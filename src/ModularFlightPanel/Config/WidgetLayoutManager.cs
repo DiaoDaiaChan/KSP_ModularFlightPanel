@@ -212,5 +212,44 @@ namespace ModularFlightPanel.Config
             CurrentLayout.Widgets.RemoveAll(w => w.WidgetId == widgetId);
             SaveLayout();
         }
+
+        public void DuplicateWidget(string widgetId)
+        {
+            var src = GetConfig(widgetId);
+            if (src == null) return;
+
+            string prefix = src.WidgetType == "ecam_dial" ? "ecam." : (src.WidgetType == "tape" ? "tape." : "custom.");
+            string newId = prefix + Guid.NewGuid().ToString().Substring(0, 8);
+
+            var clone = new WidgetConfig(newId, src.DisplayName + " (副本)", src.PositionX + 25f, src.PositionY + 25f, src.Scale, src.CustomTemplate)
+            {
+                WidgetType = src.WidgetType,
+                NumericToken = src.NumericToken,
+                MinValue = src.MinValue,
+                MaxValue = src.MaxValue,
+                CautionThreshold = src.CautionThreshold,
+                WarningThreshold = src.WarningThreshold,
+                IsSoftLimit = src.IsSoftLimit,
+                UnitLabel = src.UnitLabel,
+                StepInterval = src.StepInterval,
+                IsLeftOrientation = src.IsLeftOrientation,
+                IsEnabled = true
+            };
+
+            CurrentLayout.Widgets.Add(clone);
+            SaveLayout();
+        }
+
+        public void ResetToDefaultLayout()
+        {
+            CreateDefaultLayout();
+            SaveLayout();
+        }
+
+        public void ClearAllCustomWidgets()
+        {
+            CurrentLayout.Widgets.RemoveAll(w => w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("ecam.") || w.WidgetId.StartsWith("tape."));
+            SaveLayout();
+        }
     }
 }

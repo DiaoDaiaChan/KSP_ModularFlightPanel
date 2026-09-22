@@ -87,11 +87,18 @@ namespace ModularFlightPanel.UI
             // 1. 核心姿态球 (Pluggable Navball Sphere)
             WidgetConfig navballCfg = WidgetLayoutManager.Instance.GetConfig("core.navball") 
                 ?? new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, 0f);
-            GameObject sphereObj = new GameObject("Widget_NavballSphere");
-            sphereObj.transform.SetParent(_hudRoot.transform, false);
-            _sphereWidget = sphereObj.AddComponent<NavballSphereWidget>();
-            _sphereWidget.BaseInitialize(_hudRoot.transform, _canvas, navballCfg, theme, CustomScale);
-            _modularWidgets.Add(_sphereWidget);
+            if (navballCfg.IsEnabled)
+            {
+                GameObject sphereObj = new GameObject("Widget_NavballSphere");
+                sphereObj.transform.SetParent(_hudRoot.transform, false);
+                _sphereWidget = sphereObj.AddComponent<NavballSphereWidget>();
+                _sphereWidget.BaseInitialize(_hudRoot.transform, _canvas, navballCfg, theme, CustomScale);
+                _modularWidgets.Add(_sphereWidget);
+            }
+            else
+            {
+                _sphereWidget = null;
+            }
 
             // 2. 核心弧形表
             GameObject throtObj = new GameObject("Widget_ThrottleArc");
