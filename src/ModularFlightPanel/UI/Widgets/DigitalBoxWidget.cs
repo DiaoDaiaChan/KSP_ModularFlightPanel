@@ -27,7 +27,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            Vector2 boxSize = new Vector2(105f * CurrentDpiScale, 46f * CurrentDpiScale);
+            Vector2 boxSize = new Vector2(86f * CurrentDpiScale, 34f * CurrentDpiScale);
             RectTransform.sizeDelta = boxSize;
 
             _bgImage = gameObject.AddComponent<Image>();
@@ -38,19 +38,19 @@ namespace ModularFlightPanel.UI.Widgets
 
             _outline = gameObject.AddComponent<Outline>();
             _outline.effectColor = (_type == DigitalBoxType.Speed) ? theme.WarningColor : theme.AccentMagenta;
-            _outline.effectDistance = new Vector2(1.5f * CurrentDpiScale, 1.5f * CurrentDpiScale);
+            _outline.effectDistance = new Vector2(1.2f * CurrentDpiScale, 1.2f * CurrentDpiScale);
 
-            int modeFontSize = Mathf.RoundToInt(10f * CurrentDpiScale);
+            int modeFontSize = Mathf.Max(7, Mathf.RoundToInt(8.5f * CurrentDpiScale));
             _modeLabelText = UIFactory.CreateText(transform, "Mode_Label", "", modeFontSize, TextAnchor.UpperLeft, theme.WarningColor);
             RectTransform modeRt = _modeLabelText.GetComponent<RectTransform>();
-            modeRt.sizeDelta = new Vector2(boxSize.x - 8f * CurrentDpiScale, 16f * CurrentDpiScale);
-            modeRt.anchoredPosition = new Vector2(4f * CurrentDpiScale, (boxSize.y * 0.5f) - 10f * CurrentDpiScale);
+            modeRt.sizeDelta = new Vector2(boxSize.x - 6f * CurrentDpiScale, 13f * CurrentDpiScale);
+            modeRt.anchoredPosition = new Vector2(4f * CurrentDpiScale, (boxSize.y * 0.5f) - 7.5f * CurrentDpiScale);
 
-            int valFontSize = Mathf.RoundToInt(15f * CurrentDpiScale);
+            int valFontSize = Mathf.Max(10, Mathf.RoundToInt(13f * CurrentDpiScale));
             _valueText = UIFactory.CreateText(transform, "Value_Text", "0.0", valFontSize, TextAnchor.LowerRight, theme.TextPrimaryColor);
             RectTransform valRt = _valueText.GetComponent<RectTransform>();
-            valRt.sizeDelta = new Vector2(boxSize.x - 8f * CurrentDpiScale, 26f * CurrentDpiScale);
-            valRt.anchoredPosition = new Vector2(-4f * CurrentDpiScale, -(boxSize.y * 0.5f) + 13f * CurrentDpiScale);
+            valRt.sizeDelta = new Vector2(boxSize.x - 6f * CurrentDpiScale, 20f * CurrentDpiScale);
+            valRt.anchoredPosition = new Vector2(-4f * CurrentDpiScale, -(boxSize.y * 0.5f) + 10f * CurrentDpiScale);
         }
 
         private void OnBoxClicked()

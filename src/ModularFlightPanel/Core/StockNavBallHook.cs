@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using UnityEngine.UI;
+using KSP.UI;
 using KSP.UI.Screens.Flight;
 using ModularFlightPanel.Config;
 
@@ -115,7 +116,27 @@ namespace ModularFlightPanel.Core
         }
 
         /// <summary>
-        /// 获取官方/Principia 矢量标线 (Prograde, Retrograde, Normal, Target, Maneuver 等) 的前向局部单位方向
+        /// 获取渲染官方 NavBall 的权威 UI 摄像机
+        /// </summary>
+        public static Camera GetNavBallCamera()
+        {
+            if (HasStockNavBall)
+            {
+                Canvas canvas = StockInstance.GetComponentInParent<Canvas>();
+                if (canvas != null && canvas.worldCamera != null)
+                {
+                    return canvas.worldCamera;
+                }
+            }
+            if (UIMasterController.Instance != null && UIMasterController.Instance.uiCamera != null)
+            {
+                return UIMasterController.Instance.uiCamera;
+            }
+            return Camera.main;
+        }
+
+        /// <summary>
+        /// 获取官方/Principia 矢量标线 (Prograde, Retrograde, Normal, Target, Maneuver 等) 的前向视口单位方向
         /// </summary>
         public static bool GetMarkerDirection(string markerKey, out Vector3 dir, out bool isVisible)
         {
@@ -154,13 +175,23 @@ namespace ModularFlightPanel.Core
 
             if (marker == null) return false;
 
-            Vector3 localPos = marker.localPosition;
-            if (localPos.sqrMagnitude < 0.0001f) return false;
+            Vector3 worldVec = marker.position - StockInstance.navBall.position;
+            float markerRadius = worldVec.magnitude;
+            if (markerRadius < 0.0001f)
+            {
+                Vector3 localPos = marker.localPosition;
+                if (localPos.sqrMagnitude < 0.0001f) return false;
+                dir = localPos.normalized;
+                isVisible = marker.gameObject.activeInHierarchy && (dir.z > -0.05f);
+                return true;
+            }
 
-            dir = localPos.normalized;
-            // 当标线在姿态球可见前半球面且处于激活态时判定为可见
-            float cutoff = StockInstance.VectorUnitCutoff;
-            isVisible = marker.gameObject.activeInHierarchy && (dir.z > cutoff || dir.z > -0.05f);
+            Camera cam = GetNavBallCamera();
+            Vector3 viewVec = (cam != null) ? cam.transform.InverseTransformDirection(worldVec) : worldVec;
+
+            dir = viewVec / markerRadius;
+            float cutoff = StockInstance.VectorUnitCutoff != 0f ? StockInstance.VectorUnitCutoff : -0.05f;
+            isVisible = marker.gameObject.activeInHierarchy && (dir.z > cutoff);
             return true;
         }
 

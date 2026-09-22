@@ -78,16 +78,16 @@ namespace ModularFlightPanel.Config
         {
             CurrentLayout = new WidgetLayoutData { GlobalScale = 1.0f };
 
-            // 核心组件配置 (参考 ksp2_ref.png 空间布局，预留间隙避免互相遮挡)
+            // 核心组件配置 (紧凑人体工学布局，预留合理间隙杜绝遮挡)
             CurrentLayout.Widgets.Add(new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, 0f));
             CurrentLayout.Widgets.Add(new WidgetConfig("core.throttle", "油门推力弧形表", 0f, 0f));
             CurrentLayout.Widgets.Add(new WidgetConfig("core.vsi", "垂直速度弧形表", 0f, 0f));
             CurrentLayout.Widgets.Add(new WidgetConfig("core.propellant", "推进剂消耗弧形表", 0f, 0f));
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.speed_box", "速度读数盒", -165f, -10f));
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.alt_box", "高度读数盒", 165f, -10f));
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.bottom_controls", "RCS与SAS底控", 0f, -145f));
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.orbital_info", "轨道数据面板", 0f, -185f));
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.sas_dial", "环形 SAS 罗盘", 265f, -20f));
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.speed_box", "速度读数盒", -118f, -5f));
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.alt_box", "高度读数盒", 118f, -5f));
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.bottom_controls", "RCS与SAS底控", 0f, -78f));
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.orbital_info", "轨道数据面板", 0f, -108f));
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.sas_dial", "环形 SAS 罗盘", 185f, -15f));
 
             // 通配符扩展小组件示例 (默认不遮挡核心飞行面板，用户可在设置界面自由添加开启并拖拽)
             CurrentLayout.Widgets.Add(new WidgetConfig("custom.aero", "大气与气动参数", -360f, 110f, 1.0f, "动压: {Q} | 马赫: {MACH} | G: {GFORCE}") { IsEnabled = false });

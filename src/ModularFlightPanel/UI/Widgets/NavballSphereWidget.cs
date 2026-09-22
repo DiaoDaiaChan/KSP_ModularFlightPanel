@@ -33,27 +33,25 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            // 1. 自适应读取 KSP 原生 UI_SCALE_NAVBALL 与高分屏 DPI 计算最终直径 (基准直径优化为 ~195px，贴合原生)
+            // 1. 自适应读取 KSP 原生 UI_SCALE_NAVBALL 与尺寸比例 (基准直径优化为 ~150px，完全贴合原生)
             float uiScale = UIFactory.GetKspNavballUiScale();
-            float ballDiameter = 195f * uiScale;
+            float ballDiameter = 150f * uiScale * CurrentDpiScale;
             RectTransform.sizeDelta = new Vector2(ballDiameter, ballDiameter);
 
-            // 姿态球面在摄像机正交投影下的实际像素直径
-            float visualDiameter = ballDiameter * (1.0f / 1.05f);
-            _visualRadius = visualDiameter * 0.5f;
+            _visualRadius = ballDiameter * 0.5f;
 
-            // 2. 动态自适应高分辨率 RenderTexture (单采样避免 DX11 边缘 Alpha 污染)
+            // 2. 动态自适应高分辨率 RenderTexture (开启 4x 硬件 MSAA 抗锯齿，消除几何锯齿)
             int rtResolution = Mathf.Clamp(Mathf.NextPowerOfTwo(Mathf.RoundToInt(ballDiameter * 1.5f)), 512, 2048);
             _renderTexture = new RenderTexture(rtResolution, rtResolution, 24, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 1,
+                antiAliasing = 4,
                 useMipMap = false,
                 autoGenerateMips = false,
                 filterMode = FilterMode.Bilinear
             };
             _renderTexture.Create();
 
-            // 3. 独立离屏摄像机
+            // 3. 独立离屏摄像机 (正交投影视口 1.0f 完美贴合单位球，零拉伸畸变)
             GameObject camObj = new GameObject("Navball_Offscreen_Cam", typeof(Camera));
             camObj.transform.SetParent(transform, false);
             camObj.transform.localPosition = new Vector3(0f, 0f, -2.5f);
@@ -63,12 +61,12 @@ namespace ModularFlightPanel.UI.Widgets
             _ballCamera.backgroundColor = new Color(0f, 0f, 0f, 0f);
             _ballCamera.targetTexture = _renderTexture;
             _ballCamera.orthographic = true;
-            _ballCamera.orthographicSize = 1.05f;
+            _ballCamera.orthographicSize = 1.0f;
             _ballCamera.nearClipPlane = 0.1f;
             _ballCamera.farClipPlane = 10f;
             _ballCamera.cullingMask = 1 << 31;
 
-            // 4. 3D 球体 (直接使用原版/Principia 姿态球贴图，并经由现代 Shader 渲染)
+            // 4. 3D 球体 (直接共享官方 StockNavBall 网格模型与 UV 拓扑，杜绝贴图畸变)
             _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             _sphereObject.name = "Navball_3D_Sphere";
             _sphereObject.transform.SetParent(transform, false);
@@ -79,46 +77,52 @@ namespace ModularFlightPanel.UI.Widgets
             Collider col = _sphereObject.GetComponent<Collider>();
             if (col != null) Destroy(col);
 
+            // 优先共享官方专属 NavBall Mesh，保障 UV 展开与官方贴图 100% 绝对契合
+            if (StockNavBallHook.HasStockNavBall)
+            {
+                MeshFilter stockMf = StockNavBallHook.StockInstance.navBall.GetComponent<MeshFilter>();
+                if (stockMf != null && stockMf.sharedMesh != null)
+                {
+                    _sphereObject.GetComponent<MeshFilter>().sharedMesh = stockMf.sharedMesh;
+                }
+            }
+
             MeshRenderer mr = _sphereObject.GetComponent<MeshRenderer>();
             Shader targetShader = AssetLoader.EnhancedShader ?? AssetLoader.ModernShader;
             _sphereMaterial = new Material(targetShader);
 
-            // 读取官方/Principia/TextureReplacer 正在使用的贴图
+            // 读取官方/Principia/TextureReplacer 正在使用的贴图与 UV 缩放偏置
             Texture stockTex = StockNavBallHook.GetTexture();
             if (stockTex != null)
             {
                 _sphereMaterial.SetTexture("_MainTex", stockTex);
             }
+            if (StockNavBallHook.HasStockNavBall)
+            {
+                Renderer stockR = StockNavBallHook.StockInstance.navBall.GetComponent<Renderer>();
+                if (stockR != null && stockR.sharedMaterial != null)
+                {
+                    _sphereMaterial.mainTextureScale = stockR.sharedMaterial.mainTextureScale;
+                    _sphereMaterial.mainTextureOffset = stockR.sharedMaterial.mainTextureOffset;
+                }
+            }
             mr.material = _sphereMaterial;
 
-            // 5. 圆形硬件裁切遮罩容器 (保证 100% 绝对圆形呈现，零方形杂角)
-            GameObject maskObj = new GameObject("Sphere_Mask_Container", typeof(RectTransform), typeof(Image), typeof(Mask));
-            maskObj.transform.SetParent(transform, false);
-            RectTransform maskRt = maskObj.GetComponent<RectTransform>();
-            maskRt.sizeDelta = new Vector2(visualDiameter, visualDiameter);
-            maskRt.anchoredPosition = Vector2.zero;
-
-            Image maskImg = maskObj.GetComponent<Image>();
-            maskImg.sprite = NavballMarkerFactory.GetCircleMaskSprite();
-            maskImg.color = Color.white;
-
-            Mask maskComp = maskObj.GetComponent<Mask>();
-            maskComp.showMaskGraphic = false;
-
-            // 6. RawImage 画布映射 (放置于圆形遮罩内部)
+            // 5. RawImage 画布映射 (直接作为子物体渲染，彻底摒弃 1-bit Stencil UGUI Mask 硬锯齿)
             GameObject rawImgObj = new GameObject("Sphere_RawImage", typeof(RectTransform), typeof(RawImage));
-            rawImgObj.transform.SetParent(maskObj.transform, false);
+            rawImgObj.transform.SetParent(transform, false);
             RectTransform rawRt = rawImgObj.GetComponent<RectTransform>();
             rawRt.sizeDelta = new Vector2(ballDiameter, ballDiameter);
             rawRt.anchoredPosition = Vector2.zero;
 
             _displayImage = rawImgObj.GetComponent<RawImage>();
             _displayImage.texture = _renderTexture;
+            _displayImage.raycastTarget = false;
 
-            // 7. 2D 矢量标线层 (Prograde, Retrograde, Normal, Radial, Target, Maneuver)
+            // 6. 2D 矢量标线层 (Prograde, Retrograde, Normal, Radial, Target, Maneuver)
             CreateMarkerOverlayLayer(transform, CurrentDpiScale);
 
-            // 8. 瞄准标与航向标卡
+            // 7. 瞄准标与航向标卡
             CreateCrosshair(transform, CurrentDpiScale, theme);
             CreateHeadingBox(transform, CurrentDpiScale, theme);
 
@@ -208,10 +212,32 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(TelemetryHub telemetry)
         {
-            // 1. 姿态旋转：100% 同步官方/Principia 解算的世界坐标姿态 (Mod 0 数学运算)
+            // 0. 官方专属网格与材质属性动态挂钩检查 (确保晚期加载时无缝衔接)
+            if (StockNavBallHook.HasStockNavBall && _sphereObject != null)
+            {
+                MeshFilter stockMf = StockNavBallHook.StockInstance.navBall.GetComponent<MeshFilter>();
+                MeshFilter ourMf = _sphereObject.GetComponent<MeshFilter>();
+                if (stockMf != null && stockMf.sharedMesh != null && ourMf.sharedMesh != stockMf.sharedMesh)
+                {
+                    ourMf.sharedMesh = stockMf.sharedMesh;
+                }
+
+                Renderer stockR = StockNavBallHook.StockInstance.navBall.GetComponent<Renderer>();
+                if (stockR != null && stockR.sharedMaterial != null && _sphereMaterial != null)
+                {
+                    if (_sphereMaterial.mainTextureScale != stockR.sharedMaterial.mainTextureScale)
+                        _sphereMaterial.mainTextureScale = stockR.sharedMaterial.mainTextureScale;
+                    if (_sphereMaterial.mainTextureOffset != stockR.sharedMaterial.mainTextureOffset)
+                        _sphereMaterial.mainTextureOffset = stockR.sharedMaterial.mainTextureOffset;
+                }
+            }
+
+            // 1. 姿态旋转：同步官方摄像机视口空间下的权威旋转
             if (_sphereObject != null)
             {
-                _sphereObject.transform.rotation = StockNavBallHook.GetRotation();
+                Camera stockCam = StockNavBallHook.GetNavBallCamera();
+                Quaternion camRot = (stockCam != null) ? stockCam.transform.rotation : Quaternion.identity;
+                _sphereObject.transform.rotation = Quaternion.Inverse(camRot) * StockNavBallHook.GetRotation();
             }
 
             // 2. 贴图同步：实时同步 Principia 多参考系 (Barycentric/Inertial/Surface) 与 TextureReplacer
@@ -245,8 +271,8 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (StockNavBallHook.GetMarkerDirection(key, out Vector3 dir, out bool isVisible))
                 {
-                    // 在可见前半球 (dir.z > 0)
-                    if (isVisible && dir.z > 0.001f)
+                    // 在可见前半球 (dir.z > -0.05f)
+                    if (isVisible && dir.z > -0.05f)
                     {
                         if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
@@ -254,7 +280,7 @@ namespace ModularFlightPanel.UI.Widgets
                         img.rectTransform.anchoredPosition = new Vector2(dir.x, dir.y) * _visualRadius;
 
                         // 接近地平线边缘时平滑渐隐淡出
-                        float alpha = Mathf.Clamp01(dir.z / 0.15f);
+                        float alpha = Mathf.Clamp01((dir.z + 0.05f) / 0.20f);
                         Color c = img.color;
                         c.a = alpha;
                         img.color = c;

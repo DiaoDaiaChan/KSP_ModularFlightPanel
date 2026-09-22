@@ -23,9 +23,9 @@ namespace ModularFlightPanel.UI.Widgets
         public void Initialize(Transform parent, ArcMeterType type, LayoutConfig layout, ThemeConfig theme, float scale)
         {
             _type = type;
-            float dpiScale = UIFactory.GetScreenDpiScale() * scale;
-            float ballDiameter = layout.SphereRadius * 2f * dpiScale;
-            float meterDiameter = ballDiameter * 1.32f;
+            float dpiScale = scale;
+            float ballDiameter = 150f * scale;
+            float meterDiameter = ballDiameter * 1.30f;
 
             GameObject meterObj = new GameObject($"ArcMeter_{type}", typeof(RectTransform), typeof(Image));
             meterObj.transform.SetParent(parent, false);

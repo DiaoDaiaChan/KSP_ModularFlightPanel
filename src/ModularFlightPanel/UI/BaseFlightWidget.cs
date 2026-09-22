@@ -25,7 +25,7 @@ namespace ModularFlightPanel.UI
         {
             Config = config;
             RootCanvas = canvas;
-            CurrentDpiScale = UIFactory.GetScreenDpiScale() * scale;
+            CurrentDpiScale = scale;
 
             transform.SetParent(parent, false);
             RectTransform = GetComponent<RectTransform>();

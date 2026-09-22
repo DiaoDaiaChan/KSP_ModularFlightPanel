@@ -40,12 +40,13 @@ Shader "ModularFlightPanel/NavballProcedural"
     {
         Tags 
         { 
-            "Queue" = "Geometry" 
-            "RenderType" = "Opaque" 
+            "Queue" = "Transparent" 
+            "RenderType" = "Transparent" 
             "IgnoreProjector" = "True"
         }
         LOD 200
         Cull Back
+        Blend SrcAlpha OneMinusSrcAlpha
 
         Pass
         {
@@ -68,7 +69,11 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float3 localPos : TEXCOORD0;
                 float3 worldNormal : TEXCOORD1;
                 float3 worldPos : TEXCOORD2;
+                float2 uv : TEXCOORD3;
             };
+
+            sampler2D _MainTex;
+            float4 _MainTex_ST;
 
             fixed4 _SkyZenithColor;
             fixed4 _SkyHorizonColor;
@@ -99,6 +104,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 o.localPos = v.vertex.xyz; // 本地单位球坐标
                 o.worldNormal = UnityObjectToWorldNormal(v.normal);
                 o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 return o;
             }
 
@@ -191,6 +197,17 @@ Shader "ModularFlightPanel/NavballProcedural"
                     col = lerp(col, _GroundHorizonColor * 1.8, isNadirRing);
                 }
 
+                // 6.5. 融合官方贴图角度数字刻度与航向文字 (Pitch Degree Digits & Compass Text)
+                fixed4 markTex = tex2D(_MainTex, i.uv);
+                float markLuma = dot(markTex.rgb, float3(0.299, 0.587, 0.114));
+                float maxC = max(markTex.r, max(markTex.g, markTex.b));
+                float minC = min(markTex.r, min(markTex.g, markTex.b));
+                // 提取灰度反差明显的数字和文字笔画 (避免提取底色)
+                float isDigit = smoothstep(0.68, 0.95, markLuma) * step(maxC - minC, 0.28);
+                float isDarkOutline = (1.0 - smoothstep(0.04, 0.22, markLuma)) * step(maxC - minC, 0.28);
+                col.rgb = lerp(col.rgb, float3(0.02, 0.04, 0.06), isDarkOutline * 0.72);
+                col.rgb = lerp(col.rgb, float3(0.98, 0.98, 1.0), isDigit * 0.92);
+
                 // 7. 3D 球面深度边缘衰减 (Limb Darkening)
                 float NdotV = saturate(dot(normal, viewDir));
                 float limbFalloff = pow(NdotV, _LimbPower);
@@ -208,7 +225,9 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float spec = pow(specAngle, _Glossiness) * _SpecIntensity;
                 col.rgb += _SpecularColor.rgb * spec;
 
-                col.a = 1.0;
+                // 10. 亚像素硬件多重采样边缘抗锯齿 (Subpixel Silhouette Limb Anti-Aliasing)
+                float edgeAA = max(fwidth(NdotV) * 1.5, 0.005);
+                col.a = saturate(NdotV / edgeAA);
                 return col;
             }
             ENDCG

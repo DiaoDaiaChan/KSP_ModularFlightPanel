@@ -61,7 +61,7 @@ namespace ModularFlightPanel.UI
             _scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             _scaler.referenceResolution = new Vector2(1920f, 1080f);
             _scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            _scaler.matchWidthOrHeight = 0.5f;
+            _scaler.matchWidthOrHeight = 1.0f;
 
             _raycaster = _canvasObj.GetComponent<GraphicRaycaster>();
         }
@@ -82,7 +82,7 @@ namespace ModularFlightPanel.UI
             rootRt.anchorMin = new Vector2(0.5f, 0f);
             rootRt.anchorMax = new Vector2(0.5f, 0f);
             rootRt.pivot = new Vector2(0.5f, 0f);
-            rootRt.anchoredPosition = new Vector2(0f, 160f * CustomScale);
+            rootRt.anchoredPosition = new Vector2(0f, 85f * CustomScale);
 
             // 1. 核心姿态球 (Pluggable Navball Sphere)
             WidgetConfig navballCfg = WidgetLayoutManager.Instance.GetConfig("core.navball") 

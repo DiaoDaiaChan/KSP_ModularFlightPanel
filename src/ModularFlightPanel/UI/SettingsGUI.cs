@@ -107,7 +107,7 @@ namespace ModularFlightPanel.UI
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(navCfg);
                 }
                 WidgetLayoutManager.Instance.SaveLayout();
-                NavballHUD.Instance.RebuildHUD();
+                NavballHUD.Instance?.RebuildHUD();
             }
             GUI.color = Color.white;
 

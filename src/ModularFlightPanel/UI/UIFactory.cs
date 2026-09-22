@@ -48,7 +48,7 @@ namespace ModularFlightPanel.UI
             }
 
             if (kspScale <= 0.05f) kspScale = 1.0f;
-            return kspScale * GetScreenDpiScale();
+            return Mathf.Clamp(kspScale, 0.5f, 2.5f);
         }
 
         public static GameObject CreatePanel(Transform parent, string name, Vector2 size, Vector2 anchoredPos, Color color)

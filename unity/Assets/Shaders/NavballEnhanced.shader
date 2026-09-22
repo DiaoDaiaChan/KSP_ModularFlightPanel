@@ -29,12 +29,13 @@ Shader "ModularFlightPanel/NavballEnhanced"
     {
         Tags 
         { 
-            "Queue" = "Geometry" 
-            "RenderType" = "Opaque" 
+            "Queue" = "Transparent" 
+            "RenderType" = "Transparent" 
             "IgnoreProjector" = "True"
         }
         LOD 200
         Cull Back
+        Blend SrcAlpha OneMinusSrcAlpha
 
         Pass
         {
@@ -120,7 +121,9 @@ Shader "ModularFlightPanel/NavballEnhanced"
                 float spec = pow(specAngle, _Glossiness) * _SpecIntensity;
                 col.rgb += _SpecularColor.rgb * spec;
 
-                col.a = 1.0;
+                // 6. 亚像素硬件多重采样边缘抗锯齿 (Subpixel Silhouette Limb Anti-Aliasing)
+                float edgeAA = max(fwidth(NdotV) * 1.5, 0.005);
+                col.a = saturate(NdotV / edgeAA);
                 return col;
             }
             ENDCG
