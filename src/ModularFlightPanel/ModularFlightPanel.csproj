@@ -1,0 +1,105 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>ModularFlightPanel</AssemblyName>
+    <RootNamespace>ModularFlightPanel</RootNamespace>
+    <OutputType>Library</OutputType>
+    <Deterministic>true</Deterministic>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <KSPRoot Condition="'$(KSPRoot)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program_newmod</KSPRoot>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- KSP Core Assemblies -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    
+    <!-- Unity Engine Modules -->
+    <Reference Include="UnityEngine">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.JSONSerializeModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.TextCoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Harmony -->
+    <Reference Include="0Harmony">
+      <HintPath>$(KSPRoot)\GameData\000_Harmony\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Optional ToolbarControl & ClickThroughBlocker -->
+    <Reference Include="ToolbarControl" Condition="Exists('$(KSPRoot)\GameData\001_ToolbarControl\Plugins\ToolbarControl.dll')">
+      <HintPath>$(KSPRoot)\GameData\001_ToolbarControl\Plugins\ToolbarControl.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ClickThroughBlocker" Condition="Exists('$(KSPRoot)\GameData\000_ClickThroughBlocker\Plugins\ClickThroughBlocker.dll')">
+      <HintPath>$(KSPRoot)\GameData\000_ClickThroughBlocker\Plugins\ClickThroughBlocker.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Post-Build copy to local GameData and KSP installation -->
+  <Target Name="PostBuild" AfterTargets="Build">
+    <ItemGroup>
+      <OutputFiles Include="$(TargetPath)" />
+      <OutputPdb Condition="Exists('$(TargetDir)$(TargetName).pdb')" Include="$(TargetDir)$(TargetName).pdb" />
+    </ItemGroup>
+    <!-- Copy to repo GameData -->
+    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb')" SkipUnchangedFiles="true" />
+    <!-- Copy directly to target KSP instance GameData -->
+    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" Condition="Exists('$(KSPRoot)\GameData')" />
+    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

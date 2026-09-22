@@ -1,0 +1,33 @@
+# Visual Studio / .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+unity/AssetBundles/
+!GameData/**/AssetBundles/*.ksp
+!GameData/**/AssetBundles/*.manifest
+*.csproj
+*.unityproj
+*.sln
+!src/**/*.sln
+!src/**/*.csproj
+
+# OS & IDE
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

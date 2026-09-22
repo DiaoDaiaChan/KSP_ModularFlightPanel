@@ -1,0 +1,104 @@
+{
+  "GlobalScale": 1.0,
+  "Widgets": [
+    {
+      "WidgetId": "core.navball",
+      "Title": "姿态球 (Navball)",
+      "PosX": 0.0,
+      "PosY": 0.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.throttle",
+      "Title": "油门推力弧形表",
+      "PosX": 0.0,
+      "PosY": 0.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.vsi",
+      "Title": "垂直速度弧形表",
+      "PosX": 0.0,
+      "PosY": 0.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.propellant",
+      "Title": "推进剂消耗弧形表",
+      "PosX": 0.0,
+      "PosY": 0.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.speed_box",
+      "Title": "速度读数盒",
+      "PosX": -165.0,
+      "PosY": -10.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.alt_box",
+      "Title": "高度读数盒",
+      "PosX": 165.0,
+      "PosY": -10.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.bottom_controls",
+      "Title": "RCS与SAS底控",
+      "PosX": 0.0,
+      "PosY": -145.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.orbital_info",
+      "Title": "轨道数据面板",
+      "PosX": 0.0,
+      "PosY": -185.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "core.sas_dial",
+      "Title": "环形 SAS 罗盘",
+      "PosX": 265.0,
+      "PosY": -20.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
+      "WidgetId": "custom.aero",
+      "Title": "大气与气动参数",
+      "PosX": -360.0,
+      "PosY": 110.0,
+      "Scale": 1.0,
+      "Visible": false,
+      "Template": "动压: {Q} | 马赫: {MACH} | G: {GFORCE}"
+    },
+    {
+      "WidgetId": "custom.power",
+      "Title": "推重比与推进",
+      "PosX": 360.0,
+      "PosY": 110.0,
+      "Scale": 1.0,
+      "Visible": false,
+      "Template": "TWR: {TWR:F2} | 燃料: {PROP} | 油门: {THROTTLE}"
+    }
+  ]
+}

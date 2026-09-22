@@ -1,0 +1,23 @@
+ManifestFileVersion: 0
+CRC: 292322353
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 53ee2f9023fc1b86473047203784e163
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: 55d48f4ad9c3b13330b9eb5ee5686477
+HashAppended: 0
+ClassTypes:
+- Class: 48
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/Shaders/GlassCockpitUI.shader
+- Assets/Shaders/NavballEnhanced.shader
+- Assets/Shaders/RadialSegmentedMeter.shader
+- Assets/Shaders/NavballHalftone.shader
+- Assets/Shaders/NeonGlowUI.shader
+- Assets/Shaders/NavballProcedural.shader
+- Assets/Shaders/NavballModern.shader
+Dependencies: []
