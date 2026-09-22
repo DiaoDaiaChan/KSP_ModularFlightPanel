@@ -67,12 +67,14 @@ function Navball() {
   </div></div>;
 }
 
-function TapeGauge({ label, value, unit, color, side, verticalSpeed = 0 }) {
+function TapeGauge({ label, value, unit, color, side, verticalSpeed = 0, shape = 'slim', onToggleShape }) {
   const [position, startDrag] = useDragPosition();
   const ticks = Array.from({ length: 9 }, (_, i) => Math.round(value + (i - 4) * 10));
-  return <div className={`tape ${side}`} style={{ '--tape-color': color, transform: `translate(${position.x}px, ${position.y}px)` }}><DragHandle onPointerDown={startDrag} title={label} />
-    <div className="tape-title">{label}<small>{unit}</small></div>
-    <div className="tape-body">{ticks.map((tick, i) => <div className={i === 4 ? 'tape-tick selected' : 'tape-tick'} key={i}><span>{tick}</span><i /></div>)}</div>
+  const isArc = shape === 'arc';
+  return <div className={`tape ${side} ${isArc ? 'tape-arc' : 'tape-slim'}`} style={{ '--tape-color': color, transform: `translate(${position.x}px, ${position.y}px)` }}><DragHandle onPointerDown={startDrag} title={label} />
+    <div className="tape-title"><span>{label}</span><small>{unit}</small>{onToggleShape && <button className="tape-shape-toggle" onClick={onToggleShape}>{isArc ? 'SLIM' : 'ARC'}</button>}</div>
+    {!isArc && <div className="tape-body">{ticks.map((tick, i) => <div className={i === 4 ? 'tape-tick selected' : 'tape-tick'} key={i}><span>{tick}</span><i /></div>)}</div>}
+    {isArc && <div className="arc-band">{ticks.map((tick, i) => { const angle = (i - 4) * 15; return <div className={i === 4 ? 'arc-tick selected' : 'arc-tick'} key={i} style={{ '--arc-angle': `${angle}deg` }}><span style={{ transform: `rotate(${-angle}deg)` }}>{tick}</span><i /></div>; })}</div>}
     <div className="tape-value">{value.toLocaleString()}<small>{unit}</small></div>
     <div className={`trend-indicator ${verticalSpeed >= 0 ? 'trend-up' : 'trend-down'}`} style={{ '--trend-length': `${Math.max(18, Math.min(92, Math.abs(verticalSpeed) * 2.2))}px` }}>
       <span>{verticalSpeed >= 0 ? '+' : '−'}{Math.abs(verticalSpeed)}</span><i /><b>{verticalSpeed >= 0 ? '▲' : '▼'}</b>
@@ -340,6 +342,7 @@ function SasDial({ active, onSelect }) {
 function App() {
   const [throttle, setThrottle] = useState(.64);
   const [sas, setSas] = useState('PRO');
+  const [tapeShape, setTapeShape] = useState('slim');
   const [visibility, setVisibility] = useState({ elec: true, xy: true, orbit: true, rocket: true, life: true, signal: true, stage: true, staging: true, action: true });
   const toggleComponent = id => setVisibility(value => ({ ...value, [id]: !value[id] }));
   const status = useMemo(() => sas === 'PRO' ? 'SAS / PROGRADE' : 'SAS / ' + sas, [sas]);
@@ -362,7 +365,7 @@ function App() {
         <EcamDial title="G-FORCE" value="2.36" max="15" unit="G" color={colors.green} />
       </aside>
       <section className="center-stage">
-        <TapeGauge label="SURFACE" value={356} unit="SPD / m/s" color={colors.yellow} side="speed-tape" verticalSpeed={18} />
+        <TapeGauge label="SURFACE" value={356} unit="SPD / m/s" color={colors.yellow} side="speed-tape" verticalSpeed={18} shape={tapeShape} onToggleShape={() => setTapeShape(shape => shape === 'slim' ? 'arc' : 'slim')} />
         <Navball />
         <div className="orbital panel"><span>AP</span> 16,177 m <em>in T-00:00:38</em><br/><span>PE</span> -598,308 m <em>in T-00:32:43</em><b>ORBITAL.INFO</b></div>
         {visibility.stage && <StageIndicator />}
@@ -370,7 +373,7 @@ function App() {
       <aside className="right-rail">
         <div className="rail-label">FLIGHT DATA</div>
         <SegmentedArc value={.42} color={colors.blue} start={40} end={140} label="VSI" unit="m/s" />
-        <TapeGauge label="GROUND" value={9222} unit="ALT / m" color={colors.pink} side="alt-tape" verticalSpeed={-12} />
+        <TapeGauge label="GROUND" value={9222} unit="ALT / m" color={colors.pink} side="alt-tape" verticalSpeed={-12} shape={tapeShape} onToggleShape={() => setTapeShape(shape => shape === 'slim' ? 'arc' : 'slim')} />
         <div className="readout panel"><small>ALTITUDE / GROUND</small><strong>9,222</strong><span>m</span></div>
         <div className="readout panel"><small>DYNAMIC PRESSURE</small><strong>11.2</strong><span>kPa</span></div>
         <EcamDial title="DYNAMIC PRESSURE" value="11.2" max="40" unit="kPa" color={colors.blue} />

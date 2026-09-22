@@ -57,3 +57,29 @@ button, input { font: inherit; }
 .signal-detail { display:grid; grid-template-columns:1.3fr .7fr 1fr 1fr; gap:8px; border-top:1px solid #222d71; margin-top:7px; padding-top:6px; }
 .signal-detail span { display:block; color:#68739d; font-size:6px; }
 .signal-detail strong { display:block; color:#dfe7ff; font-size:8px; font-weight:500; margin-top:2px; white-space:nowrap; }
+.tape-slim { width:62px; height:300px; padding:8px 4px; }
+.speed-tape.tape-slim { left:-60px; }
+.alt-tape.tape-slim { right:-60px; }
+.tape-title { position:relative; }
+.tape-title span { display:block; }
+.tape-shape-toggle { position:absolute; top:-2px; right:-1px; border:1px solid var(--tape-color); background:#080c24; color:var(--tape-color); font-size:6px; line-height:13px; height:15px; padding:0 3px; cursor:pointer; }
+.tape-shape-toggle:hover { color:#fff; background:var(--tape-color); }
+.tape-arc { width:146px; height:226px; top:150px; background:transparent; border:0; box-shadow:none; padding:8px 0; }
+.speed-tape.tape-arc { left:-110px; }
+.alt-tape.tape-arc { right:-110px; }
+.tape-arc:before { content:''; position:absolute; width:116px; height:168px; top:37px; border:2px solid var(--tape-color); opacity:.78; border-radius:58px; box-shadow:0 0 10px color-mix(in srgb, var(--tape-color) 35%, transparent); }
+.speed-tape.tape-arc:before { right:0; border-left-color:transparent; border-bottom-color:transparent; transform:rotate(-36deg); }
+.alt-tape.tape-arc:before { left:0; border-right-color:transparent; border-bottom-color:transparent; transform:rotate(36deg); }
+.tape-arc .tape-title { width:74px; margin:auto; z-index:2; }
+.tape-arc .tape-title small { font-size:7px; }
+.tape-arc .tape-value { left:34px; right:34px; top:95px; font-size:16px; padding:7px 2px 6px; z-index:3; }
+.tape-arc .tape-value:after { display:none; }
+.arc-band { position:absolute; inset:28px 5px 12px; z-index:2; }
+.arc-tick { position:absolute; left:50%; top:50%; width:42px; height:16px; display:flex; align-items:center; gap:4px; color:#667099; font-size:8px; transform:translate(-50%,-50%) rotate(var(--arc-angle)) translateY(-84px); transform-origin:center; }
+.arc-tick span { width:25px; text-align:right; }
+.arc-tick i { width:12px; height:1px; background:#4b5688; }
+.arc-tick.selected { color:#f4f7ff; font-size:9px; }
+.arc-tick.selected i { height:3px; background:var(--tape-color); box-shadow:0 0 6px var(--tape-color); }
+.tape-arc .trend-indicator { top:69px; bottom:42px; z-index:4; }
+.speed-tape.tape-arc .trend-indicator { right:-4px; }
+.alt-tape.tape-arc .trend-indicator { left:-4px; }
