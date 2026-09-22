@@ -74,6 +74,15 @@
       "Template": ""
     },
     {
+      "WidgetId": "core.ecam_status",
+      "Title": "ECAM 飞行状态",
+      "PosX": 0.0,
+      "PosY": -185.0,
+      "Scale": 1.0,
+      "Visible": true,
+      "Template": ""
+    },
+    {
       "WidgetId": "core.sas_dial",
       "Title": "环形 SAS 罗盘",
       "PosX": 265.0,

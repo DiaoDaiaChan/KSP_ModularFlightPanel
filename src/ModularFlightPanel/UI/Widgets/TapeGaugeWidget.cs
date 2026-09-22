@@ -55,13 +55,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. 半透明背景板
             _bgImage = gameObject.AddComponent<Image>();
-            Color bgCol = theme.FrameBgColor;
-            _bgImage.color = new Color(bgCol.r, bgCol.g, bgCol.b, 0.82f);
+            _bgImage.color = new Color(0.008f, 0.012f, 0.04f, 0.94f);
 
             _bgOutline = gameObject.AddComponent<Outline>();
             Color borderCol = theme.FrameBorderColor;
             _bgOutline.effectColor = new Color(borderCol.r, borderCol.g, borderCol.b, 0.6f);
             _bgOutline.effectDistance = new Vector2(1f * CurrentDpiScale, 1f * CurrentDpiScale);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _bgOutline.effectColor, CurrentDpiScale);
 
             // 2. 标尺视口 (裁剪超出范围的刻度)
             GameObject viewportObj = new GameObject("Tape_Viewport", typeof(RectTransform), typeof(RectMask2D));
@@ -315,9 +315,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void ApplyTheme(ThemeConfig theme)
         {
-            Color bgCol = theme.FrameBgColor;
             if (_bgImage != null)
-                _bgImage.color = new Color(bgCol.r, bgCol.g, bgCol.b, 0.82f);
+                _bgImage.color = new Color(0.008f, 0.012f, 0.04f, 0.94f);
 
             Color borderCol = theme.FrameBorderColor;
             if (_bgOutline != null)

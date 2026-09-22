@@ -86,6 +86,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereObject.GetComponent<MeshFilter>().sharedMesh = stockMf.sharedMesh;
                 }
             }
+            UpdateSphereMeshScale();
 
             MeshRenderer mr = _sphereObject.GetComponent<MeshRenderer>();
             Shader targetShader = AssetLoader.EnhancedShader ?? AssetLoader.ModernShader;
@@ -127,6 +128,21 @@ namespace ModularFlightPanel.UI.Widgets
             CreateHeadingBox(transform, CurrentDpiScale, theme);
 
             ApplyTheme(theme);
+        }
+
+        private void UpdateSphereMeshScale()
+        {
+            if (_sphereObject == null) return;
+            MeshFilter meshFilter = _sphereObject.GetComponent<MeshFilter>();
+            if (meshFilter == null || meshFilter.sharedMesh == null) return;
+
+            Bounds bounds = meshFilter.sharedMesh.bounds;
+            float maxExtent = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z);
+            if (maxExtent > 0.0001f)
+            {
+                // Keep the visual radius at one world unit for both stock and replacement navball meshes.
+                _sphereObject.transform.localScale = Vector3.one * (1f / maxExtent);
+            }
         }
 
         private void CreateMarkerOverlayLayer(Transform parent, float dpiScale)
@@ -220,6 +236,11 @@ namespace ModularFlightPanel.UI.Widgets
                 if (stockMf != null && stockMf.sharedMesh != null && ourMf.sharedMesh != stockMf.sharedMesh)
                 {
                     ourMf.sharedMesh = stockMf.sharedMesh;
+                    UpdateSphereMeshScale();
+                }
+                else if (_sphereObject.transform.localScale == Vector3.one * 2.0f && ourMf != null && ourMf.sharedMesh != null)
+                {
+                    UpdateSphereMeshScale();
                 }
 
                 Renderer stockR = StockNavBallHook.StockInstance.navBall.GetComponent<Renderer>();

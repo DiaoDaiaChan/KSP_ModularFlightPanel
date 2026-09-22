@@ -87,6 +87,7 @@ namespace ModularFlightPanel.Config
             CurrentLayout.Widgets.Add(new WidgetConfig("core.alt_box", "高度读数盒", 118f, -5f));
             CurrentLayout.Widgets.Add(new WidgetConfig("core.bottom_controls", "RCS与SAS底控", 0f, -78f));
             CurrentLayout.Widgets.Add(new WidgetConfig("core.orbital_info", "轨道数据面板", 0f, -108f));
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.ecam_status", "ECAM 飞行状态", 0f, -185f));
             CurrentLayout.Widgets.Add(new WidgetConfig("core.sas_dial", "环形 SAS 罗盘", 185f, -15f));
 
             // 通配符扩展小组件示例 (默认不遮挡核心飞行面板，用户可在设置界面自由添加开启并拖拽)

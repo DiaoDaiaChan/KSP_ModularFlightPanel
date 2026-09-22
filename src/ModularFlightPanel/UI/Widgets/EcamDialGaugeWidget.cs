@@ -50,13 +50,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. 卡片底衬 (轻微半透明圆角底板)
             _bgPanel = gameObject.AddComponent<Image>();
-            Color bgCol = theme.FrameBgColor;
-            _bgPanel.color = new Color(bgCol.r, bgCol.g, bgCol.b, 0.78f);
+            _bgPanel.color = new Color(0.008f, 0.012f, 0.04f, 0.94f);
 
             _bgOutline = gameObject.AddComponent<Outline>();
             Color borderCol = theme.FrameBorderColor;
             _bgOutline.effectColor = new Color(borderCol.r, borderCol.g, borderCol.b, 0.45f);
             _bgOutline.effectDistance = new Vector2(1f * CurrentDpiScale, 1f * CurrentDpiScale);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgPanel.color, _bgOutline.effectColor, CurrentDpiScale);
 
             // 2. 马蹄形弧线度量环 (RadialSegmentedMeter.shader)
             _meterObj = new GameObject("ECAM_Arc_Meter", typeof(RectTransform), typeof(Image));
@@ -236,9 +236,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void ApplyTheme(ThemeConfig theme)
         {
-            Color bgCol = theme.FrameBgColor;
             if (_bgPanel != null)
-                _bgPanel.color = new Color(bgCol.r, bgCol.g, bgCol.b, 0.78f);
+                _bgPanel.color = new Color(0.008f, 0.012f, 0.04f, 0.94f);
 
             Color borderCol = theme.FrameBorderColor;
             if (_bgOutline != null)

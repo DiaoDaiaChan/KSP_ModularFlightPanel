@@ -16,15 +16,16 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            Vector2 panelSize = new Vector2(230f * CurrentDpiScale, 48f * CurrentDpiScale);
+            Vector2 panelSize = new Vector2(260f * CurrentDpiScale, 54f * CurrentDpiScale);
             RectTransform.sizeDelta = panelSize;
 
             _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = theme.FrameBgColor;
+            _bgImage.color = new Color(0.008f, 0.012f, 0.04f, 0.96f);
 
             _outline = gameObject.AddComponent<Outline>();
             _outline.effectColor = theme.FrameBorderColor;
             _outline.effectDistance = new Vector2(1.5f * CurrentDpiScale, 1.5f * CurrentDpiScale);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _outline.effectColor, CurrentDpiScale);
 
             int infoFontSize = Mathf.RoundToInt(11f * CurrentDpiScale);
             int titleFontSize = Mathf.RoundToInt(9f * CurrentDpiScale);
@@ -75,7 +76,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void ApplyTheme(ThemeConfig theme)
         {
-            if (_bgImage != null) _bgImage.color = theme.FrameBgColor;
+            if (_bgImage != null) _bgImage.color = new Color(0.008f, 0.012f, 0.04f, 0.96f);
             if (_outline != null) _outline.effectColor = theme.FrameBorderColor;
             if (_titleText != null) _titleText.color = theme.AccentSecondary;
             if (_apText != null) _apText.color = theme.TextPrimaryColor;

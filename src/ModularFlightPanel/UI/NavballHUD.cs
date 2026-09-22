@@ -28,6 +28,7 @@ namespace ModularFlightPanel.UI
         private ArcMeterWidget _vsiArcWidget;
         private ArcMeterWidget _propellantArcWidget;
         private BottomControlsWidget _bottomControlsWidget;
+        private EcamStatusWidget _ecamStatusWidget;
 
         public float CustomScale
         {
@@ -120,6 +121,18 @@ namespace ModularFlightPanel.UI
             ctrlObj.transform.SetParent(_hudRoot.transform, false);
             _bottomControlsWidget = ctrlObj.AddComponent<BottomControlsWidget>();
             _bottomControlsWidget.Initialize(_hudRoot.transform, fallbackLayout, theme, CustomScale);
+
+            // ECAM-style status strip: a quiet information layer above the control cluster.
+            WidgetConfig statusCfg = WidgetLayoutManager.Instance.GetConfig("core.ecam_status")
+                ?? new WidgetConfig("core.ecam_status", "ECAM 飞行状态", 0f, -185f);
+            if (statusCfg.IsEnabled)
+            {
+                GameObject statusObj = new GameObject("Widget_EcamStatus");
+                statusObj.transform.SetParent(_hudRoot.transform, false);
+                _ecamStatusWidget = statusObj.AddComponent<EcamStatusWidget>();
+                _ecamStatusWidget.BaseInitialize(_hudRoot.transform, _canvas, statusCfg, theme, CustomScale);
+                _modularWidgets.Add(_ecamStatusWidget);
+            }
 
             // 3. 动态加载所有模块化小组件 (BaseFlightWidget 体系)
             var widgetConfigs = WidgetLayoutManager.Instance.CurrentLayout.Widgets;

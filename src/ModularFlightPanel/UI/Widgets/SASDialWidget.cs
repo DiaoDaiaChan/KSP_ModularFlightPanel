@@ -23,6 +23,8 @@ namespace ModularFlightPanel.UI.Widgets
         private GameObject _shipSilhouette;
         private Image _dialBgImage;
         private Outline _dialOutline;
+        private RawImage _silhouetteRawImage;
+        private Image _noseTipImage;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -31,11 +33,12 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform.sizeDelta = new Vector2(dialDiameter, dialDiameter);
 
             _dialBgImage = gameObject.AddComponent<Image>();
-            _dialBgImage.color = new Color(0.03f, 0.05f, 0.08f, 0.9f);
+            _dialBgImage.color = new Color(0.008f, 0.012f, 0.04f, 0.96f);
 
             _dialOutline = gameObject.AddComponent<Outline>();
             _dialOutline.effectColor = theme.FrameBorderColor;
             _dialOutline.effectDistance = new Vector2(1.5f * CurrentDpiScale, 1.5f * CurrentDpiScale);
+            UIFactory.ApplyCockpitChrome(gameObject, _dialBgImage.color, _dialOutline.effectColor, CurrentDpiScale);
 
             CreateShipSilhouette(transform, CurrentDpiScale, theme);
             CreateSASModeButtons(transform, dialRadius, CurrentDpiScale, theme);
@@ -47,12 +50,38 @@ namespace ModularFlightPanel.UI.Widgets
             _shipSilhouette = new GameObject("Ship_Silhouette", typeof(RectTransform));
             _shipSilhouette.transform.SetParent(parent, false);
 
-            float w = 24f * dpiScale;
+            float silhouetteSize = 44f * dpiScale;
 
-            UIFactory.CreatePanel(_shipSilhouette.transform, "Fuselage", new Vector2(w, 3f * dpiScale), Vector2.zero, theme.AccentSecondary);
-            UIFactory.CreatePanel(_shipSilhouette.transform, "Wing_L", new Vector2(8f * dpiScale, 2.5f * dpiScale), new Vector2(-4f * dpiScale, 4.5f * dpiScale), theme.AccentSecondary);
-            UIFactory.CreatePanel(_shipSilhouette.transform, "Wing_R", new Vector2(8f * dpiScale, 2.5f * dpiScale), new Vector2(-4f * dpiScale, -4.5f * dpiScale), theme.AccentSecondary);
-            UIFactory.CreatePanel(_shipSilhouette.transform, "Nose_Tip", new Vector2(4f * dpiScale, 4f * dpiScale), new Vector2(w * 0.5f, 0f), theme.WarningColor);
+            GameObject rawImgObj = new GameObject("Silhouette_RawImage", typeof(RectTransform), typeof(RawImage));
+            rawImgObj.transform.SetParent(_shipSilhouette.transform, false);
+            RectTransform rawRt = rawImgObj.GetComponent<RectTransform>();
+            rawRt.sizeDelta = new Vector2(silhouetteSize, silhouetteSize);
+            rawRt.anchoredPosition = Vector2.zero;
+
+            _silhouetteRawImage = rawImgObj.GetComponent<RawImage>();
+            _silhouetteRawImage.raycastTarget = false;
+            _silhouetteRawImage.color = theme.AccentSecondary;
+
+            if (VesselSilhouetteBaker.Instance != null)
+            {
+                _silhouetteRawImage.texture = VesselSilhouetteBaker.Instance.SilhouetteTexture;
+                VesselSilhouetteBaker.Instance.OnSilhouetteUpdated += OnSilhouetteUpdated;
+            }
+
+            // 机头指向微标 (保持 WarningColor 橙黄视觉，提示前缘朝向)
+            float tipSize = 3.5f * dpiScale;
+            Vector2 tipPos = new Vector2(0f, 18f * dpiScale);
+            GameObject tipObj = UIFactory.CreatePanel(_shipSilhouette.transform, "Nose_Tip", new Vector2(tipSize, tipSize), tipPos, theme.WarningColor);
+            _noseTipImage = tipObj.GetComponent<Image>();
+            if (_noseTipImage != null) _noseTipImage.raycastTarget = false;
+        }
+
+        private void OnSilhouetteUpdated(RenderTexture rt)
+        {
+            if (_silhouetteRawImage != null)
+            {
+                _silhouetteRawImage.texture = rt;
+            }
         }
 
         private void CreateSASModeButtons(Transform parent, float dialRadius, float dpiScale, ThemeConfig theme)
@@ -136,6 +165,21 @@ namespace ModularFlightPanel.UI.Widgets
                 _shipSilhouette.transform.localRotation = Quaternion.Euler(0f, 0f, -telemetry.Roll);
             }
 
+            if (_silhouetteRawImage != null && _silhouetteRawImage.texture == null)
+            {
+                if (VesselSilhouetteBaker.Instance != null && VesselSilhouetteBaker.Instance.SilhouetteTexture != null)
+                {
+                    _silhouetteRawImage.texture = VesselSilhouetteBaker.Instance.SilhouetteTexture;
+                }
+            }
+
+            if (_noseTipImage != null && VesselSilhouetteBaker.Instance != null)
+            {
+                float halfSpan = 22f * CurrentDpiScale;
+                float tipY = Mathf.Clamp(VesselSilhouetteBaker.Instance.NormalizedNoseTipY * (halfSpan * 2f), 6f * CurrentDpiScale, halfSpan - 2f * CurrentDpiScale);
+                ((RectTransform)_noseTipImage.transform).anchoredPosition = new Vector2(0f, tipY);
+            }
+
             VesselAutopilot.AutopilotMode currentMode = telemetry.CurrentSASMode;
             bool sasOn = telemetry.IsSASEnabled;
 
@@ -163,6 +207,16 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_dialBgImage != null) _dialBgImage.color = theme.FrameBgColor;
             if (_dialOutline != null) _dialOutline.effectColor = theme.FrameBorderColor;
+            if (_silhouetteRawImage != null) _silhouetteRawImage.color = theme.AccentSecondary;
+            if (_noseTipImage != null) _noseTipImage.color = theme.WarningColor;
+        }
+
+        private void OnDestroy()
+        {
+            if (VesselSilhouetteBaker.Instance != null)
+            {
+                VesselSilhouetteBaker.Instance.OnSilhouetteUpdated -= OnSilhouetteUpdated;
+            }
         }
     }
 }

@@ -31,6 +31,9 @@ namespace ModularFlightPanel.Core
             // 4. 挂载遥测数据中心
             _telemetry = gameObject.AddComponent<TelemetryHub>();
 
+            // 4.5. 挂载飞船二维剪影烘焙器 (零常驻开销 / 15 FPS 动态变动捕获)
+            gameObject.AddComponent<VesselSilhouetteBaker>();
+
             // 5. 挂载 UGUI 表现层
             _hud = gameObject.AddComponent<NavballHUD>();
             _hud.Initialize();

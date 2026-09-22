@@ -27,11 +27,11 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            Vector2 boxSize = new Vector2(86f * CurrentDpiScale, 34f * CurrentDpiScale);
+            Vector2 boxSize = new Vector2(104f * CurrentDpiScale, 42f * CurrentDpiScale);
             RectTransform.sizeDelta = boxSize;
 
             _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = theme.FrameBgColor;
+            _bgImage.color = new Color(0.008f, 0.012f, 0.04f, 0.96f);
 
             Button btn = gameObject.AddComponent<Button>();
             btn.onClick.AddListener(OnBoxClicked);
@@ -39,6 +39,7 @@ namespace ModularFlightPanel.UI.Widgets
             _outline = gameObject.AddComponent<Outline>();
             _outline.effectColor = (_type == DigitalBoxType.Speed) ? theme.WarningColor : theme.AccentMagenta;
             _outline.effectDistance = new Vector2(1.2f * CurrentDpiScale, 1.2f * CurrentDpiScale);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _outline.effectColor, CurrentDpiScale);
 
             int modeFontSize = Mathf.Max(7, Mathf.RoundToInt(8.5f * CurrentDpiScale));
             _modeLabelText = UIFactory.CreateText(transform, "Mode_Label", "", modeFontSize, TextAnchor.UpperLeft, theme.WarningColor);
@@ -46,7 +47,7 @@ namespace ModularFlightPanel.UI.Widgets
             modeRt.sizeDelta = new Vector2(boxSize.x - 6f * CurrentDpiScale, 13f * CurrentDpiScale);
             modeRt.anchoredPosition = new Vector2(4f * CurrentDpiScale, (boxSize.y * 0.5f) - 7.5f * CurrentDpiScale);
 
-            int valFontSize = Mathf.Max(10, Mathf.RoundToInt(13f * CurrentDpiScale));
+            int valFontSize = Mathf.Max(10, Mathf.RoundToInt(16f * CurrentDpiScale));
             _valueText = UIFactory.CreateText(transform, "Value_Text", "0.0", valFontSize, TextAnchor.LowerRight, theme.TextPrimaryColor);
             RectTransform valRt = _valueText.GetComponent<RectTransform>();
             valRt.sizeDelta = new Vector2(boxSize.x - 6f * CurrentDpiScale, 20f * CurrentDpiScale);
@@ -95,7 +96,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void ApplyTheme(ThemeConfig theme)
         {
-            if (_bgImage != null) _bgImage.color = theme.FrameBgColor;
+            if (_bgImage != null) _bgImage.color = new Color(0.008f, 0.012f, 0.04f, 0.96f);
             if (_valueText != null) _valueText.color = theme.TextPrimaryColor;
 
             if (_type == DigitalBoxType.Speed)

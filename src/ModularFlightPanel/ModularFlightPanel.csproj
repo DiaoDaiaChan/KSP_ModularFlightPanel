@@ -95,11 +95,11 @@
       <OutputPdb Condition="Exists('$(TargetDir)$(TargetName).pdb')" Include="$(TargetDir)$(TargetName).pdb" />
     </ItemGroup>
     <!-- Copy to repo GameData -->
-    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" ContinueOnError="true" />
+    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb')" SkipUnchangedFiles="true" ContinueOnError="true" />
     <!-- Copy directly to target KSP instance GameData -->
-    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" Condition="Exists('$(KSPRoot)\GameData')" />
-    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" Condition="Exists('$(KSPRoot)\GameData')" ContinueOnError="true" />
+    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
 </Project>
