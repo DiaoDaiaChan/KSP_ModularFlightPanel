@@ -120,6 +120,18 @@ namespace ModularFlightPanel.UI
             {
                 if (!cfg.IsEnabled) continue;
 
+                if (cfg.WidgetType == "tape" || cfg.WidgetId.StartsWith("tape."))
+                {
+                    SpawnTapeWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "ecam_dial" || cfg.WidgetId.StartsWith("ecam."))
+                {
+                    SpawnEcamDialWidget(cfg, theme);
+                    continue;
+                }
+
                 switch (cfg.WidgetId)
                 {
                     case "core.speed_box":
@@ -145,6 +157,22 @@ namespace ModularFlightPanel.UI
             }
 
             Debug.Log($"[ModularFlightPanel] Assembled {_modularWidgets.Count} modular flight widgets.");
+        }
+
+        private void SpawnTapeWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<TapeGaugeWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnEcamDialWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<EcamDialGaugeWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
         }
 
         private void SpawnSpeedBox(WidgetConfig cfg, ThemeConfig theme)
@@ -193,6 +221,20 @@ namespace ModularFlightPanel.UI
         {
             Vector2 pos = new Vector2(UnityEngine.Random.Range(-200f, 200f), UnityEngine.Random.Range(50f, 250f));
             WidgetLayoutManager.Instance.AddCustomWidget(title, template, pos);
+            BuildHUD();
+        }
+
+        public void AddNewTapeWidget(string title, string token, bool isLeft, float step)
+        {
+            Vector2 pos = isLeft ? new Vector2(-230f, 0f) : new Vector2(230f, 0f);
+            WidgetLayoutManager.Instance.AddTapeWidget(title, token, isLeft, step, pos);
+            BuildHUD();
+        }
+
+        public void AddNewEcamDialWidget(string title, string token, double min, double max, double caution, double warning, bool isSoftLimit, string unit)
+        {
+            Vector2 pos = new Vector2(UnityEngine.Random.Range(-360f, 360f), UnityEngine.Random.Range(20f, 150f));
+            WidgetLayoutManager.Instance.AddEcamDialWidget(title, token, min, max, caution, warning, isSoftLimit, unit, pos);
             BuildHUD();
         }
 

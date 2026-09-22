@@ -25,6 +25,103 @@ namespace ModularFlightPanel.Core
     {
         private static readonly Regex TokenRegex = new Regex(@"\{([A-Za-z0-9_]+)(?::([A-Za-z0-9_]+))?(?::([A-Za-z0-9_]+))?\}", RegexOptions.Compiled);
 
+        /// <summary>
+        /// 原生双精度数值提取（用于驱动表盘指针、弧线、带状滚动物理计算）
+        /// 支持如 "{SPD}", "{ALT:AGL}", "{GFORCE}", "{Q}", "{TWR}", "{THROTTLE}", "{PROP}" 等
+        /// 亦可传入无花括号的纯标识如 "GFORCE" 或 "ALT:ASL"
+        /// </summary>
+        public static double EvaluateNumeric(string token, TelemetryHub telemetry)
+        {
+            if (string.IsNullOrEmpty(token) || telemetry == null) return double.NaN;
+            Vessel v = telemetry.ActiveVessel;
+            if (v == null) return double.NaN;
+
+            string clean = token.Trim().Trim('{', '}');
+            string[] parts = clean.Split(':');
+            string tag = parts[0].ToUpperInvariant();
+            string subTag = parts.Length > 1 ? parts[1].ToUpperInvariant() : string.Empty;
+
+            switch (tag)
+            {
+                case "SPD":
+                case "SPEED":
+                    if (subTag == "SURF") return telemetry.SurfaceSpeed;
+                    if (subTag == "OBT" || subTag == "ORBIT") return telemetry.OrbitalSpeed;
+                    if (subTag == "TGT" || subTag == "TARGET") return telemetry.TargetSpeed;
+                    return telemetry.CurrentSpeed;
+
+                case "MACH":
+                    return v.mach;
+
+                case "ALT":
+                case "ALTITUDE":
+                    if (subTag == "ASL") return telemetry.AltitudeASL;
+                    if (subTag == "AGL" || subTag == "RADAR") return telemetry.AltitudeAGL;
+                    return telemetry.DisplayAltitude;
+
+                case "VSI":
+                case "VERTSPD":
+                    return telemetry.VerticalSpeed;
+
+                case "HDG":
+                case "HEADING":
+                    return (telemetry.Heading % 360.0 + 360.0) % 360.0;
+
+                case "PITCH":
+                    return telemetry.Pitch;
+
+                case "ROLL":
+                    return telemetry.Roll;
+
+                case "THROTTLE":
+                case "THR":
+                    return telemetry.Throttle * 100.0;
+
+                case "AP":
+                case "APOAPSIS":
+                    return telemetry.Apoapsis;
+
+                case "PE":
+                case "PERIAPSIS":
+                    return telemetry.Periapsis;
+
+                case "TAP":
+                    return Math.Max(0.0, telemetry.TimeToAp);
+
+                case "TPE":
+                    return Math.Max(0.0, telemetry.TimeToPe);
+
+                case "TWR":
+                    double thrust = 0.0;
+                    var engines = v.FindPartModulesImplementing<ModuleEngines>();
+                    if (engines != null)
+                    {
+                        for (int i = 0; i < engines.Count; i++)
+                        {
+                            if (engines[i] != null && engines[i].isOperational)
+                                thrust += engines[i].finalThrust;
+                        }
+                    }
+                    double weight = v.totalMass * (v.mainBody != null ? v.mainBody.GeeASL * 9.80665 : 9.80665);
+                    return weight > 0.001 ? thrust / weight : 0.0;
+
+                case "GFORCE":
+                case "G":
+                    return v.geeForce;
+
+                case "Q":
+                case "DYNAERO":
+                    return v.dynamicPressurekPa;
+
+                case "PROP":
+                case "STAGEPROP":
+                    return telemetry.StagePropellantFraction * 100.0;
+
+                default:
+                    return double.NaN;
+            }
+        }
+
         public static string Evaluate(string template, TelemetryHub telemetry)
         {
             if (string.IsNullOrEmpty(template) || telemetry == null) return template ?? string.Empty;

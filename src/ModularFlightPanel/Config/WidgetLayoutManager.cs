@@ -92,6 +92,72 @@ namespace ModularFlightPanel.Config
             // 通配符扩展小组件示例 (默认不遮挡核心飞行面板，用户可在设置界面自由添加开启并拖拽)
             CurrentLayout.Widgets.Add(new WidgetConfig("custom.aero", "大气与气动参数", -360f, 110f, 1.0f, "动压: {Q} | 马赫: {MACH} | G: {GFORCE}") { IsEnabled = false });
             CurrentLayout.Widgets.Add(new WidgetConfig("custom.power", "推重比与推进", 360f, 110f, 1.0f, "TWR: {TWR:F2} | 燃料: {PROP} | 油门: {THROTTLE}") { IsEnabled = false });
+
+            // PFD 风格滚动速度带与高度带套件预设
+            var speedTape = new WidgetConfig("tape.speed", "PFD 速度标尺带", -225f, 0f, 1.0f)
+            {
+                WidgetType = "tape",
+                NumericToken = "{SPD}",
+                StepInterval = 10f,
+                IsLeftOrientation = true,
+                UnitLabel = "m/s",
+                IsEnabled = false
+            };
+            CurrentLayout.Widgets.Add(speedTape);
+
+            var altTape = new WidgetConfig("tape.altitude", "PFD 高度标尺带", 225f, 0f, 1.0f)
+            {
+                WidgetType = "tape",
+                NumericToken = "{ALT}",
+                StepInterval = 100f,
+                IsLeftOrientation = false,
+                UnitLabel = "m",
+                IsEnabled = false
+            };
+            CurrentLayout.Widgets.Add(altTape);
+
+            // ECAM 风格圆弧仪表套件预设 (含软上限 10G 爆表模式与有上限油门模式)
+            var gDial = new WidgetConfig("ecam.gforce", "ECAM G力过载表", -345f, 90f, 1.0f)
+            {
+                WidgetType = "ecam_dial",
+                NumericToken = "{GFORCE}",
+                MinValue = 0.0,
+                MaxValue = 10.0,
+                CautionThreshold = 5.0,
+                WarningThreshold = 8.0,
+                IsSoftLimit = true, // 软上限爆表模式 (10G满格告警, 超过继续如实数显)
+                UnitLabel = "G",
+                IsEnabled = false
+            };
+            CurrentLayout.Widgets.Add(gDial);
+
+            var qDial = new WidgetConfig("ecam.q", "ECAM 动压监控表", -345f, -35f, 1.0f)
+            {
+                WidgetType = "ecam_dial",
+                NumericToken = "{Q}",
+                MinValue = 0.0,
+                MaxValue = 35.0,
+                CautionThreshold = 25.0,
+                WarningThreshold = 32.0,
+                IsSoftLimit = true,
+                UnitLabel = "kPa",
+                IsEnabled = false
+            };
+            CurrentLayout.Widgets.Add(qDial);
+
+            var thrDial = new WidgetConfig("ecam.throttle", "ECAM 引擎推力表", 345f, 90f, 1.0f)
+            {
+                WidgetType = "ecam_dial",
+                NumericToken = "{THROTTLE}",
+                MinValue = 0.0,
+                MaxValue = 100.0,
+                CautionThreshold = 85.0,
+                WarningThreshold = 100.0,
+                IsSoftLimit = false, // 有上限型 (严格截断 0~100%)
+                UnitLabel = "%",
+                IsEnabled = false
+            };
+            CurrentLayout.Widgets.Add(thrDial);
         }
 
         public WidgetConfig GetConfig(string widgetId)
@@ -103,6 +169,41 @@ namespace ModularFlightPanel.Config
         {
             string id = "custom." + Guid.NewGuid().ToString().Substring(0, 8);
             CurrentLayout.Widgets.Add(new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f, template));
+            SaveLayout();
+        }
+
+        public void AddTapeWidget(string title, string token, bool isLeft, float step, Vector2 initialPos)
+        {
+            string id = "tape." + Guid.NewGuid().ToString().Substring(0, 8);
+            var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f)
+            {
+                WidgetType = "tape",
+                NumericToken = token,
+                StepInterval = step,
+                IsLeftOrientation = isLeft,
+                UnitLabel = isLeft ? "m/s" : "m",
+                IsEnabled = true
+            };
+            CurrentLayout.Widgets.Add(cfg);
+            SaveLayout();
+        }
+
+        public void AddEcamDialWidget(string title, string token, double min, double max, double caution, double warning, bool isSoftLimit, string unit, Vector2 initialPos)
+        {
+            string id = "ecam." + Guid.NewGuid().ToString().Substring(0, 8);
+            var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f)
+            {
+                WidgetType = "ecam_dial",
+                NumericToken = token,
+                MinValue = min,
+                MaxValue = max,
+                CautionThreshold = caution,
+                WarningThreshold = warning,
+                IsSoftLimit = isSoftLimit,
+                UnitLabel = unit,
+                IsEnabled = true
+            };
+            CurrentLayout.Widgets.Add(cfg);
             SaveLayout();
         }
 
