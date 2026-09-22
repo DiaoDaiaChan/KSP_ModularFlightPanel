@@ -32,6 +32,25 @@ namespace ModularFlightPanel.UI
             return currentHeight / baseHeight;
         }
 
+        /// <summary>
+        /// 读取 KSP 原生 UI_SCALE_NAVBALL 与 UI_SCALE 设定，并结合屏幕 DPI 自动计算权威姿态球界面尺寸比例
+        /// </summary>
+        public static float GetKspNavballUiScale()
+        {
+            float kspScale = 1.0f;
+            try
+            {
+                kspScale = GameSettings.UI_SCALE_NAVBALL * GameSettings.UI_SCALE;
+            }
+            catch
+            {
+                kspScale = 1.0f;
+            }
+
+            if (kspScale <= 0.05f) kspScale = 1.0f;
+            return kspScale * GetScreenDpiScale();
+        }
+
         public static GameObject CreatePanel(Transform parent, string name, Vector2 size, Vector2 anchoredPos, Color color)
         {
             GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image));

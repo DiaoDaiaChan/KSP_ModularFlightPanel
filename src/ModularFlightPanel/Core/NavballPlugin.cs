@@ -19,6 +19,9 @@ namespace ModularFlightPanel.Core
             // 1. 加载着色器与 AssetBundle
             AssetLoader.LoadBundle();
 
+            // 1.5. 初始化外部第三方 Mod 遥测数据探针 (FAR / KER / MechJeb)
+            Probes.TelemetryProbeManager.InitializeAll();
+
             // 2. 初始化主题与配置
             ThemeManager.Instance.Initialize();
 

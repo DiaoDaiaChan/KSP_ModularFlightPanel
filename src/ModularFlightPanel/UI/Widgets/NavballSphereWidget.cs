@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
@@ -8,6 +9,11 @@ namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
     /// 3D 姿态球主组件 (直接 Hook 官方 NavBall 实现，Mod 不做任何多余数学运算)
+    /// 完整支持：
+    /// 1. 原版与 Principia 动态多参考系 (Barycentric/Inertial/Surface/Target) 世界旋转与贴图
+    /// 2. 2D 亚像素无畸变平滑投影矢量标线 (Prograde, Retrograde, Normal, Maneuver 等)
+    /// 3. 圆形 Stencil 硬件遮罩，完全规避方形边缘杂色与 Alpha 污染
+    /// 4. 自适应 KSP 原生 UI_SCALE_NAVBALL 与屏幕物理 DPI 缩放
     /// </summary>
     public class NavballSphereWidget : BaseFlightWidget
     {
@@ -18,27 +24,36 @@ namespace ModularFlightPanel.UI.Widgets
         private RawImage _displayImage;
 
         private Text _headingText;
+        private Text _frameText;
         private GameObject _headingBox;
         private GameObject _crosshair;
 
-        private readonly System.Collections.Generic.Dictionary<string, GameObject> _markerClones 
-            = new System.Collections.Generic.Dictionary<string, GameObject>();
+        private readonly Dictionary<string, Image> _markerImages = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+        private float _visualRadius;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            float ballDiameter = 260f * CurrentDpiScale;
+            // 1. 自适应读取 KSP 原生 UI_SCALE_NAVBALL 与高分屏 DPI 计算最终直径 (基准直径优化为 ~195px，贴合原生)
+            float uiScale = UIFactory.GetKspNavballUiScale();
+            float ballDiameter = 195f * uiScale;
             RectTransform.sizeDelta = new Vector2(ballDiameter, ballDiameter);
 
-            // 1. 动态自适应高分辨率 RenderTexture (单采样避免 DX11 边缘 Alpha 污染)
+            // 姿态球面在摄像机正交投影下的实际像素直径
+            float visualDiameter = ballDiameter * (1.0f / 1.05f);
+            _visualRadius = visualDiameter * 0.5f;
+
+            // 2. 动态自适应高分辨率 RenderTexture (单采样避免 DX11 边缘 Alpha 污染)
             int rtResolution = Mathf.Clamp(Mathf.NextPowerOfTwo(Mathf.RoundToInt(ballDiameter * 1.5f)), 512, 2048);
-            _renderTexture = new RenderTexture(rtResolution, rtResolution, 24, RenderTextureFormat.ARGB32);
-            _renderTexture.antiAliasing = 1;
-            _renderTexture.useMipMap = false;
-            _renderTexture.autoGenerateMips = false;
-            _renderTexture.filterMode = FilterMode.Bilinear;
+            _renderTexture = new RenderTexture(rtResolution, rtResolution, 24, RenderTextureFormat.ARGB32)
+            {
+                antiAliasing = 1,
+                useMipMap = false,
+                autoGenerateMips = false,
+                filterMode = FilterMode.Bilinear
+            };
             _renderTexture.Create();
 
-            // 2. 独立离屏摄像机
+            // 3. 独立离屏摄像机
             GameObject camObj = new GameObject("Navball_Offscreen_Cam", typeof(Camera));
             camObj.transform.SetParent(transform, false);
             camObj.transform.localPosition = new Vector3(0f, 0f, -2.5f);
@@ -53,7 +68,7 @@ namespace ModularFlightPanel.UI.Widgets
             _ballCamera.farClipPlane = 10f;
             _ballCamera.cullingMask = 1 << 31;
 
-            // 3. 3D 球体 (直接使用原版导航球贴图，并经由高保真增强 Shader 渲染)
+            // 4. 3D 球体 (直接使用原版/Principia 姿态球贴图，并经由现代 Shader 渲染)
             _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             _sphereObject.name = "Navball_3D_Sphere";
             _sphereObject.transform.SetParent(transform, false);
@@ -68,7 +83,7 @@ namespace ModularFlightPanel.UI.Widgets
             Shader targetShader = AssetLoader.EnhancedShader ?? AssetLoader.ModernShader;
             _sphereMaterial = new Material(targetShader);
 
-            // 读取官方/Principia/TextureReplacer 正在使用的贴图 (完全保留原版数字、经纬线与刻度)
+            // 读取官方/Principia/TextureReplacer 正在使用的贴图
             Texture stockTex = StockNavBallHook.GetTexture();
             if (stockTex != null)
             {
@@ -76,9 +91,23 @@ namespace ModularFlightPanel.UI.Widgets
             }
             mr.material = _sphereMaterial;
 
-            // 4. RawImage 画布映射
+            // 5. 圆形硬件裁切遮罩容器 (保证 100% 绝对圆形呈现，零方形杂角)
+            GameObject maskObj = new GameObject("Sphere_Mask_Container", typeof(RectTransform), typeof(Image), typeof(Mask));
+            maskObj.transform.SetParent(transform, false);
+            RectTransform maskRt = maskObj.GetComponent<RectTransform>();
+            maskRt.sizeDelta = new Vector2(visualDiameter, visualDiameter);
+            maskRt.anchoredPosition = Vector2.zero;
+
+            Image maskImg = maskObj.GetComponent<Image>();
+            maskImg.sprite = NavballMarkerFactory.GetCircleMaskSprite();
+            maskImg.color = Color.white;
+
+            Mask maskComp = maskObj.GetComponent<Mask>();
+            maskComp.showMaskGraphic = false;
+
+            // 6. RawImage 画布映射 (放置于圆形遮罩内部)
             GameObject rawImgObj = new GameObject("Sphere_RawImage", typeof(RectTransform), typeof(RawImage));
-            rawImgObj.transform.SetParent(transform, false);
+            rawImgObj.transform.SetParent(maskObj.transform, false);
             RectTransform rawRt = rawImgObj.GetComponent<RectTransform>();
             rawRt.sizeDelta = new Vector2(ballDiameter, ballDiameter);
             rawRt.anchoredPosition = Vector2.zero;
@@ -86,11 +115,49 @@ namespace ModularFlightPanel.UI.Widgets
             _displayImage = rawImgObj.GetComponent<RawImage>();
             _displayImage.texture = _renderTexture;
 
-            // 5. 瞄准标与航向标卡
+            // 7. 2D 矢量标线层 (Prograde, Retrograde, Normal, Radial, Target, Maneuver)
+            CreateMarkerOverlayLayer(transform, CurrentDpiScale);
+
+            // 8. 瞄准标与航向标卡
             CreateCrosshair(transform, CurrentDpiScale, theme);
             CreateHeadingBox(transform, CurrentDpiScale, theme);
 
             ApplyTheme(theme);
+        }
+
+        private void CreateMarkerOverlayLayer(Transform parent, float dpiScale)
+        {
+            GameObject markerLayerObj = new GameObject("Markers_Layer", typeof(RectTransform));
+            markerLayerObj.transform.SetParent(parent, false);
+            RectTransform mlRt = markerLayerObj.GetComponent<RectTransform>();
+            mlRt.sizeDelta = new Vector2(_visualRadius * 2f, _visualRadius * 2f);
+            mlRt.anchoredPosition = Vector2.zero;
+
+            string[] markerKeys = new string[]
+            {
+                "prograde", "retrograde", "normal", "antinormal",
+                "radialin", "radialout", "target", "maneuver"
+            };
+
+            float markerSize = 25f * dpiScale;
+
+            for (int i = 0; i < markerKeys.Length; i++)
+            {
+                string key = markerKeys[i];
+                GameObject mObj = new GameObject("Marker_" + key, typeof(RectTransform), typeof(Image));
+                mObj.transform.SetParent(markerLayerObj.transform, false);
+
+                RectTransform mRt = mObj.GetComponent<RectTransform>();
+                mRt.sizeDelta = new Vector2(markerSize, markerSize);
+                mRt.anchoredPosition = Vector2.zero;
+
+                Image img = mObj.GetComponent<Image>();
+                img.sprite = NavballMarkerFactory.GetMarkerSprite(key);
+                img.raycastTarget = false;
+                mObj.SetActive(false);
+
+                _markerImages[key] = img;
+            }
         }
 
         private void CreateCrosshair(Transform parent, float dpiScale, ThemeConfig theme)
@@ -98,20 +165,20 @@ namespace ModularFlightPanel.UI.Widgets
             _crosshair = new GameObject("Crosshair_Center", typeof(RectTransform));
             _crosshair.transform.SetParent(parent, false);
 
-            float wingW = 32f * dpiScale;
-            float wingH = 3.5f * dpiScale;
-            float offset = 26f * dpiScale;
+            float wingW = 28f * dpiScale;
+            float wingH = 3.2f * dpiScale;
+            float offset = 22f * dpiScale;
 
             UIFactory.CreatePanel(_crosshair.transform, "H_Wing_L", new Vector2(wingW, wingH), new Vector2(-offset, 0f), theme.AccentPrimary);
             UIFactory.CreatePanel(_crosshair.transform, "H_Wing_R", new Vector2(wingW, wingH), new Vector2(offset, 0f), theme.AccentPrimary);
-            UIFactory.CreatePanel(_crosshair.transform, "V_Center", new Vector2(wingH, 18f * dpiScale), Vector2.zero, theme.WarningColor);
-            UIFactory.CreatePanel(_crosshair.transform, "Center_Dot", new Vector2(6f * dpiScale, 6f * dpiScale), Vector2.zero, theme.WarningColor);
+            UIFactory.CreatePanel(_crosshair.transform, "V_Center", new Vector2(wingH, 16f * dpiScale), Vector2.zero, theme.WarningColor);
+            UIFactory.CreatePanel(_crosshair.transform, "Center_Dot", new Vector2(5.5f * dpiScale, 5.5f * dpiScale), Vector2.zero, theme.WarningColor);
         }
 
         private void CreateHeadingBox(Transform parent, float dpiScale, ThemeConfig theme)
         {
-            Vector2 boxSize = new Vector2(72f * dpiScale, 30f * dpiScale);
-            Vector2 anchoredPos = new Vector2(0f, 145f * dpiScale);
+            Vector2 boxSize = new Vector2(68f * dpiScale, 36f * dpiScale);
+            Vector2 anchoredPos = new Vector2(0f, _visualRadius + 22f * dpiScale);
 
             _headingBox = UIFactory.CreatePanel(parent, "Heading_Box", boxSize, anchoredPos, theme.FrameBgColor);
 
@@ -120,85 +187,87 @@ namespace ModularFlightPanel.UI.Widgets
             outline.effectColor = theme.FrameBorderColor;
             outline.effectDistance = new Vector2(1.5f * dpiScale, 1.5f * dpiScale);
 
-            int fontSize = Mathf.RoundToInt(15f * dpiScale);
+            // 1. 航向角读数
+            int fontSize = Mathf.RoundToInt(14f * dpiScale);
             _headingText = UIFactory.CreateText(_headingBox.transform, "Heading_Text", "000°", fontSize, TextAnchor.MiddleCenter, theme.TextPrimaryColor);
             RectTransform textRt = _headingText.GetComponent<RectTransform>();
-            textRt.sizeDelta = boxSize;
+            textRt.anchorMin = new Vector2(0f, 0.35f);
+            textRt.anchorMax = Vector2.one;
+            textRt.sizeDelta = Vector2.zero;
             textRt.anchoredPosition = Vector2.zero;
+
+            // 2. 参考系模式读数 (Principia / Stock: BARYCENTRIC, SURFACE, ORBIT, TARGET)
+            int frameFontSize = Mathf.Max(9, Mathf.RoundToInt(9f * dpiScale));
+            _frameText = UIFactory.CreateText(_headingBox.transform, "Frame_Text", "ORBIT", frameFontSize, TextAnchor.MiddleCenter, theme.AccentSecondary);
+            RectTransform frameRt = _frameText.GetComponent<RectTransform>();
+            frameRt.anchorMin = Vector2.zero;
+            frameRt.anchorMax = new Vector2(1f, 0.4f);
+            frameRt.sizeDelta = Vector2.zero;
+            frameRt.anchoredPosition = Vector2.zero;
         }
 
         public override void OnUpdateTelemetry(TelemetryHub telemetry)
         {
-            // 核心要点：旋转 100% 同步官方/Principia 结算结果，Mod 不做任何计算
+            // 1. 姿态旋转：100% 同步官方/Principia 解算的世界坐标姿态 (Mod 0 数学运算)
             if (_sphereObject != null)
             {
-                _sphereObject.transform.localRotation = StockNavBallHook.GetRotation();
+                _sphereObject.transform.rotation = StockNavBallHook.GetRotation();
             }
 
-            // 贴图 100% 自动同步第三方贴图模组 (Principia / TextureReplacer)
+            // 2. 贴图同步：实时同步 Principia 多参考系 (Barycentric/Inertial/Surface) 与 TextureReplacer
             Texture stockTex = StockNavBallHook.GetTexture();
             if (stockTex != null && _sphereMaterial != null && _sphereMaterial.GetTexture("_MainTex") != stockTex)
             {
                 _sphereMaterial.SetTexture("_MainTex", stockTex);
             }
 
-            // 航向读数同步官方
+            // 3. 航向读数与参考系模式更新
             if (_headingText != null)
             {
                 _headingText.text = StockNavBallHook.GetHeadingText();
             }
+            if (_frameText != null)
+            {
+                _frameText.text = StockNavBallHook.GetReferenceFrameName();
+            }
 
-            // 同步官方矢量标线 (Prograde, Retrograde, Normal, Target等)
+            // 4. 2D 亚像素无畸变平滑投影矢量标线同步
             SyncMarkers();
         }
 
         private void SyncMarkers()
         {
-            if (!StockNavBallHook.HasStockNavBall) return;
-            var stock = StockNavBallHook.StockInstance;
-
-            SyncSingleMarker("prograde", stock.progradeVector);
-            SyncSingleMarker("retrograde", stock.retrogradeVector);
-            SyncSingleMarker("normal", stock.normalVector);
-            SyncSingleMarker("antinormal", stock.antiNormalVector);
-            SyncSingleMarker("radialIn", stock.radialInVector);
-            SyncSingleMarker("radialOut", stock.radialOutVector);
-            SyncSingleMarker("target", stock.target);
-        }
-
-        private void SyncSingleMarker(string key, Transform stockMarker)
-        {
-            if (stockMarker == null || _sphereObject == null) return;
-
-            if (!_markerClones.TryGetValue(key, out GameObject clone) || clone == null)
+            foreach (var kvp in _markerImages)
             {
-                clone = Instantiate(stockMarker.gameObject);
-                clone.name = "Cloned_" + key;
-                clone.transform.SetParent(_sphereObject.transform, false);
+                string key = kvp.Key;
+                Image img = kvp.Value;
+                if (img == null) continue;
 
-                // 强制分配到 Layer 31 供离屏摄像机渲染
-                Transform[] allTr = clone.GetComponentsInChildren<Transform>(true);
-                for (int i = 0; i < allTr.Length; i++)
+                if (StockNavBallHook.GetMarkerDirection(key, out Vector3 dir, out bool isVisible))
                 {
-                    allTr[i].gameObject.layer = 31;
-                }
+                    // 在可见前半球 (dir.z > 0)
+                    if (isVisible && dir.z > 0.001f)
+                    {
+                        if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
-                Renderer[] rends = clone.GetComponentsInChildren<Renderer>(true);
-                for (int i = 0; i < rends.Length; i++)
+                        // 正交平面投影: (x, y) * 半径
+                        img.rectTransform.anchoredPosition = new Vector2(dir.x, dir.y) * _visualRadius;
+
+                        // 接近地平线边缘时平滑渐隐淡出
+                        float alpha = Mathf.Clamp01(dir.z / 0.15f);
+                        Color c = img.color;
+                        c.a = alpha;
+                        img.color = c;
+                    }
+                    else
+                    {
+                        if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                    }
+                }
+                else
                 {
-                    rends[i].enabled = true;
+                    if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
                 }
-
-                _markerClones[key] = clone;
-            }
-
-            bool active = stockMarker.gameObject.activeInHierarchy;
-            clone.SetActive(active);
-            if (active)
-            {
-                clone.transform.localPosition = stockMarker.localPosition;
-                clone.transform.localRotation = stockMarker.localRotation;
-                clone.transform.localScale = stockMarker.localScale;
             }
         }
 
@@ -218,7 +287,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (!isProcedural)
                 {
-                    // 1. 贴图模式：使用原版/TextureReplacer素材，并叠加高动态航电增强
+                    // 1. 贴图模式：使用原版/Principia素材，色彩对比与高光适度调校，杜绝过曝
                     Texture stockTex = StockNavBallHook.GetTexture();
                     if (stockTex != null)
                     {
@@ -226,16 +295,17 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     _sphereMaterial.SetColor("_RimColor", theme.RimGlowColor);
                     _sphereMaterial.SetFloat("_RimPower", 3.2f);
-                    _sphereMaterial.SetFloat("_RimIntensity", 0.45f);
+                    _sphereMaterial.SetFloat("_RimIntensity", 0.28f);
                     _sphereMaterial.SetFloat("_LimbPower", 1.4f);
-                    _sphereMaterial.SetFloat("_LimbIntensity", 0.35f);
-                    _sphereMaterial.SetFloat("_Contrast", 1.08f);
-                    _sphereMaterial.SetFloat("_Brightness", 1.05f);
-                    _sphereMaterial.SetFloat("_Saturation", 1.10f);
+                    _sphereMaterial.SetFloat("_LimbIntensity", 0.32f);
+                    _sphereMaterial.SetFloat("_Contrast", 1.02f);
+                    _sphereMaterial.SetFloat("_Brightness", 1.0f);
+                    _sphereMaterial.SetFloat("_Saturation", 1.05f);
+                    _sphereMaterial.SetFloat("_SpecIntensity", 0.16f);
                 }
                 else
                 {
-                    // 2. 程序化矢量模式：纯数学完美超清解算，支持4K/8K无极抗锯齿
+                    // 2. 程序化矢量模式：纯数学完美超清解算
                     _sphereMaterial.SetColor("_SkyZenithColor", new Color(0.04f, 0.18f, 0.38f, 1.0f));
                     _sphereMaterial.SetColor("_SkyHorizonColor", theme.AccentSecondary);
                     _sphereMaterial.SetColor("_GroundHorizonColor", new Color(0.24f, 0.18f, 0.15f, 1.0f));
@@ -247,9 +317,10 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereMaterial.SetColor("_HeadingLineColor", theme.AccentSecondary);
                     _sphereMaterial.SetColor("_RimColor", theme.RimGlowColor);
                     _sphereMaterial.SetFloat("_RimPower", 3.2f);
-                    _sphereMaterial.SetFloat("_RimIntensity", 0.45f);
+                    _sphereMaterial.SetFloat("_RimIntensity", 0.35f);
                     _sphereMaterial.SetFloat("_LimbPower", 1.35f);
-                    _sphereMaterial.SetFloat("_LimbIntensity", 0.32f);
+                    _sphereMaterial.SetFloat("_LimbIntensity", 0.30f);
+                    _sphereMaterial.SetFloat("_SpecIntensity", 0.16f);
                 }
             }
 
@@ -257,15 +328,15 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _headingText.color = theme.TextPrimaryColor;
             }
+            if (_frameText != null)
+            {
+                _frameText.color = theme.AccentSecondary;
+            }
         }
 
         private void OnDestroy()
         {
-            foreach (var kvp in _markerClones)
-            {
-                if (kvp.Value != null) Destroy(kvp.Value);
-            }
-            _markerClones.Clear();
+            _markerImages.Clear();
 
             if (_renderTexture != null)
             {
@@ -275,6 +346,10 @@ namespace ModularFlightPanel.UI.Widgets
             if (_sphereMaterial != null)
             {
                 Destroy(_sphereMaterial);
+            }
+            if (_sphereObject != null)
+            {
+                Destroy(_sphereObject);
             }
         }
     }

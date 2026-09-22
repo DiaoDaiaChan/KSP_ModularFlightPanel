@@ -2,27 +2,27 @@ Shader "ModularFlightPanel/NavballEnhanced"
 {
     Properties
     {
-        _MainTex ("Navball Texture", 2D) = "white" {}
+        _MainTex ("Navball Texture", 2D) = "gray" {}
         _Color ("Color Tint", Color) = (1.0, 1.0, 1.0, 1.0)
         
         // 3D 深度与球面微光 (Spherical Limb Darkening & Depth)
         _LimbPower ("Limb Darkening Power", Range(0.5, 4.0)) = 1.4
-        _LimbIntensity ("Limb Darkening Intensity", Range(0.0, 1.0)) = 0.35
+        _LimbIntensity ("Limb Darkening Intensity", Range(0.0, 1.0)) = 0.32
         
         // 边缘高科技发光 (Rim Light / Atmospheric Limb Glow)
         _RimColor ("Rim Glow Color", Color) = (0.2, 0.75, 1.0, 1.0)
         _RimPower ("Rim Power", Range(1.0, 8.0)) = 3.2
-        _RimIntensity ("Rim Intensity", Range(0.0, 2.0)) = 0.45
+        _RimIntensity ("Rim Intensity", Range(0.0, 2.0)) = 0.28
         
         // 弧面防眩玻璃反光 (Curved Anti-Reflective Glass Reflection)
-        _SpecularColor ("Glass Specular Color", Color) = (1.0, 1.0, 1.0, 0.6)
-        _Glossiness ("Glossiness", Range(4.0, 64.0)) = 24.0
-        _SpecIntensity ("Specular Intensity", Range(0.0, 1.0)) = 0.25
+        _SpecularColor ("Glass Specular Color", Color) = (1.0, 1.0, 1.0, 0.4)
+        _Glossiness ("Glossiness", Range(4.0, 64.0)) = 28.0
+        _SpecIntensity ("Specular Intensity", Range(0.0, 1.0)) = 0.16
         
         // 对比度与通透度增强 (Contrast & Dynamic Range)
-        _Contrast ("Contrast Boost", Range(0.8, 1.5)) = 1.08
-        _Brightness ("Overall Brightness", Range(0.5, 1.5)) = 1.05
-        _Saturation ("Saturation Boost", Range(0.5, 1.5)) = 1.10
+        _Contrast ("Contrast Boost", Range(0.8, 1.5)) = 1.02
+        _Brightness ("Overall Brightness", Range(0.5, 1.5)) = 1.0
+        _Saturation ("Saturation Boost", Range(0.5, 1.5)) = 1.05
     }
 
     SubShader
@@ -99,7 +99,7 @@ Shader "ModularFlightPanel/NavballEnhanced"
                 // 2. 色彩通透度与饱和度微调 (优化原版稍显灰暗平淡的色调)
                 float luminance = dot(col.rgb, float3(0.299, 0.587, 0.114));
                 col.rgb = lerp(float3(luminance, luminance, luminance), col.rgb, _Saturation);
-                // 对比度提升，让黑白刻度更锐利
+                // 对比度适度调校
                 col.rgb = ((col.rgb - 0.5) * _Contrast) + 0.5;
                 col.rgb *= _Brightness;
 

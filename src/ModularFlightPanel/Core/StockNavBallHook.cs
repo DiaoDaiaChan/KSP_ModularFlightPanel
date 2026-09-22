@@ -10,14 +10,17 @@ namespace ModularFlightPanel.Core
     /// 官方原生 NavBall 深度桥接与挂钩器 (Zero-Calculation Hook)
     /// 
     /// 核心理念：
-    /// 1. 姿态旋转：直接读取官方 navBall.localRotation（不做任何数学计算，天然支持 Principia 任意参考系及载具控向点）
-    /// 2. 贴图支持：直接读取官方 Renderer.sharedMaterial.mainTexture（天然兼容 TextureReplacer / Principia 动态贴图）
-    /// 3. 矢量标线：官方与第三方 Mod (Trajectories, NavBallDockingAlignmentIndicator, Maneuver) 的标线原生保留
+    /// 1. 姿态旋转：直接读取官方/Principia 权威 world rotation（不做任何多余计算，完美兼容 Principia 任意参考系及载具控向点）
+    /// 2. 贴图支持：直接探测 _MainTexture 与 _MainTex（天然兼容 Principia 动态多参考系贴图及 TextureReplacer）
+    /// 3. 矢量标线：挂钩官方与第三方 (Trajectories, Maneuver, Principia) 实时标线向量并投影呈现
     /// </summary>
     public static class StockNavBallHook
     {
         public static NavBall StockInstance { get; set; }
         public static bool HasStockNavBall => StockInstance != null && StockInstance.navBall != null;
+
+        private static NavBallBurnVector _cachedBurnVector;
+        private static Transform _cachedManeuverTransform;
 
         public static void RegisterStockNavBall(NavBall instance)
         {
@@ -25,6 +28,8 @@ namespace ModularFlightPanel.Core
             if (StockInstance != instance)
             {
                 StockInstance = instance;
+                _cachedBurnVector = null;
+                _cachedManeuverTransform = null;
                 Debug.Log("[ModularFlightPanel] Successfully hooked Stock NavBall instance!");
             }
         }
@@ -34,40 +39,166 @@ namespace ModularFlightPanel.Core
             if (StockInstance == instance)
             {
                 StockInstance = null;
+                _cachedBurnVector = null;
+                _cachedManeuverTransform = null;
             }
         }
 
         /// <summary>
-        /// 获取经由官方/Principia 结算后的权威姿态四元数（0计算量）
+        /// 获取经由官方/Principia 权威解算的姿态四元数（0计算量，采用世界坐标旋转）
         /// </summary>
         public static Quaternion GetRotation()
         {
             if (HasStockNavBall)
             {
-                return StockInstance.navBall.localRotation;
+                // Principia 每帧将解算姿态写入 navBall.rotation (World Rotation)
+                // 原版 KSP 亦通过世界坐标驱动姿态球网格
+                return StockInstance.navBall.rotation;
             }
             return TelemetryHub.Instance != null ? TelemetryHub.Instance.AttitudeRotation : Quaternion.identity;
         }
 
         /// <summary>
-        /// 获取官方或第三方贴图替换插件 (TextureReplacer / Principia) 加载的原版展开贴图
+        /// 获取官方或 Principia / TextureReplacer 加载的高保真姿态球贴图
         /// </summary>
         public static Texture GetTexture()
         {
             if (HasStockNavBall)
             {
                 Renderer r = StockInstance.navBall.GetComponent<Renderer>();
-                if (r != null && r.sharedMaterial != null && r.sharedMaterial.mainTexture != null)
+                if (r != null)
                 {
-                    return r.sharedMaterial.mainTexture;
+                    Material mat = r.sharedMaterial ?? r.material;
+                    if (mat != null)
+                    {
+                        // 1. Principia 显式注入的 "_MainTexture" (质心/惯性/地表/目标/罗盘贴图)
+                        if (mat.HasProperty("_MainTexture"))
+                        {
+                            Texture tex = mat.GetTexture("_MainTexture");
+                            if (tex != null) return tex;
+                        }
+                        // 2. 原生 Unity 规范 "_MainTex"
+                        if (mat.HasProperty("_MainTex"))
+                        {
+                            Texture tex = mat.GetTexture("_MainTex");
+                            if (tex != null) return tex;
+                        }
+                        // 3. Unity 标准 mainTexture 属性读取
+                        if (mat.mainTexture != null)
+                        {
+                            return mat.mainTexture;
+                        }
+                    }
                 }
             }
+
+            // 4. 原版与 Principia GameDatabase 资源多重安全后备
             if (GameDatabase.Instance != null)
             {
-                Texture2D tex = GameDatabase.Instance.GetTexture("Squad/Props/NavBall/NavBall600", false);
-                if (tex != null) return tex;
+                string[] fallbackTextures = new string[]
+                {
+                    "Squad/Props/IVANavBall/navball2",
+                    "Squad/Props/IVANavBall/IVANavBall",
+                    "Squad/Props/IVANavBallNoBase/navball2",
+                    "Principia/assets/navball_surface",
+                    "Principia/assets/navball_inertial"
+                };
+
+                for (int i = 0; i < fallbackTextures.Length; i++)
+                {
+                    Texture2D tex = GameDatabase.Instance.GetTexture(fallbackTextures[i], false);
+                    if (tex != null) return tex;
+                }
             }
+
             return null;
+        }
+
+        /// <summary>
+        /// 获取官方/Principia 矢量标线 (Prograde, Retrograde, Normal, Target, Maneuver 等) 的前向局部单位方向
+        /// </summary>
+        public static bool GetMarkerDirection(string markerKey, out Vector3 dir, out bool isVisible)
+        {
+            dir = Vector3.forward;
+            isVisible = false;
+            if (!HasStockNavBall) return false;
+
+            Transform marker = null;
+            switch (markerKey.ToLowerInvariant())
+            {
+                case "prograde":
+                    marker = StockInstance.progradeVector;
+                    break;
+                case "retrograde":
+                    marker = StockInstance.retrogradeVector;
+                    break;
+                case "normal":
+                    marker = StockInstance.normalVector;
+                    break;
+                case "antinormal":
+                    marker = StockInstance.antiNormalVector;
+                    break;
+                case "radialin":
+                    marker = StockInstance.radialInVector;
+                    break;
+                case "radialout":
+                    marker = StockInstance.radialOutVector;
+                    break;
+                case "target":
+                    marker = StockInstance.target;
+                    break;
+                case "maneuver":
+                    marker = GetManeuverTransform();
+                    break;
+            }
+
+            if (marker == null) return false;
+
+            Vector3 localPos = marker.localPosition;
+            if (localPos.sqrMagnitude < 0.0001f) return false;
+
+            dir = localPos.normalized;
+            // 当标线在姿态球可见前半球面且处于激活态时判定为可见
+            float cutoff = StockInstance.VectorUnitCutoff;
+            isVisible = marker.gameObject.activeInHierarchy && (dir.z > cutoff || dir.z > -0.05f);
+            return true;
+        }
+
+        private static Transform GetManeuverTransform()
+        {
+            if (_cachedManeuverTransform != null) return _cachedManeuverTransform;
+            if (_cachedBurnVector == null)
+            {
+                _cachedBurnVector = UnityEngine.Object.FindObjectOfType<NavBallBurnVector>();
+            }
+            if (_cachedBurnVector != null)
+            {
+                _cachedManeuverTransform = _cachedBurnVector.vectorProgr;
+            }
+            return _cachedManeuverTransform;
+        }
+
+        /// <summary>
+        /// 获取当前权威导航参考系名称 (如 BARYCENTRIC, INERTIAL, SURFACE, ORBIT, TARGET)
+        /// </summary>
+        public static string GetReferenceFrameName()
+        {
+            if (SpeedDisplay.Instance != null && SpeedDisplay.Instance.textTitle != null)
+            {
+                string title = SpeedDisplay.Instance.textTitle.text;
+                if (!string.IsNullOrEmpty(title))
+                {
+                    return title.Trim();
+                }
+            }
+
+            switch (FlightGlobals.speedDisplayMode)
+            {
+                case FlightGlobals.SpeedDisplayModes.Surface: return "SURFACE";
+                case FlightGlobals.SpeedDisplayModes.Orbit: return "ORBIT";
+                case FlightGlobals.SpeedDisplayModes.Target: return "TARGET";
+                default: return "ORBIT";
+            }
         }
 
         /// <summary>
@@ -85,36 +216,13 @@ namespace ModularFlightPanel.Core
         }
 
         /// <summary>
-        /// 彻底隐藏官方屏幕底栏导航球及其外壳、滑块、折叠按钮与3D球体（由模块化飞行面板统一呈现）
+        /// 彻底隐藏官方屏幕底栏导航球及其外壳、滑块、折叠按钮，同时保障姿态数据结算脚本正常运转
         /// </summary>
         public static void HideStockNavballCompletely(bool hide)
         {
             if (StockInstance == null) return;
 
-            // 1. 隐藏官方 3D 姿态球及所有原版 3D 矢量标线 MeshRenderer
-            if (StockInstance.navBall != null)
-            {
-                Renderer[] renderers = StockInstance.GetComponentsInChildren<Renderer>(true);
-                for (int i = 0; i < renderers.Length; i++)
-                {
-                    if (renderers[i] != null && renderers[i].enabled == hide)
-                    {
-                        renderers[i].enabled = !hide;
-                    }
-                }
-            }
-
-            // 2. 隐藏官方 UI 组件 (外框底图、油门滑动条、重力计滑动条、航向读数)
-            Graphic[] graphics = StockInstance.GetComponentsInChildren<Graphic>(true);
-            for (int i = 0; i < graphics.Length; i++)
-            {
-                if (graphics[i] != null && graphics[i].enabled == hide)
-                {
-                    graphics[i].enabled = !hide;
-                }
-            }
-
-            // 3. 彻底隐藏官方导航球父级容器 (底栏 RCS / SAS 按钮、折叠箭头、外壳)
+            // 1. 通过 CanvasGroup 隐藏官方 UI 容器 (完全透明、阻断射线响应，但不中断其内部状态更新)
             if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
             {
                 CanvasGroup cg = FlightUIModeController.Instance.navBall.GetComponent<CanvasGroup>();
@@ -125,6 +233,16 @@ namespace ModularFlightPanel.Core
                 cg.alpha = hide ? 0f : 1f;
                 cg.blocksRaycasts = !hide;
                 cg.interactable = !hide;
+            }
+
+            // 2. 仅隐藏原版 3D 姿态球主球体网格，杜绝重叠渲染；标线物体与骨架依然在后台持续更新坐标
+            if (StockInstance.navBall != null)
+            {
+                Renderer r = StockInstance.navBall.GetComponent<Renderer>();
+                if (r != null && r.enabled == hide)
+                {
+                    r.enabled = !hide;
+                }
             }
         }
     }

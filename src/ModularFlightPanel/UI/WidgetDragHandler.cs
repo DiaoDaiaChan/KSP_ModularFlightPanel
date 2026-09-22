@@ -47,9 +47,31 @@ namespace ModularFlightPanel.UI
             img.color = new Color(0f, 0.8f, 1f, 0.08f); // 微弱半透明填充便以拾取
             img.raycastTarget = true;
 
-            _editOutline = _editOverlay.AddComponent<Outline>();
-            _editOutline.effectColor = new Color(0f, 1f, 0.8f, 0.9f);
-            _editOutline.effectDistance = new Vector2(2f, 2f);
+            bool isNavball = _ownerWidget is Widgets.NavballSphereWidget;
+            if (isNavball)
+            {
+                // 姿态球专用：圆形半透明遮罩拾取 + 圆形高亮描边环
+                img.sprite = Core.NavballMarkerFactory.GetCircleMaskSprite();
+
+                GameObject ringObj = new GameObject("CircleEditRing", typeof(RectTransform), typeof(Image));
+                ringObj.transform.SetParent(_editOverlay.transform, false);
+                RectTransform ringRt = ringObj.GetComponent<RectTransform>();
+                ringRt.anchorMin = Vector2.zero;
+                ringRt.anchorMax = Vector2.one;
+                ringRt.sizeDelta = Vector2.zero;
+                ringRt.anchoredPosition = Vector2.zero;
+
+                Image ringImg = ringObj.GetComponent<Image>();
+                ringImg.sprite = Core.NavballMarkerFactory.GetCircleRingSprite();
+                ringImg.color = new Color(0f, 1f, 0.8f, 0.9f);
+                ringImg.raycastTarget = false;
+            }
+            else
+            {
+                _editOutline = _editOverlay.AddComponent<Outline>();
+                _editOutline.effectColor = new Color(0f, 1f, 0.8f, 0.9f);
+                _editOutline.effectDistance = new Vector2(2f, 2f);
+            }
 
             _editTitleText = UIFactory.CreateText(_editOverlay.transform, "Title", $"[拖拽] {_ownerWidget.DisplayName}", 11, TextAnchor.MiddleCenter, Color.yellow);
             RectTransform trt = _editTitleText.GetComponent<RectTransform>();

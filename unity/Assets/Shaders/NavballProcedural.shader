@@ -2,7 +2,7 @@ Shader "ModularFlightPanel/NavballProcedural"
 {
     Properties
     {
-        _MainTex ("Reference Texture (Optional)", 2D) = "white" {}
+        _MainTex ("Reference Texture (Optional)", 2D) = "gray" {}
         
         // 天空配色 (Aero Sky Gradient)
         _SkyZenithColor ("Sky Zenith (Deep Space Blue)", Color) = (0.04, 0.18, 0.38, 1.0)
@@ -25,15 +25,15 @@ Shader "ModularFlightPanel/NavballProcedural"
         
         // 3D 深度与边缘微光 (Limb Darkening & Rim Glow)
         _LimbPower ("Limb Darkening Power", Range(0.5, 4.0)) = 1.35
-        _LimbIntensity ("Limb Darkening Intensity", Range(0.0, 1.0)) = 0.32
+        _LimbIntensity ("Limb Darkening Intensity", Range(0.0, 1.0)) = 0.30
         _RimColor ("Rim Glow Color", Color) = (0.2, 0.8, 1.0, 1.0)
         _RimPower ("Rim Power", Range(1.0, 8.0)) = 3.2
-        _RimIntensity ("Rim Intensity", Range(0.0, 2.0)) = 0.45
+        _RimIntensity ("Rim Intensity", Range(0.0, 2.0)) = 0.35
         
         // 玻璃反光 (Glass Reflection)
-        _SpecularColor ("Glass Specular Color", Color) = (1.0, 1.0, 1.0, 0.5)
-        _Glossiness ("Glossiness", Range(4.0, 64.0)) = 24.0
-        _SpecIntensity ("Specular Intensity", Range(0.0, 1.0)) = 0.22
+        _SpecularColor ("Glass Specular Color", Color) = (1.0, 1.0, 1.0, 0.4)
+        _Glossiness ("Glossiness", Range(4.0, 64.0)) = 28.0
+        _SpecIntensity ("Specular Intensity", Range(0.0, 1.0)) = 0.16
     }
 
     SubShader
@@ -132,45 +132,43 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float isEquator = 1.0 - smoothstep(_EquatorWidth, _EquatorWidth + eqAA, absY);
                 col = lerp(col, _EquatorColor, isEquator);
 
-                // 4. 俯仰梯级线 (Pitch Ladder: 每 10° 主刻度，每 5° 次刻度)
-                // 计算当前度数与最近 5°/10° 的距离
-                float pitchMod5 = abs(fmod(pitchDeg + 360.0 + 2.5, 5.0) - 2.5);
+                // 4. 俯仰梯级线 (Pitch Ladder: 全球面连续主刻度 10°，次刻度 5°)
                 float pitchMod10 = abs(fmod(pitchDeg + 360.0 + 5.0, 10.0) - 5.0);
+                float pitchMod5  = abs(fmod(pitchDeg + 360.0 + 2.5, 5.0) - 2.5);
 
                 float pLadderAA = fwidth(pitchDeg) * 1.2;
-                bool isNear10 = pitchMod10 < (_PitchLadderWidth * 120.0 + pLadderAA);
-                bool isNear5  = pitchMod5  < (_PitchLadderWidth * 80.0 + pLadderAA);
-
-                // 经度水平跨度限制 (梯级线宽度：主刻度跨 14°，次刻度跨 7°)
-                float headMod30 = abs(fmod(headDeg + 360.0 + 15.0, 30.0) - 15.0);
-                float ladderSpan10 = step(headMod30, 8.0);
-                float ladderSpan5  = step(headMod30, 4.5);
-
                 float isPitchLine = 0.0;
-                if (abs(pitchDeg) > 2.0 && abs(pitchDeg) < 88.0)
+
+                if (abs(pitchDeg) > 1.8 && abs(pitchDeg) < 88.5)
                 {
-                    if (isNear10 && ladderSpan10 > 0.5)
-                    {
-                        // 地面虚线刻度，天空实线刻度
-                        float dash = (pitchDeg < 0.0) ? step(0.3, frac(headDeg * 1.2)) : 1.0;
-                        isPitchLine = (1.0 - smoothstep(0.0, pLadderAA * 2.0, pitchMod10)) * dash;
-                    }
-                    else if (isNear5 && ladderSpan5 > 0.5)
-                    {
-                        float dash = (pitchDeg < 0.0) ? step(0.35, frac(headDeg * 1.5)) : 1.0;
-                        isPitchLine = (1.0 - smoothstep(0.0, pLadderAA * 2.0, pitchMod5)) * 0.7 * dash;
-                    }
+                    // 10° 主纬度线：天空实线，地面虚线 (全球面贯通，无死角视野)
+                    float dash10 = (pitchDeg < 0.0) ? step(0.35, frac(headDeg / 6.0)) : 1.0;
+                    float line10 = (1.0 - smoothstep(_PitchLadderWidth * 60.0, _PitchLadderWidth * 60.0 + pLadderAA * 2.0, pitchMod10)) * dash10;
+
+                    // 5° 次纬度线：精细刻度
+                    float dash5 = (pitchDeg < 0.0) ? step(0.40, frac(headDeg / 4.0)) : 1.0;
+                    float line5 = (1.0 - smoothstep(_PitchLadderWidth * 35.0, _PitchLadderWidth * 35.0 + pLadderAA * 1.8, pitchMod5)) * dash5 * 0.55;
+
+                    isPitchLine = max(line10, line5);
                 }
                 col = lerp(col, _PitchLadderColor, saturate(isPitchLine));
 
-                // 5. 航向方位基准线 (Meridians: 0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
+                // 5. 航向方位基准经线 (Meridians)
+                // 90° 主子午线 (0° 北, 90° 东, 180° 南, 270° 西)
+                float headMod90 = abs(fmod(headDeg + 360.0 + 45.0, 90.0) - 45.0);
+                // 45° 次子午线
                 float headMod45 = abs(fmod(headDeg + 360.0 + 22.5, 45.0) - 22.5);
+                // 10° 刻度齿
                 float headMod10 = abs(fmod(headDeg + 360.0 + 5.0, 10.0) - 5.0);
+
                 float hAA = fwidth(headDeg) * 1.2;
 
-                // 每 45° 的细经线
-                float isMeridian45 = (1.0 - smoothstep(0.0, hAA * 2.5, headMod45)) * 0.5;
-                col = lerp(col, _HeadingLineColor, saturate(isMeridian45 * step(abs(pitchDeg), 75.0)));
+                // 90° 主经线 (贯通南北)
+                float isMeridian90 = (1.0 - smoothstep(0.0, hAA * 2.5, headMod90)) * 0.75;
+                // 45° 次经线
+                float isMeridian45 = (1.0 - smoothstep(0.0, hAA * 2.0, headMod45)) * 0.40;
+                float isMeridian = max(isMeridian90, isMeridian45) * step(abs(pitchDeg), 82.0);
+                col = lerp(col, _HeadingLineColor, saturate(isMeridian));
 
                 // 赤道附近的航向刻度齿 (Equatorial Ticks)
                 if (absY < 0.035)
@@ -179,7 +177,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                     col = lerp(col, _EquatorColor, saturate(isTick10 * 0.9));
                 }
 
-                // 6. 天顶 (+90°) 与天底 (-90°) 极点几何标记
+                // 6. 天顶 (+90°) 与天底 (-90°) 极点同心几何标记
                 if (p.y > 0.985)
                 {
                     float rTop = length(p.xz);

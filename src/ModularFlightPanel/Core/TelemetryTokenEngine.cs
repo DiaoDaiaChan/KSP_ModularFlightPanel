@@ -1,6 +1,7 @@
 using System;
 using System.Text.RegularExpressions;
 using UnityEngine;
+using ModularFlightPanel.Core.Probes;
 
 namespace ModularFlightPanel.Core
 {
@@ -116,6 +117,51 @@ namespace ModularFlightPanel.Core
                 case "PROP":
                 case "STAGEPROP":
                     return telemetry.StagePropellantFraction * 100.0;
+
+                case "FRAME":
+                    return 0.0;
+
+                case "FAR":
+                    switch (subTag)
+                    {
+                        case "IAS": return FarProbe.IAS;
+                        case "EAS": return FarProbe.EAS;
+                        case "AOA": return FarProbe.AngleOfAttack;
+                        case "SIDESLIP": return FarProbe.Sideslip;
+                        case "Q":
+                        case "DYNAERO": return FarProbe.DynamicPressure;
+                        case "LIFT": return FarProbe.LiftCoeff;
+                        case "DRAG": return FarProbe.DragCoeff;
+                        case "STALL": return FarProbe.StallFraction;
+                        case "LD": return FarProbe.LiftToDragRatio;
+                        case "BALLISTIC": return FarProbe.BallisticCoeff;
+                        default: return double.NaN;
+                    }
+
+                case "KER":
+                    switch (subTag)
+                    {
+                        case "DV":
+                        case "STAGEDV": return KerbalEngineerProbe.StageDeltaV;
+                        case "TOTALDV": return KerbalEngineerProbe.TotalDeltaV;
+                        case "TWR": return KerbalEngineerProbe.StageTWR;
+                        case "BURNTIME": return KerbalEngineerProbe.StageBurnTime;
+                        case "TOTALBURNTIME": return KerbalEngineerProbe.TotalBurnTime;
+                        case "ISP": return KerbalEngineerProbe.StageIsp;
+                        default: return double.NaN;
+                    }
+
+                case "MJ":
+                case "MECHJEB":
+                    switch (subTag)
+                    {
+                        case "DV":
+                        case "STAGEDV": return MechJebProbe.StageDeltaV;
+                        case "TOTALDV": return MechJebProbe.TotalDeltaV;
+                        case "TWR": return MechJebProbe.CurrentTWR;
+                        case "TERMINALVEL": return MechJebProbe.TerminalVelocity;
+                        default: return double.NaN;
+                    }
 
                 default:
                     return double.NaN;
@@ -235,6 +281,53 @@ namespace ModularFlightPanel.Core
 
                 case "SITUATION":
                     return v.situation.ToString().ToUpper();
+
+                case "FRAME":
+                    return StockNavBallHook.GetReferenceFrameName();
+
+                case "FAR":
+                    if (!FarProbe.IsAvailable) return "---";
+                    switch (subTag)
+                    {
+                        case "IAS": return FormatNumber(FarProbe.IAS, format, "F1") + " m/s";
+                        case "EAS": return FormatNumber(FarProbe.EAS, format, "F1") + " m/s";
+                        case "AOA": return FormatNumber(FarProbe.AngleOfAttack, format, "F1") + "°";
+                        case "SIDESLIP": return FormatNumber(FarProbe.Sideslip, format, "F1") + "°";
+                        case "Q": return FormatNumber(FarProbe.DynamicPressure, format, "F2") + " kPa";
+                        case "STALL": return $"{Mathf.RoundToInt((float)FarProbe.StallFraction * 100f)}%";
+                        case "LD": return FormatNumber(FarProbe.LiftToDragRatio, format, "F2");
+                        case "LIFT": return FormatNumber(FarProbe.LiftCoeff, format, "F3");
+                        case "DRAG": return FormatNumber(FarProbe.DragCoeff, format, "F3");
+                        case "BALLISTIC": return FormatNumber(FarProbe.BallisticCoeff, format, "F1");
+                        default: return "FAR";
+                    }
+
+                case "KER":
+                    if (!KerbalEngineerProbe.IsAvailable) return "---";
+                    switch (subTag)
+                    {
+                        case "DV":
+                        case "STAGEDV": return FormatNumber(KerbalEngineerProbe.StageDeltaV, format, "N0") + " m/s";
+                        case "TOTALDV": return FormatNumber(KerbalEngineerProbe.TotalDeltaV, format, "N0") + " m/s";
+                        case "TWR": return FormatNumber(KerbalEngineerProbe.StageTWR, format, "F2");
+                        case "BURNTIME": return FormatTime(KerbalEngineerProbe.StageBurnTime);
+                        case "TOTALBURNTIME": return FormatTime(KerbalEngineerProbe.TotalBurnTime);
+                        case "ISP": return FormatNumber(KerbalEngineerProbe.StageIsp, format, "F0") + " s";
+                        default: return "KER";
+                    }
+
+                case "MJ":
+                case "MECHJEB":
+                    if (!MechJebProbe.IsAvailable) return "---";
+                    switch (subTag)
+                    {
+                        case "DV":
+                        case "STAGEDV": return FormatNumber(MechJebProbe.StageDeltaV, format, "N0") + " m/s";
+                        case "TOTALDV": return FormatNumber(MechJebProbe.TotalDeltaV, format, "N0") + " m/s";
+                        case "TWR": return FormatNumber(MechJebProbe.CurrentTWR, format, "F2");
+                        case "TERMINALVEL": return FormatNumber(MechJebProbe.TerminalVelocity, format, "F1") + " m/s";
+                        default: return "MJ";
+                    }
 
                 default:
                     return $"{{{tag}}}";
