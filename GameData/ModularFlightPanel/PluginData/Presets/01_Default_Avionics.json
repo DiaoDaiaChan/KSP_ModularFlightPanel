@@ -1,0 +1,99 @@
+{
+  "GlobalScale": 1.0,
+  "Widgets": [
+    {
+      "WidgetId": "core.navball",
+      "DisplayName": "姿态球 (Navball)",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "core"
+    },
+    {
+      "WidgetId": "core.heading_arc",
+      "DisplayName": "PFD 航向指示弧 (Set 2)",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "heading_arc"
+    },
+    {
+      "WidgetId": "gauge.throttle",
+      "DisplayName": "AVIONICS 油门推力带",
+      "IsEnabled": true,
+      "PositionX": -158,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "bar_gauge",
+      "NumericToken": "{THROTTLE}",
+      "MinValue": 0,
+      "MaxValue": 100,
+      "CautionThreshold": 85,
+      "WarningThreshold": 100,
+      "UnitLabel": "%",
+      "IsLeftOrientation": true
+    },
+    {
+      "WidgetId": "gauge.barometer",
+      "DisplayName": "AVIONICS 动压气压带",
+      "IsEnabled": true,
+      "PositionX": 158,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "bar_gauge",
+      "NumericToken": "{Q}",
+      "MinValue": 0,
+      "MaxValue": 35,
+      "CautionThreshold": 20,
+      "WarningThreshold": 28,
+      "UnitLabel": "kPa",
+      "IsLeftOrientation": false
+    },
+    {
+      "WidgetId": "tape.speed",
+      "DisplayName": "PFD 速度标尺带",
+      "IsEnabled": true,
+      "PositionX": -120,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "tape",
+      "NumericToken": "{SPD}",
+      "StepInterval": 10,
+      "IsLeftOrientation": true,
+      "UnitLabel": "m/s"
+    },
+    {
+      "WidgetId": "tape.altitude",
+      "DisplayName": "PFD 高度标尺带",
+      "IsEnabled": true,
+      "PositionX": 120,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "tape",
+      "NumericToken": "{ALT}",
+      "StepInterval": 100,
+      "IsLeftOrientation": false,
+      "UnitLabel": "m"
+    },
+    {
+      "WidgetId": "core.bottom_controls",
+      "DisplayName": "RCS与SAS底控台",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -88,
+      "Scale": 1,
+      "WidgetType": "core"
+    },
+    {
+      "WidgetId": "core.sas_dial",
+      "DisplayName": "环形 SAS 罗盘",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -150,
+      "Scale": 1,
+      "WidgetType": "core"
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "GlobalScale": 1.0,
+  "Widgets": [
+    {
+      "WidgetId": "core.navball",
+      "DisplayName": "姿态球 (Navball)",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "core"
+    },
+    {
+      "WidgetId": "core.bottom_controls",
+      "DisplayName": "RCS与SAS底控",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -78,
+      "Scale": 1,
+      "WidgetType": "core"
+    },
+    {
+      "WidgetId": "core.orbital_info",
+      "DisplayName": "轨道数据面板",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -108,
+      "Scale": 1,
+      "WidgetType": "core"
+    },
+    {
+      "WidgetId": "core.ecam_status",
+      "DisplayName": "ECAM 飞行状态",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -185,
+      "Scale": 1,
+      "WidgetType": "core"
+    },
+    {
+      "WidgetId": "tape.speed",
+      "DisplayName": "PFD 速度标尺带",
+      "IsEnabled": true,
+      "PositionX": -225,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "tape",
+      "NumericToken": "{SPD}",
+      "StepInterval": 10,
+      "IsLeftOrientation": true,
+      "UnitLabel": "m/s"
+    },
+    {
+      "WidgetId": "tape.altitude",
+      "DisplayName": "PFD 高度标尺带",
+      "IsEnabled": true,
+      "PositionX": 225,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "tape",
+      "NumericToken": "{ALT}",
+      "StepInterval": 100,
+      "IsLeftOrientation": false,
+      "UnitLabel": "m"
+    },
+    {
+      "WidgetId": "custom.electrical",
+      "DisplayName": "ELEC 电力分配系统",
+      "IsEnabled": true,
+      "PositionX": -450,
+      "PositionY": 150,
+      "Scale": 1,
+      "WidgetType": "electrical"
+    },
+    {
+      "WidgetId": "custom.rocket",
+      "DisplayName": "ROCKET 2D 火箭状态",
+      "IsEnabled": true,
+      "PositionX": 450,
+      "PositionY": 150,
+      "Scale": 1,
+      "WidgetType": "rocket2d"
+    },
+    {
+      "WidgetId": "ecam.gforce",
+      "DisplayName": "ECAM G力过载表",
+      "IsEnabled": true,
+      "PositionX": -345,
+      "PositionY": -35,
+      "Scale": 1,
+      "WidgetType": "ecam_dial",
+      "NumericToken": "{GFORCE}",
+      "MinValue": 0,
+      "MaxValue": 15,
+      "CautionThreshold": 5,
+      "WarningThreshold": 8,
+      "IsSoftLimit": true,
+      "UnitLabel": "G"
+    },
+    {
+      "WidgetId": "ecam.q",
+      "DisplayName": "ECAM 动压监控表",
+      "IsEnabled": true,
+      "PositionX": 345,
+      "PositionY": -35,
+      "Scale": 1,
+      "WidgetType": "ecam_dial",
+      "NumericToken": "{Q}",
+      "MinValue": 0,
+      "MaxValue": 35,
+      "CautionThreshold": 25,
+      "WarningThreshold": 32,
+      "IsSoftLimit": false,
+      "UnitLabel": "kPa"
+    }
+  ]
+}

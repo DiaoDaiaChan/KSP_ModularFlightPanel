@@ -6,7 +6,7 @@ namespace ModularFlightPanel.Core.Probes
 {
     /// <summary>
     /// Kerbal Engineer Redux (KER) 软依赖遥测反射探针
-    /// 零硬编码依赖，当玩家安装 KER 时自动提取专业级分级 Delta-V、TWR 与燃烧时间
+    /// 采用 ProbeReflectionTraverser 彻底遍历 SimManager、Stage 以及全部 8 大 Readout Processors 公开 API，零遗漏。
     /// </summary>
     public static class KerbalEngineerProbe
     {
@@ -14,14 +14,9 @@ namespace ModularFlightPanel.Core.Probes
         private static bool _isAvailable = false;
         public static bool IsAvailable => _isAvailable;
 
+        public static ProbeReflectionTraverser Traverser { get; } = new ProbeReflectionTraverser("KER");
+
         private static PropertyInfo _lastStageProp;
-        private static FieldInfo _deltaVField;
-        private static FieldInfo _totalDeltaVField;
-        private static FieldInfo _twrField;
-        private static FieldInfo _timeField;
-        private static FieldInfo _totalTimeField;
-        private static FieldInfo _ispField;
-        private static FieldInfo _actualThrustField;
 
         public static void Initialize()
         {
@@ -30,41 +25,114 @@ namespace ModularFlightPanel.Core.Probes
 
             try
             {
-                Type simManagerType = null;
+                Assembly kerAssembly = null;
                 foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    if (asm.GetName().Name.StartsWith("KerbalEngineer"))
+                    if (asm.GetName().Name.Equals("KerbalEngineer", StringComparison.OrdinalIgnoreCase))
                     {
-                        simManagerType = asm.GetType("KerbalEngineer.VesselSimulator.SimManager");
-                        if (simManagerType != null) break;
+                        kerAssembly = asm;
+                        break;
                     }
                 }
 
-                if (simManagerType != null)
+                if (kerAssembly != null)
                 {
-                    _lastStageProp = simManagerType.GetProperty("LastStage", BindingFlags.Public | BindingFlags.Static);
-                    if (_lastStageProp != null)
+                    // 1. 遍历 SimManager (仿真管理器公开静态成员)
+                    Type simManagerType = kerAssembly.GetType("KerbalEngineer.VesselSimulator.SimManager");
+                    if (simManagerType != null)
                     {
-                        Type stageType = _lastStageProp.PropertyType;
-                        _deltaVField = stageType.GetField("deltaV", BindingFlags.Public | BindingFlags.Instance);
-                        _totalDeltaVField = stageType.GetField("totalDeltaV", BindingFlags.Public | BindingFlags.Instance);
-                        _twrField = stageType.GetField("actualThrustToWeight", BindingFlags.Public | BindingFlags.Instance) 
-                                   ?? stageType.GetField("thrustToWeight", BindingFlags.Public | BindingFlags.Instance);
-                        _timeField = stageType.GetField("time", BindingFlags.Public | BindingFlags.Instance);
-                        _totalTimeField = stageType.GetField("totalTime", BindingFlags.Public | BindingFlags.Instance);
-                        _ispField = stageType.GetField("isp", BindingFlags.Public | BindingFlags.Instance);
-                        _actualThrustField = stageType.GetField("actualThrust", BindingFlags.Public | BindingFlags.Instance);
-
-                        _isAvailable = true;
-                        Debug.Log("[ModularFlightPanel] Successfully hooked Kerbal Engineer Redux (KER) SimManager!");
+                        Traverser.TraverseStatic(simManagerType, "KER 仿真机 (SimManager)");
+                        _lastStageProp = simManagerType.GetProperty("LastStage", BindingFlags.Public | BindingFlags.Static);
                     }
+
+                    // 2. 遍历 Stage (分级解算详细指标，全部分级推力/dV/燃时/RCS等)
+                    Type stageType = kerAssembly.GetType("KerbalEngineer.VesselSimulator.Stage");
+                    if (stageType != null && _lastStageProp != null)
+                    {
+                        Traverser.TraverseInstance(stageType, GetLastStage, "KER 分级遥测 (Stage)");
+                    }
+
+                    // 3. 遍历全部 8 个 Readout Processors 公开遥测解算器
+                    string[] processorNames = new string[]
+                    {
+                        "KerbalEngineer.Flight.Readouts.Vessel.SimulationProcessor",
+                        "KerbalEngineer.Flight.Readouts.Vessel.AttitudeProcessor",
+                        "KerbalEngineer.Flight.Readouts.Surface.AtmosphericProcessor",
+                        "KerbalEngineer.Flight.Readouts.Surface.ImpactProcessor",
+                        "KerbalEngineer.Flight.Readouts.Surface.SurfaceDistanceProcessor",
+                        "KerbalEngineer.Flight.Readouts.Thermal.ThermalProcessor",
+                        "KerbalEngineer.Flight.Readouts.Orbital.ManoeuvreNode.ManoeuvreProcessor",
+                        "KerbalEngineer.Flight.Readouts.Rendezvous.RendezvousProcessor"
+                    };
+
+                    for (int i = 0; i < processorNames.Length; i++)
+                    {
+                        Type procType = kerAssembly.GetType(processorNames[i]);
+                        if (procType != null)
+                        {
+                            string shortName = procType.Name.Replace("Processor", "");
+                            Traverser.TraverseStatic(procType, $"KER {shortName} 处理器");
+                        }
+                    }
+
+                    // 4. 注册标准高频别名，保持 100% 向后兼容
+                    Traverser.RegisterAlias("DV", "deltaV");
+                    Traverser.RegisterAlias("STAGEDV", "deltaV");
+                    Traverser.RegisterAlias("TOTALDV", "totalDeltaV");
+                    Traverser.RegisterAlias("TWR", "actualThrustToWeight");
+                    Traverser.RegisterAlias("STAGETWR", "actualThrustToWeight");
+                    Traverser.RegisterAlias("BURNTIME", "time");
+                    Traverser.RegisterAlias("STAGEBURNTIME", "time");
+                    Traverser.RegisterAlias("TOTALBURNTIME", "totalTime");
+                    Traverser.RegisterAlias("ISP", "isp");
+                    Traverser.RegisterAlias("STAGEISP", "isp");
+                    Traverser.RegisterAlias("THRUST", "thrust");
+                    Traverser.RegisterAlias("ACTUALTHRUST", "actualThrust");
+
+                    // 自杀式点火与着陆撞击别名
+                    Traverser.RegisterAlias("SUICIDECD", "SuicideCountdown");
+                    Traverser.RegisterAlias("SUICIDEALT", "SuicideAltitude");
+                    Traverser.RegisterAlias("SUICIDEDV", "SuicideDeltaV");
+                    Traverser.RegisterAlias("SUICIDEDIST", "SuicideDistance");
+                    Traverser.RegisterAlias("SUICIDELEN", "SuicideLength");
+                    Traverser.RegisterAlias("IMPACTTIME", "Time");
+                    Traverser.RegisterAlias("IMPACTALT", "Altitude");
+
+                    // 热力学别名
+                    Traverser.RegisterAlias("HOTTESTTEMP", "HottestTemperature");
+                    Traverser.RegisterAlias("COOLESTTEMP", "CoolestTemperature");
+
+                    // 机动节点别名
+                    Traverser.RegisterAlias("NODEDV", "NodeDeltaV");
+                    Traverser.RegisterAlias("MANOEUVREDV", "NodeDeltaV");
+                    Traverser.RegisterAlias("TIMETONODE", "TimeToManoeuvre");
+                    Traverser.RegisterAlias("NODEBURNTIME", "BurnTime");
+
+                    _isAvailable = true;
+                    SafeLog($"[ModularFlightPanel] KerbalEngineerProbe successfully hooked KER! Traversed {Traverser.DiscoveredCount} public API telemetry members.");
+                }
+                else
+                {
+                    _isAvailable = false;
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[ModularFlightPanel] KER probe initialization notice: {ex.Message}");
+                SafeLogWarning($"[ModularFlightPanel] KER probe initialization warning: {ex.Message}");
                 _isAvailable = false;
             }
+        }
+
+        private static void SafeLog(string msg)
+        {
+            try { Debug.Log(msg); }
+            catch { Console.WriteLine(msg); }
+        }
+
+        private static void SafeLogWarning(string msg)
+        {
+            try { Debug.LogWarning(msg); }
+            catch { Console.WriteLine("[WARN] " + msg); }
         }
 
         private static object GetLastStage()
@@ -80,64 +148,22 @@ namespace ModularFlightPanel.Core.Probes
             }
         }
 
-        public static double StageDeltaV
+        public static double ResolveNumeric(string subTag, string modifier = null)
         {
-            get
-            {
-                object stage = GetLastStage();
-                if (stage == null || _deltaVField == null) return double.NaN;
-                return Convert.ToDouble(_deltaVField.GetValue(stage));
-            }
+            return _isAvailable ? Traverser.ResolveNumeric(subTag, modifier) : double.NaN;
         }
 
-        public static double TotalDeltaV
+        public static string ResolveString(string subTag, string format = null, string modifier = null)
         {
-            get
-            {
-                object stage = GetLastStage();
-                if (stage == null || _totalDeltaVField == null) return double.NaN;
-                return Convert.ToDouble(_totalDeltaVField.GetValue(stage));
-            }
+            return _isAvailable ? Traverser.ResolveString(subTag, format, modifier) : "---";
         }
 
-        public static double StageTWR
-        {
-            get
-            {
-                object stage = GetLastStage();
-                if (stage == null || _twrField == null) return double.NaN;
-                return Convert.ToDouble(_twrField.GetValue(stage));
-            }
-        }
-
-        public static double StageBurnTime
-        {
-            get
-            {
-                object stage = GetLastStage();
-                if (stage == null || _timeField == null) return double.NaN;
-                return Convert.ToDouble(_timeField.GetValue(stage));
-            }
-        }
-
-        public static double TotalBurnTime
-        {
-            get
-            {
-                object stage = GetLastStage();
-                if (stage == null || _totalTimeField == null) return double.NaN;
-                return Convert.ToDouble(_totalTimeField.GetValue(stage));
-            }
-        }
-
-        public static double StageIsp
-        {
-            get
-            {
-                object stage = GetLastStage();
-                if (stage == null || _ispField == null) return double.NaN;
-                return Convert.ToDouble(_ispField.GetValue(stage));
-            }
-        }
+        // 向后兼容强类型静态属性
+        public static double StageDeltaV => ResolveNumeric("deltaV");
+        public static double TotalDeltaV => ResolveNumeric("totalDeltaV");
+        public static double StageTWR => ResolveNumeric("actualThrustToWeight");
+        public static double StageBurnTime => ResolveNumeric("time");
+        public static double TotalBurnTime => ResolveNumeric("totalTime");
+        public static double StageIsp => ResolveNumeric("isp");
     }
 }

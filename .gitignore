@@ -24,6 +24,7 @@ unity/AssetBundles/
 *.sln
 !src/**/*.sln
 !src/**/*.csproj
+!tools/**/*.csproj
 
 # OS & IDE
 *.log
@@ -36,3 +37,8 @@ Thumbs.db
 prototype/node_modules/
 prototype/dist/
 
+# Scratch & Temporary Renders
+scratch/
+tools/tmp_decompile.cs
+GameData/**/PluginData/*.png
+tools/**/*.png

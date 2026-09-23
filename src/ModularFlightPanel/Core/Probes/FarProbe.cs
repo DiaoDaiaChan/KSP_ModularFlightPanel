@@ -6,7 +6,7 @@ namespace ModularFlightPanel.Core.Probes
 {
     /// <summary>
     /// Ferram Aerospace Research (FAR / FARC) 软依赖遥测反射探针
-    /// 零硬编码依赖，当玩家安装 FAR 时自动捕获高阶空气动力学遥测指标
+    /// 采用 ProbeReflectionTraverser 彻底遍历 FARAPI 及 VesselFlightInfo 全部公开 API 内容，零遗漏。
     /// </summary>
     public static class FarProbe
     {
@@ -14,15 +14,10 @@ namespace ModularFlightPanel.Core.Probes
         private static bool _isAvailable = false;
         public static bool IsAvailable => _isAvailable;
 
-        private static Func<double> _getIAS;
-        private static Func<double> _getEAS;
-        private static Func<double> _getDynPres;
-        private static Func<double> _getAoA;
-        private static Func<double> _getSideslip;
-        private static Func<double> _getLiftCoeff;
-        private static Func<double> _getDragCoeff;
-        private static Func<double> _getStallFrac;
-        private static Func<double> _getBallisticCoeff;
+        public static ProbeReflectionTraverser Traverser { get; } = new ProbeReflectionTraverser("FAR");
+
+        private static MethodInfo _vesselFlightInfoMethod;
+        private static PropertyInfo _infoParametersProp;
 
         public static void Initialize()
         {
@@ -32,33 +27,75 @@ namespace ModularFlightPanel.Core.Probes
             try
             {
                 Type farApiType = Type.GetType("FerramAerospaceResearch.FARAPI, FerramAerospaceResearch");
+                Assembly farAssembly = null;
+
                 if (farApiType == null)
                 {
-                    // 在已加载的程序集中搜索
                     foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
                     {
                         if (asm.GetName().Name.StartsWith("FerramAerospaceResearch"))
                         {
+                            farAssembly = asm;
                             farApiType = asm.GetType("FerramAerospaceResearch.FARAPI");
                             if (farApiType != null) break;
                         }
                     }
                 }
+                else
+                {
+                    farAssembly = farApiType.Assembly;
+                }
 
                 if (farApiType != null)
                 {
-                    _getIAS = CreateDoubleDelegate(farApiType, "ActiveVesselIAS");
-                    _getEAS = CreateDoubleDelegate(farApiType, "ActiveVesselEAS");
-                    _getDynPres = CreateDoubleDelegate(farApiType, "ActiveVesselDynPres");
-                    _getAoA = CreateDoubleDelegate(farApiType, "ActiveVesselAoA");
-                    _getSideslip = CreateDoubleDelegate(farApiType, "ActiveVesselSideslip");
-                    _getLiftCoeff = CreateDoubleDelegate(farApiType, "ActiveVesselLiftCoeff");
-                    _getDragCoeff = CreateDoubleDelegate(farApiType, "ActiveVesselDragCoeff");
-                    _getStallFrac = CreateDoubleDelegate(farApiType, "ActiveVesselStallFrac");
-                    _getBallisticCoeff = CreateDoubleDelegate(farApiType, "ActiveVesselBallisticCoeff");
+                    // 1. 完全遍历 FARAPI 所有公开静态方法、属性与字段
+                    int apiCount = Traverser.TraverseStatic(farApiType, "FAR 官方接口 (FARAPI)");
+
+                    // 2. 遍历 VesselFlightInfo 结构体中的所有公开遥测数据字段
+                    _vesselFlightInfoMethod = farApiType.GetMethod("VesselFlightInfo", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(Vessel) }, null);
+                    
+                    Type flightGuiType = farAssembly?.GetType("FerramAerospaceResearch.FARGUI.FARFlightGUI.FlightGUI");
+                    Type vesselFlightInfoType = farAssembly?.GetType("FerramAerospaceResearch.FARGUI.FARFlightGUI.VesselFlightInfo");
+
+                    if (flightGuiType != null && vesselFlightInfoType != null)
+                    {
+                        _infoParametersProp = flightGuiType.GetProperty("InfoParameters", BindingFlags.Public | BindingFlags.Instance);
+                        if (_infoParametersProp != null)
+                        {
+                            Traverser.TraverseInstance(vesselFlightInfoType, GetActiveVesselFlightInfo, "FAR 气动解算 (VesselFlightInfo)");
+                        }
+                    }
+
+                    // 3. 注册自定义便捷计算属性 (L/D 升阻比)
+                    Traverser.RegisterCustom("LiftToDragRatio", typeof(double), () =>
+                    {
+                        double drag = Traverser.ResolveNumeric("ActiveVesselDragCoeff");
+                        double lift = Traverser.ResolveNumeric("ActiveVesselLiftCoeff");
+                        if (double.IsNaN(drag) || Math.Abs(drag) < 1e-6) return double.NaN;
+                        return lift / drag;
+                    }, "FAR 气动解算 (VesselFlightInfo)", "即时气动升阻效率比 (L/D)", new[] { "LD", "LIFTTODRAG" });
+
+                    // 4. 注册标准高频别名，保持 100% 向后兼容
+                    Traverser.RegisterAlias("IAS", "ActiveVesselIAS");
+                    Traverser.RegisterAlias("EAS", "ActiveVesselEAS");
+                    Traverser.RegisterAlias("Q", "ActiveVesselDynPres");
+                    Traverser.RegisterAlias("DYNAERO", "ActiveVesselDynPres");
+                    Traverser.RegisterAlias("AOA", "ActiveVesselAoA");
+                    Traverser.RegisterAlias("SIDESLIP", "ActiveVesselSideslip");
+                    Traverser.RegisterAlias("LIFT", "ActiveVesselLiftCoeff");
+                    Traverser.RegisterAlias("LIFTCOEFF", "ActiveVesselLiftCoeff");
+                    Traverser.RegisterAlias("DRAG", "ActiveVesselDragCoeff");
+                    Traverser.RegisterAlias("DRAGCOEFF", "ActiveVesselDragCoeff");
+                    Traverser.RegisterAlias("STALL", "ActiveVesselStallFrac");
+                    Traverser.RegisterAlias("BALLISTIC", "ActiveVesselBallisticCoeff");
+                    Traverser.RegisterAlias("TSFC", "ActiveVesselTSFC");
+                    Traverser.RegisterAlias("REFAREA", "ActiveVesselRefArea");
+                    Traverser.RegisterAlias("TERMVEL", "ActiveVesselTermVelEst");
+                    Traverser.RegisterAlias("AEROFORCE", "ActiveVesselAerodynamicForce");
+                    Traverser.RegisterAlias("AEROTORQUE", "ActiveVesselAerodynamicTorque");
 
                     _isAvailable = true;
-                    Debug.Log("[ModularFlightPanel] Successfully hooked Ferram Aerospace Research (FAR) API!");
+                    SafeLog($"[ModularFlightPanel] FarProbe successfully hooked FAR! Traversed {Traverser.DiscoveredCount} public API telemetry members.");
                 }
                 else
                 {
@@ -67,44 +104,58 @@ namespace ModularFlightPanel.Core.Probes
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[ModularFlightPanel] FAR probe initialization notice: {ex.Message}");
+                SafeLogWarning($"[ModularFlightPanel] FarProbe initialization warning: {ex.Message}");
                 _isAvailable = false;
             }
         }
 
-        private static Func<double> CreateDoubleDelegate(Type type, string methodName)
+        private static void SafeLog(string msg)
         {
-            MethodInfo mi = type.GetMethod(methodName, BindingFlags.Public | BindingFlags.Static, null, Type.EmptyTypes, null);
-            if (mi != null)
+            try { Debug.Log(msg); }
+            catch { Console.WriteLine(msg); }
+        }
+
+        private static void SafeLogWarning(string msg)
+        {
+            try { Debug.LogWarning(msg); }
+            catch { Console.WriteLine("[WARN] " + msg); }
+        }
+
+        private static object GetActiveVesselFlightInfo()
+        {
+            if (FlightGlobals.ActiveVessel == null || _vesselFlightInfoMethod == null || _infoParametersProp == null) return null;
+            try
             {
-                try
+                object gui = _vesselFlightInfoMethod.Invoke(null, new object[] { FlightGlobals.ActiveVessel });
+                if (gui != null)
                 {
-                    return (Func<double>)Delegate.CreateDelegate(typeof(Func<double>), mi);
-                }
-                catch
-                {
-                    return () => { try { return Convert.ToDouble(mi.Invoke(null, null)); } catch { return 0.0; } };
+                    return _infoParametersProp.GetValue(gui, null);
                 }
             }
+            catch { }
             return null;
         }
 
-        public static double IAS => _isAvailable && _getIAS != null ? _getIAS() : double.NaN;
-        public static double EAS => _isAvailable && _getEAS != null ? _getEAS() : double.NaN;
-        public static double DynamicPressure => _isAvailable && _getDynPres != null ? _getDynPres() : double.NaN;
-        public static double AngleOfAttack => _isAvailable && _getAoA != null ? _getAoA() : double.NaN;
-        public static double Sideslip => _isAvailable && _getSideslip != null ? _getSideslip() : double.NaN;
-        public static double LiftCoeff => _isAvailable && _getLiftCoeff != null ? _getLiftCoeff() : double.NaN;
-        public static double DragCoeff => _isAvailable && _getDragCoeff != null ? _getDragCoeff() : double.NaN;
-        public static double StallFraction => _isAvailable && _getStallFrac != null ? _getStallFrac() : double.NaN;
-        public static double BallisticCoeff => _isAvailable && _getBallisticCoeff != null ? _getBallisticCoeff() : double.NaN;
-        public static double LiftToDragRatio
+        public static double ResolveNumeric(string subTag, string modifier = null)
         {
-            get
-            {
-                double d = DragCoeff;
-                return (Math.Abs(d) > 0.0001) ? LiftCoeff / d : 0.0;
-            }
+            return _isAvailable ? Traverser.ResolveNumeric(subTag, modifier) : double.NaN;
         }
+
+        public static string ResolveString(string subTag, string format = null, string modifier = null)
+        {
+            return _isAvailable ? Traverser.ResolveString(subTag, format, modifier) : "---";
+        }
+
+        // 向后兼容强类型静态属性
+        public static double IAS => ResolveNumeric("IAS");
+        public static double EAS => ResolveNumeric("EAS");
+        public static double DynamicPressure => ResolveNumeric("Q");
+        public static double AngleOfAttack => ResolveNumeric("AOA");
+        public static double Sideslip => ResolveNumeric("SIDESLIP");
+        public static double LiftCoeff => ResolveNumeric("LIFT");
+        public static double DragCoeff => ResolveNumeric("DRAG");
+        public static double StallFraction => ResolveNumeric("STALL");
+        public static double BallisticCoeff => ResolveNumeric("BALLISTIC");
+        public static double LiftToDragRatio => ResolveNumeric("LD");
     }
 }

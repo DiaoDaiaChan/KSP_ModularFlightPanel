@@ -24,7 +24,9 @@ namespace ModularFlightPanel.UI
             "📦 航电组件库 (Library)",
             "🛠️ 遥测装配台 (Assembler)",
             "📋 挂载管理 (Manager)",
-            "🎨 视觉与风格 (Themes & Navball)"
+            "🎨 视觉风格 (Themes)",
+            "🔄 预设与分享码 (Presets & Share)",
+            "🚀 遥测仿真沙盒 (Simulation)"
         };
 
         private void Awake()
@@ -34,6 +36,12 @@ namespace ModularFlightPanel.UI
 
         private void Update()
         {
+            // F2 隐藏界面时不响应 Alt+N
+            if (KSP.UI.UIMasterController.Instance != null && !KSP.UI.UIMasterController.Instance.IsUIShowing)
+            {
+                return;
+            }
+
             // Alt + N 快捷键呼出/关闭
             if ((Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) && Input.GetKeyDown(KeyCode.N))
             {
@@ -48,6 +56,7 @@ namespace ModularFlightPanel.UI
             {
                 // 关闭窗口时自动退出拖拽编辑模式并保存
                 WidgetDragHandler.IsEditModeActive = false;
+                WidgetSelectionManager.ClearSelection();
                 WidgetLayoutManager.Instance.SaveLayout();
             }
         }
@@ -55,6 +64,12 @@ namespace ModularFlightPanel.UI
         private void OnGUI()
         {
             if (!_isOpen) return;
+
+            // F2 隐藏界面时不绘制设置面板
+            if (KSP.UI.UIMasterController.Instance != null && !KSP.UI.UIMasterController.Instance.IsUIShowing)
+            {
+                return;
+            }
 
             GUI.skin = HighLogic.Skin;
             _windowRect = GUILayout.Window(
@@ -83,6 +98,7 @@ namespace ModularFlightPanel.UI
                 WidgetDragHandler.IsEditModeActive = !WidgetDragHandler.IsEditModeActive;
                 if (!WidgetDragHandler.IsEditModeActive)
                 {
+                    WidgetSelectionManager.ClearSelection();
                     WidgetLayoutManager.Instance.SaveLayout();
                 }
             }
@@ -114,8 +130,8 @@ namespace ModularFlightPanel.UI
             GUILayout.FlexibleSpace();
 
             // 载具与当前参考系信息
-            string vesselName = FlightGlobals.ActiveVessel != null ? FlightGlobals.ActiveVessel.vesselName : "---";
-            string frameName = StockNavBallHook.GetReferenceFrameName();
+            string vesselName = FlightTelemetryContext.Current?.VesselName ?? "---";
+            string frameName = TelemetryTokenEngine.Evaluate("{FRAME}", FlightTelemetryContext.Current);
             GUILayout.Label($"<color=#AAAAAA><size=11>载具: {vesselName} | 参考系: <color=#00E5FF>{frameName}</color></size></color>", GUILayout.Height(28f));
 
             GUILayout.EndHorizontal();
@@ -156,6 +172,12 @@ namespace ModularFlightPanel.UI
                     break;
                 case 3:
                     TabThemeSettings.Draw();
+                    break;
+                case 4:
+                    TabSharePresets.Draw();
+                    break;
+                case 5:
+                    TabSimulation.Draw();
                     break;
             }
 

@@ -11,7 +11,7 @@ namespace ModularFlightPanel.UI.Settings
     {
         private static Vector2 _scrollPos = Vector2.zero;
         private static int _subCategory = 0;
-        private static readonly string[] SubCategories = new string[] { "全部套件", "ECAM 圆弧仪表", "PFD 标尺带", "遥测监控卡片", "核心大字盒" };
+        private static readonly string[] SubCategories = new string[] { "全部组件", "通用仪表与卡片", "航电子系统面板", "核心扩展组件" };
         private static string _toastMsg = "";
         private static float _toastTimer = 0f;
 
@@ -51,105 +51,55 @@ namespace ModularFlightPanel.UI.Settings
 
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
 
-            // 2. ECAM 圆弧仪表套件
+            // 2. 通用仪表与卡片套件 (Generic Gauges & Cards)
             if (_subCategory == 0 || _subCategory == 1)
             {
-                GUILayout.Label("<b>▼ ECAM 圆弧仪表套件 (ECAM Dial Gauges)</b>");
+                GUILayout.Label("<b>▼ 通用飞行仪表与卡片套件 (Generic Avionics Gauges)</b>");
 
-                DrawDialPreset("ECAM 15G 过载表", "{GFORCE}", 0, 15, 8, 12, true, "G",
-                    "💥 15G 满格爆表模式，超过 15G 指针停驻满格告警，数字如实累加");
+                DrawDialPreset("ECAM 圆弧通用仪表", "{SPD}", 0, 100, 70, 90, true, "",
+                    "🛠️ 270° 马蹄形高对比度圆弧表盘，带动态指针、数显与软上限爆表模式。添加后可在装配台中自由绑定任意遥测通配符并设置量程。");
 
-                DrawDialPreset("ECAM 动压 Q 监控表", "{Q}", 0, 40, 25, 35, true, "kPa",
-                    "💨 大气动压上升段监测，Max-Q 极限压力告警");
+                DrawTapePreset("PFD 垂直通用标尺带", "{SPD}", true, 10f, "m/s",
+                    "🛠️ PFD 风格平滑滚动动态标尺带，添加后可自由指定为左侧/右侧方向、绑定任意遥测数据与刻度步长。");
 
-                DrawDialPreset("ECAM 引擎推力表", "{THROTTLE}", 0, 100, 85, 100, false, "%",
-                    "🔥 发动机输出总推力百分比 (0~100% 严格限幅截断)");
-
-                DrawDialPreset("ECAM 推重比 TWR", "{TWR}", 0, 5, 3.5, 4.5, true, "",
-                    "⚖️ 动力起降 TWR 实时指针，软上限 5.0 模式");
-
-                DrawDialPreset("ECAM 推进剂存量表", "{PROP}", 0, 100, 20, 10, false, "%",
-                    "⛽ 当前级推进剂剩余百分比，带 20% 琥珀告警与 10% 红色急危告警");
-
-                DrawDialPreset("ECAM FAR 气动迎角表", "{FAR:AOA}", -15, 25, 15, 20, true, "°",
-                    "🛩️ FAR 空气动力学即时迎角指针，带失速临界阈值告警");
-
-                DrawDialPreset("ECAM KER 分级 dV 表", "{KER:DV}", 0, 3500, 2500, 3200, true, "m/s",
-                    "🎯 Kerbal Engineer 实时解算当前级真空剩余 Delta-V");
-
-                DrawDialPreset("ECAM 空白自定义表盘", "{SPD}", 0, 100, 70, 90, true, "",
-                    "🛠️ 空白表盘底板，添加后可随意绑定任意遥测通配符");
+                DrawCardPreset("遥测通配符卡片", "参数1: {SPD} | 参数2: {ALT:ASL}",
+                    "📝 多参数高对比度技术卡片，可在装配台内自由编写任意遥测通配符模板（如 {Q:F2}、{MACH}、{TWR} 等）。");
 
                 GUILayout.Space(10f);
             }
 
-            // 3. PFD 标尺带套件
+            // 3. 航电子系统面板套件 (Avionics Subsystems)
             if (_subCategory == 0 || _subCategory == 2)
             {
-                GUILayout.Label("<b>▼ PFD 飞行姿态标尺带套件 (PFD Tape Gauges)</b>");
+                GUILayout.Label("<b>▼ 航电子系统原生组件 (Avionics Subsystems)</b>");
 
-                DrawTapePreset("PFD 速度标尺带", "{SPD}", true, 10f, "m/s",
-                    "🛫 左侧向右读数，步长 10m/s，实时呈现平滑滚动速度刻度");
+                DrawSubsystemPreset("ELEC 电力分配系统", "custom.electrical", "electrical", -440f, 160f,
+                    "⚡ 蓄电池电压、DC ESS 总线负荷、太阳能帆板与即时净充放电率 (EC/s)");
 
-                DrawTapePreset("PFD 海拔高度标尺带", "{ALT}", false, 100f, "m",
-                    "🏔️ 右侧向左读数，步长 100m，实时呈现海平面海拔刻度带");
+                DrawSubsystemPreset("ROCKET 2D 分级姿态卡", "custom.rocket", "rocket2d", 440f, 160f,
+                    "🚀 多级火箭垂直推进栈、推进剂实时耗尽进度条、发动机工况与本级 dV");
 
-                DrawTapePreset("PFD 雷达真高标尺带", "{ALT:AGL}", false, 50f, "m",
-                    "🌲 右侧向左读数，步长 50m，近地着陆探地真高精准刻度带");
+                DrawSubsystemPreset("LIFE SUPPORT 维生监控卡", "custom.life", "life_support", -440f, -40f,
+                    "🌱 乘员居住舱压环境、氧气/电力/RCS/维生消耗品 2x2 进度仪表");
 
-                DrawTapePreset("PFD 垂直速度爬升带", "{VSI}", false, 5f, "m/s",
-                    "📈 右侧向左读数，步长 5m/s，呈现垂直爬升与下沉速率");
+                DrawSubsystemPreset("COMMNET 天线通信网络", "custom.signal", "signal", 440f, -40f,
+                    "📡 原版 CommNet 连接状态、控制权级别、天线阵列规格与 5 格信号计量柱");
 
-                DrawTapePreset("PFD FAR 指示空速带", "{FAR:IAS}", true, 20f, "m/s",
-                    "🛩️ 左侧向右读数，FAR 空气动力学指示空速 (IAS)");
-
-                DrawTapePreset("PFD 空白标尺带", "{SPD}", true, 10f, "",
-                    "🛠️ 自定义滚动标尺，可在装配台中自由指定驱动参数与刻度步长");
+                DrawSubsystemPreset("AERO ND 综合导航屏", "custom.nd_navigation", "nd_navigation", -440f, 25f,
+                    "🧭 飞机航电综合水平态势显示器 (Set 1)，包含罗盘弧、测距环、飞机微标与航点航路");
 
                 GUILayout.Space(10f);
             }
 
-            // 4. 遥测监控卡片套件
+            // 4. 核心扩展组件 (Core Extensions)
             if (_subCategory == 0 || _subCategory == 3)
             {
-                GUILayout.Label("<b>▼ 遥测监控卡片套件 (Telemetry Cards)</b>");
+                GUILayout.Label("<b>▼ 核心扩展组件 (Core Extensions)</b>");
 
-                DrawCardPreset("综合巡航监控卡", "动压: {Q:F2} | 马赫: {MACH} | G力: {GFORCE}",
-                    "✈️ 大气层与超音速巡航核心指标");
-
-                DrawCardPreset("动力与推进监控卡", "TWR: {TWR:F2} | 燃料: {PROP} | 油门: {THROTTLE}",
-                    "🚀 发动机工况、推重比与推进剂余量");
-
-                DrawCardPreset("轨道机动监控卡", "远地点: {AP:DIST} | 近地点: {PE:DIST} | 到AP: {TAP}",
-                    "🌐 远近地点与变轨倒计时卡片");
-
-                DrawCardPreset("航电设备监控卡", "SAS: {SAS} | RCS: {RCS} | 参考系: {FRAME}",
-                    "🧭 自动稳定仪、姿控喷气与当前导航参考系");
-
-                DrawCardPreset("FAR 气动参数卡", "IAS: {FAR:IAS} | AoA: {FAR:AOA} | 动压: {FAR:Q} | 失速: {FAR:STALL}",
-                    "📡 FAR 权威迎角、动压与失速百分比");
-
-                DrawCardPreset("KER 深度分级卡", "本级 dV: {KER:DV} | 总 dV: {KER:TOTALDV} | TWR: {KER:TWR}",
-                    "🎯 Kerbal Engineer 专业级分级推进动力学数据");
-
-                DrawCardPreset("MechJeb 飞行卡", "本级 dV: {MJ:DV} | 终端速度: {MJ:TERMINALVEL} | TWR: {MJ:TWR}",
-                    "🤖 MechJeb 动力状态机解算结果");
-
-                DrawCardPreset("空白自定义卡片", "参数1: {SPD} | 参数2: {ALT:ASL}",
-                    "📝 空白多行卡片，支持自由通配符装配");
+                DrawCoreBoxPreset("ORBITAL 轨道数据面板", "core.orbital_info", "🌐 原生紧凑型轨道力学四项读数面板 (AP, PE, Time to AP/PE)");
+                DrawCoreBoxPreset("环形 SAS 罗盘", "core.sas_dial", "🧭 10向全功能快速 SAS 模式选择罗盘，带飞船实时滚转剪影");
 
                 GUILayout.Space(10f);
-            }
-
-            // 5. 核心大字数显盒
-            if (_subCategory == 0 || _subCategory == 4)
-            {
-                GUILayout.Label("<b>▼ 核心大字数显盒 (Digital Readout Boxes)</b>");
-
-                DrawCoreBoxPreset("速度大字读数盒", "core.speed_box", "⚡ 原生高保真三模速度读数盒 (地表/轨道/目标)");
-                DrawCoreBoxPreset("高度大字读数盒", "core.alt_box", "🏔️ 原生高保真双模高度读数盒 (海拔/真高)");
-                DrawCoreBoxPreset("轨道数据面板", "core.orbital_info", "🌐 原生紧凑型轨道力学四项读数面板");
-                DrawCoreBoxPreset("环形 SAS 罗盘", "core.sas_dial", "🧭 10向全功能快速 SAS 模式选择罗盘");
             }
 
             GUILayout.EndScrollView();
@@ -249,6 +199,53 @@ namespace ModularFlightPanel.UI.Settings
                     else
                     {
                         WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(new WidgetConfig(widgetId, title, 0f, 0f) { IsEnabled = true });
+                    }
+                    NavballHUD.Instance.RebuildHUD();
+                    ShowToast($"已启用「{title}」！");
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label($"<color=#CCCCCC><size=10>{desc}</size></color>");
+            GUILayout.EndVertical();
+        }
+
+        private static void DrawSubsystemPreset(string title, string widgetId, string widgetType, float defaultX, float defaultY, string desc)
+        {
+            var cfg = WidgetLayoutManager.Instance.GetConfig(widgetId);
+            bool isAdded = cfg != null && cfg.IsEnabled;
+
+            GUILayout.BeginVertical("box");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<color=#00E5FF><b>{title}</b></color> <color=#888888>[{widgetType}]</color>", GUILayout.ExpandWidth(true));
+
+            if (isAdded)
+            {
+                GUI.color = Color.yellow;
+                if (GUILayout.Button("已在面板上 (点击隐藏)", GUILayout.Width(140f), GUILayout.Height(22f)))
+                {
+                    cfg.IsEnabled = false;
+                    NavballHUD.Instance.RebuildHUD();
+                    ShowToast($"已隐藏「{title}」！");
+                }
+                GUI.color = Color.white;
+            }
+            else
+            {
+                if (GUILayout.Button("+ 开启此子系统", GUILayout.Width(140f), GUILayout.Height(22f)))
+                {
+                    if (cfg != null)
+                    {
+                        cfg.IsEnabled = true;
+                        cfg.WidgetType = widgetType;
+                    }
+                    else
+                    {
+                        WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(new WidgetConfig(widgetId, title, defaultX, defaultY)
+                        {
+                            IsEnabled = true,
+                            WidgetType = widgetType
+                        });
                     }
                     NavballHUD.Instance.RebuildHUD();
                     ShowToast($"已启用「{title}」！");

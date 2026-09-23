@@ -16,7 +16,7 @@ namespace ModularFlightPanel.Core
     /// 5. 权威俯视正交投影：基于 ActiveVessel.ReferenceTransform 建立视图矩阵并自适应居中缩放，
     ///    机头始终对齐 +Y，与滚转角（Roll）严格契合。
     /// </summary>
-    public class VesselSilhouetteBaker : MonoBehaviour
+    public class VesselSilhouetteBaker : MonoBehaviour, IVesselSilhouetteProvider
     {
         private static VesselSilhouetteBaker _instance;
         public static VesselSilhouetteBaker Instance
@@ -33,14 +33,14 @@ namespace ModularFlightPanel.Core
             }
         }
 
-        public const int TextureResolution = 128;
+        public const int TextureResolution = 512;
         public const float DefaultBurstFps = 15f;
         public const float DefaultBurstDuration = 3.0f;
 
         private RenderTexture _renderTexture;
-        public RenderTexture SilhouetteTexture => _renderTexture;
+        public Texture SilhouetteTexture => _renderTexture;
 
-        public event Action<RenderTexture> OnSilhouetteUpdated;
+        public event Action<Texture> OnSilhouetteUpdated;
 
         private Camera _offscreenCamera;
         private Material _silhouetteMaterial;
@@ -67,6 +67,7 @@ namespace ModularFlightPanel.Core
 
         // 几何包围盒数据
         public float NormalizedNoseTipY { get; private set; } = 1.0f;
+        public float NormalizedEngineBottomY { get; private set; } = -1.0f;
 
         private void Awake()
         {
@@ -82,18 +83,19 @@ namespace ModularFlightPanel.Core
 
             InitializeRenderPipeline();
             RegisterEvents();
+            VesselSilhouetteService.Provider = this;
         }
 
         private void InitializeRenderPipeline()
         {
             if (_renderTexture == null)
             {
-                _renderTexture = new RenderTexture(TextureResolution, TextureResolution, 16, RenderTextureFormat.ARGB32)
+                _renderTexture = new RenderTexture(TextureResolution, TextureResolution, 24, RenderTextureFormat.ARGB32)
                 {
                     name = "Vessel_Silhouette_RT",
                     filterMode = FilterMode.Bilinear,
                     wrapMode = TextureWrapMode.Clamp,
-                    antiAliasing = 1,
+                    antiAliasing = 8, // 启用 8x 硬件抗锯齿，彻底消除飞船 3D 部件与桁架边缘阶梯锯齿
                     useMipMap = false,
                     autoGenerateMips = false
                 };
@@ -163,58 +165,68 @@ namespace ModularFlightPanel.Core
 
         private void Update()
         {
+            if (MFPProfiler.IsMasterBypassed) return;
+
             Vessel active = FlightGlobals.ActiveVessel;
             if (active == null || !active.loaded || active.packed)
             {
                 return;
             }
 
-            // 备用状态监测：若检测到载具切换或部件数量变化，自动激活动态捕获
-            if (active != _lastTrackedVessel)
+            MFPProfiler.BeginSample(ProfilerSection.Silhouette);
+            try
             {
-                _lastTrackedVessel = active;
-                _lastPartCount = active.parts.Count;
-                TriggerBurst(2.5f);
-            }
-            else if (active.parts.Count != _lastPartCount)
-            {
-                _lastPartCount = active.parts.Count;
-                TriggerBurst(DefaultBurstDuration);
-            }
-
-            // 执行 15 FPS 动态剪影突发捕获
-            if (_burstRemainingTime > 0f)
-            {
-                float dt = Time.unscaledDeltaTime;
-                _burstRemainingTime -= dt;
-                _burstAccumulator += dt;
-
-                if (_burstAccumulator >= _burstInterval)
+                // 备用状态监测：若检测到载具切换或部件数量变化，自动激活动态捕获
+                if (active != _lastTrackedVessel)
                 {
-                    _burstAccumulator = 0f;
-                    BakeNow();
+                    _lastTrackedVessel = active;
+                    _lastPartCount = active.parts != null ? active.parts.Count : 0;
+                    TriggerBurst(2.5f);
+                }
+                else if (active.parts != null && active.parts.Count != _lastPartCount)
+                {
+                    _lastPartCount = active.parts.Count;
+                    TriggerBurst(DefaultBurstDuration);
                 }
 
-                // 捕获阶段结束前执行最后一次权威校准并彻底休眠
-                if (_burstRemainingTime <= 0f)
+                // 执行 15 FPS 动态剪影突发捕获
+                if (_burstRemainingTime > 0f)
                 {
-                    _burstRemainingTime = 0f;
-                    BakeNow();
-                    _detachedParts.Clear();
-                }
-            }
-            else
-            {
-                // 静止飞行阶段保持部件列表最新，用于检测下一次分离
-                _detachedParts.Clear();
-                _lastVesselParts.Clear();
-                if (active.parts != null)
-                {
-                    for (int i = 0; i < active.parts.Count; i++)
+                    float dt = Time.unscaledDeltaTime;
+                    _burstRemainingTime -= dt;
+                    _burstAccumulator += dt;
+
+                    if (_burstAccumulator >= _burstInterval)
                     {
-                        _lastVesselParts.Add(active.parts[i]);
+                        _burstAccumulator = 0f;
+                        BakeNow();
+                    }
+
+                    // 捕获阶段结束前执行最后一次权威校准并彻底休眠
+                    if (_burstRemainingTime <= 0f)
+                    {
+                        _burstRemainingTime = 0f;
+                        BakeNow();
+                        _detachedParts.Clear();
                     }
                 }
+                else
+                {
+                    // 静止飞行阶段保持部件列表最新，用于检测下一次分离 (仅当部件数变化或首次进入时刷新，杜绝每帧数万次 HashSet 分配)
+                    _detachedParts.Clear();
+                    if (active.parts != null && _lastVesselParts.Count != active.parts.Count)
+                    {
+                        _lastVesselParts.Clear();
+                        for (int i = 0; i < active.parts.Count; i++)
+                        {
+                            _lastVesselParts.Add(active.parts[i]);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                MFPProfiler.EndSample(ProfilerSection.Silhouette);
             }
         }
 
@@ -409,7 +421,8 @@ namespace ModularFlightPanel.Core
 
             // 预留 15% 安全边距，防止飞船边缘紧贴边缘
             float viewExtent = maxSpan * 1.15f * 0.5f;
-            NormalizedNoseTipY = (maxY - centerY) / (viewExtent * 2f);
+            NormalizedNoseTipY = Mathf.Clamp((maxY - centerY) / viewExtent, -1.0f, 1.0f);
+            NormalizedEngineBottomY = Mathf.Clamp((minY - centerY) / viewExtent, -1.0f, 1.0f);
 
             // 4. 定位与校准离屏摄像机 (平滑视口过渡，消除分离瞬间镜头突然弹跳缩放)
             Vector3 targetCenter = origin + right * centerX + forward * centerY + dorsal * centerZ;
@@ -442,8 +455,9 @@ namespace ModularFlightPanel.Core
             _offscreenCamera.farClipPlane = camDistance * 2f + spanZ + 50f;
 
             // 5. 构筑并执行极轻量 CommandBuffer (GPU 直接显存渲染，无任何场景管线开销)
+            // 注意：renderIntoTexture 设为 false，确保 DirectX 下输出的纹理与标准 UI RawImage 贴图坐标系完全一致（不产生上下颠倒反转）
             Matrix4x4 viewMatrix = _offscreenCamera.worldToCameraMatrix;
-            Matrix4x4 projMatrix = GL.GetGPUProjectionMatrix(_offscreenCamera.projectionMatrix, true);
+            Matrix4x4 projMatrix = GL.GetGPUProjectionMatrix(_offscreenCamera.projectionMatrix, false);
 
             CommandBuffer cb = new CommandBuffer();
             cb.name = "Vessel_Silhouette_Capture";

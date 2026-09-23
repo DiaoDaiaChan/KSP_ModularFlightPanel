@@ -10,7 +10,31 @@ namespace ModularFlightPanel.Core
     public static class HarmonyPatches
     {
         private static Harmony _harmony;
-        public static bool IsStockNavballHidden { get; set; } = true;
+        public static bool IsStockNavballHidden
+        {
+            get => ThemeManager.IsStockNavballHidden;
+            set => ThemeManager.IsStockNavballHidden = value;
+        }
+        public static bool IsStockAltimeterHidden
+        {
+            get => ThemeManager.IsStockAltimeterHidden;
+            set => ThemeManager.IsStockAltimeterHidden = value;
+        }
+        public static bool IsStockBottomLeftHidden
+        {
+            get => ThemeManager.IsStockBottomLeftHidden;
+            set => ThemeManager.IsStockBottomLeftHidden = value;
+        }
+        public static bool IsStockTimeWarpHidden
+        {
+            get => ThemeManager.IsStockTimeWarpHidden;
+            set => ThemeManager.IsStockTimeWarpHidden = value;
+        }
+        public static bool IsStockCommNetHidden
+        {
+            get => ThemeManager.IsStockCommNetHidden;
+            set => ThemeManager.IsStockCommNetHidden = value;
+        }
 
         public static void ApplyPatches()
         {
@@ -51,12 +75,36 @@ namespace ModularFlightPanel.Core
             {
                 StockNavBallHook.HideStockNavballCompletely(true);
             }
+            if (HarmonyPatches.IsStockAltimeterHidden)
+            {
+                StockNavBallHook.HideStockAltimeter(true);
+            }
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                StockNavBallHook.HideStockBottomLeft(true);
+            }
+            if (HarmonyPatches.IsStockTimeWarpHidden)
+            {
+                StockNavBallHook.HideStockTimeWarp(true);
+            }
+            if (HarmonyPatches.IsStockCommNetHidden)
+            {
+                StockNavBallHook.HideStockCommNet(true);
+            }
         }
     }
 
     [HarmonyPatch(typeof(NavBall), "Update")]
     public static class Patch_NavBall_Update
     {
+        private static bool _prevNavballHidden = false;
+        private static bool _prevAltimeterHidden = false;
+        private static bool _prevBottomLeftHidden = false;
+        private static bool _prevTimeWarpHidden = false;
+        private static bool _prevCommNetHidden = false;
+        private static bool _prevBypassed = false;
+        private static float _lastWatchdogTime = -1f;
+
         [HarmonyPostfix]
         public static void Postfix(NavBall __instance)
         {
@@ -64,26 +112,60 @@ namespace ModularFlightPanel.Core
 
             StockNavBallHook.RegisterStockNavBall(__instance);
 
-            // 当开启接管时：彻底隐藏官方底栏旧版姿态球与容器，由本 Mod 独立呈现高质感导航面板
-            if (HarmonyPatches.IsStockNavballHidden)
+            bool bypassed = MFPProfiler.IsMasterBypassed;
+            if (bypassed)
             {
-                StockNavBallHook.HideStockNavballCompletely(true);
+                if (!_prevBypassed)
+                {
+                    _prevBypassed = true;
+                    StockNavBallHook.RestoreAllStockUI();
+                }
+                return;
             }
-            else
-            {
-                StockNavBallHook.HideStockNavballCompletely(false);
-            }
-        }
-    }
 
-    [HarmonyPatch(typeof(NavBall), "OnDestroy")]
-    public static class Patch_NavBall_OnDestroy
-    {
-        [HarmonyPostfix]
-        public static void Postfix(NavBall __instance)
-        {
-            if (__instance == null) return;
-            StockNavBallHook.UnregisterStockNavBall(__instance);
+            if (_prevBypassed)
+            {
+                _prevBypassed = false;
+                _lastWatchdogTime = -1f; // 强制刷新
+            }
+
+            float now = Time.unscaledTime;
+            bool force = (now - _lastWatchdogTime) > 1.0f;
+            if (force) _lastWatchdogTime = now;
+
+            MFPProfiler.BeginSample(ProfilerSection.Hooks);
+            try
+            {
+                if (force || HarmonyPatches.IsStockNavballHidden != _prevNavballHidden)
+                {
+                    _prevNavballHidden = HarmonyPatches.IsStockNavballHidden;
+                    StockNavBallHook.HideStockNavballCompletely(_prevNavballHidden);
+                }
+                if (force || HarmonyPatches.IsStockAltimeterHidden != _prevAltimeterHidden)
+                {
+                    _prevAltimeterHidden = HarmonyPatches.IsStockAltimeterHidden;
+                    StockNavBallHook.HideStockAltimeter(_prevAltimeterHidden);
+                }
+                if (force || HarmonyPatches.IsStockBottomLeftHidden != _prevBottomLeftHidden)
+                {
+                    _prevBottomLeftHidden = HarmonyPatches.IsStockBottomLeftHidden;
+                    StockNavBallHook.HideStockBottomLeft(_prevBottomLeftHidden);
+                }
+                if (force || HarmonyPatches.IsStockTimeWarpHidden != _prevTimeWarpHidden)
+                {
+                    _prevTimeWarpHidden = HarmonyPatches.IsStockTimeWarpHidden;
+                    StockNavBallHook.HideStockTimeWarp(_prevTimeWarpHidden);
+                }
+                if (force || HarmonyPatches.IsStockCommNetHidden != _prevCommNetHidden)
+                {
+                    _prevCommNetHidden = HarmonyPatches.IsStockCommNetHidden;
+                    StockNavBallHook.HideStockCommNet(_prevCommNetHidden);
+                }
+            }
+            finally
+            {
+                MFPProfiler.EndSample(ProfilerSection.Hooks);
+            }
         }
     }
 }

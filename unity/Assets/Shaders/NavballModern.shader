@@ -23,6 +23,7 @@ Shader "ModularFlightPanel/NavballModern"
         _AtmosphereGlowPower ("Limb Glow Power", Range(1.0, 10.0)) = 3.5
         
         _Brightness ("Overall Brightness", Range(0.5, 2.5)) = 1.1
+        _TextureBlend ("Texture Blend Factor", Range(0.0, 1.0)) = 0.0
     }
 
     SubShader
@@ -76,6 +77,7 @@ Shader "ModularFlightPanel/NavballModern"
             fixed4 _AtmosphereGlowColor;
             float _AtmosphereGlowPower;
             float _Brightness;
+            float _TextureBlend;
 
             v2f vert(appdata v)
             {
@@ -126,9 +128,9 @@ Shader "ModularFlightPanel/NavballModern"
                 float pitchLadderMask = 1.0 - smoothstep(18.0, 22.0, lonFromCenter);
                 baseColor = lerp(baseColor, _PitchLadderColor, isPitchTick * pitchLadderMask * 0.75);
 
-                // 采样贴图（如果用户提供高清贴图，混合叠加）
+                // 采样贴图（如果用户提供高清贴图，微量混合叠加）
                 fixed4 texSample = tex2D(_MainTex, i.uv);
-                baseColor = lerp(baseColor, baseColor * texSample, texSample.a * 0.4);
+                baseColor = lerp(baseColor, baseColor * texSample, _TextureBlend);
 
                 // 现代大气边缘菲涅尔微发光 (Subtle Aerodynamic Fresnel Glow)
                 float NdotV = saturate(dot(normal, viewDir));

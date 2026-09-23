@@ -83,3 +83,12 @@ button, input { font: inherit; }
 .tape-arc .trend-indicator { top:69px; bottom:42px; z-index:4; }
 .speed-tape.tape-arc .trend-indicator { right:-4px; }
 .alt-tape.tape-arc .trend-indicator { left:-4px; }
+.dial-title { display:flex; align-items:center; justify-content:center; gap:7px; }
+.dial-limit { color:#68739d; font-size:6px; letter-spacing:.08em; border:1px solid #303e9b; padding:2px 3px; }
+.dial-limit-soft { color:#ffe34f; border-color:#8d7d2b; }
+.dial-limit-none { color:#7184ff; border-color:#5262b8; font-size:9px; line-height:8px; }
+.dial-ring.soft-limit { border-color:rgba(255,227,79,.55); }
+.dial-ring.over-limit { background:conic-gradient(from 225deg, var(--dial-color) 0 180deg, #ff335d 180deg 270deg, transparent 270deg); filter:drop-shadow(0 0 7px #ff335d); }
+.dial-over-limit .dial-value { color:#ff335d; text-shadow:0 0 8px rgba(255,51,93,.8); }
+.dial-alert { position:absolute; left:0; right:0; bottom:1px; color:#ff335d; font-size:7px; text-align:center; letter-spacing:.11em; animation: dial-alert-pulse 1s ease-in-out infinite alternate; }
+@keyframes dial-alert-pulse { from { opacity:.55; } to { opacity:1; text-shadow:0 0 7px #ff335d; } }

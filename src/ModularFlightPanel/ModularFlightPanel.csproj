@@ -98,8 +98,15 @@
     <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" ContinueOnError="true" />
     <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb')" SkipUnchangedFiles="true" ContinueOnError="true" />
     <!-- Copy directly to target KSP instance GameData -->
-    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" Condition="Exists('$(KSPRoot)\GameData')" ContinueOnError="true" />
-    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" ContinueOnError="true" />
+    <Copy SourceFiles="@(OutputFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" SkipUnchangedFiles="true" Condition="Exists('$(KSPRoot)\GameData')" ContinueOnError="true" Retries="0" />
+    <Copy SourceFiles="@(OutputPdb)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Plugins\" Condition="Exists('$(TargetDir)$(TargetName).pdb') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" ContinueOnError="true" Retries="0" />
+    
+    <!-- Copy layout.json and themes to target KSP instance PluginData & Themes -->
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\PluginData\layout.json" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\PluginData\" Condition="Exists('$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\PluginData\layout.json') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="false" ContinueOnError="true" />
+    <ItemGroup>
+      <ThemeFiles Include="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Themes\*.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ThemeFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Themes\" Condition="Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
 </Project>

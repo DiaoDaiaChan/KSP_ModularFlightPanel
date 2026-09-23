@@ -93,6 +93,11 @@ namespace ModularFlightPanel.UI.Settings
             curWidget.DisplayName = GUILayout.TextField(curWidget.DisplayName);
             GUILayout.EndHorizontal();
 
+            GUILayout.Space(6f);
+
+            // 空间几何与变换控制 (Transform, Scale, Rotation & Alignment)
+            DrawTransformInspector(curWidget);
+
             GUILayout.Space(8f);
 
             // 分支 A: ECAM 表盘或 PFD 标尺带装配
@@ -110,6 +115,9 @@ namespace ModularFlightPanel.UI.Settings
             {
                 DrawCoreInspector(curWidget);
             }
+
+            // 通用：绘制单独优化控制区 (Individual Render Optimization)
+            DrawOptimizationInspector(curWidget);
 
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
@@ -211,18 +219,28 @@ namespace ModularFlightPanel.UI.Settings
             w.WarningThreshold = DrawDoubleField(w.WarningThreshold);
             GUILayout.EndHorizontal();
 
-            // 软上限爆表模式开关
+            // 三态量程语义：硬上限 / 软上限爆表 / 无上限
             GUILayout.Space(4f);
-            bool prevSoft = w.IsSoftLimit;
-            w.IsSoftLimit = GUILayout.Toggle(w.IsSoftLimit, " <b>软上限爆表模式 (Soft Limit Overflow)</b>");
-            if (prevSoft != w.IsSoftLimit)
+            string currentLimitMode = string.IsNullOrEmpty(w.LimitMode) ? (w.IsSoftLimit ? "soft" : "hard") : w.LimitMode.ToLowerInvariant();
+            string previousLimitMode = currentLimitMode;
+            GUILayout.Label("量程语义 (Limit Model):");
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Toggle(currentLimitMode == "hard", "硬上限", "Button")) currentLimitMode = "hard";
+            if (GUILayout.Toggle(currentLimitMode == "soft", "软上限爆表", "Button")) currentLimitMode = "soft";
+            if (GUILayout.Toggle(currentLimitMode == "none", "无上限", "Button")) currentLimitMode = "none";
+            GUILayout.EndHorizontal();
+            w.LimitMode = currentLimitMode;
+            w.IsSoftLimit = currentLimitMode == "soft";
+            if (previousLimitMode != currentLimitMode)
             {
                 WidgetLayoutManager.Instance.SaveLayout();
             }
-            string softTip = w.IsSoftLimit
-                ? "<color=#00E5FF><size=10>已开启软上限：超过满量程时指针卡在上限并报警，数字绝不截断继续如实累加 (如15G过载表)。</size></color>"
-                : "<color=#FFAA00><size=10>已设为硬上限：读数与指针在满量程截断限幅 (如引擎油门 0~100%)。</size></color>";
-            GUILayout.Label(softTip);
+            string limitTip = currentLimitMode == "soft"
+                ? "<color=#00E5FF><size=10>软上限：指针卡在满量程，数显继续显示真实超限值，并触发红光报警。</size></color>"
+                : currentLimitMode == "none"
+                    ? "<color=#9FAFFF><size=10>无上限：不截断真实数值，刻度仅作为参考，不制造虚假的最大值。</size></color>"
+                    : "<color=#FFAA00><size=10>硬上限：读数、指针与状态在满量程处截断。</size></color>";
+            GUILayout.Label(limitTip);
 
             // 单位标签
             GUILayout.BeginHorizontal();
@@ -308,6 +326,46 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Label("<color=#AAAAAA><size=11>核心组件提供内建专属渲染逻辑 (如高保真 3D 姿态球、滑动带、SAS 罗盘等)，可在拖拽模式下自由摆放位置。</size></color>");
         }
 
+        private static void DrawOptimizationInspector(WidgetConfig w)
+        {
+            GUILayout.Space(8f);
+            GUILayout.Label("<color=#00E5FF><b>⚡ 绘制性能单独优化 (Render Optimization):</b></color>");
+            GUILayout.BeginVertical("box");
+
+            // 1. 独立画布隔离 (Sub-Canvas)
+            bool prevIsolate = w.IsolateCanvas;
+            w.IsolateCanvas = GUILayout.Toggle(w.IsolateCanvas, " 启用独立画布隔离 (Isolate Sub-Canvas 避免脏标记污染)");
+            if (w.IsolateCanvas != prevIsolate)
+            {
+                WidgetLayoutManager.Instance.SaveLayout();
+                NavballHUD.Instance?.RebuildHUD();
+                ShowToast($"已{(w.IsolateCanvas ? "开启" : "关闭")}「{w.DisplayName}」独立画布！");
+            }
+
+            // 2. 遥测刷新与绘制分频 (Update Interval / Frequency Throttling)
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("刷新分频模式:", GUILayout.Width(85f));
+            string hzLabel = w.UpdateInterval <= 0f ? "原生 60Hz+ (每帧)" :
+                            (w.UpdateInterval <= 0.06f ? "中频 20Hz (0.05s)" :
+                            (w.UpdateInterval <= 0.15f ? "低频 10Hz (0.1s)" :
+                            (w.UpdateInterval <= 0.25f ? "节能 5Hz (0.2s)" : "极简 2Hz (0.5s)")));
+            GUILayout.Label($"<b>{hzLabel}</b>", GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("60Hz", GUILayout.Height(20f))) { w.UpdateInterval = 0f; WidgetLayoutManager.Instance.SaveLayout(); ShowToast("已设为 60Hz 每帧刷新"); }
+            if (GUILayout.Button("20Hz", GUILayout.Height(20f))) { w.UpdateInterval = 0.05f; WidgetLayoutManager.Instance.SaveLayout(); ShowToast("已设为 20Hz (0.05s)"); }
+            if (GUILayout.Button("10Hz", GUILayout.Height(20f))) { w.UpdateInterval = 0.1f; WidgetLayoutManager.Instance.SaveLayout(); ShowToast("已设为 10Hz (0.1s)"); }
+            if (GUILayout.Button("5Hz", GUILayout.Height(20f))) { w.UpdateInterval = 0.2f; WidgetLayoutManager.Instance.SaveLayout(); ShowToast("已设为 5Hz (0.2s)"); }
+            if (GUILayout.Button("2Hz", GUILayout.Height(20f))) { w.UpdateInterval = 0.5f; WidgetLayoutManager.Instance.SaveLayout(); ShowToast("已设为 2Hz (0.5s)"); }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label("<color=#888888><size=10>说明：姿态球与标尺带推荐 60Hz；维生/通信/电力面板设为 2~5Hz 可节省 80% CPU 与顶点批处理开销。</size></color>");
+
+            GUILayout.EndVertical();
+        }
+
         private static void DrawParameterMenuCard(TelemetryParam p, WidgetConfig curWidget)
         {
             GUILayout.BeginVertical("box");
@@ -328,6 +386,7 @@ namespace ModularFlightPanel.UI.Settings
                     curWidget.CautionThreshold = p.DefaultCaution;
                     curWidget.WarningThreshold = p.DefaultWarning;
                     curWidget.IsSoftLimit = p.DefaultIsSoftLimit;
+                    curWidget.LimitMode = p.DefaultIsSoftLimit ? "soft" : "hard";
                     curWidget.UnitLabel = p.DefaultUnit;
                     if (curWidget.WidgetType == "tape") curWidget.StepInterval = p.DefaultStep;
 
@@ -371,6 +430,103 @@ namespace ModularFlightPanel.UI.Settings
             string newTxt = GUILayout.TextField(txt, GUILayout.Width(65f));
             if (float.TryParse(newTxt, out float parsed)) return parsed;
             return val;
+        }
+
+        private static void DrawTransformInspector(WidgetConfig w)
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.Label("<b>📐 空间几何与变换 (Transform & Alignment)</b>");
+
+            // 1. 坐标位置 (Position X, Y)
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"X: <b>{w.PositionX:F0}px</b>", GUILayout.Width(80f));
+            if (GUILayout.Button("-10", GUILayout.Width(35f))) { w.PositionX -= 10f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("-1", GUILayout.Width(28f))) { w.PositionX -= 1f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("+1", GUILayout.Width(28f))) { w.PositionX += 1f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("+10", GUILayout.Width(35f))) { w.PositionX += 10f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("居中 0", GUILayout.Width(50f))) { w.PositionX = 0f; ApplyWidgetTransform(w); }
+
+            GUILayout.Space(8f);
+            GUILayout.Label($"Y: <b>{w.PositionY:F0}px</b>", GUILayout.Width(80f));
+            if (GUILayout.Button("-10", GUILayout.Width(35f))) { w.PositionY -= 10f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("-1", GUILayout.Width(28f))) { w.PositionY -= 1f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("+1", GUILayout.Width(28f))) { w.PositionY += 1f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("+10", GUILayout.Width(35f))) { w.PositionY += 10f; ApplyWidgetTransform(w); }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 2. 缩放比例 (Scale)
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"缩放比: <b>{w.Scale:F2}x</b>", GUILayout.Width(85f));
+            if (GUILayout.Button("-0.1", GUILayout.Width(35f))) { w.Scale = Mathf.Clamp(Mathf.Round((w.Scale - 0.1f) * 20f) / 20f, 0.2f, 4.0f); ApplyWidgetTransform(w); }
+            if (GUILayout.Button("+0.1", GUILayout.Width(35f))) { w.Scale = Mathf.Clamp(Mathf.Round((w.Scale + 0.1f) * 20f) / 20f, 0.2f, 4.0f); ApplyWidgetTransform(w); }
+            float newScale = GUILayout.HorizontalSlider(w.Scale, 0.3f, 2.5f, GUILayout.Width(100f));
+            if (Math.Abs(newScale - w.Scale) > 0.005f)
+            {
+                w.Scale = Mathf.Round(newScale * 20f) / 20f;
+                ApplyWidgetTransform(w);
+            }
+            if (GUILayout.Button("0.8x", GUILayout.Width(38f))) { w.Scale = 0.8f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("1.0x", GUILayout.Width(38f))) { w.Scale = 1.0f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("1.2x", GUILayout.Width(38f))) { w.Scale = 1.2f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("1.5x", GUILayout.Width(38f))) { w.Scale = 1.5f; ApplyWidgetTransform(w); }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 3. 旋转角度 (Rotation)
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"旋转角: <b>{w.Rotation:F0}°</b>", GUILayout.Width(95f));
+            float newRot = GUILayout.HorizontalSlider(w.Rotation, 0f, 360f, GUILayout.Width(130f));
+            if (Math.Abs(newRot - w.Rotation) > 0.5f)
+            {
+                w.Rotation = Mathf.Round(newRot / 5f) * 5f;
+                ApplyWidgetTransform(w);
+            }
+            if (GUILayout.Button("0°", GUILayout.Width(35f))) { w.Rotation = 0f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("90°", GUILayout.Width(35f))) { w.Rotation = 90f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("180°", GUILayout.Width(40f))) { w.Rotation = 180f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("270°", GUILayout.Width(40f))) { w.Rotation = 270f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("-15°", GUILayout.Width(38f))) { w.Rotation = (w.Rotation - 15f + 360f) % 360f; ApplyWidgetTransform(w); }
+            if (GUILayout.Button("+15°", GUILayout.Width(38f))) { w.Rotation = (w.Rotation + 15f) % 360f; ApplyWidgetTransform(w); }
+            GUILayout.EndHorizontal();
+
+            // 4. 多选批量对齐工具
+            int selCount = WidgetSelectionManager.Count;
+            if (selCount >= 2)
+            {
+                GUILayout.Space(4f);
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"<color=#FFE000><b>多选对齐 ({selCount}项):</b></color>", GUILayout.Width(100f));
+                if (GUILayout.Button("左对齐", GUILayout.Width(50f))) WidgetSelectionManager.AlignLeft();
+                if (GUILayout.Button("居中X", GUILayout.Width(48f))) WidgetSelectionManager.AlignCenterX();
+                if (GUILayout.Button("右对齐", GUILayout.Width(50f))) WidgetSelectionManager.AlignRight();
+                if (GUILayout.Button("顶对齐", GUILayout.Width(50f))) WidgetSelectionManager.AlignTop();
+                if (GUILayout.Button("居中Y", GUILayout.Width(48f))) WidgetSelectionManager.AlignCenterY();
+                if (GUILayout.Button("底对齐", GUILayout.Width(50f))) WidgetSelectionManager.AlignBottom();
+                if (selCount >= 3)
+                {
+                    if (GUILayout.Button("水平等距", GUILayout.Width(58f))) WidgetSelectionManager.DistributeHorizontally();
+                    if (GUILayout.Button("垂直等距", GUILayout.Width(58f))) WidgetSelectionManager.DistributeVertically();
+                }
+                GUILayout.EndHorizontal();
+            }
+
+            GUILayout.EndVertical();
+        }
+
+        private static void ApplyWidgetTransform(WidgetConfig w)
+        {
+            WidgetLayoutManager.Instance.SaveLayout();
+            if (NavballHUD.Instance != null && NavballHUD.Instance.ModularWidgets != null)
+            {
+                var target = NavballHUD.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
+                if (target != null)
+                {
+                    target.UpdateTransform(w.PositionX, w.PositionY, w.Scale, w.Rotation);
+                }
+            }
         }
 
         private static void ShowToast(string msg)
