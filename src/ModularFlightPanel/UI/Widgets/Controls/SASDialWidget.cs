@@ -170,7 +170,8 @@ namespace ModularFlightPanel.UI.Widgets
             _shipSilhouette = new GameObject("Ship_Silhouette_Root", typeof(RectTransform), typeof(Button));
             _shipSilhouette.transform.SetParent(_attitudeAssemblyRoot.transform, false);
             RectTransform sRt = _shipSilhouette.GetComponent<RectTransform>();
-            sRt.sizeDelta = new Vector2(36f * s, 36f * s);
+            float shipSize = 48f * s;
+            sRt.sizeDelta = new Vector2(shipSize, shipSize);
             sRt.anchoredPosition = Vector2.zero;
 
             // 为中央剪影根节点挂载透明点击响应层，确保鼠标交互稳定触发 STAB 切换
@@ -205,7 +206,7 @@ namespace ModularFlightPanel.UI.Widgets
             GameObject rawImgObj = new GameObject("Silhouette_Graphic", typeof(RectTransform), typeof(RawImage));
             rawImgObj.transform.SetParent(_shipSilhouette.transform, false);
             RectTransform rawRt = rawImgObj.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(36f * s, 36f * s);
+            rawRt.sizeDelta = new Vector2(shipSize, shipSize);
             rawRt.anchoredPosition = Vector2.zero;
 
             _silhouetteRawImage = rawImgObj.GetComponent<RawImage>();
@@ -225,7 +226,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 机头朝向前缘高精矢量前视光标 (Precision Boresight Chevron Pointer)
             float tipSize = 8f * s;
-            Vector2 tipPos = new Vector2(0f, 16.5f * s);
+            Vector2 tipPos = new Vector2(0f, 21.5f * s);
             GameObject tipObj = new GameObject("Nose_Tip", typeof(RectTransform), typeof(RawImage));
             tipObj.transform.SetParent(_shipSilhouette.transform, false);
             RectTransform tipRt = tipObj.GetComponent<RectTransform>();
@@ -485,14 +486,25 @@ namespace ModularFlightPanel.UI.Widgets
             // 5. 机头朝向标动态微调 (与正向烘焙包围盒严格对齐)
             if (_noseTipRawImage != null)
             {
-                float tipY = 16.5f * s;
-                if (VesselSilhouetteService.Provider != null)
+                // 仅在 3D 模式或外部 3D 烘焙器提供动态 NormalizedNoseTipY 时挂载前向标；
+                // 纯 2D 矢量剪影自身已拥有视网膜级一体化锐利机头探针与雷达罩，无需外挂重叠块
+                bool showTip = (_displayMode == SASDialDisplayMode.Mode3D);
+                if (_noseTipRawImage.gameObject.activeSelf != showTip)
                 {
-                    float halfSpan = 18f * s;
-                    float normY = VesselSilhouetteService.Provider.NormalizedNoseTipY;
-                    tipY = Mathf.Clamp(normY * halfSpan, 8f * s, halfSpan + 1f * s);
+                    _noseTipRawImage.gameObject.SetActive(showTip);
                 }
-                _noseTipRawImage.rectTransform.anchoredPosition = new Vector2(0f, tipY);
+
+                if (showTip)
+                {
+                    float tipY = 21.5f * s;
+                    if (VesselSilhouetteService.Provider != null)
+                    {
+                        float halfSpan = 22f * s;
+                        float normY = VesselSilhouetteService.Provider.NormalizedNoseTipY;
+                        tipY = Mathf.Clamp(normY * halfSpan, 10f * s, halfSpan + 1f * s);
+                    }
+                    _noseTipRawImage.rectTransform.anchoredPosition = new Vector2(0f, tipY);
+                }
             }
 
             // 6. 当前 SAS 模式与开关高亮指示 (Dirty Checking + 100% 语义化驱动)
@@ -579,22 +591,26 @@ namespace ModularFlightPanel.UI.Widgets
                 return;
             }
 
-            if (!_sasDirectorRoot.gameObject.activeSelf)
-            {
-                _sasDirectorRoot.gameObject.SetActive(true);
-            }
-
             FlightSASMode mode = telemetry.CurrentSASMode;
             if (mode == FlightSASMode.StabilityAssist)
             {
                 _isDirectorLocked = true;
                 _currentMarkerHasDir = true;
-                _currentMarkerVisible = true;
+                _currentMarkerVisible = false;
                 _currentMarkerAngleDeg = 0f;
                 _sasDirectorRoot.anchoredPosition = Vector2.zero;
                 _sasDirectorRoot.localRotation = Quaternion.identity;
                 _sasDirectorRawImage.color = theme.AccentPrimary;
+                if (_sasDirectorRoot.gameObject.activeSelf)
+                {
+                    _sasDirectorRoot.gameObject.SetActive(false);
+                }
                 return;
+            }
+
+            if (!_sasDirectorRoot.gameObject.activeSelf)
+            {
+                _sasDirectorRoot.gameObject.SetActive(true);
             }
 
             string markerKey = GetMarkerKeyForSASMode(mode);
@@ -899,219 +915,184 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         /// <summary>
-        /// 程序化生成高精度 512x512 现代空天/航天器矢量剪影纹理
-        /// (包含针状空速管、双曲尖削机头、座舱天窗反射高光、前缘大边条、复合后掠三角翼、升降副翼分割缝、翼尖姿态喷口与双发矢量喷管)
-        /// 全程采用次像素分析距离场平滑抗锯齿，零颜色字面量。
+        /// 程序化生成 256x256 高精度全矢量双三角翼航电飞船剪影 (Precision Double-Delta Spacecraft Silhouette)
+        /// 具备屏幕自适应次像素抗锯齿 (SDF Calibrated Anti-Aliasing)，在 48px 表盘显示下实现 1.15 物理像素的平滑过渡；
+        /// 彻底消除低分辨率阶梯走样与锯齿，提供高反差外轮廓光辉、座舱盖航电玻璃反光条、中央背脊线与双发推进喷口。
         /// </summary>
         private static Texture2D CreateProceduralSpacecraftTexture()
         {
-            const int size = 512;
+            const int size = 256;
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
-            tex.filterMode = FilterMode.Trilinear;
+            tex.filterMode = FilterMode.Bilinear;
             tex.wrapMode = TextureWrapMode.Clamp;
             Color[] cols = new Color[size * size];
             float half = (size - 1) * 0.5f;
             float invHalf = 1f / half;
-            float feather = 3.0f * invHalf; // ~3像素次像素反走样羽化
+
+            // 针对 48px 标准表盘显示尺寸校准边缘次像素羽化宽度 (~1.15 物理屏幕像素，彻底终结锯齿与虚化)
+            const float targetDisplaySize = 48f;
+            float feather = 1.15f * (size / targetDisplaySize) * invHalf;
 
             for (int y = 0; y < size; y++)
             {
-                float ny = (float)y / (size - 1); // 0.0 (尾部) .. 1.0 (机头)
+                // ny: -1.0 (尾部喷口) .. +1.0 (机头鼻锥)
+                float ny = (y - half) * invHalf;
+                int rowOffset = y * size;
+
                 for (int x = 0; x < size; x++)
                 {
-                    float nx = (x - half) * invHalf; // -1.0 .. +1.0
-                    float dx = Mathf.Abs(nx);
+                    // nx: -1.0 (左翼尖) .. +1.0 (右翼尖)
+                    float nx = (x - half) * invHalf;
+                    float adx = Mathf.Abs(nx);
 
-                    // 1. 机体各段包络半宽 W(ny) 计算
+                    // 1. 几何拓扑定义 (Double-Delta Aerospace Interceptor)
                     float bodyW = 0f;
                     float wingW = 0f;
-                    bool inProbe = false;
+                    float nozzleDist = 0f;
                     bool inNozzle = false;
-                    float nozzleCenter = 0.115f;
-                    float nozzleDist = Mathf.Abs(dx - nozzleCenter);
-                    float nozzleW = 0f;
 
-                    // A. 空速管 / 机头长探针 (0.91 .. 0.97)
-                    if (ny >= 0.91f && ny <= 0.97f)
+                    // A. 机头雷达罩与双曲边条 (ny: 0.35 .. 0.88)
+                    if (ny >= 0.35f && ny <= 0.88f)
                     {
-                        float pt = (ny - 0.91f) / 0.06f;
-                        float pWidth = Mathf.Lerp(0.016f, 0.003f, pt);
-                        if (dx <= pWidth)
-                        {
-                            inProbe = true;
-                            bodyW = pWidth;
-                        }
+                        float t = (0.88f - ny) / 0.53f; // 0 at nose, 1 at chine base
+                        bodyW = 0.035f + 0.165f * Mathf.Pow(t, 0.85f);
+                    }
+                    else if (ny >= -0.65f && ny < 0.35f)
+                    {
+                        bodyW = 0.20f; // 核心机身中段
                     }
 
-                    // B. 尖削雷达罩与双曲整流头锥 (0.72 .. 0.91)
-                    if (ny >= 0.72f && ny < 0.91f)
+                    // B. 双三角后掠主机翼 (ny: -0.55 .. 0.35)
+                    if (ny >= -0.55f && ny <= 0.35f)
                     {
-                        float t = (ny - 0.72f) / 0.19f;
-                        bodyW = Mathf.Lerp(0.145f, 0.016f, Mathf.Pow(t, 0.75f));
-                    }
-                    // C. 前缘大边条 / 前机身 (0.52 .. 0.72)
-                    else if (ny >= 0.52f && ny < 0.72f)
-                    {
-                        float t = (ny - 0.52f) / 0.20f;
-                        bodyW = Mathf.Lerp(0.25f, 0.145f, Mathf.Pow(t, 0.85f));
-                    }
-                    // D. 主后掠双三角翼段 (0.18 .. 0.52)
-                    else if (ny >= 0.18f && ny < 0.52f)
-                    {
-                        bodyW = 0.25f; // 核心机身宽
-
-                        // 前缘后掠至翼尖 (0.27 .. 0.52)
-                        if (ny >= 0.27f)
+                        if (ny >= -0.38f)
                         {
-                            float wt = (ny - 0.27f) / 0.25f;
-                            wingW = Mathf.Lerp(0.72f, 0.25f, Mathf.Pow(wt, 0.78f));
+                            // 前缘后掠段 (0.35 .. -0.38)
+                            float wt = (0.35f - ny) / 0.73f;
+                            wingW = 0.20f + 0.54f * Mathf.Pow(wt, 0.88f);
                         }
-                        // 翼尖防颤配重 / 导弹滑轨 / 姿态喷口 (0.22 .. 0.27)
-                        else if (ny >= 0.22f)
-                        {
-                            wingW = 0.72f;
-                        }
-                        // 机翼后缘前掠切角与升降副翼内收 (0.18 .. 0.22)
                         else
                         {
-                            float wt = (ny - 0.18f) / 0.04f;
-                            wingW = Mathf.Lerp(0.25f, 0.72f, Mathf.Pow(wt, 0.60f));
+                            // 机翼后缘前掠切角与升降副翼内收 (-0.55 .. -0.38)
+                            float wt = (ny - (-0.55f)) / 0.17f;
+                            wingW = 0.20f + 0.54f * Mathf.Pow(wt, 0.55f);
                         }
                     }
-                    // E. 尾部发动机整流段 (0.07 .. 0.18)
-                    else if (ny >= 0.07f && ny < 0.18f)
-                    {
-                        float t = (ny - 0.07f) / 0.11f;
-                        bodyW = Mathf.Lerp(0.19f, 0.25f, t);
 
-                        // 双发火箭/涡扇尾喷管外廓 (0.07 .. 0.17)
-                        if (ny >= 0.07f && ny <= 0.17f)
+                    // C. 翼尖防颤滑轨 / RCS 姿态喷口滑块 (ny: -0.46 .. -0.30, adx: 0.71 .. 0.76)
+                    bool tipRail = (ny >= -0.46f && ny <= -0.30f && adx >= 0.71f && adx <= 0.76f);
+
+                    // D. 双发尾喷管外廓 (ny: -0.76 .. -0.60)
+                    float nozzleCenter = 0.105f;
+                    nozzleDist = Mathf.Abs(adx - nozzleCenter);
+                    if (ny >= -0.76f && ny <= -0.60f && nozzleDist <= 0.062f)
+                    {
+                        inNozzle = true;
+                    }
+
+                    float hullW = Mathf.Max(bodyW, wingW);
+                    if (tipRail) hullW = Mathf.Max(hullW, 0.76f);
+
+                    // 2. 次像素反走样因子解算 (SDF Coverage)
+                    float alpha = 0f;
+                    if (hullW > 0.001f)
+                    {
+                        alpha = Mathf.Clamp01((hullW - adx) / feather);
+                    }
+
+                    // 机头尖端平滑裁切
+                    if (ny > 0.86f)
+                    {
+                        alpha = Mathf.Min(alpha, Mathf.Clamp01((0.88f - ny) / feather));
+                    }
+
+                    // 尾部平滑裁切
+                    if (!inNozzle)
+                    {
+                        if (ny < -0.55f)
                         {
-                            float nt = (ny - 0.07f) / 0.10f;
-                            nozzleW = Mathf.Lerp(0.062f, 0.048f, nt);
-                            if (nozzleDist <= nozzleW) inNozzle = true;
+                            alpha = Mathf.Min(alpha, Mathf.Clamp01((ny - (-0.58f)) / feather));
                         }
                     }
-
-                    float maxExtent = Mathf.Max(bodyW, wingW);
-
-                    // 2. 次像素反走样因子计算
-                    float hullAlpha = 0f;
-                    if (maxExtent > 0.001f)
+                    else
                     {
-                        hullAlpha = Mathf.Clamp01((maxExtent - dx) / feather);
-                    }
-                    if (inProbe)
-                    {
-                        hullAlpha = Mathf.Max(hullAlpha, Mathf.Clamp01((0.97f - ny) / feather));
-                    }
-                    if (inNozzle)
-                    {
-                        float nDistAlpha = Mathf.Clamp01((nozzleW - nozzleDist) / feather);
-                        float nBottomAlpha = Mathf.Clamp01((ny - 0.07f) / feather);
-                        float nAlpha = Mathf.Min(nDistAlpha, nBottomAlpha);
-                        hullAlpha = Mathf.Max(hullAlpha, nAlpha);
+                        float nAlpha = Mathf.Clamp01((0.062f - nozzleDist) / feather);
+                        float nYAlpha = Mathf.Clamp01((ny - (-0.76f)) / feather);
+                        alpha = Mathf.Max(alpha, Mathf.Min(nAlpha, nYAlpha));
                     }
 
-                    if (hullAlpha <= 0.001f)
+                    if (alpha <= 0.001f)
                     {
-                        cols[y * size + x] = Color.clear;
+                        cols[rowOffset + x] = Color.clear;
                         continue;
                     }
 
-                    // 3. 几何分层与明度/结构线解算 (Luminance & Structure Detailing)
-                    float lum = 0.65f; // 基准机身蒙皮亮度
-                    float alphaWeight = 0.85f; // 基准透明度
+                    // 3. 几何分层与高对比度结构光线 (High-Contrast Avionics Detailing)
+                    float lum = 0.52f; // 基准蒙皮亮度
 
-                    // A. 外轮廓矢量高亮描边 (Rim Glow, 边框强化)
-                    float distToHullRim = maxExtent - dx;
-                    if (distToHullRim >= 0f && distToHullRim <= 0.022f)
+                    // A. 外轮廓矢量强化描边 (1.4 物理屏幕像素高亮边缘，大幅强化微型表盘视认度)
+                    float distToRim = hullW - adx;
+                    float rimWidth = 1.4f * feather;
+                    if (distToRim >= 0f && distToRim <= rimWidth)
                     {
-                        float rimFactor = 1f - (distToHullRim / 0.022f);
-                        lum = Mathf.Lerp(lum, 1.0f, rimFactor);
-                        alphaWeight = Mathf.Lerp(alphaWeight, 1.0f, rimFactor);
+                        float rf = 1f - (distToRim / rimWidth);
+                        lum = Mathf.Max(lum, 0.52f + 0.48f * rf);
                     }
 
-                    // B. 翼尖 RCS 姿态喷口高亮指示 (0.22 .. 0.27, 翼展边缘)
-                    if (ny >= 0.22f && ny <= 0.27f && dx >= 0.66f)
+                    // B. 座舱盖高反差航电深色玻璃与高光反射条 (ny: 0.38 .. 0.70)
+                    bool isCanopy = false;
+                    if (ny >= 0.38f && ny <= 0.70f)
                     {
-                        lum = 0.98f;
-                        alphaWeight = 1.0f;
-                    }
-
-                    // C. 座舱天窗座舱罩 (Cockpit Canopy, 0.63 .. 0.81)
-                    if (ny >= 0.63f && ny <= 0.81f)
-                    {
-                        float ct = (ny - 0.63f) / 0.18f;
-                        float canopyW = Mathf.Lerp(0.062f, 0.016f, Mathf.Pow(ct, 0.85f));
-                        if (dx <= canopyW)
+                        float ct = (0.70f - ny) / 0.32f;
+                        float cw = 0.068f * Mathf.Pow(Mathf.Sin(ct * Mathf.PI), 0.8f);
+                        if (adx <= cw)
                         {
-                            float canopyDist = canopyW - dx;
-                            // 舱盖边框
-                            if (canopyDist <= 0.012f)
+                            isCanopy = true;
+                            float cdist = cw - adx;
+                            if (cdist <= 1.1f * feather)
                             {
-                                lum = 1.0f;
-                                alphaWeight = 1.0f;
+                                lum = 1.0f; // 座舱框架亮线
                             }
                             else
                             {
-                                // 舱盖深色玻璃与高光反射条
-                                if (nx >= -0.038f && nx <= -0.012f && ny >= 0.66f && ny <= 0.77f)
-                                {
-                                    lum = 0.92f; // 左前侧高光反射 (Glint)
-                                    alphaWeight = 0.95f;
-                                }
-                                else
-                                {
-                                    lum = 0.26f; // 深邃航电玻璃底色
-                                    alphaWeight = 0.92f;
-                                }
+                                if (nx >= -0.04f && nx <= -0.01f) lum = 0.88f; // 左前侧高光反射 (Glint)
+                                else lum = 0.18f; // 深邃航电玻璃底色
                             }
                         }
                     }
 
-                    // D. 中心背脊高光线 (Dorsal Spine Ridge, 0.18 .. 0.88)
-                    if (dx <= 0.012f && ny >= 0.18f && ny <= 0.88f)
+                    // C. 飞船中心脊背高光线 (Dorsal Spine Ridge)
+                    if (!isCanopy && adx <= 0.75f * feather && ny >= -0.50f && ny <= 0.84f)
                     {
-                        lum = 0.96f;
-                        alphaWeight = 1.0f;
+                        lum = 0.95f;
                     }
 
-                    // E. 升降副翼铰链刻线与副翼分割缝 (Elevon Seams)
-                    if (ny >= 0.235f && ny <= 0.246f && dx >= 0.25f && dx <= 0.68f)
+                    // D. 机翼边条折痕阴影线
+                    if (!isCanopy && adx >= 0.19f && adx <= hullW)
                     {
-                        lum = 0.35f; // 细缝阴影
-                    }
-
-                    // F. 尾喷管内侧燃烧室与喉部环 (Engine Nozzle Depth & Throat Ring)
-                    if (inNozzle && ny <= 0.16f)
-                    {
-                        if (ny >= 0.125f && ny <= 0.142f && nozzleDist <= 0.038f)
+                        if (Mathf.Abs(adx - 0.20f) <= 0.6f * feather)
                         {
-                            lum = 0.95f; // 喉部高光环
-                            alphaWeight = 1.0f;
-                        }
-                        else if (ny < 0.125f)
-                        {
-                            lum = 0.22f; // 喷管深色内腔
+                            lum = 0.28f;
                         }
                     }
 
-                    // G. 空速管针尖 (0.91 .. 0.97)
-                    if (inProbe)
+                    // E. 尾喷管喉部内腔发光环
+                    if (inNozzle && ny <= -0.68f)
                     {
-                        lum = 0.98f;
-                        alphaWeight = 1.0f;
+                        lum = 0.95f;
                     }
 
-                    // 4. 生成语义色 (零颜色字面量，纯由 NeutralOpaque 派生)
+                    // 4. 语义着色映射 (100% 遵照 MFP-SPEC-006 零颜色字面量，纯由 NeutralOpaque 衍生)
                     Color baseCol = WidgetStyleManager.NeutralOpaque;
                     if (lum < 0.999f)
                     {
                         baseCol = WidgetStyleManager.Darken(baseCol, 1.0f - lum);
                     }
-                    Color finalPixel = WidgetStyleManager.WithAlpha(baseCol, alphaWeight * hullAlpha);
-                    cols[y * size + x] = finalPixel;
+                    else if (lum > 1.001f)
+                    {
+                        baseCol = WidgetStyleManager.Lighten(baseCol, (lum - 1.0f) * 0.5f);
+                    }
+                    cols[rowOffset + x] = WidgetStyleManager.WithAlpha(baseCol, alpha * 0.98f);
                 }
             }
 

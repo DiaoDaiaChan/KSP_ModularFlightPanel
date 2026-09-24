@@ -192,11 +192,13 @@ namespace ModularFlightPanel.Core
             float rCircle = 13f;
             float strokeW = 2.5f;
 
-            // 航电标准色彩 (与当前主题保持一致)
+            // 航电标准色彩 (严格遵循 KSP 官方原版航电矢量标配色方案与主题自适应)
             ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
             Color colPrograde = theme != null ? (Color)theme.AccentPrimary : WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Primary, null);
-            Color colNormal = theme != null ? (Color)theme.AccentSecondary : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Cardinal, null);
-            Color colRadial = theme != null ? (Color)theme.AccentSecondary : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Cardinal, null);
+            // 原版法线/反法线色标: 官方经典品红/洋红 (Stock Magenta #EA1EE5)
+            Color colNormal = new Color(0.92f, 0.14f, 0.88f, 1.0f);
+            // 原版径向向外/向内色标: 官方经典天青/蓝绿 (Stock Cyan #18E8D4)
+            Color colRadial = new Color(0.10f, 0.91f, 0.83f, 1.0f);
             Color colTarget = theme != null ? (Color)theme.AccentMagenta : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Danger, null);
             Color colManeuver = theme != null ? (Color)theme.AccentMagenta : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Danger, null);
 
@@ -245,38 +247,73 @@ namespace ModularFlightPanel.Core
 
                         case "normal":
                             markerColor = colNormal;
-                            // 向上正三角形
-                            float aTriNorm = EquilateralTriangleSdf(px, py - 1f, 18f, strokeW, true);
-                            alpha = aTriNorm;
+                            // 向上正三角形 (顶点向上，底边水平，高度几何居中)
+                            float aTriNorm = EquilateralTriangleSdf(px, py, 16f, strokeW, true);
+                            // 中心准直实心瞄准点 (Pip)
+                            float aDotNorm = Mathf.Clamp01(0.5f - (dist - 2.2f));
+                            alpha = Mathf.Clamp01(Mathf.Max(aTriNorm, aDotNorm));
                             break;
 
                         case "antinormal":
                             markerColor = colNormal;
-                            // 向下正三角形
-                            float aTriAnti = EquilateralTriangleSdf(px, py + 1f, 18f, strokeW, false);
-                            alpha = aTriAnti;
+                            // 1. 向下正三角形 (顶点向下，底边水平，高度几何居中)
+                            float rAnti = 16f;
+                            float aTriAnti = EquilateralTriangleSdf(px, py, rAnti, strokeW, false);
+
+                            // 2. 三边向外放射延伸的 3 个突刺/刻度翼 (Spikes at 90°, 210°, 330°)
+                            float yTopAnti = rAnti * 0.57735027f; // r / sqrt(3)
+                            float lSpikeTop = 6.8f;
+                            float lSpikeSide = 6.5f;
+
+                            // 顶部中点垂直向上突刺 (px = 0, y 自 yTopAnti 向上至 yTopAnti + lSpikeTop)
+                            float dSpikeTop = SegmentSdf(Mathf.Abs(px), py, 0f, yTopAnti, 0f, yTopAnti + lSpikeTop) - (strokeW * 0.5f);
+
+                            // 左右两翼自侧边约 56% 处向外下方放射突刺 (利用 Abs(px) 轴对称合并计算)
+                            float tAnti = 0.56f;
+                            float xMidAnti = rAnti * (1.0f - tAnti);
+                            float yMidAnti = yTopAnti - tAnti * (3.0f * yTopAnti);
+                            const float cos30 = 0.8660254f;
+                            const float sin30 = 0.5f;
+                            float dSpikeSides = SegmentSdf(Mathf.Abs(px), py, xMidAnti, yMidAnti, xMidAnti + cos30 * lSpikeSide, yMidAnti - sin30 * lSpikeSide) - (strokeW * 0.5f);
+
+                            float aSpikesAnti = Mathf.Clamp01(0.5f - Mathf.Min(dSpikeTop, dSpikeSides));
+                            // 反法线内部为空心（无中心点），由倒三角与三向放射突刺组成
+                            alpha = Mathf.Clamp01(Mathf.Max(aTriAnti, aSpikesAnti));
                             break;
 
                         case "radialin":
                             markerColor = colRadial;
-                            // 圆环 + 中心实心点 + 内向刻度
+                            // 1. 中间空心圆环
                             float dRingRadIn = Mathf.Abs(dist - rCircle) - (strokeW * 0.5f);
                             float aRingRadIn = Mathf.Clamp01(0.5f - dRingRadIn);
-                            float aDot = Mathf.Clamp01(3.5f - dist);
-                            // 4向刻度 (上下左右)
-                            float aTickH = (Mathf.Abs(py) < strokeW * 0.5f && Mathf.Abs(px) > 13f && Mathf.Abs(px) < 22f) ? 1f : 0f;
-                            float aTickV = (Mathf.Abs(px) < strokeW * 0.5f && Mathf.Abs(py) > 13f && Mathf.Abs(py) < 22f) ? 1f : 0f;
-                            alpha = Mathf.Clamp01(Mathf.Max(aRingRadIn, Mathf.Max(aDot, Mathf.Max(aTickH, aTickV))));
+
+                            // 2. 四角 45°、135°、225°、315° 向内汇聚四向刻度 (向内延伸至半径 5.5f 留空，中心为空心孔径)
+                            float rRadIn1 = rCircle - 0.5f;
+                            float rRadIn2 = 5.5f;
+                            const float c45In = 0.70710678f;
+                            float dProngIn = SegmentSdf(Mathf.Abs(px), Mathf.Abs(py), rRadIn1 * c45In, rRadIn1 * c45In, rRadIn2 * c45In, rRadIn2 * c45In) - (strokeW * 0.5f);
+                            float aProngIn = Mathf.Clamp01(0.5f - dProngIn);
+
+                            alpha = Mathf.Clamp01(Mathf.Max(aRingRadIn, aProngIn));
                             break;
 
                         case "radialout":
                             markerColor = colRadial;
-                            // 小圆环 + 4向外发散刻度
-                            float dRingRadOut = Mathf.Abs(dist - 10f) - (strokeW * 0.5f);
+                            // 1. 中间空心圆环
+                            float dRingRadOut = Mathf.Abs(dist - rCircle) - (strokeW * 0.5f);
                             float aRingRadOut = Mathf.Clamp01(0.5f - dRingRadOut);
-                            float aTickHOut = (Mathf.Abs(py) < strokeW * 0.5f && Mathf.Abs(px) > 10f && Mathf.Abs(px) < 22f) ? 1f : 0f;
-                            float aTickVOut = (Mathf.Abs(px) < strokeW * 0.5f && Mathf.Abs(py) > 10f && Mathf.Abs(py) < 22f) ? 1f : 0f;
-                            alpha = Mathf.Clamp01(Mathf.Max(aRingRadOut, Mathf.Max(aTickHOut, aTickVOut)));
+
+                            // 2. 正中心实心瞄准点 (Pip)
+                            float aDotRadOut = Mathf.Clamp01(0.5f - (dist - 2.2f));
+
+                            // 3. 四角 45°、135°、225°、315° 向外发散四向突刺 (利用 Abs(px), Abs(py) 四象限对称合并解算)
+                            float rRadOut1 = rCircle + 0.5f;
+                            float rRadOut2 = rCircle + 5.2f;
+                            const float c45Out = 0.70710678f;
+                            float dProngOut = SegmentSdf(Mathf.Abs(px), Mathf.Abs(py), rRadOut1 * c45Out, rRadOut1 * c45Out, rRadOut2 * c45Out, rRadOut2 * c45Out) - (strokeW * 0.5f);
+                            float aProngOut = Mathf.Clamp01(0.5f - dProngOut);
+
+                            alpha = Mathf.Clamp01(Mathf.Max(aRingRadOut, Mathf.Max(aDotRadOut, aProngOut)));
                             break;
 
                         case "target":

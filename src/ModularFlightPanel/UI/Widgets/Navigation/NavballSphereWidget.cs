@@ -36,11 +36,17 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Dictionary<string, Image> _markerImages = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private float _ballDiameter;
         private float _visualRadius;
+        private readonly Vector3[] _displayCorners = new Vector3[4];
+        private float _lastDetailScale = -1f;
 
         private static Mesh _primitiveSphereMesh;
         private Image _reticleImage;
         private float _currentHazardAlert = 0.0f;
         private float _currentVernierDetail = 0.0f;
+        private float _lastNavballProbeSampleTime = -1f;
+        private double _cachedGpwsRadarAltitude = double.NaN;
+        private double _cachedGpwsSinkRate = double.NaN;
+        private double _cachedTrajImpactTime = double.NaN;
 
         private static void EnsureDefaultSphereMesh()
         {
@@ -366,6 +372,7 @@ namespace ModularFlightPanel.UI.Widgets
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
         private bool _paletteInitialized = false;
+        private float _lastNumeralRollAngle;
 
         private NavballFramePalette GetPaletteForCategory(string category, ThemeConfig theme)
         {
@@ -454,17 +461,20 @@ namespace ModularFlightPanel.UI.Widgets
                         : rawRot;
                 }
 
-                // 动态滚转角度解算并注入着色器 (Screen-Upright / Zero-Roll Dynamic Numeral Alignment)
+                // 从实际球面朝向计算屏幕滚转，避免遥测 Roll 与 Principia/Hook 的最终姿态不同步。
                 if (_sphereMaterial != null && _sphereMaterial.HasProperty("_NumeralRollAngle"))
                 {
-                    float rollRad = 0f;
-                    IFlightTelemetry curTelem = FlightTelemetryContext.Current;
-                    if (curTelem != null)
+                    if (_ballCamera != null)
                     {
-                        // 航电物理权威 Roll 角度 (度转弧度，正向航向绝对正交，彻底杜绝航向泄漏进滚转)
-                        rollRad = curTelem.Roll * Mathf.Deg2Rad;
+                        Vector3 projectedUp = _ballCamera.transform.InverseTransformDirection(_sphereObject.transform.up);
+                        float projectedMagnitudeSq = projectedUp.x * projectedUp.x + projectedUp.y * projectedUp.y;
+                        // 当本地天顶几乎正对/背对镜头时，屏幕投影没有稳定方向；保持上一个有效角度，避免 90°/180° 跳变。
+                        if (projectedMagnitudeSq > 0.0225f)
+                        {
+                            _lastNumeralRollAngle = -Mathf.Atan2(projectedUp.x, projectedUp.y);
+                        }
                     }
-                    _sphereMaterial.SetFloat("_NumeralRollAngle", rollRad);
+                    _sphereMaterial.SetFloat("_NumeralRollAngle", _lastNumeralRollAngle);
                 }
             }
 
@@ -511,10 +521,23 @@ namespace ModularFlightPanel.UI.Widgets
                 bool isHazard = false;
                 if (curTelem != null && curTelem.HasVessel)
                 {
-                    if ((curTelem.AltitudeAGL > 0 && curTelem.AltitudeAGL < 300.0 && curTelem.VerticalSpeed < -8.0) || curTelem.IsTouchdownAlert)
-                    {
-                        isHazard = true;
-                    }
+                    UpdateNavballProbeSnapshot(curTelem);
+                    // 优先取 GPWS 雷达真高；Mod 未安装或参数不可用时，回退到核心 AGL。
+                    double radarAltitude = _cachedGpwsRadarAltitude;
+                    if (double.IsNaN(radarAltitude) || double.IsInfinity(radarAltitude) || radarAltitude < 0.0)
+                        radarAltitude = curTelem.AltitudeAGL;
+
+                    // GPWS 下沉率用于加强趋势判断，但只在核心 VSI 确认正在下降时采纳，避免不同 Mod 的正负号约定误报。
+                    double gpwsSinkRate = _cachedGpwsSinkRate;
+                    double descentRate = Math.Max(0.0, -curTelem.VerticalSpeed);
+                    if (curTelem.VerticalSpeed < 0.0 && !double.IsNaN(gpwsSinkRate) && !double.IsInfinity(gpwsSinkRate))
+                        descentRate = Math.Max(descentRate, Math.Abs(gpwsSinkRate));
+
+                    // Trajectories 的预测撞击倒计时可提前提示高速再入/落地风险，不依赖是否已进入低空。
+                    double impactTime = _cachedTrajImpactTime;
+                    bool predictedImpact = !double.IsNaN(impactTime) && !double.IsInfinity(impactTime) && impactTime > 0.0 && impactTime < 15.0;
+                    bool lowAltitudeDescent = radarAltitude > 0.0 && radarAltitude < 300.0 && curTelem.VerticalSpeed < 0.0 && descentRate > 8.0;
+                    isHazard = lowAltitudeDescent || predictedImpact || curTelem.IsTouchdownAlert;
                 }
                 float targetHazard = isHazard ? 1.0f : 0.0f;
                 _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dt * 6.0f));
@@ -560,6 +583,16 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        private void UpdateNavballProbeSnapshot(IFlightTelemetry telemetry)
+        {
+            float now = Time.unscaledTime;
+            if (Application.isPlaying && now - _lastNavballProbeSampleTime < 0.1f) return;
+            _lastNavballProbeSampleTime = now;
+            _cachedGpwsRadarAltitude = TelemetryTokenEngine.EvaluateNumeric("{GPWS:RadarAltitude}", telemetry);
+            _cachedGpwsSinkRate = TelemetryTokenEngine.EvaluateNumeric("{GPWS:SinkRate}", telemetry);
+            _cachedTrajImpactTime = TelemetryTokenEngine.EvaluateNumeric("{TRAJ:ImpactTime}", telemetry);
+        }
+
         protected override void LateUpdate()
         {
             base.LateUpdate();
@@ -568,6 +601,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 在 Principia/官方 LateUpdate 彻底执行完毕后，执行最终高保真姿态与标线同步
             SyncAttitudeAndVisuals();
             SyncMarkers();
+            UpdateProceduralDetailScale();
 
             // 强制锁定离屏相机 FPS 跟随游戏每一帧满频同步渲染，彻底杜绝帧率不一致导致的标线与球体相对漂移
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
@@ -603,6 +637,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (hasDir && isVisible && dir.z > -0.15f)
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
+                    img.rectTransform.localScale = Vector3.one;
 
                     // 正交平面投影: (x, y) * 半径，每一帧直接贴合目标坐标，0 滞后、0 阈值量化步进
                     img.rectTransform.anchoredPosition = new Vector2(dir.x, dir.y) * _visualRadius;
@@ -614,6 +649,25 @@ namespace ModularFlightPanel.UI.Widgets
                         Color c = WidgetStyleManager.NeutralOpaque;
                         c.a = alpha;
                         img.color = c;
+                    }
+                }
+                else if (hasDir && dir.z <= -0.15f)
+                {
+                    // 背面标记投影到球缘，保留方位感；正后方没有可靠的左右方向，因此不强行猜测。
+                    Vector2 bearing = new Vector2(dir.x, dir.y);
+                    if (bearing.sqrMagnitude > 0.025f)
+                    {
+                        if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
+                        bearing.Normalize();
+                        img.rectTransform.anchoredPosition = bearing * (_visualRadius * 0.82f);
+                        img.rectTransform.localScale = Vector3.one * 0.62f;
+                        Color ghost = WidgetStyleManager.NeutralOpaque;
+                        ghost.a = Mathf.Lerp(0.40f, 0.18f, Mathf.Clamp01(-dir.z));
+                        if (img.color != ghost) img.color = ghost;
+                    }
+                    else if (img.gameObject.activeSelf)
+                    {
+                        img.gameObject.SetActive(false);
                     }
                 }
                 else
@@ -638,6 +692,26 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 if (count == 0) sb.Append("(none)");
                 Debug.Log(sb.ToString());
+            }
+        }
+
+        private void UpdateProceduralDetailScale()
+        {
+            if (_sphereMaterial == null || !_sphereMaterial.HasProperty("_DetailScale") || _displayImage == null) return;
+
+            Canvas canvas = _displayImage.canvas;
+            Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            RectTransform imageRect = _displayImage.rectTransform;
+            imageRect.GetWorldCorners(_displayCorners);
+            Vector2 bottomLeft = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[0]);
+            Vector2 topLeft = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[1]);
+            Vector2 bottomRight = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[3]);
+            float displayPixels = Mathf.Max(Vector2.Distance(bottomLeft, topLeft), Vector2.Distance(bottomLeft, bottomRight));
+            float detailScale = Mathf.InverseLerp(88f, 240f, displayPixels);
+            if (Mathf.Abs(detailScale - _lastDetailScale) > 0.015f)
+            {
+                _lastDetailScale = detailScale;
+                _sphereMaterial.SetFloat("_DetailScale", detailScale);
             }
         }
 

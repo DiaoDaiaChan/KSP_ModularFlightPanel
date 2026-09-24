@@ -167,6 +167,10 @@ namespace ModularFlightPanel.Core
         public bool IsDockingMode { get; set; } = false;
         public string StagePropellantName { get; set; } = "LH2 / OX";
 
+        // 瞬态事件遥测
+        public bool IsStageSeparating { get; set; } = false;
+        public bool IsEngineIgniting { get; set; } = false;
+
         public void SetSASMode(FlightSASMode mode) { CurrentSASMode = mode; }
         public void ToggleSAS() { IsSASEnabled = !IsSASEnabled; }
         public void ToggleRCS() { IsRCSEnabled = !IsRCSEnabled; }
@@ -182,6 +186,7 @@ namespace ModularFlightPanel.Core
             {
                 CurrentStage--;
                 StagePropellantFraction = 1.0f;
+                IsStageSeparating = true;
             }
         }
         public void ToggleStageLock() { IsStageLocked = !IsStageLocked; }

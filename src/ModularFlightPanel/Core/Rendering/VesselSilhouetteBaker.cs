@@ -48,6 +48,7 @@ namespace ModularFlightPanel.Core
         public const float DefaultBurstFps = 15f;
         public const float DefaultBurstDuration = 3.0f;
 
+        private RenderTexture _rawMsaaTexture;
         private RenderTexture _renderTexture;
         public Texture SilhouetteTexture => _renderTexture;
 
@@ -103,16 +104,30 @@ namespace ModularFlightPanel.Core
 
         private void InitializeRenderPipeline()
         {
-            if (_renderTexture == null)
+            if (_rawMsaaTexture == null)
             {
-                _renderTexture = new RenderTexture(TextureResolution, TextureResolution, 24, RenderTextureFormat.ARGB32)
+                _rawMsaaTexture = new RenderTexture(TextureResolution, TextureResolution, 24, RenderTextureFormat.ARGB32)
                 {
-                    name = "Vessel_Silhouette_RT",
+                    name = "Vessel_Silhouette_MSAA_RT",
                     filterMode = FilterMode.Bilinear,
                     wrapMode = TextureWrapMode.Clamp,
                     antiAliasing = 8, // 启用 8x 硬件抗锯齿，彻底消除飞船 3D 部件与桁架边缘阶梯锯齿
                     useMipMap = false,
                     autoGenerateMips = false
+                };
+                _rawMsaaTexture.Create();
+            }
+
+            if (_renderTexture == null)
+            {
+                _renderTexture = new RenderTexture(TextureResolution, TextureResolution, 0, RenderTextureFormat.ARGB32)
+                {
+                    name = "Vessel_Silhouette_Resolved_RT",
+                    filterMode = FilterMode.Trilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    antiAliasing = 1,
+                    useMipMap = true,
+                    autoGenerateMips = true
                 };
                 _renderTexture.Create();
             }
@@ -127,7 +142,7 @@ namespace ModularFlightPanel.Core
                 _offscreenCamera.cullingMask = 0; // 剔除一切场景物体
                 _offscreenCamera.clearFlags = CameraClearFlags.SolidColor;
                 _offscreenCamera.backgroundColor = Color.clear;
-                _offscreenCamera.targetTexture = _renderTexture;
+                _offscreenCamera.targetTexture = _rawMsaaTexture;
                 _offscreenCamera.orthographic = true;
                 _offscreenCamera.aspect = 1.0f;
                 _offscreenCamera.nearClipPlane = 0.5f;
@@ -299,7 +314,7 @@ namespace ModularFlightPanel.Core
                 return;
             }
 
-            if (_renderTexture == null || !_renderTexture.IsCreated())
+            if (_rawMsaaTexture == null || !_rawMsaaTexture.IsCreated() || _renderTexture == null || !_renderTexture.IsCreated())
             {
                 InitializeRenderPipeline();
             }
@@ -328,7 +343,7 @@ namespace ModularFlightPanel.Core
 
             // 0. 底层显存彻底清屏，杜绝上一帧残影/拖尾 (Ghosting)
             RenderTexture oldRt = RenderTexture.active;
-            RenderTexture.active = _renderTexture;
+            RenderTexture.active = _rawMsaaTexture;
             GL.Clear(true, true, Color.clear);
             RenderTexture.active = oldRt;
 
@@ -538,7 +553,7 @@ namespace ModularFlightPanel.Core
             Matrix4x4 projMatrix = GL.GetGPUProjectionMatrix(_offscreenCamera.projectionMatrix, false);
 
             _commandBuffer.Clear();
-            _commandBuffer.SetRenderTarget(_renderTexture);
+            _commandBuffer.SetRenderTarget(_rawMsaaTexture);
             _commandBuffer.ClearRenderTarget(true, true, Color.clear);
             _commandBuffer.SetViewProjectionMatrices(viewMatrix, projMatrix);
 
@@ -565,6 +580,7 @@ namespace ModularFlightPanel.Core
             }
 
             Graphics.ExecuteCommandBuffer(_commandBuffer);
+            Graphics.Blit(_rawMsaaTexture, _renderTexture);
 
             OnSilhouetteUpdated?.Invoke(_renderTexture);
         }
@@ -698,6 +714,13 @@ namespace ModularFlightPanel.Core
             if (VesselSilhouetteService.Provider == (IVesselSilhouetteProvider)this)
             {
                 VesselSilhouetteService.Provider = null;
+            }
+
+            if (_rawMsaaTexture != null)
+            {
+                _rawMsaaTexture.Release();
+                Destroy(_rawMsaaTexture);
+                _rawMsaaTexture = null;
             }
 
             if (_renderTexture != null)

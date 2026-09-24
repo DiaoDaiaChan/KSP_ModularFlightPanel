@@ -144,6 +144,10 @@ namespace ModularFlightPanel.Core
         bool IsDockingMode { get; }
         string StagePropellantName { get; }
 
+        // 瞬态事件遥测 (分级分离与点火瞬态)
+        bool IsStageSeparating { get; }
+        bool IsEngineIgniting { get; }
+
         // 注：所有双向控制指令方法已拆分解耦至 IFlightControl 接口 (落实 ISP 接口隔离原则)
     }
 }

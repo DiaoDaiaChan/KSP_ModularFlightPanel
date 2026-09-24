@@ -218,6 +218,13 @@ namespace ModularFlightPanel.Core
         public bool IsDockingMode { get; private set; } = false;
         public string StagePropellantName { get; private set; } = "PROP";
 
+        // 瞬态事件遥测 (分级分离与点火瞬态)
+        public bool IsStageSeparating { get; private set; } = false;
+        public bool IsEngineIgniting { get; private set; } = false;
+        private float _stageSepTimer = 0f;
+        private float _engineIgnTimer = 0f;
+        private int _lastActiveEngines = -1;
+
         public void ActivateNextStage()
         {
             if (IsSimulationMode)
@@ -583,6 +590,31 @@ namespace ModularFlightPanel.Core
         private void OnStageActivated(int stage)
         {
             _vesselTopologyDirty = true;
+            TriggerStageSeparationEvent();
+        }
+
+        private void OnPartUndocked(Part p)
+        {
+            _vesselTopologyDirty = true;
+            TriggerStageSeparationEvent();
+        }
+
+        private void OnPartDecoupled(Part p)
+        {
+            _vesselTopologyDirty = true;
+            TriggerStageSeparationEvent();
+        }
+
+        public void TriggerStageSeparationEvent()
+        {
+            IsStageSeparating = true;
+            _stageSepTimer = 1.6f;
+        }
+
+        public void TriggerEngineIgnitionEvent()
+        {
+            IsEngineIgniting = true;
+            _engineIgnTimer = 1.6f;
         }
 
         private void OnVesselChanged(Vessel v)
@@ -625,10 +657,12 @@ namespace ModularFlightPanel.Core
             _instance = this;
             FlightTelemetryContext.FallbackProvider = () => Instance;
 
-            // 监听载具拓扑与分级事件，驱动 P2 引擎与推进剂缓存按需重算
+            // 监听载具拓扑与分级/分离事件，驱动 P2 引擎与推进剂缓存按需重算
             GameEvents.onVesselWasModified.Add(OnVesselModified);
             GameEvents.onStageActivate.Add(OnStageActivated);
             GameEvents.onVesselChange.Add(OnVesselChanged);
+            GameEvents.onPartUndock.Add(OnPartUndocked);
+            GameEvents.onPartDeCouple.Add(OnPartDecoupled);
 
             // 初始化统一探针中枢与场景搜索排队调度器
             ProbeManager.Instance.InitializeAll();
@@ -649,6 +683,8 @@ namespace ModularFlightPanel.Core
             GameEvents.onVesselWasModified.Remove(OnVesselModified);
             GameEvents.onStageActivate.Remove(OnStageActivated);
             GameEvents.onVesselChange.Remove(OnVesselChanged);
+            GameEvents.onPartUndock.Remove(OnPartUndocked);
+            GameEvents.onPartDeCouple.Remove(OnPartDecoupled);
 
             if (_instance == this)
             {
@@ -667,6 +703,17 @@ namespace ModularFlightPanel.Core
             MFPProfiler.BeginSample(ProfilerSection.Telemetry);
             try
             {
+                if (_stageSepTimer > 0f)
+                {
+                    _stageSepTimer -= Time.unscaledDeltaTime;
+                    if (_stageSepTimer <= 0f) IsStageSeparating = false;
+                }
+                if (_engineIgnTimer > 0f)
+                {
+                    _engineIgnTimer -= Time.unscaledDeltaTime;
+                    if (_engineIgnTimer <= 0f) IsEngineIgniting = false;
+                }
+
                 if (IsSimulationMode)
                 {
                     SimulationEngine.Update(Time.deltaTime);
@@ -778,6 +825,8 @@ namespace ModularFlightPanel.Core
             IsPrecisionControl = sim.IsPrecisionControl;
             IsDockingMode = sim.IsDockingMode;
             StagePropellantName = sim.StagePropellantName;
+            IsStageSeparating = sim.IsStageSeparating;
+            IsEngineIgniting = sim.IsEngineIgniting;
 
             IsTouchdownAlert = (AltitudeAGL < 300.0 && VerticalSpeed < -1.5);
         }
@@ -1014,26 +1063,45 @@ namespace ModularFlightPanel.Core
                             {
                                 thrust += eng.finalThrust;
                                 engineCount++;
-                                Part p = eng.part;
-                                if (p != null && p.Resources != null)
+
+                                // 1. 优先读取 ModuleEngines.propellants (获取全供油管网真实余量与容量)
+                                if (eng.propellants != null && eng.propellants.Count > 0)
                                 {
-                                    for (int r = 0; r < p.Resources.Count; r++)
+                                    for (int pr = 0; pr < eng.propellants.Count; pr++)
                                     {
-                                        PartResource res = p.Resources[r];
-                                        if (res != null && res.info != null)
+                                        var pDef = eng.propellants[pr];
+                                        if (pDef != null && pDef.totalResourceCapacity > 0.001)
                                         {
-                                            string rName = res.info.name;
-                                            if (rName == "LiquidFuel" || rName == "SolidFuel" || rName == "Propellant" ||
-                                                rName.IndexOf("Hydrogen", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                rName.IndexOf("Methane", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                rName == "Oxidizer" || rName == "XenonGas")
+                                            currentResource += pDef.totalResourceAvailable;
+                                            maxResource += pDef.totalResourceCapacity;
+                                            if (string.IsNullOrEmpty(detectedProp) || detectedProp == "PROP")
+                                                detectedProp = pDef.displayName ?? pDef.name;
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    Part p = eng.part;
+                                    if (p != null && p.Resources != null)
+                                    {
+                                        for (int r = 0; r < p.Resources.Count; r++)
+                                        {
+                                            PartResource res = p.Resources[r];
+                                            if (res != null && res.info != null && res.maxAmount > 0.001)
                                             {
-                                                currentResource += res.amount;
-                                                maxResource += res.maxAmount;
-                                                if (!string.IsNullOrEmpty(res.info.displayName))
-                                                    detectedProp = res.info.displayName;
-                                                else
-                                                    detectedProp = rName;
+                                                string rName = res.info.name;
+                                                if (rName == "LiquidFuel" || rName == "SolidFuel" || rName == "Propellant" ||
+                                                    rName.IndexOf("Hydrogen", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                    rName.IndexOf("Methane", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                    rName == "Oxidizer" || rName == "XenonGas")
+                                                {
+                                                    currentResource += res.amount;
+                                                    maxResource += res.maxAmount;
+                                                    if (!string.IsNullOrEmpty(res.info.displayName))
+                                                        detectedProp = res.info.displayName;
+                                                    else
+                                                        detectedProp = rName;
+                                                }
                                             }
                                         }
                                     }
@@ -1041,6 +1109,39 @@ namespace ModularFlightPanel.Core
                             }
                         }
                     }
+
+                    // 2. 若全船引擎均处于滑行未点火状态或未取到推进剂，回退读取全船主要推进剂储箱
+                    if (maxResource <= 0.001 && ActiveVessel != null)
+                    {
+                        double curLf = 0.0, maxLf = 0.0;
+                        double curOx = 0.0, maxOx = 0.0;
+                        double curSf = 0.0, maxSf = 0.0;
+                        var lfDef = PartResourceLibrary.Instance != null ? PartResourceLibrary.Instance.GetDefinition("LiquidFuel") : null;
+                        var oxDef = PartResourceLibrary.Instance != null ? PartResourceLibrary.Instance.GetDefinition("Oxidizer") : null;
+                        var sfDef = PartResourceLibrary.Instance != null ? PartResourceLibrary.Instance.GetDefinition("SolidFuel") : null;
+                        if (lfDef != null) ActiveVessel.GetConnectedResourceTotals(lfDef.id, out curLf, out maxLf);
+                        if (oxDef != null) ActiveVessel.GetConnectedResourceTotals(oxDef.id, out curOx, out maxOx);
+                        if (sfDef != null) ActiveVessel.GetConnectedResourceTotals(sfDef.id, out curSf, out maxSf);
+
+                        if (maxLf + maxOx > 0.001)
+                        {
+                            currentResource = curLf + curOx;
+                            maxResource = maxLf + maxOx;
+                            detectedProp = "LF / OX";
+                        }
+                        else if (maxSf > 0.001)
+                        {
+                            currentResource = curSf;
+                            maxResource = maxSf;
+                            detectedProp = "SOLID";
+                        }
+                    }
+
+                    if (_lastActiveEngines == 0 && engineCount > 0 && Throttle > 0.01f)
+                    {
+                        TriggerEngineIgnitionEvent();
+                    }
+                    _lastActiveEngines = engineCount;
 
                     int stageTotalEngines = 0;
                     if (_cachedEngines != null)
@@ -1061,7 +1162,7 @@ namespace ModularFlightPanel.Core
 
                     ActiveEngines = engineCount;
                     TotalStageEngines = stageTotalEngines > 0 ? stageTotalEngines : (engineCount > 0 ? engineCount : 1);
-                    StagePropellantFraction = maxResource > 0.001 ? (float)(currentResource / maxResource) : 1.0f;
+                    StagePropellantFraction = maxResource > 0.001 ? Mathf.Clamp01((float)(currentResource / maxResource)) : 1.0f;
                     StagePropellantName = detectedProp;
                     _cachedTotalThrust = thrust;
                     }

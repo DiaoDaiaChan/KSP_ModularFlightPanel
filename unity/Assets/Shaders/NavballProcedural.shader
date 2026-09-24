@@ -41,6 +41,7 @@ Shader "ModularFlightPanel/NavballProcedural"
         _NumeralRollAngle ("Numeral Roll Angle (Rad)", Float) = 0.0
         _NumeralUprightMode ("Numeral Upright Mode", Range(0.0, 1.0)) = 1.0
         _NumeralTangentComp ("Tangent Foreshortening Comp", Range(0.0, 1.0)) = 1.0
+        _DetailScale ("Screen-Size Detail", Range(0.0, 1.0)) = 1.0
 
         // 合成视景近地防撞警示 (GPWS Ground Hazard Warning)
         _GroundHazardAlert ("Ground Hazard Alert", Range(0.0, 1.0)) = 0.0
@@ -145,6 +146,7 @@ Shader "ModularFlightPanel/NavballProcedural"
             float _NumeralRollAngle;
             float _NumeralUprightMode;
             float _NumeralTangentComp;
+            float _DetailScale;
             float _GroundHazardAlert;
             float _VernierScaleDetail;
 
@@ -182,6 +184,12 @@ Shader "ModularFlightPanel/NavballProcedural"
                 else
                 {
                     col = lerp(_GroundHorizonColor, _GroundNadirColor, pow(-p.y, 0.88));
+
+                    // 地面半球加稀疏斜向地形纹理，配合负俯仰虚线刻度，让上下半球一眼可辨。
+                    float terrainPhase = headDeg * 0.42 + absPitch * 1.15;
+                    float terrainLine = abs(frac(terrainPhase / 11.0 + 0.5) - 0.5);
+                    float terrainHatch = 1.0 - smoothstep(0.012, 0.038, terrainLine);
+                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb, terrainHatch * 0.16);
 
                     // GPWS / 近地大下沉率防撞动态斑马纹 (Ground Terrain Hazard Pull-Up Stripes)
                     if (_GroundHazardAlert > 0.01)
@@ -223,7 +231,8 @@ Shader "ModularFlightPanel/NavballProcedural"
 
                 // 动态字形滚转正向对齐与切向反畸变展开 (Dynamic Upright Roll Rotation & Tangent Expansion)
                 float NdotV = saturate(dot(normal, viewDir));
-                float tangentAspect = lerp(1.0, clamp(1.0 / max(NdotV, 0.45), 1.0, 1.75), _NumeralTangentComp);
+                // 限制球缘切向补偿，避免字形被过度拉宽后碰撞、截断。
+                float tangentAspect = lerp(1.0, clamp(1.0 / max(NdotV, 0.58), 1.0, 1.28), _NumeralTangentComp);
                 float numRoll = -_NumeralRollAngle * _NumeralUprightMode;
                 float cosNR = cos(numRoll);
                 float sinNR = sin(numRoll);
@@ -239,7 +248,11 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pitchGlyphDistance = min(
                     DigitDistance(rotPitchOffset + float2(2.0, 0.0), pitchTens),
                     DigitDistance(rotPitchOffset - float2(2.0, 0.0), pitchOnes));
-                float pitchGlyphEnabled = step(14.0, pitchLabelLevel) * (1.0 - step(76.0, pitchLabelLevel)) * polarLadderFade;
+                float pitchGlyphEnabled = step(14.0, pitchLabelLevel) * (1.0 - step(76.0, pitchLabelLevel)) * polarLadderFade * smoothstep(0.12, 0.42, NdotV) * smoothstep(0.08, 0.34, _DetailScale);
+                // 负俯仰数字前加短横，和地面侧虚线梯级形成明确的方向提示。
+                float pitchSignDistance = SegmentDistance(rotPitchOffset, float2(-4.45, 0.0), float2(0.58, 0.10));
+                float pitchSignEnabled = pitchGlyphEnabled * step(0.1, pitchLabelLevel) * (pitchDeg < 0.0 ? 1.0 : 0.0);
+                pitchGlyphDistance = min(pitchGlyphDistance, lerp(100.0, pitchSignDistance, pitchSignEnabled));
                 float pitchRadialSq = pitchHeadingOffset * pitchHeadingOffset + pitchLabelOffset * pitchLabelOffset;
                 float pitchLabelGap = (pitchRadialSq < 26.0) ? pitchGlyphEnabled : 0.0;
 
@@ -264,13 +277,13 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pMod10 = abs(pitchDeg - round(pitchDeg / 10.0) * 10.0);
                 float pLevel10 = round(absPitch / 10.0) * 10.0;
                 bool isPure10 = (fmod(pLevel10, 30.0) > 4.0) && (fmod(pLevel10, 15.0) > 4.0) && (pLevel10 > 4.0 && pLevel10 < 80.0);
-                float isTick10 = (isPure10 && pMod10 < 0.28 && absHOffset < 5.5) ? 0.72 : 0.0;
+                float isTick10 = (isPure10 && pMod10 < 0.28 && absHOffset < 5.5) ? 0.72 * smoothstep(0.0, 0.32, _DetailScale) : 0.0;
 
                 // 中间 5° 梯级短杠 (横跨 ±3.2°)
                 float pMod5 = abs(pitchDeg - round(pitchDeg / 5.0) * 5.0);
                 float pLevel5 = round(absPitch / 5.0) * 5.0;
                 bool isPure5 = (fmod(pLevel5, 10.0) > 2.0) && (pLevel5 > 2.0 && pLevel5 < 80.0);
-                float isTick5 = (isPure5 && pMod5 < 0.22 && absHOffset < 3.2) ? 0.50 : 0.0;
+                float isTick5 = (isPure5 && pMod5 < 0.22 && absHOffset < 3.2) ? 0.50 * smoothstep(0.22, 0.62, _DetailScale) : 0.0;
 
                 float combinedLadder = max(majorLadder15, max(isTick10, isTick5)) * polarLadderFade;
 
@@ -281,7 +294,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                     float pLevel25 = round(absPitch / 2.5) * 2.5;
                     bool isPure25 = (fmod(pLevel25, 5.0) > 1.0);
                     float isTick25 = (isPure25 && pMod25 < 0.18 && absHOffset < 2.0) ? 0.65 : 0.0;
-                    combinedLadder = max(combinedLadder, isTick25 * _VernierScaleDetail);
+                    combinedLadder = max(combinedLadder, isTick25 * _VernierScaleDetail * smoothstep(0.35, 0.75, _DetailScale));
                 }
 
                 col = lerp(col, _PitchLadderColor, saturate(combinedLadder * _PitchLadderColor.a * 0.92));
@@ -314,8 +327,12 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pitchTextFill = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance)) * pitchGlyphEnabled;
 
                 // 赤道航向 3 位读数 (000, 030, 060, 090, 120, 150, 180, 210, 240, 270, 300, 330)
-                float headingCenter = pitchHeadingCenter;
-                float headingOffset = pitchHeadingOffset;
+                // 只在 30°/60° 的标准航向间隔间切换，避免缩放过渡时出现非标准角度标签。
+                float headingStep = (_DetailScale < 0.48) ? 60.0 : 30.0;
+                float headingCenter = floor(headDeg / headingStep + 0.5) * headingStep;
+                float headingOffset = headDeg - headingCenter;
+                if (headingOffset > 180.0) headingOffset -= 360.0;
+                if (headingOffset < -180.0) headingOffset += 360.0;
                 float headingNumber = fmod(headingCenter + 360.0, 360.0);
                 float headingHundreds = floor(headingNumber / 100.0);
                 float headingTens = floor(fmod(headingNumber, 100.0) / 10.0);
@@ -334,7 +351,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float headingGlyphAA = clamp(max(fwidth(headingOffset), fwidth(pitchDeg)), 0.08, 0.32);
                 float headingTextOutline = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance - 0.45);
                 float headingTextFill = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance);
-                float headingTextEnabled = 1.0 - smoothstep(5.5, 7.5, abs(pitchDeg));
+                float headingTextEnabled = (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) * smoothstep(0.12, 0.42, NdotV);
 
                 float textOutline = max(pitchTextOutline, headingTextOutline * headingTextEnabled);
                 float textFill = max(pitchTextFill, headingTextFill * headingTextEnabled);

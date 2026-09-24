@@ -59,8 +59,37 @@ namespace ModularFlightPanel.Editor
             }
             public float HeadingAngle => _sim != null ? _sim.Heading : 0f;
 
+            public static bool MarkerDemoMode = false;
+
             public bool GetMarkerDirection(string markerType, out Vector3 dir, out bool isVisible)
             {
+                if (MarkerDemoMode)
+                {
+                    switch (markerType.ToLowerInvariant())
+                    {
+                        case "normal":
+                            dir = new Vector3(0f, 0.58f, 0.81f).normalized;
+                            isVisible = true;
+                            return true;
+                        case "antinormal":
+                            dir = new Vector3(0f, -0.58f, 0.81f).normalized;
+                            isVisible = true;
+                            return true;
+                        case "radialin":
+                            dir = new Vector3(-0.58f, 0f, 0.81f).normalized;
+                            isVisible = true;
+                            return true;
+                        case "radialout":
+                            dir = new Vector3(0.58f, 0f, 0.81f).normalized;
+                            isVisible = true;
+                            return true;
+                        default:
+                            dir = Vector3.forward;
+                            isVisible = false;
+                            return false;
+                    }
+                }
+
                 switch (markerType.ToLowerInvariant())
                 {
                     case "prograde":
@@ -239,8 +268,11 @@ namespace ModularFlightPanel.Editor
                     simEngine.ApplyScenario(FlightScenario.MECOAndStaging);
                 else if (targetScenario.IndexOf("cruise", StringComparison.OrdinalIgnoreCase) >= 0 || targetScenario.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0)
                     simEngine.ApplyScenario(FlightScenario.OrbitalCruise);
-                else if (targetScenario.IndexOf("pad", StringComparison.OrdinalIgnoreCase) >= 0)
-                    simEngine.ApplyScenario(FlightScenario.PadHold);
+                else if (targetScenario.IndexOf("marker", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    HeadlessNavBallHook.MarkerDemoMode = true;
+                    simEngine.ApplyScenario(FlightScenario.OrbitalCruise);
+                }
                 else
                     simEngine.ApplyScenario(FlightScenario.AscentTransonic);
             }
