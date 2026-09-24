@@ -248,8 +248,8 @@ namespace ModularFlightPanel.Core
             {
                 list.Add(new StageDeltaVInfo(3, activeDv, activeBurnTime, activeTwr, 312.0, currentStage == 3, new List<StagePartIconData>
                 {
-                    new StagePartIconData("SOLID_BOOSTER", 3, 6, "BACC 固体燃料助推器", "Solid Fuel", stageFuel),
-                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-M3 'Mainsail' 液体发动机", "Liquid Fuel", Mathf.Clamp01(stageFuel + 0.15f))
+                    new StagePartIconData("SOLID_BOOSTER", 3, 6, "BACC 固体燃料助推器", "Solid Fuel", stageFuel, default, false, 1001),
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-M3 'Mainsail' 液体发动机", "Liquid Fuel", Mathf.Clamp01(stageFuel + 0.15f), default, false, 1002)
                 }));
             }
             if (currentStage >= 2)
@@ -259,8 +259,8 @@ namespace ModularFlightPanel.Core
                 double s2Twr = currentStage == 2 ? activeTwr : 1.40;
                 list.Add(new StageDeltaVInfo(2, s2Dv, s2Time, s2Twr, 345.0, currentStage == 2, new List<StagePartIconData>
                 {
-                    new StagePartIconData("DECOUPLER_HOR", 6, 4, "TT-70 径向分离挂架"),
-                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-25 垂直级间分离器")
+                    new StagePartIconData("DECOUPLER_HOR", 6, 4, "TT-70 径向分离挂架", null, -1f, default, false, 1003),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-25 垂直级间分离器", null, -1f, default, false, 1004)
                 }));
             }
             if (currentStage >= 1)
@@ -270,16 +270,99 @@ namespace ModularFlightPanel.Core
                 double s1Twr = currentStage == 1 ? activeTwr : 0.95;
                 list.Add(new StageDeltaVInfo(1, s1Dv, s1Time, s1Twr, 380.0, currentStage == 1, new List<StagePartIconData>
                 {
-                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-L10 'Poodle' 上级发动机", "Liquid Fuel", currentStage == 1 ? stageFuel : 1.0f),
-                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-12 载荷分离环")
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-L10 'Poodle' 上级发动机", "Liquid Fuel", currentStage == 1 ? stageFuel : 1.0f, default, false, 1005),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-12 载荷分离环", null, -1f, default, false, 1006)
                 }));
             }
             list.Add(new StageDeltaVInfo(0, 0.0, 0.0, 0.0, 0.0, currentStage == 0, new List<StagePartIconData>
             {
-                new StagePartIconData("PARACHUTES", 8, 2, "Mk16-XL 主降落伞"),
-                new StagePartIconData("COMMAND_POD", 4, 1, "Mk1-3 载人指令舱")
+                new StagePartIconData("PARACHUTES", 8, 2, "Mk16-XL 主降落伞", null, -1f, default, false, 1007),
+                new StagePartIconData("COMMAND_POD", 4, 1, "Mk1-3 载人指令舱", null, -1f, default, false, 1008)
             }));
             return list;
+        }
+
+        public void InsertSimulatedStage(int stageIndex)
+        {
+            var list = new List<StageDeltaVInfo>(StageDeltaVList);
+            int insertPos = 0;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Stage <= stageIndex)
+                {
+                    insertPos = i;
+                    break;
+                }
+            }
+            list.Insert(insertPos, new StageDeltaVInfo(stageIndex, 0.0, 0.0, 0.0, 0.0, false, new List<StagePartIconData>()));
+            for (int i = 0; i < list.Count; i++)
+            {
+                var s = list[i];
+                list[i] = new StageDeltaVInfo(list.Count - 1 - i, s.DeltaV, s.BurnTime, s.TWR, s.Isp, s.IsActive, s.PartIcons);
+            }
+            StageDeltaVList = list;
+        }
+
+        public void DeleteSimulatedStage(int stageIndex)
+        {
+            var list = new List<StageDeltaVInfo>(StageDeltaVList);
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Stage == stageIndex)
+                {
+                    list.RemoveAt(i);
+                    break;
+                }
+            }
+            for (int i = 0; i < list.Count; i++)
+            {
+                var s = list[i];
+                list[i] = new StageDeltaVInfo(list.Count - 1 - i, s.DeltaV, s.BurnTime, s.TWR, s.Isp, s.IsActive, s.PartIcons);
+            }
+            StageDeltaVList = list;
+        }
+
+        public void MoveSimulatedPartToStage(uint partFlightId, int fromStage, int partIndex, int targetStage)
+        {
+            var list = new List<StageDeltaVInfo>(StageDeltaVList);
+            StagePartIconData foundPart = default;
+            bool found = false;
+            int fromStageIdx = -1;
+            int toStageIdx = -1;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Stage == fromStage) fromStageIdx = i;
+                if (list[i].Stage == targetStage) toStageIdx = i;
+            }
+
+            if (fromStageIdx >= 0 && toStageIdx >= 0)
+            {
+                var fromParts = new List<StagePartIconData>(list[fromStageIdx].PartIcons);
+                for (int p = 0; p < fromParts.Count; p++)
+                {
+                    if ((partFlightId > 0 && fromParts[p].PartFlightId == partFlightId) || (partIndex == p))
+                    {
+                        foundPart = fromParts[p];
+                        fromParts.RemoveAt(p);
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found)
+                {
+                    var fromStageInfo = list[fromStageIdx];
+                    list[fromStageIdx] = new StageDeltaVInfo(fromStageInfo.Stage, fromStageInfo.DeltaV, fromStageInfo.BurnTime, fromStageInfo.TWR, fromStageInfo.Isp, fromStageInfo.IsActive, fromParts);
+
+                    var toParts = new List<StagePartIconData>(list[toStageIdx].PartIcons);
+                    toParts.Add(foundPart);
+                    var toStageInfo = list[toStageIdx];
+                    list[toStageIdx] = new StageDeltaVInfo(toStageInfo.Stage, toStageInfo.DeltaV, toStageInfo.BurnTime, toStageInfo.TWR, toStageInfo.Isp, toStageInfo.IsActive, toParts);
+
+                    StageDeltaVList = list;
+                }
+            }
         }
 
         public void ApplyScenario(FlightScenario scenario)

@@ -252,6 +252,7 @@ namespace ModularFlightPanel.Editor
             }
             NavBallHookService.Provider = new HeadlessNavBallHook(navballTex, simEngine);
             StockStageIconService.Provider = new HeadlessStageIconHook();
+            StockStageActionService.Provider = new HeadlessStageActionHook(simEngine);
 
             // 5. 创建专用 1080P 离屏渲染相机与 RenderTexture
             const int width = 1920;
@@ -520,7 +521,10 @@ namespace ModularFlightPanel.Editor
             SetWidgetState("tape.altitude", true, 120f, 0f);
             SetWidgetState("core.bottom_controls", true, 0f, -88f);
             SetWidgetState("core.sas_dial", true, 0f, -150f);
-            SetWidgetState("core.stage_control", true, -340f, -120f);
+            SetWidgetState("core.stage_control", true, -360f, -120f);
+            SetWidgetState("custom.staging_sequence", true, -360f, 110f);
+            SetWidgetState("core.time_warp", true, -560f, 460f);
+            SetWidgetState("custom.signal", true, 560f, 460f);
 
             // 隐藏其它非核心部件
             SetWidgetState("core.throttle", false, 0f, 0f);
@@ -534,7 +538,6 @@ namespace ModularFlightPanel.Editor
             SetWidgetState("custom.nd_navigation", false, -420f, 25f);
             SetWidgetState("custom.electrical", false, -420f, -165f);
             SetWidgetState("custom.rocket", false, 420f, 95f);
-            SetWidgetState("custom.signal", false, 420f, -85f);
             SetWidgetState("custom.life", false, 420f, -220f);
             SetWidgetState("gauge.stage_dv", false, 0f, 0f);
         }
@@ -585,6 +588,15 @@ namespace ModularFlightPanel.Editor
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cs);
+                }
+                else if (id == "custom.signal" || id == "signal" || id == "custom.signal_list")
+                {
+                    var sig = new WidgetConfig("custom.signal", "天线通信网络", x, y, 1.0f)
+                    {
+                        WidgetType = "signal",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(sig);
                 }
                 else if (id == "core.toolbar" || id == "toolbar")
                 {

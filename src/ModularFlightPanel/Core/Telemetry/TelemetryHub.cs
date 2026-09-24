@@ -468,9 +468,13 @@ namespace ModularFlightPanel.Core
                             string partTitle = string.Empty;
                             string propName = null;
                             float propFrac = -1f;
+                            uint flightId = 0;
 
                             if (icon.Part != null)
                             {
+                                flightId = icon.Part.flightID;
+                                if (flightId == 0) flightId = icon.Part.craftID;
+                                if (flightId == 0) flightId = (uint)icon.Part.persistentId;
                                 partTitle = icon.Part.partInfo != null ? icon.Part.partInfo.title : icon.Part.name;
                                 if (icon.Part.Resources != null)
                                 {
@@ -534,7 +538,7 @@ namespace ModularFlightPanel.Core
                             }
                             else
                             {
-                                iconList.Add(new StagePartIconData(typeStr, typeIdx, count, partTitle, propName, propFrac, uv, hasUv));
+                                iconList.Add(new StagePartIconData(typeStr, typeIdx, count, partTitle, propName, propFrac, uv, hasUv, flightId));
                             }
                         }
                     }

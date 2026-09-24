@@ -18,8 +18,9 @@ namespace ModularFlightPanel.Core
         public float PropellantFraction;  // 推进剂余量比例 (0.0 ~ 1.0, 若非推进部件则为 -1.0)
         public Rect StockUvRect;          // 原版 StageIcon 贴图图集 UV 矩形
         public bool HasStockUv;           // 是否包含原版有效 UV 坐标
+        public uint PartFlightId;         // 部件全局唯一 ID (flightID / craftID)，用于场景高亮与跨级移动
 
-        public StagePartIconData(string iconType, int iconTypeIndex, int count, string partTitle = "", string propName = null, float propFrac = -1f, Rect stockUv = default, bool hasStockUv = false)
+        public StagePartIconData(string iconType, int iconTypeIndex, int count, string partTitle = "", string propName = null, float propFrac = -1f, Rect stockUv = default, bool hasStockUv = false, uint partFlightId = 0)
         {
             IconType = iconType;
             IconTypeIndex = iconTypeIndex;
@@ -29,6 +30,7 @@ namespace ModularFlightPanel.Core
             PropellantFraction = propFrac;
             StockUvRect = stockUv;
             HasStockUv = hasStockUv;
+            PartFlightId = partFlightId;
         }
     }
 

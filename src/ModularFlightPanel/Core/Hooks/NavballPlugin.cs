@@ -30,6 +30,7 @@ namespace ModularFlightPanel.Core
             NavBallHookService.Provider = new StockNavBallVisualHook();
             NavBallHookService.MarkerDirectionFallback = StockNavBallHook.GetMarkerDirection;
             StockStageIconService.Provider = new StockStageIconHook();
+            StockStageActionService.Provider = new StockStageActionHook();
 
             // 3. 应用 Harmony 补丁隐藏原版 Navball
             HarmonyPatches.ApplyPatches();

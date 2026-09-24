@@ -30,6 +30,7 @@ namespace ModularFlightPanel.Core
             NavBallHookService.HideStockCommNetAction = HideStockCommNet;
             NavBallHookService.RestoreAllStockUIAction = RestoreAllStockUI;
             StockStageIconService.Provider = new StockStageIconHook();
+            StockStageActionService.Provider = new StockStageActionHook();
         }
 
         public static void RestoreAllStockUI()

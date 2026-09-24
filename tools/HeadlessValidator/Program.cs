@@ -192,6 +192,10 @@ namespace ModularFlightPanel.HeadlessValidator
                 {
                     return CheckUnityMirror(repoRoot, true) == 0 ? 0 : 1;
                 }
+                else if (args[i] == "--export-probe-catalog")
+                {
+                    return ProbeCatalogExporter.ExportCatalog(repoRoot);
+                }
             }
 
             int overallErrors = 0;
