@@ -14,6 +14,9 @@ namespace ModularFlightPanel.Config
         public string DefaultName = "";
         public string CustomLabel = "";
         public bool IsVisible = true;
+
+        public string ButtonKey { get => Key; set => Key = value; }
+        public string DisplayName { get => string.IsNullOrEmpty(CustomLabel) ? DefaultName : CustomLabel; set => CustomLabel = value; }
     }
 
     [Serializable]
@@ -163,7 +166,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ModularFlightPanel] Failed to save theme settings: {ex.Message}");
+                MFPLogger.Exception(MFPLogger.CatTheme, ex, "Failed to save theme settings");
             }
         }
 
@@ -212,7 +215,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ModularFlightPanel] Failed to load theme settings: {ex.Message}");
+                MFPLogger.Exception(MFPLogger.CatTheme, ex, "Failed to load theme settings");
             }
         }
 
@@ -244,7 +247,7 @@ namespace ModularFlightPanel.Config
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[ModularFlightPanel] Failed to parse custom theme file '{file}': {ex.Message}");
+                        MFPLogger.Exception(MFPLogger.CatTheme, ex, $"Failed to parse custom theme file '{file}'");
                     }
                 }
             }
@@ -264,11 +267,11 @@ namespace ModularFlightPanel.Config
                 CurrentTheme = target;
                 SaveSettings();
                 OnThemeChanged?.Invoke(CurrentTheme);
-                Debug.Log($"[ModularFlightPanel] Switched theme to: {CurrentTheme.DisplayName}");
+                MFPLogger.Info(MFPLogger.CatTheme, $"Switched theme to: {CurrentTheme.DisplayName}");
             }
             else
             {
-                Debug.LogWarning($"[ModularFlightPanel] Theme not found for query: '{themeId}'");
+                MFPLogger.Warn(MFPLogger.CatTheme, $"Theme not found for query: '{themeId}'");
             }
         }
 
@@ -304,11 +307,11 @@ namespace ModularFlightPanel.Config
                 else AvailableThemes.Add(theme);
 
                 SetTheme(theme);
-                Debug.Log($"[ModularFlightPanel] Custom theme saved & activated: {theme.DisplayName} ({path})");
+                MFPLogger.Info(MFPLogger.CatTheme, $"Custom theme saved & activated: {theme.DisplayName} ({path})");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ModularFlightPanel] Failed to save custom theme: {ex.Message}");
+                MFPLogger.Exception(MFPLogger.CatTheme, ex, "Failed to save custom theme");
             }
         }
 
@@ -324,12 +327,12 @@ namespace ModularFlightPanel.Config
                 {
                     SetTheme(AvailableThemes.Count > 0 ? AvailableThemes[0].ThemeId : "modern_aero");
                 }
-                Debug.Log($"[ModularFlightPanel] Custom theme deleted: {themeId}");
+                MFPLogger.Info(MFPLogger.CatTheme, $"Custom theme deleted: {themeId}");
                 return true;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ModularFlightPanel] Failed to delete custom theme: {ex.Message}");
+                MFPLogger.Exception(MFPLogger.CatTheme, ex, "Failed to delete custom theme");
                 return false;
             }
         }

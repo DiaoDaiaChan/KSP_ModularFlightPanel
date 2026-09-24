@@ -66,4 +66,54 @@ namespace ModularFlightPanel.Core
             set => _provider = value;
         }
     }
+
+    /// <summary>
+    /// 3D 飞船离屏渲染投影与观察视角模式
+    /// </summary>
+    public enum Vessel3DViewMode
+    {
+        /// <summary>经典航空航天轴测 3/4 视角 (俯仰 ~25°, 偏航 ~-35°)</summary>
+        Isometric = 0,
+        /// <summary>真实三维透视视角 (具备自然纵深与视锥收敛感)</summary>
+        Perspective = 1,
+        /// <summary>姿态联动视角 (跟随飞船世界/轨道姿态实时偏转)</summary>
+        AttitudeSync = 2,
+        /// <summary>权威俯视视角 (带三维表面法线与边缘发光)</summary>
+        TopDown = 3
+    }
+
+    /// <summary>
+    /// 低代价 3D 飞船离屏渲染提供者抽象接口 (Pure Unity Contract)
+    /// </summary>
+    public interface IVessel3DProvider
+    {
+        Texture Texture3D { get; }
+        event Action<Texture> OnTexture3DUpdated;
+        void TriggerBurst(float duration = 3.0f);
+        void BakeNow();
+
+        Vessel3DViewMode ViewMode { get; set; }
+        Vector3 CameraAngles { get; set; }
+        bool IsTurntableActive { get; set; }
+        float TurntableSpeed { get; set; }
+        float CameraFov { get; set; }
+        float ZoomMargin { get; set; }
+    }
+
+    public static class Vessel3DService
+    {
+        private static IVessel3DProvider _provider;
+        public static IVessel3DProvider Provider
+        {
+            get
+            {
+                if (_provider is UnityEngine.Object obj && obj == null)
+                {
+                    _provider = null;
+                }
+                return _provider;
+            }
+            set => _provider = value;
+        }
+    }
 }

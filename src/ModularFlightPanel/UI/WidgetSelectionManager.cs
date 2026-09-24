@@ -127,14 +127,17 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            float minX = list.Min(w => GetWidgetBounds(w).xMin);
-            foreach (var w in list)
+            WidgetEditHistory.RecordInstantAction("左对齐", () =>
             {
-                var b = GetWidgetBounds(w);
-                float newX = minX + b.width * 0.5f;
-                w.UpdateTransform(x: newX);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float minX = list.Min(w => GetWidgetBounds(w).xMin);
+                foreach (var w in list)
+                {
+                    var b = GetWidgetBounds(w);
+                    float newX = minX + b.width * 0.5f;
+                    w.UpdateTransform(x: newX);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void AlignCenterX()
@@ -142,12 +145,15 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            float avgX = list.Average(w => w.RectTransform.anchoredPosition.x);
-            foreach (var w in list)
+            WidgetEditHistory.RecordInstantAction("水平居中", () =>
             {
-                w.UpdateTransform(x: avgX);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float avgX = list.Average(w => w.RectTransform.anchoredPosition.x);
+                foreach (var w in list)
+                {
+                    w.UpdateTransform(x: avgX);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void AlignRight()
@@ -155,14 +161,17 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            float maxX = list.Max(w => GetWidgetBounds(w).xMax);
-            foreach (var w in list)
+            WidgetEditHistory.RecordInstantAction("右对齐", () =>
             {
-                var b = GetWidgetBounds(w);
-                float newX = maxX - b.width * 0.5f;
-                w.UpdateTransform(x: newX);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float maxX = list.Max(w => GetWidgetBounds(w).xMax);
+                foreach (var w in list)
+                {
+                    var b = GetWidgetBounds(w);
+                    float newX = maxX - b.width * 0.5f;
+                    w.UpdateTransform(x: newX);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void AlignTop()
@@ -170,14 +179,17 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            float maxY = list.Max(w => GetWidgetBounds(w).yMax);
-            foreach (var w in list)
+            WidgetEditHistory.RecordInstantAction("顶对齐", () =>
             {
-                var b = GetWidgetBounds(w);
-                float newY = maxY - b.height * 0.5f;
-                w.UpdateTransform(y: newY);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float maxY = list.Max(w => GetWidgetBounds(w).yMax);
+                foreach (var w in list)
+                {
+                    var b = GetWidgetBounds(w);
+                    float newY = maxY - b.height * 0.5f;
+                    w.UpdateTransform(y: newY);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void AlignCenterY()
@@ -185,12 +197,15 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            float avgY = list.Average(w => w.RectTransform.anchoredPosition.y);
-            foreach (var w in list)
+            WidgetEditHistory.RecordInstantAction("垂直居中", () =>
             {
-                w.UpdateTransform(y: avgY);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float avgY = list.Average(w => w.RectTransform.anchoredPosition.y);
+                foreach (var w in list)
+                {
+                    w.UpdateTransform(y: avgY);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void AlignBottom()
@@ -198,14 +213,17 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            float minY = list.Min(w => GetWidgetBounds(w).yMin);
-            foreach (var w in list)
+            WidgetEditHistory.RecordInstantAction("底对齐", () =>
             {
-                var b = GetWidgetBounds(w);
-                float newY = minY + b.height * 0.5f;
-                w.UpdateTransform(y: newY);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float minY = list.Min(w => GetWidgetBounds(w).yMin);
+                foreach (var w in list)
+                {
+                    var b = GetWidgetBounds(w);
+                    float newY = minY + b.height * 0.5f;
+                    w.UpdateTransform(y: newY);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void DistributeHorizontally()
@@ -213,16 +231,19 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.OrderBy(w => w.RectTransform.anchoredPosition.x).ToList();
             if (list.Count < 3) return;
 
-            float minX = list.First().RectTransform.anchoredPosition.x;
-            float maxX = list.Last().RectTransform.anchoredPosition.x;
-            float step = (maxX - minX) / (list.Count - 1);
-
-            for (int i = 1; i < list.Count - 1; i++)
+            WidgetEditHistory.RecordInstantAction("水平等距分布", () =>
             {
-                float targetX = minX + i * step;
-                list[i].UpdateTransform(x: targetX);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float minX = list.First().RectTransform.anchoredPosition.x;
+                float maxX = list.Last().RectTransform.anchoredPosition.x;
+                float step = (maxX - minX) / (list.Count - 1);
+
+                for (int i = 1; i < list.Count - 1; i++)
+                {
+                    float targetX = minX + i * step;
+                    list[i].UpdateTransform(x: targetX);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void DistributeVertically()
@@ -230,16 +251,19 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.OrderBy(w => w.RectTransform.anchoredPosition.y).ToList();
             if (list.Count < 3) return;
 
-            float minY = list.First().RectTransform.anchoredPosition.y;
-            float maxY = list.Last().RectTransform.anchoredPosition.y;
-            float step = (maxY - minY) / (list.Count - 1);
-
-            for (int i = 1; i < list.Count - 1; i++)
+            WidgetEditHistory.RecordInstantAction("垂直等距分布", () =>
             {
-                float targetY = minY + i * step;
-                list[i].UpdateTransform(y: targetY);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                float minY = list.First().RectTransform.anchoredPosition.y;
+                float maxY = list.Last().RectTransform.anchoredPosition.y;
+                float step = (maxY - minY) / (list.Count - 1);
+
+                for (int i = 1; i < list.Count - 1; i++)
+                {
+                    float targetY = minY + i * step;
+                    list[i].UpdateTransform(y: targetY);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void CenterToScreenX()
@@ -247,24 +271,86 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count == 0) return;
 
-            if (list.Count == 1)
+            WidgetEditHistory.RecordInstantAction("对齐至机体对称轴(X=0)", () =>
             {
-                list[0].UpdateTransform(x: 0f);
-            }
-            else
-            {
-                // 将多选群组的整体包围盒中心对准 X = 0
-                float minX = list.Min(w => GetWidgetBounds(w).xMin);
-                float maxX = list.Max(w => GetWidgetBounds(w).xMax);
-                float groupCenterX = (minX + maxX) * 0.5f;
-                float offset = -groupCenterX;
+                if (list.Count == 1)
+                {
+                    list[0].UpdateTransform(x: 0f);
+                }
+                else
+                {
+                    float minX = list.Min(w => GetWidgetBounds(w).xMin);
+                    float maxX = list.Max(w => GetWidgetBounds(w).xMax);
+                    float groupCenterX = (minX + maxX) * 0.5f;
+                    float offset = -groupCenterX;
 
+                    foreach (var w in list)
+                    {
+                        w.UpdateTransform(x: w.RectTransform.anchoredPosition.x + offset);
+                    }
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
+        }
+
+        public static void Nudge(Vector2 delta)
+        {
+            if (Count == 0) return;
+            WidgetEditHistory.RecordInstantAction("键盘微调位移", () =>
+            {
+                BatchMove(delta);
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
+        }
+
+        public static void BringToFront()
+        {
+            var list = SelectedWidgets.ToList();
+            if (list.Count == 0) return;
+            WidgetEditHistory.RecordInstantAction("置于顶层", () =>
+            {
                 foreach (var w in list)
                 {
-                    w.UpdateTransform(x: w.RectTransform.anchoredPosition.x + offset);
+                    if (w != null) w.transform.SetAsLastSibling();
                 }
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
+            MFPToastBridge.Show("⤒ 已置于顶层");
+        }
+
+        public static void SendToBack()
+        {
+            var list = SelectedWidgets.ToList();
+            if (list.Count == 0) return;
+            WidgetEditHistory.RecordInstantAction("置于底层", () =>
+            {
+                foreach (var w in list)
+                {
+                    if (w != null) w.transform.SetAsFirstSibling();
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
+            MFPToastBridge.Show("⤓ 已置于底层");
+        }
+
+        public static void DeleteSelected()
+        {
+            var list = SelectedWidgets.ToList();
+            if (list.Count == 0) return;
+            WidgetEditHistory.RecordInstantAction($"隐藏 {list.Count} 个组件", () =>
+            {
+                foreach (var w in list)
+                {
+                    if (w != null)
+                    {
+                        if (w.Config != null) w.Config.IsEnabled = false;
+                        w.gameObject.SetActive(false);
+                    }
+                }
+                ClearSelection();
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
+            MFPToastBridge.Show($"已隐藏选中的组件 (Ctrl+Z 可撤销)");
         }
 
         // ==========================================
@@ -339,20 +425,26 @@ namespace ModularFlightPanel.UI
 
         public static void ResetRotation()
         {
-            foreach (var w in SelectedWidgets)
+            WidgetEditHistory.RecordInstantAction("复位旋转至0°", () =>
             {
-                if (w != null) w.UpdateTransform(rotation: 0f);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                foreach (var w in SelectedWidgets)
+                {
+                    if (w != null) w.UpdateTransform(rotation: 0f);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
 
         public static void ResetScale()
         {
-            foreach (var w in SelectedWidgets)
+            WidgetEditHistory.RecordInstantAction("复位缩放至1.0x", () =>
             {
-                if (w != null) w.UpdateTransform(scale: 1.0f);
-            }
-            WidgetLayoutManager.Instance.SaveLayout();
+                foreach (var w in SelectedWidgets)
+                {
+                    if (w != null) w.UpdateTransform(scale: 1.0f);
+                }
+                WidgetLayoutManager.Instance.SaveLayout();
+            });
         }
     }
 }

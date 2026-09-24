@@ -5,8 +5,11 @@ using ModularFlightPanel.Core;
 namespace ModularFlightPanel.UI.Settings
 {
     /// <summary>
-    /// 游戏内机载遥测仿真测试沙盒 (In-Game Telemetry Simulation Sandbox)
-    /// 无需进入飞行场景或发射飞船，在航天中心、发射台或任意场景均可原地进行动态 UI 效果调校
+    /// 全新游戏内机载遥测仿真测试沙盒 (In-Game Telemetry Simulation Sandbox)
+    /// 核心功能：
+    /// 1. 原地测试全量动态仪表与飞行组件，无需等待火箭发射。
+    /// 2. 真实飞行工况阶段瞬时跳转（音障、Max-Q、关机分级、入轨、再入黑障）。
+    /// 3. 全量接入 MFPGuiSkin 现代黑晶设计系统 2.0。
     /// </summary>
     public static class TabSimulation
     {
@@ -14,9 +17,11 @@ namespace ModularFlightPanel.UI.Settings
 
         public static void Draw()
         {
+            MFPGuiSkin.EnsureInitialized();
+
             if (TelemetryHub.Instance == null)
             {
-                GUILayout.Label("正在初始化 TelemetryHub...");
+                GUILayout.Label("<color=#7088A8>正在初始化 TelemetryHub...</color>");
                 return;
             }
 
@@ -25,97 +30,96 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.BeginVertical();
 
-            // 1. 仿真模式总开关
-            GUILayout.BeginHorizontal("box");
+            // 1. 仿真模式总开关卡片
+            MFPGuiSkin.BeginCard();
             bool isSim = hub.IsSimulationMode;
-            GUI.color = isSim ? Color.green : Color.white;
-            string simToggleBtn = isSim ? "▶ [仿真模式已激活] 正在喂送物理仿真流" : "▶ [开启遥测仿真模式] 原地测试全量动态仪表";
-            if (GUILayout.Button(simToggleBtn, GUILayout.Height(30f), GUILayout.ExpandWidth(true)))
+            GUIStyle simBtnStyle = isSim ? MFPGuiSkin.SuccessButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
+            string simToggleBtn = isSim ? "▶ [仿真模式已激活] 正在喂送高保真物理仿真流" : "▶ [开启遥测仿真模式] 原地测试全量动态仪表";
+            if (GUILayout.Button(simToggleBtn, simBtnStyle, GUILayout.Height(32f), GUILayout.ExpandWidth(true)))
             {
                 hub.IsSimulationMode = !hub.IsSimulationMode;
             }
-            GUI.color = Color.white;
-            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndCard();
 
-            GUILayout.Space(6f);
+            GUILayout.Space(4f);
 
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
 
-            // 2. 真实工况阶段一键跳转
-            GUILayout.Label("<b>▼ 真实飞行工况阶段瞬时跳转 (Flight Scenarios)</b>");
-            GUILayout.Label("<color=#AAAAAA><size=11>点击任意按钮即可瞬间将全船动力学、气动、电量、通信推演至指定真实工况：</size></color>");
+            // 2. 真实工况阶段一键跳转卡片
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("🚀 真实飞行工况阶段瞬时跳转 (Flight Scenarios)", "点击即可将全船动力学推演至真实工况");
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("🚀 发射预备\n<size=10>0m/s | 1G | 满油</size>", GUILayout.Height(36f)))
+            if (GUILayout.Button("🚀 发射预备\n<size=10>0m/s | 1G | 满油</size>", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(38f)))
             {
                 hub.IsSimulationMode = true;
                 sim.ApplyScenario(FlightScenario.PadHold);
             }
-            if (GUILayout.Button("⚡ 音障爬升\n<size=10>340m/s | 动压爬升</size>", GUILayout.Height(36f)))
+            if (GUILayout.Button("⚡ 音障爬升\n<size=10>340m/s | 动压爬升</size>", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(38f)))
             {
                 hub.IsSimulationMode = true;
                 sim.ApplyScenario(FlightScenario.AscentTransonic);
             }
-            if (GUILayout.Button("💥 Max-Q 极限\n<size=10>Q=34kPa | 3.5G</size>", GUILayout.Height(36f)))
+            if (GUILayout.Button("💥 Max-Q 极限\n<size=10>Q=34kPa | 3.5G</size>", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(38f)))
             {
                 hub.IsSimulationMode = true;
                 sim.ApplyScenario(FlightScenario.MaxQ);
             }
             GUILayout.EndHorizontal();
 
+            GUILayout.Space(3f);
+
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("🔄 关机分级\n<size=10>下级点火 | 级间切分</size>", GUILayout.Height(36f)))
+            if (GUILayout.Button("🔄 关机分级\n<size=10>下级点火 | 级间切分</size>", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(38f)))
             {
                 hub.IsSimulationMode = true;
                 sim.ApplyScenario(FlightScenario.MECOAndStaging);
             }
-            if (GUILayout.Button("🌐 入轨微重力\n<size=10>120km | 0G | 净充电</size>", GUILayout.Height(36f)))
+            if (GUILayout.Button("🌐 入轨微重力\n<size=10>120km | 0G | 净充电</size>", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(38f)))
             {
                 hub.IsSimulationMode = true;
                 sim.ApplyScenario(FlightScenario.OrbitalCruise);
             }
-            if (GUILayout.Button("🌑 暗面断电\n<size=10>无光照 | 电压跌破</size>", GUILayout.Height(36f)))
+            if (GUILayout.Button("🌑 暗面断电\n<size=10>无光照 | 电压跌破</size>", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(38f)))
             {
                 hub.IsSimulationMode = true;
                 sim.ApplyScenario(FlightScenario.PowerCrisis);
             }
-            if (GUILayout.Button("🔥 黑障再入\n<size=10>-420m/s | 断网离线</size>", GUILayout.Height(36f)))
+            if (GUILayout.Button("🔥 黑障再入\n<size=10>-420m/s | 断网离线</size>", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(38f)))
             {
                 hub.IsSimulationMode = true;
                 sim.ApplyScenario(FlightScenario.ReentryBlackout);
             }
             GUILayout.EndHorizontal();
+            MFPGuiSkin.EndCard();
 
-            GUILayout.Space(12f);
+            GUILayout.Space(6f);
 
             // 3. 连续时间轴物理播放控制
-            GUILayout.Label("<b>▼ 连续物理推演时序控制器 (Timeline Player)</b>");
-            GUILayout.BeginVertical("box");
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("⏱ 连续物理推演时序控制器 (Timeline Player)");
 
             GUILayout.BeginHorizontal();
             string playBtn = sim.IsPlaying ? "❚❚ 暂停推演" : "▶ 继续播放";
-            GUI.color = sim.IsPlaying ? Color.cyan : Color.yellow;
-            if (GUILayout.Button(playBtn, GUILayout.Width(110f), GUILayout.Height(24f)))
+            GUIStyle pStyle = sim.IsPlaying ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.WarningButtonStyle;
+            if (GUILayout.Button(playBtn, pStyle, GUILayout.Width(110f), GUILayout.Height(24f)))
             {
                 sim.IsPlaying = !sim.IsPlaying;
             }
-            GUI.color = Color.white;
 
-            GUILayout.Label($"<b>推演进度:</b> {sim.TimelineTime:F1}s / {sim.MaxTimelineTime:F0}s", GUILayout.Width(160f));
+            GUILayout.Label($"<b>推演进度:</b> {sim.TimelineTime:F1}s / {sim.MaxTimelineTime:F0}s", GUILayout.Width(170f));
 
-            // 倍速切换
-            GUILayout.Label("<b>倍速:</b>", GUILayout.Width(45f));
+            GUILayout.Label("倍速:", GUILayout.Width(40f));
             float[] speeds = new float[] { 0.5f, 1.0f, 2.0f, 5.0f };
             for (int i = 0; i < speeds.Length; i++)
             {
                 bool isSel = Mathf.Approximately(sim.PlaybackSpeed, speeds[i]);
-                GUI.color = isSel ? Color.green : Color.white;
-                if (GUILayout.Button($"{speeds[i]}x", GUILayout.Width(38f), GUILayout.Height(22f)))
+                GUIStyle sStyle = isSel ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.StepperButtonStyle;
+                if (GUILayout.Button($"{speeds[i]}x", sStyle, GUILayout.Width(38f), GUILayout.Height(22f)))
                 {
                     sim.PlaybackSpeed = speeds[i];
                 }
             }
-            GUI.color = Color.white;
             GUILayout.EndHorizontal();
 
             // 时间轴滑块
@@ -124,14 +128,15 @@ namespace ModularFlightPanel.UI.Settings
             {
                 sim.TimelineTime = newTime;
             }
-            GUILayout.EndVertical();
+            MFPGuiSkin.EndCard();
 
-            GUILayout.Space(12f);
+            GUILayout.Space(6f);
 
             // 4. 当前仿真遥测即时仪表读数监视器
-            GUILayout.Label("<b>▼ 仿真物理参量即时监视器 (Live Telemetry Monitor)</b>");
-            GUILayout.BeginVertical("box");
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("📊 仿真物理参量即时监视器 (Live Telemetry Monitor)");
 
+            MFPGuiSkin.BeginInset();
             GUILayout.BeginHorizontal();
             GUILayout.Label($"地表速度: <color=#00E5FF><b>{hub.SurfaceSpeed:F1} m/s</b></color> (Mach {hub.Mach:F2})", GUILayout.Width(250f));
             GUILayout.Label($"显示高度: <color=#00FF88><b>{hub.DisplayAltitude:F0} m</b></color>", GUILayout.Width(200f));
@@ -155,8 +160,9 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Label($"通信信号: <color=#00E5FF><b>{hub.CommSignal * 100f:F0}% ({hub.ControlLevelStr})</b></color>", GUILayout.Width(200f));
             GUILayout.Label($"乘员数: <b>CREW {hub.CrewCount}/{hub.CrewCapacity}</b>", GUILayout.ExpandWidth(true));
             GUILayout.EndHorizontal();
+            MFPGuiSkin.EndInset();
 
-            GUILayout.EndVertical();
+            MFPGuiSkin.EndCard();
 
             GUILayout.EndScrollView();
             GUILayout.EndVertical();

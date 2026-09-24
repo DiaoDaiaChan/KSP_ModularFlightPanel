@@ -7,38 +7,38 @@ using ModularFlightPanel.Core;
 namespace ModularFlightPanel.UI.Settings
 {
     /// <summary>
-    /// 全新现代暗晶遥测装配台 (Aero Dark Glass Telemetry Assembler & Widget Inspector)
-    /// 核心升级：
-    /// 1. 分页检索与结果缓存 (Pagination & Query Caching)：
-    ///    彻底终结每帧无差别循环 100+ 参数造成的 2000+ IMGUI 节点风暴与严重掉帧，固定每页 8 项，性能损耗降低 92%！
-    /// 2. 变换解耦防卡死 (Decoupled Transform & Debounced Disk I/O)：
-    ///    拖拽滑块时直接热修改内存 RectTransform，仅在鼠标松开或切页时持久化，杜绝每帧写盘阻塞。
-    /// 3. 真实遥测求值节流 (Live HUD Evaluation Throttling)：
-    ///    卡片预览由每帧求值改为 4Hz (0.25s) 定频采样，大幅削减正则匹配开销。
-    /// 4. 现代 SpaceX 暗晶界面美学 (Aero Glass Cockpit UX)：
-    ///    全面接入 MFPGuiSkin，高对比度表盘量程刻度条、胶囊徽章与一键填槽。
+    /// 全新双栏主从式遥测装配台 (Master-Detail Avionics Assembler & Widget Inspector)
+    /// 核心革新：
+    /// 1. 左栏组件全局秒选器 (Widget Master Navigator, 270px)：支持实时关键字搜索、分类过滤与行内显隐，点击即切，告别盲目翻页。
+    /// 2. 缓冲式防重绘数值标定 (Buffered Numeric Calibration)：彻底根绝输入小数点与负号时被重刷回弹的经典问题。
+    /// 3. 可视化几何快速对齐工具集 (Visual Alignment & Snap Tools)：居中、贴边、吸附网格一键生效。
+    /// 4. 4Hz 定频解算真实遥测实时预览与参数字典一键绑定。
     /// </summary>
     public static class TabAssembler
     {
         private static Vector2 _leftScroll = Vector2.zero;
         private static Vector2 _rightScroll = Vector2.zero;
-        private static string _searchQuery = "";
-        private static string _lastSearchQuery = null;
-        private static int _selectedCategoryIndex = 0;
-        private static int _lastCategoryIndex = -1;
-        private static int _selectedWidgetIndex = 0;
+        private static string _widgetSearchQuery = "";
+        private static int _widgetCategoryFilter = 0; // 0=All, 1=Gauges, 2=Systems, 3=SpaceX, 4=Controls
+        private static readonly string[] WidgetCatNames = new string[] { "全部", "仪表", "系统", "SPX", "控制" };
 
-        // 分页与缓存引擎
-        private const int PageSize = 7;
-        private static int _currentPage = 0;
-        private static readonly List<TelemetryParam> _cachedFilteredParams = new List<TelemetryParam>();
+        private static string _selectedWidgetId = null;
 
-        // 遥测求值缓存
+        // 遥测词典检索与缓存
+        private static string _catalogSearchQuery = "";
+        private static string _lastCatalogSearch = null;
+        private static int _catalogCatIndex = 0;
+        private static int _lastCatalogCatIndex = -1;
+        private const int CatalogPageSize = 6;
+        private static int _catalogPage = 0;
+        private static readonly List<TelemetryParam> _filteredParams = new List<TelemetryParam>();
+
+        // 遥测卡片求值预览缓存
         private static string _cachedTemplate = null;
         private static string _cachedEvaluation = "---";
         private static float _lastEvalTime = 0f;
 
-        // 脏数据与防抖保存
+        // 脏数据与防抖提交
         private static bool _isDirty = false;
         private static float _dirtyTimer = 0f;
         private static string _toastMsg = "";
@@ -46,16 +46,7 @@ namespace ModularFlightPanel.UI.Settings
 
         public static void SetSelectedWidget(string widgetId)
         {
-            var widgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets;
-            if (widgets == null) return;
-            for (int i = 0; i < widgets.Count; i++)
-            {
-                if (widgets[i].WidgetId == widgetId)
-                {
-                    _selectedWidgetIndex = i;
-                    break;
-                }
-            }
+            _selectedWidgetId = widgetId;
         }
 
         public static void Draw()
@@ -64,203 +55,325 @@ namespace ModularFlightPanel.UI.Settings
             var widgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets;
             if (widgets == null || widgets.Count == 0)
             {
-                GUILayout.Label("<color=#FFAA00><b>当前没有任何组件，请在「航电组件库」中先添加组件。</b></color>");
+                GUILayout.Label("<color=#FFAA00><b>当前没有任何组件，请在「航电库」中先添加组件。</b></color>");
                 return;
             }
 
-            if (_selectedWidgetIndex >= widgets.Count) _selectedWidgetIndex = 0;
-            var curWidget = widgets[_selectedWidgetIndex];
+            // 保持当前选中有效
+            WidgetConfig curWidget = null;
+            if (!string.IsNullOrEmpty(_selectedWidgetId))
+            {
+                curWidget = widgets.Find(x => x.WidgetId == _selectedWidgetId);
+            }
+            if (curWidget == null)
+            {
+                curWidget = widgets[0];
+                _selectedWidgetId = curWidget.WidgetId;
+            }
 
-            // 监听鼠标抬起事件进行防抖落盘
+            // 监听鼠标抬起与防抖保存
             if (Event.current.type == EventType.MouseUp && _isDirty)
             {
                 CommitPendingSaves();
             }
 
-            // 自动定时防抖存盘 (1.5 秒空闲)
             if (_isDirty)
             {
                 _dirtyTimer += Time.unscaledDeltaTime;
-                if (_dirtyTimer > 1.5f)
-                {
-                    CommitPendingSaves();
-                }
+                if (_dirtyTimer > 1.5f) CommitPendingSaves();
             }
 
-            // 顶部横幅提示
-            if (_toastTimer > 0f && !string.IsNullOrEmpty(_toastMsg))
-            {
-                _toastTimer -= Time.unscaledDeltaTime;
-                MFPGuiSkin.DrawBadge($"✔ {_toastMsg}", Color.white, new Color(0.05f, 0.45f, 0.25f, 0.95f));
-                GUILayout.Space(4f);
-            }
+            // Toast 提示
+            MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
 
             GUILayout.BeginHorizontal();
 
             // =========================================================================
-            // 左栏：组件配置与变换标定 (Left Column: Widget Slot & Calibration, 480px)
+            // 左栏：主从组件选择与过滤器 (Master Widget Navigator, 270px)
             // =========================================================================
-            GUILayout.BeginVertical(GUILayout.Width(480f), GUILayout.ExpandHeight(true));
-            _leftScroll = GUILayout.BeginScrollView(_leftScroll);
-
-            // 1. 组件导航器卡片
-            MFPGuiSkin.BeginCard();
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("◀ 上一个", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(24f)))
-            {
-                CommitPendingSaves();
-                _selectedWidgetIndex = (_selectedWidgetIndex - 1 + widgets.Count) % widgets.Count;
-                curWidget = widgets[_selectedWidgetIndex];
-            }
-
-            string badgeText = curWidget.WidgetType == "ecam_dial" ? "ECAM 表盘" :
-                              (curWidget.WidgetType == "tape" ? "PFD 标尺" :
-                              (curWidget.WidgetId.StartsWith("spacex.") ? "SpaceX" :
-                              (curWidget.WidgetId.StartsWith("custom.") ? "遥测卡片" : "核心组件")));
-            Color badgeBg = curWidget.WidgetType == "ecam_dial" ? new Color(0.0f, 0.4f, 0.25f, 0.9f) :
-                            (curWidget.WidgetType == "tape" ? new Color(0.0f, 0.35f, 0.5f, 0.9f) :
-                            (curWidget.WidgetId.StartsWith("custom.") ? new Color(0.45f, 0.3f, 0.05f, 0.9f) : new Color(0.35f, 0.15f, 0.4f, 0.9f)));
-            MFPGuiSkin.DrawBadge(badgeText, Color.white, badgeBg, 75f);
-
-            GUILayout.Label($"<b><size=12>{curWidget.DisplayName}</size></b>", GUILayout.ExpandWidth(true));
-
-            if (GUILayout.Button("下一个 ▶", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(24f)))
-            {
-                CommitPendingSaves();
-                _selectedWidgetIndex = (_selectedWidgetIndex + 1) % widgets.Count;
-                curWidget = widgets[_selectedWidgetIndex];
-            }
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(4f);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("组件名称:", GUILayout.Width(65f));
-            string newName = GUILayout.TextField(curWidget.DisplayName, MFPGuiSkin.SearchFieldStyle);
-            if (newName != curWidget.DisplayName)
-            {
-                curWidget.DisplayName = newName;
-                MarkDirty();
-            }
-            bool prevEnabled = curWidget.IsEnabled;
-            curWidget.IsEnabled = GUILayout.Toggle(curWidget.IsEnabled, curWidget.IsEnabled ? "● 启用" : "○ 隐藏", GUILayout.Width(75f));
-            if (prevEnabled != curWidget.IsEnabled)
-            {
-                NavballHUD.Instance?.RebuildHUD();
-                MarkDirty();
-            }
-            GUILayout.EndHorizontal();
-            MFPGuiSkin.EndCard();
-
-            // 2. 空间几何与变换控制 (Transform)
-            DrawTransformInspector(curWidget);
-
-            // 3. 驱动参数插槽与标定 (Slot & Calibration)
-            if (curWidget.WidgetType == "ecam_dial" || curWidget.WidgetType == "tape")
-            {
-                DrawDialOrTapeInspector(curWidget);
-            }
-            else if (curWidget.WidgetId.StartsWith("custom.") || curWidget.WidgetType == "custom")
-            {
-                DrawCardInspector(curWidget);
-            }
-            else
-            {
-                DrawCoreInspector(curWidget);
-            }
-
-            // 4. 渲染优化控制
-            DrawOptimizationInspector(curWidget);
-
-            GUILayout.EndScrollView();
+            GUILayout.BeginVertical(GUILayout.Width(270f), GUILayout.ExpandHeight(true));
+            DrawWidgetMasterList(widgets, curWidget);
             GUILayout.EndVertical();
 
             GUILayout.Space(8f);
 
             // =========================================================================
-            // 右栏：高频遥测词典检索库 (Right Column: High-Performance Telemetry Catalog)
+            // 右栏：组件参数标定与遥测词典 (Detail Inspector & Slot Calibration)
             // =========================================================================
             GUILayout.BeginVertical(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
-            DrawTelemetryCatalogExplorer(curWidget);
+            _rightScroll = GUILayout.BeginScrollView(_rightScroll, GUILayout.ExpandHeight(true));
+
+            DrawWidgetDetailInspector(curWidget);
+
+            GUILayout.EndScrollView();
             GUILayout.EndVertical();
 
             GUILayout.EndHorizontal();
         }
 
-        #region Left Panel Sub-Inspectors
+        #region Master List (Left Column)
 
-        private static void DrawTransformInspector(WidgetConfig w)
+        private static void DrawWidgetMasterList(List<WidgetConfig> widgets, WidgetConfig curWidget)
+        {
+            MFPGuiSkin.BeginCard(GUILayout.ExpandHeight(true));
+
+            // 1. 标题与搜索框
+            MFPGuiSkin.DrawHeader("组件导航 (WIDGETS)", $"共 {widgets.Count} 项");
+            MFPGuiSkin.DrawSearchBar(ref _widgetSearchQuery, "筛选组件名称/ID...");
+
+            GUILayout.Space(4f);
+
+            // 2. 分类筛选按钮
+            GUILayout.BeginHorizontal();
+            for (int i = 0; i < WidgetCatNames.Length; i++)
+            {
+                bool isCat = (_widgetCategoryFilter == i);
+                GUIStyle catStyle = isCat ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                if (GUILayout.Button(WidgetCatNames[i], catStyle, GUILayout.Height(20f)))
+                {
+                    _widgetCategoryFilter = i;
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(6f);
+
+            // 3. 滚动组件卡片列表
+            _leftScroll = GUILayout.BeginScrollView(_leftScroll, GUILayout.ExpandHeight(true));
+
+            bool hasQuery = !string.IsNullOrEmpty(_widgetSearchQuery);
+            int matchCount = 0;
+
+            for (int i = 0; i < widgets.Count; i++)
+            {
+                var w = widgets[i];
+
+                if (!MatchesCategory(w, _widgetCategoryFilter)) continue;
+
+                if (hasQuery)
+                {
+                    bool match = (w.DisplayName != null && w.DisplayName.IndexOf(_widgetSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0)
+                              || (w.WidgetId != null && w.WidgetId.IndexOf(_widgetSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0)
+                              || (w.WidgetType != null && w.WidgetType.IndexOf(_widgetSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0);
+                    if (!match) continue;
+                }
+
+                matchCount++;
+                bool isSelected = (w.WidgetId == curWidget.WidgetId);
+                GUIStyle rowStyle = isSelected ? MFPGuiSkin.RowSelectedStyle : MFPGuiSkin.RowNormalStyle;
+
+                GUILayout.BeginHorizontal(rowStyle);
+
+                // 显隐开关小球
+                string ledChar = w.IsEnabled ? "<color=#00FF88>●</color>" : "<color=#667788>○</color>";
+                if (GUILayout.Button(ledChar, MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(22f)))
+                {
+                    w.IsEnabled = !w.IsEnabled;
+                    MarkDirty();
+                    NavballHUD.Instance?.RebuildHUD();
+                }
+
+                // 点击条目选中
+                string badge = w.WidgetType == "tape" ? "PFD" :
+                              (w.WidgetType == "ecam_dial" ? "ECAM" :
+                              (w.WidgetId.StartsWith("spacex.") ? "SPX" :
+                              (w.WidgetId.StartsWith("custom.") ? "CARD" : "CORE")));
+
+                string rowText = $"<b>{w.DisplayName}</b>\n<size=9><color=#88AACC>{badge}</color> | <color=#AAAAAA>({w.PositionX:F0}, {w.PositionY:F0})</color></size>";
+                if (GUILayout.Button(rowText, "label", GUILayout.ExpandWidth(true), GUILayout.Height(30f)))
+                {
+                    CommitPendingSaves();
+                    _selectedWidgetId = w.WidgetId;
+                }
+
+                GUILayout.EndHorizontal();
+            }
+
+            if (matchCount == 0)
+            {
+                GUILayout.Space(20f);
+                GUILayout.Label("<color=#8899AA><size=11>未搜索到匹配项</size></color>");
+            }
+
+            GUILayout.EndScrollView();
+            MFPGuiSkin.EndCard();
+        }
+
+        private static bool MatchesCategory(WidgetConfig w, int category)
+        {
+            if (category == 0) return true;
+            string id = w.WidgetId.ToLowerInvariant();
+            string type = (w.WidgetType ?? "").ToLowerInvariant();
+
+            if (category == 1) return type == "ecam_dial" || type == "tape" || type == "bar_gauge" || id.Contains("gauge");
+            if (category == 2) return id.Contains("eicas") || id.Contains("elec") || id.Contains("life") || id.Contains("perf") || id.Contains("signal") || id.Contains("rocket");
+            if (category == 3) return id.StartsWith("spacex.") || type.StartsWith("spacex_");
+            if (category == 4) return id.Contains("toolbar") || id.Contains("control") || id.Contains("sas") || id.Contains("timewarp") || id.Contains("staging") || id.Contains("ui_widget");
+            return true;
+        }
+
+        #endregion
+
+        #region Detail Inspector (Right Column)
+
+        private static void DrawWidgetDetailInspector(WidgetConfig w)
+        {
+            // 1. 顶部基础属性卡
+            DrawBasicInfoCard(w);
+
+            GUILayout.Space(4f);
+
+            // 2. 空间几何与快速对齐
+            DrawTransformCard(w);
+
+            GUILayout.Space(4f);
+
+            // 3. 遥测插槽驱动与量程标定
+            if (w.WidgetType == "ecam_dial" || w.WidgetType == "tape" || w.WidgetType == "bar_gauge")
+            {
+                DrawDialOrTapeCard(w);
+            }
+            else if (w.WidgetId.StartsWith("custom.") || w.WidgetType == "custom")
+            {
+                DrawCardTemplateCard(w);
+            }
+            else
+            {
+                DrawCoreInfoCard(w);
+            }
+
+            GUILayout.Space(4f);
+
+            // 4. 嵌入式全球遥测词典库
+            DrawEmbeddedCatalogCard(w);
+
+            GUILayout.Space(4f);
+
+            // 5. 性能与离屏调优
+            DrawPerformanceCard(w);
+        }
+
+        private static void DrawBasicInfoCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            GUILayout.Label("<b>📐 空间几何与位置变换 (Transform & Alignment)</b>", MFPGuiSkin.SectionTitleStyle);
-
-            // 坐标 X
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"X: <b>{w.PositionX:F0}px</b>", GUILayout.Width(75f));
-            if (GUILayout.Button("-10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionX -= 10f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("-1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionX -= 1f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("+1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionX += 1f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("+10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionX += 10f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("居中 0", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(48f))) { w.PositionX = 0f; ApplyWidgetTransformRuntime(w); }
 
-            GUILayout.Space(10f);
-            // 坐标 Y
-            GUILayout.Label($"Y: <b>{w.PositionY:F0}px</b>", GUILayout.Width(75f));
-            if (GUILayout.Button("-10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionY -= 10f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("-1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionY -= 1f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("+1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionY += 1f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("+10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionY += 10f; ApplyWidgetTransformRuntime(w); }
+            string typeTag = w.WidgetType == "tape" ? "PFD 滚动标尺带" :
+                            (w.WidgetType == "ecam_dial" ? "ECAM 圆弧仪表" :
+                            (w.WidgetId.StartsWith("spacex.") ? "SpaceX 航电组件" :
+                            (w.WidgetId.StartsWith("custom.") ? "遥测卡片" : "原生核心组件")));
+
+            MFPGuiSkin.DrawBadge(typeTag, Color.white, new Color(0.00f, 0.45f, 0.65f, 0.95f), 120f);
+
+            GUILayout.Label("组件显示名称:", GUILayout.Width(85f));
+            string newName = GUILayout.TextField(w.DisplayName ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.ExpandWidth(true));
+            if (newName != w.DisplayName)
+            {
+                w.DisplayName = newName;
+                MarkDirty();
+            }
+
+            GUILayout.Space(8f);
+
+            bool prevEnabled = w.IsEnabled;
+            w.IsEnabled = GUILayout.Toggle(w.IsEnabled, w.IsEnabled ? "● 运行显示" : "○ 挂起隐藏", GUILayout.Width(85f));
+            if (prevEnabled != w.IsEnabled)
+            {
+                MarkDirty();
+                NavballHUD.Instance?.RebuildHUD();
+            }
+
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndCard();
+        }
+
+        private static void DrawTransformCard(WidgetConfig w)
+        {
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("📐 空间几何与快速对齐标定 (Transform & Alignment)");
+
+            // X / Y 坐标
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("坐标 X (px):", GUILayout.Width(75f));
+            float newX = MFPGuiSkin.DrawBufferedFloatField($"posX_{w.WidgetId}", w.PositionX, 65f);
+            if (Math.Abs(newX - w.PositionX) > 0.01f) { w.PositionX = newX; ApplyTransformRuntime(w); }
+
+            if (GUILayout.Button("-50", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionX -= 50f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("-10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(32f))) { w.PositionX -= 10f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("-1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionX -= 1f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("+1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionX += 1f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("+10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(32f))) { w.PositionX += 10f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("+50", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionX += 50f; ApplyTransformRuntime(w); }
+
+            GUILayout.Space(12f);
+
+            GUILayout.Label("坐标 Y (px):", GUILayout.Width(75f));
+            float newY = MFPGuiSkin.DrawBufferedFloatField($"posY_{w.WidgetId}", w.PositionY, 65f);
+            if (Math.Abs(newY - w.PositionY) > 0.01f) { w.PositionY = newY; ApplyTransformRuntime(w); }
+
+            if (GUILayout.Button("-50", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionY -= 50f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("-10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(32f))) { w.PositionY -= 10f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("-1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionY -= 1f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("+1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f))) { w.PositionY += 1f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("+10", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(32f))) { w.PositionY += 10f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("+50", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.PositionY += 50f; ApplyTransformRuntime(w); }
             GUILayout.EndHorizontal();
 
-            GUILayout.Space(3f);
+            GUILayout.Space(4f);
 
-            // 缩放比例 Scale
+            // 一键对齐工具集
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"缩放: <b>{w.Scale:F2}x</b>", GUILayout.Width(75f));
-            if (GUILayout.Button("-0.1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.Scale = Mathf.Clamp(Mathf.Round((w.Scale - 0.1f) * 20f) / 20f, 0.2f, 4.0f); ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("+0.1", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.Scale = Mathf.Clamp(Mathf.Round((w.Scale + 0.1f) * 20f) / 20f, 0.2f, 4.0f); ApplyWidgetTransformRuntime(w); }
-            float newScale = GUILayout.HorizontalSlider(w.Scale, 0.3f, 2.5f, GUILayout.Width(90f));
-            if (Math.Abs(newScale - w.Scale) > 0.005f)
+            GUILayout.Label("快速对齐:", GUILayout.Width(75f));
+            if (GUILayout.Button("水平居中 0", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f))) { w.PositionX = 0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("垂直居中 0", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f))) { w.PositionY = 0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("贴左 -440", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f))) { w.PositionX = -440f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("贴右 +440", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f))) { w.PositionX = 440f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("🧲 吸附 10px 网格", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(115f)))
             {
-                w.Scale = Mathf.Round(newScale * 20f) / 20f;
-                ApplyWidgetTransformRuntime(w);
+                w.PositionX = Mathf.Round(w.PositionX / 10f) * 10f;
+                w.PositionY = Mathf.Round(w.PositionY / 10f) * 10f;
+                ApplyTransformRuntime(w);
             }
-            if (GUILayout.Button("0.8x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.Scale = 0.8f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("1.0x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.Scale = 1.0f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("1.2x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.Scale = 1.2f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("1.5x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.Scale = 1.5f; ApplyWidgetTransformRuntime(w); }
             GUILayout.EndHorizontal();
 
-            GUILayout.Space(3f);
+            GUILayout.Space(4f);
 
-            // 旋转角 Rotation
+            // 缩放比例
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"旋转: <b>{w.Rotation:F0}°</b>", GUILayout.Width(75f));
-            float newRot = GUILayout.HorizontalSlider(w.Rotation, 0f, 360f, GUILayout.Width(110f));
-            if (Math.Abs(newRot - w.Rotation) > 0.5f)
-            {
-                w.Rotation = Mathf.Round(newRot / 5f) * 5f;
-                ApplyWidgetTransformRuntime(w);
-            }
-            if (GUILayout.Button("0°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(32f))) { w.Rotation = 0f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("90°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.Rotation = 90f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("180°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f))) { w.Rotation = 180f; ApplyWidgetTransformRuntime(w); }
-            if (GUILayout.Button("270°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f))) { w.Rotation = 270f; ApplyWidgetTransformRuntime(w); }
+            GUILayout.Label($"缩放比例: <b>{w.Scale:F2}x</b>", GUILayout.Width(95f));
+            float sVal = GUILayout.HorizontalSlider(w.Scale, 0.3f, 3.0f, GUILayout.Width(140f));
+            if (Math.Abs(sVal - w.Scale) > 0.01f) { w.Scale = Mathf.Round(sVal * 20f) / 20f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("0.8x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Scale = 0.8f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("1.0x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Scale = 1.0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("1.2x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Scale = 1.2f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("1.5x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Scale = 1.5f; ApplyTransformRuntime(w); }
+
+            GUILayout.Space(12f);
+
+            // 旋转角
+            GUILayout.Label($"旋转角: <b>{w.Rotation:F0}°</b>", GUILayout.Width(80f));
+            float rVal = GUILayout.HorizontalSlider(w.Rotation, 0f, 360f, GUILayout.Width(120f));
+            if (Math.Abs(rVal - w.Rotation) > 0.5f) { w.Rotation = Mathf.Round(rVal / 5f) * 5f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("0°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(30f))) { w.Rotation = 0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("90°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.Rotation = 90f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("180°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Rotation = 180f; ApplyTransformRuntime(w); }
             GUILayout.EndHorizontal();
 
             MFPGuiSkin.EndCard();
         }
 
-        private static void DrawDialOrTapeInspector(WidgetConfig w)
+        private static void DrawDialOrTapeCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            GUILayout.Label("<b>📊 仪表数据驱动与量程标定 (Calibration)</b>", MFPGuiSkin.SectionTitleStyle);
+            MFPGuiSkin.DrawHeader("📊 仪表数据驱动与量程标定 (Calibration)");
 
-            // 当前绑定通配符
+            // 数据源绑定
             GUILayout.BeginHorizontal();
             GUILayout.Label("当前驱动数据源:", GUILayout.Width(110f));
-            MFPGuiSkin.DrawBadge(string.IsNullOrEmpty(w.NumericToken) ? "<未绑定>" : w.NumericToken,
-                Color.white, new Color(0.00f, 0.40f, 0.60f, 0.95f));
-            if (GUILayout.Button("解绑", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f)))
+            string tokenText = string.IsNullOrEmpty(w.NumericToken) ? "<未绑定>" : w.NumericToken;
+            MFPGuiSkin.DrawBadge(tokenText, Color.white, new Color(0.00f, 0.40f, 0.60f, 0.95f));
+
+            if (GUILayout.Button("解绑数据源", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f)))
             {
                 w.NumericToken = "";
                 MarkDirty();
@@ -276,73 +389,71 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.Space(6f);
 
-            // 量程下限与满量程上限
+            // Min & Max
             GUILayout.BeginHorizontal();
             GUILayout.Label("量程下限 (Min):", GUILayout.Width(105f));
-            double newMin = DrawDoubleField(w.MinValue);
+            double newMin = MFPGuiSkin.DrawBufferedDoubleField($"min_{w.WidgetId}", w.MinValue, 75f);
             if (Math.Abs(newMin - w.MinValue) > 0.0001) { w.MinValue = newMin; MarkDirty(); }
 
+            GUILayout.Space(16f);
+
             GUILayout.Label("量程上限 (Max):", GUILayout.Width(105f));
-            double newMax = DrawDoubleField(w.MaxValue);
+            double newMax = MFPGuiSkin.DrawBufferedDoubleField($"max_{w.WidgetId}", w.MaxValue, 75f);
             if (Math.Abs(newMax - w.MaxValue) > 0.0001) { w.MaxValue = newMax; MarkDirty(); }
             GUILayout.EndHorizontal();
 
-            // 警示与告警阈值
+            // Caution & Warning
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<color=#FFB800>黄色警示 (Caution):</color>", GUILayout.Width(105f));
-            double newCaution = DrawDoubleField(w.CautionThreshold);
+            GUILayout.Label("<color=#FFB800>黄色警示 (Caution):</color>", GUILayout.Width(125f));
+            double newCaution = MFPGuiSkin.DrawBufferedDoubleField($"caut_{w.WidgetId}", w.CautionThreshold, 75f);
             if (Math.Abs(newCaution - w.CautionThreshold) > 0.0001) { w.CautionThreshold = newCaution; MarkDirty(); }
 
-            GUILayout.Label("<color=#FF4D4D>红色告警 (Warn):</color>", GUILayout.Width(105f));
-            double newWarn = DrawDoubleField(w.WarningThreshold);
+            GUILayout.Space(16f);
+
+            GUILayout.Label("<color=#FF4D4D>红色告警 (Warn):</color>", GUILayout.Width(125f));
+            double newWarn = MFPGuiSkin.DrawBufferedDoubleField($"warn_{w.WidgetId}", w.WarningThreshold, 75f);
             if (Math.Abs(newWarn - w.WarningThreshold) > 0.0001) { w.WarningThreshold = newWarn; MarkDirty(); }
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4f);
 
-            // 量程语义模式
-            string currentLimitMode = string.IsNullOrEmpty(w.LimitMode) ? (w.IsSoftLimit ? "soft" : "hard") : w.LimitMode.ToLowerInvariant();
+            // Limit Mode
+            string curLimit = string.IsNullOrEmpty(w.LimitMode) ? (w.IsSoftLimit ? "soft" : "hard") : w.LimitMode.ToLowerInvariant();
             GUILayout.BeginHorizontal();
             GUILayout.Label("量程模式:", GUILayout.Width(75f));
-            if (GUILayout.Toggle(currentLimitMode == "hard", "硬上限 (截断)", "Button", GUILayout.Height(22f))) currentLimitMode = "hard";
-            if (GUILayout.Toggle(currentLimitMode == "soft", "软上限 (爆表警报)", "Button", GUILayout.Height(22f))) currentLimitMode = "soft";
-            if (GUILayout.Toggle(currentLimitMode == "none", "无上限 (真实直通)", "Button", GUILayout.Height(22f))) currentLimitMode = "none";
+            if (GUILayout.Toggle(curLimit == "hard", "硬截断 (Hard Clamp)", "Button", GUILayout.Height(22f))) curLimit = "hard";
+            if (GUILayout.Toggle(curLimit == "soft", "软上限爆表警报 (Soft Alert)", "Button", GUILayout.Height(22f))) curLimit = "soft";
+            if (GUILayout.Toggle(curLimit == "none", "无上限直通 (None)", "Button", GUILayout.Height(22f))) curLimit = "none";
             GUILayout.EndHorizontal();
-            if (w.LimitMode != currentLimitMode)
+
+            if (w.LimitMode != curLimit)
             {
-                w.LimitMode = currentLimitMode;
-                w.IsSoftLimit = currentLimitMode == "soft";
+                w.LimitMode = curLimit;
+                w.IsSoftLimit = (curLimit == "soft");
                 MarkDirty();
             }
 
-            // 单位标签与步长
+            // 单位
             GUILayout.BeginHorizontal();
             GUILayout.Label("单位标注 (Unit):", GUILayout.Width(105f));
-            string newUnit = GUILayout.TextField(w.UnitLabel ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Width(70f));
+            string newUnit = GUILayout.TextField(w.UnitLabel ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Width(80f));
             if (newUnit != w.UnitLabel) { w.UnitLabel = newUnit; MarkDirty(); }
 
             if (w.WidgetType == "tape")
             {
                 GUILayout.Label("标尺步长:", GUILayout.Width(65f));
-                float newStep = DrawFloatField(w.StepInterval);
-                if (Math.Abs(newStep - w.StepInterval) > 0.001f) { w.StepInterval = newStep; MarkDirty(); }
+                float newStep = MFPGuiSkin.DrawBufferedFloatField($"step_{w.WidgetId}", w.StepInterval, 60f);
+                if (Math.Abs(newStep - w.StepInterval) > 0.01f) { w.StepInterval = newStep; MarkDirty(); }
             }
             GUILayout.EndHorizontal();
 
-            GUILayout.Space(4f);
-            if (GUILayout.Button("保存仪表标定并即刻生效", MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(24f)))
-            {
-                CommitPendingSaves();
-                NavballHUD.Instance?.RebuildHUD();
-                ShowToast($"已生效「{w.DisplayName}」表盘标定！");
-            }
             MFPGuiSkin.EndCard();
         }
 
-        private static void DrawCardInspector(WidgetConfig w)
+        private static void DrawCardTemplateCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            GUILayout.Label("<b>📝 遥测监控卡片模板 (Custom Template)</b>", MFPGuiSkin.SectionTitleStyle);
+            MFPGuiSkin.DrawHeader("📝 遥测监控卡片模板 (Custom Template)");
 
             string newTemplate = GUILayout.TextArea(w.CustomTemplate ?? "", GUILayout.Height(55f));
             if (newTemplate != w.CustomTemplate)
@@ -371,7 +482,7 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.Space(6f);
 
-            // 节流版实时求值预览 (4Hz 节流，绝不卡死 OnGUI)
+            // 实时 4Hz 遥测解算预览
             if (Time.unscaledTime - _lastEvalTime > 0.25f || _cachedTemplate != w.CustomTemplate)
             {
                 _lastEvalTime = Time.unscaledTime;
@@ -390,243 +501,132 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Label("<b>🌟 航电真实遥测实时解算预览 (Live Preview):</b>");
             MFPGuiSkin.DrawBadge(_cachedEvaluation, MFPGuiSkin.AccentGreen, new Color(0.04f, 0.08f, 0.12f, 0.98f));
 
-            GUILayout.Space(4f);
-            if (GUILayout.Button("保存卡片模板并即刻生效", MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(24f)))
-            {
-                CommitPendingSaves();
-                NavballHUD.Instance?.RebuildHUD();
-                ShowToast($"已生效「{w.DisplayName}」模板！");
-            }
             MFPGuiSkin.EndCard();
         }
 
-        private static void DrawCoreInspector(WidgetConfig w)
+        private static void DrawCoreInfoCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            GUILayout.Label("<b>⚙️ 核心内建飞行仪表组件</b>", MFPGuiSkin.SectionTitleStyle);
+            MFPGuiSkin.DrawHeader("⚙️ 核心内建飞行仪表组件");
             GUILayout.Label($"• 组件标识 (WidgetId): <color=#00E5FF>{w.WidgetId}</color>");
             GUILayout.Label($"• 运行状态: {(w.IsEnabled ? "<color=#00FF88>● 正在运行</color>" : "<color=#888888>○ 已挂起隐藏</color>")}");
-            GUILayout.Label("<color=#AAAAAA><size=11>核心组件包含专属底层管线 (如 3D 姿态球、滑动罗盘、SAS底座等)，支持在拖拽模式下自由摆放或在上方调节位置缩放。</size></color>");
+            GUILayout.Label("<color=#88AACC><size=11>核心组件包含底层管线逻辑 (如 3D 姿态球、滑动罗盘、SAS底座、工具栏坞)，位置与缩放可在上方直接调整或在屏幕拖拽。</size></color>");
             MFPGuiSkin.EndCard();
         }
 
-        private static void DrawOptimizationInspector(WidgetConfig w)
+        private static void DrawEmbeddedCatalogCard(WidgetConfig curWidget)
         {
+            UpdateCatalogFilter();
+
             MFPGuiSkin.BeginCard();
-            GUILayout.Label("<b>⚡ 绘制性能单独调优 (Performance Tuning)</b>", MFPGuiSkin.SectionTitleStyle);
+            MFPGuiSkin.DrawHeader("📖 全球遥测参数字典库 (Telemetry Catalog)", $"匹配 {_filteredParams.Count} 项");
 
-            // 1. 独立画布隔离
-            bool prevIsolate = w.IsolateCanvas;
-            w.IsolateCanvas = GUILayout.Toggle(w.IsolateCanvas, " 启用独立画布隔离 (Isolate Sub-Canvas 防止网格污染)");
-            if (w.IsolateCanvas != prevIsolate)
-            {
-                MarkDirty();
-                NavballHUD.Instance?.RebuildHUD();
-                ShowToast($"已{(w.IsolateCanvas ? "开启" : "关闭")}画布隔离");
-            }
-
-            // 2. 刷新分频阶梯
-            GUILayout.Space(4f);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("刷新分频模式:", GUILayout.Width(85f));
-            string hzLabel = w.UpdateInterval <= 0f ? "60Hz+ (每帧)" :
-                            (w.UpdateInterval <= 0.06f ? "20Hz (0.05s)" :
-                            (w.UpdateInterval <= 0.15f ? "10Hz (0.1s)" :
-                            (w.UpdateInterval <= 0.25f ? "5Hz (0.2s)" : "2Hz (0.5s)")));
-            GUILayout.Label($"<b><color=#00E5FF>{hzLabel}</color></b>", GUILayout.ExpandWidth(true));
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("60Hz", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0f; MarkDirty(); ShowToast("已设为 60Hz 满帧刷新"); }
-            if (GUILayout.Button("20Hz", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.05f; MarkDirty(); ShowToast("已设为 20Hz"); }
-            if (GUILayout.Button("10Hz", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.1f; MarkDirty(); ShowToast("已设为 10Hz"); }
-            if (GUILayout.Button("5Hz", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.2f; MarkDirty(); ShowToast("已设为 5Hz"); }
-            if (GUILayout.Button("2Hz", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.5f; MarkDirty(); ShowToast("已设为 2Hz 节能"); }
-            GUILayout.EndHorizontal();
-
-            // 3. 渲染管线区分
-            GUILayout.Space(4f);
-            bool isOffscreen3D = (w.WidgetType == "core.navball_sphere" || w.WidgetType == "system.rocket_2d");
-            if (isOffscreen3D)
-            {
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("离屏 3D 渲染倍率:", GUILayout.Width(110f));
-                GUILayout.Label($"<b><color=#00E5FF>{w.RenderScale:F2}x</color></b>", GUILayout.Width(45f));
-                if (GUILayout.Button("0.8x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f), GUILayout.Height(20f)))
-                {
-                    w.RenderScale = 0.8f;
-                    MarkDirty();
-                    NavballHUD.Instance?.RebuildHUD();
-                }
-                if (GUILayout.Button("1.0x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f), GUILayout.Height(20f)))
-                {
-                    w.RenderScale = 1.0f;
-                    MarkDirty();
-                    NavballHUD.Instance?.RebuildHUD();
-                }
-                if (GUILayout.Button("1.5x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f), GUILayout.Height(20f)))
-                {
-                    w.RenderScale = 1.5f;
-                    MarkDirty();
-                    NavballHUD.Instance?.RebuildHUD();
-                }
-                GUILayout.EndHorizontal();
-            }
-            else
-            {
-                GUILayout.Label("<color=#66CCFF><size=10>● 渲染管线架构：原生 2D UGUI 矢量光栅化 (天生 1:1 满血输出，无需离屏贴图)</size></color>");
-            }
-
-            MFPGuiSkin.EndCard();
-        }
-
-        #endregion
-
-        #region Right Panel Telemetry Explorer (Cached & Paginated)
-
-        private static void UpdateTelemetryFilter()
-        {
-            if (_lastSearchQuery == _searchQuery && _lastCategoryIndex == _selectedCategoryIndex)
-            {
-                return;
-            }
-
-            _lastSearchQuery = _searchQuery;
-            _lastCategoryIndex = _selectedCategoryIndex;
-            _cachedFilteredParams.Clear();
-
-            string currentCategory = TelemetryCatalog.Categories[_selectedCategoryIndex];
-            bool hasSearch = !string.IsNullOrEmpty(_searchQuery);
-
-            for (int i = 0; i < TelemetryCatalog.Parameters.Count; i++)
-            {
-                var p = TelemetryCatalog.Parameters[i];
-
-                if (_selectedCategoryIndex != 0 && p.Category != currentCategory) continue;
-
-                if (hasSearch)
-                {
-                    bool match = p.DisplayName.IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0
-                              || p.Token.IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0
-                              || p.Description.IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0;
-                    if (!match) continue;
-                }
-
-                _cachedFilteredParams.Add(p);
-            }
-
-            // 重置页码边界
-            int maxPages = Mathf.Max(1, Mathf.CeilToInt((float)_cachedFilteredParams.Count / PageSize));
-            if (_currentPage >= maxPages) _currentPage = 0;
-        }
-
-        private static void DrawTelemetryCatalogExplorer(WidgetConfig curWidget)
-        {
-            UpdateTelemetryFilter();
-
-            MFPGuiSkin.BeginCard(GUILayout.ExpandHeight(true));
-
-            // 1. 标题与搜索栏
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>📋 全球遥测参数字典库</b>", MFPGuiSkin.SectionTitleStyle);
-            GUILayout.FlexibleSpace();
-            GUILayout.Label($"<color=#AAAAAA>匹配项: <color=#00E5FF>{_cachedFilteredParams.Count}</color> / {TelemetryCatalog.Parameters.Count}</color>");
-            GUILayout.EndHorizontal();
-
-            GUILayout.BeginHorizontal();
-            _searchQuery = GUILayout.TextField(_searchQuery ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.ExpandWidth(true));
-            if (GUILayout.Button("清空", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f), GUILayout.Height(22f)))
-            {
-                _searchQuery = "";
-            }
-            GUILayout.EndHorizontal();
+            // 搜索框
+            MFPGuiSkin.DrawSearchBar(ref _catalogSearchQuery, "搜索遥测参数 / 通配符...");
 
             GUILayout.Space(4f);
 
-            // 2. 分类筛选胶囊行 (Category Chips)
+            // 分类胶囊
             GUILayout.BeginHorizontal();
             for (int i = 0; i < TelemetryCatalog.Categories.Length; i++)
             {
-                bool isCat = _selectedCategoryIndex == i;
-                GUIStyle chipStyle = isCat ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
-                string catShortName = TelemetryCatalog.Categories[i].Split(' ')[0];
-                if (GUILayout.Button(catShortName, chipStyle, GUILayout.Height(22f)))
+                bool isCat = (_catalogCatIndex == i);
+                GUIStyle catStyle = isCat ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                string catShort = TelemetryCatalog.Categories[i].Split(' ')[0];
+                if (GUILayout.Button(catShort, catStyle, GUILayout.Height(20f)))
                 {
-                    _selectedCategoryIndex = i;
-                    _currentPage = 0;
+                    _catalogCatIndex = i;
+                    _catalogPage = 0;
                 }
             }
             GUILayout.EndHorizontal();
 
             GUILayout.Space(6f);
 
-            // 3. 分页参数卡片列表 (固定 7~8 项，0 掉帧卡顿！)
-            int totalCount = _cachedFilteredParams.Count;
-            int totalPages = Mathf.Max(1, Mathf.CeilToInt((float)totalCount / PageSize));
-            int startIndex = _currentPage * PageSize;
-            int endIndex = Mathf.Min(startIndex + PageSize, totalCount);
+            // 分页参数列表
+            int total = _filteredParams.Count;
+            int totalPages = Mathf.Max(1, Mathf.CeilToInt((float)total / CatalogPageSize));
+            int start = _catalogPage * CatalogPageSize;
+            int end = Mathf.Min(start + CatalogPageSize, total);
 
-            _rightScroll = GUILayout.BeginScrollView(_rightScroll, GUILayout.ExpandHeight(true));
-
-            if (totalCount == 0)
+            for (int i = start; i < end; i++)
             {
-                GUILayout.Space(20f);
-                GUILayout.Label("<color=#AAAAAA><size=12>未检索到匹配的遥测参数，请尝试调整关键词或切换分类。</size></color>", GUILayout.ExpandWidth(true));
-            }
-            else
-            {
-                for (int i = startIndex; i < endIndex; i++)
-                {
-                    DrawParameterCard(_cachedFilteredParams[i], curWidget);
-                }
+                var p = _filteredParams[i];
+                DrawCatalogParamRow(p, curWidget);
             }
 
-            GUILayout.EndScrollView();
+            if (total == 0)
+            {
+                GUILayout.Label("<color=#778899><size=11>未找到匹配的参数</size></color>");
+            }
 
-            // 4. 底部分页导航栏 (Pagination Bar)
+            // 分页栏
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
-            GUI.enabled = _currentPage > 0;
-            if (GUILayout.Button("◀ 上一页", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f), GUILayout.Height(24f)))
-            {
-                _currentPage--;
-            }
+            GUI.enabled = _catalogPage > 0;
+            if (GUILayout.Button("◀ 上页", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(22f))) _catalogPage--;
             GUI.enabled = true;
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label($"<b>第 {_currentPage + 1} / {totalPages} 页</b>  (展示 {startIndex + 1} - {endIndex} 项)");
+            GUILayout.Label($"<b>第 {_catalogPage + 1} / {totalPages} 页</b>");
             GUILayout.FlexibleSpace();
 
-            GUI.enabled = _currentPage < totalPages - 1;
-            if (GUILayout.Button("下一页 ▶", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f), GUILayout.Height(24f)))
-            {
-                _currentPage++;
-            }
+            GUI.enabled = _catalogPage < totalPages - 1;
+            if (GUILayout.Button("下页 ▶", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(22f))) _catalogPage++;
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
             MFPGuiSkin.EndCard();
         }
 
-        private static void DrawParameterCard(TelemetryParam p, WidgetConfig curWidget)
+        private static void UpdateCatalogFilter()
         {
-            GUILayout.BeginVertical(MFPGuiSkin.CardStyle);
+            if (_lastCatalogSearch == _catalogSearchQuery && _lastCatalogCatIndex == _catalogCatIndex) return;
+
+            _lastCatalogSearch = _catalogSearchQuery;
+            _lastCatalogCatIndex = _catalogCatIndex;
+            _filteredParams.Clear();
+
+            string cat = TelemetryCatalog.Categories[_catalogCatIndex];
+            bool hasSearch = !string.IsNullOrEmpty(_catalogSearchQuery);
+
+            for (int i = 0; i < TelemetryCatalog.Parameters.Count; i++)
+            {
+                var p = TelemetryCatalog.Parameters[i];
+                if (_catalogCatIndex != 0 && p.Category != cat) continue;
+
+                if (hasSearch)
+                {
+                    bool m = p.DisplayName.IndexOf(_catalogSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0
+                          || p.Token.IndexOf(_catalogSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0
+                          || p.Description.IndexOf(_catalogSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!m) continue;
+                }
+                _filteredParams.Add(p);
+            }
+
+            int maxPages = Mathf.Max(1, Mathf.CeilToInt((float)_filteredParams.Count / CatalogPageSize));
+            if (_catalogPage >= maxPages) _catalogPage = 0;
+        }
+
+        private static void DrawCatalogParamRow(TelemetryParam p, WidgetConfig curWidget)
+        {
+            MFPGuiSkin.BeginInset();
             GUILayout.BeginHorizontal();
 
-            // 参数名称与通配符徽章
             GUILayout.Label($"<b>{p.DisplayName}</b>", GUILayout.Width(130f));
-            MFPGuiSkin.DrawBadge(p.Token, MFPGuiSkin.AccentCyan, new Color(0.00f, 0.25f, 0.40f, 0.9f));
+            MFPGuiSkin.DrawBadge(p.Token, MFPGuiSkin.AccentCyan, new Color(0.00f, 0.28f, 0.45f, 0.9f));
 
             GUILayout.FlexibleSpace();
 
-            // 智能一键填槽/绑定操作
-            if (curWidget.WidgetType == "ecam_dial" || curWidget.WidgetType == "tape")
+            // 快捷填槽与绑定
+            if (curWidget.WidgetType == "ecam_dial" || curWidget.WidgetType == "tape" || curWidget.WidgetType == "bar_gauge")
             {
-                bool isAlreadyBound = (curWidget.NumericToken == p.Token);
-                string btnText = isAlreadyBound ? "✔ 已绑定" : "⚡ 一键绑定到表盘";
-                GUIStyle btnStyle = isAlreadyBound ? MFPGuiSkin.StepperButtonStyle : MFPGuiSkin.SuccessButtonStyle;
+                bool isBound = (curWidget.NumericToken == p.Token);
+                string btnTxt = isBound ? "✔ 已绑定" : "⚡ 绑定至此表盘";
+                GUIStyle bStyle = isBound ? MFPGuiSkin.StepperButtonStyle : MFPGuiSkin.SuccessButtonStyle;
 
-                if (GUILayout.Button(btnText, btnStyle, GUILayout.Width(125f), GUILayout.Height(22f)))
+                if (GUILayout.Button(btnTxt, bStyle, GUILayout.Width(125f), GUILayout.Height(22f)))
                 {
                     curWidget.NumericToken = p.Token;
                     curWidget.MinValue = p.DefaultMin;
@@ -640,43 +640,80 @@ namespace ModularFlightPanel.UI.Settings
 
                     CommitPendingSaves();
                     NavballHUD.Instance?.RebuildHUD();
-                    ShowToast($"已绑定「{p.DisplayName}」至当前表盘！");
+                    ShowToast($"已绑定「{p.DisplayName}」至仪表！");
                 }
             }
             else if (curWidget.WidgetId.StartsWith("custom.") || curWidget.WidgetType == "custom")
             {
-                if (GUILayout.Button("+ 插入模板末尾", MFPGuiSkin.WarningButtonStyle, GUILayout.Width(125f), GUILayout.Height(22f)))
+                if (GUILayout.Button("+ 插入模板", MFPGuiSkin.WarningButtonStyle, GUILayout.Width(95f), GUILayout.Height(22f)))
                 {
                     string prefix = string.IsNullOrEmpty(curWidget.CustomTemplate) ? "" : (curWidget.CustomTemplate.EndsWith(" ") ? "" : " | ");
                     curWidget.CustomTemplate = (curWidget.CustomTemplate ?? "") + prefix + $"{p.DisplayName}: {p.Token}";
                     CommitPendingSaves();
                     NavballHUD.Instance?.RebuildHUD();
-                    ShowToast($"已插入「{p.DisplayName}」到卡片模板！");
+                    ShowToast($"已插入「{p.DisplayName}」到模板！");
                 }
             }
             else
             {
-                if (GUILayout.Button("📋 复制通配符", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(100f), GUILayout.Height(22f)))
+                if (GUILayout.Button("📋 复制", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(60f), GUILayout.Height(22f)))
                 {
                     GUIUtility.systemCopyBuffer = p.Token;
-                    ShowToast($"已复制 {p.Token} 到剪贴板！");
+                    ShowToast($"已复制 {p.Token}");
                 }
             }
 
             GUILayout.EndHorizontal();
 
-            // 描述与推荐范围
-            string limitHint = (p.DefaultMax > 0) ? $" | 推荐上限: {p.DefaultMax}{p.DefaultUnit}" : "";
-            GUILayout.Label($"<color=#8898AA><size=10>{p.Description}{limitHint}</size></color>");
+            // 实时求值与说明
+            string liveVal = TelemetryTokenEngine.Evaluate(p.Token, TelemetryHub.Instance);
+            GUILayout.Label($"<color=#7088A8><size=10>{p.Description} | 当前实时读数: <color=#00FF88>{liveVal}</color></size></color>");
 
-            GUILayout.EndVertical();
+            MFPGuiSkin.EndInset();
+        }
+
+        private static void DrawPerformanceCard(WidgetConfig w)
+        {
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("⚡ 绘制性能单独调优 (Performance & Sub-Canvas)");
+
+            // 画布隔离
+            bool prevIsolate = w.IsolateCanvas;
+            w.IsolateCanvas = GUILayout.Toggle(w.IsolateCanvas, " 启用独立画布隔离 (Isolate Sub-Canvas 杜绝全屏重绘网格污染)");
+            if (w.IsolateCanvas != prevIsolate)
+            {
+                MarkDirty();
+                NavballHUD.Instance?.RebuildHUD();
+                ShowToast($"已{(w.IsolateCanvas ? "开启" : "关闭")}画布隔离");
+            }
+
+            GUILayout.Space(4f);
+
+            // 刷新阶梯
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("刷新分频模式:", GUILayout.Width(90f));
+            string hzLabel = w.UpdateInterval <= 0f ? "60Hz+ (每帧)" :
+                            (w.UpdateInterval <= 0.06f ? "20Hz (0.05s)" :
+                            (w.UpdateInterval <= 0.15f ? "10Hz (0.1s)" :
+                            (w.UpdateInterval <= 0.25f ? "5Hz (0.2s)" : "2Hz (0.5s)")));
+            GUILayout.Label($"<b><color=#00E5FF>{hzLabel}</color></b>", GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("60Hz 满血", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0f; MarkDirty(); ShowToast("已设为 60Hz 满帧刷新"); }
+            if (GUILayout.Button("20Hz 标称", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.05f; MarkDirty(); ShowToast("已设为 20Hz"); }
+            if (GUILayout.Button("10Hz 舒缓", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.1f; MarkDirty(); ShowToast("已设为 10Hz"); }
+            if (GUILayout.Button("2Hz 节能", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.5f; MarkDirty(); ShowToast("已设为 2Hz 节能"); }
+            GUILayout.EndHorizontal();
+
+            MFPGuiSkin.EndCard();
         }
 
         #endregion
 
-        #region Helpers & State
+        #region Helpers
 
-        private static void ApplyWidgetTransformRuntime(WidgetConfig w)
+        private static void ApplyTransformRuntime(WidgetConfig w)
         {
             MarkDirty();
             if (NavballHUD.Instance != null && NavballHUD.Instance.ModularWidgets != null)
@@ -701,22 +738,6 @@ namespace ModularFlightPanel.UI.Settings
             _isDirty = false;
             _dirtyTimer = 0f;
             WidgetLayoutManager.Instance.SaveLayout();
-        }
-
-        private static double DrawDoubleField(double val)
-        {
-            string txt = val.ToString("G");
-            string newTxt = GUILayout.TextField(txt, MFPGuiSkin.ValueFieldStyle, GUILayout.Width(65f));
-            if (double.TryParse(newTxt, out double parsed)) return parsed;
-            return val;
-        }
-
-        private static float DrawFloatField(float val)
-        {
-            string txt = val.ToString("F0");
-            string newTxt = GUILayout.TextField(txt, MFPGuiSkin.ValueFieldStyle, GUILayout.Width(65f));
-            if (float.TryParse(newTxt, out float parsed)) return parsed;
-            return val;
         }
 
         private static void ShowToast(string msg)

@@ -655,6 +655,7 @@ namespace ModularFlightPanel.HeadlessValidator
         private static (float width, float height) GetDefaultWidgetDimensions(string widgetId, string widgetType)
         {
             if (widgetId == "core.navball") return (154f, 154f);
+            if (widgetId == "nav.vessel_navball" || widgetId == "nav.vessel_attitude_sphere" || widgetType == "vessel_navball" || widgetType == "vessel_attitude_sphere") return (150f, 178f);
             if (widgetId == "core.heading_arc" || widgetType == "heading_arc") return (180f, 60f);
             if (widgetId == "core.bottom_controls") return (184f, 22f);
             if (widgetId == "core.orbital_info") return (320f, 36f);
@@ -664,6 +665,7 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "core.time_warp" || widgetType == "time_warp" || widgetType == "timewarp") return (236f, 46f);
             if (widgetId == "core.comm_signal" || widgetType == "comm_signal" || widgetType == "commsignal") return (236f, 32f);
             if (widgetId == "core.toolbar" || widgetType == "toolbar") return (88f, 240f);
+            if (widgetId == "core.ui_widget" || widgetType == "ui_widget" || widgetType == "ui_manager") return (290f, 340f);
             if (widgetId == "gauge.stage_dv" || widgetType == "stage_dv" || widgetId.Contains("stage_dv")) return (220f, 180f);
             if (widgetId == "core.throttle" || widgetId == "core.vsi" || widgetId == "core.propellant") return (195f, 195f);
             if (widgetType == "bar_gauge" || widgetId.StartsWith("gauge.")) return (20f, 180f);
@@ -690,6 +692,8 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "spacex.attitude" || widgetType == "spacex_attitude") return (96f, 96f);
             if (widgetId == "spacex.engines" || widgetType == "spacex_engines") return (96f, 96f);
             if (widgetId == "custom.perf_monitor" || widgetId == "core.performance_monitor" || widgetType == "performance_monitor" || widgetType == "perf_monitor") return (240f, 195f);
+            if (widgetId == "custom.maneuver_timeline" || widgetType == "custom.maneuver_timeline" || widgetType == "maneuver_timeline") return (520f, 88f);
+            if (widgetId == "custom.staging_sequence" || widgetType == "custom.staging_sequence" || widgetType == "staging_sequence") return (160f, 260f);
 
             return (220f, 50f);
         }

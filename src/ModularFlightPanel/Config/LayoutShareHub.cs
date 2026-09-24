@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using UnityEngine;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.Config
 {
@@ -48,7 +49,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ModularFlightPanel] Failed to export share code: {ex.Message}");
+                MFPLogger.Exception(MFPLogger.CatPresets, ex, "Failed to export share code");
                 return string.Empty;
             }
         }
@@ -169,7 +170,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[ModularFlightPanel] Error listing preset directory: {ex.Message}");
+                MFPLogger.Warn(MFPLogger.CatPresets, $"Error listing preset directory: {ex.Message}");
             }
 
             return list;
@@ -196,7 +197,7 @@ namespace ModularFlightPanel.Config
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[ModularFlightPanel] Failed to load preset file: {ex.Message}");
+                    MFPLogger.Exception(MFPLogger.CatPresets, ex, "Failed to load preset file");
                 }
             }
 
@@ -322,7 +323,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ModularFlightPanel] Failed to export theme share code: {ex.Message}");
+                MFPLogger.Exception(MFPLogger.CatPresets, ex, "Failed to export theme share code");
                 return string.Empty;
             }
         }

@@ -3,23 +3,32 @@ using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Settings;
+using ModularFlightPanel.UI.Widgets.Controls;
 
 namespace ModularFlightPanel.UI
 {
     /// <summary>
-    /// 全新模块化航电暗晶工作台 (Modular Avionics Cyber-Dark Workbench - Alt+N)
-    /// 全面升级现代暗晶航电 UI 视觉体系，集成高保真状态显示栏、防抖动自适应调度与流畅拖拽交互。
+    /// 全新模块化航电暗晶工程工作台 (Modular Avionics Cyber-Dark Workbench - Alt+N)
+    /// 核心特性：
+    /// 1. 双重输入穿透防护 (MFPInputLock)：悬浮阻断背景 3D 相机旋转与误点零件，输入时独占键盘阻断热键泄露。
+    /// 2. 屏幕自适应居中与拖拽边界吸附 (Adaptive Resolution & Bounds Clamp)。
+    /// 3. ESC / Alt+N 优雅关闭、暂存防抖提交与即时落盘。
+    /// 4. 完美联动现代暗晶航电设计系统 2.0 (MFPGuiSkin)。
     /// </summary>
     public class SettingsGUI : MonoBehaviour
     {
         private static SettingsGUI _instance;
         public static SettingsGUI Instance => _instance;
+        public static Action<bool> OnWindowStateChanged;
 
         private bool _isOpen = false;
-        private Rect _windowRect = new Rect(100f, 60f, 980f, 670f);
-        private int _windowId = 849204;
+        public bool IsOpen => _isOpen;
 
-        private int _currentTab = 1; // 默认打开遥测装配台，方便直接调参
+        private Rect _windowRect = new Rect(100f, 60f, 1040f, 740f);
+        private int _windowId = 849204;
+        private bool _rectInitialized = false;
+
+        private int _currentTab = 1; // 默认打开遥测装配台
         private readonly string[] TabTitles = new string[]
         {
             "📦 航电库 (Library)",
@@ -33,6 +42,8 @@ namespace ModularFlightPanel.UI
         private void Awake()
         {
             _instance = this;
+            UIWidget.OnRequestOpenWorkbench = ToggleWindow;
+            MFPToastBridge.OnShowToast = (msg) => Settings.MFPGuiSkin.ShowToast(msg);
         }
 
         private void Update()
@@ -48,6 +59,18 @@ namespace ModularFlightPanel.UI
             {
                 ToggleWindow();
             }
+
+            // 打开状态下按下 ESC 退出窗口
+            if (_isOpen && Input.GetKeyDown(KeyCode.Escape))
+            {
+                ToggleWindow();
+            }
+        }
+
+        public void SwitchTab(int tabIndex)
+        {
+            if (_currentTab == 1) TabAssembler.CommitPendingSaves();
+            _currentTab = Mathf.Clamp(tabIndex, 0, TabTitles.Length - 1);
         }
 
         public void ToggleWindow()
@@ -55,12 +78,53 @@ namespace ModularFlightPanel.UI
             _isOpen = !_isOpen;
             if (!_isOpen)
             {
-                // 关闭窗口时退出拖拽编辑模式并提交暂存
+                // 关闭窗口时退出拖拽编辑模式、释放输入锁并提交暂存
                 WidgetDragHandler.IsEditModeActive = false;
                 WidgetSelectionManager.ClearSelection();
                 TabAssembler.CommitPendingSaves();
                 WidgetLayoutManager.Instance.SaveLayout();
+                MFPInputLock.ReleaseAllLocks();
             }
+            else
+            {
+                EnsureWindowRect();
+            }
+            OnWindowStateChanged?.Invoke(_isOpen);
+        }
+
+        private void EnsureWindowRect()
+        {
+            float targetW = Mathf.Clamp(Screen.width * 0.72f, 960f, 1140f);
+            float targetH = Mathf.Clamp(Screen.height * 0.82f, 640f, 820f);
+
+            if (!_rectInitialized)
+            {
+                float x = (Screen.width - targetW) * 0.5f;
+                float y = (Screen.height - targetH) * 0.5f;
+                _windowRect = new Rect(x, y, targetW, targetH);
+                _rectInitialized = true;
+            }
+            else
+            {
+                _windowRect.width = targetW;
+                _windowRect.height = targetH;
+                _windowRect.x = Mathf.Clamp(_windowRect.x, 10f, Screen.width - targetW - 10f);
+                _windowRect.y = Mathf.Clamp(_windowRect.y, 10f, Screen.height - targetH - 10f);
+            }
+        }
+
+        private void OnDisable()
+        {
+            MFPInputLock.ReleaseAllLocks();
+        }
+
+        private void OnDestroy()
+        {
+            if (UIWidget.OnRequestOpenWorkbench == ToggleWindow)
+            {
+                UIWidget.OnRequestOpenWorkbench = null;
+            }
+            MFPInputLock.ReleaseAllLocks();
         }
 
         private void OnGUI()
@@ -76,15 +140,26 @@ namespace ModularFlightPanel.UI
             MFPGuiSkin.EnsureInitialized();
             GUI.skin = HighLogic.Skin;
 
+            // 输入穿透安全防护
+            bool isMouseOver = _windowRect.Contains(Event.current.mousePosition);
+            MFPInputLock.SetWindowHoverLock(isMouseOver);
+
+            bool isTextFocused = !string.IsNullOrEmpty(GUI.GetNameOfFocusedControl());
+            MFPInputLock.SetKeyboardFocusLock(isTextFocused);
+
             _windowRect = GUILayout.Window(
                 _windowId,
                 _windowRect,
                 DrawWindowContent,
                 "",
                 MFPGuiSkin.WindowStyle,
-                GUILayout.Width(980f),
-                GUILayout.Height(670f)
+                GUILayout.Width(_windowRect.width),
+                GUILayout.Height(_windowRect.height)
             );
+
+            // 保持窗口在屏幕安全可视范围内
+            _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, Screen.width - _windowRect.width);
+            _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, Screen.height - _windowRect.height);
         }
 
         private void DrawWindowContent(int id)
@@ -98,7 +173,7 @@ namespace ModularFlightPanel.UI
             GUILayout.BeginHorizontal();
 
             // 标题徽章
-            GUILayout.Label("<color=#00E5FF><b>MODULAR FLIGHT PANEL</b></color> <color=#66CCFF><size=11>| 航电工程工作台</size></color>", GUILayout.Width(260f));
+            GUILayout.Label("<color=#00E5FF><b>MODULAR FLIGHT PANEL</b></color> <color=#88AACC><size=11>| 航电工程工作台</size></color>", GUILayout.Width(270f));
 
             GUILayout.FlexibleSpace();
 
@@ -108,16 +183,16 @@ namespace ModularFlightPanel.UI
             double mfpMs = MFPProfiler.AvgTotalMs;
             float fps = MFPProfiler.CurrentFPS;
 
-            string statusText = $"<color=#8898AA>载具: <color=#FFFFFF>{vesselName}</color> | 参考系: <color=#00E5FF>{frameName}</color> | MFP: <color=#00FF88>{mfpMs:F2}ms</color> | <color=#FFB800>{fps:F0} FPS</color></color>";
+            string statusText = $"<color=#7088A8>载具: <color=#FFFFFF>{vesselName}</color> | 参考系: <color=#00E5FF>{frameName}</color> | MFP: <color=#00FF88>{mfpMs:F2}ms</color> | <color=#FFB800>{fps:F0} FPS</color></color>";
             GUILayout.Label(statusText);
 
             GUILayout.FlexibleSpace();
 
             // 自由拖拽编辑模式开关
             bool isEdit = WidgetDragHandler.IsEditModeActive;
-            GUIStyle dragBtnStyle = isEdit ? MFPGuiSkin.SuccessButtonStyle : MFPGuiSkin.StepperButtonStyle;
+            GUIStyle dragBtnStyle = isEdit ? MFPGuiSkin.SuccessButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
             string dragBtn = isEdit ? "🎯 [拖拽模式中] 点击锁定" : "🎯 [开启自由拖拽]";
-            if (GUILayout.Button(dragBtn, dragBtnStyle, GUILayout.Height(24f), GUILayout.Width(140f)))
+            if (GUILayout.Button(dragBtn, dragBtnStyle, GUILayout.Height(24f), GUILayout.Width(145f)))
             {
                 WidgetDragHandler.IsEditModeActive = !WidgetDragHandler.IsEditModeActive;
                 if (!WidgetDragHandler.IsEditModeActive)
@@ -152,7 +227,7 @@ namespace ModularFlightPanel.UI
             GUILayout.Space(6f);
 
             // 顶栏关闭按钮
-            if (GUILayout.Button("✕", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
+            if (GUILayout.Button("✕", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(28f), GUILayout.Height(24f)))
             {
                 ToggleWindow();
             }
@@ -172,8 +247,7 @@ namespace ModularFlightPanel.UI
                 GUIStyle tabStyle = isSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
                 if (GUILayout.Button(TabTitles[i], tabStyle, GUILayout.Height(28f)))
                 {
-                    if (_currentTab == 1) TabAssembler.CommitPendingSaves();
-                    _currentTab = i;
+                    SwitchTab(i);
                 }
             }
             GUILayout.EndHorizontal();
@@ -194,8 +268,7 @@ namespace ModularFlightPanel.UI
                 case 2:
                     TabWidgetManager.Draw(jumpId =>
                     {
-                        TabAssembler.CommitPendingSaves();
-                        _currentTab = 1;
+                        SwitchTab(1);
                         TabAssembler.SetSelectedWidget(jumpId);
                     });
                     break;
@@ -217,14 +290,12 @@ namespace ModularFlightPanel.UI
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
 
-            GUILayout.Label("<color=#6688AA><size=11>快捷键提示: <b>Alt+N</b> 唤出面板 | <b>F2</b> 隐藏全UI | <b>F10</b> 性能HUD | <b>F11</b> 纯净旁路</size></color>", GUILayout.ExpandWidth(true));
+            int totalWidgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets.Count ?? 0;
+            GUILayout.Label($"<color=#7088A8><size=11>当前布局: <b>{totalWidgets}</b> 个组件 | 快捷键: <b>Alt+N / ESC</b> 关闭 | <b>F2</b> 隐藏全UI | <b>F10</b> 性能HUD | <b>F11</b> 纯净旁路</size></color>", GUILayout.ExpandWidth(true));
 
             if (GUILayout.Button("✔ 保存配置并关闭 (Alt+N)", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(200f)))
             {
-                WidgetDragHandler.IsEditModeActive = false;
-                TabAssembler.CommitPendingSaves();
-                WidgetLayoutManager.Instance.SaveLayout();
-                _isOpen = false;
+                ToggleWindow();
             }
 
             GUILayout.EndHorizontal();
@@ -233,7 +304,7 @@ namespace ModularFlightPanel.UI
             GUILayout.EndVertical();
 
             // 限制拖拽响应区域为顶栏，防止吞噬窗口内部按钮点击
-            GUI.DragWindow(new Rect(0f, 0f, 980f, 40f));
+            GUI.DragWindow(new Rect(0f, 0f, _windowRect.width, 42f));
         }
     }
 }

@@ -2,13 +2,15 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
-using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Settings
 {
     /// <summary>
-    /// 社区分享中枢与预设模板库 (Sharing Hub & Presets)
-    /// 一键生成单行 Base64 GZip 压缩分享码，并支持导入还原与出厂预设一键套用
+    /// 全新社区分享中枢与预设模板库 (Avionics Sharing Hub & Presets)
+    /// 核心功能：
+    /// 1. 一键生成单行 Base64 GZip 压缩分享码，支持系统剪贴板互通。
+    /// 2. 预设库卡片化呈现（出厂精选与本地预设）。
+    /// 3. 全量接入 MFPGuiSkin 现代黑晶设计系统 2.0。
     /// </summary>
     public static class TabSharePresets
     {
@@ -20,67 +22,59 @@ namespace ModularFlightPanel.UI.Settings
 
         public static void Draw()
         {
+            MFPGuiSkin.EnsureInitialized();
+
             GUILayout.BeginVertical();
 
             // Toast 提示
-            if (_toastTimer > 0f && !string.IsNullOrEmpty(_toastMsg))
-            {
-                _toastTimer -= Time.deltaTime;
-                GUI.color = Color.green;
-                GUILayout.Label($"<b>✔ {_toastMsg}</b>");
-                GUI.color = Color.white;
-            }
-            else
-            {
-                GUILayout.Label("<color=#AAAAAA><size=11>使用分享码可将当前全套仪表排版一键复制发送给社区好友；亦可一键套用出厂调校好的工效学座舱。</size></color>");
-            }
-
-            GUILayout.Space(6f);
+            MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
 
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
 
             // 1. 导出分享码
-            GUILayout.Label("<b>▼ 导出当前座舱排版分享码 (Export Share Code)</b>");
-            GUILayout.BeginVertical("box");
-            GUILayout.BeginHorizontal();
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("📋 导出当前座舱排版分享码 (Export Share Code)", "一键复制到剪贴板，发送给社区好友");
 
-            if (GUILayout.Button("📋 复制当前布局分享码到剪贴板", GUILayout.Height(28f), GUILayout.ExpandWidth(true)))
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("📋 复制当前布局分享码到剪贴板", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true)))
             {
                 string code = LayoutShareHub.ExportShareCode(WidgetLayoutManager.Instance.CurrentLayout);
                 if (!string.IsNullOrEmpty(code))
                 {
                     GUIUtility.systemCopyBuffer = code;
-                    _toastMsg = "已成功复制分享码至系统剪贴板！可直接在聊天软件或论坛粘贴 (Ctrl+V)";
+                    _toastMsg = "已成功复制分享码至系统剪贴板！可直接粘贴发送 (Ctrl+V)";
                     _toastTimer = 3.5f;
                 }
             }
             GUILayout.EndHorizontal();
-            GUILayout.Label("<color=#888888><size=10>生成的分享码包含所有组件坐标、尺寸、阈值与显隐状态，采用 GZip 压缩为紧凑单行文本。</size></color>");
-            GUILayout.EndVertical();
 
-            GUILayout.Space(12f);
+            GUILayout.Space(2f);
+            GUILayout.Label("<color=#7088A8><size=10>生成的分享码包含所有组件坐标、尺寸、阈值与显隐状态，采用 GZip 压缩为紧凑单行文本。</size></color>");
+            MFPGuiSkin.EndCard();
+
+            GUILayout.Space(6f);
 
             // 2. 导入分享码
-            GUILayout.Label("<b>▼ 导入社区分享码 (Import Share Code)</b>");
-            GUILayout.BeginVertical("box");
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>分享码:</b>", GUILayout.Width(60f));
-            _inputShareCode = GUILayout.TextField(_inputShareCode, GUILayout.Height(22f), GUILayout.ExpandWidth(true));
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("📥 导入社区分享码 (Import Share Code)", "粘贴他人分享的 Base64 编码并套用");
 
-            if (GUILayout.Button("粘贴剪贴板", GUILayout.Width(90f), GUILayout.Height(22f)))
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("分享码:", GUILayout.Width(60f));
+            _inputShareCode = GUILayout.TextField(_inputShareCode ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true));
+
+            if (GUILayout.Button("粘贴剪贴板", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(90f), GUILayout.Height(24f)))
             {
                 _inputShareCode = GUIUtility.systemCopyBuffer;
             }
 
-            GUI.color = Color.cyan;
-            if (GUILayout.Button("📥 导入并套用", GUILayout.Width(110f), GUILayout.Height(22f)))
+            if (GUILayout.Button("📥 导入并套用", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(110f), GUILayout.Height(24f)))
             {
                 if (LayoutShareHub.TryImportShareCode(_inputShareCode, out WidgetLayoutData importedLayout, out string error))
                 {
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets = importedLayout.Widgets;
                     WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = importedLayout.GlobalScale;
                     WidgetLayoutManager.Instance.SaveLayout();
-                    NavballHUD.Instance.RebuildHUD();
+                    NavballHUD.Instance?.RebuildHUD();
                     _toastMsg = $"成功导入并套用布局！(共加载 {importedLayout.Widgets.Count} 个组件)";
                     _toastTimer = 3.0f;
                 }
@@ -90,27 +84,28 @@ namespace ModularFlightPanel.UI.Settings
                     _toastTimer = 3.5f;
                 }
             }
-            GUI.color = Color.white;
             GUILayout.EndHorizontal();
-            GUILayout.EndVertical();
+            MFPGuiSkin.EndCard();
 
-            GUILayout.Space(12f);
+            GUILayout.Space(6f);
 
             // 3. 预设模板库
-            GUILayout.Label("<b>▼ 精选预设模板库 (Preset Library)</b>");
-            List<PresetInfo> presets = LayoutShareHub.GetAvailablePresets();
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("🌟 精选出厂与本地预设模板库 (Preset Library)", "一键套用调校好的工效学座舱");
 
+            List<PresetInfo> presets = LayoutShareHub.GetAvailablePresets();
             for (int i = 0; i < presets.Count; i++)
             {
                 PresetInfo p = presets[i];
-                GUILayout.BeginVertical("box");
+                MFPGuiSkin.BeginInset();
                 GUILayout.BeginHorizontal();
 
-                string nameColor = p.IsBuiltIn ? "#00E5FF" : "#00FF88";
-                string tag = p.IsBuiltIn ? "[出厂预置]" : "[本地文件]";
-                GUILayout.Label($"<color={nameColor}><b>{p.Name}</b></color> <color=#888888>{tag}</color>", GUILayout.ExpandWidth(true));
+                string tag = p.IsBuiltIn ? "[出厂预置]" : "[本地模板]";
+                Color tagCol = p.IsBuiltIn ? MFPGuiSkin.AccentCyan : MFPGuiSkin.AccentGreen;
+                GUILayout.Label($"<b>{p.Name}</b>", GUILayout.ExpandWidth(true));
+                MFPGuiSkin.DrawBadge(tag, Color.white, tagCol);
 
-                if (GUILayout.Button("⚡ 一键套用此预设", GUILayout.Width(140f), GUILayout.Height(22f)))
+                if (GUILayout.Button("⚡ 一键套用此预设", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
                 {
                     WidgetLayoutData presetData = LayoutShareHub.LoadPreset(p);
                     if (presetData != null && presetData.Widgets != null)
@@ -118,27 +113,30 @@ namespace ModularFlightPanel.UI.Settings
                         WidgetLayoutManager.Instance.CurrentLayout.Widgets = presetData.Widgets;
                         WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = presetData.GlobalScale;
                         WidgetLayoutManager.Instance.SaveLayout();
-                        NavballHUD.Instance.RebuildHUD();
+                        NavballHUD.Instance?.RebuildHUD();
                         _toastMsg = $"已成功套用预设「{p.Name}」！";
                         _toastTimer = 3.0f;
                     }
                 }
                 GUILayout.EndHorizontal();
 
-                GUILayout.Label($"<color=#CCCCCC><size=10>{p.Description}</size></color>");
-                GUILayout.EndVertical();
+                GUILayout.Label($"<color=#7088A8><size=10>{p.Description}</size></color>");
+                MFPGuiSkin.EndInset();
+                GUILayout.Space(3f);
             }
+            MFPGuiSkin.EndCard();
 
-            GUILayout.Space(12f);
+            GUILayout.Space(6f);
 
             // 4. 另存为本地新预设
-            GUILayout.Label("<b>▼ 另存为新预设文件 (Save Preset File)</b>");
-            GUILayout.BeginVertical("box");
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>预设名称:</b>", GUILayout.Width(75f));
-            _savePresetName = GUILayout.TextField(_savePresetName, GUILayout.Height(22f), GUILayout.Width(220f));
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader("💾 另存为新预设文件 (Save Preset File)", "将当前排版保存至 PluginData/Presets 文件夹");
 
-            if (GUILayout.Button("💾 保存到本地 Presets 库", GUILayout.Width(180f), GUILayout.Height(22f)))
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("预设名称:", GUILayout.Width(75f));
+            _savePresetName = GUILayout.TextField(_savePresetName ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Height(24f), GUILayout.Width(220f));
+
+            if (GUILayout.Button("💾 保存到本地 Presets 库", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(180f), GUILayout.Height(24f)))
             {
                 if (LayoutShareHub.SavePresetToFile(_savePresetName, WidgetLayoutManager.Instance.CurrentLayout, out string error))
                 {
@@ -153,7 +151,7 @@ namespace ModularFlightPanel.UI.Settings
                 }
             }
             GUILayout.EndHorizontal();
-            GUILayout.EndVertical();
+            MFPGuiSkin.EndCard();
 
             GUILayout.EndScrollView();
             GUILayout.EndVertical();

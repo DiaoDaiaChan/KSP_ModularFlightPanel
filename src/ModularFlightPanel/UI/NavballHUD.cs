@@ -6,7 +6,11 @@ using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI.Widgets;
 using ModularFlightPanel.UI.Widgets.Navigation;
+using ModularFlightPanel.UI.Widgets.Controls;
 using ModularFlightPanel.UI.Widgets.SpaceX;
+#if KSP_RUNTIME
+using ModularFlightPanel.UI.Settings;
+#endif
 
 namespace ModularFlightPanel.UI
 {
@@ -209,6 +213,13 @@ namespace ModularFlightPanel.UI
                 _hudRoot.SetActive(false);
             }
 
+            // 实例化全屏蓝图辅助网格与对称轴 (位于底层)
+            GameObject gridObj = new GameObject("CanvasBlueprintGrid", typeof(RectTransform));
+            gridObj.transform.SetParent(_hudRoot.transform, false);
+            gridObj.transform.SetAsFirstSibling();
+            var canvasGrid = gridObj.AddComponent<WidgetCanvasGrid>();
+            canvasGrid.Initialize(rootRt, _canvas);
+
             // 实例化全屏框选捕获器 (位于底层，空白拖拽框选)
             GameObject marqueeObj = new GameObject("MarqueeSelectionCatcher", typeof(RectTransform));
             marqueeObj.transform.SetParent(_hudRoot.transform, false);
@@ -350,6 +361,12 @@ namespace ModularFlightPanel.UI
                     continue;
                 }
 
+                if (cfg.WidgetType == "staging_sequence" || cfg.WidgetType == "stage_sequence" || cfg.WidgetId == "custom.staging_sequence" || cfg.WidgetId == "custom.stage_sequence" || cfg.WidgetId == "core.staging_sequence")
+                {
+                    SpawnStagingSequenceWidget(cfg, theme);
+                    continue;
+                }
+
                 if (cfg.WidgetType == "maneuver_timeline" || cfg.WidgetId == "custom.maneuver_timeline")
                 {
                     SpawnManeuverTimelineWidget(cfg, theme);
@@ -384,8 +401,29 @@ namespace ModularFlightPanel.UI
                     continue;
                 }
 
+                if (cfg.WidgetType == "ui_widget" || cfg.WidgetType == "ui_manager" || cfg.WidgetId == "core.ui_widget" || cfg.WidgetId == "custom.ui_widget")
+                {
+                    SpawnUIWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "vessel_navball" || cfg.WidgetType == "vessel_attitude_sphere" ||
+                    cfg.WidgetId == "nav.vessel_navball" || cfg.WidgetId == "nav.vessel_attitude_sphere" ||
+                    cfg.WidgetId == "core.vessel_navball" || cfg.WidgetId == "nav.attitude_sphere_3d")
+                {
+                    SpawnVesselNavballWidget(cfg, theme);
+                    continue;
+                }
+
                 switch (cfg.WidgetId)
                 {
+                    case "nav.vessel_navball":
+                    case "nav.vessel_attitude_sphere":
+                    case "core.vessel_navball":
+                    case "core.vessel_attitude_sphere":
+                    case "nav.attitude_sphere_3d":
+                        SpawnVesselNavballWidget(cfg, theme);
+                        break;
                     case "core.navball":
                         SpawnNavballSphere(cfg, theme);
                         break;
@@ -414,6 +452,7 @@ namespace ModularFlightPanel.UI
                         SpawnOrbitalInfo(cfg, theme);
                         break;
                     case "core.sas_dial":
+                    case "core.sas_dial_3d":
                         SpawnSASDial(cfg, theme);
                         break;
                     case "core.time_warp":
@@ -461,6 +500,10 @@ namespace ModularFlightPanel.UI
                     case "custom.maneuver_timeline":
                         SpawnManeuverTimelineWidget(cfg, theme);
                         break;
+                    case "core.ui_widget":
+                    case "custom.ui_widget":
+                        SpawnUIWidget(cfg, theme);
+                        break;
                     default:
                         // 自定义通配符组件 (CustomTokenTextWidget)
                         if (cfg.WidgetId.StartsWith("custom."))
@@ -502,6 +545,28 @@ namespace ModularFlightPanel.UI
             }
 
             Debug.Log($"[ModularFlightPanel] Assembled {_modularWidgets.Count} modular flight widgets into WidgetRenderManager.");
+
+            // 实例化 Figma 级智能对齐参考线中枢 (位于顶层)
+            GameObject guidesObj = new GameObject("SmartGuides", typeof(RectTransform));
+            guidesObj.transform.SetParent(_canvasObj.transform, false);
+            guidesObj.transform.SetAsLastSibling();
+            var smartGuides = guidesObj.AddComponent<WidgetSmartGuides>();
+            smartGuides.Initialize(_canvasObj.GetComponent<RectTransform>(), _canvas);
+
+            // 实例化 8 点包围盒变换手柄与旋转操纵器 (位于最顶层)
+            GameObject gizmoObj = new GameObject("TransformGizmo", typeof(RectTransform));
+            gizmoObj.transform.SetParent(_canvasObj.transform, false);
+            gizmoObj.transform.SetAsLastSibling();
+            var gizmo = gizmoObj.AddComponent<WidgetTransformGizmo>();
+            gizmo.Initialize(_canvasObj.GetComponent<RectTransform>(), _canvas);
+        }
+
+        private void SpawnVesselNavballWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<VesselNavballWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
         }
 
         private void SpawnNavballSphere(WidgetConfig cfg, ThemeConfig theme)
@@ -664,6 +729,14 @@ namespace ModularFlightPanel.UI
             _modularWidgets.Add(w);
         }
 
+        private void SpawnStagingSequenceWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<StagingSequenceWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
         private void SpawnTimeWarpWidget(WidgetConfig cfg, ThemeConfig theme)
         {
             GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
@@ -700,6 +773,14 @@ namespace ModularFlightPanel.UI
         {
             GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
             var w = go.AddComponent<ManeuverTimelineWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnUIWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<UIWidget>();
             w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
             _modularWidgets.Add(w);
         }
@@ -861,6 +942,7 @@ namespace ModularFlightPanel.UI
             }
         }
 
+#if KSP_RUNTIME && !UNITY_EDITOR
         private void OnGUI()
         {
             // 实时绘制高精度性能分析探针 HUD 徽章 (可按 F10 开启/关闭)
@@ -868,14 +950,12 @@ namespace ModularFlightPanel.UI
 
             if (!WidgetDragHandler.IsEditModeActive || !_isUIVisible || MFPProfiler.IsMasterBypassed) return;
 
-#if KSP_RUNTIME
-            GUI.skin = HighLogic.Skin;
-#endif
+            MFPGuiSkin.EnsureInitialized();
 
             IsMouseOverFloatingToolbar = false;
 
-            float toolbarW = 890f;
-            float toolbarH = 74f;
+            float toolbarW = 980f;
+            float toolbarH = 78f;
             float x = (Screen.width - toolbarW) * 0.5f;
             float y = 12f;
 
@@ -885,79 +965,96 @@ namespace ModularFlightPanel.UI
                 IsMouseOverFloatingToolbar = true;
             }
 
-            GUILayout.BeginArea(topToolbarRect, GUI.skin.box);
+            GUILayout.BeginArea(topToolbarRect, MFPGuiSkin.CardStyle);
 
+            // 第一行：标题 + 撤销/重做 + 全套对齐工具
             GUILayout.BeginHorizontal();
             int selCount = WidgetSelectionManager.Count;
             string selInfo = selCount > 0 ? $"<color=#FFE000><b>已选 {selCount} 项</b></color>" : "<color=#AAAAAA>未选中 (拉框多选)</color>";
-            GUILayout.Label($"🛠️ <b>MFP 布局编辑</b> | {selInfo}", GUILayout.Width(170f));
+            GUILayout.Label($"🛠️ <b>MFP 设计工坊</b> | {selInfo}", GUILayout.Width(170f));
 
+            GUI.enabled = WidgetEditHistory.CanUndo;
+            if (GUILayout.Button("↶ 撤销", GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Undo();
+            GUI.enabled = WidgetEditHistory.CanRedo;
+            if (GUILayout.Button("↷ 重做", GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Redo();
+            GUI.enabled = true;
+
+            GUILayout.Space(6f);
             GUI.enabled = selCount >= 2;
-            if (GUILayout.Button("⬅ 左对齐", GUILayout.Width(58f), GUILayout.Height(24f))) WidgetSelectionManager.AlignLeft();
-            if (GUILayout.Button("⏸ 水平居中", GUILayout.Width(66f), GUILayout.Height(24f))) WidgetSelectionManager.AlignCenterX();
-            if (GUILayout.Button("➡ 右对齐", GUILayout.Width(58f), GUILayout.Height(24f))) WidgetSelectionManager.AlignRight();
-            if (GUILayout.Button("⬆ 顶对齐", GUILayout.Width(58f), GUILayout.Height(24f))) WidgetSelectionManager.AlignTop();
-            if (GUILayout.Button("⏵ 垂直居中", GUILayout.Width(66f), GUILayout.Height(24f))) WidgetSelectionManager.AlignCenterY();
-            if (GUILayout.Button("⬇ 底对齐", GUILayout.Width(58f), GUILayout.Height(24f))) WidgetSelectionManager.AlignBottom();
+            if (GUILayout.Button("⬅ 左对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignLeft();
+            if (GUILayout.Button("⏸ 居中X", GUILayout.Width(54f), GUILayout.Height(24f))) WidgetSelectionManager.AlignCenterX();
+            if (GUILayout.Button("➡ 右对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignRight();
+            if (GUILayout.Button("⬆ 顶对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignTop();
+            if (GUILayout.Button("⏵ 居中Y", GUILayout.Width(54f), GUILayout.Height(24f))) WidgetSelectionManager.AlignCenterY();
+            if (GUILayout.Button("⬇ 底对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignBottom();
             GUI.enabled = selCount >= 3;
             if (GUILayout.Button("⇹ 水平等距", GUILayout.Width(68f), GUILayout.Height(24f))) WidgetSelectionManager.DistributeHorizontally();
             if (GUILayout.Button("⇳ 垂直等距", GUILayout.Width(68f), GUILayout.Height(24f))) WidgetSelectionManager.DistributeVertically();
             GUI.enabled = selCount >= 1;
-            if (GUILayout.Button("⤢ 居中X", GUILayout.Width(54f), GUILayout.Height(24f))) WidgetSelectionManager.CenterToScreenX();
+            if (GUILayout.Button("⌖ X=0中轴", GUILayout.Width(64f), GUILayout.Height(24f))) WidgetSelectionManager.CenterToScreenX();
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
+            // 第二行：磁吸/网格开关 + 图层/删除/微调 + 快捷退出
             GUILayout.BeginHorizontal();
             bool snap = WidgetDragHandler.EnableMagneticSnap;
             GUI.color = snap ? Color.cyan : Color.white;
-            if (GUILayout.Button(snap ? "🧲 磁吸: [开]" : "🧲 磁吸: [关]", GUILayout.Width(88f), GUILayout.Height(22f)))
+            if (GUILayout.Button(snap ? "🧲 磁吸: [开]" : "🧲 磁吸: [关]", GUILayout.Width(84f), GUILayout.Height(22f)))
             {
                 WidgetDragHandler.EnableMagneticSnap = !WidgetDragHandler.EnableMagneticSnap;
+            }
+
+            bool grid = WidgetCanvasGrid.IsGridVisible;
+            GUI.color = grid ? Color.cyan : Color.white;
+            if (GUILayout.Button(grid ? "▦ 网格: [开]" : "▦ 网格: [关]", GUILayout.Width(84f), GUILayout.Height(22f)))
+            {
+                WidgetCanvasGrid.ToggleGrid();
             }
             GUI.color = Color.white;
 
             if (selCount > 0)
             {
-                // 缩放直接生效按钮
-                GUILayout.Label("<color=#00E5FF><b>缩放:</b></color>", GUILayout.Width(35f));
+                // 图层层级
+                if (GUILayout.Button("⤒ 置顶", GUILayout.Width(46f), GUILayout.Height(22f))) WidgetSelectionManager.BringToFront();
+                if (GUILayout.Button("⤓ 置底", GUILayout.Width(46f), GUILayout.Height(22f))) WidgetSelectionManager.SendToBack();
+
+                // 快速删除/隐藏
+                if (GUILayout.Button("🗑 隐藏", GUILayout.Width(46f), GUILayout.Height(22f))) WidgetSelectionManager.DeleteSelected();
+
+                // 缩放
+                GUILayout.Space(4f);
                 if (GUILayout.Button("－", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BatchScale(-0.1f);
                 if (GUILayout.Button("＋", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BatchScale(+0.1f);
-                if (GUILayout.Button("0.8x", GUILayout.Width(38f), GUILayout.Height(22f))) WidgetSelectionManager.BatchSetScale(0.8f);
-                if (GUILayout.Button("1.0x", GUILayout.Width(38f), GUILayout.Height(22f))) WidgetSelectionManager.BatchSetScale(1.0f);
-                if (GUILayout.Button("1.2x", GUILayout.Width(38f), GUILayout.Height(22f))) WidgetSelectionManager.BatchSetScale(1.2f);
-                if (GUILayout.Button("1.5x", GUILayout.Width(38f), GUILayout.Height(22f))) WidgetSelectionManager.BatchSetScale(1.5f);
+                if (GUILayout.Button("1.0x", GUILayout.Width(36f), GUILayout.Height(22f))) WidgetSelectionManager.BatchSetScale(1.0f);
 
-                // 旋转直接生效按钮
-                GUILayout.Space(6f);
-                GUILayout.Label("<color=#FFE000><b>旋转:</b></color>", GUILayout.Width(35f));
-                if (GUILayout.Button("↺ 15°", GUILayout.Width(44f), GUILayout.Height(22f))) WidgetSelectionManager.BatchRotate(-15f);
+                // 旋转
+                if (GUILayout.Button("↺ 15°", GUILayout.Width(42f), GUILayout.Height(22f))) WidgetSelectionManager.BatchRotate(-15f);
                 if (GUILayout.Button("0°", GUILayout.Width(26f), GUILayout.Height(22f))) WidgetSelectionManager.ResetRotation();
-                if (GUILayout.Button("↻ 15°", GUILayout.Width(44f), GUILayout.Height(22f))) WidgetSelectionManager.BatchRotate(+15f);
-                if (GUILayout.Button("90°", GUILayout.Width(32f), GUILayout.Height(22f))) WidgetSelectionManager.BatchSetRotation(90f);
+                if (GUILayout.Button("↻ 15°", GUILayout.Width(42f), GUILayout.Height(22f))) WidgetSelectionManager.BatchRotate(+15f);
 
-                GUILayout.Space(6f);
+                GUILayout.Space(4f);
                 if (GUILayout.Button("取消选择", GUILayout.Width(62f), GUILayout.Height(22f))) WidgetSelectionManager.ClearSelection();
             }
             else
             {
-                if (GUILayout.Button("全选全部组件", GUILayout.Width(90f), GUILayout.Height(22f))) WidgetSelectionManager.SelectAll(_modularWidgets);
-                GUILayout.Label("<color=#CCCCCC><size=10>快捷键: 空白拉框 | Ctrl+滚轮缩放 | Shift+滚轮旋转 | R复位旋转 | 0复位缩放</size></color>");
+                if (GUILayout.Button("全选 (Ctrl+A)", GUILayout.Width(88f), GUILayout.Height(22f))) WidgetSelectionManager.SelectAll(_modularWidgets);
+                GUILayout.Label("<color=#94A3B8><size=10>快捷键: 方向键微调(Shift+10px) | 拖拽手柄缩放/旋转 | Shift锁定轴向 | Ctrl+Z撤销 | G网格 | []图层</size></color>");
             }
 
-            GUI.color = Color.green;
-            if (GUILayout.Button("✔ 保存退出", GUILayout.Width(80f), GUILayout.Height(22f)))
+            if (GUILayout.Button("✔ 完成退出", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(84f), GUILayout.Height(24f)))
             {
                 WidgetDragHandler.IsEditModeActive = false;
                 WidgetSelectionManager.ClearSelection();
                 WidgetLayoutManager.Instance.SaveLayout();
             }
-            GUI.color = Color.white;
             GUILayout.EndHorizontal();
 
             GUILayout.EndArea();
 
             // 绘制直接吸附在组件旁边的即时悬浮缩放/旋转操作盒 (点击一下即可!)
             DrawOnWidgetFloatingToolbar(selCount);
+
+            MFPInputLock.SetWindowHoverLock(IsMouseOverFloatingToolbar);
         }
 
         private void DrawOnWidgetFloatingToolbar(int selCount)
@@ -1024,9 +1121,7 @@ namespace ModularFlightPanel.UI
                 IsMouseOverFloatingToolbar = true;
             }
 
-            GUI.color = new Color(0.06f, 0.14f, 0.22f, 0.95f);
-            GUILayout.BeginArea(badgeRect, GUI.skin.box);
-            GUI.color = Color.white;
+            GUILayout.BeginArea(badgeRect, MFPGuiSkin.CardStyle);
 
             // 1. 标题行 (显示当前组件名与实时缩放比、旋转角)
             GUILayout.BeginHorizontal();
@@ -1109,6 +1204,7 @@ namespace ModularFlightPanel.UI
 
             GUILayout.EndArea();
         }
+#endif
 
         private void HandleGlobalRenderScaleChanged(float newScale)
         {

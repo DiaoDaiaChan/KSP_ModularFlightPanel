@@ -19,6 +19,8 @@ namespace ModularFlightPanel.Core
         public static Shader DotMatrixShader { get; private set; }
         public static Shader PhosphorHoloShader { get; private set; }
         public static Shader DigitalSegmentShader { get; private set; }
+        public static Shader Vessel3DShader { get; private set; }
+        public static Shader MinimalistAttitudeShader { get; private set; }
 
         public static void LoadBundle()
         {
@@ -37,9 +39,11 @@ namespace ModularFlightPanel.Core
             DotMatrixShader = Shader.Find("ModularFlightPanel/DotMatrixUI");
             PhosphorHoloShader = Shader.Find("ModularFlightPanel/PhosphorHoloUI");
             DigitalSegmentShader = Shader.Find("ModularFlightPanel/DigitalSegmentUI");
+            Vessel3DShader = Shader.Find("ModularFlightPanel/Vessel3DTechnical");
+            MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere");
             if (ProceduralShader != null && EnhancedShader != null)
             {
-                Debug.Log("[ModularFlightPanel] In Editor: Loaded live project shaders successfully!");
+                MFPLogger.Info(MFPLogger.CatRender, "In Editor: Loaded live project shaders successfully!");
                 return;
             }
 #endif
@@ -62,17 +66,17 @@ namespace ModularFlightPanel.Core
                         DotMatrixShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DotMatrixUI.shader");
                         PhosphorHoloShader = _bundle.LoadAsset<Shader>("Assets/Shaders/PhosphorHoloUI.shader");
                         DigitalSegmentShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DigitalSegmentUI.shader");
-                        Debug.Log("[ModularFlightPanel] Successfully loaded custom shaders from AssetBundle!");
+                        MFPLogger.Info(MFPLogger.CatRender, "Successfully loaded custom shaders from AssetBundle!");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[ModularFlightPanel] Error loading AssetBundle: {ex.Message}");
+                    MFPLogger.Exception(MFPLogger.CatRender, ex, "Error loading AssetBundle");
                 }
             }
             else
             {
-                Debug.LogWarning($"[ModularFlightPanel] AssetBundle not found at: {bundlePath}. Attempting Shader.Find fallbacks.");
+                MFPLogger.Warn(MFPLogger.CatRender, $"AssetBundle not found at: {bundlePath}. Attempting Shader.Find fallbacks.");
             }
 
             // Fallbacks
@@ -86,6 +90,8 @@ namespace ModularFlightPanel.Core
             if (DotMatrixShader == null) DotMatrixShader = Shader.Find("ModularFlightPanel/DotMatrixUI") ?? Shader.Find("UI/Default");
             if (PhosphorHoloShader == null) PhosphorHoloShader = Shader.Find("ModularFlightPanel/PhosphorHoloUI") ?? Shader.Find("UI/Default");
             if (DigitalSegmentShader == null) DigitalSegmentShader = Shader.Find("ModularFlightPanel/DigitalSegmentUI") ?? Shader.Find("UI/Default");
+            if (Vessel3DShader == null) Vessel3DShader = Shader.Find("ModularFlightPanel/Vessel3DTechnical") ?? Shader.Find("Diffuse") ?? Shader.Find("Unlit/Color");
+            if (MinimalistAttitudeShader == null) MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere") ?? ProceduralShader ?? ModernShader ?? Shader.Find("Diffuse");
         }
 
         public static void UnloadBundle()

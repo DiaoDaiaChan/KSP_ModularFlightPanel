@@ -4,11 +4,18 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Widgets.Controls;
 
 namespace ModularFlightPanel.UI
 {
     /// <summary>
-    /// 挂载在任意组件根物体上的通用自由拖拽、多选批量移动、磁吸对齐与快捷缩放/旋转交互器
+    /// 专业图形编辑软件级自由拖拽、多选批量操作与磁吸微调中枢 (Figma/Photoshop-Grade Interaction Engine)
+    /// 核心交互特性：
+    /// 1. 毫秒级智能磁吸导引线 (Smart Guides) 与屏幕对称轴 (X=0) 贴合联动。
+    /// 2. 像素级方向键微调 (Arrow Keys Nudge: 1px/5px/10px) 与图层层级控制 ([ / ])。
+    /// 3. 全局多级撤销/重做 (Ctrl+Z / Ctrl+Y) 与快捷复制 (Ctrl+D) / 删除 (Delete)。
+    /// 4. Shift 轴向锁定 (Axis-Lock) 平移与双击快速唤起检视工作台。
+    /// 5. 8 点包围盒几何变换手柄与旋转操纵器联动。
     /// </summary>
     public class WidgetDragHandler : MonoBehaviour, IPointerDownHandler, IDragHandler, IEndDragHandler, IPointerEnterHandler, IPointerExitHandler
     {
@@ -23,6 +30,15 @@ namespace ModularFlightPanel.UI
                 {
                     _isEditModeActive = value;
                     OnEditModeChanged?.Invoke(_isEditModeActive);
+                    if (!_isEditModeActive)
+                    {
+                        WidgetSmartGuides.Instance?.HideAllGuides();
+                        WidgetTransformGizmo.Instance?.HideGizmo();
+                    }
+                    else
+                    {
+                        WidgetTransformGizmo.Instance?.UpdateGizmoPosition();
+                    }
                 }
             }
         }
@@ -39,6 +55,8 @@ namespace ModularFlightPanel.UI
         private Text _editTitleText;
 
         private bool _isHovered = false;
+        private bool _isDragging = false;
+        private Vector2 _dragTotalDelta = Vector2.zero;
 
         public void Initialize(BaseFlightWidget owner, Canvas canvas)
         {
@@ -59,7 +77,6 @@ namespace ModularFlightPanel.UI
 
         private void CreateEditVisuals()
         {
-            // 创建编辑模式专用的高亮提示边框与标题把手
             _editOverlay = new GameObject("EditOverlay", typeof(RectTransform), typeof(Image));
             _editOverlay.transform.SetParent(transform, false);
 
@@ -70,7 +87,7 @@ namespace ModularFlightPanel.UI
             rt.anchoredPosition = Vector2.zero;
 
             _overlayImage = _editOverlay.GetComponent<Image>();
-            _overlayImage.color = new Color(0f, 0.8f, 1f, 0.08f);
+            _overlayImage.color = new Color(0f, 0.8f, 1f, 0.04f);
             _overlayImage.raycastTarget = true;
 
             bool isNavball = _ownerWidget is Widgets.NavballSphereWidget;
@@ -94,16 +111,16 @@ namespace ModularFlightPanel.UI
             else
             {
                 _editOutline = _editOverlay.AddComponent<Outline>();
-                _editOutline.effectColor = new Color(0f, 1f, 0.8f, 0.6f);
-                _editOutline.effectDistance = new Vector2(1.5f, 1.5f);
+                _editOutline.effectColor = new Color(0f, 1f, 0.8f, 0.5f);
+                _editOutline.effectDistance = new Vector2(1.2f, 1.2f);
             }
 
-            _editTitleText = UIFactory.CreateText(_editOverlay.transform, "Title", $"[拖拽] {_ownerWidget.DisplayName}", 11, TextAnchor.MiddleCenter, Color.white);
+            _editTitleText = UIFactory.CreateText(_editOverlay.transform, "Title", $"[拖拽] {_ownerWidget.DisplayName}", 10, TextAnchor.MiddleCenter, Color.white);
             RectTransform trt = _editTitleText.GetComponent<RectTransform>();
             trt.anchorMin = new Vector2(0.5f, 1f);
             trt.anchorMax = new Vector2(0.5f, 1f);
             trt.pivot = new Vector2(0.5f, 0f);
-            trt.sizeDelta = new Vector2(220f, 22f);
+            trt.sizeDelta = new Vector2(220f, 20f);
             trt.anchoredPosition = new Vector2(0f, 4f);
         }
 
@@ -113,7 +130,7 @@ namespace ModularFlightPanel.UI
 
             if (!IsEditModeActive) return;
 
-            // 快捷键响应 (仅当鼠标悬停或该组件已被多选时)
+            // 全局快捷键与手柄联动（仅当选中当前组件或鼠标悬停时触发）
             bool isSelected = WidgetSelectionManager.IsSelected(_ownerWidget);
             if (_isHovered || isSelected)
             {
@@ -123,45 +140,82 @@ namespace ModularFlightPanel.UI
 
         private void HandleShortcuts(bool isSelected)
         {
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            // 0. 全局 Undo / Redo 快捷键 (Ctrl+Z / Ctrl+Y)
+            WidgetEditHistory.HandleHotkeys();
 
-            // 1. Ctrl + 滚轮 或 [ / ] 键: 平滑无级缩放
             bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
+            // 1. 全选 (Ctrl + A)
+            if (ctrl && Input.GetKeyDown(KeyCode.A))
+            {
+                if (NavballHUD.Instance != null && NavballHUD.Instance.ModularWidgets != null)
+                {
+                    WidgetSelectionManager.SelectAll(NavballHUD.Instance.ModularWidgets);
+                    MFPToastBridge.Show("已全选所有小组件");
+                }
+                return;
+            }
+
+            // 2. 切换蓝图辅助网格 (G 键)
+            if (Input.GetKeyDown(KeyCode.G) && !ctrl)
+            {
+                WidgetCanvasGrid.ToggleGrid();
+                return;
+            }
+
+            if (!isSelected) return;
+
+            // 3. 像素级方向键微调 (Arrow Keys Nudge)
+            float nudge = shift ? 10f : (ctrl ? 5f : 1f);
+            if (Input.GetKeyDown(KeyCode.UpArrow)) WidgetSelectionManager.Nudge(new Vector2(0f, nudge));
+            else if (Input.GetKeyDown(KeyCode.DownArrow)) WidgetSelectionManager.Nudge(new Vector2(0f, -nudge));
+            else if (Input.GetKeyDown(KeyCode.LeftArrow)) WidgetSelectionManager.Nudge(new Vector2(-nudge, 0f));
+            else if (Input.GetKeyDown(KeyCode.RightArrow)) WidgetSelectionManager.Nudge(new Vector2(nudge, 0f));
+
+            // 4. 图层层级移动 ([ 键置底，] 键置顶)
+            if (Input.GetKeyDown(KeyCode.RightBracket)) WidgetSelectionManager.BringToFront();
+            else if (Input.GetKeyDown(KeyCode.LeftBracket)) WidgetSelectionManager.SendToBack();
+
+            // 5. 快速隐藏/删除选中组件 (Delete / Backspace)
+            if (Input.GetKeyDown(KeyCode.Delete) || Input.GetKeyDown(KeyCode.Backspace))
+            {
+                WidgetSelectionManager.DeleteSelected();
+                return;
+            }
+
+            // 6. 快捷复位 (R 复位旋转，0 复位缩放)
+            if (Input.GetKeyDown(KeyCode.R) && !ctrl)
+            {
+                WidgetSelectionManager.ResetRotation();
+                UpdateSelectionAppearance();
+            }
+            else if ((Input.GetKeyDown(KeyCode.Alpha0) || Input.GetKeyDown(KeyCode.Keypad0)) && !ctrl)
+            {
+                WidgetSelectionManager.ResetScale();
+                UpdateSelectionAppearance();
+            }
+
+            // 7. 滚轮辅助缩放与旋转
+            float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (ctrl && !shift && Math.Abs(scroll) > 0.001f)
             {
                 float deltaScale = scroll > 0f ? 0.05f : -0.05f;
-                if (isSelected) WidgetSelectionManager.BatchScale(deltaScale);
-                else _ownerWidget.UpdateTransform(scale: (_ownerWidget.Config?.Scale ?? 1f) + deltaScale);
+                WidgetEditHistory.BeginAction();
+                WidgetSelectionManager.BatchScale(deltaScale);
+                WidgetEditHistory.CommitAction("滚轮缩放");
                 WidgetLayoutManager.Instance.SaveLayout();
                 UpdateSelectionAppearance();
             }
-
-            // 2. Shift + 滚轮 或 < / > 键: 平滑旋转 (按住 Ctrl 加速为 15° 吸附)
-            if (shift && Math.Abs(scroll) > 0.001f)
+            else if (shift && Math.Abs(scroll) > 0.001f)
             {
                 float step = ctrl ? 15f : 5f;
                 float deltaAngle = scroll > 0f ? step : -step;
-                if (isSelected) WidgetSelectionManager.BatchRotate(deltaAngle);
-                else _ownerWidget.UpdateTransform(rotation: (_ownerWidget.Config?.Rotation ?? 0f) + deltaAngle);
+                WidgetEditHistory.BeginAction();
+                WidgetSelectionManager.BatchRotate(deltaAngle);
+                WidgetEditHistory.CommitAction("滚轮旋转");
                 WidgetLayoutManager.Instance.SaveLayout();
                 UpdateSelectionAppearance();
-            }
-
-            // 3. 键盘按键快捷控制
-            if (isSelected)
-            {
-                if (Input.GetKeyDown(KeyCode.R))
-                {
-                    WidgetSelectionManager.ResetRotation();
-                    UpdateSelectionAppearance();
-                }
-                else if (Input.GetKeyDown(KeyCode.Alpha0) || Input.GetKeyDown(KeyCode.Keypad0))
-                {
-                    WidgetSelectionManager.ResetScale();
-                    UpdateSelectionAppearance();
-                }
             }
         }
 
@@ -197,12 +251,12 @@ namespace ModularFlightPanel.UI
 
             if (isSelected)
             {
-                // 选中高亮: 金黄霓虹光环
+                // 选中高亮: 边框柔和青蓝底衬，主手柄由 WidgetTransformGizmo 接管
                 Color goldColor = new Color(1f, 0.85f, 0.15f, 1f);
                 if (_editOutline != null)
                 {
                     _editOutline.effectColor = goldColor;
-                    _editOutline.effectDistance = new Vector2(3f, 3f);
+                    _editOutline.effectDistance = new Vector2(2f, 2f);
                 }
                 if (_ringImg != null)
                 {
@@ -210,22 +264,22 @@ namespace ModularFlightPanel.UI
                 }
                 if (_overlayImage != null)
                 {
-                    _overlayImage.color = new Color(1f, 0.85f, 0.15f, 0.15f);
+                    _overlayImage.color = new Color(1f, 0.85f, 0.15f, 0.08f);
                 }
                 if (_editTitleText != null)
                 {
-                    _editTitleText.text = $"<b>★ [已选中] {_ownerWidget.DisplayName} ({scale:F2}x, {rot:F0}°)</b>";
+                    _editTitleText.text = $"<b>★ {_ownerWidget.DisplayName}</b>";
                     _editTitleText.color = goldColor;
                 }
             }
             else
             {
-                // 普通未选中编辑态: 柔和青蓝
-                Color cyanColor = new Color(0f, 0.85f, 1f, 0.6f);
+                // 普通未选中编辑态
+                Color cyanColor = new Color(0f, 0.85f, 1f, 0.5f);
                 if (_editOutline != null)
                 {
                     _editOutline.effectColor = cyanColor;
-                    _editOutline.effectDistance = new Vector2(1.5f, 1.5f);
+                    _editOutline.effectDistance = new Vector2(1.2f, 1.2f);
                 }
                 if (_ringImg != null)
                 {
@@ -233,12 +287,12 @@ namespace ModularFlightPanel.UI
                 }
                 if (_overlayImage != null)
                 {
-                    _overlayImage.color = new Color(0f, 0.85f, 1f, 0.06f);
+                    _overlayImage.color = new Color(0f, 0.85f, 1f, 0.04f);
                 }
                 if (_editTitleText != null)
                 {
-                    _editTitleText.text = $"[可拖拽] {_ownerWidget.DisplayName}";
-                    _editTitleText.color = Color.white;
+                    _editTitleText.text = $"{_ownerWidget.DisplayName}";
+                    _editTitleText.color = new Color(0.85f, 0.95f, 1f, 0.8f);
                 }
             }
         }
@@ -247,14 +301,11 @@ namespace ModularFlightPanel.UI
         {
             if (!IsEditModeActive || NavballHUD.IsMouseOverFloatingToolbar) return;
 
-            // 双击快捷循环切换缩放 (1.0x -> 1.2x -> 1.5x -> 0.8x -> 1.0x)
+            // 双击快速唤起装配台聚焦检视 (像 Figma 双击图层一样丝滑)
             if (eventData.clickCount == 2)
             {
-                float currentScale = _ownerWidget.Config?.Scale ?? 1.0f;
-                float nextScale = currentScale < 1.15f ? 1.2f : (currentScale < 1.45f ? 1.5f : (currentScale < 1.75f ? 0.8f : 1.0f));
-                _ownerWidget.UpdateTransform(scale: nextScale);
-                WidgetLayoutManager.Instance.SaveLayout();
-                UpdateSelectionAppearance();
+                UIWidget.OnRequestOpenWorkbench?.Invoke();
+                MFPToastBridge.Show($"🛠️ 正在装配台检视: {_ownerWidget.DisplayName}");
                 return;
             }
 
@@ -273,7 +324,10 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            transform.SetAsLastSibling();
+            _isDragging = false;
+            _dragTotalDelta = Vector2.zero;
+
+            WidgetEditHistory.BeginAction();
             UpdateSelectionAppearance();
         }
 
@@ -281,7 +335,23 @@ namespace ModularFlightPanel.UI
         {
             if (!IsEditModeActive || NavballHUD.IsMouseOverFloatingToolbar || _rectTransform == null || _canvas == null) return;
 
+            _isDragging = true;
             Vector2 delta = eventData.delta / _canvas.scaleFactor;
+            _dragTotalDelta += delta;
+
+            // Shift 轴向锁定 (Axis-Lock): 约束为纯水平或纯垂直平移
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            if (shift)
+            {
+                if (Mathf.Abs(_dragTotalDelta.x) > Mathf.Abs(_dragTotalDelta.y))
+                {
+                    delta.y = 0f;
+                }
+                else
+                {
+                    delta.x = 0f;
+                }
+            }
 
             bool isMulti = WidgetSelectionManager.IsSelected(_ownerWidget) && WidgetSelectionManager.Count > 1;
 
@@ -290,12 +360,12 @@ namespace ModularFlightPanel.UI
                 // 多选批量拖拽
                 WidgetSelectionManager.BatchMove(delta);
 
-                // 磁吸吸附校准 (以当前拖拽的 leader 组件为主导校准 group)
-                if (EnableMagneticSnap)
+                // 智能磁吸参考线计算
+                if (EnableMagneticSnap && WidgetSmartGuides.Instance != null)
                 {
-                    Vector2 currentPos = _rectTransform.anchoredPosition;
-                    Vector2 snappedPos = ApplyMagneticOrGridSnap(currentPos);
-                    Vector2 snapDelta = snappedPos - currentPos;
+                    Vector2 curPos = _rectTransform.anchoredPosition;
+                    var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, curPos, 8f);
+                    Vector2 snapDelta = snap.SnappedPosition - curPos;
                     if (snapDelta.sqrMagnitude > 0.001f)
                     {
                         WidgetSelectionManager.BatchMove(snapDelta);
@@ -307,9 +377,10 @@ namespace ModularFlightPanel.UI
                 // 单个组件拖拽
                 _rectTransform.anchoredPosition += delta;
 
-                if (EnableMagneticSnap)
+                if (EnableMagneticSnap && WidgetSmartGuides.Instance != null)
                 {
-                    _rectTransform.anchoredPosition = ApplyMagneticOrGridSnap(_rectTransform.anchoredPosition);
+                    var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, _rectTransform.anchoredPosition, 8f);
+                    _rectTransform.anchoredPosition = snap.SnappedPosition;
                 }
                 else
                 {
@@ -319,65 +390,17 @@ namespace ModularFlightPanel.UI
                     _rectTransform.anchoredPosition = new Vector2(snapX, snapY);
                 }
             }
-        }
 
-        private Vector2 ApplyMagneticOrGridSnap(Vector2 proposedPos)
-        {
-            float snapX = Mathf.Round(proposedPos.x / 5f) * 5f;
-            float snapY = Mathf.Round(proposedPos.y / 5f) * 5f;
-
-            if (NavballHUD.Instance == null || NavballHUD.Instance.ModularWidgets == null)
-            {
-                return new Vector2(snapX, snapY);
-            }
-
-            float threshold = 8f;
-            Rect myBounds = WidgetSelectionManager.GetWidgetBounds(_ownerWidget);
-            float halfW = myBounds.width * 0.5f;
-            float halfH = myBounds.height * 0.5f;
-
-            float myLeft = proposedPos.x - halfW;
-            float myRight = proposedPos.x + halfW;
-            float myBottom = proposedPos.y - halfH;
-            float myTop = proposedPos.y + halfH;
-
-            // 优先检查与屏幕水平中轴 X=0 对齐
-            if (Mathf.Abs(proposedPos.x) < threshold)
-            {
-                snapX = 0f;
-            }
-
-            // 遍历其他未选中的组件进行边缘与中心磁吸
-            foreach (var other in NavballHUD.Instance.ModularWidgets)
-            {
-                if (other == null || other == _ownerWidget || !other.gameObject.activeInHierarchy) continue;
-                if (WidgetSelectionManager.IsSelected(other)) continue; // 排除同组选中的组件
-
-                Rect ob = WidgetSelectionManager.GetWidgetBounds(other);
-
-                // 水平吸附 (左-左, 右-右, 中-中, 左-右, 右-左)
-                if (Mathf.Abs(myLeft - ob.xMin) < threshold) snapX = ob.xMin + halfW;
-                else if (Mathf.Abs(myRight - ob.xMax) < threshold) snapX = ob.xMax - halfW;
-                else if (Mathf.Abs(proposedPos.x - ob.center.x) < threshold) snapX = ob.center.x;
-                else if (Mathf.Abs(myLeft - ob.xMax) < threshold) snapX = ob.xMax + halfW;
-                else if (Mathf.Abs(myRight - ob.xMin) < threshold) snapX = ob.xMin - halfW;
-
-                // 垂直吸附 (顶-顶, 底-底, 中-中, 顶-底, 底-顶)
-                if (Mathf.Abs(myTop - ob.yMax) < threshold) snapY = ob.yMax - halfH;
-                else if (Mathf.Abs(myBottom - ob.yMin) < threshold) snapY = ob.yMin + halfH;
-                else if (Mathf.Abs(proposedPos.y - ob.center.y) < threshold) snapY = ob.center.y;
-                else if (Mathf.Abs(myBottom - ob.yMax) < threshold) snapY = ob.yMax + halfH;
-                else if (Mathf.Abs(myTop - ob.yMin) < threshold) snapY = ob.yMin - halfH;
-            }
-
-            return new Vector2(snapX, snapY);
+            WidgetTransformGizmo.Instance?.UpdateGizmoPosition();
         }
 
         public void OnEndDrag(PointerEventData eventData)
         {
             if (!IsEditModeActive) return;
 
-            // 批量保存最新坐标到配置对象
+            WidgetSmartGuides.Instance?.HideAllGuides();
+
+            // 批量持久化坐标到配置对象
             if (WidgetSelectionManager.IsSelected(_ownerWidget) && WidgetSelectionManager.Count > 1)
             {
                 foreach (var w in WidgetSelectionManager.SelectedWidgets)
@@ -398,7 +421,14 @@ namespace ModularFlightPanel.UI
                 }
             }
 
+            if (_isDragging)
+            {
+                WidgetEditHistory.CommitAction($"移动 {_ownerWidget.DisplayName}");
+                _isDragging = false;
+            }
+
             WidgetLayoutManager.Instance.SaveLayout();
+            WidgetTransformGizmo.Instance?.UpdateGizmoPosition();
             UpdateSelectionAppearance();
         }
     }

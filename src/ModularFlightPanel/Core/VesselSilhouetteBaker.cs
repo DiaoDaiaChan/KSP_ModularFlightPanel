@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.Core
 {
@@ -16,6 +17,16 @@ namespace ModularFlightPanel.Core
     /// 5. 权威俯视正交投影：基于 ActiveVessel.ReferenceTransform 建立视图矩阵并自适应居中缩放，
     ///    机头始终对齐 +Y，与滚转角（Roll）严格契合。
     /// </summary>
+    /// <summary>
+    /// 剪影烘焙器渲染模式 (2D 俯视 / 3D 轴测 / 3D 透视)
+    /// </summary>
+    public enum SilhouetteRenderMode
+    {
+        TopDown2D = 0,
+        Isometric3D = 1,
+        Perspective3D = 2
+    }
+
     public class VesselSilhouetteBaker : MonoBehaviour, IVesselSilhouetteProvider
     {
         private static VesselSilhouetteBaker _instance;
@@ -42,8 +53,12 @@ namespace ModularFlightPanel.Core
 
         public event Action<Texture> OnSilhouetteUpdated;
 
+        public SilhouetteRenderMode RenderMode { get; set; } = SilhouetteRenderMode.TopDown2D;
+        public Vector3 Custom3DAngles { get; set; } = new Vector3(-35f, 25f, 0f);
+
         private Camera _offscreenCamera;
         private Material _silhouetteMaterial;
+        private CommandBuffer _commandBuffer;
 
         // 动态突发烘焙状态
         private float _burstRemainingTime = 0f;
@@ -111,12 +126,18 @@ namespace ModularFlightPanel.Core
                 _offscreenCamera.enabled = false; // 严禁每帧自动渲染
                 _offscreenCamera.cullingMask = 0; // 剔除一切场景物体
                 _offscreenCamera.clearFlags = CameraClearFlags.SolidColor;
-                _offscreenCamera.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                _offscreenCamera.backgroundColor = Color.clear;
                 _offscreenCamera.targetTexture = _renderTexture;
                 _offscreenCamera.orthographic = true;
                 _offscreenCamera.aspect = 1.0f;
                 _offscreenCamera.nearClipPlane = 0.5f;
                 _offscreenCamera.farClipPlane = 500f;
+            }
+
+            if (_commandBuffer == null)
+            {
+                _commandBuffer = new CommandBuffer();
+                _commandBuffer.name = "Vessel_Silhouette_Capture";
             }
 
             if (_silhouetteMaterial == null)
@@ -130,7 +151,7 @@ namespace ModularFlightPanel.Core
 
                 _silhouetteMaterial = new Material(shader)
                 {
-                    color = Color.white
+                    color = WidgetStyleManager.NeutralOpaque
                 };
                 if (shader != null && shader.name.IndexOf("texture", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
@@ -454,25 +475,72 @@ namespace ModularFlightPanel.Core
 
             float camDistance = Mathf.Max(spanZ * 2f + 15f, 25f);
 
-            _offscreenCamera.transform.position = _smoothedWorldCenter + dorsal * camDistance;
-            _offscreenCamera.transform.rotation = Quaternion.LookRotation(-dorsal, forward);
-            _offscreenCamera.orthographicSize = _smoothedViewExtent;
-            _offscreenCamera.nearClipPlane = 0.5f;
-            _offscreenCamera.farClipPlane = camDistance * 2f + spanZ + 50f;
+            if (RenderMode == SilhouetteRenderMode.TopDown2D)
+            {
+                _offscreenCamera.orthographic = true;
+                _offscreenCamera.transform.position = _smoothedWorldCenter + dorsal * camDistance;
+                _offscreenCamera.transform.rotation = Quaternion.LookRotation(-dorsal, forward);
+                _offscreenCamera.orthographicSize = _smoothedViewExtent;
+                _offscreenCamera.nearClipPlane = 0.5f;
+                _offscreenCamera.farClipPlane = camDistance * 2f + spanZ + 50f;
+            }
+            else
+            {
+                Quaternion defaultRot = Quaternion.LookRotation(-dorsal, forward);
+                Quaternion camRot = defaultRot * Quaternion.Euler(Custom3DAngles.y, Custom3DAngles.x, Custom3DAngles.z);
+                Vector3 camForward = camRot * Vector3.forward;
+
+                if (RenderMode == SilhouetteRenderMode.Perspective3D)
+                {
+                    float fov = 35f;
+                    float dist = (maxSpan * 0.5f / Mathf.Max(0.1f, Mathf.Sin(fov * 0.5f * Mathf.Deg2Rad))) * 1.25f;
+                    _offscreenCamera.orthographic = false;
+                    _offscreenCamera.fieldOfView = fov;
+                    _offscreenCamera.transform.position = _smoothedWorldCenter - camForward * dist;
+                    _offscreenCamera.transform.rotation = camRot;
+                    _offscreenCamera.nearClipPlane = Mathf.Max(0.1f, dist - maxSpan);
+                    _offscreenCamera.farClipPlane = dist + maxSpan * 2f + 100f;
+                }
+                else
+                {
+                    float dist = maxSpan * 2f + 30f;
+                    _offscreenCamera.orthographic = true;
+                    _offscreenCamera.orthographicSize = _smoothedViewExtent * 1.15f;
+                    _offscreenCamera.transform.position = _smoothedWorldCenter - camForward * dist;
+                    _offscreenCamera.transform.rotation = camRot;
+                    _offscreenCamera.nearClipPlane = 0.5f;
+                    _offscreenCamera.farClipPlane = dist * 2f + 100f;
+                }
+
+                // 3D 模式下启用技术着色器与虚拟光照
+                if (_silhouetteMaterial != null)
+                {
+                    if (_silhouetteMaterial.shader == null || _silhouetteMaterial.shader.name.IndexOf("Technical", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        Shader shader3d = AssetLoader.Vessel3DShader ?? Shader.Find("ModularFlightPanel/Vessel3DTechnical");
+                        if (shader3d != null) _silhouetteMaterial.shader = shader3d;
+                    }
+                    Vector3 localLight = new Vector3(0.45f, 0.75f, -0.55f).normalized;
+                    Vector3 worldLight = camRot * localLight;
+                    _silhouetteMaterial.SetVector("_LightDir", new Vector4(worldLight.x, worldLight.y, worldLight.z, 0f));
+                    _silhouetteMaterial.SetColor("_Color", WidgetStyleManager.NeutralOpaque);
+                    _silhouetteMaterial.SetColor("_RimColor", WidgetStyleManager.NeutralOpaque);
+                    _silhouetteMaterial.SetColor("_AmbientColor", WidgetStyleManager.Darken(WidgetStyleManager.NeutralOpaque, 0.2f));
+                }
+            }
 
             _offscreenCamera.ResetWorldToCameraMatrix();
             _offscreenCamera.ResetProjectionMatrix();
 
-            // 5. 构筑并执行极轻量 CommandBuffer (GPU 直接显存渲染，无任何场景管线开销)
+            // 5. 构筑并执行极轻量 CommandBuffer (GPU 直接显存渲染，无任何场景管线开销，复用对象 0 GC)
             // 注意：renderIntoTexture 设为 false，确保 DirectX 下输出的纹理与标准 UI RawImage 贴图坐标系完全一致（不产生上下颠倒反转）
             Matrix4x4 viewMatrix = _offscreenCamera.worldToCameraMatrix;
             Matrix4x4 projMatrix = GL.GetGPUProjectionMatrix(_offscreenCamera.projectionMatrix, false);
 
-            CommandBuffer cb = new CommandBuffer();
-            cb.name = "Vessel_Silhouette_Capture";
-            cb.SetRenderTarget(_renderTexture);
-            cb.ClearRenderTarget(true, true, Color.clear);
-            cb.SetViewProjectionMatrices(viewMatrix, projMatrix);
+            _commandBuffer.Clear();
+            _commandBuffer.SetRenderTarget(_renderTexture);
+            _commandBuffer.ClearRenderTarget(true, true, Color.clear);
+            _commandBuffer.SetViewProjectionMatrices(viewMatrix, projMatrix);
 
             for (int i = 0; i < _cachedMeshFilters.Count; i++)
             {
@@ -481,7 +549,7 @@ namespace ModularFlightPanel.Core
                 int subCount = mf.sharedMesh.subMeshCount;
                 for (int s = 0; s < subCount; s++)
                 {
-                    cb.DrawMesh(mf.sharedMesh, mf.transform.localToWorldMatrix, _silhouetteMaterial, s, 0);
+                    _commandBuffer.DrawMesh(mf.sharedMesh, mf.transform.localToWorldMatrix, _silhouetteMaterial, s, 0);
                 }
             }
 
@@ -492,12 +560,11 @@ namespace ModularFlightPanel.Core
                 int subCount = smr.sharedMesh.subMeshCount;
                 for (int s = 0; s < subCount; s++)
                 {
-                    cb.DrawMesh(smr.sharedMesh, smr.transform.localToWorldMatrix, _silhouetteMaterial, s, 0);
+                    _commandBuffer.DrawMesh(smr.sharedMesh, smr.transform.localToWorldMatrix, _silhouetteMaterial, s, 0);
                 }
             }
 
-            Graphics.ExecuteCommandBuffer(cb);
-            cb.Release();
+            Graphics.ExecuteCommandBuffer(_commandBuffer);
 
             OnSilhouetteUpdated?.Invoke(_renderTexture);
         }
@@ -650,6 +717,12 @@ namespace ModularFlightPanel.Core
             {
                 Destroy(_offscreenCamera.gameObject);
                 _offscreenCamera = null;
+            }
+
+            if (_commandBuffer != null)
+            {
+                _commandBuffer.Release();
+                _commandBuffer = null;
             }
 
             if (_instance == this)

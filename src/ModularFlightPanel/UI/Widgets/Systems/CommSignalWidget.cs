@@ -20,7 +20,6 @@ namespace ModularFlightPanel.UI.Widgets
     {
         private Image _panelBg;
         private Outline _panelOutline;
-        private Image _topStripe;
 
         // 胶囊顶栏 UI 元素
         private GameObject _capsuleBar;
@@ -52,7 +51,7 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly PeerRowUI[] _peerRows = new PeerRowUI[MaxPeerRows];
         private Text _matrixFooterText;
 
-        private bool _isExpanded = true;
+        private bool _isExpanded = false;
         private bool _stockHidden = true;
         private ThemeConfig _currentTheme;
         private IFlightTelemetry _lastTelemetry;
@@ -63,23 +62,21 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            Vector2 baseSize = new Vector2(236f * s, 32f * s);
+            Vector2 baseSize = new Vector2(264f * s, 26f * s);
             RectTransform.sizeDelta = baseSize;
 
-            Color bgCol = theme.FrameBgColor;
-            Color borderCol = theme.FrameBorderColor;
             Color primaryAccent = theme.AccentPrimary;
             Color secondaryAccent = theme.AccentSecondary;
             Color textPrimary = theme.TextPrimaryColor;
+            Color bgCol = theme.FrameBgColor;
+            Color borderCol = theme.FrameBorderColor;
 
-            // 1. 胶囊底座
-            _capsuleBar = UIFactory.CreatePanel(transform, "CapsuleBar", baseSize, Vector2.zero, bgCol, borderCol, 1.2f * s);
+            // 1. 胶囊底座 (全息极简 HUD 风格)
+            _capsuleBar = UIFactory.CreatePanel(transform, "CapsuleBar", baseSize, Vector2.zero, Color.clear,
+                WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Ghost), 1f * s);
             _panelBg = _capsuleBar.GetComponent<Image>();
             _panelOutline = _capsuleBar.GetComponent<Outline>();
-
-            // 顶部微光装饰线条
-            _topStripe = UIFactory.CreatePanel(_capsuleBar.transform, "TopStripe", new Vector2(baseSize.x, 2f * s),
-                new Vector2(0f, baseSize.y * 0.5f - 1f * s), primaryAccent).GetComponent<Image>();
+            _panelOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             // ==========================================
             // 2. 胶囊顶栏控件布局
@@ -92,57 +89,52 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 float barH = (4f + i * 2f) * s;
                 float bx = barStartX + i * (barW + barGap);
-                float by = -baseSize.y * 0.5f + 8f * s + barH * 0.5f;
+                float by = -baseSize.y * 0.5f + 7f * s + barH * 0.5f;
 
                 GameObject bGo = UIFactory.CreatePanel(_capsuleBar.transform, $"SigBar_{i}",
                     new Vector2(barW, barH), new Vector2(bx, by), primaryAccent);
                 _mainSignalBars[i] = bGo.GetComponent<Image>();
             }
 
-            // 控制权状态徽章 (FULL / PART / NONE)
-            Vector2 ctrlSize = new Vector2(34f * s, 16f * s);
+            // 控制权状态徽章 (FULL / PART / NONE) - 极简药丸
+            Vector2 ctrlSize = new Vector2(32f * s, 14f * s);
             GameObject ctrlBg = UIFactory.CreatePanel(_capsuleBar.transform, "CtrlBadge", ctrlSize,
-                new Vector2(-baseSize.x * 0.5f + 46f * s, 0f), WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success),
-                WidgetStyleManager.Weighted(primaryAccent, LineWeight.Strong), 1f * s);
+                new Vector2(-baseSize.x * 0.5f + 46f * s, 0f), WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success));
             _ctrlBadgeBg = ctrlBg.GetComponent<Image>();
             _ctrlBadgeText = UIFactory.CreateText(ctrlBg.transform, "Text", "FULL",
-                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, primaryAccent);
+                Mathf.Max(7, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, primaryAccent);
+            _ctrlBadgeText.fontStyle = FontStyle.Bold;
             _ctrlBadgeText.GetComponent<RectTransform>().sizeDelta = ctrlSize;
 
             // 主站点/对端名称
             _targetNameText = UIFactory.CreateText(_capsuleBar.transform, "TargetName", "KSAT - Singapore",
                 Mathf.Max(7, Mathf.RoundToInt(8.5f * s)), TextAnchor.MiddleLeft, textPrimary);
+            _targetNameText.fontStyle = FontStyle.Bold;
             RectTransform tgtRt = _targetNameText.GetComponent<RectTransform>();
-            tgtRt.sizeDelta = new Vector2(70f * s, 18f * s);
-            tgtRt.anchoredPosition = new Vector2(-baseSize.x * 0.5f + 102f * s, 0f);
+            tgtRt.sizeDelta = new Vector2(80f * s, 18f * s);
+            tgtRt.anchoredPosition = new Vector2(-baseSize.x * 0.5f + 108f * s, 0f);
 
-            // 综合速率与信号 (90% | 15.8K)
-            _rateSummaryText = UIFactory.CreateText(_capsuleBar.transform, "RateSummary", "90% | 15.8K",
+            // 综合速率与信号 (100% · 15.8K)
+            _rateSummaryText = UIFactory.CreateText(_capsuleBar.transform, "RateSummary", "100% · 15.8K",
                 Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleRight, secondaryAccent);
             RectTransform rateRt = _rateSummaryText.GetComponent<RectTransform>();
-            rateRt.sizeDelta = new Vector2(62f * s, 18f * s);
-            rateRt.anchoredPosition = new Vector2(baseSize.x * 0.5f - 76f * s, 0f);
+            rateRt.sizeDelta = new Vector2(72f * s, 18f * s);
+            rateRt.anchoredPosition = new Vector2(baseSize.x * 0.5f - 65f * s, 0f);
 
-            // 折叠/展开按键 (▼ / ▲)
-            Vector2 expBtnSize = new Vector2(16f * s, 16f * s);
+            // 折叠/展开按键 (▾ / ▴)
+            Vector2 expBtnSize = new Vector2(14f * s, 16f * s);
             _expandBtn = UIFactory.CreateButton(_capsuleBar.transform, "Btn_Expand", expBtnSize,
-                new Vector2(baseSize.x * 0.5f - 36f * s, 0f), OnToggleExpand);
-            _expandBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Control);
-            var expOut = _expandBtn.gameObject.AddComponent<Outline>();
-            expOut.effectColor = WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Normal);
-            expOut.effectDistance = new Vector2(1f * s, 1f * s);
-            _expandBtnText = UIFactory.CreateText(_expandBtn.transform, "Text", "▼",
-                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, secondaryAccent);
+                new Vector2(baseSize.x * 0.5f - 24f * s, 0f), OnToggleExpand);
+            _expandBtn.GetComponent<Image>().color = Color.clear;
+            _expandBtnText = UIFactory.CreateText(_expandBtn.transform, "Text", "▾",
+                Mathf.Max(7, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter, secondaryAccent);
             _expandBtnText.GetComponent<RectTransform>().sizeDelta = expBtnSize;
 
             // 原版信号栏显隐按键 (KSP)
-            Vector2 stockBtnSize = new Vector2(24f * s, 16f * s);
+            Vector2 stockBtnSize = new Vector2(18f * s, 16f * s);
             _stockBtn = UIFactory.CreateButton(_capsuleBar.transform, "Btn_Stock", stockBtnSize,
-                new Vector2(baseSize.x * 0.5f - 14f * s, 0f), OnToggleStock);
-            _stockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Control);
-            var stockOut = _stockBtn.gameObject.AddComponent<Outline>();
-            stockOut.effectColor = WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Normal);
-            stockOut.effectDistance = new Vector2(1f * s, 1f * s);
+                new Vector2(baseSize.x * 0.5f - 8f * s, 0f), OnToggleStock);
+            _stockBtn.GetComponent<Image>().color = Color.clear;
             _stockBtnText = UIFactory.CreateText(_stockBtn.transform, "Text", "KSP",
                 Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
             _stockBtnText.GetComponent<RectTransform>().sizeDelta = stockBtnSize;
@@ -406,10 +398,14 @@ namespace ModularFlightPanel.UI.Widgets
         {
             _currentTheme = theme;
             if (theme == null) return;
+            theme = WidgetStyleManager.ResolveTheme(theme);
 
-            ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
-
-            if (_topStripe != null) _topStripe.color = (Color)theme.AccentPrimary;
+            if (_panelBg != null) _panelBg.color = Color.clear;
+            if (_panelOutline != null)
+            {
+                _panelOutline.enabled = true;
+                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            }
             if (_targetNameText != null) ApplyText(_targetNameText, TextStyleRole.PrimaryValue, theme);
             if (_rateSummaryText != null) ApplyText(_rateSummaryText, TextStyleRole.SecondaryValue, theme);
             if (_matrixTitleText != null)
@@ -418,8 +414,10 @@ namespace ModularFlightPanel.UI.Widgets
                 _matrixTitleText.text = title;
                 ApplyText(_matrixTitleText, TextStyleRole.Label, theme);
             }
-            if (_expandBtn != null) ApplyButton(_expandBtn, _expandBtn.GetComponent<Image>(), _expandBtnText, ButtonVisualRole.Normal, false, theme);
-            if (_stockBtn != null) ApplyButton(_stockBtn, _stockBtn.GetComponent<Image>(), _stockBtnText, ButtonVisualRole.Normal, false, theme);
+            if (_expandBtn != null) _expandBtn.GetComponent<Image>().color = Color.clear;
+            if (_stockBtn != null) _stockBtn.GetComponent<Image>().color = Color.clear;
+            if (_expandBtnText != null) ApplyText(_expandBtnText, TextStyleRole.SecondaryValue, theme);
+            if (_stockBtnText != null) ApplyText(_stockBtnText, TextStyleRole.SecondaryValue, theme);
         }
 
         private void OnToggleExpand()
@@ -432,7 +430,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             float s = CurrentDpiScale;
             float dropH = 142f * s;
-            float capH = 32f * s;
+            float capH = 26f * s;
             float totalH = _isExpanded ? (capH + dropH + 2f * s) : capH;
 
             RectTransform.sizeDelta = new Vector2(236f * s, totalH);
@@ -457,7 +455,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_expandBtnText != null)
             {
-                _expandBtnText.text = _isExpanded ? "▲" : "▼";
+                _expandBtnText.text = _isExpanded ? "▴" : "▾";
             }
         }
 

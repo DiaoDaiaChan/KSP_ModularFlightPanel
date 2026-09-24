@@ -233,6 +233,47 @@ namespace ModularFlightPanel.Core
             ApplyScenario(FlightScenario.PadHold);
         }
 
+        private static List<StageDeltaVInfo> CreateSimulatedStages(int currentStage, float stageFuel, double activeDv, double activeBurnTime, double activeTwr)
+        {
+            var list = new List<StageDeltaVInfo>();
+            if (currentStage >= 3)
+            {
+                list.Add(new StageDeltaVInfo(3, activeDv, activeBurnTime, activeTwr, 312.0, currentStage == 3, new List<StagePartIconData>
+                {
+                    new StagePartIconData("SOLID_BOOSTER", 3, 6, "BACC 固体燃料助推器", "Solid Fuel", stageFuel),
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-M3 'Mainsail' 液体发动机", "Liquid Fuel", Mathf.Clamp01(stageFuel + 0.15f))
+                }));
+            }
+            if (currentStage >= 2)
+            {
+                double s2Dv = currentStage == 2 ? activeDv : 1820.0;
+                double s2Time = currentStage == 2 ? activeBurnTime : 84.0;
+                double s2Twr = currentStage == 2 ? activeTwr : 1.40;
+                list.Add(new StageDeltaVInfo(2, s2Dv, s2Time, s2Twr, 345.0, currentStage == 2, new List<StagePartIconData>
+                {
+                    new StagePartIconData("DECOUPLER_HOR", 6, 4, "TT-70 径向分离挂架"),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-25 垂直级间分离器")
+                }));
+            }
+            if (currentStage >= 1)
+            {
+                double s1Dv = currentStage == 1 ? activeDv : 680.0;
+                double s1Time = currentStage == 1 ? activeBurnTime : 60.0;
+                double s1Twr = currentStage == 1 ? activeTwr : 0.95;
+                list.Add(new StageDeltaVInfo(1, s1Dv, s1Time, s1Twr, 380.0, currentStage == 1, new List<StagePartIconData>
+                {
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-L10 'Poodle' 上级发动机", "Liquid Fuel", currentStage == 1 ? stageFuel : 1.0f),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-12 载荷分离环")
+                }));
+            }
+            list.Add(new StageDeltaVInfo(0, 0.0, 0.0, 0.0, 0.0, currentStage == 0, new List<StagePartIconData>
+            {
+                new StagePartIconData("PARACHUTES", 8, 2, "Mk16-XL 主降落伞"),
+                new StagePartIconData("COMMAND_POD", 4, 1, "Mk1-3 载人指令舱")
+            }));
+            return list;
+        }
+
         public void ApplyScenario(FlightScenario scenario)
         {
             CurrentScenario = scenario;
@@ -268,12 +309,7 @@ namespace ModularFlightPanel.Core
                     TotalDeltaV = 4850.0;
                     StageBurnTime = 52.0;
                     TotalBurnTime = 196.0;
-                    StageDeltaVList = new List<StageDeltaVInfo>
-                    {
-                        new StageDeltaVInfo(3, 2350.0, 52.0, 1.65, 310.0, true),
-                        new StageDeltaVInfo(2, 1820.0, 84.0, 1.40, 345.0, false),
-                        new StageDeltaVInfo(1, 680.0, 60.0, 0.95, 380.0, false)
-                    };
+                    StageDeltaVList = CreateSimulatedStages(3, 1.0f, 2350.0, 52.0, 1.65);
                     ActiveEngines = 0;
                     Pitch = 90f;
                     Heading = 90f;
@@ -312,12 +348,7 @@ namespace ModularFlightPanel.Core
                     TotalDeltaV = 4180.0;
                     StageBurnTime = 36.0;
                     TotalBurnTime = 180.0;
-                    StageDeltaVList = new List<StageDeltaVInfo>
-                    {
-                        new StageDeltaVInfo(3, 1680.0, 36.0, 2.15, 312.0, true),
-                        new StageDeltaVInfo(2, 1820.0, 84.0, 1.40, 345.0, false),
-                        new StageDeltaVInfo(1, 680.0, 60.0, 0.95, 380.0, false)
-                    };
+                    StageDeltaVList = CreateSimulatedStages(3, 0.72f, 1680.0, 36.0, 2.15);
                     ActiveEngines = 4;
                     Pitch = 72f;
                     Heading = 90f;
@@ -345,12 +376,7 @@ namespace ModularFlightPanel.Core
                     TotalDeltaV = 3550.0;
                     StageBurnTime = 22.0;
                     TotalBurnTime = 166.0;
-                    StageDeltaVList = new List<StageDeltaVInfo>
-                    {
-                        new StageDeltaVInfo(3, 1050.0, 22.0, 2.85, 315.0, true),
-                        new StageDeltaVInfo(2, 1820.0, 84.0, 1.40, 345.0, false),
-                        new StageDeltaVInfo(1, 680.0, 60.0, 0.95, 380.0, false)
-                    };
+                    StageDeltaVList = CreateSimulatedStages(3, 0.45f, 1050.0, 22.0, 2.85);
                     ActiveEngines = 4;
                     Pitch = 58f;
                     Heading = 90f;
@@ -378,11 +404,7 @@ namespace ModularFlightPanel.Core
                     TotalDeltaV = 2500.0;
                     StageBurnTime = 74.0;
                     TotalBurnTime = 134.0;
-                    StageDeltaVList = new List<StageDeltaVInfo>
-                    {
-                        new StageDeltaVInfo(2, 1820.0, 74.0, 1.65, 348.0, true),
-                        new StageDeltaVInfo(1, 680.0, 60.0, 0.95, 380.0, false)
-                    };
+                    StageDeltaVList = CreateSimulatedStages(2, 0.98f, 1820.0, 74.0, 1.65);
                     ActiveEngines = 1;
                     Pitch = 32f;
                     Heading = 90f;
@@ -410,10 +432,7 @@ namespace ModularFlightPanel.Core
                     TotalDeltaV = 680.0;
                     StageBurnTime = 60.0;
                     TotalBurnTime = 60.0;
-                    StageDeltaVList = new List<StageDeltaVInfo>
-                    {
-                        new StageDeltaVInfo(1, 680.0, 60.0, 0.95, 380.0, true)
-                    };
+                    StageDeltaVList = CreateSimulatedStages(1, 0.65f, 680.0, 60.0, 0.95);
                     ActiveEngines = 1;
                     Apoapsis = 124000.0;
                     Periapsis = 118500.0;
@@ -455,10 +474,7 @@ namespace ModularFlightPanel.Core
                     TotalDeltaV = 680.0;
                     StageBurnTime = 60.0;
                     TotalBurnTime = 60.0;
-                    StageDeltaVList = new List<StageDeltaVInfo>
-                    {
-                        new StageDeltaVInfo(1, 680.0, 60.0, 0.95, 380.0, true)
-                    };
+                    StageDeltaVList = CreateSimulatedStages(1, 0.15f, 680.0, 60.0, 0.95);
                     ElectricCharge = 35.0;  // 仅余 < 10%
                     NetEcRate = -4.5;       // 净放电急剧流失
                     SolarPower = 0.0;       // 天体阴影无光照
@@ -483,10 +499,7 @@ namespace ModularFlightPanel.Core
                     TotalDeltaV = 0.0;
                     StageBurnTime = 0.0;
                     TotalBurnTime = 0.0;
-                    StageDeltaVList = new List<StageDeltaVInfo>
-                    {
-                        new StageDeltaVInfo(0, 0.0, 0.0, 0.0, 0.0, true)
-                    };
+                    StageDeltaVList = CreateSimulatedStages(0, 0.0f, 0.0, 0.0, 0.0);
                     Pitch = -28f;
                     CommSignal = 0.0;       // 等离子体黑障断网
                     IsConnected = false;

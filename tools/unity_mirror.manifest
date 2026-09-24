@@ -20,7 +20,10 @@
 !Core/NavballPlugin.cs
 !Core/HarmonyPatches.cs
 !Core/StockNavBallHook.cs
+!Core/StockStageIconHook.cs
+!Core/MFPToolbarButton.cs
 !Core/VesselSilhouetteBaker.cs
+!Core/Vessel3DBaker.cs
 
 # ── 遥测采集层：探针中枢 + 各 Mod 适配探针 + 反射遍历器（全部依赖 KSP 程序集与真实场景）──
 !Core/ProbeManager.cs

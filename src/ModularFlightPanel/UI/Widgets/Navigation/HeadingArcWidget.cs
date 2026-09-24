@@ -572,6 +572,7 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     tick.Label.material = textMat;
                 }
+                _tickPool[i] = tick;
             }
             if (FlightTelemetryContext.Current != null)
             {

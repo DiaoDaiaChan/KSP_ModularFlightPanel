@@ -44,13 +44,13 @@ namespace ModularFlightPanel.Config
                     if (CurrentLayout != null && CurrentLayout.Widgets != null && CurrentLayout.Widgets.Count > 0)
                     {
                         MigrateToUnifiedPfdLayout();
-                        Debug.Log($"[ModularFlightPanel] Successfully loaded layout with {CurrentLayout.Widgets.Count} widgets.");
+                        MFPLogger.Info(MFPLogger.CatUI, $"Successfully loaded layout with {CurrentLayout.Widgets.Count} widgets.");
                         return;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[ModularFlightPanel] Error reading layout config: {ex.Message}");
+                    MFPLogger.Exception(MFPLogger.CatUI, ex, "Error reading layout config");
                 }
             }
 
@@ -122,11 +122,11 @@ namespace ModularFlightPanel.Config
 
                 string json = JsonUtility.ToJson(CurrentLayout, true);
                 File.WriteAllText(ConfigPath, json);
-                Debug.Log("[ModularFlightPanel] Saved widget layout to layout.json");
+                MFPLogger.Info(MFPLogger.CatUI, "Saved widget layout to layout.json");
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[ModularFlightPanel] Failed to save layout: {ex.Message}");
+                MFPLogger.Exception(MFPLogger.CatUI, ex, "Failed to save layout");
             }
         }
 
@@ -220,14 +220,15 @@ namespace ModularFlightPanel.Config
             return CurrentLayout.Widgets.Find(w => w.WidgetId == widgetId);
         }
 
-        public void AddCustomWidget(string title, string template, Vector2 initialPos)
+        public string AddCustomWidget(string title, string template, Vector2 initialPos)
         {
             string id = "custom." + Guid.NewGuid().ToString().Substring(0, 8);
             CurrentLayout.Widgets.Add(new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f, template));
             SaveLayout();
+            return id;
         }
 
-        public void AddTapeWidget(string title, string token, bool isLeft, float step, Vector2 initialPos)
+        public string AddTapeWidget(string title, string token, bool isLeft, float step, Vector2 initialPos)
         {
             string id = "tape." + Guid.NewGuid().ToString().Substring(0, 8);
             var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f)
@@ -241,9 +242,10 @@ namespace ModularFlightPanel.Config
             };
             CurrentLayout.Widgets.Add(cfg);
             SaveLayout();
+            return id;
         }
 
-        public void AddEcamDialWidget(string title, string token, double min, double max, double caution, double warning, bool isSoftLimit, string unit, Vector2 initialPos)
+        public string AddEcamDialWidget(string title, string token, double min, double max, double caution, double warning, bool isSoftLimit, string unit, Vector2 initialPos)
         {
             string id = "ecam." + Guid.NewGuid().ToString().Substring(0, 8);
             var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f)
@@ -261,6 +263,7 @@ namespace ModularFlightPanel.Config
             };
             CurrentLayout.Widgets.Add(cfg);
             SaveLayout();
+            return id;
         }
 
         public void RemoveWidget(string widgetId)

@@ -193,6 +193,8 @@ namespace ModularFlightPanel.Config
         public ColorHex AccentMagenta = ColorHex.FromColor(new Color(0.95f, 0.30f, 0.60f, 1.0f));
         public ColorHex WarningColor = ColorHex.FromColor(new Color(1.0f, 0.65f, 0.05f, 1.0f));     // 琥珀金 (#FFA502)
         public ColorHex CautionColor => WarningColor;                                               // 注意黄 (航空规范别名)
+        public ColorHex AccentPositive => AccentPrimary;                                            // 语义正向绿 (航空规范别名)
+        public ColorHex AccentWarning => WarningColor;                                              // 语义警示黄 (航空规范别名)
         public ColorHex DangerColor = ColorHex.FromColor(new Color(1.0f, 0.28f, 0.34f, 1.0f));      // 警报珊瑚红 (#FF4757)
 
         // 仪表背景与边框

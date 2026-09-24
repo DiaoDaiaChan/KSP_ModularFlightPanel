@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
@@ -9,467 +8,306 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 {
     /// <summary>
     /// ====================================================================================
-    /// Modular Flight Panel (MFP) 横排时间轴机动节点指示器 (Maneuver Timeline Widget)
+    /// Modular Flight Panel (MFP) 极简直线时序机动指示器 (SpaceX Webcast Maneuver Timeline)
     /// ====================================================================================
-    /// 核心功能特性：
-    /// 1. 轨道时序时间轴 (Timeline Ribbon)：
-    ///    直观呈现进场巡航 (Approach)、点火起点 (Ignition)、节点交点 (T0 Node) 与点火结束 (Burnout) 全时序；
-    ///    动态推进光标与点火进度条实时映射当前飞船时间位置与消耗进度。
-    /// 2. 三轴机动速度矢量分解 (3-Axis Velocity Vector Breakdown)：
-    ///    宽幅横排排布，分别展示切向 (Prograde / Retrograde)、法向 (Normal / Antinormal)、
-    ///    径向 (Radial Out / Radial In) 独立速度增量与双向微型游标标尺。
-    /// 3. 多源遥测契约驱动与优雅降级：
-    ///    优先挂钩 Principia 高精度 N 体飞行计划 (Principia Hook)，优雅兜底原版 PatchedConicSolver
-    ///    开普勒两体机动节点与 MechJeb，100% 经由纯 C# IFlightTelemetry 与 TelemetryTokenEngine 驱动。
-    /// 4. 严格遵守 MFP 规范：
-    ///    0 颜色字面量 (MFP-SPEC-006 零容忍)、0 场景查询 (MFP-SPEC-007)、DPI 缩放与脏检查零 GC。
+    /// 核心设计语言 (SpaceX 直播直线时序 HUD 风格)：
+    /// 1. 顶部极简水平时间轴 (Straight Horizontal Timeline & Milestones)：
+    ///    直观呈现进场 (APPROACH)、点火 (IGNITION)、节点 (T0 NODE) 与关机 (BURNOUT) 4 大关键节点；
+    ///    采用极简直线轨道与动态燃烧窗口标线，飞行光标沿直线平滑推进，经过节点自动点亮激活。
+    /// 2. 中央大字号核心时钟/ΔV (Hero Digital Center)：
+    ///    进场时展示倒计时与总 ΔV (如 "T- 05:20    320.0 m/s")；点火时高亮当前燃烧状态与实时剩余量。
+    /// 3. 底部单行三向矢量遥测标牌 (Inline 3-Axis Vector Telemetry Subtitle)：
+    ///    以单行极简 HUD 形式展示 Principia / 原版三向速度增量 (PRO / NRM / RAD) 与遥测源标识。
+    /// 4. 极致精简与通透悬浮：
+    ///    去除非必要的多层方框、按钮与冗余图元，默认采用淡微光悬浮风格 (FRAME=FAINT)。
+    /// 5. 严格遵守 MFP 规范：
+    ///    0 颜色字面量 (MFP-SPEC-006)、0 场景查询 (MFP-SPEC-007)、纯 C# IFlightTelemetry 解耦。
     /// </summary>
     public class ManeuverTimelineWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
-        // UI 根与卡片
+        // UI 背景与卡片
         private Image _bgImage;
         private Outline _bgOutline;
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
 
-        // 顶部 Header 控件
-        private Text _titleText;
-        private Text _sourceBadgeText;
-        private Text _deltaVText;
-        private Text _unitText;
-        private Text _statusBadgeText;
+        // 直线时间轴轨道与节点
+        private Image _trackLineImage;
+        private Image _burnZoneImage;
+        private RectTransform _progressPipRt;
+        private Image _progressPipImage;
 
-        // 交互按钮
-        private Button _btnWarp;
-        private Image _btnWarpImg;
-        private Text _btnWarpText;
-        private Button _btnDismiss;
-        private Image _btnDismissImg;
-        private Text _btnDismissText;
+        private struct MilestoneUI
+        {
+            public Text Label;
+            public Image Dot;
+            public float NormalizedX;
+        }
+        private MilestoneUI[] _milestones;
 
-        // 中间时间轴控件
-        private RectTransform _timelineTrackRt;
-        private Image _timelineTrackImg;
-        private RectTransform _burnZoneRt;
-        private Image _burnZoneImg;
-        private RectTransform _burnFillRt;
-        private Image _burnFillImg;
-        private RectTransform _cursorPipRt;
-        private Image _cursorPipImg;
+        // 中央核心主读数 (T- 05:20    320.0 m/s / BURNING)
+        private Text _centerHeroText;
 
-        // 时间轴标尺文字
-        private Text _lblApproach;
-        private Text _lblIgnition;
-        private Text _lblNode;
-        private Text _lblBurnout;
-        private Text _timelineInfoText;
+        // 底部单行三轴矢量副标牌 ([PRINCIPIA] PRO +310.0 · NRM +75.0 · RAD -25.0 m/s)
+        private Text _vectorSubtitleText;
 
-        // 底部三轴矢量卡片
-        // 1. Prograde
-        private Image _proBg;
-        private Outline _proOutline;
-        private Text _proLabel;
-        private Text _proValueText;
-        private RectTransform _proBarFillRt;
-        private Image _proBarFillImg;
+        // 缓存与脏检查标记
+        private ThemeConfig _cachedTheme;
+        private bool _lastHasNode = false;
+        private double _lastDeltaV = double.NaN;
+        private double _lastPrograde = double.NaN;
+        private double _lastNormal = double.NaN;
+        private double _lastRadial = double.NaN;
+        private float _lastCachedPipProgress = -1f;
+        private string _lastHeroStr = string.Empty;
+        private string _lastSubtitleStr = string.Empty;
 
-        // 2. Normal
-        private Image _normBg;
-        private Outline _normOutline;
-        private Text _normLabel;
-        private Text _normValueText;
-        private RectTransform _normBarFillRt;
-        private Image _normBarFillImg;
+        // 几何参数 (基准像素)
+        private const float TrackWidth = 460f;
+        private const float TrackCenterY = 24f;
+        private const float ZoneIgnitionNorm = 0.38f;
+        private const float ZoneBurnoutNorm = 0.88f;
 
-        // 3. Radial
-        private Image _radBg;
-        private Outline _radOutline;
-        private Text _radLabel;
-        private Text _radValueText;
-        private RectTransform _radBarFillRt;
-        private Image _radBarFillImg;
+        // 风格配置 (FAINT: 极细淡边框[默认], NONE: 完全无框, NORMAL: 传统卡片)
+        private string _frameMode = "FAINT";
 
         // 通配符通道与可覆盖模板
-        private string _titleTemplate = "MANEUVER TIMELINE";
         private string _deltaVToken = "{MN:DV}";
         private string _totalDvToken = "{MN:TOTAL_DV}";
-        private string _tNodeToken = "{MN:TNODE}";
-        private string _burnTimeToken = "{MN:BURN}";
-        private string _timeToBurnToken = "{MN:BURNTIME}";
+        private string _tNodeToken = "{MN:T_NODE}";
+        private string _burnTimeToken = "{MN:BURN_TIME}";
+        private string _timeToBurnToken = "{MN:T_BURN}";
         private string _proToken = "{MN:PRO}";
         private string _normToken = "{MN:NORM}";
         private string _radToken = "{MN:RAD}";
         private string _sourceToken = "{MN:SOURCE}";
         private string _statusToken = "{MN:STATUS}";
 
-        // 脏检查缓存
-        private bool _lastHasNode = false;
-        private double _lastDeltaV = double.NaN;
-        private double _lastTotalDv = double.NaN;
-        private double _lastTimeToNode = double.NaN;
-        private double _lastBurnTime = double.NaN;
-        private double _lastTimeToBurn = double.NaN;
-        private double _lastPrograde = double.NaN;
-        private double _lastNormal = double.NaN;
-        private double _lastRadial = double.NaN;
-        private string _lastSourceStr = string.Empty;
-        private string _lastStatusStr = string.Empty;
-        private string _lastTimelineInfoStr = string.Empty;
-        private float _lastPipNormalized = -1f;
+        private void ParseCustomTemplate(string tpl)
+        {
+            _frameMode = "FAINT";
+            _deltaVToken = "{MN:DV}";
+            _totalDvToken = "{MN:TOTAL_DV}";
+            _tNodeToken = "{MN:T_NODE}";
+            _burnTimeToken = "{MN:BURN_TIME}";
+            _timeToBurnToken = "{MN:T_BURN}";
+            _proToken = "{MN:PRO}";
+            _normToken = "{MN:NORM}";
+            _radToken = "{MN:RAD}";
+            _sourceToken = "{MN:SOURCE}";
+            _statusToken = "{MN:STATUS}";
 
-        // 时间轴归一化几何分区常量
-        private const float TrackWidthLogical = 492f;
-        private const float ZoneIgnitionNorm = 0.44f;
-        private const float ZoneNodeNorm = 0.64f;
-        private const float ZoneBurnoutNorm = 0.84f;
+            if (string.IsNullOrEmpty(tpl)) return;
+            string[] pairs = tpl.Split(';');
+            for (int i = 0; i < pairs.Length; i++)
+            {
+                string p = pairs[i].Trim();
+                int eq = p.IndexOf('=');
+                if (eq <= 0) continue;
+                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
+                string v = p.Substring(eq + 1).Trim();
+                switch (k)
+                {
+                    case "FRAME": _frameMode = v.ToUpperInvariant(); break;
+                    case "DV_TOKEN":
+                    case "DELTA_V_TOKEN": _deltaVToken = v; break;
+                    case "TOTAL_DV_TOKEN": _totalDvToken = v; break;
+                    case "T_NODE_TOKEN": _tNodeToken = v; break;
+                    case "BURN_TIME_TOKEN": _burnTimeToken = v; break;
+                    case "T_BURN_TOKEN": _timeToBurnToken = v; break;
+                    case "PRO_TOKEN": _proToken = v; break;
+                    case "NORM_TOKEN": _normToken = v; break;
+                    case "RAD_TOKEN": _radToken = v; break;
+                    case "SOURCE_TOKEN": _sourceToken = v; break;
+                    case "STATUS_TOKEN": _statusToken = v; break;
+                }
+            }
+        }
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+            ParseCustomTemplate(config?.CustomTemplate);
 
-            // 1. 卡片包围盒 (基准 520 x 115 逻辑像素)
-            Vector2 cardSize = new Vector2(520f * s, 115f * s);
-            RectTransform.sizeDelta = cardSize;
+            // 1. 组件包围盒 (基准 520x88 逻辑像素，SpaceX 直播标准规格)
+            Vector2 size = new Vector2(520f * s, 88f * s);
+            RectTransform.sizeDelta = size;
 
+            // 2. 底板卡片 (全息透明 HUD / 极简淡框风格)
             _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
             _bgOutline = gameObject.AddComponent<Outline>();
             _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
 
-            ParseCustomTemplate(config);
+            // 3. 构建顶部水平直线时间轴轨道 (Straight Timeline Track)
+            GameObject trackGo = new GameObject("Timeline_Track", typeof(RectTransform), typeof(Image));
+            trackGo.transform.SetParent(transform, false);
+            RectTransform trackRt = trackGo.GetComponent<RectTransform>();
+            trackRt.sizeDelta = new Vector2(TrackWidth * s, 2f * s);
+            trackRt.anchoredPosition = new Vector2(0f, TrackCenterY * s);
+            _trackLineImage = trackGo.GetComponent<Image>();
+            _trackLineImage.raycastTarget = false;
 
-            // 2. 顶部 Header (标题 + 来源徽标 + ΔV 读数 + 状态徽标 + 交互按钮)
-            BuildHeader(s, style, theme);
+            // 燃烧窗口高亮段 (IGNITION -> BURNOUT)
+            float burnZoneW = (ZoneBurnoutNorm - ZoneIgnitionNorm) * TrackWidth * s;
+            float burnZoneCenterX = ((ZoneIgnitionNorm + ZoneBurnoutNorm) * 0.5f - 0.5f) * TrackWidth * s;
+            GameObject burnZoneGo = new GameObject("Burn_Zone_Track", typeof(RectTransform), typeof(Image));
+            burnZoneGo.transform.SetParent(transform, false);
+            RectTransform burnZoneRt = burnZoneGo.GetComponent<RectTransform>();
+            burnZoneRt.sizeDelta = new Vector2(burnZoneW, 3f * s);
+            burnZoneRt.anchoredPosition = new Vector2(burnZoneCenterX, TrackCenterY * s);
+            _burnZoneImage = burnZoneGo.GetComponent<Image>();
+            _burnZoneImage.raycastTarget = false;
 
-            // 3. 中间时间轴通道 (Timeline Ribbon)
-            BuildTimeline(s, style, theme);
+            // 4. 构建关键任务时序节点 (APPROACH, IGNITION, T0 NODE, BURNOUT)
+            BuildMilestones(s, theme);
 
-            // 4. 底部三轴矢量分解卡片 (3-Axis Vector Breakdown)
-            BuildVectorBreakdown(s, style, theme);
+            // 5. 动态飞行光标 (Progress Pip)
+            GameObject pipGo = new GameObject("Progress_Pip", typeof(RectTransform), typeof(Image));
+            pipGo.transform.SetParent(transform, false);
+            _progressPipRt = pipGo.GetComponent<RectTransform>();
+            _progressPipRt.sizeDelta = new Vector2(6f * s, 8f * s);
+            _progressPipRt.anchoredPosition = new Vector2(-TrackWidth * 0.5f * s, TrackCenterY * s);
+
+            _progressPipImage = pipGo.GetComponent<Image>();
+            _progressPipImage.raycastTarget = false;
+
+            // 6. 中央核心主读数 (T- 05:20    320.0 m/s)
+            _centerHeroText = UIFactory.CreateText(transform, "Center_Hero_Readout", "---", Mathf.RoundToInt(22f * s), TextAnchor.MiddleCenter,
+                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            _centerHeroText.fontStyle = FontStyle.Bold;
+            RectTransform heroRt = _centerHeroText.rectTransform;
+            heroRt.sizeDelta = new Vector2(480f * s, 30f * s);
+            heroRt.anchoredPosition = new Vector2(0f, -4f * s);
+
+            // 7. 底部单行三向矢量遥测标牌 ([PRINCIPIA] PRO +310.0 · NRM +75.0 · RAD -25.0 m/s)
+            _vectorSubtitleText = UIFactory.CreateText(transform, "Vector_Subtitle", "STANDBY", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter,
+                style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            _vectorSubtitleText.fontStyle = FontStyle.Bold;
+            RectTransform subRt = _vectorSubtitleText.rectTransform;
+            subRt.sizeDelta = new Vector2(480f * s, 16f * s);
+            subRt.anchoredPosition = new Vector2(0f, -26f * s);
 
             ApplyTheme(theme);
         }
 
-        private void BuildHeader(float s, WidgetStyleManager style, ThemeConfig theme)
+        private void BuildMilestones(float s, ThemeConfig theme)
         {
-            // 标题 (左侧)
-            _titleText = UIFactory.CreateText(transform, "Header_Title", _titleTemplate, Mathf.RoundToInt(9.5f * s),
-                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform titleRt = _titleText.rectTransform;
-            titleRt.pivot = new Vector2(0f, 0.5f);
-            titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 0.5f);
-            titleRt.sizeDelta = new Vector2(110f * s, 18f * s);
-            titleRt.anchoredPosition = new Vector2(-246f * s, 42f * s);
-
-            // 来源徽标 (紧邻标题右侧, [PRINCIPIA] / [STOCK])
-            _sourceBadgeText = UIFactory.CreateText(transform, "Source_Badge", "[STANDBY]", Mathf.RoundToInt(8f * s),
-                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, theme));
-            RectTransform srcRt = _sourceBadgeText.rectTransform;
-            srcRt.pivot = new Vector2(0f, 0.5f);
-            srcRt.anchorMin = srcRt.anchorMax = new Vector2(0.5f, 0.5f);
-            srcRt.sizeDelta = new Vector2(70f * s, 18f * s);
-            srcRt.anchoredPosition = new Vector2(-134f * s, 42f * s);
-
-            // 中央核心主读数：剩余 ΔV 与单位
-            _deltaVText = UIFactory.CreateText(transform, "DeltaV_Value", "---", Mathf.RoundToInt(18f * s),
-                TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            _deltaVText.fontStyle = FontStyle.Bold;
-            RectTransform dvRt = _deltaVText.rectTransform;
-            dvRt.pivot = new Vector2(0.5f, 0.5f);
-            dvRt.anchorMin = dvRt.anchorMax = new Vector2(0.5f, 0.5f);
-            dvRt.sizeDelta = new Vector2(130f * s, 22f * s);
-            dvRt.anchoredPosition = new Vector2(0f, 42f * s);
-
-            _unitText = UIFactory.CreateText(transform, "DeltaV_Unit", "m/s", Mathf.RoundToInt(9f * s),
-                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
-            RectTransform uRt = _unitText.rectTransform;
-            uRt.pivot = new Vector2(0f, 0.5f);
-            uRt.anchorMin = uRt.anchorMax = new Vector2(0.5f, 0.5f);
-            uRt.sizeDelta = new Vector2(30f * s, 18f * s);
-            uRt.anchoredPosition = new Vector2(58f * s, 42f * s);
-
-            // 状态徽标 (ARMED, BURNING, COMPLETE, STANDBY)
-            _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", "STANDBY", Mathf.RoundToInt(8.5f * s),
-                TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            RectTransform stRt = _statusBadgeText.rectTransform;
-            stRt.pivot = new Vector2(1f, 0.5f);
-            stRt.anchorMin = stRt.anchorMax = new Vector2(0.5f, 0.5f);
-            stRt.sizeDelta = new Vector2(70f * s, 18f * s);
-            stRt.anchoredPosition = new Vector2(174f * s, 42f * s);
-
-            // WARP 按键
-            Vector2 warpSize = new Vector2(32f * s, 16f * s);
-            _btnWarp = UIFactory.CreateButton(transform, "Btn_Warp", warpSize, new Vector2(195f * s, 42f * s), OnWarpClicked);
-            _btnWarpImg = _btnWarp.GetComponent<Image>();
-            _btnWarpText = UIFactory.CreateText(_btnWarp.transform, "Text", "WARP", Mathf.RoundToInt(7.5f * s),
-                TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            _btnWarpText.rectTransform.sizeDelta = warpSize;
-            _btnWarpText.rectTransform.anchoredPosition = Vector2.zero;
-
-            // DEL 按键
-            Vector2 delSize = new Vector2(28f * s, 16f * s);
-            _btnDismiss = UIFactory.CreateButton(transform, "Btn_Del", delSize, new Vector2(230f * s, 42f * s), OnDismissClicked);
-            _btnDismissImg = _btnDismiss.GetComponent<Image>();
-            _btnDismissText = UIFactory.CreateText(_btnDismiss.transform, "Text", "DEL", Mathf.RoundToInt(7.5f * s),
-                TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            _btnDismissText.rectTransform.sizeDelta = delSize;
-            _btnDismissText.rectTransform.anchoredPosition = Vector2.zero;
-        }
-
-        private void BuildTimeline(float s, WidgetStyleManager style, ThemeConfig theme)
-        {
-            float trackW = TrackWidthLogical * s;
-            float trackH = 8f * s;
-            float timelineCenterY = 10f * s;
-
-            // 1. 时间轴槽底 (Track)
-            GameObject trackGo = UIFactory.CreatePanel(transform, "Timeline_Track", new Vector2(trackW, trackH),
-                new Vector2(0f, timelineCenterY), style.GetMeterColor(MeterStyleRole.Track, theme));
-            _timelineTrackRt = trackGo.GetComponent<RectTransform>();
-            _timelineTrackImg = trackGo.GetComponent<Image>();
-
-            // 2. 点火窗口区间底板 (Burn Zone Window: 0.44 .. 0.84)
-            float burnZoneW = trackW * (ZoneBurnoutNorm - ZoneIgnitionNorm);
-            float burnZoneX = -trackW * 0.5f + (ZoneIgnitionNorm + (ZoneBurnoutNorm - ZoneIgnitionNorm) * 0.5f) * trackW;
-            Color zoneCol = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Heavy);
-            GameObject zoneGo = UIFactory.CreatePanel(trackGo.transform, "Burn_Zone", new Vector2(burnZoneW, trackH),
-                new Vector2(burnZoneX, 0f), zoneCol);
-            _burnZoneRt = zoneGo.GetComponent<RectTransform>();
-            _burnZoneImg = zoneGo.GetComponent<Image>();
-
-            // 3. 点火消耗进度填充 (Burn Fill Bar)
-            Color fillCol = style.GetMeterColor(MeterStyleRole.Primary, theme);
-            GameObject fillGo = UIFactory.CreatePanel(trackGo.transform, "Burn_Fill", new Vector2(0f, trackH),
-                Vector2.zero, fillCol);
-            _burnFillRt = fillGo.GetComponent<RectTransform>();
-            _burnFillRt.pivot = new Vector2(0f, 0.5f);
-            _burnFillRt.anchorMin = _burnFillRt.anchorMax = new Vector2(0f, 0.5f);
-            _burnFillRt.anchoredPosition = new Vector2(ZoneIgnitionNorm * trackW, 0f);
-            _burnFillImg = fillGo.GetComponent<Image>();
-
-            // 4. T0 节点中心标记线 (T0 Node Mark)
-            Color markCol = style.GetTextColor(TextStyleRole.Cardinal, theme);
-            GameObject markGo = UIFactory.CreatePanel(trackGo.transform, "T0_Mark", new Vector2(2f * s, trackH + 6f * s),
-                new Vector2(-trackW * 0.5f + ZoneNodeNorm * trackW, 0f), markCol);
-
-            // 5. 动态飞船当前位置游标 (Vessel Position Pip)
-            Color pipCol = theme.AccentPrimary;
-            GameObject pipGo = UIFactory.CreatePanel(trackGo.transform, "Vessel_Pip", new Vector2(4f * s, trackH + 8f * s),
-                new Vector2(-trackW * 0.5f, 0f), pipCol);
-            _cursorPipRt = pipGo.GetComponent<RectTransform>();
-            _cursorPipImg = pipGo.GetComponent<Image>();
-
-            // 6. 时间轴里程碑文字标签 (置于时间轴上方, 彻底与下方信息解耦)
-            Color lblCol = style.GetTextColor(TextStyleRole.Label, theme);
-            int subFont = Mathf.RoundToInt(6.5f * s);
-            float labelTopY = timelineCenterY + 11f * s;
-
-            _lblApproach = CreateMilestoneLabel("APPROACH", -trackW * 0.5f + 0.15f * trackW, labelTopY, subFont, lblCol, s);
-            _lblIgnition = CreateMilestoneLabel("IGNITION", -trackW * 0.5f + ZoneIgnitionNorm * trackW, labelTopY, subFont, lblCol, s);
-            _lblNode = CreateMilestoneLabel("T0 NODE", -trackW * 0.5f + ZoneNodeNorm * trackW, labelTopY, subFont, style.GetTextColor(TextStyleRole.Cardinal, theme), s);
-            _lblBurnout = CreateMilestoneLabel("BURNOUT", -trackW * 0.5f + ZoneBurnoutNorm * trackW, labelTopY, subFont, lblCol, s);
-
-            // 7. 时间轴下方信息读数 (置于时间轴下方, 彻底消除文字与里程碑冲突)
-            float labelBottomY = timelineCenterY - 11f * s;
-            _timelineInfoText = UIFactory.CreateText(transform, "Timeline_Info", "T-NODE --:-- | BURN --s", Mathf.RoundToInt(7.5f * s),
-                TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            RectTransform infoRt = _timelineInfoText.rectTransform;
-            infoRt.pivot = new Vector2(1f, 0.5f);
-            infoRt.anchorMin = infoRt.anchorMax = new Vector2(0.5f, 0.5f);
-            infoRt.sizeDelta = new Vector2(220f * s, 14f * s);
-            infoRt.anchoredPosition = new Vector2(246f * s, labelBottomY);
-        }
-
-        private Text CreateMilestoneLabel(string text, float x, float y, int fontSize, Color color, float s)
-        {
-            Text txt = UIFactory.CreateText(transform, $"Lbl_{text}", text, fontSize, TextAnchor.MiddleCenter, color);
-            txt.fontStyle = FontStyle.Bold;
-            RectTransform rt = txt.rectTransform;
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(64f * s, 12f * s);
-            rt.anchoredPosition = new Vector2(x, y);
-            return txt;
-        }
-
-        private void BuildVectorBreakdown(float s, WidgetStyleManager style, ThemeConfig theme)
-        {
-            float colW = 158f * s;
-            float colH = 34f * s;
-            float colY = -34f * s;
-            float spacing = 8f * s;
-
-            // Column 1: Prograde / Retrograde
-            float x1 = -colW - spacing;
-            BuildVectorColumn(x1, colY, colW, colH, "PROGRADE", s, style, theme,
-                out _proBg, out _proOutline, out _proLabel, out _proValueText, out _proBarFillRt, out _proBarFillImg);
-
-            // Column 2: Normal / Antinormal
-            float x2 = 0f;
-            BuildVectorColumn(x2, colY, colW, colH, "NORMAL", s, style, theme,
-                out _normBg, out _normOutline, out _normLabel, out _normValueText, out _normBarFillRt, out _normBarFillImg);
-
-            // Column 3: Radial Out / Radial In
-            float x3 = colW + spacing;
-            BuildVectorColumn(x3, colY, colW, colH, "RADIAL", s, style, theme,
-                out _radBg, out _radOutline, out _radLabel, out _radValueText, out _radBarFillRt, out _radBarFillImg);
-        }
-
-        private void BuildVectorColumn(float posX, float posY, float w, float h, string title, float s,
-            WidgetStyleManager style, ThemeConfig theme,
-            out Image bg, out Outline outline, out Text label, out Text valText,
-            out RectTransform barFillRt, out Image barFillImg)
-        {
-            // 底板
-            GameObject cardGo = UIFactory.CreatePanel(transform, $"Col_{title}", new Vector2(w, h),
-                new Vector2(posX, posY), Color.clear);
-            bg = cardGo.GetComponent<Image>();
-            outline = cardGo.AddComponent<Outline>();
-            outline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(bg, outline, CardStyleRole.SubtleSlot, theme);
-
-            // 轴向标签 (左上)
-            label = UIFactory.CreateText(cardGo.transform, "Label", title, Mathf.RoundToInt(7.5f * s),
-                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, theme));
-            label.fontStyle = FontStyle.Bold;
-            RectTransform lblRt = label.rectTransform;
-            lblRt.pivot = new Vector2(0f, 0.5f);
-            lblRt.anchorMin = lblRt.anchorMax = new Vector2(0f, 1f);
-            lblRt.sizeDelta = new Vector2(75f * s, 14f * s);
-            lblRt.anchoredPosition = new Vector2(6f * s, -8f * s);
-
-            // 数值读数 (右上)
-            valText = UIFactory.CreateText(cardGo.transform, "Value", "+0.0 m/s", Mathf.RoundToInt(10.5f * s),
-                TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            valText.fontStyle = FontStyle.Bold;
-            RectTransform valRt = valText.rectTransform;
-            valRt.pivot = new Vector2(1f, 0.5f);
-            valRt.anchorMin = valRt.anchorMax = new Vector2(1f, 1f);
-            valRt.sizeDelta = new Vector2(75f * s, 14f * s);
-            valRt.anchoredPosition = new Vector2(-6f * s, -8f * s);
-
-            // 底部双向标尺微槽 (Center-Zero Meter)
-            float barW = w - 12f * s;
-            float barH = 3.5f * s;
-            GameObject trackGo = UIFactory.CreatePanel(cardGo.transform, "Meter_Track", new Vector2(barW, barH),
-                new Vector2(0f, -h * 0.5f + 7f * s), style.GetMeterColor(MeterStyleRole.Track, theme));
-
-            // 中央基准零刻度微线
-            UIFactory.CreatePanel(trackGo.transform, "Center_Zero", new Vector2(1.5f * s, barH + 2f * s),
-                Vector2.zero, style.GetTextColor(TextStyleRole.Label, theme));
-
-            // 双向填充条 (从中心向左右扩展)
-            GameObject fillGo = UIFactory.CreatePanel(trackGo.transform, "Meter_Fill", new Vector2(0f, barH),
-                Vector2.zero, style.GetMeterColor(MeterStyleRole.Primary, theme));
-            barFillRt = fillGo.GetComponent<RectTransform>();
-            barFillRt.pivot = new Vector2(0.5f, 0.5f);
-            barFillImg = fillGo.GetComponent<Image>();
-        }
-
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (config != null)
+            var defs = new (string text, float normX)[]
             {
-                if (!string.IsNullOrEmpty(config.DisplayName) &&
-                    !config.DisplayName.Contains("机动") &&
-                    config.DisplayName != "TIMELINE")
-                {
-                    _titleTemplate = config.DisplayName.ToUpperInvariant();
-                }
-                else
-                {
-                    _titleTemplate = "MANEUVER TIMELINE";
-                }
-            }
+                ("APPROACH", 0.10f),
+                ("IGNITION", ZoneIgnitionNorm),
+                ("T0 NODE", 0.64f),
+                ("BURNOUT", ZoneBurnoutNorm)
+            };
 
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
+            _milestones = new MilestoneUI[defs.Length];
+            Color dotColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Bold);
+            Color textColor = WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Label, theme);
 
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
+            for (int i = 0; i < defs.Length; i++)
             {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
+                var def = defs[i];
+                float xPos = (def.normX - 0.5f) * TrackWidth * s;
+                float yPos = TrackCenterY * s;
+
+                // 节点标记竖向微刻度 (Tick)
+                GameObject dotGo = new GameObject($"Milestone_Tick_{i}", typeof(RectTransform), typeof(Image));
+                dotGo.transform.SetParent(transform, false);
+                RectTransform dotRt = dotGo.GetComponent<RectTransform>();
+                dotRt.sizeDelta = new Vector2(2f * s, 6f * s);
+                dotRt.anchoredPosition = new Vector2(xPos, yPos);
+
+                Image dotImg = dotGo.GetComponent<Image>();
+                dotImg.color = dotColor;
+                dotImg.raycastTarget = false;
+
+                // 节点文字标签 (统一置于直线轨道上方，整齐划一)
+                float textY = yPos + 9f * s;
+                Text label = UIFactory.CreateText(transform, $"Milestone_Lbl_{i}", def.text, Mathf.RoundToInt(6.5f * s),
+                    TextAnchor.LowerCenter, textColor);
+                label.fontStyle = FontStyle.Bold;
+                RectTransform lblRt = label.rectTransform;
+                lblRt.sizeDelta = new Vector2(90f * s, 12f * s);
+                lblRt.anchoredPosition = new Vector2(xPos, textY);
+
+                _milestones[i] = new MilestoneUI
                 {
-                    case "TITLE": _titleTemplate = v; break;
-                    case "DV": _deltaVToken = v; break;
-                    case "TOTAL_DV": _totalDvToken = v; break;
-                    case "TNODE": _tNodeToken = v; break;
-                    case "BURN": _burnTimeToken = v; break;
-                    case "TIMETOBURN": _timeToBurnToken = v; break;
-                    case "PRO": _proToken = v; break;
-                    case "NORM": _normToken = v; break;
-                    case "RAD": _radToken = v; break;
-                    case "SOURCE": _sourceToken = v; break;
-                    case "STATUS": _statusToken = v; break;
-                }
+                    Dot = dotImg,
+                    Label = label,
+                    NormalizedX = def.normX
+                };
             }
         }
 
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            _cachedTheme = theme;
+            theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
+            // 外框模式着色
+            if (_frameMode == "NONE")
+            {
+                if (_bgImage != null) _bgImage.color = Color.clear;
+                if (_bgOutline != null) _bgOutline.enabled = false;
+            }
+            else if (_frameMode == "FAINT")
+            {
+                if (_bgImage != null) _bgImage.color = Color.clear;
+                if (_bgOutline != null)
+                {
+                    _bgOutline.enabled = true;
+                    _bgOutline.effectColor = _currentCardRole == CardStyleRole.Emphasized
+                        ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
+                        : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                }
+            }
+            else
+            {
+                ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
+            }
 
-            // Header 文字
-            ApplyText(_titleText, TextStyleRole.Label, theme);
-            ApplyText(_sourceBadgeText, TextStyleRole.Cardinal, theme);
-            ApplyText(_deltaVText, TextStyleRole.PrimaryValue, theme);
-            ApplyText(_unitText, TextStyleRole.Unit, theme);
-            ApplyText(_statusBadgeText, _currentCardRole == CardStyleRole.Emphasized ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+            // 直线时间轴轨道着色
+            if (_trackLineImage != null)
+            {
+                _trackLineImage.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Medium);
+            }
+            if (_burnZoneImage != null)
+            {
+                _burnZoneImage.color = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Light);
+            }
 
-            // 按键
-            if (_btnWarp != null) ApplyButton(_btnWarp, _btnWarpImg, _btnWarpText, ButtonVisualRole.Normal, false, theme);
-            if (_btnDismiss != null) ApplyButton(_btnDismiss, _btnDismissImg, _btnDismissText, ButtonVisualRole.Normal, false, theme);
+            // 飞行光标着色
+            if (_progressPipImage != null)
+            {
+                _progressPipImage.color = theme.AccentPrimary;
+            }
 
-            // 时间轴
-            if (_timelineTrackImg != null) _timelineTrackImg.color = style.GetMeterColor(MeterStyleRole.Track, theme);
-            if (_burnZoneImg != null) _burnZoneImg.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Heavy);
-            if (_burnFillImg != null) _burnFillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
-            if (_cursorPipImg != null) _cursorPipImg.color = theme.AccentPrimary;
+            // 节点着色
+            if (_milestones != null)
+            {
+                Color dotColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Bold);
+                for (int i = 0; i < _milestones.Length; i++)
+                {
+                    if (_milestones[i].Dot != null) _milestones[i].Dot.color = dotColor;
+                    if (_milestones[i].Label != null) ApplyText(_milestones[i].Label, TextStyleRole.Label, theme);
+                }
+            }
 
-            // 时间轴标尺文字
-            ApplyText(_lblApproach, TextStyleRole.Label, theme);
-            ApplyText(_lblIgnition, TextStyleRole.Label, theme);
-            ApplyText(_lblNode, TextStyleRole.Cardinal, theme);
-            ApplyText(_lblBurnout, TextStyleRole.Label, theme);
-            ApplyText(_timelineInfoText, TextStyleRole.SecondaryValue, theme);
-
-            // 三轴卡片
-            ApplyCard(_proBg, _proOutline, CardStyleRole.SubtleSlot, theme);
-            ApplyText(_proLabel, TextStyleRole.Cardinal, theme);
-            ApplyText(_proValueText, TextStyleRole.PrimaryValue, theme);
-            if (_proBarFillImg != null) _proBarFillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
-
-            ApplyCard(_normBg, _normOutline, CardStyleRole.SubtleSlot, theme);
-            ApplyText(_normLabel, TextStyleRole.Cardinal, theme);
-            ApplyText(_normValueText, TextStyleRole.PrimaryValue, theme);
-            if (_normBarFillImg != null) _normBarFillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
-
-            ApplyCard(_radBg, _radOutline, CardStyleRole.SubtleSlot, theme);
-            ApplyText(_radLabel, TextStyleRole.Cardinal, theme);
-            ApplyText(_radValueText, TextStyleRole.PrimaryValue, theme);
-            if (_radBarFillImg != null) _radBarFillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+            // 核心读数与副标牌
+            ApplyText(_centerHeroText, TextStyleRole.PrimaryValue, theme);
+            ApplyText(_vectorSubtitleText, TextStyleRole.SecondaryValue, theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null || Config == null) return;
-
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+            if (telemetry == null) return;
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
-
-            // 动态标题求值
-            string evalTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-            SetTextIfChanged(_titleText, evalTitle);
 
             // 1. 无机动节点时优雅待机降级
             if (!telemetry.HasManeuverNode)
@@ -510,183 +348,132 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 来源与状态标识
             string srcStr = TelemetryTokenEngine.Evaluate(_sourceToken, telemetry);
             if (string.IsNullOrEmpty(srcStr) || srcStr.StartsWith("{")) srcStr = telemetry.ManeuverSource ?? "MANEUVER";
-            string formattedSrc = $"[{srcStr}]";
-            if (formattedSrc != _lastSourceStr)
-            {
-                _lastSourceStr = formattedSrc;
-                SetTextIfChanged(_sourceBadgeText, formattedSrc);
-            }
 
-            // 3. 状态研判与主题高亮模式
+            // 3. 状态研判与高亮模式切换
             CardStyleRole targetRole = CardStyleRole.Normal;
-            string statusStr = "ARMED";
-
             if (timeToBurn <= 0.0 && dv > 0.1)
             {
                 targetRole = CardStyleRole.Emphasized;
-                statusStr = "BURNING";
-            }
-            else if (dv <= 0.1)
-            {
-                targetRole = CardStyleRole.Normal;
-                statusStr = "COMPLETE";
-            }
-            else if (timeToBurn <= 15.0)
-            {
-                statusStr = "COUNTDOWN";
             }
 
             if (_currentCardRole != targetRole)
             {
                 _currentCardRole = targetRole;
-                ApplyCard(_bgImage, _bgOutline, targetRole, theme);
-                ApplyText(_deltaVText, TextStyleRole.PrimaryValue, theme);
-                ApplyText(_statusBadgeText, targetRole == CardStyleRole.Emphasized ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+                if (_frameMode == "FAINT" && _bgOutline != null)
+                {
+                    _bgOutline.effectColor = targetRole == CardStyleRole.Emphasized
+                        ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
+                        : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                }
+                else if (_frameMode == "NORMAL")
+                {
+                    ApplyCard(_bgImage, _bgOutline, targetRole, theme);
+                }
             }
 
-            if (statusStr != _lastStatusStr)
-            {
-                _lastStatusStr = statusStr;
-                SetTextIfChanged(_statusBadgeText, statusStr);
-            }
-
-            // 4. 主读数 ΔV 脏检查
-            double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (double.IsNaN(_lastDeltaV) || Math.Abs(dv - _lastDeltaV) > deltaThreshold)
-            {
-                _lastDeltaV = dv;
-                SetTextIfChanged(_deltaVText, $"{dv:F1}");
-            }
-
-            // 5. 时间轴推进光标与填充条计算
-            UpdateTimelineProgress(timeToBurn, timeToNode, burnTime, dv, totalDv, s);
-
-            // 6. 三轴分量卡片更新
-            UpdateVectorColumns(proDv, normDv, radDv, totalDv, deltaThreshold, s);
-
-            // 7. 交互按键状态
-            if (_btnWarp != null && !_btnWarp.interactable) _btnWarp.interactable = true;
-            if (_btnDismiss != null && !_btnDismiss.interactable) _btnDismiss.interactable = true;
-        }
-
-        private void UpdateTimelineProgress(double timeToBurn, double timeToNode, double burnTime, double dv, double totalDv, float s)
-        {
-            float trackW = TrackWidthLogical * s;
-
-            // 归一化光标计算：
-            // - 当 timeToBurn > 0: 进场阶段，从 0.05 渐进至 ZoneIgnitionNorm (0.44)
-            // - 当 timeToBurn <= 0 && dv > 0.1: 点火阶段，从 ZoneIgnitionNorm (0.44) 推进至 ZoneBurnoutNorm (0.84)
-            // - 当 dv <= 0.1: 完成阶段，停留在 ZoneBurnoutNorm 之后 (0.92)
-            float pipNorm;
+            // 4. 计算归一化飞行光标位置 (pipProgress)
+            float pipProgress;
             if (timeToBurn > 0.0)
             {
-                // 进场倒计时：以 120 秒为进场视窗
+                // 进场阶段：依据倒计时从 0.08 推进至 IGNITION 点 (0.38)
                 float approachRatio = Mathf.Clamp01(1.0f - (float)(timeToBurn / Math.Max(timeToBurn + 30.0, 120.0)));
-                pipNorm = Mathf.Lerp(0.04f, ZoneIgnitionNorm, approachRatio);
+                pipProgress = Mathf.Lerp(0.08f, ZoneIgnitionNorm, approachRatio);
             }
             else if (dv > 0.1)
             {
-                // 点火中：依据剩余 dV 进度推进 (0.44 -> 0.84)
+                // 点火阶段：从 IGNITION (0.38) 推进至 BURNOUT (0.88)
                 float burnProgress = totalDv > 0.01 ? Mathf.Clamp01(1.0f - (float)(dv / totalDv)) : 0.5f;
-                pipNorm = Mathf.Lerp(ZoneIgnitionNorm, ZoneBurnoutNorm, burnProgress);
+                pipProgress = Mathf.Lerp(ZoneIgnitionNorm, ZoneBurnoutNorm, burnProgress);
             }
             else
             {
-                // 变轨圆满完成
-                pipNorm = 0.92f;
+                // 关机完成阶段
+                pipProgress = 0.90f;
             }
 
-            if (Mathf.Abs(pipNorm - _lastPipNormalized) > 0.002f)
+            // 更新光标水平几何位置与节点经过高亮
+            if (Mathf.Abs(pipProgress - _lastCachedPipProgress) > 0.002f)
             {
-                _lastPipNormalized = pipNorm;
-                if (_cursorPipRt != null)
+                _lastCachedPipProgress = pipProgress;
+                float pipX = (pipProgress - 0.5f) * TrackWidth * s;
+                if (_progressPipRt != null)
                 {
-                    _cursorPipRt.anchoredPosition = new Vector2(-trackW * 0.5f + pipNorm * trackW, 0f);
+                    _progressPipRt.anchoredPosition = new Vector2(pipX, TrackCenterY * s);
                 }
 
-                // 点火消耗填充条 (从 ZoneIgnitionNorm 向右延伸)
-                if (_burnFillRt != null)
+                // 更新里程碑点亮状态 (已通过节点高亮)
+                if (_milestones != null)
                 {
-                    if (pipNorm > ZoneIgnitionNorm)
+                    Color activeDot = theme.AccentPrimary;
+                    Color inactiveDot = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Bold);
+
+                    for (int i = 0; i < _milestones.Length; i++)
                     {
-                        float fillW = Mathf.Min(pipNorm, ZoneBurnoutNorm) - ZoneIgnitionNorm;
-                        _burnFillRt.sizeDelta = new Vector2(fillW * trackW, _burnFillRt.sizeDelta.y);
-                    }
-                    else
-                    {
-                        _burnFillRt.sizeDelta = new Vector2(0f, _burnFillRt.sizeDelta.y);
+                        bool passed = pipProgress >= _milestones[i].NormalizedX - 0.01f;
+                        if (_milestones[i].Dot != null)
+                        {
+                            _milestones[i].Dot.color = passed ? activeDot : inactiveDot;
+                        }
+                        if (_milestones[i].Label != null)
+                        {
+                            ApplyText(_milestones[i].Label, passed ? TextStyleRole.PrimaryValue : TextStyleRole.Label, theme);
+                        }
                     }
                 }
             }
 
-            // 更新时间轴右侧信息文案
-            string infoStr;
-            if (timeToBurn <= 0.0 && dv > 0.1)
+            // 5. 中央主读数求值 (SpaceX Webcast 大字号风格)
+            string heroText;
+            if (timeToBurn > 0.0)
             {
-                infoStr = $"BURNING | REM {dv:F1} m/s";
+                int totalSec = Mathf.Abs((int)timeToBurn);
+                int m = totalSec / 60;
+                int sec = totalSec % 60;
+                heroText = $"T- {m:00}:{sec:00}    {dv:F1} m/s";
             }
-            else if (dv <= 0.1)
+            else if (dv > 0.1)
             {
-                infoStr = "BURNOUT NOMINAL";
+                int elapsed = Mathf.Abs((int)timeToBurn);
+                int m = elapsed / 60;
+                int sec = elapsed % 60;
+                heroText = $"BURNING (T+{m:00}:{sec:00})    {dv:F1} m/s";
             }
             else
             {
-                string tStr = timeToNode < 0 ? "T+" : "T-";
-                infoStr = $"{tStr}{FormatDuration(Math.Abs(timeToNode))} | BURN {burnTime:F0}s";
+                heroText = "NODE COMPLETE    0.0 m/s";
             }
 
-            if (infoStr != _lastTimelineInfoStr)
+            if (heroText != _lastHeroStr)
             {
-                _lastTimelineInfoStr = infoStr;
-                SetTextIfChanged(_timelineInfoText, infoStr);
+                _lastHeroStr = heroText;
+                SetTextIfChanged(_centerHeroText, heroText);
             }
-        }
 
-        private void UpdateVectorColumns(double pro, double norm, double rad, double totalDv, double deltaThreshold, float s)
-        {
-            double refScale = Math.Max(totalDv, 50.0);
-
-            // 1. Prograde / Retrograde
-            if (double.IsNaN(_lastPrograde) || Math.Abs(pro - _lastPrograde) > deltaThreshold)
+            // 6. 底部单行三向矢量遥测标牌更新 ([PRINCIPIA] PRO +310.0 · NRM +75.0 · RAD -25.0 m/s)
+            double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
+            if (double.IsNaN(_lastPrograde) || Math.Abs(proDv - _lastPrograde) > deltaThreshold ||
+                Math.Abs(normDv - _lastNormal) > deltaThreshold || Math.Abs(radDv - _lastRadial) > deltaThreshold)
             {
-                _lastPrograde = pro;
-                string sign = pro >= 0.0 ? "+" : "";
-                SetTextIfChanged(_proValueText, $"{sign}{pro:F1} m/s");
-                SetTextIfChanged(_proLabel, pro >= 0.0 ? "PROGRADE" : "RETROGRADE");
-                UpdateBilateralMeter(_proBarFillRt, (float)(pro / refScale), 146f * s);
+                _lastPrograde = proDv;
+                _lastNormal = normDv;
+                _lastRadial = radDv;
+
+                string proSign = proDv >= 0 ? "+" : "";
+                string normSign = normDv >= 0 ? "+" : "";
+                string radSign = radDv >= 0 ? "+" : "";
+
+                string subStr = $"[{srcStr}]  PRO {proSign}{proDv:F1}  ·  NRM {normSign}{normDv:F1}  ·  RAD {radSign}{radDv:F1} m/s";
+                if (dv <= 0.1)
+                {
+                    subStr = $"[{srcStr}]  NOMINAL BURNOUT  ·  ALL NODES EXECUTED";
+                }
+
+                if (subStr != _lastSubtitleStr)
+                {
+                    _lastSubtitleStr = subStr;
+                    SetTextIfChanged(_vectorSubtitleText, subStr);
+                }
             }
-
-            // 2. Normal / Antinormal
-            if (double.IsNaN(_lastNormal) || Math.Abs(norm - _lastNormal) > deltaThreshold)
-            {
-                _lastNormal = norm;
-                string sign = norm >= 0.0 ? "+" : "";
-                SetTextIfChanged(_normValueText, $"{sign}{norm:F1} m/s");
-                SetTextIfChanged(_normLabel, norm >= 0.0 ? "NORMAL" : "ANTINORMAL");
-                UpdateBilateralMeter(_normBarFillRt, (float)(norm / refScale), 146f * s);
-            }
-
-            // 3. Radial Out / Radial In
-            if (double.IsNaN(_lastRadial) || Math.Abs(rad - _lastRadial) > deltaThreshold)
-            {
-                _lastRadial = rad;
-                string sign = rad >= 0.0 ? "+" : "";
-                SetTextIfChanged(_radValueText, $"{sign}{rad:F1} m/s");
-                SetTextIfChanged(_radLabel, rad >= 0.0 ? "RAD OUT" : "RAD IN");
-                UpdateBilateralMeter(_radBarFillRt, (float)(rad / refScale), 146f * s);
-            }
-        }
-
-        private static void UpdateBilateralMeter(RectTransform fillRt, float normalizedValue, float maxBarW)
-        {
-            if (fillRt == null) return;
-            float clamped = Mathf.Clamp(normalizedValue, -1f, 1f);
-            float halfW = maxBarW * 0.5f;
-            float fillLen = Mathf.Abs(clamped) * halfW;
-            float fillCenter = clamped * halfW * 0.5f;
-
-            fillRt.sizeDelta = new Vector2(fillLen, fillRt.sizeDelta.y);
-            fillRt.anchoredPosition = new Vector2(fillCenter, 0f);
         }
 
         private void ShowStandby(ThemeConfig theme, float s)
@@ -695,77 +482,33 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _lastHasNode = false;
             _lastDeltaV = 0.0;
-            _lastTotalDv = 0.0;
-            _lastTimeToNode = double.NaN;
-            _lastBurnTime = double.NaN;
-            _lastTimeToBurn = double.NaN;
             _lastPrograde = double.NaN;
             _lastNormal = double.NaN;
             _lastRadial = double.NaN;
-            _lastPipNormalized = -1f;
+            _lastCachedPipProgress = -1f;
 
-            SetTextIfChanged(_deltaVText, "---");
-            SetTextIfChanged(_sourceBadgeText, "[STANDBY]");
-            SetTextIfChanged(_statusBadgeText, "STANDBY");
-            SetTextIfChanged(_timelineInfoText, "NO ACTIVE NODE");
+            SetTextIfChanged(_centerHeroText, "NO ACTIVE NODE");
+            SetTextIfChanged(_vectorSubtitleText, "AWAITING MANEUVER FLIGHT PLAN");
 
-            SetTextIfChanged(_proValueText, "---");
-            SetTextIfChanged(_normValueText, "---");
-            SetTextIfChanged(_radValueText, "---");
-
-            float trackW = TrackWidthLogical * s;
-            if (_cursorPipRt != null) _cursorPipRt.anchoredPosition = new Vector2(-trackW * 0.5f, 0f);
-            if (_burnFillRt != null) _burnFillRt.sizeDelta = new Vector2(0f, _burnFillRt.sizeDelta.y);
-
-            UpdateBilateralMeter(_proBarFillRt, 0f, 146f * s);
-            UpdateBilateralMeter(_normBarFillRt, 0f, 146f * s);
-            UpdateBilateralMeter(_radBarFillRt, 0f, 146f * s);
-
-            if (_currentCardRole != CardStyleRole.Normal)
+            if (_progressPipRt != null)
             {
-                _currentCardRole = CardStyleRole.Normal;
-                ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
-                ApplyText(_deltaVText, TextStyleRole.PrimaryValue, theme);
-                ApplyText(_statusBadgeText, TextStyleRole.SecondaryValue, theme);
+                _progressPipRt.anchoredPosition = new Vector2(-TrackWidth * 0.5f * s, TrackCenterY * s);
             }
 
-            if (_btnWarp != null && _btnWarp.interactable) _btnWarp.interactable = false;
-            if (_btnDismiss != null && _btnDismiss.interactable) _btnDismiss.interactable = false;
-        }
-
-        private static string FormatDuration(double seconds)
-        {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0) return "00:00";
-            TimeSpan ts = TimeSpan.FromSeconds(seconds);
-            if (ts.TotalHours >= 1.0)
+            if (_milestones != null)
             {
-                return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+                Color inactiveDot = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Bold);
+                for (int i = 0; i < _milestones.Length; i++)
+                {
+                    if (_milestones[i].Dot != null) _milestones[i].Dot.color = inactiveDot;
+                    if (_milestones[i].Label != null) ApplyText(_milestones[i].Label, TextStyleRole.Label, theme);
+                }
             }
-            return $"{ts.Minutes:D2}:{ts.Seconds:D2}";
-        }
-
-        private void OnWarpClicked()
-        {
-            FlightTelemetryContext.Current?.WarpToManeuverNode();
-        }
-
-        private void OnDismissClicked()
-        {
-            FlightTelemetryContext.Current?.DeleteManeuverNode();
         }
 
         protected override void OnDestroy()
         {
-            if (_btnWarp != null)
-            {
-                _btnWarp.onClick.RemoveListener(OnWarpClicked);
-                _btnWarp = null;
-            }
-            if (_btnDismiss != null)
-            {
-                _btnDismiss.onClick.RemoveListener(OnDismissClicked);
-                _btnDismiss = null;
-            }
+            _milestones = null;
             base.OnDestroy();
         }
     }

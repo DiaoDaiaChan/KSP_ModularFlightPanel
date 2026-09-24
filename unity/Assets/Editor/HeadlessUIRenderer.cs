@@ -48,6 +48,7 @@ namespace ModularFlightPanel.Editor
                         string n = _texture.name.ToLowerInvariant();
                         if (n.Contains("barycentric")) return "BARYCENTRIC";
                         if (n.Contains("inertial")) return "INERTIAL";
+                        if (n.Contains("orbit")) return "ORBIT";
                         if (n.Contains("target")) return "TARGET";
                         if (n.Contains("body_direction")) return "BODY_DIRECTION";
                         if (n.Contains("surface")) return "SURFACE";
@@ -99,6 +100,20 @@ namespace ModularFlightPanel.Editor
                         return false;
                 }
             }
+        }
+
+        private class HeadlessStageIconHook : IStockStageIconProvider
+        {
+            private Texture2D _atlas;
+            public HeadlessStageIconHook()
+            {
+                _atlas = StageIconAtlasGenerator.GetAtlas();
+            }
+
+            public Texture StockAtlas => _atlas;
+            public bool HasStockAtlas => _atlas != null;
+            public Rect GetStockIconUv(string iconType) => StageIconAtlasGenerator.GetIconUv(iconType);
+            public Rect GetStockIconUv(int iconIndex) => StageIconAtlasGenerator.GetIconUv(iconIndex);
         }
 
         private static void SafeWriteAllBytes(string path, byte[] bytes)
@@ -236,6 +251,7 @@ namespace ModularFlightPanel.Editor
                 Debug.Log($"[HeadlessUIRenderer] Loaded Navball Texture for frame {targetFrameType}");
             }
             NavBallHookService.Provider = new HeadlessNavBallHook(navballTex, simEngine);
+            StockStageIconService.Provider = new HeadlessStageIconHook();
 
             // 5. 创建专用 1080P 离屏渲染相机与 RenderTexture
             const int width = 1920;
@@ -579,6 +595,15 @@ namespace ModularFlightPanel.Editor
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(tb);
                 }
+                else if (id == "core.ui_widget" || id == "ui_widget")
+                {
+                    var ui = new WidgetConfig("core.ui_widget", "AVIONICS 全局 UI 控制中枢", x, y, 1.0f)
+                    {
+                        WidgetType = "ui_widget",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(ui);
+                }
                 else if (id == "gauge.throttle")
                 {
                     var thr = new WidgetConfig("gauge.throttle", "AVIONICS 油门推力带", x, y, 1.0f)
@@ -641,12 +666,23 @@ namespace ModularFlightPanel.Editor
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(thrDial);
                 }
-                else if (id == "core.sas_dial")
+                else if (id == "nav.vessel_navball" || id == "nav.vessel_attitude_sphere" || id == "core.vessel_navball" || id == "nav.attitude_sphere_3d")
                 {
-                    var sas = new WidgetConfig("core.sas_dial", "环形 SAS 罗盘", x, y, 1.0f)
+                    var vnav = new WidgetConfig(id, "3D 飞船球形姿态仪", x, y, 1.0f)
+                    {
+                        WidgetType = "vessel_navball",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(vnav);
+                }
+                else if (id == "core.sas_dial" || id == "core.sas_dial_3d")
+                {
+                    bool is3D = (id == "core.sas_dial_3d");
+                    var sas = new WidgetConfig(id, is3D ? "3D SAS 姿态罗盘" : "环形 SAS 罗盘", x, y, 1.0f)
                     {
                         WidgetType = "core",
-                        IsEnabled = enabled
+                        IsEnabled = enabled,
+                        CustomTemplate = is3D ? "MODE=3D" : "MODE=2D"
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(sas);
                 }
@@ -685,6 +721,15 @@ namespace ModularFlightPanel.Editor
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(mt);
+                }
+                else if (id == "custom.staging_sequence" || id == "staging_sequence" || id == "stage_sequence")
+                {
+                    var stg = new WidgetConfig("custom.staging_sequence", "STAGE 垂直火箭分级序列仪", x, y, 1.0f)
+                    {
+                        WidgetType = "staging_sequence",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(stg);
                 }
                 else if (id == "core.maneuver" || id == "maneuver")
                 {

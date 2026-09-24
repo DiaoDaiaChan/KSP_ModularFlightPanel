@@ -339,6 +339,136 @@ namespace ModularFlightPanel.Core
         private readonly List<StageDeltaVInfo> _cachedStockStages = new List<StageDeltaVInfo>(16);
         private readonly List<CommLinkInfo> _cachedStockCommLinks = new List<CommLinkInfo>(8);
         private static readonly Comparison<StageDeltaVInfo> CompareStageDescending = (a, b) => b.Stage.CompareTo(a.Stage);
+        private readonly Dictionary<int, List<StagePartIconData>> _cachedStagePartIcons = new Dictionary<int, List<StagePartIconData>>();
+        private float _lastStageIconScanTime = -10f;
+        private static System.Reflection.FieldInfo _stageIconImageField;
+
+        private IReadOnlyList<StagePartIconData> GetStagePartIcons(int stageNum)
+        {
+            float now = Time.unscaledTime;
+            if (now - _lastStageIconScanTime > 1.0f)
+            {
+                _lastStageIconScanTime = now;
+                RefreshStagePartIcons();
+            }
+            if (_cachedStagePartIcons.TryGetValue(stageNum, out var list))
+            {
+                return list;
+            }
+            return Array.Empty<StagePartIconData>();
+        }
+
+        private void RefreshStagePartIcons()
+        {
+            _cachedStagePartIcons.Clear();
+            try
+            {
+                if (KSP.UI.Screens.StageManager.Instance != null && KSP.UI.Screens.StageManager.Instance.Stages != null)
+                {
+                    var mgrStages = KSP.UI.Screens.StageManager.Instance.Stages;
+                    for (int i = 0; i < mgrStages.Count; i++)
+                    {
+                        var grp = mgrStages[i];
+                        if (grp == null) continue;
+                        int stg = grp.defaultStage;
+                        var grpIcons = grp.Icons;
+                        if (grpIcons == null || grpIcons.Count == 0) continue;
+
+                        if (!_cachedStagePartIcons.TryGetValue(stg, out var iconList))
+                        {
+                            iconList = new List<StagePartIconData>();
+                            _cachedStagePartIcons[stg] = iconList;
+                        }
+
+                        for (int j = 0; j < grpIcons.Count; j++)
+                        {
+                            var icon = grpIcons[j];
+                            if (icon == null) continue;
+
+                            string typeStr = icon.iconType.ToString();
+                            int typeIdx = (int)icon.iconType;
+                            int count = 1;
+                            if (icon.groupedIcons != null && icon.groupedIcons.Count > 0)
+                            {
+                                count += icon.groupedIcons.Count;
+                            }
+
+                            string partTitle = string.Empty;
+                            string propName = null;
+                            float propFrac = -1f;
+
+                            if (icon.Part != null)
+                            {
+                                partTitle = icon.Part.partInfo != null ? icon.Part.partInfo.title : icon.Part.name;
+                                if (icon.Part.Resources != null)
+                                {
+                                    var res = icon.Part.Resources;
+                                    for (int r = 0; r < res.Count; r++)
+                                    {
+                                        var resItem = res[r];
+                                        if (resItem != null && resItem.maxAmount > 0)
+                                        {
+                                            string rName = resItem.resourceName;
+                                            if (rName.IndexOf("Solid", StringComparison.OrdinalIgnoreCase) >= 0)
+                                            {
+                                                propName = "Solid Fuel";
+                                                propFrac = (float)(resItem.amount / resItem.maxAmount);
+                                                break;
+                                            }
+                                            else if (rName.IndexOf("Liquid", StringComparison.OrdinalIgnoreCase) >= 0)
+                                            {
+                                                propName = "Liquid Fuel";
+                                                propFrac = (float)(resItem.amount / resItem.maxAmount);
+                                                break;
+                                            }
+                                            else if (rName.IndexOf("Propellant", StringComparison.OrdinalIgnoreCase) >= 0)
+                                            {
+                                                propName = "Mono";
+                                                propFrac = (float)(resItem.amount / resItem.maxAmount);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rect uv = default;
+                            bool hasUv = false;
+                            if (_stageIconImageField == null)
+                            {
+                                _stageIconImageField = typeof(KSP.UI.Screens.StageIcon).GetField("iconImage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                            }
+                            var rawImg = _stageIconImageField?.GetValue(icon) as UnityEngine.UI.RawImage;
+                            if (rawImg != null)
+                            {
+                                uv = rawImg.uvRect;
+                                hasUv = true;
+                            }
+
+                            int existingIdx = iconList.FindIndex(p => p.IconType == typeStr);
+                            if (existingIdx >= 0)
+                            {
+                                var exist = iconList[existingIdx];
+                                exist.Count += count;
+                                if (propFrac >= 0 && exist.PropellantFraction < 0)
+                                {
+                                    exist.PropellantName = propName;
+                                    exist.PropellantFraction = propFrac;
+                                }
+                                iconList[existingIdx] = exist;
+                            }
+                            else
+                            {
+                                iconList.Add(new StagePartIconData(typeStr, typeIdx, count, partTitle, propName, propFrac, uv, hasUv));
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ModularFlightPanel] RefreshStagePartIcons warning: {ex.Message}");
+            }
+        }
 
         private static int _cachedEcDefId = -1;
         private static bool _lookedUpEcDefId = false;
@@ -825,6 +955,18 @@ namespace ModularFlightPanel.Core
                     {
                         if (MechJebProbe.TryGetStageStats(out List<StageDeltaVInfo> mjStages, out double mjTotDv, out double mjTotTime))
                         {
+                            for (int m = 0; m < mjStages.Count; m++)
+                            {
+                                var s = mjStages[m];
+                                if (s.PartIcons == null || s.PartIcons.Count == 0)
+                                {
+                                    var icons = GetStagePartIcons(s.Stage);
+                                    if (icons != null && icons.Count > 0)
+                                    {
+                                        mjStages[m] = new StageDeltaVInfo(s.Stage, s.DeltaV, s.BurnTime, s.TWR, s.Isp, s.IsActive, icons);
+                                    }
+                                }
+                            }
                             StageDeltaVList = mjStages;
                             TotalDeltaV = mjTotDv;
                             TotalBurnTime = mjTotTime;
@@ -861,13 +1003,15 @@ namespace ModularFlightPanel.Core
                                 var si = vdv.OperatingStageInfo[i];
                                 if (si != null)
                                 {
+                                    var partIcons = GetStagePartIcons(si.stage);
                                     _cachedStockStages.Add(new StageDeltaVInfo(
                                         si.stage,
                                         si.deltaVActual,
                                         si.stageBurnTime,
                                         si.TWRActual,
                                         si.ispActual,
-                                        si.stage == curStg
+                                        si.stage == curStg,
+                                        partIcons
                                     ));
                                 }
                             }

@@ -22,7 +22,6 @@ namespace ModularFlightPanel.UI.Widgets
 
         private Image _panelBg;
         private Outline _panelOutline;
-        private Image _topStripe;
 
         // 顶部时钟与状态行
         private Button _modeBtn;
@@ -57,107 +56,98 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            Vector2 panelSize = new Vector2(236f * s, 46f * s);
+            Vector2 panelSize = new Vector2(236f * s, 42f * s);
             RectTransform.sizeDelta = panelSize;
 
-            Color bgCol = theme.FrameBgColor;
-            Color borderCol = theme.FrameBorderColor;
             Color primaryAccent = theme.AccentPrimary;
             Color secondaryAccent = theme.AccentSecondary;
             Color textPrimary = theme.TextPrimaryColor;
 
-            // 1. 主背板与微光轮廓
-            GameObject panel = UIFactory.CreatePanel(transform, "TimeWarpPanel", panelSize, Vector2.zero, bgCol, borderCol, 1.2f * s);
+            // 1. 主背板与淡轮廓 (全息极简 HUD 风格)
+            GameObject panel = UIFactory.CreatePanel(transform, "TimeWarpPanel", panelSize, Vector2.zero, Color.clear,
+                WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Ghost), 1f * s);
             _panelBg = panel.GetComponent<Image>();
             _panelOutline = panel.GetComponent<Outline>();
-
-            // 2. 顶部微光装饰线条 (Top Accent Stripe)
-            _topStripe = UIFactory.CreatePanel(panel.transform, "TopStripe", new Vector2(panelSize.x, 2f * s),
-                new Vector2(0f, panelSize.y * 0.5f - 1f * s), primaryAccent).GetComponent<Image>();
+            _panelOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             // ==========================================
-            // 3. 顶部时钟与状态行 (Y ≈ +10f)
+            // 2. 顶部时钟与状态行 (Y ≈ +10f)
             // ==========================================
             float topY = 10f * s;
 
-            // 时钟模式切换键 (MET / UT)
-            Vector2 modeBtnSize = new Vector2(34f * s, 16f * s);
+            // 时钟模式切换键 (MET / UT) - 极简药丸
+            Vector2 modeBtnSize = new Vector2(32f * s, 15f * s);
             _modeBtn = UIFactory.CreateButton(panel.transform, "Btn_Mode", modeBtnSize,
-                new Vector2(-panelSize.x * 0.5f + 23f * s, topY), OnToggleMode);
-            _modeBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Control);
-            var modeOut = _modeBtn.gameObject.AddComponent<Outline>();
-            modeOut.effectColor = WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Strong);
-            modeOut.effectDistance = new Vector2(1f * s, 1f * s);
+                new Vector2(-panelSize.x * 0.5f + 20f * s, topY), OnToggleMode);
+            _modeBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             _modeBtnText = UIFactory.CreateText(_modeBtn.transform, "Text", "MET",
-                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, secondaryAccent);
+                Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, secondaryAccent);
+            _modeBtnText.fontStyle = FontStyle.Bold;
             _modeBtnText.GetComponent<RectTransform>().sizeDelta = modeBtnSize;
 
             // 高对比度数字时钟读数 (T+ 0y, 0d, 02:44:16)
             _clockText = UIFactory.CreateText(panel.transform, "ClockText", "T+ 0y, 0d, 00:00:00",
-                Mathf.Max(8, Mathf.RoundToInt(9.5f * s)), TextAnchor.MiddleLeft, textPrimary);
+                Mathf.Max(9, Mathf.RoundToInt(10.5f * s)), TextAnchor.MiddleLeft, textPrimary);
+            _clockText.fontStyle = FontStyle.Bold;
             RectTransform clockRt = _clockText.GetComponent<RectTransform>();
             clockRt.sizeDelta = new Vector2(116f * s, 18f * s);
-            clockRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 102f * s, topY);
+            clockRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 98f * s, topY);
 
             // 暂停/继续控制键 (PAUSE / RUN)
-            Vector2 pauseBtnSize = new Vector2(36f * s, 16f * s);
+            Vector2 pauseBtnSize = new Vector2(38f * s, 15f * s);
             _pauseBtn = UIFactory.CreateButton(panel.transform, "Btn_Pause", pauseBtnSize,
-                new Vector2(panelSize.x * 0.5f - 49f * s, topY), OnTogglePause);
-            _pauseBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Control);
-            var pauseOut = _pauseBtn.gameObject.AddComponent<Outline>();
-            pauseOut.effectColor = WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Strong);
-            pauseOut.effectDistance = new Vector2(1f * s, 1f * s);
+                new Vector2(panelSize.x * 0.5f - 42f * s, topY), OnTogglePause);
+            _pauseBtn.GetComponent<Image>().color = Color.clear;
             _pauseBtnText = UIFactory.CreateText(_pauseBtn.transform, "Text", "PAUSE",
-                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, primaryAccent);
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _pauseBtnText.GetComponent<RectTransform>().sizeDelta = pauseBtnSize;
 
             // 原版时间栏显隐开关 (STOCK)
-            Vector2 stockBtnSize = new Vector2(26f * s, 16f * s);
+            Vector2 stockBtnSize = new Vector2(22f * s, 15f * s);
             _stockBtn = UIFactory.CreateButton(panel.transform, "Btn_Stock", stockBtnSize,
-                new Vector2(panelSize.x * 0.5f - 16f * s, topY), OnToggleStock);
-            _stockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Control);
-            var stockOut = _stockBtn.gameObject.AddComponent<Outline>();
-            stockOut.effectColor = WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Strong);
-            stockOut.effectDistance = new Vector2(1f * s, 1f * s);
+                new Vector2(panelSize.x * 0.5f - 11f * s, topY), OnToggleStock);
+            _stockBtn.GetComponent<Image>().color = Color.clear;
             _stockBtnText = UIFactory.CreateText(_stockBtn.transform, "Text", "KSP",
-                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
+                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _stockBtnText.GetComponent<RectTransform>().sizeDelta = stockBtnSize;
 
+            // 细分割线
+            UIFactory.CreatePanel(panel.transform, "DivLine", new Vector2(panelSize.x - 16f * s, 1f * s),
+                Vector2.zero, WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Ghost));
+
             // ==========================================
-            // 4. 底部加速控制行 (Y ≈ -11f)
+            // 3. 底部加速控制行 (Y ≈ -10f)
             // ==========================================
-            float botY = -11f * s;
+            float botY = -10f * s;
 
             // 加速模式标志 (WARP / PHYS)
             _warpModeText = UIFactory.CreateText(panel.transform, "WarpMode", "WARP",
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft, secondaryAccent);
             RectTransform wmRt = _warpModeText.GetComponent<RectTransform>();
-            wmRt.sizeDelta = new Vector2(30f * s, 16f * s);
-            wmRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 21f * s, botY);
+            wmRt.sizeDelta = new Vector2(28f * s, 16f * s);
+            wmRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 18f * s, botY);
 
             // 当前速率读数 (1x / 10,000x)
             _warpRateText = UIFactory.CreateText(panel.transform, "WarpRate", "1x",
-                Mathf.Max(7, Mathf.RoundToInt(8.5f * s)), TextAnchor.MiddleLeft, primaryAccent);
+                Mathf.Max(7, Mathf.RoundToInt(9f * s)), TextAnchor.MiddleLeft, primaryAccent);
+            _warpRateText.fontStyle = FontStyle.Bold;
             RectTransform wrRt = _warpRateText.GetComponent<RectTransform>();
-            wrRt.sizeDelta = new Vector2(40f * s, 16f * s);
-            wrRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 56f * s, botY);
+            wrRt.sizeDelta = new Vector2(36f * s, 16f * s);
+            wrRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 50f * s, botY);
 
             // 步退减速键 (◀)
-            Vector2 stepBtnSize = new Vector2(14f * s, 16f * s);
+            Vector2 stepBtnSize = new Vector2(14f * s, 14f * s);
             _downBtn = UIFactory.CreateButton(panel.transform, "Btn_Down", stepBtnSize,
-                new Vector2(-panelSize.x * 0.5f + 85f * s, botY), OnStepWarpDown);
-            _downBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Control);
-            var downOut = _downBtn.gameObject.AddComponent<Outline>();
-            downOut.effectColor = WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Normal);
-            downOut.effectDistance = new Vector2(1f * s, 1f * s);
+                new Vector2(-panelSize.x * 0.5f + 76f * s, botY), OnStepWarpDown);
+            _downBtn.GetComponent<Image>().color = Color.clear;
             _downBtnText = UIFactory.CreateText(_downBtn.transform, "Text", "◀",
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, secondaryAccent);
             _downBtnText.GetComponent<RectTransform>().sizeDelta = stepBtnSize;
 
-            // 8 个多级加速指示光段 (Chevrons)
-            float chevronStartX = -panelSize.x * 0.5f + 100f * s;
+            // 8 个多级加速微型指示光段 (Micro-Pips)
+            float chevronStartX = -panelSize.x * 0.5f + 92f * s;
             float chevronW = 8.5f * s;
-            float chevronH = 13f * s;
+            float chevronH = 6f * s;
             float chevronGap = 2.5f * s;
 
             for (int i = 0; i < MaxChevronCount; i++)
@@ -166,8 +156,7 @@ namespace ModularFlightPanel.UI.Widgets
                 float cx = chevronStartX + i * (chevronW + chevronGap);
                 GameObject chGo = UIFactory.CreatePanel(panel.transform, $"Chevron_{i}",
                     new Vector2(chevronW, chevronH), new Vector2(cx, botY),
-                    WidgetStyleManager.Weighted(primaryAccent, LineWeight.Faint),
-                    WidgetStyleManager.Weighted(borderCol, LineWeight.Strong), 1f * s);
+                    WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Faint));
 
                 Button btn = chGo.AddComponent<Button>();
                 btn.onClick.AddListener(() => OnSetWarpIndex(index));
@@ -177,27 +166,22 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 步进加速键 (▶)
-            float upX = chevronStartX + MaxChevronCount * (chevronW + chevronGap) + 4f * s;
+            float upX = chevronStartX + MaxChevronCount * (chevronW + chevronGap) + 3f * s;
             _upBtn = UIFactory.CreateButton(panel.transform, "Btn_Up", stepBtnSize,
                 new Vector2(upX, botY), OnStepWarpUp);
-            _upBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Control);
-            var upOut = _upBtn.gameObject.AddComponent<Outline>();
-            upOut.effectColor = WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Normal);
-            upOut.effectDistance = new Vector2(1f * s, 1f * s);
+            _upBtn.GetComponent<Image>().color = Color.clear;
             _upBtnText = UIFactory.CreateText(_upBtn.transform, "Text", "▶",
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, secondaryAccent);
             _upBtnText.GetComponent<RectTransform>().sizeDelta = stepBtnSize;
 
             // 瞬时归一键 (1X Kill-Warp)
-            Vector2 cancelBtnSize = new Vector2(26f * s, 16f * s);
+            Vector2 cancelBtnSize = new Vector2(22f * s, 14f * s);
             _cancelBtn = UIFactory.CreateButton(panel.transform, "Btn_Cancel", cancelBtnSize,
-                new Vector2(panelSize.x * 0.5f - 16f * s, botY), OnCancelWarp);
-            _cancelBtn.GetComponent<Image>().color = WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution);
-            var cancelOut = _cancelBtn.gameObject.AddComponent<Outline>();
-            cancelOut.effectColor = WidgetStyleManager.Tinted(TextStyleRole.Warning, LineWeight.Bold);
-            cancelOut.effectDistance = new Vector2(1f * s, 1f * s);
+                new Vector2(panelSize.x * 0.5f - 14f * s, botY), OnCancelWarp);
+            _cancelBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             _cancelBtnText = UIFactory.CreateText(_cancelBtn.transform, "Text", "1X",
-                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.Warning));
+                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            _cancelBtnText.fontStyle = FontStyle.Bold;
             _cancelBtnText.GetComponent<RectTransform>().sizeDelta = cancelBtnSize;
 
             // 初始化根据主题配置执行原版时间栏静默隐藏
@@ -206,6 +190,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             ApplyTheme(theme);
         }
+
 
         private string _lastClockStr;
         private string _lastRateStr;
@@ -238,15 +223,21 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 2. 暂停状态提示 (ApplyButton 语义化)
+            // 2. 暂停状态提示
             bool isPaused = telemetry.IsGamePaused;
             if (!_hasInitState || isPaused != _lastPausedState)
             {
                 _lastPausedState = isPaused;
                 if (_pauseBtnText != null && _pauseBtn != null)
                 {
-                    _pauseBtnText.text = isPaused ? "RESUME" : "PAUSE";
-                    ApplyButton(_pauseBtn, _pauseBtn.GetComponent<Image>(), _pauseBtnText, isPaused ? ButtonVisualRole.Danger : ButtonVisualRole.Normal, isPaused, theme);
+                    _pauseBtnText.text = isPaused ? "PAUSED" : "PAUSE";
+                    _pauseBtn.GetComponent<Image>().color = isPaused 
+                        ? WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger) 
+                        : Color.clear;
+                    _pauseBtnText.color = isPaused 
+                        ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Danger, theme) 
+                        : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
+                    _pauseBtnText.fontStyle = isPaused ? FontStyle.Bold : FontStyle.Normal;
                 }
             }
 
@@ -287,7 +278,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 MeterStyleRole fillRole = isPhys ? MeterStyleRole.Warning : MeterStyleRole.Primary;
                 Color litColor = WidgetStyleManager.Meter(fillRole, theme);
-                Color dimColor = WidgetStyleManager.Weighted(litColor, LineWeight.Faint);
+                Color dimColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Faint);
 
                 for (int i = 0; i < MaxChevronCount; i++)
                 {
@@ -308,7 +299,12 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_cancelBtnText != null && _cancelBtn != null)
                 {
                     bool canCancel = activeIndex > 0;
-                    ApplyButton(_cancelBtn, _cancelBtn.GetComponent<Image>(), _cancelBtnText, canCancel ? ButtonVisualRole.Warning : ButtonVisualRole.Normal, canCancel, theme);
+                    _cancelBtn.GetComponent<Image>().color = canCancel 
+                        ? WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution) 
+                        : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+                    _cancelBtnText.color = canCancel 
+                        ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Warning, theme) 
+                        : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
                 }
             }
 
@@ -340,10 +336,15 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             _currentTheme = theme;
-            if (theme == null) return;
+            _currentTheme = theme;
+            theme = WidgetStyleManager.ResolveTheme(theme);
 
-            ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
-            if (_topStripe != null) _topStripe.color = (Color)theme.AccentPrimary;
+            if (_panelBg != null) _panelBg.color = Color.clear;
+            if (_panelOutline != null)
+            {
+                _panelOutline.enabled = true;
+                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            }
 
             ApplyText(_clockText, TextStyleRole.PrimaryValue, theme);
             ApplyText(_warpRateText, TextStyleRole.Accent, theme);

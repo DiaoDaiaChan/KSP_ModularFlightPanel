@@ -11,10 +11,11 @@ namespace ModularFlightPanel.Core
         private TelemetryHub _telemetry;
         private NavballHUD _hud;
         private SettingsGUI _settings;
+        private MFPToolbarButton _toolbarButton;
 
         private void Awake()
         {
-            Debug.Log("[ModularFlightPanel] Initializing Modular Flight Panel (模块化飞行面板)...");
+            MFPLogger.Info(MFPLogger.CatCore, "Initializing Modular Flight Panel (模块化飞行面板)...");
 
             // 1. 加载着色器与 AssetBundle
             AssetLoader.LoadBundle();
@@ -28,6 +29,7 @@ namespace ModularFlightPanel.Core
             // 2.5. 确保持久化 NavBall 桥接器与数学后备就绪
             NavBallHookService.Provider = new StockNavBallVisualHook();
             NavBallHookService.MarkerDirectionFallback = StockNavBallHook.GetMarkerDirection;
+            StockStageIconService.Provider = new StockStageIconHook();
 
             // 3. 应用 Harmony 补丁隐藏原版 Navball
             HarmonyPatches.ApplyPatches();
@@ -35,8 +37,9 @@ namespace ModularFlightPanel.Core
             // 4. 挂载遥测数据中心
             _telemetry = gameObject.AddComponent<TelemetryHub>();
 
-            // 4.5. 挂载飞船二维剪影烘焙器 (零常驻开销 / 15 FPS 动态变动捕获)
+            // 4.5. 挂载飞船二维剪影与三维视图烘焙器 (零常驻开销 / 15 FPS 动态变动捕获)
             var silhouetteBaker = VesselSilhouetteBaker.Instance;
+            var vessel3DBaker = Vessel3DBaker.Instance;
 
             // 5. 挂载 UGUI 表现层
             _hud = gameObject.AddComponent<NavballHUD>();
@@ -45,16 +48,20 @@ namespace ModularFlightPanel.Core
             // 6. 挂载设置面板
             _settings = gameObject.AddComponent<SettingsGUI>();
 
-            Debug.Log("[ModularFlightPanel] Modular Flight Panel initialized successfully!");
+            // 7. 挂载原版工具栏应用按钮 (ApplicationLauncher)
+            _toolbarButton = gameObject.AddComponent<MFPToolbarButton>();
+
+            MFPLogger.Info(MFPLogger.CatCore, "Modular Flight Panel initialized successfully!");
         }
 
         private void OnDestroy()
         {
-            Debug.Log("[ModularFlightPanel] Shutting down Modular Flight Panel...");
+            MFPLogger.Info(MFPLogger.CatCore, "Shutting down Modular Flight Panel...");
 
             HarmonyPatches.RemovePatches();
             AssetLoader.UnloadBundle();
 
+            if (_toolbarButton != null) Destroy(_toolbarButton);
             if (_hud != null) Destroy(_hud);
             if (_telemetry != null) Destroy(_telemetry);
             if (_settings != null) Destroy(_settings);

@@ -96,6 +96,7 @@ namespace ModularFlightPanel.Core
                     return altNum;
 
                 case "VSI":
+                case "VS":
                 case "VERTSPD":
                     return telemetry.VerticalSpeed;
 
@@ -492,6 +493,7 @@ namespace ModularFlightPanel.Core
                     return FormatNumber(alt, format, "N0");
 
                 case "VSI":
+                case "VS":
                 case "VERTSPD":
                     return FormatNumber(telem.VerticalSpeed, format, "F1");
 
