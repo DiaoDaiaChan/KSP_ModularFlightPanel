@@ -497,17 +497,22 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 姿态旋转：使用 localRotation 配合官方摄像机视口变换，杜绝任何外部画布/物体倾斜畸变
             if (_sphereObject != null)
             {
+                bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
                 if (hasHook)
                 {
                     Quaternion camRot = hook.CameraRotation;
                     Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
-                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
+                    _sphereObject.transform.localRotation = isProcedural
+                        ? new Quaternion(-rawRot.x, -rawRot.y, rawRot.z, rawRot.w)
+                        : rawRot;
                 }
                 else
                 {
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
                     Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
-                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
+                    _sphereObject.transform.localRotation = isProcedural
+                        ? new Quaternion(-rawRot.x, -rawRot.y, rawRot.z, rawRot.w)
+                        : rawRot;
                 }
 
                 // 动态滚转角度解算并注入着色器 (Screen-Upright / Zero-Roll Dynamic Numeral Alignment)
