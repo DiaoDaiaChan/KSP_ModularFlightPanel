@@ -26,6 +26,7 @@ namespace ModularFlightPanel.UI
 
         public const float WindowWidth = 1040f;
         public const float WindowHeight = 740f;
+        public const float ContentHeight = 550f;
 
         private Rect _windowRect = new Rect(100f, 60f, WindowWidth, WindowHeight);
         private int _windowId = 849204;
@@ -263,8 +264,9 @@ namespace ModularFlightPanel.UI
             GUILayout.Space(6f);
 
             // =========================================================================
-            // 3. 标签主体渲染 (Tab Content Area)
+            // 3. 标签主体渲染 (Tab Content Area - 严格锁定高度 550f，彻底杜绝跳变与截断)
             // =========================================================================
+            GUILayout.BeginVertical(GUILayout.Height(ContentHeight), GUILayout.MaxHeight(ContentHeight));
             switch (_currentTab)
             {
                 case 0:
@@ -290,11 +292,14 @@ namespace ModularFlightPanel.UI
                     TabSimulation.Draw();
                     break;
             }
+            GUILayout.EndVertical();
+
+            // 弹性填充空间，确保底栏始终牢固锚定在窗口最底部，零像素跳变
+            GUILayout.FlexibleSpace();
 
             // =========================================================================
-            // 4. 底栏状态与快捷指令 (Footer Status Bar)
+            // 4. 底栏状态与快捷指令 (Footer Status Bar - 绝对恒定锚定)
             // =========================================================================
-            GUILayout.Space(6f);
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
 

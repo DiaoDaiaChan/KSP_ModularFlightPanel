@@ -28,7 +28,8 @@ namespace ModularFlightPanel.UI.Settings
             TelemetryHub hub = TelemetryHub.Instance;
             TelemetrySimulationEngine sim = hub.SimulationEngine;
 
-            GUILayout.BeginVertical();
+            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight));
 
             // 1. 仿真模式总开关卡片
             MFPGuiSkin.BeginCard();
@@ -41,9 +42,7 @@ namespace ModularFlightPanel.UI.Settings
             }
             MFPGuiSkin.EndCard();
 
-            GUILayout.Space(4f);
-
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
+            GUILayout.Space(6f);
 
             // 2. 真实工况阶段一键跳转卡片
             MFPGuiSkin.BeginCard();

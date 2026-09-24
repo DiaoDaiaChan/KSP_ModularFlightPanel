@@ -87,12 +87,12 @@ namespace ModularFlightPanel.UI.Settings
             // Toast 提示
             MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
 
-            GUILayout.BeginHorizontal();
+            GUILayout.BeginHorizontal(GUILayout.Height(SettingsGUI.ContentHeight));
 
             // =========================================================================
             // 左栏：主从组件选择与过滤器 (Master Widget Navigator, 270px)
             // =========================================================================
-            GUILayout.BeginVertical(GUILayout.Width(270f), GUILayout.ExpandHeight(true));
+            GUILayout.BeginVertical(GUILayout.Width(270f), GUILayout.Height(SettingsGUI.ContentHeight));
             DrawWidgetMasterList(widgets, curWidget);
             GUILayout.EndVertical();
 
@@ -101,8 +101,8 @@ namespace ModularFlightPanel.UI.Settings
             // =========================================================================
             // 右栏：组件参数标定与遥测词典 (Detail Inspector & Slot Calibration)
             // =========================================================================
-            GUILayout.BeginVertical(GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
-            _rightScroll = GUILayout.BeginScrollView(_rightScroll, GUILayout.ExpandHeight(true));
+            GUILayout.BeginVertical(GUILayout.ExpandWidth(true), GUILayout.Height(SettingsGUI.ContentHeight));
+            _rightScroll = GUILayout.BeginScrollView(_rightScroll, GUILayout.Height(SettingsGUI.ContentHeight));
 
             DrawWidgetDetailInspector(curWidget);
 
@@ -116,7 +116,7 @@ namespace ModularFlightPanel.UI.Settings
 
         private static void DrawWidgetMasterList(List<WidgetConfig> widgets, WidgetConfig curWidget)
         {
-            MFPGuiSkin.BeginCard(GUILayout.ExpandHeight(true));
+            MFPGuiSkin.BeginCard(GUILayout.Height(SettingsGUI.ContentHeight));
 
             // 1. 标题与搜索框
             MFPGuiSkin.DrawHeader("组件导航 (WIDGETS)", $"共 {widgets.Count} 项");
@@ -140,7 +140,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(6f);
 
             // 3. 滚动组件卡片列表
-            _leftScroll = GUILayout.BeginScrollView(_leftScroll, GUILayout.ExpandHeight(true));
+            _leftScroll = GUILayout.BeginScrollView(_leftScroll, GUILayout.Height(SettingsGUI.ContentHeight - 114f));
 
             bool hasQuery = !string.IsNullOrEmpty(_widgetSearchQuery);
             int matchCount = 0;

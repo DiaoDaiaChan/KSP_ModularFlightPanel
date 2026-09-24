@@ -26,8 +26,8 @@ namespace ModularFlightPanel.UI.Settings
         {
             MFPGuiSkin.EnsureInitialized();
 
-            GUILayout.BeginVertical();
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
+            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight));
 
             // =========================================================================
             // 模块 1: 视觉主题预设风格 (Aero Themes)

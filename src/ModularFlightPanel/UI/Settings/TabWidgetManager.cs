@@ -32,7 +32,7 @@ namespace ModularFlightPanel.UI.Settings
             var widgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets;
             if (widgets == null) return;
 
-            GUILayout.BeginVertical();
+            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
 
             // 1. 顶部搜索与批量控制卡片
             MFPGuiSkin.BeginCard();
@@ -91,13 +91,13 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
 
-            // Toast 提示
-            MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
-
             GUILayout.Space(4f);
 
-            // 2. 列表内容
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
+            // 2. 列表内容 (高度严格锁定，扣除顶底固定卡片与间距，合计 550f)
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight - 170f));
+
+            // Toast 提示 (置于滚动列表内部，杜绝撑大顶栏高度)
+            MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
 
             bool hasQuery = !string.IsNullOrEmpty(_searchQuery);
             int renderedCount = 0;

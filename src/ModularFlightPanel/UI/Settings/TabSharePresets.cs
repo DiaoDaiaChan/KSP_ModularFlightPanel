@@ -25,12 +25,11 @@ namespace ModularFlightPanel.UI.Settings
         {
             MFPGuiSkin.EnsureInitialized();
 
-            GUILayout.BeginVertical();
+            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight));
 
             // Toast 提示
             MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
-
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
 
             // 1. 导出分享码
             MFPGuiSkin.BeginCard();

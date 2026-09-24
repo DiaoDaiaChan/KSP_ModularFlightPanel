@@ -36,7 +36,7 @@ namespace ModularFlightPanel.UI.Settings
         {
             MFPGuiSkin.EnsureInitialized();
 
-            GUILayout.BeginVertical();
+            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
 
             // 1. 顶部搜索栏与分类选项卡
             MFPGuiSkin.BeginCard();
@@ -58,12 +58,12 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
 
-            // Toast 提示
-            MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
-
             GUILayout.Space(4f);
 
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.ExpandHeight(true));
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight - 120f));
+
+            // Toast 提示 (置于滚动视图内部，杜绝浮动撑大固定外框)
+            MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
 
             // 2. 通用仪表与标尺 (Gauges & Tapes)
             if (_categoryIndex == 0 || _categoryIndex == 1)
