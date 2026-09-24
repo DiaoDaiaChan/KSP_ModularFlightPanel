@@ -280,6 +280,18 @@ namespace ModularFlightPanel.UI
             theme = ResolveTheme(theme);
             Material panelMat = GetUiMaterial(isText: false);
 
+            if (btn != null)
+            {
+                var fb = btn.GetComponent<AvionicsButtonFeedback>();
+                if (fb != null)
+                {
+                    if (bg != null && fb.BackgroundImage == null) fb.BackgroundImage = bg;
+                    if (label != null && fb.LabelText == null) fb.LabelText = label;
+                    fb.SetRole(role);
+                    return;
+                }
+            }
+
             if (bg != null)
             {
                 bg.material = panelMat;
@@ -338,7 +350,7 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>叠加语义色：把 baseCol 按 amount 向 target 混合，并调整透明度</summary>
-        private static Color Tint(Color baseCol, Color target, float amount, float alphaBoost = 0f, float? alphaOverride = null)
+        public static Color Tint(Color baseCol, Color target, float amount, float alphaBoost = 0f, float? alphaOverride = null)
         {
             float a = alphaOverride ?? Mathf.Clamp01(baseCol.a + alphaBoost);
             return new Color(
@@ -349,7 +361,7 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>按乘子压暗语义色（用于按下/激活态）</summary>
-        private static Color Dim(Color semanticCol, float multiplier, float alpha)
+        public static Color Dim(Color semanticCol, float multiplier, float alpha)
         {
             return new Color(semanticCol.r * multiplier, semanticCol.g * multiplier, semanticCol.b * multiplier, alpha);
         }

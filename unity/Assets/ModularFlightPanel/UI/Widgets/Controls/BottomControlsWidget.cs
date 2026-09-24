@@ -64,11 +64,9 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. RCS 开关
             _rcsBtn = UIFactory.CreateButton(parent, "Btn_RCS", toggleBtnSize, new Vector2(-68f * s, 0f), OnRCSToggle);
+            _rcsBtn.SetTooltip("RCS 姿态推力系统", "开启/关闭反作用力姿态微调喷气动力 (Reaction Control System)", "R");
             _rcsImg = _rcsBtn.GetComponent<Image>();
-            _rcsImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _rcsOutline = _rcsBtn.gameObject.AddComponent<Outline>();
-            _rcsOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            _rcsOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _rcsOutline = _rcsBtn.GetComponent<Outline>();
 
             _rcsText = UIFactory.CreateText(_rcsBtn.transform, "Text", "RCS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter,
                 WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
@@ -79,11 +77,9 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 2. SAS 主开关
             _sasBtn = UIFactory.CreateButton(parent, "Btn_SAS", toggleBtnSize, new Vector2(-26f * s, 0f), OnSASToggle);
+            _sasBtn.SetTooltip("SAS 稳定性增益系统", "开启/关闭姿态稳定性自动保持 (Stability Augmentation System)", "T");
             _sasImg = _sasBtn.GetComponent<Image>();
-            _sasImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _sasOutline = _sasBtn.gameObject.AddComponent<Outline>();
-            _sasOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            _sasOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _sasOutline = _sasBtn.GetComponent<Outline>();
 
             _sasText = UIFactory.CreateText(_sasBtn.transform, "Text", "SAS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter,
                 WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
@@ -95,11 +91,9 @@ namespace ModularFlightPanel.UI.Widgets
             // 3. REF FRAME 模式胶囊按钮 (左键切换, 右键展开 Principia 参考系窗口)
             Vector2 frameBtnSize = new Vector2(90f * s, 18f * s);
             _frameBtn = UIFactory.CreateButton(parent, "Btn_RefFrame", frameBtnSize, new Vector2(43f * s, 0f), null);
+            _frameBtn.SetTooltip("速度参考系模式", "左键点击轮换 SURFACE / ORBIT / TARGET 参考系；右键呼出 Principia 权威参考系设置窗口。");
             _frameImg = _frameBtn.GetComponent<Image>();
-            _frameImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _frameOutline = _frameBtn.gameObject.AddComponent<Outline>();
-            _frameOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            _frameOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _frameOutline = _frameBtn.GetComponent<Outline>();
 
             var clickHandler = _frameBtn.gameObject.AddComponent<RefFrameButtonHandler>();
             clickHandler.OnLeftClick = OnCycleSpeedMode;
@@ -152,39 +146,25 @@ namespace ModularFlightPanel.UI.Widgets
 
             ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
 
-            // 1. RCS 状态 (高反差发光药丸微交互)
+            // 1. RCS 状态 (统一航电反馈状态机驱动)
             bool rcs = telem.IsRCSEnabled;
             if (!_hasInitializedState || rcs != _lastRcs)
             {
                 _lastRcs = rcs;
                 if (_rcsBtn != null)
                 {
-                    _rcsImg.color = rcs ? theme.AccentPrimary : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                    _rcsText.color = rcs 
-                        ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.InverseOnAccent, theme) 
-                        : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
-                    if (_rcsOutline != null)
-                    {
-                        _rcsOutline.effectColor = rcs ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-                    }
+                    _rcsBtn.SetToggleActive(rcs);
                 }
             }
 
-            // 2. SAS 状态 (高反差发光药丸微交互)
+            // 2. SAS 状态 (统一航电反馈状态机驱动)
             bool sas = telem.IsSASEnabled;
             if (!_hasInitializedState || sas != _lastSas)
             {
                 _lastSas = sas;
                 if (_sasBtn != null)
                 {
-                    _sasImg.color = sas ? theme.AccentPrimary : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                    _sasText.color = sas 
-                        ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.InverseOnAccent, theme) 
-                        : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
-                    if (_sasOutline != null)
-                    {
-                        _sasOutline.effectColor = sas ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-                    }
+                    _sasBtn.SetToggleActive(sas);
                 }
             }
 
@@ -232,24 +212,17 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_rcsBtn != null)
             {
-                _rcsImg.color = _lastRcs ? theme.AccentPrimary : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                _rcsText.color = _lastRcs 
-                    ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.InverseOnAccent, theme) 
-                    : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
-                if (_rcsOutline != null) _rcsOutline.effectColor = _lastRcs ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _rcsBtn.GetFeedback()?.ApplyTheme(theme);
+                _rcsBtn.SetToggleActive(_lastRcs);
             }
             if (_sasBtn != null)
             {
-                _sasImg.color = _lastSas ? theme.AccentPrimary : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                _sasText.color = _lastSas 
-                    ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.InverseOnAccent, theme) 
-                    : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
-                if (_sasOutline != null) _sasOutline.effectColor = _lastSas ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _sasBtn.GetFeedback()?.ApplyTheme(theme);
+                _sasBtn.SetToggleActive(_lastSas);
             }
             if (_frameBtn != null)
             {
-                _frameImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                if (_frameOutline != null) _frameOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _frameBtn.GetFeedback()?.ApplyTheme(theme);
                 if (_frameText != null) ApplyText(_frameText, TextStyleRole.SecondaryValue, theme);
             }
         }

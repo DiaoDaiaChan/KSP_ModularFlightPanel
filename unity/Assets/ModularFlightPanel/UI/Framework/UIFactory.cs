@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Events;
+using ModularFlightPanel.Config;
 
 namespace ModularFlightPanel.UI
 {
@@ -153,30 +154,35 @@ namespace ModularFlightPanel.UI
             rt.sizeDelta = size;
             rt.anchoredPosition = anchoredPos;
 
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme;
+            Color borderColor = theme != null ? theme.AccentSecondary : WidgetStyleManager.Surface(SurfaceStyleRole.Inset);
+
             Image img = go.GetComponent<Image>();
             img.color = WidgetStyleManager.Surface(SurfaceStyleRole.Panel);
 
+            Outline outline = go.AddComponent<Outline>();
+            outline.effectColor = WidgetStyleManager.Weighted(borderColor, LineWeight.Ghost);
+            outline.effectDistance = new Vector2(1f, 1f);
+
             Button btn = go.GetComponent<Button>();
+            btn.transition = Selectable.Transition.None;
             if (onClick != null)
             {
                 btn.onClick.AddListener(onClick);
             }
 
+            var feedback = go.AddComponent<AvionicsButtonFeedback>();
+            feedback.Initialize(btn, img, outline, null, theme);
+
             return btn;
         }
 
         public static Button CreateCockpitButton(Transform parent, string name, string label, Vector2 size,
-            Vector2 anchoredPos, Color background, Color border, Color textColor, UnityAction onClick)
+            Vector2 anchoredPos, Color background, Color border, Color textColor, UnityAction onClick, ButtonVisualRole role = ButtonVisualRole.Normal)
         {
             GameObject go = CreatePanel(parent, name, size, anchoredPos, background, border, 1f);
             Button btn = go.AddComponent<Button>();
-            ColorBlock colors = btn.colors;
-            colors.normalColor = background;
-            colors.highlightedColor = Color.Lerp(background, WidgetStyleManager.NeutralOpaque, 0.16f);
-            colors.pressedColor = Color.Lerp(background, WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep), 0.18f);
-            colors.selectedColor = colors.highlightedColor;
-            colors.fadeDuration = 0.05f;
-            btn.colors = colors;
+            btn.transition = Selectable.Transition.None;
             if (onClick != null) btn.onClick.AddListener(onClick);
 
             Text text = CreateText(go.transform, name + "_Label", label, Mathf.RoundToInt(size.y * 0.34f),
@@ -186,6 +192,14 @@ namespace ModularFlightPanel.UI
             textRt.anchorMax = Vector2.one;
             textRt.offsetMin = new Vector2(2f, 0f);
             textRt.offsetMax = new Vector2(-2f, 0f);
+
+            Image img = go.GetComponent<Image>();
+            Outline outline = go.GetComponent<Outline>();
+
+            var feedback = go.AddComponent<AvionicsButtonFeedback>();
+            feedback.VisualRole = role;
+            feedback.Initialize(btn, img, outline, text, WidgetStyleManager.Instance?.CurrentTheme);
+
             return btn;
         }
 
@@ -204,6 +218,52 @@ namespace ModularFlightPanel.UI
             shadow.effectColor = shadowCol;
             shadow.effectDistance = new Vector2(0f, -2f * scale);
             shadow.useGraphicAlpha = true;
+        }
+
+        public static AvionicsSegmentedControl CreateSegmentedControl(Transform parent, string name, Vector2 size,
+            Vector2 anchoredPos, string[] options, int defaultIndex, Action<int, string> onSelect)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+
+            RectTransform rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = size;
+            rt.anchoredPosition = anchoredPos;
+
+            var segmented = go.AddComponent<AvionicsSegmentedControl>();
+            segmented.Initialize(options, defaultIndex, size, onSelect, WidgetStyleManager.Instance?.CurrentTheme);
+            return segmented;
+        }
+
+        public static AvionicsValueBox CreateValueBox(Transform parent, string name, Vector2 size,
+            Vector2 anchoredPos, string title, string initialValue, string unit = null)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+
+            RectTransform rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = size;
+            rt.anchoredPosition = anchoredPos;
+
+            var valBox = go.AddComponent<AvionicsValueBox>();
+            valBox.Initialize(title, initialValue, unit, size, WidgetStyleManager.Instance?.CurrentTheme);
+            return valBox;
+        }
+
+        public static AvionicsAnnunciator CreateAnnunciator(Transform parent, string name, Vector2 size,
+            Vector2 anchoredPos, string label, AnnunciatorState initialState = AnnunciatorState.Off,
+            bool blinkOnAlert = true, UnityAction onClick = null)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+
+            RectTransform rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = size;
+            rt.anchoredPosition = anchoredPos;
+
+            var ann = go.AddComponent<AvionicsAnnunciator>();
+            ann.Initialize(label, size, initialState, blinkOnAlert, onClick, WidgetStyleManager.Instance?.CurrentTheme);
+            return ann;
         }
     }
 }
