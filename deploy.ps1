@@ -53,8 +53,32 @@ if (Test-Path $sourceDll) {
     }
 }
 
-# 同步其余所有资产 (配置、预设、材质等)
-Copy-Item -Path "$source\*" -Destination $dest -Recurse -Force -Exclude "ModularFlightPanel.dll"
+# 5. 同步其余所有资产 (材质、着色器、预设模板等)，严格保护用户运行期配置 (layout.json, theme_settings.json, Vessels/*)
+Write-Host "Syncing assets to GameData with PluginData protection..." -ForegroundColor Cyan
+Get-ChildItem -Path $source -Recurse | ForEach-Object {
+    $relativePath = $_.FullName.Substring($source.Length).TrimStart("\", "/")
+    $targetFile = Join-Path $dest $relativePath
+
+    if ($_.PSIsContainer) {
+        if (!(Test-Path $targetFile)) { New-Item -ItemType Directory -Path $targetFile -Force | Out-Null }
+    } else {
+        if ($_.Name -eq "ModularFlightPanel.dll") {
+            return # 已在步骤 4 完成原子替换
+        }
+
+        # 保护用户实时配置，绝不冲掉玩家在游戏内保存的排版或主题
+        $isProtectedConfig = ($relativePath -like "PluginData\layout*.json" -or 
+                              $relativePath -like "PluginData\theme_settings*.json" -or
+                              $relativePath -like "PluginData\Vessels\*")
+        if ($isProtectedConfig -and (Test-Path $targetFile)) {
+            return # 目标已存在用户实际配置，安全保留
+        }
+
+        $targetDir = [System.IO.Path]::GetDirectoryName($targetFile)
+        if (!(Test-Path $targetDir)) { New-Item -ItemType Directory -Path $targetDir -Force | Out-Null }
+        Copy-Item -Path $_.FullName -Destination $targetFile -Force
+    }
+}
 
 Write-Host "Deployment completed successfully! ModularFlightPanel UGUI assets & DLL synced to KSP." -ForegroundColor Green
 exit 0

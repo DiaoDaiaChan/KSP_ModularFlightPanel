@@ -15,6 +15,74 @@ namespace ModularFlightPanel.Core
         private static readonly Dictionary<string, Sprite> SpriteCache = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
         private static Sprite _circleMaskSprite;
         private static Sprite _circleRingSprite;
+        private static Sprite _reticleSprite;
+
+        public static void ClearCache()
+        {
+            SpriteCache.Clear();
+            _circleMaskSprite = null;
+            _circleRingSprite = null;
+            _reticleSprite = null;
+        }
+
+        public static Sprite GetReticleSprite()
+        {
+            if (_reticleSprite != null) return _reticleSprite;
+
+            const int w = 256;
+            const int h = 128;
+            Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            Color[] pixels = new Color[w * h];
+            float cx = (w - 1) * 0.5f;
+            float cy = (h - 1) * 0.5f;
+
+            ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
+            Color baseCol = theme != null ? (Color)theme.WarningColor : new Color(1.0f, 0.65f, 0.05f, 1.0f);
+            Color amberBright = Color.Lerp(baseCol, Color.white, 0.15f);
+            Color amberDark = Color.Lerp(baseCol, Color.black, 0.12f);
+            Color shadowCol = new Color(0.06f, 0.05f, 0.04f, 1.0f);
+
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    float px = x - cx;
+                    float py = y - cy;
+
+                    float dfg = ReticleSdf(px, py);
+                    // 深度阴影 (向下偏右采样，SDF 柔和羽化)
+                    float dsh = ReticleSdf(px - 1.2f, py + 2.2f);
+
+                    float afg = Mathf.Clamp01(0.5f - dfg);
+                    float ash = Mathf.Clamp01(0.5f - dsh * 0.75f) * 0.72f;
+
+                    float t = Mathf.Clamp01((py + 20f) / 40f);
+                    Color fgCol = Color.Lerp(amberDark, amberBright, t);
+
+                    float outA = afg + ash * (1.0f - afg);
+                    if (outA > 0.005f)
+                    {
+                        Color outRgb = (fgCol * afg + shadowCol * (ash * (1.0f - afg))) / outA;
+                        outRgb.a = outA;
+                        pixels[y * w + x] = outRgb;
+                    }
+                    else
+                    {
+                        pixels[y * w + x] = Color.clear;
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _reticleSprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f));
+            return _reticleSprite;
+        }
 
         public static Sprite GetMarkerSprite(string markerType)
         {
@@ -284,6 +352,42 @@ namespace ModularFlightPanel.Core
             float d = -Mathf.Sqrt(pxAbs * pxAbs + pyOffset * pyOffset) * Mathf.Sign(pyOffset);
             float wireD = Mathf.Abs(d) - (strokeW * 0.5f);
             return Mathf.Clamp01(0.5f - wireD);
+        }
+
+        private static float ReticleSdf(float px, float py)
+        {
+            // 1. 水线左右水平翼 (Waterline Wings)
+            float d1 = SegmentSdf(px, py, -56f, 0f, -18f, 0f);
+            // 2. 左向下 45 度托槽斜边 (Downward V-Notch Cradle)
+            float d2 = SegmentSdf(px, py, -18f, 0f, 0f, -18f);
+            // 3. 右向上 45 度托槽斜边
+            float d3 = SegmentSdf(px, py, 0f, -18f, 18f, 0f);
+            // 4. 右侧水平翼
+            float d4 = SegmentSdf(px, py, 18f, 0f, 56f, 0f);
+
+            float dPath = Mathf.Min(Mathf.Min(d1, d2), Mathf.Min(d3, d4)) - 2.5f;
+            // 翼梢平头垂直切割
+            float dClip = Mathf.Max(0f, Mathf.Abs(px) - 56f);
+            dPath = Mathf.Max(dPath, dClip);
+
+            // 5. 正中心钻石瞄准点 (Boresight Diamond Pip, 精确位于 (0, 0))
+            float dPip = (Mathf.Abs(px) + Mathf.Abs(py) - 5.5f) / 1.41421356f;
+
+            return Mathf.Min(dPath, dPip);
+        }
+
+        private static float SegmentSdf(float px, float py, float x1, float y1, float x2, float y2)
+        {
+            float dx = x2 - x1;
+            float dy = y2 - y1;
+            float l2 = dx * dx + dy * dy;
+            if (l2 <= 0.00001f) return Mathf.Sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+            float t = Mathf.Clamp01(((px - x1) * dx + (py - y1) * dy) / l2);
+            float qx = x1 + t * dx;
+            float qy = y1 + t * dy;
+            float ex = px - qx;
+            float ey = py - qy;
+            return Mathf.Sqrt(ex * ex + ey * ey);
         }
     }
 }

@@ -637,7 +637,7 @@ namespace ModularFlightPanel.Core
                 if (!string.IsNullOrEmpty(pType))
                 {
                     if (pType.IndexOf("SURFACE", StringComparison.OrdinalIgnoreCase) >= 0)
-                        return "SURFACE";
+                        return "BODY_SURFACE";
                     if (pType.IndexOf("NON_ROTATING", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         pType.IndexOf("INERTIAL", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "INERTIAL";
@@ -666,6 +666,7 @@ namespace ModularFlightPanel.Core
                     if (tName.IndexOf("barycentric", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BARYCENTRIC");
                     if (tName.IndexOf("target", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "TARGET");
                     if (tName.IndexOf("body_direction", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BODY_DIRECTION");
+                    if (tName.IndexOf("navball_surface", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BODY_SURFACE");
                     if (tName.IndexOf("surface", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("navball", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "SURFACE");
                 }
 
@@ -692,7 +693,11 @@ namespace ModularFlightPanel.Core
                         if (north.r > 0.55f && north.g > 0.38f && north.b < 0.35f)
                             return CacheAndReturn(tex, "BODY_DIRECTION");
 
-                        // Surface: 蓝天棕地 (B > R + 0.15)
+                        // Principia Body Surface: 棕天蓝地 / 北半球棕色南半球蓝色 (R > B + 0.15 && south.b > south.r + 0.15)
+                        if (north.r > north.b + 0.15f && south.b > south.r + 0.15f)
+                            return CacheAndReturn(tex, "BODY_SURFACE");
+
+                        // Stock Surface: 蓝天棕地 (B > R + 0.15)
                         if (north.b > north.r + 0.15f)
                             return CacheAndReturn(tex, "SURFACE");
                     }

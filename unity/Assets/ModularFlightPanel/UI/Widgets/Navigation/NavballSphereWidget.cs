@@ -38,14 +38,7 @@ namespace ModularFlightPanel.UI.Widgets
         private float _visualRadius;
 
         private static Mesh _primitiveSphereMesh;
-        private Image _crossWingL;
-        private Image _crossWingR;
-        private Image _crossTabL;
-        private Image _crossTabR;
-        private Image _crossChevronL;
-        private Image _crossChevronR;
-        private Image _crossDot;
-        private readonly List<Outline> _crosshairOutlines = new List<Outline>();
+        private Image _reticleImage;
         private float _currentHazardAlert = 0.0f;
         private float _currentVernierDetail = 0.0f;
 
@@ -275,86 +268,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void CreateCrosshair(Transform parent, float dpiScale, ThemeConfig theme)
         {
-            _crosshair = new GameObject("Crosshair_Center", typeof(RectTransform));
-            _crosshair.transform.SetParent(parent, false);
-            _crosshairOutlines.Clear();
-
             float s = dpiScale;
-            Color wingColor = theme.AccentPrimary;
-            Color chevronColor = theme.WarningColor;
-            Color darkBorder = WidgetStyleManager.Weighted(theme.FrameBgColor, LineWeight.Strong);
-            Vector2 outlineDist = new Vector2(1.2f * s, 1.2f * s);
-
-            // 1. 左侧水平水线机翼 (Waterline Left Wing Bar) + 内侧向下机腹折角 (Down-Tab，权威指示“下方/机腹”天地关系)
-            float wingW = 18f * s;
-            float wingH = 2.4f * s;
-            float wingOffX = 20f * s;
-            GameObject wingLObj = UIFactory.CreatePanel(_crosshair.transform, "H_Wing_L", new Vector2(wingW, wingH), new Vector2(-wingOffX, 0f), wingColor);
-            _crossWingL = wingLObj.GetComponent<Image>();
-            _crossWingL.raycastTarget = false;
-            Outline olWL = wingLObj.AddComponent<Outline>();
-            olWL.effectColor = darkBorder;
-            olWL.effectDistance = outlineDist;
-            _crosshairOutlines.Add(olWL);
-
-            float tabW = 2.4f * s;
-            float tabH = 5.5f * s;
-            float tabOffX = 11f * s;
-            float tabOffY = -2.5f * s;
-            GameObject tabLObj = UIFactory.CreatePanel(_crosshair.transform, "Tab_Down_L", new Vector2(tabW, tabH), new Vector2(-tabOffX, tabOffY), wingColor);
-            _crossTabL = tabLObj.GetComponent<Image>();
-            _crossTabL.raycastTarget = false;
-            Outline olTL = tabLObj.AddComponent<Outline>();
-            olTL.effectColor = darkBorder;
-            olTL.effectDistance = outlineDist;
-            _crosshairOutlines.Add(olTL);
-
-            // 2. 右侧水平水线机翼 (Waterline Right Wing Bar) + 内侧向下机腹折角 (Down-Tab)
-            GameObject wingRObj = UIFactory.CreatePanel(_crosshair.transform, "H_Wing_R", new Vector2(wingW, wingH), new Vector2(wingOffX, 0f), wingColor);
-            _crossWingR = wingRObj.GetComponent<Image>();
-            _crossWingR.raycastTarget = false;
-            Outline olWR = wingRObj.AddComponent<Outline>();
-            olWR.effectColor = darkBorder;
-            olWR.effectDistance = outlineDist;
-            _crosshairOutlines.Add(olWR);
-
-            GameObject tabRObj = UIFactory.CreatePanel(_crosshair.transform, "Tab_Down_R", new Vector2(tabW, tabH), new Vector2(tabOffX, tabOffY), wingColor);
-            _crossTabR = tabRObj.GetComponent<Image>();
-            _crossTabR.raycastTarget = false;
-            Outline olTR = tabRObj.AddComponent<Outline>();
-            olTR.effectColor = darkBorder;
-            olTR.effectDistance = outlineDist;
-            _crosshairOutlines.Add(olTR);
-
-            // 3. 中央向上机头天顶指示尖 (Aircraft Boresight Chevron - 顶点严格朝上，权威指示“上方/天空”方向)
-            float chevLen = 8.5f * s;
-            float chevThick = 2.4f * s;
-            GameObject chevLObj = UIFactory.CreatePanel(_crosshair.transform, "Chevron_L", new Vector2(chevLen, chevThick), new Vector2(-2.8f * s, 2.8f * s), chevronColor);
-            chevLObj.transform.localRotation = Quaternion.Euler(0f, 0f, 36f);
-            _crossChevronL = chevLObj.GetComponent<Image>();
-            _crossChevronL.raycastTarget = false;
-            Outline olCL = chevLObj.AddComponent<Outline>();
-            olCL.effectColor = darkBorder;
-            olCL.effectDistance = outlineDist;
-            _crosshairOutlines.Add(olCL);
-
-            GameObject chevRObj = UIFactory.CreatePanel(_crosshair.transform, "Chevron_R", new Vector2(chevLen, chevThick), new Vector2(2.8f * s, 2.8f * s), chevronColor);
-            chevRObj.transform.localRotation = Quaternion.Euler(0f, 0f, -36f);
-            _crossChevronR = chevRObj.GetComponent<Image>();
-            _crossChevronR.raycastTarget = false;
-            Outline olCR = chevRObj.AddComponent<Outline>();
-            olCR.effectColor = darkBorder;
-            olCR.effectDistance = outlineDist;
-            _crosshairOutlines.Add(olCR);
-
-            // 4. 正中央高精度瞄准靶心 (Precision Boresight Pip)
-            GameObject dotObj = UIFactory.CreatePanel(_crosshair.transform, "Boresight_Pip", new Vector2(3f * s, 3f * s), Vector2.zero, chevronColor);
-            _crossDot = dotObj.GetComponent<Image>();
-            _crossDot.raycastTarget = false;
-            Outline olDot = dotObj.AddComponent<Outline>();
-            olDot.effectColor = darkBorder;
-            olDot.effectDistance = outlineDist;
-            _crosshairOutlines.Add(olDot);
+            Vector2 reticleSize = new Vector2(96f * s, 48f * s);
+            _crosshair = UIFactory.CreatePanel(parent, "Crosshair_Center", reticleSize, Vector2.zero, WidgetStyleManager.NeutralOpaque);
+            _reticleImage = _crosshair.GetComponent<Image>();
+            _reticleImage.sprite = NavballMarkerFactory.GetReticleSprite();
+            _reticleImage.raycastTarget = false;
         }
 
         private void CreateHeadingBox(Transform parent, float dpiScale, ThemeConfig theme)
@@ -460,6 +379,26 @@ namespace ModularFlightPanel.UI.Widgets
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.DangerColor, theme);
                 case "BODY_DIRECTION":
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
+                case "BODY_SURFACE":
+                {
+                    // Principia 地固参考系 (Body-Centred Body-Fixed / ECEF):
+                    // 严格与 Principia 官方 navball_surface 保持一致：北半球 (+lat / +Y) 对应大地棕色，南半球 (-lat / -Y) 对应海洋/天蓝色
+                    Color bGndH = theme.GroundColor;
+                    Color bGndN = WidgetStyleManager.Darken(bGndH, 0.55f);
+                    Color bSkyH = theme.AccentSecondary;
+                    Color bSkyZ = theme.SkyColor;
+                    return new NavballFramePalette
+                    {
+                        SkyZenith = bGndN,
+                        SkyHorizon = bGndH,
+                        GroundHorizon = bSkyH,
+                        GroundNadir = bSkyZ,
+                        Equator = theme.HorizonLineColor,
+                        PitchLadder = theme.GridColor,
+                        HeadingLine = theme.AccentSecondary,
+                        Rim = theme.RimGlowColor
+                    };
+                }
                 case "SURFACE":
                 default:
                     Color skyZ = theme.SkyColor;
@@ -772,17 +711,21 @@ namespace ModularFlightPanel.UI.Widgets
                 ApplyText(_shellStatus, TextStyleRole.SecondaryValue, theme);
             }
 
-            if (_crossWingL != null) _crossWingL.color = theme.AccentPrimary;
-            if (_crossWingR != null) _crossWingR.color = theme.AccentPrimary;
-            if (_crossTabL != null) _crossTabL.color = theme.AccentPrimary;
-            if (_crossTabR != null) _crossTabR.color = theme.AccentPrimary;
-            if (_crossChevronL != null) _crossChevronL.color = theme.WarningColor;
-            if (_crossChevronR != null) _crossChevronR.color = theme.WarningColor;
-            if (_crossDot != null) _crossDot.color = theme.WarningColor;
-            Color darkBorder = WidgetStyleManager.Weighted(theme.FrameBgColor, LineWeight.Strong);
-            for (int i = 0; i < _crosshairOutlines.Count; i++)
+            NavballMarkerFactory.ClearCache();
+            if (_markerImages != null)
             {
-                if (_crosshairOutlines[i] != null) _crosshairOutlines[i].effectColor = darkBorder;
+                foreach (var kvp in _markerImages)
+                {
+                    if (kvp.Value != null)
+                    {
+                        kvp.Value.sprite = NavballMarkerFactory.GetMarkerSprite(kvp.Key);
+                    }
+                }
+            }
+            if (_reticleImage != null)
+            {
+                _reticleImage.sprite = NavballMarkerFactory.GetReticleSprite();
+                _reticleImage.color = WidgetStyleManager.NeutralOpaque;
             }
         }
 

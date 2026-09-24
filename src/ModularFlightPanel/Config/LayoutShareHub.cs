@@ -235,7 +235,7 @@ namespace ModularFlightPanel.Config
 
         private static WidgetLayoutData CreateBuiltInPreset(string presetName)
         {
-            WidgetLayoutData data = new WidgetLayoutData { GlobalScale = 1.0f };
+            WidgetLayoutData data = new WidgetLayoutData { GlobalScale = 1.25f };
 
             if (presetName.Contains("SpaceX") || presetName.Contains("Dragon") || presetName.Contains("龙飞船"))
             {

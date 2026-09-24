@@ -39,7 +39,7 @@ namespace ModularFlightPanel.UI
             "🛠️ 遥测装配台 (Assembler)",
             "📋 挂载清单 (Manager)",
             "🎨 视觉风格 (Themes)",
-            "🔄 预设与分享 (Share)",
+            "💾 档案与配置 (Profiles)",
             "🚀 仿真沙盒 (Sandbox)"
         };
 
@@ -288,7 +288,7 @@ namespace ModularFlightPanel.UI
                     TabThemeSettings.Draw();
                     break;
                 case 4:
-                    TabSharePresets.Draw();
+                    TabProfilesConfig.Draw();
                     break;
                 case 5:
                     TabSimulation.Draw();

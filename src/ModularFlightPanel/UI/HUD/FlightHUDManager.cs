@@ -73,12 +73,17 @@ namespace ModularFlightPanel.UI
             }
 
 #if KSP_RUNTIME
-            // 注册 KSP 原生 UI 显隐事件与 DPI 缩放事件 (支持 F2 一键隐藏 UI)
+            // 注册 KSP 原生 UI 显隐事件、DPI 缩放与活动载具切换事件 (支持 F2 一键隐藏 UI 与切船载具专属配置)
             try
             {
                 GameEvents.onHideUI.Add(OnHideUI);
                 GameEvents.onShowUI.Add(OnShowUI);
                 GameEvents.onUIScaleChange.Add(OnUIScaleChange);
+                GameEvents.onVesselChange.Add(OnVesselChange);
+                if (FlightGlobals.ActiveVessel != null)
+                {
+                    WidgetLayoutManager.Instance.OnActiveVesselChanged(FlightGlobals.ActiveVessel.vesselName);
+                }
             }
             catch { }
 #endif
@@ -459,6 +464,18 @@ namespace ModularFlightPanel.UI
             RebuildHUD();
         }
 
+#if KSP_RUNTIME
+        private void OnVesselChange(Vessel v)
+        {
+            if (v == null) return;
+            bool layoutChanged = WidgetLayoutManager.Instance.OnActiveVesselChanged(v.vesselName);
+            if (layoutChanged)
+            {
+                RebuildHUD();
+            }
+        }
+#endif
+
         public void SetVisible(bool visible)
         {
             SetUIVisible(visible);
@@ -767,6 +784,7 @@ namespace ModularFlightPanel.UI
                 GameEvents.onHideUI.Remove(OnHideUI);
                 GameEvents.onShowUI.Remove(OnShowUI);
                 GameEvents.onUIScaleChange.Remove(OnUIScaleChange);
+                GameEvents.onVesselChange.Remove(OnVesselChange);
             }
             catch { }
 #endif

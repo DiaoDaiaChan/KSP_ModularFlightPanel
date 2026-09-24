@@ -19,7 +19,6 @@ namespace ModularFlightPanel.UI.Settings
     {
         private static Vector2 _scrollPos = Vector2.zero;
         private static string _lastSpecAuditSummary = "未运行 (含源码级规范审计)";
-        private static bool _showWorkshop = false;
         private static bool _showDockSettingsFold = false;
 
         public static void Draw()
@@ -54,13 +53,6 @@ namespace ModularFlightPanel.UI.Settings
             // 模块 4: 性能探针诊断与全局主干旁路 (Profiler & Master Bypass)
             // =========================================================================
             DrawPerformanceAndSpecCard();
-
-            GUILayout.Space(6f);
-
-            // =========================================================================
-            // 模块 5: 自定义主题工坊 (Theme Workshop & Share)
-            // =========================================================================
-            DrawWorkshopCard();
 
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
@@ -364,71 +356,6 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
 
             MFPGuiSkin.EndCard();
-        }
-
-        #endregion
-
-        #region Module 5: Workshop
-
-        private static void DrawWorkshopCard()
-        {
-            MFPGuiSkin.BeginCard();
-            GUILayout.BeginHorizontal();
-            string fold = _showWorkshop ? "▼" : "▶";
-            if (GUILayout.Button($"<b>{fold} 自定义航电主题工坊 (Theme Workshop & Color Customizer)</b>", "label", GUILayout.ExpandWidth(true)))
-            {
-                _showWorkshop = !_showWorkshop;
-            }
-            MFPGuiSkin.EndCard();
-
-            if (!_showWorkshop) return;
-
-            var cur = ThemeManager.Instance.CurrentTheme;
-            if (cur == null) return;
-
-            MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🎨 主题调色板编辑 (Active Theme Palette)");
-
-            DrawColorEditorRow("主强调色 (Accent Primary)", ref cur.AccentPrimary);
-            DrawColorEditorRow("副强调色 (Accent Secondary)", ref cur.AccentSecondary);
-            DrawColorEditorRow("面板底板色 (Frame Background)", ref cur.FrameBgColor);
-            DrawColorEditorRow("面板边框色 (Frame Border)", ref cur.FrameBorderColor);
-            DrawColorEditorRow("主读数文字色 (Text Primary)", ref cur.TextPrimaryColor);
-
-            GUILayout.Space(6f);
-            if (GUILayout.Button("保存主题修改", MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(24f)))
-            {
-                ThemeManager.Instance.SaveSettings();
-                ThemeManager.Instance.NotifyThemeChanged();
-            }
-
-            MFPGuiSkin.EndCard();
-        }
-
-        private static void DrawColorEditorRow(string label, ref ColorHex ch)
-        {
-            Color c = ch.ToColor();
-            GUILayout.BeginHorizontal();
-            string hexStr = ColorUtility.ToHtmlStringRGBA(c);
-            GUILayout.Label($"<color=#{hexStr}>■</color> <b>{label}:</b>", GUILayout.Width(220f));
-
-            GUILayout.Label("R", GUILayout.Width(14f));
-            float r = GUILayout.HorizontalSlider(c.r, 0f, 1f, GUILayout.Width(55f));
-            GUILayout.Label("G", GUILayout.Width(14f));
-            float g = GUILayout.HorizontalSlider(c.g, 0f, 1f, GUILayout.Width(55f));
-            GUILayout.Label("B", GUILayout.Width(14f));
-            float b = GUILayout.HorizontalSlider(c.b, 0f, 1f, GUILayout.Width(55f));
-            GUILayout.Label("A", GUILayout.Width(14f));
-            float a = GUILayout.HorizontalSlider(c.a, 0f, 1f, GUILayout.Width(45f));
-
-            GUILayout.Label($"#{hexStr}", GUILayout.Width(75f));
-            GUILayout.EndHorizontal();
-
-            if (Mathf.Abs(r - c.r) > 0.005f || Mathf.Abs(g - c.g) > 0.005f || Mathf.Abs(b - c.b) > 0.005f || Mathf.Abs(a - c.a) > 0.005f)
-            {
-                ch = ColorHex.FromColor(new Color(r, g, b, a));
-                ThemeManager.Instance.NotifyThemeChanged();
-            }
         }
 
         #endregion

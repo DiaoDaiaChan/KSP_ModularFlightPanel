@@ -51,6 +51,7 @@ namespace ModularFlightPanel.Editor
                         if (n.Contains("orbit")) return "ORBIT";
                         if (n.Contains("target")) return "TARGET";
                         if (n.Contains("body_direction")) return "BODY_DIRECTION";
+                        if (n.Contains("body_surface")) return "BODY_SURFACE";
                         if (n.Contains("surface")) return "SURFACE";
                     }
                     return "SURFACE";

@@ -9,7 +9,7 @@ namespace ModularFlightPanel.Config
     [Serializable]
     public class WidgetLayoutData
     {
-        public float GlobalScale = 1.0f;
+        public float GlobalScale = 1.25f;
         public List<WidgetConfig> Widgets = new List<WidgetConfig>();
     }
 
@@ -20,7 +20,12 @@ namespace ModularFlightPanel.Config
 
         public WidgetLayoutData CurrentLayout { get; private set; } = new WidgetLayoutData();
 
-        private string ConfigPath => Path.Combine(AppPathHelper.RootPath, "GameData/ModularFlightPanel/PluginData/layout.json");
+        public string ConfigPath => Path.Combine(AppPathHelper.RootPath, "GameData/ModularFlightPanel/PluginData/layout.json");
+        public string BackupPath => Path.Combine(AppPathHelper.RootPath, "GameData/ModularFlightPanel/PluginData/layout.backup.json");
+        public string VesselsDir => Path.Combine(AppPathHelper.RootPath, "GameData/ModularFlightPanel/PluginData/Vessels");
+
+        public string CurrentVesselName { get; private set; } = string.Empty;
+        public bool HasBackup => File.Exists(BackupPath);
 
         public void Initialize()
         {
@@ -120,9 +125,31 @@ namespace ModularFlightPanel.Config
                 string dir = Path.GetDirectoryName(ConfigPath);
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
+                // 1. 若现有 layout.json 有效，自动克隆一份为 layout.backup.json 作为防丢失保护副本
+                if (File.Exists(ConfigPath))
+                {
+                    try
+                    {
+                        File.Copy(ConfigPath, BackupPath, true);
+                    }
+                    catch { }
+                }
+
+                // 2. 原子写入模式 (Atomic Write via .tmp)：防止并发冲突或 KSP 崩溃导致生成 0 字节损坏文件
+                string tmpPath = ConfigPath + ".tmp";
                 string json = JsonUtility.ToJson(CurrentLayout, true);
-                File.WriteAllText(ConfigPath, json);
-                MFPLogger.Info(MFPLogger.CatUI, "Saved widget layout to layout.json");
+                File.WriteAllText(tmpPath, json);
+
+                if (File.Exists(ConfigPath)) File.Delete(ConfigPath);
+                File.Move(tmpPath, ConfigPath);
+
+                // 3. 若当前载具开启了独立配置绑定，同步保存其独立文件
+                if (!string.IsNullOrEmpty(CurrentVesselName) && HasVesselProfile(CurrentVesselName))
+                {
+                    SaveVesselLayout(CurrentVesselName);
+                }
+
+                MFPLogger.Info(MFPLogger.CatUI, "Saved widget layout to layout.json (Atomic + Backup)");
             }
             catch (Exception ex)
             {
@@ -130,9 +157,209 @@ namespace ModularFlightPanel.Config
             }
         }
 
+        public bool CreateManualBackup()
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(ConfigPath);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string json = JsonUtility.ToJson(CurrentLayout, true);
+                File.WriteAllText(BackupPath, json);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Exception(MFPLogger.CatUI, ex, "Failed to create manual backup");
+                return false;
+            }
+        }
+
+        public bool ReloadFromDisk()
+        {
+            if (!File.Exists(ConfigPath)) return false;
+            try
+            {
+                string json = File.ReadAllText(ConfigPath);
+                var loaded = JsonUtility.FromJson<WidgetLayoutData>(json);
+                if (loaded != null && loaded.Widgets != null && loaded.Widgets.Count > 0)
+                {
+                    CurrentLayout = loaded;
+                    MigrateToUnifiedPfdLayout();
+                    MFPLogger.Info(MFPLogger.CatUI, "Reloaded layout from disk successfully.");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Exception(MFPLogger.CatUI, ex, "Failed to reload layout from disk");
+            }
+            return false;
+        }
+
+        public bool RestoreFromBackup()
+        {
+            if (!File.Exists(BackupPath)) return false;
+            try
+            {
+                string json = File.ReadAllText(BackupPath);
+                var loaded = JsonUtility.FromJson<WidgetLayoutData>(json);
+                if (loaded != null && loaded.Widgets != null && loaded.Widgets.Count > 0)
+                {
+                    CurrentLayout = loaded;
+                    SaveLayout();
+                    MFPLogger.Info(MFPLogger.CatUI, "Restored layout from backup successfully.");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Exception(MFPLogger.CatUI, ex, "Failed to restore layout from backup");
+            }
+            return false;
+        }
+
+        #region Per-Vessel Profile Management
+
+        public string GetVesselConfigPath(string vesselName)
+        {
+            if (string.IsNullOrEmpty(vesselName)) return string.Empty;
+            if (!Directory.Exists(VesselsDir)) Directory.CreateDirectory(VesselsDir);
+            string safeName = string.Join("_", vesselName.Split(Path.GetInvalidFileNameChars())).Trim();
+            return Path.Combine(VesselsDir, $"{safeName}.json");
+        }
+
+        public bool HasVesselProfile(string vesselName)
+        {
+            string path = GetVesselConfigPath(vesselName);
+            return !string.IsNullOrEmpty(path) && File.Exists(path);
+        }
+
+        public bool SaveVesselLayout(string vesselName)
+        {
+            if (string.IsNullOrEmpty(vesselName)) return false;
+            try
+            {
+                string path = GetVesselConfigPath(vesselName);
+                string json = JsonUtility.ToJson(CurrentLayout, true);
+                File.WriteAllText(path, json);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Exception(MFPLogger.CatUI, ex, $"Failed to save vessel layout for {vesselName}");
+                return false;
+            }
+        }
+
+        public bool LoadVesselLayout(string vesselName)
+        {
+            if (!HasVesselProfile(vesselName)) return false;
+            try
+            {
+                string path = GetVesselConfigPath(vesselName);
+                string json = File.ReadAllText(path);
+                var loaded = JsonUtility.FromJson<WidgetLayoutData>(json);
+                if (loaded != null && loaded.Widgets != null && loaded.Widgets.Count > 0)
+                {
+                    CurrentLayout = loaded;
+                    MigrateToUnifiedPfdLayout();
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Exception(MFPLogger.CatUI, ex, $"Failed to load vessel layout for {vesselName}");
+            }
+            return false;
+        }
+
+        public bool DeleteVesselProfile(string vesselName)
+        {
+            try
+            {
+                string path = GetVesselConfigPath(vesselName);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        public bool OnActiveVesselChanged(string newVesselName)
+        {
+            CurrentVesselName = newVesselName ?? string.Empty;
+            if (string.IsNullOrEmpty(CurrentVesselName)) return false;
+
+            if (HasVesselProfile(CurrentVesselName))
+            {
+                MFPLogger.Info(MFPLogger.CatUI, $"Switching to vessel '{CurrentVesselName}' dedicated layout.");
+                return LoadVesselLayout(CurrentVesselName);
+            }
+            return false;
+        }
+
+        #endregion
+
+        #region File Metadata Queries
+
+        public void GetLayoutFileInfo(out bool exists, out long size, out string lastWrite)
+        {
+            if (!File.Exists(ConfigPath))
+            {
+                exists = false;
+                size = 0;
+                lastWrite = "不存在";
+                return;
+            }
+            FileInfo fi = new FileInfo(ConfigPath);
+            exists = true;
+            size = fi.Length;
+            lastWrite = fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        public void GetBackupFileInfo(out bool exists, out long size, out string lastWrite)
+        {
+            if (!File.Exists(BackupPath))
+            {
+                exists = false;
+                size = 0;
+                lastWrite = "无备份";
+                return;
+            }
+            FileInfo fi = new FileInfo(BackupPath);
+            exists = true;
+            size = fi.Length;
+            lastWrite = fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
+        }
+
+        public string GetLayoutFileInfo()
+        {
+            GetLayoutFileInfo(out bool exists, out long size, out string lastWrite);
+            if (!exists) return "不存在 (使用内存默认)";
+            return $"大小: {size / 1024f:F1} KB | 修改: {lastWrite}";
+        }
+
+        public string GetBackupFileInfo()
+        {
+            GetBackupFileInfo(out bool exists, out long size, out string lastWrite);
+            if (!exists) return "无备份副本";
+            return $"大小: {size / 1024f:F1} KB | 修改: {lastWrite}";
+        }
+
+        public void ResetToDefault()
+        {
+            CreateDefaultLayout();
+            SaveLayout();
+        }
+
+        #endregion
+
         private void CreateDefaultLayout()
         {
-            CurrentLayout = new WidgetLayoutData { GlobalScale = 1.0f };
+            CurrentLayout = new WidgetLayoutData { GlobalScale = 1.25f };
 
             // 核心飞行仪表集群 (紧凑人体工学布局：姿态球、速度高度带、航向指示器、全新光柱油门/气压计、一体化底控与SAS控制台)
             CurrentLayout.Widgets.Add(new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, 0f));
