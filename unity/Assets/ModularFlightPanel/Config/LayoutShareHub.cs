@@ -139,6 +139,13 @@ namespace ModularFlightPanel.Config
                 IsBuiltIn = true
             });
 
+            list.Add(new PresetInfo
+            {
+                Name = "SpaceX 载人龙飞船 (SpaceX Dragon)",
+                Description = "极简全息触控座舱：顶部全景遥测横幅、中央对接与姿态准星 HUD、侧边 ECLSS 维生面板与底部药丸触控条",
+                IsBuiltIn = true
+            });
+
             // 2. 本地 Presets 目录预设
             try
             {
@@ -229,6 +236,20 @@ namespace ModularFlightPanel.Config
         {
             WidgetLayoutData data = new WidgetLayoutData { GlobalScale = 1.0f };
 
+            if (presetName.Contains("SpaceX") || presetName.Contains("Dragon") || presetName.Contains("龙飞船"))
+            {
+                // SpaceX 载人龙飞船极简全息触控座舱
+                data.Widgets.Add(new WidgetConfig("spacex.header", "SpaceX 任务阶段与遥测顶栏", 0f, 420f, 1.0f) { WidgetType = "spacex_header", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("spacex.docking", "SpaceX 对接与姿态准星 HUD", 0f, 170f, 1.0f) { WidgetType = "spacex_docking", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, -40f, 1.0f) { IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("spacex.bottom", "SpaceX 底部控制与链路栏", 0f, -150f, 1.0f) { WidgetType = "spacex_bottom", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("spacex.overview", "SpaceX 综合工况与维生监控", -460f, 120f, 1.0f) { WidgetType = "spacex_overview", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("custom.nd_navigation", "AERO ND 综合导航屏", 460f, 120f, 1.0f) { WidgetType = "nd_navigation", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("tape.speed", "PFD 速度标尺带", -220f, 40f, 1.0f) { WidgetType = "tape", NumericToken = "{SPD}", StepInterval = 10f, IsLeftOrientation = true, UnitLabel = "m/s", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("tape.altitude", "PFD 高度标尺带", 220f, 40f, 1.0f) { WidgetType = "tape", NumericToken = "{ALT}", StepInterval = 100f, IsLeftOrientation = false, UnitLabel = "m", IsEnabled = true });
+                return data;
+            }
+
             // 核心基础组件
             data.Widgets.Add(new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, 0f) { IsEnabled = true });
             data.Widgets.Add(new WidgetConfig("core.bottom_controls", "RCS与SAS底控", 0f, -78f) { IsEnabled = true });
@@ -270,6 +291,87 @@ namespace ModularFlightPanel.Config
             }
 
             return data;
+        }
+    }
+
+    /// <summary>
+    /// 航电主题色彩与 Shader 参数分享中枢 (Theme Share Hub)
+    /// 支持一键 GZip + Base64 编解码为紧凑分享码 (MFP-THEME:v1:...)
+    /// </summary>
+    public static class ThemeShareHub
+    {
+        private const string CodePrefix = "MFP-THEME:v1:";
+
+        public static string ExportShareCode(ThemeConfig theme)
+        {
+            if (theme == null) return string.Empty;
+            try
+            {
+                string json = JsonUtility.ToJson(theme);
+                byte[] rawBytes = Encoding.UTF8.GetBytes(json);
+
+                using (MemoryStream outputStream = new MemoryStream())
+                {
+                    using (GZipStream gzip = new GZipStream(outputStream, CompressionMode.Compress))
+                    {
+                        gzip.Write(rawBytes, 0, rawBytes.Length);
+                    }
+                    string base64 = Convert.ToBase64String(outputStream.ToArray());
+                    return CodePrefix + base64;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ModularFlightPanel] Failed to export theme share code: {ex.Message}");
+                return string.Empty;
+            }
+        }
+
+        public static bool TryImportShareCode(string shareCode, out ThemeConfig theme, out string error)
+        {
+            theme = null;
+            error = string.Empty;
+
+            if (string.IsNullOrEmpty(shareCode))
+            {
+                error = "主题分享码为空";
+                return false;
+            }
+
+            string clean = shareCode.Trim();
+            if (!clean.StartsWith(CodePrefix))
+            {
+                error = "无效的主题分享码格式 (必须以 MFP-THEME:v1: 开头)";
+                return false;
+            }
+
+            try
+            {
+                string base64 = clean.Substring(CodePrefix.Length);
+                byte[] compressedBytes = Convert.FromBase64String(base64);
+
+                using (MemoryStream inputStream = new MemoryStream(compressedBytes))
+                using (GZipStream gzip = new GZipStream(inputStream, CompressionMode.Decompress))
+                using (MemoryStream outputStream = new MemoryStream())
+                {
+                    gzip.CopyTo(outputStream);
+                    string json = Encoding.UTF8.GetString(outputStream.ToArray());
+                    theme = JsonUtility.FromJson<ThemeConfig>(json);
+
+                    if (theme == null || string.IsNullOrEmpty(theme.ThemeId))
+                    {
+                        error = "解析成功但未发现有效主题 ID";
+                        return false;
+                    }
+
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = $"解码失败: {ex.Message}";
+                return false;
+            }
         }
     }
 }

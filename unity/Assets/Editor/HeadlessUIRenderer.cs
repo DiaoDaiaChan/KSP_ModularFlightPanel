@@ -35,7 +35,7 @@ namespace ModularFlightPanel.Editor
             public Vector2 TextureScale => new Vector2(1f, 1f);
             public Vector2 TextureOffset => Vector2.zero;
             public Quaternion CameraRotation => Quaternion.identity;
-            public Quaternion BallRotation => _sim.AttitudeRotation;
+            public Quaternion BallRotation => Quaternion.Euler(12f, 0f, 0f);
             public Texture BallTexture => _texture;
             public string HeadingText => $"HDG {Mathf.RoundToInt(_sim.Heading) % 360:D3}°";
             public string FrameName => (_texture != null && !string.IsNullOrEmpty(_texture.name)) ? _texture.name.Replace("navball_", "").ToUpperInvariant() : "SURFACE";
@@ -145,6 +145,12 @@ namespace ModularFlightPanel.Editor
             // 解析命令行参数 (支持按组件单独隔离绘制优化与切片导出: -targetWidget <widgetId>, 蓝幕/绿幕高反差背景: -screen <blue|green|dark>)
             string targetWidgetId = null;
             string screenType = "blue"; // 默认工业级蓝幕，高反差突显半透明玻璃UI与激光矢量标度
+            string targetFrameType = "surface";
+            string targetPreset = null;
+            string targetTheme = null;
+            string targetScenario = null;
+            string artifactDir = @"C:\Users\43701\.gemini\antigravity\brain\18f4211a-21db-4b60-901c-abc74392326e";
+            string outputName = "unity_headless_render.png";
             string[] cmdArgs = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < cmdArgs.Length; i++)
             {
@@ -162,11 +168,58 @@ namespace ModularFlightPanel.Editor
                     if (rm.Contains("proc")) ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Procedural;
                     else if (rm.Contains("tex")) ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Texture;
                 }
+                if ((cmdArgs[i] == "-frame" || cmdArgs[i] == "--frame") && i + 1 < cmdArgs.Length)
+                {
+                    string f = cmdArgs[i + 1].Trim().ToLowerInvariant();
+                    targetFrameType = f;
+                }
+                if ((cmdArgs[i] == "-preset" || cmdArgs[i] == "--preset" || cmdArgs[i] == "-layout" || cmdArgs[i] == "--layout" || cmdArgs[i] == "-file" || cmdArgs[i] == "--file") && i + 1 < cmdArgs.Length)
+                {
+                    targetPreset = cmdArgs[i + 1].Trim();
+                }
+                if ((cmdArgs[i] == "-scenario" || cmdArgs[i] == "--scenario") && i + 1 < cmdArgs.Length)
+                {
+                    targetScenario = cmdArgs[i + 1].Trim().ToLowerInvariant();
+                }
+                if ((cmdArgs[i] == "-theme" || cmdArgs[i] == "--theme") && i + 1 < cmdArgs.Length)
+                {
+                    targetTheme = cmdArgs[i + 1].Trim();
+                }
+                if ((cmdArgs[i] == "-artifactDir" || cmdArgs[i] == "--artifactDir") && i + 1 < cmdArgs.Length)
+                {
+                    artifactDir = cmdArgs[i + 1].Trim();
+                }
+                if ((cmdArgs[i] == "-outputName" || cmdArgs[i] == "--outputName") && i + 1 < cmdArgs.Length)
+                {
+                    outputName = cmdArgs[i + 1].Trim();
+                }
             }
 
-            // 3. 构建高保真机载遥测物理仿真引擎 (音障爬升场景：跨音速、大推力、气动压力抬升)
+            if (!string.IsNullOrEmpty(targetTheme))
+            {
+                ThemeManager.Instance.SetTheme(targetTheme);
+                Debug.Log($"[HeadlessUIRenderer] Applied Theme: {targetTheme}");
+            }
+
+            // 3. 构建高保真机载遥测物理仿真引擎
             TelemetrySimulationEngine simEngine = new TelemetrySimulationEngine();
-            simEngine.ApplyScenario(FlightScenario.AscentTransonic);
+            bool isSpaceXMode = (!string.IsNullOrEmpty(targetScenario) && targetScenario.Contains("spacex")) ||
+                                (!string.IsNullOrEmpty(targetPreset) && targetPreset.ToLowerInvariant().Contains("spacex")) ||
+                                (!string.IsNullOrEmpty(targetWidgetId) && targetWidgetId.ToLowerInvariant().Contains("spacex"));
+
+            if (isSpaceXMode)
+            {
+                simEngine.ApplyScenario(FlightScenario.MECOAndStaging);
+                simEngine.SetFlightParameters(5642.0 / 3.6, 132000.0, 14f, 90f, 0.95f, 5, 6, 504.0);
+            }
+            else if (!string.IsNullOrEmpty(targetWidgetId) && targetWidgetId.IndexOf("maneuver", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                simEngine.ApplyScenario(FlightScenario.OrbitalCruise);
+            }
+            else
+            {
+                simEngine.ApplyScenario(FlightScenario.AscentTransonic);
+            }
             FlightTelemetryContext.Current = simEngine;
 
             // 4. 挂载真实姿态球纹理
@@ -176,11 +229,11 @@ namespace ModularFlightPanel.Editor
             {
                 byte[] imgBytes = File.ReadAllBytes(navballPath);
                 navballTex = new Texture2D(512, 256, TextureFormat.RGBA32, false);
-                navballTex.name = "navball_barycentric";
+                navballTex.name = "navball_" + targetFrameType;
                 navballTex.LoadImage(imgBytes);
-                navballTex.name = "navball_barycentric";
+                navballTex.name = "navball_" + targetFrameType;
                 navballTex.filterMode = FilterMode.Trilinear;
-                Debug.Log($"[HeadlessUIRenderer] Loaded Navball Texture from {navballPath}");
+                Debug.Log($"[HeadlessUIRenderer] Loaded Navball Texture for frame {targetFrameType}");
             }
             NavBallHookService.Provider = new HeadlessNavBallHook(navballTex, simEngine);
 
@@ -231,9 +284,45 @@ namespace ModularFlightPanel.Editor
             NavballHUD hud = hudHost.GetComponent<NavballHUD>();
             hud.Initialize(renderCam);
 
-            if (!string.IsNullOrEmpty(targetWidgetId))
+            if (!string.IsNullOrEmpty(targetPreset))
+            {
+                string presetPath = targetPreset;
+                if (!File.Exists(presetPath))
+                {
+                    string pRoot = Path.Combine(projectRoot, targetPreset);
+                    if (File.Exists(pRoot)) presetPath = pRoot;
+                    else
+                    {
+                        string p1 = Path.Combine(projectRoot, "GameData", "ModularFlightPanel", "PluginData", "Presets", targetPreset);
+                        if (File.Exists(p1)) presetPath = p1;
+                        else if (File.Exists(p1 + ".json")) presetPath = p1 + ".json";
+                    }
+                }
+
+                if (File.Exists(presetPath))
+                {
+                    string pJson = File.ReadAllText(presetPath);
+                    var layout = JsonUtility.FromJson<WidgetLayoutData>(pJson);
+                    if (layout != null && layout.Widgets != null && layout.Widgets.Count > 0)
+                    {
+                        WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = layout.GlobalScale;
+                        WidgetLayoutManager.Instance.CurrentLayout.Widgets = layout.Widgets;
+                        Debug.Log($"[HeadlessUIRenderer] Applied Preset: {presetPath} with {layout.Widgets.Count} widgets.");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[HeadlessUIRenderer] Preset not found: {targetPreset}");
+                }
+                hud.RebuildHUD();
+            }
+            else if (!string.IsNullOrEmpty(targetWidgetId))
             {
                 Debug.Log($"[HeadlessUIRenderer] >>> Isolating single widget for drawing optimization: {targetWidgetId}");
+                if (targetWidgetId.Equals("core.toolbar", StringComparison.OrdinalIgnoreCase) || targetWidgetId.Equals("toolbar", StringComparison.OrdinalIgnoreCase))
+                {
+                    ThemeManager.Instance.ToolbarStyleMode = 2;
+                }
                 EnablePreviewWidgets();
                 SetWidgetState(targetWidgetId, true, 0f, 0f);
                 foreach (var w in WidgetLayoutManager.Instance.CurrentLayout.Widgets)
@@ -258,12 +347,20 @@ namespace ModularFlightPanel.Editor
             // 7. 驱动遥测数据更新至所有小组件
             Canvas.ForceUpdateCanvases();
 
+            // 模拟高保真航电性能剖面数据 (供探针与性能面板在无头批处理下展示满幅真实读数)
+            MFPProfiler.InjectSimulatedMetrics(0.38, 0.05, 0.12, 0.17, 0.03, 0.01, 60.0f, 134.5, 12, 0);
+
             // 刷新所有小组件遥测数值与状态 (所有标准化小组件均继承 BaseFlightWidget)
             BaseFlightWidget[] widgets = UnityEngine.Object.FindObjectsOfType<BaseFlightWidget>();
             int subCanvasCount = 0;
             foreach (var w in widgets)
             {
                 w.OnUpdateTelemetry(simEngine);
+                var lateUpdate = w.GetType().GetMethod("LateUpdate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (lateUpdate != null)
+                {
+                    lateUpdate.Invoke(w, null);
+                }
                 if (w.SubCanvas != null) subCanvasCount++;
             }
             Debug.Log($"[HeadlessUIRenderer] Render Optimization Metrics: {widgets.Length} active widgets, {subCanvasCount} isolated sub-canvases.");
@@ -294,15 +391,18 @@ namespace ModularFlightPanel.Editor
             byte[] pngBytes = tex.EncodeToPNG();
 
             // 10. 保存至多处目标：GameData、Artifact 路径与 tools 目录
-            string gameDataOut = Path.Combine(projectRoot, "GameData", "ModularFlightPanel", "PluginData", "unity_headless_render.png");
-            string artifactOut = @"C:\Users\43701\.gemini\antigravity\brain\923c5033-094b-42c4-9e9a-2c6c1bc5088a\headless_preview.png";
-            string toolsOut = Path.Combine(projectRoot, "tools", "unity_headless_render.png");
+            string gameDataOut = Path.Combine(projectRoot, "GameData", "ModularFlightPanel", "PluginData", outputName);
+            string toolsOut = Path.Combine(projectRoot, "tools", outputName);
 
             SafeWriteAllBytes(gameDataOut, pngBytes);
             Debug.Log($"[HeadlessUIRenderer] Exported render to: {gameDataOut}");
 
-            SafeWriteAllBytes(artifactOut, pngBytes);
-            Debug.Log($"[HeadlessUIRenderer] Exported render to Artifact: {artifactOut}");
+            if (!string.IsNullOrEmpty(artifactDir))
+            {
+                string artifactOut = Path.Combine(artifactDir, outputName);
+                SafeWriteAllBytes(artifactOut, pngBytes);
+                Debug.Log($"[HeadlessUIRenderer] Exported render to Artifact: {artifactOut}");
+            }
 
             SafeWriteAllBytes(toolsOut, pngBytes);
 
@@ -362,13 +462,16 @@ namespace ModularFlightPanel.Editor
 
                 string safeName = targetWidgetId.Replace(".", "_");
                 string isolatedOut = Path.Combine(projectRoot, "GameData", "ModularFlightPanel", "PluginData", $"isolated_{safeName}.png");
-                string isolatedArtifact = $@"C:\Users\43701\.gemini\antigravity\brain\923c5033-094b-42c4-9e9a-2c6c1bc5088a\isolated_{safeName}.png";
                 SafeWriteAllBytes(isolatedOut, targetBytes);
-                SafeWriteAllBytes(isolatedArtifact, targetBytes);
+                if (!string.IsNullOrEmpty(artifactDir))
+                {
+                    string isolatedArtifact = Path.Combine(artifactDir, $"isolated_{safeName}.png");
+                    SafeWriteAllBytes(isolatedArtifact, targetBytes);
+                }
 
                 if (targetWidgetId.Equals("core.navball", StringComparison.OrdinalIgnoreCase))
                 {
-                    string navballPreviewArtifact = @"C:\Users\43701\.gemini\antigravity\brain\923c5033-094b-42c4-9e9a-2c6c1bc5088a\navball_preview.png";
+                    string navballPreviewArtifact = @"C:\Users\43701\.gemini\antigravity\brain\8433aea0-30e8-4e13-bc9f-7a2a96b2c85c\navball_preview.png";
                     SafeWriteAllBytes(navballPreviewArtifact, targetBytes);
                 }
                 Debug.Log($"[HeadlessUIRenderer] Exported isolated single-widget render to: {isolatedOut}");
@@ -546,6 +649,157 @@ namespace ModularFlightPanel.Editor
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(sas);
+                }
+                else if (id == "custom.b747_eicas" || id == "core.b747_eicas" || id == "b747_eicas")
+                {
+                    var eicas = new WidgetConfig("custom.b747_eicas", "波音 747 EICAS 航电组件", x, y, 1.0f)
+                    {
+                        WidgetType = "b747_eicas",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(eicas);
+                }
+                else if (id == "custom.b747_lower_eicas" || id == "core.b747_lower_eicas" || id == "b747_lower_eicas")
+                {
+                    var leicas = new WidgetConfig("custom.b747_lower_eicas", "波音 747 下部辅助发动机 EICAS", x, y, 1.0f)
+                    {
+                        WidgetType = "b747_lower_eicas",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(leicas);
+                }
+                else if (id == "custom.perf_monitor" || id == "core.performance_monitor" || id == "performance_monitor")
+                {
+                    var pm = new WidgetConfig("custom.perf_monitor", "SYS PERF 航电性能探针监控屏", x, y, 1.0f)
+                    {
+                        WidgetType = "performance_monitor",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(pm);
+                }
+                else if (id == "core.maneuver" || id == "maneuver")
+                {
+                    var mn = new WidgetConfig("core.maneuver", "AVIONICS 机动节点指示器", x, y, 1.0f)
+                    {
+                        WidgetType = "maneuver",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(mn);
+                }
+                else if (id == "custom.rocket" || id == "rocket2d" || id == "rocket")
+                {
+                    var rkt = new WidgetConfig("custom.rocket", "ROCKET 2D 分级姿态卡", x, y, 1.0f)
+                    {
+                        WidgetType = "rocket2d",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(rkt);
+                }
+                else if (id == "spacex.header" || id == "spacex_header")
+                {
+                    cfg = new WidgetConfig("spacex.header", "SpaceX 任务阶段与遥测顶栏", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_header",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.docking" || id == "spacex_docking")
+                {
+                    cfg = new WidgetConfig("spacex.docking", "SpaceX 对接与姿态准星 HUD", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_docking",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.overview" || id == "spacex_overview")
+                {
+                    cfg = new WidgetConfig("spacex.overview", "SpaceX 综合工况与维生监控", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_overview",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.bottom" || id == "spacex_bottom")
+                {
+                    cfg = new WidgetConfig("spacex.bottom", "SpaceX 底部控制与链路栏", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_bottom",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.speed" || id == "spacex_speed")
+                {
+                    cfg = new WidgetConfig("spacex.speed", "SPEED", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_arc",
+                        NumericToken = "{SPD:SURF:KMH}",
+                        MinValue = 0,
+                        MaxValue = 28000,
+                        CautionThreshold = 22000,
+                        WarningThreshold = 27000,
+                        LimitMode = "soft",
+                        UnitLabel = "KM/H",
+                        ValueDeltaThreshold = 0.05,
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.altitude" || id == "spacex_altitude")
+                {
+                    cfg = new WidgetConfig("spacex.altitude", "ALTITUDE", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_arc",
+                        NumericToken = "{ALT:ASL:KM}",
+                        MinValue = 0,
+                        MaxValue = 250,
+                        CautionThreshold = 180,
+                        WarningThreshold = 240,
+                        LimitMode = "soft",
+                        UnitLabel = "KM",
+                        ValueDeltaThreshold = 0.05,
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.arc" || id == "spacex_arc")
+                {
+                    cfg = new WidgetConfig("spacex.arc", "SpaceX 速度与高度双弧线仪", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_arc",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.attitude" || id == "spacex_attitude")
+                {
+                    cfg = new WidgetConfig("spacex.attitude", "SpaceX 极简水平仪姿态视窗", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_attitude",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.engine" || id == "spacex_engine" || id == "spacex.engines" || id == "spacex_engines")
+                {
+                    cfg = new WidgetConfig("spacex.engines", "SpaceX 引擎阵列工况矩阵", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_engines",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "spacex.timeline" || id == "spacex_timeline")
+                {
+                    cfg = new WidgetConfig("spacex.timeline", "SpaceX 时序飞行时间轴", x, y, 1.0f)
+                    {
+                        WidgetType = "spacex_timeline",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
                 }
             }
         }

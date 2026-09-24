@@ -1,0 +1,72 @@
+{
+  "GlobalScale": 1.0,
+  "Widgets": [
+    {
+      "WidgetId": "spacex.speed",
+      "DisplayName": "SPEED",
+      "IsEnabled": true,
+      "PositionX": -500,
+      "PositionY": -160,
+      "Scale": 1,
+      "WidgetType": "spacex_arc",
+      "NumericToken": "{SPD:SURF:KMH}",
+      "MinValue": 0,
+      "MaxValue": 28000,
+      "CautionThreshold": 22000,
+      "WarningThreshold": 27000,
+      "LimitMode": "soft",
+      "UnitLabel": "KM/H",
+      "ValueDeltaThreshold": 0.05
+    },
+    {
+      "WidgetId": "spacex.altitude",
+      "DisplayName": "ALTITUDE",
+      "IsEnabled": true,
+      "PositionX": -380,
+      "PositionY": -160,
+      "Scale": 1,
+      "WidgetType": "spacex_arc",
+      "NumericToken": "{ALT:ASL:KM}",
+      "MinValue": 0,
+      "MaxValue": 250,
+      "CautionThreshold": 180,
+      "WarningThreshold": 240,
+      "LimitMode": "soft",
+      "UnitLabel": "KM",
+      "ValueDeltaThreshold": 0.05
+    },
+    {
+      "WidgetId": "spacex.timeline",
+      "DisplayName": "STARSHIP FLIGHT TEST",
+      "IsEnabled": true,
+      "PositionX": -40,
+      "PositionY": -160,
+      "Scale": 1,
+      "WidgetType": "spacex_timeline",
+      "NumericToken": "{MET:COMPACT}",
+      "ValueDeltaThreshold": 0.05
+    },
+    {
+      "WidgetId": "spacex.attitude",
+      "DisplayName": "ATTITUDE",
+      "IsEnabled": true,
+      "PositionX": 280,
+      "PositionY": -160,
+      "Scale": 1,
+      "WidgetType": "spacex_attitude",
+      "NumericToken": "{HDG:D3}",
+      "ValueDeltaThreshold": 0.05
+    },
+    {
+      "WidgetId": "spacex.engines",
+      "DisplayName": "ENGINES",
+      "IsEnabled": true,
+      "PositionX": 390,
+      "PositionY": -160,
+      "Scale": 1,
+      "WidgetType": "spacex_engines",
+      "NumericToken": "{ENG}",
+      "ValueDeltaThreshold": 0.05
+    }
+  ]
+}

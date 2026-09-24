@@ -73,6 +73,12 @@ namespace ModularFlightPanel.UI.Settings
             {
                 GUILayout.Label("<b>▼ 航电子系统原生组件 (Avionics Subsystems)</b>");
 
+                DrawSubsystemPreset("B747 EICAS 发动机与机组告警显示", "custom.b747_eicas", "b747_eicas", -440f, 160f,
+                    "✈️ 经典波音 747 四发主发动机 CRT：EPR/N1/EGT 四发柱状表、数字框显、TAT/推力模式、起落架与客舱/燃油状态");
+
+                DrawSubsystemPreset("B747 下部辅助发动机 EICAS", "custom.b747_lower_eicas", "b747_lower_eicas", -440f, -120f,
+                    "✈️ 经典波音 747 四发下部系统 CRT：N2/N3 转速表条、燃油流量 FF、滑油压力/温度双轴游标表、滑油量与震动监控");
+
                 DrawSubsystemPreset("ELEC 电力分配系统", "custom.electrical", "electrical", -440f, 160f,
                     "⚡ 蓄电池电压、DC ESS 总线负荷、太阳能帆板与即时净充放电率 (EC/s)");
 
@@ -87,6 +93,24 @@ namespace ModularFlightPanel.UI.Settings
 
                 DrawSubsystemPreset("AERO ND 综合导航屏", "custom.nd_navigation", "nd_navigation", -440f, 25f,
                     "🧭 飞机航电综合水平态势显示器 (Set 1)，包含罗盘弧、测距环、飞机微标与航点航路");
+
+                DrawSubsystemPreset("MANEUVER 机动节点指示器", "core.maneuver", "maneuver", 440f, 160f,
+                    "🎯 实时机动节点指示器：剩余 Delta-V 进度条、节点倒计时、燃烧时长预估、点火倒计时与一键时间加速/删除");
+
+                DrawSubsystemPreset("SPACEX 载人龙飞船任务遥测顶栏", "spacex.header", "spacex_header", 0f, 420f,
+                    "🐉 SpaceX Crew Dragon 顶部贯通式航电状态栏：主动飞行阶段胶囊徽章、倒计时与 5 组高对比度轨道数显列");
+
+                DrawSubsystemPreset("SPACEX 对接与姿态准星 HUD", "spacex.docking", "spacex_docking", 0f, 170f,
+                    "🎯 SpaceX ISS 空间站对接瞄准器：同心双环准星、3 轴姿态偏差角与角速度、测距接近率与 RCS 喷管脉冲点亮");
+
+                DrawSubsystemPreset("SPACEX 综合工况与 ECLSS 面板", "spacex.overview", "spacex_overview", -460f, 120f,
+                    "🌱 飞船综合工况与维生监控：客舱压力、氧分压、客舱温度、电网功率与气闸/推进剂/热控/对接口状态矩阵");
+
+                DrawSubsystemPreset("SPACEX 底部控制与链路栏", "spacex.bottom", "spacex_bottom", 0f, -150f,
+                    "🎮 SpaceX 底部药丸触控条：RCS/SAS/参考系/精细控制开关、指向模式与 SPX GND/TDRS/ISS 通信链路矩阵");
+
+                DrawSubsystemPreset("SYS PERF 航电性能探针监控屏", "custom.perf_monitor", "performance_monitor", 440f, -40f,
+                    "⚡ 实时监控 MFP 遥测、外部探针、组件渲染、飞船剪影耗时与物理帧率 FPS，支持一键主干旁路 (Master Bypass)");
 
                 GUILayout.Space(10f);
             }

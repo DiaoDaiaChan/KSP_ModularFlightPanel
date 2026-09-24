@@ -82,8 +82,81 @@ namespace ModularFlightPanel.Core
         public static double AvgSilhouetteMs { get; private set; }
         public static double AvgHooksMs { get; private set; }
 
+        public static double TelemetryPercent => AvgTotalMs > 0.0001 ? (AvgTelemetryMs / AvgTotalMs) * 100.0 : 0.0;
+        public static double ProbesPercent => AvgTotalMs > 0.0001 ? (AvgProbesMs / AvgTotalMs) * 100.0 : 0.0;
+        public static double WidgetsPercent => AvgTotalMs > 0.0001 ? (AvgWidgetsMs / AvgTotalMs) * 100.0 : 0.0;
+        public static double SilhouettePercent => AvgTotalMs > 0.0001 ? (AvgSilhouetteMs / AvgTotalMs) * 100.0 : 0.0;
+        public static double HooksPercent => AvgTotalMs > 0.0001 ? (AvgHooksMs / AvgTotalMs) * 100.0 : 0.0;
+
         public static float CurrentFPS { get; private set; }
         public static double FrameBudgetPercent { get; private set; } // MFP 占整帧渲染周期的百分比
+        public static double UnityFrameTimeMs { get; private set; }
+        public static int SpikeCount { get; private set; }
+
+        // 内存与垃圾回收遥测
+        public static double TotalMemoryMB { get; private set; }
+        public static int Gc0Collections { get; private set; }
+        public static int Gc1Collections { get; private set; }
+        public static int Gc2Collections { get; private set; }
+
+        // 组件级负载监测 (Top Offending Widget)
+        public static int ActiveWidgetCount { get; set; }
+        public static string TopOffenderWidgetId { get; private set; } = "---";
+        public static double TopOffenderWidgetMs { get; private set; }
+
+        private static readonly Dictionary<string, long> _widgetStartTicks = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        private static string _currentFrameTopWidgetId = "---";
+        private static double _currentFrameTopWidgetMs = 0.0;
+
+        public static void BeginWidgetSample(string widgetId)
+        {
+            if (_isMasterBypassed || string.IsNullOrEmpty(widgetId)) return;
+            _widgetStartTicks[widgetId] = Stopwatch.GetTimestamp();
+        }
+
+        public static void EndWidgetSample(string widgetId)
+        {
+            if (_isMasterBypassed || string.IsNullOrEmpty(widgetId)) return;
+            if (_widgetStartTicks.TryGetValue(widgetId, out long startTick))
+            {
+                long elapsedTicks = Stopwatch.GetTimestamp() - startTick;
+                if (elapsedTicks > 0)
+                {
+                    double ms = elapsedTicks * TicksToMs;
+                    if (ms > _currentFrameTopWidgetMs)
+                    {
+                        _currentFrameTopWidgetMs = ms;
+                        _currentFrameTopWidgetId = widgetId;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 模拟/测试模式数据注入接口 (供无头渲染、自动化单元测试与装配台实时演示使用)
+        /// </summary>
+        public static void InjectSimulatedMetrics(double totalMs, double telemMs, double probesMs, double widgetsMs,
+            double silMs, double hooksMs, float fps, double memMb, int gc0, int spikes)
+        {
+            AvgTotalMs = totalMs;
+            LastTotalMs = totalMs;
+            MinTotalMs = totalMs * 0.85;
+            MaxTotalMs = totalMs * 1.45;
+
+            AvgTelemetryMs = telemMs;
+            AvgProbesMs = probesMs;
+            AvgWidgetsMs = widgetsMs;
+            AvgSilhouetteMs = silMs;
+            AvgHooksMs = hooksMs;
+
+            CurrentFPS = fps;
+            UnityFrameTimeMs = fps > 0f ? (1000.0 / fps) : 16.6667;
+            FrameBudgetPercent = UnityFrameTimeMs > 0.001 ? (totalMs / UnityFrameTimeMs) * 100.0 : 0.0;
+
+            TotalMemoryMB = memMb;
+            Gc0Collections = gc0;
+            SpikeCount = spikes;
+        }
 
         // ------------------ Overlay 绘制控制 ------------------
         public static bool ShowOverlay { get; set; } = false;
@@ -113,17 +186,31 @@ namespace ModularFlightPanel.Core
 
         public static void BeginFrame()
         {
-            for (int i = 0; i < _timings.Length; i++)
-            {
-                _timings[i].AccumulatedMs = 0.0;
-                _timings[i].CurrentFrameMs = 0.0;
-            }
             BeginSample(ProfilerSection.TotalMFP);
         }
 
         public static void EndFrame()
         {
             EndSample(ProfilerSection.TotalMFP);
+
+            // 采样宿主内存与 GC 频率
+            try
+            {
+                TotalMemoryMB = GC.GetTotalMemory(false) / (1024.0 * 1024.0);
+                Gc0Collections = GC.CollectionCount(0);
+                Gc1Collections = GC.CollectionCount(1);
+                Gc2Collections = GC.CollectionCount(2);
+            }
+            catch { }
+
+            TopOffenderWidgetId = _currentFrameTopWidgetId;
+            TopOffenderWidgetMs = _currentFrameTopWidgetMs;
+            _currentFrameTopWidgetId = "---";
+            _currentFrameTopWidgetMs = 0.0;
+
+            float dt = Time.unscaledDeltaTime;
+            UnityFrameTimeMs = dt * 1000.0;
+            CurrentFPS = dt > 0.0001f ? 1.0f / dt : 0f;
 
             if (_isMasterBypassed)
             {
@@ -135,7 +222,7 @@ namespace ModularFlightPanel.Core
                 AvgSilhouetteMs = 0.0;
                 AvgHooksMs = 0.0;
                 FrameBudgetPercent = 0.0;
-                CurrentFPS = Time.unscaledDeltaTime > 0.0001f ? 1.0f / Time.unscaledDeltaTime : 0f;
+                SpikeCount = 0;
                 return;
             }
 
@@ -156,6 +243,7 @@ namespace ModularFlightPanel.Core
             double sumTotal = 0, sumTelem = 0, sumProbes = 0, sumWidgets = 0, sumSil = 0, sumHooks = 0;
             double min = double.MaxValue;
             double max = double.MinValue;
+            int spikes = 0;
 
             for (int i = 0; i < _historyCount; i++)
             {
@@ -169,11 +257,14 @@ namespace ModularFlightPanel.Core
                 sumWidgets += _historyWidgetsMs[i];
                 sumSil += _historySilhouetteMs[i];
                 sumHooks += _historyHooksMs[i];
+
+                if (v > 16.6667) spikes++;
             }
 
             AvgTotalMs = sumTotal / _historyCount;
             MinTotalMs = min;
             MaxTotalMs = max;
+            SpikeCount = spikes;
 
             AvgTelemetryMs = sumTelem / _historyCount;
             AvgProbesMs = sumProbes / _historyCount;
@@ -181,10 +272,14 @@ namespace ModularFlightPanel.Core
             AvgSilhouetteMs = sumSil / _historyCount;
             AvgHooksMs = sumHooks / _historyCount;
 
-            float dt = Time.unscaledDeltaTime;
-            CurrentFPS = dt > 0.0001f ? 1.0f / dt : 0f;
-            double totalFrameTimeMs = dt * 1000.0;
-            FrameBudgetPercent = totalFrameTimeMs > 0.001 ? (AvgTotalMs / totalFrameTimeMs) * 100.0 : 0.0;
+            FrameBudgetPercent = UnityFrameTimeMs > 0.001 ? (AvgTotalMs / UnityFrameTimeMs) * 100.0 : 0.0;
+
+            // 采样统计结束后，重置累加器以供下一帧采样（确保 TelemetryHub 等先于 HUD 执行的脚本时间被完整计入，杜绝清零丢失）
+            for (int i = 0; i < _timings.Length; i++)
+            {
+                _timings[i].AccumulatedMs = 0.0;
+                _timings[i].CurrentFrameMs = 0.0;
+            }
         }
 
         /// <summary>

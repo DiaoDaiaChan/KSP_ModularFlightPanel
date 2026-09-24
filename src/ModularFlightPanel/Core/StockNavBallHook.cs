@@ -21,6 +21,8 @@ namespace ModularFlightPanel.Core
     {
         static StockNavBallHook()
         {
+            NavBallHookService.Provider = new StockNavBallVisualHook();
+            NavBallHookService.MarkerDirectionFallback = GetMarkerDirection;
             NavBallHookService.HideStockNavballAction = HideStockNavballCompletely;
             NavBallHookService.HideStockAltimeterAction = HideStockAltimeter;
             NavBallHookService.HideStockBottomLeftAction = HideStockBottomLeft;
@@ -40,26 +42,32 @@ namespace ModularFlightPanel.Core
         }
 
         private static NavBall _stockInstance;
+        private static float _lastNavBallSearchTime = -10f;
         public static NavBall StockInstance
         {
             get
             {
                 if (_stockInstance == null)
                 {
-                    if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+                    float now = Time.unscaledTime;
+                    if (now - _lastNavBallSearchTime > 3.0f)
                     {
-                        var nb = FlightUIModeController.Instance.navBall.GetComponentInChildren<NavBall>(true);
-                        if (nb != null)
+                        _lastNavBallSearchTime = now;
+                        if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
                         {
-                            RegisterStockNavBall(nb);
+                            var nb = FlightUIModeController.Instance.navBall.GetComponentInChildren<NavBall>(true);
+                            if (nb != null)
+                            {
+                                RegisterStockNavBall(nb);
+                            }
                         }
-                    }
-                    if (_stockInstance == null)
-                    {
-                        var found = UnityEngine.Object.FindObjectOfType<NavBall>();
-                        if (found != null)
+                        if (_stockInstance == null)
                         {
-                            RegisterStockNavBall(found);
+                            var found = UnityEngine.Object.FindObjectOfType<NavBall>();
+                            if (found != null)
+                            {
+                                RegisterStockNavBall(found);
+                            }
                         }
                     }
                 }
@@ -107,7 +115,7 @@ namespace ModularFlightPanel.Core
         /// </summary>
         public static Quaternion GetRotation()
         {
-            if (HasStockNavBall && StockInstance.gameObject.activeInHierarchy)
+            if (HasStockNavBall && StockInstance.navBall != null)
             {
                 // Principia 每帧将解算姿态写入 navBall.rotation (World Rotation)
                 // 原版 KSP 亦通过世界坐标驱动姿态球网格
@@ -194,30 +202,38 @@ namespace ModularFlightPanel.Core
 
         /// <summary>
         /// 获取官方/Principia 矢量标线 (Prograde, Retrograde, Normal, Target, Maneuver 等) 的前向视口单位方向与可见性
-        /// 双重保障：优先官方活跃 GameObject，一旦原版隐藏/折叠/停用立即无缝启用数学解耦解算
+        /// 权威直驱：优先读取 Stock/Principia 满帧更新的 Marker Transform HUD 坐标；当原版不存在时启用开普勒数学兜底
         /// </summary>
         public static bool GetMarkerDirection(string markerKey, out Vector3 dir, out bool isVisible)
         {
             dir = Vector3.forward;
             isVisible = false;
 
-            // 1. 优先尝试直接从原版活跃的 Marker Transform 获取 (仅当原版处于激活状态时)
-            if (HasStockNavBall && StockInstance.gameObject.activeInHierarchy)
+            // 1. 优先尝试直接从原版/Principia 解算的 Marker Transform 获取
+            if (HasStockNavBall && StockInstance != null)
             {
                 Transform marker = GetMarkerTransformByKey(markerKey);
-                if (marker != null && marker.gameObject.activeSelf)
+                if (marker != null)
                 {
-                    Vector3 localPos = marker.localPosition;
-                    if (localPos.sqrMagnitude > 0.0001f)
+                    if (IsMarkerLogicallyActive(markerKey, marker))
                     {
-                        // KSP 原版 NavBall 内部 3D 模型存在 90 度旋转基准偏移 (rotationOffset = (90, 0, 0)):
-                        // localPos.x -> HUD X (水平偏航左右，右为正)
-                        // localPos.z -> HUD Y (垂直俯仰上下，上为正)
-                        // -localPos.y -> HUD Z (视口前向深度，>0 位于可见前半球面对玩家)
-                        Vector3 hudDir = new Vector3(localPos.x, localPos.z, -localPos.y).normalized;
-                        float cutoff = StockInstance.VectorUnitCutoff != 0f ? StockInstance.VectorUnitCutoff : 0.022f;
-                        isVisible = (hudDir.z > cutoff);
-                        dir = hudDir;
+                        Vector3 localPos = marker.localPosition;
+                        if (localPos.sqrMagnitude > 0.0001f)
+                        {
+                            // 原版与 Principia 已将矢量投影为 HUD 坐标:
+                            // localPos.x -> 水平 (右为正)
+                            // localPos.y -> 垂直 (上为正)
+                            // localPos.z -> 视口深度 (> cutoff 可见)
+                            Vector3 hudDir = localPos.normalized;
+                            float cutoff = StockInstance.VectorUnitCutoff != 0f ? StockInstance.VectorUnitCutoff : 0.022f;
+                            isVisible = (hudDir.z > cutoff);
+                            dir = hudDir;
+                            return true;
+                        }
+                    }
+                    else
+                    {
+                        isVisible = false;
                         return true;
                     }
                 }
@@ -225,6 +241,50 @@ namespace ModularFlightPanel.Core
 
             // 2. 权威解耦数学模型兜底解算 (Bulletproof Math Fallback)
             return CalculateMarkerDirectionMath(markerKey, out dir, out isVisible);
+        }
+
+        private static bool IsMarkerLogicallyActive(string markerKey, Transform marker)
+        {
+            if (marker == null) return false;
+
+            string key = markerKey.ToLowerInvariant();
+            switch (key)
+            {
+                case "prograde":
+                case "retrograde":
+                {
+                    Vessel v = FlightGlobals.ActiveVessel;
+                    if (v != null && v.srf_velocity.sqrMagnitude < 0.01 && v.obt_velocity.sqrMagnitude < 0.01)
+                        return false;
+                    return true;
+                }
+
+                case "normal":
+                case "antinormal":
+                case "radialin":
+                case "radialout":
+                {
+                    if (PrincipiaProbe.IsAvailable) return true;
+                    return FlightGlobals.speedDisplayMode == FlightGlobals.SpeedDisplayModes.Orbit;
+                }
+
+                case "target":
+                case "antitarget":
+                {
+                    return FlightGlobals.fetch != null && FlightGlobals.fetch.VesselTarget != null;
+                }
+
+                case "maneuver":
+                {
+                    Vessel v = FlightGlobals.ActiveVessel;
+                    if (v != null && v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
+                        return true;
+                    return marker.gameObject.activeSelf;
+                }
+
+                default:
+                    return marker.gameObject.activeSelf;
+            }
         }
 
         private static Transform GetMarkerTransformByKey(string markerKey)
@@ -330,7 +390,7 @@ namespace ModularFlightPanel.Core
                             if (rad.sqrMagnitude > 0.0001)
                             {
                                 Vector3 r = (Vector3)rad.normalized;
-                                worldVec = (key == "radialin") ? r : -r;
+                                worldVec = (key == "radialout") ? r : -r;
                                 hasValidVector = true;
                             }
                         }
@@ -364,7 +424,7 @@ namespace ModularFlightPanel.Core
                         var node = vessel.patchedConicSolver.maneuverNodes[0];
                         if (node != null)
                         {
-                            Vector3 burnVec = (Vector3)node.GetBurnVector(vessel.orbit);
+                            Vector3 burnVec = (Vector3)node.GetBurnVector(node.patch ?? vessel.orbit);
                             if (burnVec.sqrMagnitude > 0.001f)
                             {
                                 worldVec = burnVec.normalized;
@@ -378,13 +438,22 @@ namespace ModularFlightPanel.Core
 
             if (!hasValidVector) return false;
 
-            // 将世界坐标矢量精确投影至载具基准座舱坐标系 (Cockpit HUD Space):
-            // refTransform.right -> HUD X (水平左右，右正)
-            // refTransform.up    -> HUD Y (垂直俯仰，上正)
-            // refTransform.forward -> HUD Z (视口前向深度，>0 位于可见前半球面对玩家)
-            Vector3 bodyVec = refTransform.InverseTransformDirection(worldVec);
-            dir = bodyVec.normalized;
-            isVisible = (dir.z > 0.022f);
+            // 获取或构造官方姿态投影四元数 attitudeGymbal (与原版 NavBall.Update 严格对齐)
+            Quaternion attitudeGymbal;
+            if (HasStockNavBall && StockInstance != null)
+            {
+                attitudeGymbal = StockInstance.attitudeGymbal;
+            }
+            else
+            {
+                attitudeGymbal = Quaternion.Euler(90f, 0f, 0f) * Quaternion.Inverse(refTransform.rotation);
+            }
+
+            Vector3 screenVec = attitudeGymbal * worldVec;
+            // 对齐 UGUI 屏幕坐标 (+y 为上)
+            dir = new Vector3(screenVec.x, screenVec.y, screenVec.z).normalized;
+            float cutoff = (HasStockNavBall && StockInstance.VectorUnitCutoff != 0f) ? StockInstance.VectorUnitCutoff : 0.022f;
+            isVisible = (dir.z > cutoff);
             return true;
         }
 
@@ -432,13 +501,40 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        private static float _lastBurnVectorSearchTime = -10f;
+
         private static Transform GetManeuverTransform()
         {
             if (_cachedManeuverTransform != null) return _cachedManeuverTransform;
+
+            // 1. O(1) 权威机动节点状态预检：若当前载具没有生效中的机动节点，直接返回 null，杜绝场景遍历
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null || v.patchedConicSolver == null || v.patchedConicSolver.maneuverNodes == null || v.patchedConicSolver.maneuverNodes.Count == 0)
+            {
+                return null;
+            }
+
+            // 2. 若有节点，优先在 StockInstance 局部层级中查找，避免全场景扫描
+            if (_cachedBurnVector == null && StockInstance != null)
+            {
+                var parent = StockInstance.transform.parent;
+                if (parent != null)
+                {
+                    _cachedBurnVector = parent.GetComponentInChildren<NavBallBurnVector>(true);
+                }
+            }
+
+            // 3. 严格防抖限频的全场景保底查找（最多每 5 秒一次）
             if (_cachedBurnVector == null)
             {
-                _cachedBurnVector = UnityEngine.Object.FindObjectOfType<NavBallBurnVector>();
+                float now = Time.unscaledTime;
+                if (now - _lastBurnVectorSearchTime > 5.0f)
+                {
+                    _lastBurnVectorSearchTime = now;
+                    _cachedBurnVector = UnityEngine.Object.FindObjectOfType<NavBallBurnVector>();
+                }
             }
+
             if (_cachedBurnVector != null)
             {
                 _cachedManeuverTransform = _cachedBurnVector.vectorProgr;
@@ -467,6 +563,16 @@ namespace ModularFlightPanel.Core
                 case FlightGlobals.SpeedDisplayModes.Target: return "TARGET";
                 default: return "ORBIT";
             }
+        }
+
+        private static Texture _lastSampledTexture = null;
+        private static string _cachedPixelFingerprintCategory = null;
+
+        private static string CacheAndReturn(Texture tex, string category)
+        {
+            _lastSampledTexture = tex;
+            _cachedPixelFingerprintCategory = category;
+            return category;
         }
 
         /// <summary>
@@ -504,17 +610,22 @@ namespace ModularFlightPanel.Core
             Texture tex = GetTexture();
             if (tex != null)
             {
+                if (tex == _lastSampledTexture && !string.IsNullOrEmpty(_cachedPixelFingerprintCategory))
+                {
+                    return _cachedPixelFingerprintCategory;
+                }
+
                 string tName = tex.name;
                 if (!string.IsNullOrEmpty(tName))
                 {
-                    if (tName.IndexOf("inertial", StringComparison.OrdinalIgnoreCase) >= 0) return "INERTIAL";
-                    if (tName.IndexOf("barycentric", StringComparison.OrdinalIgnoreCase) >= 0) return "BARYCENTRIC";
-                    if (tName.IndexOf("target", StringComparison.OrdinalIgnoreCase) >= 0) return "TARGET";
-                    if (tName.IndexOf("body_direction", StringComparison.OrdinalIgnoreCase) >= 0) return "BODY_DIRECTION";
-                    if (tName.IndexOf("surface", StringComparison.OrdinalIgnoreCase) >= 0) return "SURFACE";
+                    if (tName.IndexOf("inertial", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "INERTIAL");
+                    if (tName.IndexOf("barycentric", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BARYCENTRIC");
+                    if (tName.IndexOf("target", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "TARGET");
+                    if (tName.IndexOf("body_direction", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BODY_DIRECTION");
+                    if (tName.IndexOf("surface", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("navball", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "SURFACE");
                 }
 
-                if (tex is Texture2D t2d)
+                if (tex is Texture2D t2d && t2d.isReadable)
                 {
                     try
                     {
@@ -523,23 +634,23 @@ namespace ModularFlightPanel.Core
                         Color south = t2d.GetPixelBilinear(0.5f, 0.25f);
 
                         // Barycentric: 显著紫/品红 (R > 0.40, B > 0.40, G < 0.35)
-                        if (north.r > 0.40f && north.b > 0.40f && north.g < 0.35f) return "BARYCENTRIC";
+                        if (north.r > 0.40f && north.b > 0.40f && north.g < 0.35f) return CacheAndReturn(tex, "BARYCENTRIC");
 
                         // Inertial: 灰天黑地 (R ≈ G ≈ B, south 极暗)
                         if (Mathf.Abs(north.r - north.g) < 0.08f && Mathf.Abs(north.g - north.b) < 0.08f && south.r < 0.15f && south.g < 0.15f && south.b < 0.15f)
-                            return "INERTIAL";
+                            return CacheAndReturn(tex, "INERTIAL");
 
                         // Target: 玫瑰粉天红地 (R > 0.55, R > B + 0.15)
                         if (north.r > 0.55f && north.r > north.b + 0.15f && north.g > 0.30f)
-                            return "TARGET";
+                            return CacheAndReturn(tex, "TARGET");
 
                         // Body Direction: 暖沙黄/琥珀色 (R > 0.55, G > 0.38, B < 0.35)
                         if (north.r > 0.55f && north.g > 0.38f && north.b < 0.35f)
-                            return "BODY_DIRECTION";
+                            return CacheAndReturn(tex, "BODY_DIRECTION");
 
                         // Surface: 蓝天棕地 (B > R + 0.15)
                         if (north.b > north.r + 0.15f)
-                            return "SURFACE";
+                            return CacheAndReturn(tex, "SURFACE");
                     }
                     catch { }
                 }
@@ -736,7 +847,8 @@ namespace ModularFlightPanel.Core
             }
         }
 
-        private static KSP.UI.Screens.Flight.METDisplay _cachedMETDisplay;
+        private static KSP.UI.Screens.Flight.METDisplay _cachedMETDisplay = null;
+        private static float _lastMETSearchTime = -10f;
 
         /// <summary>
         /// 彻底隐藏/打开官方左上角时间加速面板与 MET 任务时钟，同时保障物理时钟与时间加速内部逻辑正常运转
@@ -750,8 +862,9 @@ namespace ModularFlightPanel.Core
                     ApplyCanvasGroup(FlightUIModeController.Instance.timeFrame.gameObject, hide);
                 }
 
-                if (_cachedMETDisplay == null)
+                if (_cachedMETDisplay == null && Time.unscaledTime - _lastMETSearchTime > 5.0f)
                 {
+                    _lastMETSearchTime = Time.unscaledTime;
                     _cachedMETDisplay = UnityEngine.Object.FindObjectOfType<KSP.UI.Screens.Flight.METDisplay>();
                 }
                 if (_cachedMETDisplay != null && _cachedMETDisplay.transform.parent != null)
@@ -802,23 +915,14 @@ namespace ModularFlightPanel.Core
                     ApplyCanvasGroup(StockInstance.gameObject, hide);
                 }
 
-                // 2. 原版 NavBallToggle 折叠面板联动 (收起原生托盘，双重保障物理视口零遮挡)
+                // 2. 原版 NavBallToggle 联动 (确保原生面板处于展开运转状态，通过 CanvasGroup 和 Renderer 达到 100% 视觉隐形)
                 if (KSP.UI.Screens.Flight.NavBallToggle.Instance != null && KSP.UI.Screens.Flight.NavBallToggle.Instance.panel != null)
                 {
                     var panel = KSP.UI.Screens.Flight.NavBallToggle.Instance.panel;
-                    if (hide)
+                    // 若原版处于折叠状态，则展开它以保证 Update/LateUpdate 满频执行；由于已设置 alpha=0 且 renderers.enabled=false，在视觉上 100% 隐形
+                    if (panel.collapsed)
                     {
-                        if (panel.expanded)
-                        {
-                            panel.CollapseImmediate();
-                        }
-                    }
-                    else
-                    {
-                        if (panel.collapsed)
-                        {
-                            panel.ExpandImmediate();
-                        }
+                        panel.ExpandImmediate();
                     }
                 }
 
@@ -871,10 +975,22 @@ namespace ModularFlightPanel.Core
                     SafeAddRenderersFromTransform(StockInstance.retrogradeWaypoint, _cachedAllStockRenderers);
                     SafeAddRenderersFromTransform(StockInstance.target, _cachedAllStockRenderers);
 
-                    // D. 机动节点烧蚀矢量物体
+                    // D. 机动节点烧蚀矢量物体 (仅当载具确有生效机动节点时才查找，绝不盲目扫描场景)
                     if (_cachedBurnVector == null)
                     {
-                        _cachedBurnVector = UnityEngine.Object.FindObjectOfType<NavBallBurnVector>();
+                        Vessel v = FlightGlobals.ActiveVessel;
+                        if (v != null && v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
+                        {
+                            if (StockInstance != null && StockInstance.transform.parent != null)
+                            {
+                                _cachedBurnVector = StockInstance.transform.parent.GetComponentInChildren<NavBallBurnVector>(true);
+                            }
+                            if (_cachedBurnVector == null && Time.unscaledTime - _lastBurnVectorSearchTime > 5.0f)
+                            {
+                                _lastBurnVectorSearchTime = Time.unscaledTime;
+                                _cachedBurnVector = UnityEngine.Object.FindObjectOfType<NavBallBurnVector>();
+                            }
+                        }
                     }
                     if (_cachedBurnVector != null)
                     {

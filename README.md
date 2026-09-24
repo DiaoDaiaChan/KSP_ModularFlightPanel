@@ -26,6 +26,7 @@ Modular Flight Panel 彻底抛弃了将各个表盘“静态焊死在同一块�
 - **万物皆组件 (Everything is a Widget)**：中心 3D 姿态球、弧形油门表、速度盒、高度盒、SAS 罗盘，乃至用户自己新建的文本卡片，全部继承自统一抽象基类 [`BaseFlightWidget`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/BaseFlightWidget.cs)。
 - **所见即所得自由拖拽**：在飞行中按 `Alt+N` 点击“开启自由拖拽模式”，即可用鼠标在屏幕上任意拖拽移动每一个小组件，松手自动 10px 网格对齐并保存至 JSON！
 - **通配符参数自由配置**：支持像编写代码表达式一样配置界面参数（如 `"{SPD:SURF:F1} m/s | Q: {Q} | TWR: {TWR}"`），实时计算更新。
+- **全面标准化铁律（无特例、无分层妥协）**：MFP 严禁任何组件内部硬编码读数或写死界面文案标签。不论是简单表盘还是高度集成的波音 747 EICAS 等成套复杂航电，全部读数与文案必须 100% 接入 `TelemetryTokenEngine`，支持用户在配置文件中自由热替换任意通道与标签。
 
 ---
 

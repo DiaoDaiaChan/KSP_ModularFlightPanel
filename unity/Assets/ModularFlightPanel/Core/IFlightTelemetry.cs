@@ -68,12 +68,19 @@ namespace ModularFlightPanel.Core
         string DeltaVSource { get; }
         int CurrentStage { get; }
         int ActiveEngines { get; }
+        int TotalStageEngines { get; }
 
-        // 轨道力学
+        // 轨道力学与机动节点
         double Apoapsis { get; }
         double Periapsis { get; }
         double TimeToAp { get; }
         double TimeToPe { get; }
+        bool HasManeuverNode { get; }
+        double ManeuverDeltaV { get; }
+        double ManeuverTotalDeltaV { get; }
+        double ManeuverTimeToNode { get; }
+        double ManeuverBurnTime { get; }
+        double ManeuverTimeToBurn { get; }
 
         // 电气系统
         double ElectricCharge { get; }
@@ -141,6 +148,8 @@ namespace ModularFlightPanel.Core
         void ToggleStageLock();
         void TogglePrecisionMode();
         void ToggleFlightMode();
+        void WarpToManeuverNode();
+        void DeleteManeuverNode();
 
         // 时间加速控制
         void IncreaseTimeWarp();

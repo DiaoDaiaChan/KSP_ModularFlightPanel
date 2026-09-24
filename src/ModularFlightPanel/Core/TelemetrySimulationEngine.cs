@@ -70,12 +70,21 @@ namespace ModularFlightPanel.Core
         public IReadOnlyList<StageDeltaVInfo> StageDeltaVList { get; private set; } = Array.Empty<StageDeltaVInfo>();
         public string DeltaVSource { get; private set; } = "SIM";
         public int ActiveEngines { get; private set; } = 0;
+        public int TotalStageEngines { get; private set; } = 6;
 
         // 轨道数据
         public double Apoapsis { get; private set; } = 74.0;
         public double Periapsis { get; private set; } = -600000.0;
         public double TimeToAp { get; private set; } = 0.0;
         public double TimeToPe { get; private set; } = 0.0;
+
+        // 机动节点
+        public bool HasManeuverNode { get; private set; } = false;
+        public double ManeuverDeltaV { get; private set; } = 0.0;
+        public double ManeuverTotalDeltaV { get; private set; } = 0.0;
+        public double ManeuverTimeToNode { get; private set; } = 0.0;
+        public double ManeuverBurnTime { get; private set; } = 0.0;
+        public double ManeuverTimeToBurn { get; private set; } = 0.0;
 
         // 电气系统
         public double ElectricCharge { get; private set; } = 400.0;
@@ -164,6 +173,19 @@ namespace ModularFlightPanel.Core
             }
         }
         public void ToggleStageLock() { IsStageLocked = !IsStageLocked; }
+
+        public void SetFlightParameters(double surfaceSpeed, double altitudeASL, float pitch, float heading, float throttle, int activeEngines, int totalStageEngines, double missionTime = 504.0)
+        {
+            SurfaceSpeed = surfaceSpeed;
+            AltitudeASL = altitudeASL;
+            AltitudeAGL = altitudeASL;
+            Pitch = pitch;
+            Heading = heading;
+            Throttle = throttle;
+            ActiveEngines = activeEngines;
+            TotalStageEngines = totalStageEngines;
+            MissionTime = missionTime;
+        }
         public void TogglePrecisionMode() { IsPrecisionControl = !IsPrecisionControl; }
         public void ToggleFlightMode() { IsDockingMode = !IsDockingMode; }
 
@@ -210,6 +232,13 @@ namespace ModularFlightPanel.Core
         public void ApplyScenario(FlightScenario scenario)
         {
             CurrentScenario = scenario;
+            HasManeuverNode = false;
+            ManeuverDeltaV = 0.0;
+            ManeuverTotalDeltaV = 0.0;
+            ManeuverTimeToNode = 0.0;
+            ManeuverBurnTime = 0.0;
+            ManeuverTimeToBurn = 0.0;
+
             switch (scenario)
             {
                 case FlightScenario.PadHold:
@@ -391,6 +420,12 @@ namespace ModularFlightPanel.Core
                     CommSignal = 1.0;
                     IsConnected = true;
                     ControlLevelStr = "FULL CONTROL";
+                    HasManeuverNode = true;
+                    ManeuverTotalDeltaV = 320.0;
+                    ManeuverDeltaV = 320.0;
+                    ManeuverTimeToNode = 180.0;
+                    ManeuverBurnTime = 24.0;
+                    ManeuverTimeToBurn = 168.0;
                     break;
 
                 case FlightScenario.PowerCrisis:
@@ -524,6 +559,40 @@ namespace ModularFlightPanel.Core
             PitchInput = Mathf.Clamp(Mathf.Sin(t * 1.5f) * 0.35f + PitchTrim, -1f, 1f);
             RollInput = Mathf.Clamp(Mathf.Cos(t * 1.2f) * 0.20f + RollTrim, -1f, 1f);
             YawInput = Mathf.Clamp(Mathf.Sin(t * 0.8f) * 0.15f + YawTrim, -1f, 1f);
+
+            // 机动节点动力学演化
+            if (HasManeuverNode)
+            {
+                if (ManeuverTimeToNode > -30.0)
+                {
+                    ManeuverTimeToNode -= dt;
+                    ManeuverTimeToBurn = ManeuverTimeToNode - (ManeuverBurnTime * 0.5);
+                    if (ManeuverTimeToBurn <= 0.0 && ManeuverDeltaV > 0.0)
+                    {
+                        double burnRate = ManeuverBurnTime > 0.1 ? (ManeuverTotalDeltaV / ManeuverBurnTime) : 10.0;
+                        ManeuverDeltaV = Math.Max(0.0, ManeuverDeltaV - burnRate * dt);
+                    }
+                }
+            }
+        }
+
+        public void WarpToManeuverNode()
+        {
+            if (HasManeuverNode && ManeuverTimeToBurn > 15.0)
+            {
+                ManeuverTimeToNode = 15.0 + (ManeuverBurnTime * 0.5);
+                ManeuverTimeToBurn = 15.0;
+            }
+        }
+
+        public void DeleteManeuverNode()
+        {
+            HasManeuverNode = false;
+            ManeuverDeltaV = 0.0;
+            ManeuverTotalDeltaV = 0.0;
+            ManeuverTimeToNode = 0.0;
+            ManeuverBurnTime = 0.0;
+            ManeuverTimeToBurn = 0.0;
         }
     }
 }

@@ -1,0 +1,427 @@
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
+
+namespace ModularFlightPanel.UI.Widgets
+{
+    /// <summary>
+    /// ECAM 风格弧形/马蹄形仪表套件 (ECAM Dial Gauge Kit)
+    /// 具备：
+    /// 1. 270° 马蹄形分段极坐标圆弧度量环 (采用 RadialSegmentedMeter 着色器)
+    /// 2. 旋转指针与高对比度数显
+    /// 3. 双极限量程模型：
+    ///    - 有上限型 (Hard Limit): 弧度与数显严格截断在 [Min, Max]
+    ///    - 软上限/无上限型 (Soft Limit): 达到 Max 标称量程时弧线/指针卡满量程端并触发红色爆表告警，
+    ///      但中央数显框绝不截断，持续精准呈现真实超标数值 (例如 15G 表盘显示 18.4 G)
+    /// 4. 三色安全区间切换 (正常绿/青 -> 注意黄 -> 警告红/爆表闪烁)
+    /// 5. 100% 通配符与 CustomTemplate 双驱动，零硬编码，统一样式管道
+    /// </summary>
+    public class EcamDialGaugeWidget : BaseFlightWidget
+    {
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        private const float START_ANGLE = 225.0f; // 左下 225° 顺时针旋转
+        private const float END_ANGLE = 315.0f;   // 右下 315° (即 -45°)
+        private const float ANGLE_SPAN = 270.0f;  // 270 度大弧度马蹄形
+
+        private Image _bgPanel;
+        private Outline _bgOutline;
+
+        private GameObject _meterObj;
+        private Image _meterImage;
+        private Material _meterMaterial;
+
+        private RectTransform _needlePivot;
+        private Image _needleImage;
+
+        private Text _titleText;
+        private Text _valueText;
+        private Text _unitText;
+        private Text _minScaleText;
+        private Text _maxScaleText;
+        private Text _limitModeText;
+
+        // 通配符通道配置与模板
+        private string _valueToken = "{ENG:N1}";
+        private string _titleTemplate = "N1";
+        private string _unitTemplate = "%";
+        private double _overrideMin = double.NaN;
+        private double _overrideMax = double.NaN;
+        private double _overrideCaution = double.NaN;
+        private double _overrideWarning = double.NaN;
+        private string _overrideLimitMode = null;
+
+        // 运行时脏检查缓存
+        private double _lastValue = double.NaN;
+        private string _lastFormattedVal = string.Empty;
+        private string _lastTitleStr = string.Empty;
+        private string _lastUnitStr = string.Empty;
+        private int _lastAlertState = -1; // 0=Normal, 1=Caution, 2=Warning
+
+        protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
+        {
+            theme = WidgetStyleManager.ResolveTheme(theme);
+            float s = CurrentDpiScale;
+            float size = 112f * s;
+            RectTransform.sizeDelta = new Vector2(size, size);
+
+            // 1. 卡片底衬
+            _bgPanel = gameObject.AddComponent<Image>();
+            _bgPanel.color = Color.clear;
+            _bgOutline = gameObject.AddComponent<Outline>();
+            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Normal, theme);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgPanel.color, _bgOutline.effectColor, s);
+
+            // 解析自定义通配符通道
+            ParseCustomTemplate(config);
+
+            // 2. 马蹄形弧线度量环 (RadialSegmentedMeter.shader)
+            _meterObj = new GameObject("ECAM_Arc_Meter", typeof(RectTransform), typeof(Image));
+            _meterObj.transform.SetParent(transform, false);
+            RectTransform meterRt = _meterObj.GetComponent<RectTransform>();
+            meterRt.sizeDelta = new Vector2(size * 0.92f, size * 0.92f);
+            meterRt.anchoredPosition = Vector2.zero;
+
+            _meterImage = _meterObj.GetComponent<Image>();
+            if (AssetLoader.RadialMeterShader != null)
+            {
+                _meterMaterial = new Material(AssetLoader.RadialMeterShader);
+                _meterImage.material = _meterMaterial;
+            }
+
+            ConfigureMeterMaterial(theme);
+
+            // 3. 动态指针 (Needle Pointer)
+            GameObject pivotObj = new GameObject("Needle_Pivot", typeof(RectTransform));
+            pivotObj.transform.SetParent(transform, false);
+            _needlePivot = pivotObj.GetComponent<RectTransform>();
+            _needlePivot.sizeDelta = Vector2.zero;
+            _needlePivot.anchoredPosition = Vector2.zero;
+
+            GameObject needleObj = new GameObject("Needle_Bar", typeof(RectTransform), typeof(Image));
+            needleObj.transform.SetParent(_needlePivot, false);
+            RectTransform needleRt = needleObj.GetComponent<RectTransform>();
+            needleRt.sizeDelta = new Vector2(1.5f * s, 16f * s);
+            needleRt.pivot = new Vector2(0.5f, 0f);
+            needleRt.anchoredPosition = new Vector2(0f, (size * 0.46f) - (18f * s));
+            _needleImage = needleObj.GetComponent<Image>();
+            _needleImage.color = WidgetStyleManager.Meter(MeterStyleRole.Secondary, theme);
+
+            // 4. 标题、数显与单位 (ECAM 风格排版)
+            int titleSize = Mathf.RoundToInt(10f * s);
+            _titleText = UIFactory.CreateText(transform, "ECAM_Title", _titleTemplate, titleSize, TextAnchor.MiddleCenter,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Cardinal, theme));
+            RectTransform trt = _titleText.GetComponent<RectTransform>();
+            trt.sizeDelta = new Vector2(size - 10f * s, 16f * s);
+            trt.anchoredPosition = new Vector2(0f, 22f * s);
+
+            int valSize = Mathf.RoundToInt(17f * s);
+            _valueText = UIFactory.CreateText(transform, "ECAM_Value", "0.0", valSize, TextAnchor.MiddleCenter,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            RectTransform vrt = _valueText.GetComponent<RectTransform>();
+            vrt.sizeDelta = new Vector2(size - 10f * s, 24f * s);
+            vrt.anchoredPosition = new Vector2(0f, -2f * s);
+
+            int unitSize = Mathf.RoundToInt(9f * s);
+            _unitText = UIFactory.CreateText(transform, "ECAM_Unit", _unitTemplate, unitSize, TextAnchor.MiddleCenter,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, theme));
+            RectTransform urt = _unitText.GetComponent<RectTransform>();
+            urt.sizeDelta = new Vector2(size - 10f * s, 14f * s);
+            urt.anchoredPosition = new Vector2(0f, -22f * s);
+
+            // 刻度两端标称数字 (左下起点与右下满格)
+            int scaleFontSize = Mathf.RoundToInt(9f * s);
+            double effectiveMin = GetEffectiveMin();
+            double effectiveMax = GetEffectiveMax();
+            _minScaleText = UIFactory.CreateText(transform, "Min_Scale", $"{effectiveMin:F0}", scaleFontSize, TextAnchor.MiddleLeft,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, theme));
+            RectTransform minRt = _minScaleText.GetComponent<RectTransform>();
+            minRt.sizeDelta = new Vector2(30f * s, 14f * s);
+            minRt.anchoredPosition = new Vector2(-28f * s, -38f * s);
+
+            _maxScaleText = UIFactory.CreateText(transform, "Max_Scale", $"{effectiveMax:F0}", scaleFontSize, TextAnchor.MiddleRight,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, theme));
+            RectTransform maxRt = _maxScaleText.GetComponent<RectTransform>();
+            maxRt.sizeDelta = new Vector2(30f * s, 14f * s);
+            maxRt.anchoredPosition = new Vector2(28f * s, -38f * s);
+
+            _limitModeText = UIFactory.CreateText(transform, "Limit_Mode", GetLimitModeLabel(), Mathf.RoundToInt(6f * s), TextAnchor.MiddleCenter,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, theme));
+            RectTransform limitRt = _limitModeText.GetComponent<RectTransform>();
+            limitRt.sizeDelta = new Vector2(36f * s, 12f * s);
+            limitRt.anchoredPosition = new Vector2(0f, 34f * s);
+        }
+
+        private void ParseCustomTemplate(WidgetConfig config)
+        {
+            if (config != null)
+            {
+                if (!string.IsNullOrEmpty(config.NumericToken)) _valueToken = config.NumericToken;
+                if (!string.IsNullOrEmpty(config.DisplayName)) _titleTemplate = config.DisplayName;
+                if (!string.IsNullOrEmpty(config.UnitLabel)) _unitTemplate = config.UnitLabel;
+            }
+
+            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
+
+            var pairs = config.CustomTemplate.Split(';');
+            foreach (var p in pairs)
+            {
+                var kv = p.Split('=');
+                if (kv.Length != 2) continue;
+                string k = kv[0].Trim().ToUpperInvariant();
+                string v = kv[1].Trim();
+                switch (k)
+                {
+                    case "VAL":
+                    case "VALUE":
+                    case "TOKEN":
+                        _valueToken = v;
+                        break;
+                    case "TITLE":
+                    case "LABEL":
+                    case "TAG":
+                    case "NAME":
+                        _titleTemplate = v;
+                        break;
+                    case "UNIT":
+                        _unitTemplate = v;
+                        break;
+                    case "MIN":
+                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double minV))
+                            _overrideMin = minV;
+                        break;
+                    case "MAX":
+                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double maxV))
+                            _overrideMax = maxV;
+                        break;
+                    case "CAUTION":
+                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cVal))
+                            _overrideCaution = cVal;
+                        break;
+                    case "WARN":
+                    case "WARNING":
+                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double wVal))
+                            _overrideWarning = wVal;
+                        break;
+                    case "LIMIT":
+                    case "LIMITMODE":
+                        _overrideLimitMode = v.ToLowerInvariant();
+                        break;
+                }
+            }
+        }
+
+        private double GetEffectiveMin() => !double.IsNaN(_overrideMin) ? _overrideMin : (Config != null ? Config.MinValue : 0.0);
+        private double GetEffectiveMax() => !double.IsNaN(_overrideMax) ? _overrideMax : (Config != null && Config.MaxValue > 0 ? Config.MaxValue : 100.0);
+        private double GetEffectiveCaution() => !double.IsNaN(_overrideCaution) ? _overrideCaution : (Config != null && Config.CautionThreshold > 0 ? Config.CautionThreshold : double.MaxValue);
+        private double GetEffectiveWarning() => !double.IsNaN(_overrideWarning) ? _overrideWarning : (Config != null && Config.WarningThreshold > 0 ? Config.WarningThreshold : double.MaxValue);
+
+        private string GetLimitMode()
+        {
+            if (!string.IsNullOrEmpty(_overrideLimitMode)) return _overrideLimitMode;
+            if (Config == null) return "hard";
+            string mode = Config.LimitMode;
+            if (string.IsNullOrEmpty(mode)) mode = Config.IsSoftLimit ? "soft" : "hard";
+            mode = mode.ToLowerInvariant();
+            return mode == "soft" || mode == "none" ? mode : "hard";
+        }
+
+        private string GetLimitModeLabel()
+        {
+            string mode = GetLimitMode();
+            return mode == "soft" ? "SOFT" : mode == "none" ? "OPEN" : "MAX";
+        }
+
+        private void ConfigureMeterMaterial(ThemeConfig theme)
+        {
+            if (_meterMaterial == null) return;
+
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+            Color normalColor = style.GetMeterColor(MeterStyleRole.Primary, theme);
+            Color inactiveColor = style.GetMeterColor(MeterStyleRole.Track, theme);
+            Color borderColor = style.GetCardBorderColor(CardStyleRole.Normal, theme);
+
+            _meterMaterial.SetFloat("_Clockwise", 1.0f);
+            _meterMaterial.SetFloat("_StartAngle", START_ANGLE);
+            _meterMaterial.SetFloat("_EndAngle", END_ANGLE);
+            _meterMaterial.SetFloat("_InnerRadius", 0.83f);
+            _meterMaterial.SetFloat("_OuterRadius", 0.92f);
+            _meterMaterial.SetFloat("_SegmentCount", 36.0f);
+            _meterMaterial.SetFloat("_SegmentGap", 0.08f);
+            _meterMaterial.SetColor("_ActiveColor", normalColor);
+            _meterMaterial.SetColor("_InactiveColor", inactiveColor);
+            _meterMaterial.SetColor("_BorderColor", borderColor);
+        }
+
+        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        {
+            if (telemetry == null || !telemetry.HasVessel) return;
+
+            // 1. 动态标题与单位求值
+            string evalTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
+            if (evalTitle != _lastTitleStr)
+            {
+                _lastTitleStr = evalTitle;
+                if (_titleText != null) _titleText.text = evalTitle;
+            }
+
+            string evalUnit = TelemetryTokenEngine.Evaluate(_unitTemplate, telemetry);
+            if (evalUnit != _lastUnitStr)
+            {
+                _lastUnitStr = evalUnit;
+                if (_unitText != null) _unitText.text = evalUnit;
+            }
+
+            // 2. 数值通道求值
+            double currentVal = TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
+            if (double.IsNaN(currentVal)) currentVal = 0.0;
+
+            double minVal = GetEffectiveMin();
+            double maxVal = GetEffectiveMax();
+            double range = maxVal - minVal;
+            if (range <= 0.0001) range = 1.0;
+
+            double normalized = (currentVal - minVal) / range;
+            float visualFraction = Mathf.Clamp01((float)normalized);
+
+            string limitMode = GetLimitMode();
+            bool isOverflow = (limitMode == "soft" && currentVal > maxVal);
+            double displayValue;
+
+            if (limitMode == "soft" || limitMode == "none")
+            {
+                displayValue = currentVal;
+            }
+            else
+            {
+                displayValue = Math.Min(Math.Max(currentVal, minVal), maxVal);
+            }
+
+            // 3. 告警区间判定 (0=Normal, 1=Caution, 2=Warning)
+            double cautionThresh = GetEffectiveCaution();
+            double warningThresh = GetEffectiveWarning();
+            bool isWarning = isOverflow || (limitMode != "none" && currentVal >= warningThresh);
+            bool isCaution = !isWarning && (currentVal >= cautionThresh);
+            int alertState = isWarning ? 2 : (isCaution ? 1 : 0);
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            // 状态变更或初次运行时更新语义色彩
+            if (alertState != _lastAlertState)
+            {
+                _lastAlertState = alertState;
+                if (isWarning)
+                {
+                    ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Danger, theme);
+                    ApplyText(_valueText, TextStyleRole.Danger, theme);
+                    if (_needleImage != null) _needleImage.color = WidgetStyleManager.Meter(MeterStyleRole.Danger, theme);
+                }
+                else if (isCaution)
+                {
+                    ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Warning, theme);
+                    ApplyText(_valueText, TextStyleRole.Warning, theme);
+                    if (_needleImage != null) _needleImage.color = WidgetStyleManager.Meter(MeterStyleRole.Warning, theme);
+                }
+                else
+                {
+                    ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Normal, theme);
+                    ApplyText(_valueText, TextStyleRole.PrimaryValue, theme);
+                    if (_needleImage != null) _needleImage.color = WidgetStyleManager.Meter(MeterStyleRole.Secondary, theme);
+                }
+            }
+
+            // 4. 几何与指针角度更新 (脏标记保护)
+            double deltaThreshold = Config != null && Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
+            if (double.IsNaN(_lastValue) || Math.Abs(currentVal - _lastValue) > deltaThreshold)
+            {
+                _lastValue = currentVal;
+
+                if (_meterMaterial != null)
+                {
+                    Color activeMeterCol = isWarning ? style.GetMeterColor(MeterStyleRole.Danger, theme)
+                        : (isCaution ? style.GetMeterColor(MeterStyleRole.Warning, theme)
+                        : style.GetMeterColor(MeterStyleRole.Primary, theme));
+
+                    _meterMaterial.SetFloat("_FillAmount", visualFraction);
+                    _meterMaterial.SetColor("_ActiveColor", activeMeterCol);
+                }
+
+                if (_needlePivot != null)
+                {
+                    float needleAngle = START_ANGLE - visualFraction * ANGLE_SPAN - 90f;
+                    _needlePivot.localEulerAngles = new Vector3(0f, 0f, needleAngle);
+                }
+
+                // 5. 更新中央数字显示
+                UpdateDisplayText(displayValue);
+            }
+        }
+
+        private void UpdateDisplayText(double val)
+        {
+            string formatted;
+            if (Math.Abs(val) >= 10000.0)
+            {
+                formatted = $"{val / 1000.0:F1}k";
+            }
+            else if (Math.Abs(val) >= 100.0)
+            {
+                formatted = $"{val:F1}";
+            }
+            else if (Math.Abs(val) >= 10.0)
+            {
+                formatted = $"{val:F1}";
+            }
+            else
+            {
+                formatted = $"{val:F2}";
+            }
+
+            if (formatted != _lastFormattedVal)
+            {
+                _lastFormattedVal = formatted;
+                if (_valueText != null) _valueText.text = formatted;
+            }
+        }
+
+        public override void ApplyTheme(ThemeConfig theme)
+        {
+            if (theme == null) return;
+
+            CardStyleRole cardRole = _lastAlertState == 2 ? CardStyleRole.Danger : (_lastAlertState == 1 ? CardStyleRole.Warning : CardStyleRole.Normal);
+            ApplyCard(_bgPanel, _bgOutline, cardRole, theme);
+            ConfigureMeterMaterial(theme);
+
+            ApplyText(_titleText, TextStyleRole.Cardinal, theme);
+            TextStyleRole valRole = _lastAlertState == 2 ? TextStyleRole.Danger : (_lastAlertState == 1 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
+            ApplyText(_valueText, valRole, theme);
+            ApplyText(_unitText, TextStyleRole.Unit, theme);
+            ApplyText(_minScaleText, TextStyleRole.Unit, theme);
+            ApplyText(_maxScaleText, TextStyleRole.Unit, theme);
+
+            MeterStyleRole needleRole = _lastAlertState == 2 ? MeterStyleRole.Danger : (_lastAlertState == 1 ? MeterStyleRole.Warning : MeterStyleRole.Secondary);
+            if (_needleImage != null) _needleImage.color = WidgetStyleManager.Meter(needleRole, theme);
+
+            if (_limitModeText != null)
+            {
+                _limitModeText.text = GetLimitModeLabel();
+                TextStyleRole limitRole = GetLimitMode() == "soft" ? TextStyleRole.Warning : TextStyleRole.Unit;
+                ApplyText(_limitModeText, limitRole, theme);
+            }
+        }
+
+        protected override void OnDestroy()
+        {
+            if (_meterMaterial != null)
+            {
+                Destroy(_meterMaterial);
+                _meterMaterial = null;
+            }
+            base.OnDestroy();
+        }
+    }
+}

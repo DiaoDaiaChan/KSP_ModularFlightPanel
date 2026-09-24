@@ -22,6 +22,7 @@ namespace ModularFlightPanel.Core
     /// 统一机载遥测中枢 (支持真实飞行遥测与高保真物理仿真双模式)
     /// 彻底解耦，无论在飞行场景还是在主菜单/航天中心测试沙盒，均可向所有组件稳定喂送数据流
     /// </summary>
+    [DefaultExecutionOrder(-500)]
     public class TelemetryHub : MonoBehaviour, IFlightTelemetry
     {
         private static TelemetryHub _instance;
@@ -96,12 +97,20 @@ namespace ModularFlightPanel.Core
         public IReadOnlyList<StageDeltaVInfo> StageDeltaVList { get; private set; } = Array.Empty<StageDeltaVInfo>();
         public string DeltaVSource { get; private set; } = "NONE";
         public int ActiveEngines { get; private set; } = 0;
+        public int TotalStageEngines { get; private set; } = 0;
 
-        // 轨道动力学
+        // 轨道动力学与机动节点
         public double Apoapsis { get; private set; } = 0.0;
         public double Periapsis { get; private set; } = 0.0;
         public double TimeToAp { get; private set; } = 0.0;
         public double TimeToPe { get; private set; } = 0.0;
+
+        public bool HasManeuverNode { get; private set; } = false;
+        public double ManeuverDeltaV { get; private set; } = 0.0;
+        public double ManeuverTotalDeltaV { get; private set; } = 0.0;
+        public double ManeuverTimeToNode { get; private set; } = 0.0;
+        public double ManeuverBurnTime { get; private set; } = 0.0;
+        public double ManeuverTimeToBurn { get; private set; } = 0.0;
 
         // 电气系统 (通用解耦读取)
         public double ElectricCharge { get; private set; } = 0.0;
@@ -265,6 +274,49 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        public void WarpToManeuverNode()
+        {
+            if (IsSimulationMode)
+            {
+                SimulationEngine.WarpToManeuverNode();
+                return;
+            }
+
+            Vessel v = ActiveVessel;
+            if (v != null && v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
+            {
+                var node = v.patchedConicSolver.maneuverNodes[0];
+                if (node != null && TimeWarp.fetch != null)
+                {
+                    double targetUT = node.UT - (ManeuverBurnTime * 0.5) - 15.0;
+                    if (targetUT > Planetarium.GetUniversalTime())
+                    {
+                        TimeWarp.fetch.WarpTo(targetUT);
+                    }
+                }
+            }
+        }
+
+        public void DeleteManeuverNode()
+        {
+            if (IsSimulationMode)
+            {
+                SimulationEngine.DeleteManeuverNode();
+                return;
+            }
+
+            Vessel v = ActiveVessel;
+            if (v != null && v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
+            {
+                var node = v.patchedConicSolver.maneuverNodes[0];
+                if (node != null)
+                {
+                    node.RemoveSelf();
+                    ResetManeuverParameters();
+                }
+            }
+        }
+
         // 差分计算电量速率
         private double _lastEc = 0.0;
         private float _lastEcTime = 0f;
@@ -280,11 +332,93 @@ namespace ModularFlightPanel.Core
         private float _lastPanelScanTime = -1f;
         private int _lastSubsystemPartCount = -1;
         private float _lastCommScanTime = -1f;
+        private readonly List<StageDeltaVInfo> _cachedStockStages = new List<StageDeltaVInfo>(16);
+        private readonly List<CommLinkInfo> _cachedStockCommLinks = new List<CommLinkInfo>(8);
+        private static readonly Comparison<StageDeltaVInfo> CompareStageDescending = (a, b) => b.Stage.CompareTo(a.Stage);
+
+        private static int _cachedEcDefId = -1;
+        private static bool _lookedUpEcDefId = false;
+
+        private static int GetEcDefinitionId()
+        {
+            if (!_lookedUpEcDefId)
+            {
+                _lookedUpEcDefId = true;
+                if (PartResourceLibrary.Instance != null)
+                {
+                    var def = PartResourceLibrary.Instance.GetDefinition("ElectricCharge");
+                    if (def != null) _cachedEcDefId = def.id;
+                }
+            }
+            return _cachedEcDefId;
+        }
+
+        #region P2 & P3: Event-Driven Topology Invalidation & Target Kinematics
+
+        private bool _vesselTopologyDirty = true;
+        private float _lastLoggedThrottle = -1f;
+
+        private void OnVesselModified(Vessel v)
+        {
+            if (v == ActiveVessel)
+            {
+                _vesselTopologyDirty = true;
+            }
+        }
+
+        private void OnStageActivated(int stage)
+        {
+            _vesselTopologyDirty = true;
+        }
+
+        private void OnVesselChanged(Vessel v)
+        {
+            _vesselTopologyDirty = true;
+            _cachedEngines = null;
+            _cachedSolarPanels = null;
+            _cachedAntennaCount = 0;
+            CacheManager.Instance.ClearTransient();
+        }
+
+        /// <summary>
+        /// P3: 获取或外推目标交会相对几何状态 (15Hz 物理采样 + 帧间平滑一阶外推)
+        /// </summary>
+        public CacheManager.TargetKinematicState GetTargetKinematics()
+        {
+            if (ActiveVessel == null || FlightGlobals.fetch == null || FlightGlobals.fetch.VesselTarget == null)
+            {
+                return CacheManager.Instance.GetOrExtrapolateTargetState(false, Vector3.zero, Vector3.zero, Quaternion.identity, Time.time);
+            }
+
+            var target = FlightGlobals.fetch.VesselTarget;
+            Transform targetT = target.GetTransform();
+            if (targetT == null)
+            {
+                return CacheManager.Instance.GetOrExtrapolateTargetState(false, Vector3.zero, Vector3.zero, Quaternion.identity, Time.time);
+            }
+
+            Vector3 relPos = targetT.position - ActiveVessel.transform.position;
+            Vector3 relVel = (ActiveVessel.obt_velocity - target.GetObtVelocity()).xzy;
+            Quaternion relRot = Quaternion.Inverse(ActiveVessel.transform.rotation) * targetT.rotation;
+
+            return CacheManager.Instance.GetOrExtrapolateTargetState(true, relPos, relVel, relRot, Time.time);
+        }
+
+        #endregion
 
         private void Awake()
         {
             _instance = this;
             FlightTelemetryContext.FallbackProvider = () => Instance;
+
+            // 监听载具拓扑与分级事件，驱动 P2 引擎与推进剂缓存按需重算
+            GameEvents.onVesselWasModified.Add(OnVesselModified);
+            GameEvents.onStageActivate.Add(OnStageActivated);
+            GameEvents.onVesselChange.Add(OnVesselChanged);
+
+            // 初始化统一探针中枢与场景搜索排队调度器
+            ProbeManager.Instance.InitializeAll();
+
             ModularFlightPanel.UI.Widgets.TapeGaugeWidget.OnCycleSpeedModeAction = () => Instance?.CycleSpeedMode();
             ModularFlightPanel.UI.Widgets.TapeGaugeWidget.OnCycleAltitudeModeAction = () => Instance?.CycleAltitudeMode();
             ModularFlightPanel.UI.Widgets.BottomControlsWidget.OnTogglePrincipiaWindowAction = () =>
@@ -298,6 +432,10 @@ namespace ModularFlightPanel.Core
 
         private void OnDestroy()
         {
+            GameEvents.onVesselWasModified.Remove(OnVesselModified);
+            GameEvents.onStageActivate.Remove(OnStageActivated);
+            GameEvents.onVesselChange.Remove(OnVesselChanged);
+
             if (_instance == this)
             {
                 _instance = null;
@@ -330,6 +468,7 @@ namespace ModularFlightPanel.Core
                 UpdateVerticalSpeed();
                 UpdateThrottleAndPropellant();
                 UpdateOrbitalParameters();
+                UpdateManeuverParameters();
                 UpdateFlightControls();
 
                 float now = Time.unscaledTime;
@@ -380,11 +519,19 @@ namespace ModularFlightPanel.Core
             StageDeltaVList = sim.StageDeltaVList;
             DeltaVSource = sim.DeltaVSource;
             ActiveEngines = sim.ActiveEngines;
+            TotalStageEngines = sim.TotalStageEngines;
 
             Apoapsis = sim.Apoapsis;
             Periapsis = sim.Periapsis;
             TimeToAp = sim.TimeToAp;
             TimeToPe = sim.TimeToPe;
+
+            HasManeuverNode = sim.HasManeuverNode;
+            ManeuverDeltaV = sim.ManeuverDeltaV;
+            ManeuverTotalDeltaV = sim.ManeuverTotalDeltaV;
+            ManeuverTimeToNode = sim.ManeuverTimeToNode;
+            ManeuverBurnTime = sim.ManeuverBurnTime;
+            ManeuverTimeToBurn = sim.ManeuverTimeToBurn;
 
             ElectricCharge = sim.ElectricCharge;
             MaxElectricCharge = sim.MaxElectricCharge;
@@ -569,13 +716,30 @@ namespace ModularFlightPanel.Core
 
                 float now = Time.unscaledTime;
                 int currentParts = ActiveVessel.parts != null ? ActiveVessel.parts.Count : 0;
-                bool needEngineScan = (_cachedEngines == null || _lastEngineScanPartCount != currentParts || _lastEngineScanStage != CurrentStage || (now - _lastEngineScanTime) >= 0.15f);
+                bool throttleChanged = Mathf.Abs(Throttle - _lastLoggedThrottle) > 0.005f;
+                bool partsChanged = _lastEngineScanPartCount != currentParts;
+                bool stageChanged = _lastEngineScanStage != CurrentStage;
+
+                // P2: 事件驱动与稳态滑行解算缓存
+                // 仅在分级激活、部件拓扑改变、节流阀变动，或推力产生时的定时刷新周期重算
+                float allowedInterval = (Throttle > 0.001f) ? 0.35f : 2.0f;
+                bool needEngineScan = _vesselTopologyDirty || _cachedEngines == null || partsChanged || stageChanged ||
+                                      throttleChanged || (now - _lastEngineScanTime) >= allowedInterval;
 
                 if (needEngineScan)
                 {
                     _lastEngineScanTime = now;
                     _lastEngineScanPartCount = currentParts;
                     _lastEngineScanStage = CurrentStage;
+                    _lastLoggedThrottle = Throttle;
+
+                    // 稳态 0 油门滑行快速路径：推力直接置 0，且拓扑未变时保留发动机与推进剂比例，跳过全船部件遍历
+                    if (!_vesselTopologyDirty && !partsChanged && !stageChanged && Throttle <= 0.001f && _cachedEngines != null && _cachedEngines.Count > 0)
+                    {
+                        _cachedTotalThrust = 0.0;
+                    }
+                    else
+                    {
 
                     double currentResource = 0.0;
                     double maxResource = 0.0;
@@ -583,10 +747,11 @@ namespace ModularFlightPanel.Core
                     int engineCount = 0;
                     string detectedProp = "PROP";
 
-                    if (_cachedEngines == null || _cachedEngines.Count == 0 || _lastEngineScanPartCount != currentParts)
-                    {
-                        _cachedEngines = ActiveVessel.FindPartModulesImplementing<ModuleEngines>();
-                    }
+                        if (_vesselTopologyDirty || _cachedEngines == null || _cachedEngines.Count == 0 || _lastEngineScanPartCount != currentParts)
+                        {
+                            _cachedEngines = ActiveVessel.FindPartModulesImplementing<ModuleEngines>();
+                            _vesselTopologyDirty = false;
+                        }
 
                     if (_cachedEngines != null)
                     {
@@ -625,10 +790,29 @@ namespace ModularFlightPanel.Core
                         }
                     }
 
+                    int stageTotalEngines = 0;
+                    if (_cachedEngines != null)
+                    {
+                        for (int i = 0; i < _cachedEngines.Count; i++)
+                        {
+                            ModuleEngines eng = _cachedEngines[i];
+                            if (eng != null)
+                            {
+                                if (eng.part != null && (eng.part.inverseStage == CurrentStage || eng.isOperational))
+                                    stageTotalEngines++;
+                                else if (eng.isOperational)
+                                    stageTotalEngines++;
+                            }
+                        }
+                        if (stageTotalEngines == 0) stageTotalEngines = _cachedEngines.Count;
+                    }
+
                     ActiveEngines = engineCount;
+                    TotalStageEngines = stageTotalEngines > 0 ? stageTotalEngines : (engineCount > 0 ? engineCount : 1);
                     StagePropellantFraction = maxResource > 0.001 ? (float)(currentResource / maxResource) : 1.0f;
                     StagePropellantName = detectedProp;
                     _cachedTotalThrust = thrust;
+                    }
 
                     // 多级 ΔV 与烧燃时序遥测 (Tier 1: MechJeb -> Tier 2: Stock VesselDeltaV -> Tier 3: KER/单级)
                     bool dvFound = false;
@@ -662,50 +846,50 @@ namespace ModularFlightPanel.Core
                     }
 
                     if (!dvFound && ActiveVessel != null && ActiveVessel.VesselDeltaV != null)
-                {
-                    var vdv = ActiveVessel.VesselDeltaV;
-                    var stockStages = new List<StageDeltaVInfo>();
-                    if (vdv.OperatingStageInfo != null)
                     {
-                        int curStg = ActiveVessel.currentStage;
-                        for (int i = 0; i < vdv.OperatingStageInfo.Count; i++)
+                        var vdv = ActiveVessel.VesselDeltaV;
+                        _cachedStockStages.Clear();
+                        if (vdv.OperatingStageInfo != null)
                         {
-                            var si = vdv.OperatingStageInfo[i];
-                            if (si != null)
+                            int curStg = ActiveVessel.currentStage;
+                            for (int i = 0; i < vdv.OperatingStageInfo.Count; i++)
                             {
-                                stockStages.Add(new StageDeltaVInfo(
-                                    si.stage,
-                                    si.deltaVActual,
-                                    si.stageBurnTime,
-                                    si.TWRActual,
-                                    si.ispActual,
-                                    si.stage == curStg
-                                ));
+                                var si = vdv.OperatingStageInfo[i];
+                                if (si != null)
+                                {
+                                    _cachedStockStages.Add(new StageDeltaVInfo(
+                                        si.stage,
+                                        si.deltaVActual,
+                                        si.stageBurnTime,
+                                        si.TWRActual,
+                                        si.ispActual,
+                                        si.stage == curStg
+                                    ));
+                                }
                             }
                         }
-                    }
-                    if (stockStages.Count > 0)
-                    {
-                        stockStages.Sort((a, b) => b.Stage.CompareTo(a.Stage));
-                        StageDeltaVList = stockStages;
-                        TotalDeltaV = vdv.TotalDeltaVActual;
-                        TotalBurnTime = vdv.TotalBurnTime;
-                        DeltaVSource = "STOCK";
+                        if (_cachedStockStages.Count > 0)
+                        {
+                            _cachedStockStages.Sort(CompareStageDescending);
+                            StageDeltaVList = _cachedStockStages;
+                            TotalDeltaV = vdv.TotalDeltaVActual;
+                            TotalBurnTime = vdv.TotalBurnTime;
+                            DeltaVSource = "STOCK";
 
-                        StageDeltaVInfo active = stockStages.Find(s => s.IsActive);
-                        if (active.Stage >= 0)
-                        {
-                            StageDeltaV = active.DeltaV;
-                            StageBurnTime = active.BurnTime;
+                            StageDeltaVInfo active = _cachedStockStages.Find(s => s.IsActive);
+                            if (active.Stage >= 0)
+                            {
+                                StageDeltaV = active.DeltaV;
+                                StageBurnTime = active.BurnTime;
+                            }
+                            else
+                            {
+                                StageDeltaV = _cachedStockStages[0].DeltaV;
+                                StageBurnTime = _cachedStockStages[0].BurnTime;
+                            }
+                            dvFound = true;
                         }
-                        else
-                        {
-                            StageDeltaV = stockStages[0].DeltaV;
-                            StageBurnTime = stockStages[0].BurnTime;
-                        }
-                        dvFound = true;
                     }
-                }
 
                 if (!dvFound)
                 {
@@ -739,6 +923,101 @@ namespace ModularFlightPanel.Core
                 TimeToAp = double.IsNaN(orbit.timeToAp) ? 0.0 : orbit.timeToAp;
                 TimeToPe = double.IsNaN(orbit.timeToPe) ? 0.0 : orbit.timeToPe;
             }
+        }
+
+        private void UpdateManeuverParameters()
+        {
+            try
+            {
+                Vessel v = ActiveVessel;
+                if (v == null)
+                {
+                    ResetManeuverParameters();
+                    return;
+                }
+
+                // 1. 原版 PatchedConicSolver 机动节点
+                if (v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
+                {
+                    var node = v.patchedConicSolver.maneuverNodes[0];
+                    if (node != null)
+                    {
+                        Vector3d burnVec = node.GetBurnVector(node.patch ?? v.orbit);
+                        HasManeuverNode = true;
+                        ManeuverDeltaV = double.IsNaN(burnVec.magnitude) ? 0.0 : burnVec.magnitude;
+                        ManeuverTotalDeltaV = node.DeltaV != null ? node.DeltaV.magnitude : ManeuverDeltaV;
+                        if (double.IsNaN(ManeuverTotalDeltaV)) ManeuverTotalDeltaV = ManeuverDeltaV;
+
+                        double ut = Planetarium.GetUniversalTime();
+                        ManeuverTimeToNode = node.UT - ut;
+
+                        // 燃烧时长解算：F = m * a -> a = F/m -> t = dV / a
+                        double burnDur = 0.0;
+                        double thrust = _cachedTotalThrust;
+                        double mass = v.totalMass;
+                        if (thrust > 0.1 && mass > 0.01)
+                        {
+                            double accel = thrust / mass;
+                            burnDur = (ManeuverDeltaV > 0.01 ? ManeuverDeltaV : ManeuverTotalDeltaV) / accel;
+                        }
+                        ManeuverBurnTime = (double.IsNaN(burnDur) || burnDur < 0.0) ? 0.0 : burnDur;
+                        ManeuverTimeToBurn = ManeuverTimeToNode - (ManeuverBurnTime * 0.5);
+                        return;
+                    }
+                }
+
+                // 2. Principia 飞行计划兜底
+                if (PrincipiaProbe.IsAvailable && PrincipiaProbe.HasActiveFlightPlan)
+                {
+                    double pDv = PrincipiaProbe.ManeuverDeltaV;
+                    if (!double.IsNaN(pDv) && pDv > 0.001)
+                    {
+                        HasManeuverNode = true;
+                        ManeuverDeltaV = pDv;
+                        ManeuverTotalDeltaV = pDv;
+                        double pDur = PrincipiaProbe.ManeuverDuration;
+                        ManeuverBurnTime = (double.IsNaN(pDur) || pDur < 0.0) ? 0.0 : pDur;
+                        double pTime = PrincipiaProbe.TimeToManeuver;
+                        ManeuverTimeToNode = (double.IsNaN(pTime) || pTime < 0.0) ? 0.0 : pTime;
+                        ManeuverTimeToBurn = ManeuverTimeToNode;
+                        return;
+                    }
+                }
+
+                // 3. MechJeb 兜底
+                if (MechJebProbe.IsAvailable)
+                {
+                    double mjDv = MechJebProbe.ResolveNumeric("NODEDV");
+                    if (!double.IsNaN(mjDv) && mjDv > 0.001)
+                    {
+                        HasManeuverNode = true;
+                        ManeuverDeltaV = mjDv;
+                        ManeuverTotalDeltaV = mjDv;
+                        double mjDur = MechJebProbe.ResolveNumeric("NODEBURNTIME");
+                        ManeuverBurnTime = (double.IsNaN(mjDur) || mjDur < 0.0) ? 0.0 : mjDur;
+                        double mjTime = MechJebProbe.ResolveNumeric("TIMETONODE");
+                        ManeuverTimeToNode = (double.IsNaN(mjTime) || mjTime < 0.0) ? 0.0 : mjTime;
+                        ManeuverTimeToBurn = ManeuverTimeToNode - (ManeuverBurnTime * 0.5);
+                        return;
+                    }
+                }
+
+                ResetManeuverParameters();
+            }
+            catch
+            {
+                ResetManeuverParameters();
+            }
+        }
+
+        private void ResetManeuverParameters()
+        {
+            HasManeuverNode = false;
+            ManeuverDeltaV = 0.0;
+            ManeuverTotalDeltaV = 0.0;
+            ManeuverTimeToNode = 0.0;
+            ManeuverBurnTime = 0.0;
+            ManeuverTimeToBurn = 0.0;
         }
 
         private void UpdateFlightControls()
@@ -784,25 +1063,45 @@ namespace ModularFlightPanel.Core
                 Vessel v = ActiveVessel;
                 if (v == null || v.parts == null) return;
 
+                // 统一探针中枢调度更新 (包含 Principia, GPWS, FAR, Trajectories, DPAI, MJ 等 15 大探针)
+                ProbeManager.Instance.UpdateAllProbes(v, this);
+
                 int partCount = v.parts.Count;
                 float now = Time.unscaledTime;
                 bool partsChanged = (partCount != _lastSubsystemPartCount);
                 if (partsChanged) _lastSubsystemPartCount = partCount;
 
-                // 1. 电气系统
+                // 1. 电气系统 (优先通过 KSP 原生内部资源总线直取，0 堆分配与 0 循环开销)
                 double curEc = 0.0, maxEc = 0.0;
-                for (int i = 0; i < v.parts.Count; i++)
+                int ecId = GetEcDefinitionId();
+                bool gotTotals = false;
+
+                if (ecId >= 0)
                 {
-                    Part p = v.parts[i];
-                    if (p != null && p.Resources != null)
+                    try
                     {
-                        for (int r = 0; r < p.Resources.Count; r++)
+                        v.GetConnectedResourceTotals(ecId, out curEc, out maxEc);
+                        gotTotals = (maxEc > 0.0001);
+                    }
+                    catch { gotTotals = false; }
+                }
+
+                if (!gotTotals)
+                {
+                    // 回退方案：仅在 Native API 未返回时执行部件级扫描，使用整数 ID 比对杜绝字符串值比较
+                    for (int i = 0; i < v.parts.Count; i++)
+                    {
+                        Part p = v.parts[i];
+                        if (p != null && p.Resources != null)
                         {
-                            PartResource res = p.Resources[r];
-                            if (res != null && res.resourceName == "ElectricCharge")
+                            for (int r = 0; r < p.Resources.Count; r++)
                             {
-                                curEc += res.amount;
-                                maxEc += res.maxAmount;
+                                PartResource res = p.Resources[r];
+                                if (res != null && (ecId >= 0 ? (res.info != null && res.info.id == ecId) : (res.resourceName == "ElectricCharge")))
+                                {
+                                    curEc += res.amount;
+                                    maxEc += res.maxAmount;
+                                }
                             }
                         }
                     }
@@ -879,7 +1178,7 @@ namespace ModularFlightPanel.Core
                                 SignalRx = CommSignal;
                                 ControlLevelStr = !IsConnected ? "NO LINK" : (CommSignal < 0.35 ? "WEAK LINK" : "FULL CONTROL");
 
-                                var links = new List<CommLinkInfo>();
+                                _cachedStockCommLinks.Clear();
                                 if (v.Connection.ControlPath != null && v.Connection.ControlPath.Count > 0)
                                 {
                                     foreach (var link in v.Connection.ControlPath)
@@ -888,12 +1187,12 @@ namespace ModularFlightPanel.Core
                                         {
                                             string pName = link.end.displayName ?? link.end.name;
                                             float qual = Mathf.Clamp01((float)link.strengthAR);
-                                            links.Add(new CommLinkInfo(pName, 100000.0 * qual, qual, link.end.isHome));
+                                            _cachedStockCommLinks.Add(new CommLinkInfo(pName, 100000.0 * qual, qual, link.end.isHome));
                                         }
                                     }
                                 }
-                                ActiveCommLinks = links;
-                                if (links.Count > 0) DirectLinkTarget = links[0].PeerName;
+                                ActiveCommLinks = _cachedStockCommLinks;
+                                if (_cachedStockCommLinks.Count > 0) DirectLinkTarget = _cachedStockCommLinks[0].PeerName;
                                 else DirectLinkTarget = IsConnected ? "KERBIN DSN" : "NONE";
                             }
                             if (partsChanged || (now - _lastAntennaScanTime) >= 1.0f)

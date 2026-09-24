@@ -56,7 +56,8 @@ namespace ModularFlightPanel.UI.Settings
                 // 2. 类型标签徽章
                 string typeBadge = w.WidgetType == "tape" ? "<color=#00E5FF>[标尺带]</color>" :
                                    (w.WidgetType == "ecam_dial" ? "<color=#00FF88>[ECAM表盘]</color>" :
-                                   (w.WidgetId.StartsWith("custom.") ? "<color=#FFAA00>[卡片]</color>" : "<color=#FF88FF>[核心]</color>"));
+                                   (w.WidgetId.StartsWith("spacex.") || w.WidgetType.StartsWith("spacex_") ? "<color=#00F0FF>[SpaceX]</color>" :
+                                   (w.WidgetId.StartsWith("custom.") ? "<color=#FFAA00>[卡片]</color>" : "<color=#FF88FF>[核心]</color>")));
                 GUILayout.Label(typeBadge, GUILayout.Width(75f));
 
                 // 3. 名称编辑
@@ -67,22 +68,22 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("◀", GUILayout.Width(24f), GUILayout.Height(20f)))
                 {
                     w.PositionX -= 10f;
-                    NavballHUD.Instance.RebuildHUD();
+                    ApplyWidgetTransform(w);
                 }
                 if (GUILayout.Button("▶", GUILayout.Width(24f), GUILayout.Height(20f)))
                 {
                     w.PositionX += 10f;
-                    NavballHUD.Instance.RebuildHUD();
+                    ApplyWidgetTransform(w);
                 }
                 if (GUILayout.Button("▲", GUILayout.Width(24f), GUILayout.Height(20f)))
                 {
                     w.PositionY += 10f;
-                    NavballHUD.Instance.RebuildHUD();
+                    ApplyWidgetTransform(w);
                 }
                 if (GUILayout.Button("▼", GUILayout.Width(24f), GUILayout.Height(20f)))
                 {
                     w.PositionY -= 10f;
-                    NavballHUD.Instance.RebuildHUD();
+                    ApplyWidgetTransform(w);
                 }
 
                 GUILayout.Space(10f);
@@ -96,7 +97,7 @@ namespace ModularFlightPanel.UI.Settings
                 GUI.color = Color.white;
 
                 // 6. 复制副本
-                if (w.WidgetType == "ecam_dial" || w.WidgetType == "tape" || w.WidgetId.StartsWith("custom."))
+                if (w.WidgetType == "ecam_dial" || w.WidgetType == "tape" || w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("spacex."))
                 {
                     if (GUILayout.Button("➕ 复制", GUILayout.Width(50f), GUILayout.Height(20f)))
                     {
@@ -148,6 +149,19 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
 
             GUILayout.EndVertical();
+        }
+
+        private static void ApplyWidgetTransform(WidgetConfig w)
+        {
+            WidgetLayoutManager.Instance.SaveLayout();
+            if (NavballHUD.Instance != null && NavballHUD.Instance.ModularWidgets != null)
+            {
+                var target = NavballHUD.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
+                if (target != null)
+                {
+                    target.UpdateTransform(w.PositionX, w.PositionY, w.Scale, w.Rotation);
+                }
+            }
         }
 
         private static void ShowToast(string msg)

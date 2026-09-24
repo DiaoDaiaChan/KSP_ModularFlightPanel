@@ -1,0 +1,85 @@
+{
+  "GlobalScale": 1.0,
+  "Widgets": [
+    {
+      "WidgetId": "spacex.header",
+      "DisplayName": "SpaceX 任务阶段与遥测顶栏",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 420,
+      "Scale": 1,
+      "WidgetType": "spacex_header"
+    },
+    {
+      "WidgetId": "spacex.docking",
+      "DisplayName": "SpaceX 对接与姿态准星 HUD",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 170,
+      "Scale": 1,
+      "WidgetType": "spacex_docking"
+    },
+    {
+      "WidgetId": "core.navball",
+      "DisplayName": "姿态球 (Navball)",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -40,
+      "Scale": 1,
+      "WidgetType": "core"
+    },
+    {
+      "WidgetId": "spacex.bottom",
+      "DisplayName": "SpaceX 底部控制与链路栏",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -150,
+      "Scale": 1,
+      "WidgetType": "spacex_bottom"
+    },
+    {
+      "WidgetId": "spacex.overview",
+      "DisplayName": "SpaceX 综合工况与维生监控",
+      "IsEnabled": true,
+      "PositionX": -460,
+      "PositionY": 120,
+      "Scale": 1,
+      "WidgetType": "spacex_overview"
+    },
+    {
+      "WidgetId": "custom.nd_navigation",
+      "DisplayName": "AERO ND 综合导航屏",
+      "IsEnabled": true,
+      "PositionX": 460,
+      "PositionY": 120,
+      "Scale": 1,
+      "WidgetType": "nd_navigation"
+    },
+    {
+      "WidgetId": "tape.speed",
+      "DisplayName": "PFD 速度标尺带",
+      "IsEnabled": true,
+      "PositionX": -220,
+      "PositionY": 40,
+      "Scale": 1,
+      "WidgetType": "tape",
+      "NumericToken": "{SPD}",
+      "StepInterval": 10,
+      "IsLeftOrientation": true,
+      "UnitLabel": "m/s"
+    },
+    {
+      "WidgetId": "tape.altitude",
+      "DisplayName": "PFD 高度标尺带",
+      "IsEnabled": true,
+      "PositionX": 220,
+      "PositionY": 40,
+      "Scale": 1,
+      "WidgetType": "tape",
+      "NumericToken": "{ALT}",
+      "StepInterval": 100,
+      "IsLeftOrientation": false,
+      "UnitLabel": "m"
+    }
+  ]
+}

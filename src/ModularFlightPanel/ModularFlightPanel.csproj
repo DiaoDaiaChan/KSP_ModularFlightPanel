@@ -12,6 +12,7 @@
     <KSPRoot Condition="'$(KSPRoot)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program_newmod</KSPRoot>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>bin\$(Configuration)\</OutputPath>
+    <DefineConstants>KSP_RUNTIME;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -103,10 +104,6 @@
     
     <!-- Copy layout.json and themes to target KSP instance PluginData & Themes -->
     <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\PluginData\layout.json" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\PluginData\" Condition="Exists('$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\PluginData\layout.json') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="false" ContinueOnError="true" />
-    <ItemGroup>
-      <ThemeFiles Include="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Themes\*.json" />
-    </ItemGroup>
-    <Copy SourceFiles="@(ThemeFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Themes\" Condition="Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
 </Project>

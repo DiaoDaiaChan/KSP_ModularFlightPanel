@@ -57,3 +57,4 @@ if (Test-Path $sourceDll) {
 Copy-Item -Path "$source\*" -Destination $dest -Recurse -Force -Exclude "ModularFlightPanel.dll"
 
 Write-Host "Deployment completed successfully! ModularFlightPanel UGUI assets & DLL synced to KSP." -ForegroundColor Green
+exit 0

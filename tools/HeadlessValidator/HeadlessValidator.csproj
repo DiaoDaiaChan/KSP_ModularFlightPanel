@@ -14,4 +14,11 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- MFP 组件规范审计内核：直接编译插件源码本体（纯 C#，无 UnityEngine 依赖），
+         保证规则码 / 正则 / 扫描范围 / 颜色基线只有一份定义，杜绝验证器副本漂移。 -->
+    <Compile Include="..\..\src\ModularFlightPanel\UI\WidgetSourceAudit.cs" />
+    <Compile Include="..\..\src\ModularFlightPanel\UI\WidgetColorLiteralAudit.cs" />
+  </ItemGroup>
+
 </Project>

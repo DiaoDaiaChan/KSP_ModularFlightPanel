@@ -12,7 +12,20 @@ namespace ModularFlightPanel.UI
     /// </summary>
     public class WidgetDragHandler : MonoBehaviour, IPointerDownHandler, IDragHandler, IEndDragHandler, IPointerEnterHandler, IPointerExitHandler
     {
-        public static bool IsEditModeActive { get; set; } = false;
+        private static bool _isEditModeActive = false;
+        public static event Action<bool> OnEditModeChanged;
+        public static bool IsEditModeActive
+        {
+            get => _isEditModeActive;
+            set
+            {
+                if (_isEditModeActive != value)
+                {
+                    _isEditModeActive = value;
+                    OnEditModeChanged?.Invoke(_isEditModeActive);
+                }
+            }
+        }
         public static bool EnableMagneticSnap { get; set; } = true;
 
         private RectTransform _rectTransform;

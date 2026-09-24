@@ -25,6 +25,10 @@ namespace ModularFlightPanel.Core
             // 2. 初始化主题与配置
             ThemeManager.Instance.Initialize();
 
+            // 2.5. 确保持久化 NavBall 桥接器与数学后备就绪
+            NavBallHookService.Provider = new StockNavBallVisualHook();
+            NavBallHookService.MarkerDirectionFallback = StockNavBallHook.GetMarkerDirection;
+
             // 3. 应用 Harmony 补丁隐藏原版 Navball
             HarmonyPatches.ApplyPatches();
 
@@ -32,7 +36,7 @@ namespace ModularFlightPanel.Core
             _telemetry = gameObject.AddComponent<TelemetryHub>();
 
             // 4.5. 挂载飞船二维剪影烘焙器 (零常驻开销 / 15 FPS 动态变动捕获)
-            gameObject.AddComponent<VesselSilhouetteBaker>();
+            var silhouetteBaker = VesselSilhouetteBaker.Instance;
 
             // 5. 挂载 UGUI 表现层
             _hud = gameObject.AddComponent<NavballHUD>();

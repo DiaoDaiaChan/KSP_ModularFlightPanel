@@ -1,4 +1,66 @@
 {
-  "SelectedThemeId": "modern_aero",
-  "RenderMode": 1
+    "SelectedThemeId": "modern_aero",
+    "RenderMode": 0,
+    "HideStockNavball": true,
+    "HideStockAltimeter": false,
+    "HideStockBottomLeft": false,
+    "HideStockTimeWarp": false,
+    "HideStockCommNet": false,
+    "HideStockToolbar": false,
+    "ToolbarStyleMode": 2,
+    "MasterBypass": false,
+    "ShowPerformanceBadge": false,
+    "AutoAdaptResolution": true,
+    "GlobalRenderScaleMultiplier": 1.0,
+    "DockRules": [
+        {
+            "Key": "MOCK_RES",
+            "DefaultName": "RES",
+            "CustomLabel": "资源",
+            "IsVisible": true
+        },
+        {
+            "Key": "MOCK_COMM",
+            "DefaultName": "COMM",
+            "CustomLabel": "",
+            "IsVisible": false
+        },
+        {
+            "Key": "MOCK_TIME",
+            "DefaultName": "TIME",
+            "CustomLabel": "时钟",
+            "IsVisible": true
+        },
+        {
+            "Key": "MOCK_MJ",
+            "DefaultName": "MJ",
+            "CustomLabel": "智驾",
+            "IsVisible": true
+        },
+        {
+            "Key": "MOCK_FAR",
+            "DefaultName": "FAR",
+            "CustomLabel": "",
+            "IsVisible": false
+        },
+        {
+            "Key": "MOCK_RA",
+            "DefaultName": "RA",
+            "CustomLabel": "",
+            "IsVisible": false
+        },
+        {
+            "Key": "MOCK_ALARM",
+            "DefaultName": "ALARM",
+            "CustomLabel": "警报",
+            "IsVisible": true
+        },
+        {
+            "Key": "MOCK_MFP",
+            "DefaultName": "MFP",
+            "CustomLabel": "面板",
+            "IsVisible": true
+        }
+    ],
+    "DockShowHiddenDrawer": true
 }

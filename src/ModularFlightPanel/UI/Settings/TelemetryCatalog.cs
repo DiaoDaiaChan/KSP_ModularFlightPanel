@@ -44,6 +44,7 @@ namespace ModularFlightPanel.UI.Settings
             // 1. 速度与马赫
             new TelemetryParam("{SPD}", "🚀 速度与马赫", "当前模式速度", "当前参考系(地表/轨道/目标)的综合航速", "m/s", 0, 1000, 750, 900, true, 10f),
             new TelemetryParam("{SPD:SURF}", "🚀 速度与马赫", "地表速度 (Surf)", "相对于当前天体地表的线速度", "m/s", 0, 1000, 750, 900, true, 10f),
+            new TelemetryParam("{SPD:SURF:KMH}", "🚀 速度与马赫", "地表速度 (km/h)", "SpaceX 官方广播规格地表时速", "km/h", 0, 28000, 20000, 26000, true, 500f),
             new TelemetryParam("{SPD:OBT}", "🚀 速度与马赫", "轨道速度 (Orbit)", "开普勒天体参考系下的真轨道速度", "m/s", 0, 3500, 2500, 3000, true, 50f),
             new TelemetryParam("{SPD:TGT}", "🚀 速度与马赫", "目标相对速度 (Target)", "相对于锁定目标的相对标量速度", "m/s", 0, 200, 50, 100, true, 5f),
             new TelemetryParam("{MACH}", "🚀 速度与马赫", "马赫数 (Mach)", "当前大气音速比率", "M", 0, 8, 4, 6, true, 0.5f),
@@ -51,12 +52,15 @@ namespace ModularFlightPanel.UI.Settings
 
             // 2. 高度与垂直
             new TelemetryParam("{ALT:ASL}", "🏔️ 高度与垂直", "海拔高度 (ASL)", "相对于海平面/基准水准面的绝对高度", "m", 0, 100000, 70000, 90000, true, 100f),
+            new TelemetryParam("{ALT:ASL:KM}", "🏔️ 高度与垂直", "海拔高度 (km)", "SpaceX 官方广播规格海拔高度", "km", 0, 250, 150, 200, true, 5f),
             new TelemetryParam("{ALT:AGL}", "🏔️ 高度与垂直", "雷达真高 (AGL)", "探地雷达测得的离地净空高度", "m", 0, 5000, 300, 100, true, 50f),
             new TelemetryParam("{ALT:ASL:DIST}", "🏔️ 高度与垂直", "海拔高度 (智能单位)", "自动在 m / km 间切换的海拔高度文本", "km", 0, 100000, 70000, 90000, true),
             new TelemetryParam("{ALT:AGL:DIST}", "🏔️ 高度与垂直", "雷达真高 (智能单位)", "自动在 m / km 间切换的真高文本", "m", 0, 5000, 300, 100, true),
 
             // 3. 动力与推进
             new TelemetryParam("{THROTTLE}", "⚡ 动力与推进", "引擎油门", "当前发动机总指令输出开度", "%", 0, 100, 85, 100, false, 10f),
+            new TelemetryParam("{ENG}", "⚡ 动力与推进", "运行中引擎数", "当前分级正在产生推力的发动机数量", "", 0, 33, 0, 0, false, 1f),
+            new TelemetryParam("{ENG:TOTAL}", "⚡ 动力与推进", "当前级总引擎数", "当前分级挂载的全部发动机总数", "", 0, 33, 0, 0, false, 1f),
             new TelemetryParam("{PROP}", "⚡ 动力与推进", "当前级推进剂", "当前激活分级剩余燃料可用百分比", "%", 0, 100, 20, 10, false, 10f),
             new TelemetryParam("{TWR}", "⚡ 动力与推进", "推重比 (TWR)", "可用发动机总推力与当前重力比值", "", 0, 5, 3.5, 4.5, true, 0.5f),
             new TelemetryParam("{GFORCE}", "⚡ 动力与推进", "重力加速度 (G力)", "载具承受的即时过载 G 值", "G", 0, 15, 8, 12, true, 1f),
@@ -70,6 +74,11 @@ namespace ModularFlightPanel.UI.Settings
             new TelemetryParam("{FRAME}", "🌌 轨道与机动", "导航参考系名称", "Principia 或原生参考系 (SURFACE / BARYCENTRIC 等)", "", 0, 0, 0, 0, false),
             new TelemetryParam("{BODY}", "🌌 轨道与机动", "环绕主天体", "当前载具所属引力影响球 SOI 母星", "", 0, 0, 0, 0, false),
             new TelemetryParam("{SITUATION}", "🌌 轨道与机动", "飞行情景状态", "FLYING / SUB_ORBITAL / ORBITING / LANDED 等", "", 0, 0, 0, 0, false),
+            new TelemetryParam("{MN:DV}", "🌌 轨道与机动", "机动剩余 Delta-V", "当前计划机动节点待消耗之速度增量", "m/s", 0, 2000, 1500, 1800, true, 20f),
+            new TelemetryParam("{MN:TOTALDV}", "🌌 轨道与机动", "机动总计划 Delta-V", "当前机动节点初始总规划 Delta-V", "m/s", 0, 2000, 1500, 1800, true, 20f),
+            new TelemetryParam("{MN:TIME}", "🌌 轨道与机动", "到达机动节点时间", "距离计划机动节点的到达倒计时", "", 0, 3600, 1800, 300, true),
+            new TelemetryParam("{MN:BURNTIME}", "🌌 轨道与机动", "预计变轨燃烧时长", "根据当前引擎推力推算之燃烧持续秒数", "", 0, 600, 300, 60, true),
+            new TelemetryParam("{MN:TIMETOBURN}", "🌌 轨道与机动", "提前点火倒计时", "按50%燃烧时长提前启动引擎之倒计时时刻", "", 0, 3600, 1800, 60, true),
 
             // 5. 姿态与控制
             new TelemetryParam("{HDG}", "🧭 姿态与控制", "航向角 (HDG)", "真北罗盘方位角 (000°~359°)", "°", 0, 360, 360, 360, false, 10f),

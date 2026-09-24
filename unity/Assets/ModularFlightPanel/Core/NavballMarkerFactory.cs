@@ -118,7 +118,7 @@ namespace ModularFlightPanel.Core
             Color colNormal = new Color(0.85f, 0.25f, 1.0f, 1.0f);     // 亮紫色
             Color colRadial = new Color(0.0f, 0.88f, 1.0f, 1.0f);      // 亮青色
             Color colTarget = new Color(1.0f, 0.2f, 0.65f, 1.0f);      // 亮品红
-            Color colManeuver = new Color(0.15f, 0.65f, 1.0f, 1.0f);   // 亮钴蓝
+            Color colManeuver = new Color(0.96f, 0.18f, 0.92f, 1.0f);  // 亮品红/紫红 (匹配原版/Principia 机动节点标准色)
 
             for (int y = 0; y < size; y++)
             {
@@ -210,14 +210,26 @@ namespace ModularFlightPanel.Core
                             alpha = Mathf.Clamp01(Mathf.Max(aOuterTgt, Mathf.Max(aCenterDot, Mathf.Max(aCrossTgtH, aCrossTgtV))));
                             break;
 
+                        case "antitarget":
+                            markerColor = colTarget;
+                            // 反目标：同心圆瞄准圈 + 内部 X 交叉线
+                            float dOuterAnti = Mathf.Abs(dist - 14f) - (strokeW * 0.5f);
+                            float aOuterAnti = Mathf.Clamp01(0.5f - dOuterAnti);
+                            float dDiag1A = (Mathf.Abs(px - py) / 1.4142f) - (strokeW * 0.45f);
+                            float dDiag2A = (Mathf.Abs(px + py) / 1.4142f) - (strokeW * 0.45f);
+                            float aCrossAnti = (dist < 12.5f) ? Mathf.Max(Mathf.Clamp01(0.5f - dDiag1A), Mathf.Clamp01(0.5f - dDiag2A)) : 0f;
+                            alpha = Mathf.Clamp01(Mathf.Max(aOuterAnti, aCrossAnti));
+                            break;
+
                         case "maneuver":
                             markerColor = colManeuver;
-                            // 机动节点星形矢量
-                            float dManRing = Mathf.Abs(dist - 12f) - (strokeW * 0.5f);
-                            float aManRing = Mathf.Clamp01(0.5f - dManRing);
-                            float aManH = BoxSdf(px, py, 19f, strokeW * 0.5f);
-                            float aManV = BoxSdf(px, py, strokeW * 0.5f, 19f);
-                            alpha = Mathf.Clamp01(Mathf.Max(aManRing, Mathf.Max(aManH, aManV)));
+                            // 原版机动节点：倒正三角 (顶点向下) + 顶部双翼刻度 + 中心瞄准点
+                            float aTriMan = EquilateralTriangleSdf(px, py + 1f, 16f, strokeW, false);
+                            float aDotMan = Mathf.Clamp01(3.2f - dist);
+                            // 顶部两侧外延横向小翼 (两翼横线)
+                            float aWingManL = (Mathf.Abs(py - 7f) < strokeW * 0.5f && px < -10f && px > -19f) ? 1f : 0f;
+                            float aWingManR = (Mathf.Abs(py - 7f) < strokeW * 0.5f && px > 10f && px < 19f) ? 1f : 0f;
+                            alpha = Mathf.Clamp01(Mathf.Max(aTriMan, Mathf.Max(aDotMan, Mathf.Max(aWingManL, aWingManR))));
                             break;
 
                         default:

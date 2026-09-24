@@ -19,6 +19,18 @@ namespace ModularFlightPanel.Core.Probes
         public static ProbeReflectionTraverser Traverser { get; } = new ProbeReflectionTraverser("PRINCIPIA");
 
         private static Type _adapterType;
+        private static Type _interfaceType;
+        private static MethodInfo _hasVesselMethod;
+        private static MethodInfo _flightPlanExistsMethod;
+        private static MethodInfo _flightPlanNumManoeuvresMethod;
+        private static MethodInfo _flightPlanGetManoeuvreMethod;
+
+        private static FieldInfo _pluginField;
+        private static MethodInfo _pluginMethod;
+        private static PropertyInfo _plannerPluginProp;
+        private static PropertyInfo _plannerPredictedVesselProp;
+        private static PropertyInfo _analyserPredictedVesselProp;
+
         private static FieldInfo _frameSelectorField;
         private static FieldInfo _flightPlannerField;
         private static FieldInfo _orbitAnalyserField;
@@ -65,9 +77,21 @@ namespace ModularFlightPanel.Core.Probes
 
                 if (principiaAssembly != null)
                 {
+                    _interfaceType = principiaAssembly.GetType("principia.ksp_plugin_adapter.Interface");
+                    if (_interfaceType != null)
+                    {
+                        _hasVesselMethod = _interfaceType.GetMethod("HasVessel", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null);
+                        _flightPlanExistsMethod = _interfaceType.GetMethod("FlightPlanExists", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null);
+                        _flightPlanNumManoeuvresMethod = _interfaceType.GetMethod("FlightPlanNumberOfManoeuvres", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null);
+                        _flightPlanGetManoeuvreMethod = _interfaceType.GetMethod("FlightPlanGetManoeuvre", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string), typeof(int) }, null);
+                    }
+
                     _adapterType = principiaAssembly.GetType("principia.ksp_plugin_adapter.PrincipiaPluginAdapter");
                     if (_adapterType != null)
                     {
+                        _pluginField = _adapterType.GetField("plugin_", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                        _pluginMethod = _adapterType.GetMethod("Plugin", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, Type.EmptyTypes, null);
+
                         // 1. 遍历 PrincipiaPluginAdapter 公开与内部组件
                         _frameSelectorField = _adapterType.GetField("plotting_frame_selector_", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                         _flightPlannerField = _adapterType.GetField("flight_planner_", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
@@ -103,6 +127,8 @@ namespace ModularFlightPanel.Core.Probes
                             Type plannerType = _flightPlannerField.FieldType;
                             Traverser.TraverseInstance(plannerType, GetFlightPlannerInstance, "Principia 飞行计划 (FlightPlanner)");
 
+                            _plannerPluginProp = plannerType.GetProperty("plugin", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                            _plannerPredictedVesselProp = plannerType.GetProperty("predicted_vessel", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                             _showGuidanceProp = plannerType.GetProperty("show_guidance", BindingFlags.Public | BindingFlags.Instance);
                             _getManoeuvreMethod = plannerType.GetMethod("GetManœuvre", BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(int) }, null);
                             _burnEditorsField = plannerType.GetField("burn_editors_", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -114,6 +140,7 @@ namespace ModularFlightPanel.Core.Probes
                             Type analyserType = _orbitAnalyserField.FieldType;
                             Traverser.TraverseInstance(analyserType, GetOrbitAnalyserInstance, "Principia 轨道摄动分析 (OrbitAnalyser)");
 
+                            _analyserPredictedVesselProp = analyserType.GetProperty("predicted_vessel", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                             _orbitDescField = analyserType.GetField("orbit_description_", BindingFlags.NonPublic | BindingFlags.Instance);
                             _getAnalysisMethod = analyserType.GetMethod("GetAnalysis", BindingFlags.NonPublic | BindingFlags.Instance, null, Type.EmptyTypes, null);
                         }
@@ -228,13 +255,41 @@ namespace ModularFlightPanel.Core.Probes
                 object man = GetCurrentManoeuvreOrEditor();
                 if (man != null)
                 {
-                    // 尝试通过 Δv() 方法或 Δv 属性取值
+                    // 1. 尝试通过 Δv() 方法或 Δv 属性取值 (BurnEditor)
                     MethodInfo mi = man.GetType().GetMethod("Δv", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
                     if (mi != null) { try { return Convert.ToDouble(mi.Invoke(man, null)); } catch { } }
                     PropertyInfo pi = man.GetType().GetProperty("Δv", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
                     if (pi != null) { try { return Convert.ToDouble(pi.GetValue(man, null)); } catch { } }
                     FieldInfo fi = man.GetType().GetField("Δv", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
                     if (fi != null) { try { return Convert.ToDouble(fi.GetValue(man)); } catch { } }
+
+                    // 2. 尝试从 NavigationManoeuvre.burn.delta_v 读取
+                    FieldInfo burnFi = man.GetType().GetField("burn", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (burnFi != null)
+                    {
+                        object burn = burnFi.GetValue(man);
+                        if (burn != null)
+                        {
+                            FieldInfo dvFi = burn.GetType().GetField("delta_v", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                            if (dvFi != null)
+                            {
+                                object xyz = dvFi.GetValue(burn);
+                                if (xyz != null)
+                                {
+                                    FieldInfo xf = xyz.GetType().GetField("x", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                                    FieldInfo yf = xyz.GetType().GetField("y", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                                    FieldInfo zf = xyz.GetType().GetField("z", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                                    if (xf != null && yf != null && zf != null)
+                                    {
+                                        double x = Convert.ToDouble(xf.GetValue(xyz));
+                                        double y = Convert.ToDouble(yf.GetValue(xyz));
+                                        double z = Convert.ToDouble(zf.GetValue(xyz));
+                                        return Math.Sqrt(x * x + y * y + z * z);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 return double.NaN;
             }, "Principia 飞行计划 (FlightPlanner)", "Principia 计划变轨 Delta-V", new[] { "DV", "MANEUVERDV", "DELTAV" });
@@ -261,6 +316,17 @@ namespace ModularFlightPanel.Core.Probes
                     FieldInfo fi = man.GetType().GetField("initial_time_", BindingFlags.NonPublic | BindingFlags.Instance)
                                    ?? man.GetType().GetField("initial_time", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
                     if (fi != null) { try { return Convert.ToDouble(fi.GetValue(man)); } catch { } }
+
+                    FieldInfo burnFi = man.GetType().GetField("burn", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (burnFi != null)
+                    {
+                        object burn = burnFi.GetValue(man);
+                        if (burn != null)
+                        {
+                            FieldInfo initFi = burn.GetType().GetField("initial_time", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                            if (initFi != null) { try { return Convert.ToDouble(initFi.GetValue(burn)); } catch { } }
+                        }
+                    }
                 }
                 return double.NaN;
             }, "Principia 飞行计划 (FlightPlanner)", "计划变轨点火起始世界时 (UT)", new[] { "BURNUT", "INITIALTIME" });
@@ -348,14 +414,33 @@ namespace ModularFlightPanel.Core.Probes
             }, "Principia 轨道摄动分析 (OrbitAnalyser)", "预估再入大气层世界时 (UT)", new[] { "REENTRYTIME" });
         }
 
+        private static object _cachedAdapterInstance;
+        private static float _lastAdapterSearchTime = -10f;
+
         private static object GetAdapterInstance()
         {
             if (_adapterType == null) return null;
+            if (_cachedAdapterInstance != null && ((UnityEngine.Object)_cachedAdapterInstance) != null)
+            {
+                return _cachedAdapterInstance;
+            }
+
+            float now = Time.unscaledTime;
+            if (now - _lastAdapterSearchTime < 2.0f)
+            {
+                return null;
+            }
+            _lastAdapterSearchTime = now;
+
             try
             {
                 // 1. 优先从场景对象查找
                 var obj = UnityEngine.Object.FindObjectOfType(_adapterType);
-                if (obj != null) return obj;
+                if (obj != null)
+                {
+                    _cachedAdapterInstance = obj;
+                    return _cachedAdapterInstance;
+                }
 
                 // 2. 备选：从 HighLogic 剧本模块列表查找
                 if (HighLogic.CurrentGame != null && HighLogic.CurrentGame.scenarios != null)
@@ -365,7 +450,8 @@ namespace ModularFlightPanel.Core.Probes
                         var sc = HighLogic.CurrentGame.scenarios[i];
                         if (sc != null && sc.moduleRef != null && _adapterType.IsAssignableFrom(sc.moduleRef.GetType()))
                         {
-                            return sc.moduleRef;
+                            _cachedAdapterInstance = sc.moduleRef;
+                            return _cachedAdapterInstance;
                         }
                     }
                 }
@@ -398,12 +484,115 @@ namespace ModularFlightPanel.Core.Probes
             catch { return null; }
         }
 
+        private static IntPtr GetPluginPointer()
+        {
+            // 1. 从 flight_planner_ 的 plugin 属性获取
+            object planner = GetFlightPlannerInstance();
+            if (planner != null && _plannerPluginProp != null)
+            {
+                try { return (IntPtr)_plannerPluginProp.GetValue(planner, null); } catch { }
+            }
+
+            // 2. 从 adapter 的 plugin_ 字段或 Plugin() 方法获取
+            object adapter = GetAdapterInstance();
+            if (adapter != null)
+            {
+                if (_pluginField != null)
+                {
+                    try { return (IntPtr)_pluginField.GetValue(adapter); } catch { }
+                }
+                if (_pluginMethod != null)
+                {
+                    try { return (IntPtr)_pluginMethod.Invoke(adapter, null); } catch { }
+                }
+            }
+
+            return IntPtr.Zero;
+        }
+
+        /// <summary>
+        /// 权威检测当前活动载具在 Principia 中是否存在有效的飞行计划与机动节点。
+        /// 严格执行三重守卫：
+        /// 1. burn_editors_ 列表探测 (最安全低开销)
+        /// 2. Interface.HasVessel 验证 (防止未跟踪载具调用引发 native CHECK 失败)
+        /// 3. Interface.FlightPlanExists 与 FlightPlanNumberOfManoeuvres 验证
+        /// 彻底杜绝 native C++ std::abort 崩溃。
+        /// </summary>
+        public static bool HasFlightPlan()
+        {
+            if (!_isAvailable) return false;
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null) return false;
+
+            // 1. 如果已能从 burn_editors_ 读到活动编辑器且数量大于0，直接确认为 true
+            object planner = GetFlightPlannerInstance();
+            if (planner != null && _burnEditorsField != null)
+            {
+                try
+                {
+                    var list = _burnEditorsField.GetValue(planner) as IList;
+                    if (list != null && list.Count > 0)
+                    {
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            // 2. 通过 Principia native 接口权威查询
+            IntPtr plugin = GetPluginPointer();
+            if (plugin == IntPtr.Zero) return false;
+
+            string guid = v.id.ToString();
+
+            // 必须先验证载具在 Principia 中存在，避免 native CHECK 失败
+            if (_hasVesselMethod != null)
+            {
+                try
+                {
+                    bool hasVessel = (bool)_hasVesselMethod.Invoke(null, new object[] { plugin, guid });
+                    if (!hasVessel) return false;
+                }
+                catch { return false; }
+            }
+
+            // 检查 FlightPlan 是否存在
+            if (_flightPlanExistsMethod != null)
+            {
+                try
+                {
+                    bool exists = (bool)_flightPlanExistsMethod.Invoke(null, new object[] { plugin, guid });
+                    if (!exists) return false;
+                }
+                catch { return false; }
+            }
+            else
+            {
+                return false;
+            }
+
+            // 检查计划机动数量是否大于 0
+            if (_flightPlanNumManoeuvresMethod != null)
+            {
+                try
+                {
+                    int count = (int)_flightPlanNumManoeuvresMethod.Invoke(null, new object[] { plugin, guid });
+                    return count > 0;
+                }
+                catch { return false; }
+            }
+
+            return false;
+        }
+
+        public static bool HasActiveFlightPlan => HasFlightPlan();
+
         private static object GetCurrentManoeuvreOrEditor()
         {
             object planner = GetFlightPlannerInstance();
             if (planner == null) return null;
 
-            // 1. 尝试从 burn_editors_ 列表读取第一个活动编辑器
+            // 1. 优先从 burn_editors_ 列表读取第一个活动编辑器 (最安全、开销最低)
             if (_burnEditorsField != null)
             {
                 try
@@ -417,30 +606,81 @@ namespace ModularFlightPanel.Core.Probes
                 catch { }
             }
 
-            // 2. 尝试调用 GetManœuvre(0)
-            if (_getManoeuvreMethod != null)
+            // 2. 只有在严格确认载具存在、FlightPlan 存在且机动数 > 0 的情况下，才允许调用 GetManœuvre(0)
+            if (HasFlightPlan())
             {
-                try
+                if (_getManoeuvreMethod != null)
                 {
-                    return _getManoeuvreMethod.Invoke(planner, new object[] { 0 });
+                    try
+                    {
+                        return _getManoeuvreMethod.Invoke(planner, new object[] { 0 });
+                    }
+                    catch { }
                 }
-                catch { }
+
+                if (_flightPlanGetManoeuvreMethod != null)
+                {
+                    try
+                    {
+                        IntPtr plugin = GetPluginPointer();
+                        Vessel v = FlightGlobals.ActiveVessel;
+                        if (plugin != IntPtr.Zero && v != null)
+                        {
+                            return _flightPlanGetManoeuvreMethod.Invoke(null, new object[] { plugin, v.id.ToString(), 0 });
+                        }
+                    }
+                    catch { }
+                }
             }
 
             return null;
         }
 
+        private static object _cachedAnalysisElements;
+        private static float _lastAnalysisElementsTime = -10f;
+
         private static object GetAnalysisElements()
         {
+            if (!_isAvailable) return null;
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null) return null;
+
+            float now = Time.unscaledTime;
+            if (now - _lastAnalysisElementsTime < 1.0f)
+            {
+                return _cachedAnalysisElements;
+            }
+            _lastAnalysisElementsTime = now;
+
             object analyser = GetOrbitAnalyserInstance();
             if (analyser == null || _getAnalysisMethod == null) return null;
+
+            // 检查 Principia 是否已跟踪该载具
+            string guid = v.id.ToString();
+            IntPtr plugin = GetPluginPointer();
+            if (plugin == IntPtr.Zero) return null;
+
+            if (_hasVesselMethod != null)
+            {
+                try
+                {
+                    bool hasVessel = (bool)_hasVesselMethod.Invoke(null, new object[] { plugin, guid });
+                    if (!hasVessel) return null;
+                }
+                catch { return null; }
+            }
+
             try
             {
                 object analysis = _getAnalysisMethod.Invoke(analyser, null);
                 if (analysis != null)
                 {
                     FieldInfo fi = analysis.GetType().GetField("elements", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-                    if (fi != null) return fi.GetValue(analysis);
+                    if (fi != null)
+                    {
+                        _cachedAnalysisElements = fi.GetValue(analysis);
+                        return _cachedAnalysisElements;
+                    }
                 }
             }
             catch { }
@@ -460,9 +700,9 @@ namespace ModularFlightPanel.Core.Probes
         // 强类型便捷属性与参考系控制
         public static string FrameName => ResolveString("FrameName");
         public static string NavballFrameName => ResolveString("NavballFrameName");
-        public static double ManeuverDeltaV => ResolveNumeric("ManeuverDeltaV");
-        public static double ManeuverDuration => ResolveNumeric("ManeuverDuration");
-        public static double TimeToManeuver => ResolveNumeric("TimeToManeuver");
+        public static double ManeuverDeltaV => HasFlightPlan() ? ResolveNumeric("ManeuverDeltaV") : double.NaN;
+        public static double ManeuverDuration => HasFlightPlan() ? ResolveNumeric("ManeuverDuration") : double.NaN;
+        public static double TimeToManeuver => HasFlightPlan() ? ResolveNumeric("TimeToManeuver") : double.NaN;
         public static string OrbitDescription => ResolveString("OrbitDescription");
 
         public static bool IsTargetFrameSelected

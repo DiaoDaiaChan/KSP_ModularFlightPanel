@@ -5,9 +5,11 @@ using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI.Widgets;
+using ModularFlightPanel.UI.Widgets.SpaceX;
 
 namespace ModularFlightPanel.UI
 {
+    [DefaultExecutionOrder(100)]
     public class NavballHUD : MonoBehaviour
     {
         private static NavballHUD _instance;
@@ -52,8 +54,12 @@ namespace ModularFlightPanel.UI
         {
             WidgetLayoutManager.Instance.Initialize();
             ThemeManager.Instance.OnThemeChanged += OnThemeChanged;
+            if (WidgetRenderManager.Instance != null)
+            {
+                WidgetRenderManager.Instance.OnGlobalRenderScaleChanged += HandleGlobalRenderScaleChanged;
+            }
 
-#if !UNITY_EDITOR
+#if KSP_RUNTIME
             // 注册 KSP 原生 UI 显隐事件与 DPI 缩放事件 (支持 F2 一键隐藏 UI)
             try
             {
@@ -70,8 +76,9 @@ namespace ModularFlightPanel.UI
                 SetRenderCamera(renderCam);
             }
             BuildHUD();
+            StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
 
-#if !UNITY_EDITOR
+#if KSP_RUNTIME
             // 若进入场景时 KSP 已经处于 F2 隐藏界面状态，立即同步隐藏
             try
             {
@@ -117,7 +124,12 @@ namespace ModularFlightPanel.UI
 
             MFPProfiler.BeginFrame();
 
-#if !UNITY_EDITOR
+            if (!bypassed)
+            {
+                WidgetRenderManager.Instance.MasterUpdate(Time.unscaledTime);
+            }
+
+#if KSP_RUNTIME
             // 实时侦测 KSP 主控制台 UI 状态 (双重安全保障：捕获 F2 快捷键与第三方 Mod 的显隐切换)
             try
             {
@@ -136,6 +148,10 @@ namespace ModularFlightPanel.UI
 
         private void LateUpdate()
         {
+            if (!MFPProfiler.IsMasterBypassed)
+            {
+                WidgetRenderManager.Instance.MasterLateUpdate();
+            }
             MFPProfiler.EndFrame();
         }
 
@@ -158,8 +174,9 @@ namespace ModularFlightPanel.UI
             _scaler.matchWidthOrHeight = 1.0f;
 
             // 航电级超采样动态像素密度 (Avionics High-DPI Dynamic Supersampling):
-            // 将默认字体与动态矢量光栅化清晰度提升至 2.5x，根治整体模糊、发虚、锯齿感
-            _scaler.dynamicPixelsPerUnit = 2.5f;
+            // 将默认字体与动态矢量光栅化清晰度与全局渲染倍率挂钩 (2.5x * GlobalRenderScaleMultiplier)
+            float renderScale = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalRenderScaleMultiplier : 1.0f;
+            _scaler.dynamicPixelsPerUnit = 2.5f * Mathf.Clamp(renderScale, 0.5f, 2.5f);
             _scaler.referencePixelsPerUnit = 100f;
 
             _raycaster = _canvasObj.GetComponent<GraphicRaycaster>();
@@ -172,6 +189,7 @@ namespace ModularFlightPanel.UI
                 if (Application.isPlaying) Destroy(_hudRoot);
                 else DestroyImmediate(_hudRoot);
             }
+            WidgetRenderManager.Instance.ClearAll();
             _modularWidgets.Clear();
 
             ThemeConfig theme = ThemeManager.Instance.CurrentTheme;
@@ -215,6 +233,68 @@ namespace ModularFlightPanel.UI
                 }
 
                 // 专属原生子系统面板 (优先通过 WidgetType 或 WidgetId 匹配)
+                if (cfg.WidgetType == "spacex_header" || cfg.WidgetId == "spacex.header" || cfg.WidgetId.StartsWith("spacex.header"))
+                {
+                    SpawnSpaceXHeaderWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "spacex_docking" || cfg.WidgetId == "spacex.docking" || cfg.WidgetId.StartsWith("spacex.docking"))
+                {
+                    SpawnSpaceXDockingReticleWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "spacex_overview" || cfg.WidgetId == "spacex.overview" || cfg.WidgetId.StartsWith("spacex.overview"))
+                {
+                    SpawnSpaceXOverviewWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "spacex_bottom" || cfg.WidgetId == "spacex.bottom" || cfg.WidgetId.StartsWith("spacex.bottom"))
+                {
+                    SpawnSpaceXBottomBarWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "spacex_arc" || cfg.WidgetType == "spacex_gauge" ||
+                    cfg.WidgetId.StartsWith("spacex.arc") || cfg.WidgetId.StartsWith("spacex.speed") ||
+                    cfg.WidgetId.StartsWith("spacex.altitude"))
+                {
+                    SpawnSpaceXArcGaugeWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "spacex_timeline" || cfg.WidgetId == "spacex.timeline" || cfg.WidgetId.StartsWith("spacex.time"))
+                {
+                    SpawnSpaceXTimelineWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "spacex_attitude" || cfg.WidgetId == "spacex.attitude")
+                {
+                    SpawnSpaceXAttitudeWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "spacex_engines" || cfg.WidgetId == "spacex.engines" || cfg.WidgetId.StartsWith("spacex.engine"))
+                {
+                    SpawnSpaceXEngineWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "b747_eicas" || cfg.WidgetType == "boeing_eicas" || cfg.WidgetType == "eicas" || cfg.WidgetId == "custom.b747_eicas" || cfg.WidgetId == "core.b747_eicas")
+                {
+                    SpawnB747EicasWidget(cfg, theme);
+                    continue;
+                }
+
+                if (cfg.WidgetType == "b747_lower_eicas" || cfg.WidgetType == "eicas_lower" || cfg.WidgetId == "custom.b747_lower_eicas" || cfg.WidgetId == "core.b747_lower_eicas")
+                {
+                    SpawnB747LowerEicasWidget(cfg, theme);
+                    continue;
+                }
+
                 if (cfg.WidgetType == "electrical" || cfg.WidgetId == "custom.electrical" || cfg.WidgetId == "custom.elec")
                 {
                     SpawnElectricalWidget(cfg, theme);
@@ -269,6 +349,12 @@ namespace ModularFlightPanel.UI
                     continue;
                 }
 
+                if (cfg.WidgetType == "maneuver" || cfg.WidgetType == "maneuver_node" || cfg.WidgetId == "core.maneuver" || cfg.WidgetId.StartsWith("maneuver."))
+                {
+                    SpawnManeuverNodeWidget(cfg, theme);
+                    continue;
+                }
+
                 if (cfg.WidgetType == "bar_gauge" || cfg.WidgetId.StartsWith("gauge."))
                 {
                     SpawnAvionicsBarGauge(cfg, theme);
@@ -277,7 +363,17 @@ namespace ModularFlightPanel.UI
 
                 if (cfg.WidgetType == "toolbar" || cfg.WidgetId == "core.toolbar" || cfg.WidgetId.StartsWith("toolbar."))
                 {
-                    SpawnModernToolbar(cfg, theme);
+                    if (ThemeManager.Instance.ToolbarStyleMode == 2)
+                    {
+                        SpawnModernToolbar(cfg, theme);
+                    }
+                    continue;
+                }
+
+                if (cfg.WidgetType == "performance_monitor" || cfg.WidgetType == "perf_monitor" || cfg.WidgetType == "profiler" ||
+                    cfg.WidgetId == "custom.perf_monitor" || cfg.WidgetId == "core.performance_monitor")
+                {
+                    SpawnPerformanceMonitorWidget(cfg, theme);
                     continue;
                 }
 
@@ -322,7 +418,38 @@ namespace ModularFlightPanel.UI
                         SpawnCommSignalWidget(cfg, theme);
                         break;
                     case "core.toolbar":
-                        SpawnModernToolbar(cfg, theme);
+                        if (ThemeManager.Instance.ToolbarStyleMode == 2)
+                        {
+                            SpawnModernToolbar(cfg, theme);
+                        }
+                        break;
+                    case "core.maneuver":
+                        SpawnManeuverNodeWidget(cfg, theme);
+                        break;
+                    case "core.b747_eicas":
+                    case "custom.b747_eicas":
+                        SpawnB747EicasWidget(cfg, theme);
+                        break;
+                    case "core.b747_lower_eicas":
+                    case "custom.b747_lower_eicas":
+                        SpawnB747LowerEicasWidget(cfg, theme);
+                        break;
+                    case "spacex.speed":
+                    case "spacex.altitude":
+                        SpawnSpaceXArcGaugeWidget(cfg, theme);
+                        break;
+                    case "spacex.timeline":
+                        SpawnSpaceXTimelineWidget(cfg, theme);
+                        break;
+                    case "spacex.attitude":
+                        SpawnSpaceXAttitudeWidget(cfg, theme);
+                        break;
+                    case "spacex.engines":
+                        SpawnSpaceXEngineWidget(cfg, theme);
+                        break;
+                    case "core.performance_monitor":
+                    case "custom.perf_monitor":
+                        SpawnPerformanceMonitorWidget(cfg, theme);
                         break;
                     default:
                         // 自定义通配符组件 (CustomTokenTextWidget)
@@ -334,7 +461,37 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            Debug.Log($"[ModularFlightPanel] Assembled {_modularWidgets.Count} modular flight widgets.");
+            // 模式 2 (折叠收纳坞) 保障：若当前布局未含 core.toolbar 或被意外关闭，自动确保 Dock 正常实例化
+            if (ThemeManager.Instance.ToolbarStyleMode == 2)
+            {
+                bool hasDock = false;
+                for (int i = 0; i < _modularWidgets.Count; i++)
+                {
+                    if (_modularWidgets[i] is ModernToolbarWidget)
+                    {
+                        hasDock = true;
+                        break;
+                    }
+                }
+                if (!hasDock)
+                {
+                    var dockCfg = WidgetLayoutManager.Instance.GetConfig("core.toolbar") ??
+                        new WidgetConfig("core.toolbar", "AVIONICS 现代折叠工具栏", 890f, 0f, 1.0f)
+                        {
+                            WidgetType = "toolbar",
+                            IsEnabled = true
+                        };
+                    SpawnModernToolbar(dockCfg, theme);
+                }
+            }
+
+            foreach (var w in _modularWidgets)
+            {
+                WidgetRenderManager.Instance.RegisterWidget(w, w.RefreshTier);
+                w.IsManagedByRenderManager = true;
+            }
+
+            Debug.Log($"[ModularFlightPanel] Assembled {_modularWidgets.Count} modular flight widgets into WidgetRenderManager.");
         }
 
         private void SpawnNavballSphere(WidgetConfig cfg, ThemeConfig theme)
@@ -409,6 +566,22 @@ namespace ModularFlightPanel.UI
             _modularWidgets.Add(w);
         }
 
+        private void SpawnB747EicasWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<B747EicasWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnB747LowerEicasWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<B747LowerEicasWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
         private void SpawnElectricalWidget(WidgetConfig cfg, ThemeConfig theme)
         {
             GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
@@ -437,6 +610,14 @@ namespace ModularFlightPanel.UI
         {
             GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
             var w = go.AddComponent<SignalStatusWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnPerformanceMonitorWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<PerformanceMonitorWidget>();
             w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
             _modularWidgets.Add(w);
         }
@@ -497,10 +678,82 @@ namespace ModularFlightPanel.UI
             _modularWidgets.Add(w);
         }
 
+        private void SpawnManeuverNodeWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<ManeuverNodeWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
         private void SpawnCustomTokenWidget(WidgetConfig cfg, ThemeConfig theme)
         {
             GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
             var w = go.AddComponent<CustomTokenTextWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXHeaderWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXHeaderWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXDockingReticleWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXDockingReticleWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXOverviewWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXOverviewWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXBottomBarWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXBottomBarWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXArcGaugeWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXArcGaugeWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXTimelineWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXTimelineWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXAttitudeWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXAttitudeWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnSpaceXEngineWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<SpaceXEngineWidget>();
             w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
             _modularWidgets.Add(w);
         }
@@ -533,6 +786,10 @@ namespace ModularFlightPanel.UI
 
         private void OnThemeChanged(ThemeConfig newTheme)
         {
+            if (ThemeManager.Instance.ToolbarStyleMode == 1)
+            {
+                StockToolbarHook.ReskinStockToolbar();
+            }
             for (int i = 0; i < _modularWidgets.Count; i++)
             {
                 if (_modularWidgets[i] != null)
@@ -593,7 +850,7 @@ namespace ModularFlightPanel.UI
 
             if (!WidgetDragHandler.IsEditModeActive || !_isUIVisible || MFPProfiler.IsMasterBypassed) return;
 
-#if !UNITY_EDITOR
+#if KSP_RUNTIME
             GUI.skin = HighLogic.Skin;
 #endif
 
@@ -835,10 +1092,22 @@ namespace ModularFlightPanel.UI
             GUILayout.EndArea();
         }
 
+        private void HandleGlobalRenderScaleChanged(float newScale)
+        {
+            if (_scaler != null)
+            {
+                _scaler.dynamicPixelsPerUnit = 2.5f * Mathf.Clamp(newScale, 0.5f, 2.5f);
+            }
+        }
+
         private void OnDestroy()
         {
             ThemeManager.Instance.OnThemeChanged -= OnThemeChanged;
-#if !UNITY_EDITOR
+            if (WidgetRenderManager.Instance != null)
+            {
+                WidgetRenderManager.Instance.OnGlobalRenderScaleChanged -= HandleGlobalRenderScaleChanged;
+            }
+#if KSP_RUNTIME
             try
             {
                 GameEvents.onHideUI.Remove(OnHideUI);

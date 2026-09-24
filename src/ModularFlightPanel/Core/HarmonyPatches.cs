@@ -91,6 +91,7 @@ namespace ModularFlightPanel.Core
             {
                 StockNavBallHook.HideStockCommNet(true);
             }
+            StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
         }
     }
 
@@ -119,6 +120,7 @@ namespace ModularFlightPanel.Core
                 {
                     _prevBypassed = true;
                     StockNavBallHook.RestoreAllStockUI();
+                    StockToolbarHook.RestoreStockToolbar();
                 }
                 return;
             }
@@ -127,6 +129,7 @@ namespace ModularFlightPanel.Core
             {
                 _prevBypassed = false;
                 _lastWatchdogTime = -1f; // 强制刷新
+                StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
             }
 
             float now = Time.unscaledTime;

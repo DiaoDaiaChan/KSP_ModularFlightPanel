@@ -34,6 +34,8 @@ namespace ModularFlightPanel.Core
         public static Action ReskinStockToolbarAction { get; set; }
         public static Action RestoreStockToolbarAction { get; set; }
         public static Action RestoreAllStockUIAction { get; set; }
+        public delegate bool MarkerDirectionFallbackDelegate(string markerKey, out Vector3 dir, out bool isVisible);
+        public static MarkerDirectionFallbackDelegate MarkerDirectionFallback { get; set; }
     }
 
     /// <summary>
@@ -50,6 +52,18 @@ namespace ModularFlightPanel.Core
 
     public static class VesselSilhouetteService
     {
-        public static IVesselSilhouetteProvider Provider { get; set; }
+        private static IVesselSilhouetteProvider _provider;
+        public static IVesselSilhouetteProvider Provider
+        {
+            get
+            {
+                if (_provider is UnityEngine.Object obj && obj == null)
+                {
+                    _provider = null;
+                }
+                return _provider;
+            }
+            set => _provider = value;
+        }
     }
 }

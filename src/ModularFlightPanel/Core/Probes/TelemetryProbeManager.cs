@@ -173,6 +173,13 @@ namespace ModularFlightPanel.Core.Probes
         {
             if (string.IsNullOrEmpty(tag) || string.IsNullOrEmpty(subTag)) return double.NaN;
 
+            string probeKey = tag + ":" + subTag;
+            int frame = Time.frameCount;
+            if (CacheManager.Instance.TryGetCachedProbeNumeric(probeKey, frame, out double cachedVal))
+            {
+                return cachedVal;
+            }
+
             // 支持三段式修饰符（如 {FAR:AEROFORCE:X}, {FAR:AEROFORCE:MAG}）
             string name = subTag;
             string modifier = null;
@@ -183,6 +190,13 @@ namespace ModularFlightPanel.Core.Probes
                 modifier = subTag.Substring(colonIdx + 1);
             }
 
+            double result = ResolveNumericProbeInternal(tag, name, modifier);
+            CacheManager.Instance.SetCachedProbeNumeric(probeKey, frame, result);
+            return result;
+        }
+
+        private static double ResolveNumericProbeInternal(string tag, string name, string modifier)
+        {
             switch (tag.ToUpperInvariant())
             {
                 // 原有 6 大探针
@@ -280,6 +294,13 @@ namespace ModularFlightPanel.Core.Probes
             if (string.IsNullOrEmpty(tag)) return "---";
             if (string.IsNullOrEmpty(subTag)) return tag;
 
+            string probeKey = tag + ":" + subTag + ":" + (format ?? string.Empty);
+            int frame = Time.frameCount;
+            if (CacheManager.Instance.TryGetCachedProbeString(probeKey, frame, out string cachedStr))
+            {
+                return cachedStr;
+            }
+
             string name = subTag;
             string modifier = null;
             int colonIdx = subTag.IndexOf(':');
@@ -289,6 +310,13 @@ namespace ModularFlightPanel.Core.Probes
                 modifier = subTag.Substring(colonIdx + 1);
             }
 
+            string result = ResolveStringProbeInternal(tag, name, modifier, format);
+            CacheManager.Instance.SetCachedProbeString(probeKey, frame, result);
+            return result;
+        }
+
+        private static string ResolveStringProbeInternal(string tag, string name, string modifier, string format)
+        {
             switch (tag.ToUpperInvariant())
             {
                 // 原有 6 大探针
@@ -390,12 +418,8 @@ namespace ModularFlightPanel.Core.Probes
             if (traverser.TryResolveNumeric(name, out double numVal))
             {
                 if (double.IsNaN(numVal)) return "---";
-                if (!string.IsNullOrEmpty(format))
-                {
-                    try { return numVal.ToString(format); }
-                    catch { return numVal.ToString("F1"); }
-                }
-                return numVal.ToString("F1");
+                string fmt = string.IsNullOrEmpty(format) ? "F1" : format;
+                return CacheManager.Instance.FastDouble(name, numVal, fmt);
             }
 
             return "---";

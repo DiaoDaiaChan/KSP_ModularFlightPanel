@@ -9,9 +9,9 @@ Shader "ModularFlightPanel/GlassCockpitUI"
         _BorderColor ("Precision Border Color", Color) = (0.35, 0.75, 1.0, 0.6)
         _AccentColor ("Modern Accent Color", Color) = (0.0, 0.85, 1.0, 1.0)
 
-        _BorderWidth ("Border Width", Range(0.001, 0.05)) = 0.015
-        _CornerChamfer ("Corner Chamfer Cut", Range(0.0, 0.2)) = 0.05
-        _GlassGradientStrength ("Top-Down Lighting Gradient", Range(0.0, 0.5)) = 0.2
+        _BorderWidth ("Border Width", Range(0.0, 0.05)) = 0.0
+        _CornerChamfer ("Corner Chamfer Cut", Range(0.0, 0.2)) = 0.0
+        _GlassGradientStrength ("Top-Down Lighting Gradient", Range(0.0, 0.5)) = 0.06
 
         // UGUI Stencil Mask Support
         _StencilComp ("Stencil Comparison", Float) = 8
@@ -59,6 +59,8 @@ Shader "ModularFlightPanel/GlassCockpitUI"
             #include "UnityCG.cginc"
             #include "UnityUI.cginc"
 
+            #pragma multi_compile __ UNITY_UI_CLIP_RECT
+
             struct appdata_t
             {
                 float4 vertex   : POSITION;
@@ -74,7 +76,11 @@ Shader "ModularFlightPanel/GlassCockpitUI"
                 float4 worldPosition : TEXCOORD1;
             };
 
+            sampler2D _MainTex;
             fixed4 _Color;
+            fixed4 _TextureSampleAdd;
+            float4 _ClipRect;
+
             fixed4 _GlassBgColor;
             fixed4 _BorderColor;
             fixed4 _AccentColor;
@@ -96,36 +102,46 @@ Shader "ModularFlightPanel/GlassCockpitUI"
             {
                 float2 uv = IN.texcoord;
 
-                // 四角微切角 (Corner Chamfer)
-                float d1 = uv.x + uv.y;
-                float d2 = (1.0 - uv.x) + uv.y;
-                float d3 = uv.x + (1.0 - uv.y);
-                float d4 = (1.0 - uv.x) + (1.0 - uv.y);
-                if (d1 < _CornerChamfer || d2 < _CornerChamfer || d3 < _CornerChamfer || d4 < _CornerChamfer)
+                // 1. 可选四角微切角 (Corner Chamfer，默认 0 为纯平矩形)
+                if (_CornerChamfer > 0.001)
                 {
-                    discard;
+                    float d1 = uv.x + uv.y;
+                    float d2 = (1.0 - uv.x) + uv.y;
+                    float d3 = uv.x + (1.0 - uv.y);
+                    float d4 = (1.0 - uv.x) + (1.0 - uv.y);
+                    if (d1 < _CornerChamfer || d2 < _CornerChamfer || d3 < _CornerChamfer || d4 < _CornerChamfer)
+                    {
+                        discard;
+                    }
                 }
 
-                // 距离边缘距离
-                float distLeft = uv.x;
-                float distRight = 1.0 - uv.x;
-                float distBottom = uv.y;
-                float distTop = 1.0 - uv.y;
-                float distToEdge = min(min(distLeft, distRight), min(distBottom, distTop));
+                // 2. 纹理基础采样与 UGUI 语义着色
+                fixed4 tex = tex2D(_MainTex, uv) + _TextureSampleAdd;
+                fixed4 finalCol = tex * IN.color;
 
-                float isBorder = step(distToEdge, _BorderWidth);
-
-                // 顶部向下微妙透光渐变 (Frosted glass vertical ambient light)
+                // 3. 顶部向下微妙透光渐变 (Frosted glass vertical ambient light sheen)
                 float topDownGradient = (1.0 - uv.y) * _GlassGradientStrength;
-                fixed4 glass = _GlassBgColor;
-                glass.rgb += topDownGradient;
+                finalCol.rgb += topDownGradient * finalCol.a;
 
-                // 顶部航空条标线 (Modern Top Header Accent)
-                float isTopAccent = step(distTop, _BorderWidth * 1.8);
-                fixed4 edgeColor = lerp(_BorderColor, _AccentColor, isTopAccent);
+                // 4. 可选程序化边框与航空强调顶标
+                if (_BorderWidth > 0.001)
+                {
+                    float distLeft = uv.x;
+                    float distRight = 1.0 - uv.x;
+                    float distBottom = uv.y;
+                    float distTop = 1.0 - uv.y;
+                    float distToEdge = min(min(distLeft, distRight), min(distBottom, distTop));
 
-                fixed4 finalCol = lerp(glass, edgeColor, isBorder);
-                finalCol *= IN.color;
+                    float isBorder = step(distToEdge, _BorderWidth);
+                    float isTopAccent = step(distTop, _BorderWidth * 1.8);
+                    fixed4 edgeColor = lerp(_BorderColor, _AccentColor, isTopAccent);
+
+                    finalCol = lerp(finalCol, edgeColor, isBorder);
+                }
+
+                #ifdef UNITY_UI_CLIP_RECT
+                finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
+                #endif
 
                 return finalCol;
             }

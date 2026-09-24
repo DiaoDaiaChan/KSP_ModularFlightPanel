@@ -1,9 +1,9 @@
 ManifestFileVersion: 0
-CRC: 2205681630
+CRC: 961490066
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: 70891757a1782b640d9f3f97630d8d5a
+    Hash: 2e2d502b190f9634d9d26615c7ddf15f
   TypeTreeHash:
     serializedVersion: 2
     Hash: 55d48f4ad9c3b13330b9eb5ee5686477
@@ -13,11 +13,14 @@ ClassTypes:
   Script: {instanceID: 0}
 SerializeReferenceClassIdentifiers: []
 Assets:
+- Assets/Shaders/DigitalSegmentUI.shader
+- Assets/Shaders/PhosphorHoloUI.shader
 - Assets/Shaders/GlassCockpitUI.shader
 - Assets/Shaders/NavballEnhanced.shader
 - Assets/Shaders/RadialSegmentedMeter.shader
 - Assets/Shaders/NavballHalftone.shader
 - Assets/Shaders/NeonGlowUI.shader
+- Assets/Shaders/DotMatrixUI.shader
 - Assets/Shaders/NavballProcedural.shader
 - Assets/Shaders/NavballModern.shader
 Dependencies: []

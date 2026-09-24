@@ -8,9 +8,9 @@ Shader "ModularFlightPanel/NavballProcedural"
         _SkyZenithColor ("Sky Zenith (Deep Space Blue)", Color) = (0.04, 0.16, 0.36, 1.0)
         _SkyHorizonColor ("Sky Horizon (Aero Cyan)", Color) = (0.08, 0.46, 0.72, 1.0)
         
-        // 地面渐变配色 (Ground Slate Gradient)
-        _GroundHorizonColor ("Ground Horizon (Cockpit Slate)", Color) = (0.18, 0.16, 0.15, 1.0)
-        _GroundNadirColor ("Ground Nadir (Deep Charcoal Nadir)", Color) = (0.07, 0.06, 0.06, 1.0)
+        // 地面渐变配色 (Aero Ground Brown Gradient)
+        _GroundHorizonColor ("Ground Horizon (Earth Brown)", Color) = (0.45, 0.25, 0.12, 1.0)
+        _GroundNadirColor ("Ground Nadir (Deep Nadir Brown)", Color) = (0.22, 0.12, 0.05, 1.0)
         
         // 地平线与赤道线 (Equator Dividing Line)
         _EquatorColor ("Equator Line Color", Color) = (1.0, 1.0, 1.0, 1.0)
@@ -80,25 +80,29 @@ Shader "ModularFlightPanel/NavballProcedural"
             }
 
             // Compact seven-segment vector glyphs keep numbers independent from the selected mode texture.
-            float DigitDistance(float2 p, float digit)
+            float DigitDistance(float2 p, float digitF)
             {
+                int digit = (int)round(digitF);
                 float d = 100.0;
+                float strokeH = 0.42;
+                float2 horizSize = float2(1.30, strokeH);
+                float2 vertSize = float2(strokeH, 0.95);
 
-                if (digit != 1.0 && digit != 4.0)
-                    d = min(d, SegmentDistance(p, float2(0.0, 1.86), float2(1.08, 0.16)));
-                if (digit != 0.0 && digit != 1.0 && digit != 7.0)
-                    d = min(d, SegmentDistance(p, float2(0.0, 0.0), float2(1.08, 0.16)));
-                if (digit != 1.0 && digit != 4.0 && digit != 7.0)
-                    d = min(d, SegmentDistance(p, float2(0.0, -1.86), float2(1.08, 0.16)));
+                if (digit != 1 && digit != 4)
+                    d = min(d, SegmentDistance(p, float2(0.0, 2.0), horizSize));
+                if (digit != 0 && digit != 1 && digit != 7)
+                    d = min(d, SegmentDistance(p, float2(0.0, 0.0), horizSize));
+                if (digit != 1 && digit != 4 && digit != 7)
+                    d = min(d, SegmentDistance(p, float2(0.0, -2.0), horizSize));
 
-                if (digit == 0.0 || digit == 4.0 || digit == 5.0 || digit == 6.0 || digit == 8.0 || digit == 9.0)
-                    d = min(d, SegmentDistance(p, float2(-0.92, 0.90), float2(0.16, 0.76)));
-                if (digit != 5.0 && digit != 6.0)
-                    d = min(d, SegmentDistance(p, float2(0.92, 0.90), float2(0.16, 0.76)));
-                if (digit == 0.0 || digit == 2.0 || digit == 6.0 || digit == 8.0)
-                    d = min(d, SegmentDistance(p, float2(-0.92, -0.90), float2(0.16, 0.76)));
-                if (digit != 2.0)
-                    d = min(d, SegmentDistance(p, float2(0.92, -0.90), float2(0.16, 0.76)));
+                if (digit == 0 || digit == 4 || digit == 5 || digit == 6 || digit == 8 || digit == 9)
+                    d = min(d, SegmentDistance(p, float2(-1.10, 1.0), vertSize));
+                if (digit != 5 && digit != 6)
+                    d = min(d, SegmentDistance(p, float2(1.10, 1.0), vertSize));
+                if (digit == 0 || digit == 2 || digit == 6 || digit == 8)
+                    d = min(d, SegmentDistance(p, float2(-1.10, -1.0), vertSize));
+                if (digit != 2)
+                    d = min(d, SegmentDistance(p, float2(1.10, -1.0), vertSize));
 
                 return d;
             }
@@ -144,9 +148,9 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float3 normal = normalize(i.worldNormal);
                 float3 viewDir = normalize(_WorldSpaceCameraPos.xyz - i.worldPos);
 
-                // 1. 俯仰角与航向角解算 (度数)
+                // 1. 俯仰角与航向角解算 (度数，相机自 -Z 俯视球体，-p.z > 0 为正前方 000° 航向)
                 float pitchDeg = asin(clamp(p.y, -1.0, 1.0)) * 57.2957795; // -90 ~ +90
-                float headDeg = atan2(p.x, p.z) * 57.2957795;               // -180 ~ +180
+                float headDeg = atan2(p.x, -p.z) * 57.2957795;              // -180 ~ +180
                 if (headDeg < 0.0) headDeg += 360.0;
 
                 float absY = abs(p.y);
@@ -176,80 +180,109 @@ Shader "ModularFlightPanel/NavballProcedural"
                 // 俯仰角超过 70° 时平滑淡出纬度线，彻底杜绝极点同心靶蜘蛛网
                 float polarLadderFade = 1.0 - smoothstep(68.0, 78.0, absPitch);
 
-                // 4. 俯仰梯级：每 15° 一道细线，30° 线稍强，负俯仰侧采用短虚线。
-                float pMod15 = abs(fmod(pitchDeg + 367.5, 15.0) - 7.5);
-                float pMod30 = abs(fmod(pitchDeg + 375.0, 30.0) - 15.0);
-                float pLadderAA = max(fwidth(pitchDeg) * 1.15, 0.025);
-                float line15 = 1.0 - smoothstep(_PitchLadderWidth * 34.0, _PitchLadderWidth * 34.0 + pLadderAA, pMod15);
-                float line30 = 1.0 - smoothstep(_PitchLadderWidth * 34.0, _PitchLadderWidth * 34.0 + pLadderAA, pMod30);
-                float majorPitch = lerp(0.48, 0.78, line30);
-
-                float pitchHeadingCenter = floor(headDeg / 45.0 + 0.5) * 45.0;
+                // 4. 俯仰梯级：每 30° 经线一列主梯级，含 15° 大横杠、10° 中横杠、5° 短横杠
+                float pitchHeadingCenter = floor(headDeg / 30.0 + 0.5) * 30.0;
                 float pitchHeadingOffset = headDeg - pitchHeadingCenter;
+                if (pitchHeadingOffset > 180.0) pitchHeadingOffset -= 360.0;
+                if (pitchHeadingOffset < -180.0) pitchHeadingOffset += 360.0;
+                float absHOffset = abs(pitchHeadingOffset);
+
+                // 主梯级 15° 步长 (15°, 30°, 45°, 60°, 75°)
                 float pitchLabelLevel = round(absPitch / 15.0) * 15.0;
                 float pitchLabelCenter = (pitchDeg < 0.0 ? -pitchLabelLevel : pitchLabelLevel);
                 float pitchLabelOffset = pitchDeg - pitchLabelCenter;
+                float absLabelOffset = abs(pitchLabelOffset);
                 float pitchTens = floor(pitchLabelLevel / 10.0);
                 float pitchOnes = fmod(pitchLabelLevel, 10.0);
+
+                // 数字排版：两位数在中央留空处呈现
                 float pitchGlyphDistance = min(
-                    DigitDistance(float2(pitchHeadingOffset + 1.42, pitchLabelOffset), pitchTens),
-                    DigitDistance(float2(pitchHeadingOffset - 1.42, pitchLabelOffset), pitchOnes));
-                float pitchGlyphEnabled = step(14.0, pitchLabelLevel) * (1.0 - step(61.0, pitchLabelLevel)) * polarLadderFade;
-                float pitchLabelGap = (abs(pitchHeadingOffset) < 3.2 && abs(pitchLabelOffset) < 2.5) ? pitchGlyphEnabled : 0.0;
+                    DigitDistance(float2(pitchHeadingOffset + 2.0, pitchLabelOffset), pitchTens),
+                    DigitDistance(float2(pitchHeadingOffset - 2.0, pitchLabelOffset), pitchOnes));
+                float pitchGlyphEnabled = step(14.0, pitchLabelLevel) * (1.0 - step(76.0, pitchLabelLevel)) * polarLadderFade;
+                float pitchLabelGap = (absHOffset < 4.8 && absLabelOffset < 3.0) ? pitchGlyphEnabled : 0.0;
 
-                float negativeDash = 1.0 - smoothstep(0.70, 0.74, frac((headDeg + 22.5) / 45.0));
-                float isPitchLine = line15 * majorPitch * polarLadderFade;
-                isPitchLine *= smoothstep(3.0, 6.0, absPitch);
-                isPitchLine *= (pitchDeg < 0.0 ? negativeDash : 1.0) * (1.0 - pitchLabelGap);
-                float pitchLineOpacity = 0.35 + 0.45 * _PitchLadderColor.a;
-                col = lerp(col, _PitchLadderColor, saturate(isPitchLine * pitchLineOpacity));
-
-                // 5. 经线每 45° 一道，主方向 90° 线略强。
-                float headMod45 = abs(fmod(headDeg + 382.5, 45.0) - 22.5);
-                float headMod90 = abs(fmod(headDeg + 405.0, 90.0) - 45.0);
-                float hAA = max(fwidth(headDeg), 0.025);
-                float isMeridian45 = 1.0 - smoothstep(0.0, hAA * 1.5, headMod45);
-                float isMeridian90 = 1.0 - smoothstep(0.0, hAA * 1.7, headMod90);
-                float isMeridian = max(isMeridian45 * 0.24, isMeridian90 * 0.42) * polarLadderFade;
-                col = lerp(col, _HeadingLineColor, saturate(isMeridian * _HeadingLineColor.a));
-
-                // 6. 赤道航向刻度与角度数字。
-                if (absY < 0.024)
+                // 15° 主横杠 (横跨 ±10.0°，两端带有指向地平线的垂直末梢指示折角)
+                float isMajorBar15 = (absLabelOffset < 0.32 && absHOffset >= 4.8 && absHOffset < 10.0) ? 1.0 : 0.0;
+                // 垂直末梢：天空侧向下折，地面侧向上折
+                float isTip15 = 0.0;
+                if (absHOffset >= 9.2 && absHOffset < 10.0)
                 {
-                    float isEqTick45 = (1.0 - smoothstep(0.0, hAA * 1.8, headMod45)) * 0.48;
-                    col = lerp(col, _EquatorColor, saturate(isEqTick45));
+                    if (pitchDeg > 0.0 && pitchLabelOffset <= 0.0 && pitchLabelOffset > -1.6) isTip15 = 1.0;
+                    else if (pitchDeg < 0.0 && pitchLabelOffset >= 0.0 && pitchLabelOffset < 1.6) isTip15 = 1.0;
+                }
+                float majorLadder15 = max(isMajorBar15, isTip15) * pitchGlyphEnabled;
+
+                // 负俯仰侧虚线风格 (Negative Pitch Ladder Dashing)
+                if (pitchDeg < 0.0 && isMajorBar15 > 0.5)
+                {
+                    if (fmod(absHOffset - 4.8, 2.2) > 1.2) majorLadder15 = 0.0;
                 }
 
-                // 七段数字：俯仰 15° 至 60° 标注，以及赤道 45° 航向标注。
-                float glyphAA = max(max(fwidth(pitchHeadingOffset), fwidth(pitchLabelOffset)), 0.05);
-                float pitchTextOutline = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance - 0.24)) * pitchGlyphEnabled;
+                // 中间 10° 梯级中杠 (横跨 ±5.5°)
+                float pMod10 = abs(pitchDeg - round(pitchDeg / 10.0) * 10.0);
+                float pLevel10 = round(absPitch / 10.0) * 10.0;
+                bool isPure10 = (fmod(pLevel10, 30.0) > 4.0) && (fmod(pLevel10, 15.0) > 4.0) && (pLevel10 > 4.0 && pLevel10 < 80.0);
+                float isTick10 = (isPure10 && pMod10 < 0.28 && absHOffset < 5.5) ? 0.72 : 0.0;
+
+                // 中间 5° 梯级短杠 (横跨 ±3.2°)
+                float pMod5 = abs(pitchDeg - round(pitchDeg / 5.0) * 5.0);
+                float pLevel5 = round(absPitch / 5.0) * 5.0;
+                bool isPure5 = (fmod(pLevel5, 10.0) > 2.0) && (pLevel5 > 2.0 && pLevel5 < 80.0);
+                float isTick5 = (isPure5 && pMod5 < 0.22 && absHOffset < 3.2) ? 0.50 : 0.0;
+
+                float combinedLadder = max(majorLadder15, max(isTick10, isTick5)) * polarLadderFade;
+                col = lerp(col, _PitchLadderColor, saturate(combinedLadder * _PitchLadderColor.a * 0.92));
+
+                // 5. 经度子午线：每 30° 一道经线，90° 主方向加亮
+                float isMeridian30 = (absHOffset < 0.25) ? 0.38 : 0.0;
+                float headMod90 = abs(fmod(headDeg + 405.0, 90.0) - 45.0);
+                float isMeridian90 = (headMod90 < 0.35) ? 0.65 : 0.0;
+                float isMeridian = max(isMeridian30, isMeridian90) * polarLadderFade;
+
+                // 在俯仰数字与赤道航向数字区域对子午线开辟净空区，严禁子午线贯穿数码管笔画
+                float pitchNumberMask = (absHOffset < 4.8 && absLabelOffset < 2.8) ? pitchGlyphEnabled : 0.0;
+                float headingNumberMask = (absHOffset < 6.2 && abs(pitchDeg - 3.8) < 2.8) ? (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) : 0.0;
+                isMeridian *= (1.0 - max(pitchNumberMask, headingNumberMask));
+
+                col = lerp(col, _HeadingLineColor, saturate(isMeridian * _HeadingLineColor.a));
+
+                // 6. 赤道航向刻度线 (Equator Cardinal & Minor Ticks)
+                if (absPitch < 1.8)
+                {
+                    float eqTick30 = (absHOffset < 0.35) ? 0.90 : 0.0;
+                    float eqTick10 = (abs(pitchHeadingOffset - round(pitchHeadingOffset / 10.0) * 10.0) < 0.25 && absPitch < 1.0) ? 0.60 : 0.0;
+                    col = lerp(col, _EquatorColor, saturate(max(eqTick30, eqTick10)));
+                }
+
+                // 7. 高精度七段数码管排版渲染 (俯仰 15°~75° 数字 + 赤道每 30° 航向数字 000~330)
+                float glyphAA = clamp(max(fwidth(pitchHeadingOffset), fwidth(pitchLabelOffset)), 0.08, 0.32);
+                float pitchTextOutline = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance - 0.45)) * pitchGlyphEnabled;
                 float pitchTextFill = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance)) * pitchGlyphEnabled;
 
-                float headingCenter = floor(headDeg / 45.0 + 0.5) * 45.0;
-                float headingOffset = headDeg - headingCenter;
+                // 赤道航向 3 位读数 (000, 030, 060, 090, 120, 150, 180, 210, 240, 270, 300, 330)
+                float headingCenter = pitchHeadingCenter;
+                float headingOffset = pitchHeadingOffset;
                 float headingNumber = fmod(headingCenter + 360.0, 360.0);
                 float headingHundreds = floor(headingNumber / 100.0);
                 float headingTens = floor(fmod(headingNumber, 100.0) / 10.0);
                 float headingOnes = fmod(headingNumber, 10.0);
-                float headingTwoDigitDistance = min(
-                    DigitDistance(float2(headingOffset + 1.42, pitchDeg - 2.75), headingTens),
-                    DigitDistance(float2(headingOffset - 1.42, pitchDeg - 2.75), headingOnes));
-                float headingThreeDigitDistance = min(
-                    DigitDistance(float2(headingOffset + 2.84, pitchDeg - 2.75), headingHundreds),
-                    min(DigitDistance(float2(headingOffset, pitchDeg - 2.75), headingTens),
-                        DigitDistance(float2(headingOffset - 2.84, pitchDeg - 2.75), headingOnes)));
-                float headingGlyphDistance = (headingNumber < 1.0)
-                    ? DigitDistance(float2(headingOffset, pitchDeg - 2.75), headingOnes)
-                    : (headingNumber < 100.0 ? headingTwoDigitDistance : headingThreeDigitDistance);
-                float headingGlyphAA = max(max(fwidth(headingOffset), fwidth(pitchDeg)), 0.05);
-                float headingTextOutline = (1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance - 0.24));
-                float headingTextFill = (1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance));
-                float headingTextEnabled = 1.0 - smoothstep(5.0, 7.0, abs(pitchDeg));
+
+                float headingGlyphDistance = min(
+                    DigitDistance(float2(headingOffset + 3.8, pitchDeg - 3.8), headingHundreds),
+                    min(DigitDistance(float2(headingOffset, pitchDeg - 3.8), headingTens),
+                        DigitDistance(float2(headingOffset - 3.8, pitchDeg - 3.8), headingOnes)));
+                float headingGlyphAA = clamp(max(fwidth(headingOffset), fwidth(pitchDeg)), 0.08, 0.32);
+                float headingTextOutline = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance - 0.45);
+                float headingTextFill = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance);
+                float headingTextEnabled = 1.0 - smoothstep(5.5, 7.5, abs(pitchDeg));
 
                 float textOutline = max(pitchTextOutline, headingTextOutline * headingTextEnabled);
                 float textFill = max(pitchTextFill, headingTextFill * headingTextEnabled);
-                col.rgb = lerp(col.rgb, _LabelOutlineColor.rgb, saturate(textOutline * _LabelOutlineColor.a));
-                col.rgb = lerp(col.rgb, _LabelColor.rgb, saturate(textFill * _LabelColor.a));
+                fixed4 labelCol = (_LabelColor.a > 0.01) ? _LabelColor : fixed4(0.96, 0.98, 1.0, 1.0);
+                fixed4 outlineCol = (_LabelOutlineColor.a > 0.01) ? _LabelOutlineColor : fixed4(0.02, 0.03, 0.05, 0.92);
+                col.rgb = lerp(col.rgb, outlineCol.rgb, saturate(textOutline * outlineCol.a));
+                col.rgb = lerp(col.rgb, labelCol.rgb, saturate(textFill * labelCol.a));
 
                 // 6. 天顶 (+90°) 与天底 (-90°) 极点专属航电十字标 (Celestial Pole Cross)
                 // 替代传统密集同心圆，以极简十字标定天顶/天底

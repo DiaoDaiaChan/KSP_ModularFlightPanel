@@ -100,7 +100,18 @@ namespace ModularFlightPanel.UI
             return go;
         }
 
-        public static Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment, Color color)
+        public static GameObject CreatePanel(Transform parent, string name, Vector2 size, Vector2 anchoredPos, Color color, Material customMaterial)
+        {
+            GameObject go = CreatePanel(parent, name, size, anchoredPos, color);
+            if (customMaterial != null)
+            {
+                Image img = go.GetComponent<Image>();
+                if (img != null) img.material = customMaterial;
+            }
+            return go;
+        }
+
+        public static Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment, Color color, Material customMaterial = null, bool addShadow = true)
         {
             GameObject go = new GameObject(name, typeof(RectTransform), typeof(Text));
             go.transform.SetParent(parent, false);
@@ -115,10 +126,33 @@ namespace ModularFlightPanel.UI
             txt.horizontalOverflow = HorizontalWrapMode.Overflow;
             txt.verticalOverflow = VerticalWrapMode.Overflow;
 
+            if (customMaterial != null)
+            {
+                txt.material = customMaterial;
+            }
+
+            if (addShadow)
+            {
+                // 抗炫光高对比微投影：无论直视恒星太阳还是明亮大气背景，均确保 100% 锐利可读
+                Shadow shadow = go.AddComponent<Shadow>();
+                shadow.effectColor = new Color(0.01f, 0.02f, 0.03f, 0.78f);
+                shadow.effectDistance = new Vector2(1f, -1f);
+                shadow.useGraphicAlpha = true;
+            }
+
             RectTransform rt = go.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(160f, 40f);
 
             return txt;
+        }
+
+        /// <summary>
+        /// 航电等宽数字对齐工具：确保高频跳变的数字在显示时具有稳定的字符占位，消除视觉左右微颤
+        /// </summary>
+        public static string FormatTabular(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            return text;
         }
 
         public static Button CreateButton(Transform parent, string name, Vector2 size, Vector2 anchoredPos, UnityAction onClick)

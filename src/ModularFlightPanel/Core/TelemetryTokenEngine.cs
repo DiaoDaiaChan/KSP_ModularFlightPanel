@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
@@ -25,15 +27,20 @@ namespace ModularFlightPanel.Core
     {
         private static readonly Regex TokenRegex = new Regex(@"\{([A-Za-z0-9_]+)(?::([A-Za-z0-9_]+))?(?::([A-Za-z0-9_]+))?(?::([A-Za-z0-9_]+))?\}", RegexOptions.Compiled);
 
-        /// <summary>
-        /// 原生双精度数值提取（用于驱动表盘指针、弧线、带状滚动物理计算）
-        /// 支持如 "{SPD}", "{ALT:AGL}", "{GFORCE}", "{Q}", "{TWR}", "{THROTTLE}", "{PROP}" 等
-        /// 亦可传入无花括号的纯标识如 "GFORCE" 或 "ALT:ASL"
-        /// </summary>
-        public static double EvaluateNumeric(string token, IFlightTelemetry telemetry)
+        private struct ParsedNumericToken
         {
-            if (string.IsNullOrEmpty(token) || telemetry == null) return double.NaN;
-            if (!telemetry.HasVessel) return double.NaN;
+            public string Tag;
+            public string SubTag;
+        }
+
+        private static readonly Dictionary<string, ParsedNumericToken> _numericTokenCache = new Dictionary<string, ParsedNumericToken>(StringComparer.OrdinalIgnoreCase);
+
+        private static ParsedNumericToken GetOrParseNumericToken(string token)
+        {
+            if (_numericTokenCache.TryGetValue(token, out var cached))
+            {
+                return cached;
+            }
 
             string clean = token.Trim().Trim('{', '}');
             string[] parts = clean.Split(':');
@@ -44,23 +51,49 @@ namespace ModularFlightPanel.Core
             else if (parts.Length > 1)
                 subTag = parts[1].ToUpperInvariant();
 
+            var parsed = new ParsedNumericToken { Tag = tag, SubTag = subTag };
+            if (_numericTokenCache.Count < 512)
+            {
+                _numericTokenCache[token] = parsed;
+            }
+            return parsed;
+        }
+
+        /// <summary>
+        /// 原生双精度数值提取（用于驱动表盘指针、弧线、带状滚动物理计算）
+        /// 支持如 "{SPD}", "{ALT:AGL}", "{GFORCE}", "{Q}", "{TWR}", "{THROTTLE}", "{PROP}" 等
+        /// 亦可传入无花括号的纯标识如 "GFORCE" 或 "ALT:ASL"
+        /// </summary>
+        public static double EvaluateNumeric(string token, IFlightTelemetry telemetry)
+        {
+            if (string.IsNullOrEmpty(token) || telemetry == null) return double.NaN;
+            if (!telemetry.HasVessel) return double.NaN;
+
+            var parsed = GetOrParseNumericToken(token);
+            string tag = parsed.Tag;
+            string subTag = parsed.SubTag;
+
             switch (tag)
             {
                 case "SPD":
                 case "SPEED":
-                    if (subTag == "SURF") return telemetry.SurfaceSpeed;
-                    if (subTag == "OBT" || subTag == "ORBIT") return telemetry.OrbitalSpeed;
-                    if (subTag == "TGT" || subTag == "TARGET") return telemetry.TargetSpeed;
-                    return telemetry.CurrentSpeed;
+                    double spdNum = telemetry.CurrentSpeed;
+                    if (subTag == "SURF" || subTag == "SURF:KMH" || subTag == "SURF_KMH") spdNum = telemetry.SurfaceSpeed;
+                    else if (subTag == "OBT" || subTag == "ORBIT" || subTag == "OBT:KMH") spdNum = telemetry.OrbitalSpeed;
+                    else if (subTag == "TGT" || subTag == "TARGET" || subTag == "TGT:KMH") spdNum = telemetry.TargetSpeed;
+                    if (subTag == "KMH" || subTag.EndsWith(":KMH") || subTag.EndsWith("_KMH")) return spdNum * 3.6;
+                    return spdNum;
 
                 case "MACH":
                     return telemetry.Mach;
 
                 case "ALT":
                 case "ALTITUDE":
-                    if (subTag == "ASL") return telemetry.AltitudeASL;
-                    if (subTag == "AGL" || subTag == "RADAR") return telemetry.AltitudeAGL;
-                    return telemetry.DisplayAltitude;
+                    double altNum = telemetry.DisplayAltitude;
+                    if (subTag == "ASL" || subTag == "ASL:KM" || subTag == "ASL_KM") altNum = telemetry.AltitudeASL;
+                    else if (subTag == "AGL" || subTag == "RADAR" || subTag == "AGL:KM" || subTag == "AGL_KM") altNum = telemetry.AltitudeAGL;
+                    if (subTag == "KM" || subTag.EndsWith(":KM") || subTag.EndsWith("_KM")) return altNum / 1000.0;
+                    return altNum;
 
                 case "VSI":
                 case "VERTSPD":
@@ -155,6 +188,20 @@ namespace ModularFlightPanel.Core
                     if (subTag == "TOTAL") return telemetry.TotalBurnTime;
                     return telemetry.StageBurnTime;
 
+                case "MN":
+                case "MANEUVER":
+                    if (subTag == "TOTAL" || subTag == "TOTALDV") return telemetry.ManeuverTotalDeltaV;
+                    if (subTag == "TIME" || subTag == "TIMETONODE") return telemetry.ManeuverTimeToNode;
+                    if (subTag == "BURNTIME" || subTag == "DURATION") return telemetry.ManeuverBurnTime;
+                    if (subTag == "TIMETOBURN" || subTag == "STARTBURN") return telemetry.ManeuverTimeToBurn;
+                    return telemetry.ManeuverDeltaV;
+
+                case "NODEDV":
+                    return telemetry.ManeuverDeltaV;
+
+                case "TIMETONODE":
+                    return telemetry.ManeuverTimeToNode;
+
                 case "STAGE":
                 case "STG":
                     if (subTag == "DV") return telemetry.StageDeltaV;
@@ -214,6 +261,7 @@ namespace ModularFlightPanel.Core
 
                 case "ENG":
                 case "ENGINES":
+                    if (subTag == "TOTAL" || subTag == "STAGE" || subTag == "ALL") return telemetry.TotalStageEngines;
                     return telemetry.ActiveEngines;
 
                 case "FRAME":
@@ -256,21 +304,83 @@ namespace ModularFlightPanel.Core
                 case "AVIONICS":
                     return ExternalProbeRegistry.ResolveNumeric(tag, subTag);
 
+                case "PERF":
+                case "PROFILER":
+                    if (subTag == "FPS") return MFPProfiler.CurrentFPS;
+                    if (subTag == "MS" || subTag == "TOTAL" || subTag == "TOTAL_MS" || subTag == "FRAMETIME") return MFPProfiler.AvgTotalMs;
+                    if (subTag == "LAST" || subTag == "LAST_MS") return MFPProfiler.LastTotalMs;
+                    if (subTag == "MIN" || subTag == "MIN_MS") return MFPProfiler.MinTotalMs;
+                    if (subTag == "MAX" || subTag == "MAX_MS") return MFPProfiler.MaxTotalMs;
+                    if (subTag == "BUDGET" || subTag == "BUDGET_PCT" || subTag == "PCT") return MFPProfiler.FrameBudgetPercent;
+                    if (subTag == "TELEM" || subTag == "TELEMETRY") return MFPProfiler.AvgTelemetryMs;
+                    if (subTag == "PROBES" || subTag == "PROBE") return MFPProfiler.AvgProbesMs;
+                    if (subTag == "WIDGETS" || subTag == "WIDGET") return MFPProfiler.AvgWidgetsMs;
+                    if (subTag == "SILHOUETTE" || subTag == "SILH") return MFPProfiler.AvgSilhouetteMs;
+                    if (subTag == "HOOKS" || subTag == "HOOK") return MFPProfiler.AvgHooksMs;
+                    if (subTag == "MEM" || subTag == "MEMORY" || subTag == "RAM") return MFPProfiler.TotalMemoryMB;
+                    if (subTag == "GC" || subTag == "GC0") return MFPProfiler.Gc0Collections;
+                    if (subTag == "GC1") return MFPProfiler.Gc1Collections;
+                    if (subTag == "GC2") return MFPProfiler.Gc2Collections;
+                    if (subTag == "SPIKES" || subTag == "SPIKE") return MFPProfiler.SpikeCount;
+                    if (subTag == "COUNT" || subTag == "ACTIVE" || subTag == "ACTIVE_WIDGETS") return MFPProfiler.ActiveWidgetCount;
+                    if (subTag == "TOP_MS" || subTag == "TOP_WIDGET_MS") return MFPProfiler.TopOffenderWidgetMs;
+                    return MFPProfiler.AvgTotalMs;
+
                 default:
                     return ExternalProbeRegistry.ResolveNumeric(tag, subTag);
             }
         }
 
-        public static string Evaluate(string template, IFlightTelemetry telemetry)
+        private struct TemplateSegment
         {
-            if (string.IsNullOrEmpty(template) || telemetry == null) return template ?? string.Empty;
+            public bool IsToken;
+            public string StaticText;
+            public string Tag;
+            public string SubTag;
+            public string Format;
+        }
 
-            return TokenRegex.Replace(template, match =>
+        private class CompiledTemplate
+        {
+            public TemplateSegment[] Segments;
+        }
+
+        private static readonly Dictionary<string, CompiledTemplate> _compiledTemplateCache =
+            new Dictionary<string, CompiledTemplate>(StringComparer.Ordinal);
+
+        [ThreadStatic]
+        private static StringBuilder _evalSb;
+
+        private static CompiledTemplate CompileTemplate(string template)
+        {
+            var matches = TokenRegex.Matches(template);
+            if (matches.Count == 0)
             {
-                string tag = match.Groups[1].Value.ToUpperInvariant();
-                string part2 = match.Groups[2].Success ? match.Groups[2].Value : string.Empty;
-                string part3 = match.Groups[3].Success ? match.Groups[3].Value : string.Empty;
-                string part4 = match.Groups[4].Success ? match.Groups[4].Value : string.Empty;
+                return new CompiledTemplate
+                {
+                    Segments = new[] { new TemplateSegment { IsToken = false, StaticText = template } }
+                };
+            }
+
+            var segments = new List<TemplateSegment>(matches.Count * 2 + 1);
+            int lastIndex = 0;
+
+            for (int i = 0; i < matches.Count; i++)
+            {
+                Match m = matches[i];
+                if (m.Index > lastIndex)
+                {
+                    segments.Add(new TemplateSegment
+                    {
+                        IsToken = false,
+                        StaticText = template.Substring(lastIndex, m.Index - lastIndex)
+                    });
+                }
+
+                string tag = m.Groups[1].Value.ToUpperInvariant();
+                string part2 = m.Groups[2].Success ? m.Groups[2].Value : string.Empty;
+                string part3 = m.Groups[3].Success ? m.Groups[3].Value : string.Empty;
+                string part4 = m.Groups[4].Success ? m.Groups[4].Value : string.Empty;
 
                 string subTag = part2.ToUpperInvariant();
                 string format = string.Empty;
@@ -294,8 +404,64 @@ namespace ModularFlightPanel.Core
                     }
                 }
 
-                return ResolveToken(tag, subTag, format, telemetry);
-            });
+                segments.Add(new TemplateSegment
+                {
+                    IsToken = true,
+                    Tag = tag,
+                    SubTag = subTag,
+                    Format = format
+                });
+
+                lastIndex = m.Index + m.Length;
+            }
+
+            if (lastIndex < template.Length)
+            {
+                segments.Add(new TemplateSegment
+                {
+                    IsToken = false,
+                    StaticText = template.Substring(lastIndex)
+                });
+            }
+
+            return new CompiledTemplate { Segments = segments.ToArray() };
+        }
+
+        public static string Evaluate(string template, IFlightTelemetry telemetry)
+        {
+            if (string.IsNullOrEmpty(template) || telemetry == null) return template ?? string.Empty;
+
+            if (!_compiledTemplateCache.TryGetValue(template, out var compiled))
+            {
+                compiled = CompileTemplate(template);
+                if (_compiledTemplateCache.Count < 512)
+                {
+                    _compiledTemplateCache[template] = compiled;
+                }
+            }
+
+            if (compiled.Segments.Length == 1 && !compiled.Segments[0].IsToken)
+            {
+                return compiled.Segments[0].StaticText;
+            }
+
+            if (_evalSb == null) _evalSb = new StringBuilder(256);
+            _evalSb.Length = 0;
+
+            for (int i = 0; i < compiled.Segments.Length; i++)
+            {
+                var seg = compiled.Segments[i];
+                if (!seg.IsToken)
+                {
+                    _evalSb.Append(seg.StaticText);
+                }
+                else
+                {
+                    _evalSb.Append(ResolveToken(seg.Tag, seg.SubTag, seg.Format, telemetry));
+                }
+            }
+
+            return _evalSb.ToString();
         }
 
         private static string ResolveToken(string tag, string subTag, string format, IFlightTelemetry telem)
@@ -307,14 +473,18 @@ namespace ModularFlightPanel.Core
                 case "SPD":
                 case "SPEED":
                     double spd = telem.CurrentSpeed;
-                    if (subTag == "SURF") spd = telem.SurfaceSpeed;
-                    else if (subTag == "OBT" || subTag == "ORBIT") spd = telem.OrbitalSpeed;
-                    else if (subTag == "TGT" || subTag == "TARGET") spd = telem.TargetSpeed;
+                    if (subTag == "SURF" || subTag == "SURF:KMH" || subTag == "SURF_KMH") spd = telem.SurfaceSpeed;
+                    else if (subTag == "OBT" || subTag == "ORBIT" || subTag == "OBT:KMH") spd = telem.OrbitalSpeed;
+                    else if (subTag == "TGT" || subTag == "TARGET" || subTag == "TGT:KMH") spd = telem.TargetSpeed;
+                    if (format == "KMH" || subTag == "KMH" || subTag.EndsWith(":KMH") || subTag.EndsWith("_KMH"))
+                        return FormatNumber(spd * 3.6, (format == "KMH" || string.IsNullOrEmpty(format)) ? "F0" : format, "F0");
                     return FormatNumber(spd, format, "F1");
 
                 case "ALT":
                 case "ALTITUDE":
-                    double alt = (subTag == "ASL") ? telem.AltitudeASL : telem.AltitudeAGL;
+                    double alt = (subTag.StartsWith("ASL")) ? telem.AltitudeASL : (subTag.StartsWith("AGL") || subTag.StartsWith("RADAR") ? telem.AltitudeAGL : telem.DisplayAltitude);
+                    if (format == "KM" || subTag == "KM" || subTag.EndsWith(":KM") || subTag.EndsWith("_KM"))
+                        return FormatNumber(alt / 1000.0, (format == "KM" || string.IsNullOrEmpty(format)) ? "F0" : format, "F0");
                     if (format == "DIST") return FormatDistance(alt);
                     return FormatNumber(alt, format, "N0");
 
@@ -324,27 +494,27 @@ namespace ModularFlightPanel.Core
 
                 case "HDG":
                 case "HEADING":
-                    return $"{Mathf.RoundToInt(telem.Heading) % 360:D3}°";
+                    return CacheManager.FastDegree(Mathf.RoundToInt(telem.Heading));
 
                 case "PITCH":
-                    return FormatNumber(telem.Pitch, format, "F1");
+                    return FormatNumber(telem.Pitch, format, "F1", "tok_pitch");
 
                 case "ROLL":
-                    return FormatNumber(telem.Roll, format, "F1");
+                    return FormatNumber(telem.Roll, format, "F1", "tok_roll");
 
                 case "THROTTLE":
                 case "THR":
-                    return FormatNumber(telem.Throttle * 100f, format, "F0") + "%";
+                    return CacheManager.FastPercent(Mathf.RoundToInt(telem.Throttle * 100f));
 
                 case "AP":
                 case "APOAPSIS":
                     if (format == "DIST") return FormatDistance(telem.Apoapsis);
-                    return FormatNumber(telem.Apoapsis, format, "N0");
+                    return FormatNumber(telem.Apoapsis, format, "N0", "tok_ap");
 
                 case "PE":
                 case "PERIAPSIS":
                     if (format == "DIST") return FormatDistance(telem.Periapsis);
-                    return FormatNumber(telem.Periapsis, format, "N0");
+                    return FormatNumber(telem.Periapsis, format, "N0", "tok_pe");
 
                 case "TAP":
                     return FormatTime(Math.Max(0.0, telem.TimeToAp));
@@ -353,27 +523,27 @@ namespace ModularFlightPanel.Core
                     return FormatTime(Math.Max(0.0, telem.TimeToPe));
 
                 case "TWR":
-                    return FormatNumber(telem.TWR, format, "F2");
+                    return FormatNumber(telem.TWR, format, "F2", "tok_twr");
 
                 case "GFORCE":
                 case "G":
-                    return FormatNumber(telem.GForce, format, "F1") + " G";
+                    return CacheManager.Instance.FastDoubleWithAffix("tok_gforce", telem.GForce, "", " G", format ?? "F1", 0.05);
 
                 case "Q":
                 case "DYNAERO":
-                    return FormatNumber(telem.DynamicPressure, format, "F2") + " kPa";
+                    return CacheManager.Instance.FastDoubleWithAffix("tok_q", telem.DynamicPressure, "", " kPa", format ?? "F2", 0.05);
 
                 case "ATM":
                 case "ATMOSPHERE":
                 case "BARO":
-                    return FormatNumber(telem.AtmosphericPressure, format, "F2") + " atm";
+                    return CacheManager.Instance.FastDoubleWithAffix("tok_atm", telem.AtmosphericPressure, "", " atm", format ?? "F2", 0.05);
 
                 case "MACH":
-                    return FormatNumber(telem.Mach, format, "F2") + " M";
+                    return CacheManager.Instance.FastDoubleWithAffix("tok_mach", telem.Mach, "", " M", format ?? "F2", 0.02);
 
                 case "PROP":
                 case "STAGEPROP":
-                    return $"{Mathf.RoundToInt(telem.StagePropellantFraction * 100f)}%";
+                    return CacheManager.FastPercent(Mathf.RoundToInt(telem.StagePropellantFraction * 100f));
 
                 case "EC":
                 case "ELEC":
@@ -402,7 +572,8 @@ namespace ModularFlightPanel.Core
 
                 case "MET":
                 case "MISSIONTIME":
-                    return FormatMissionTime(telem.MissionTime, format);
+                    string fmt = string.IsNullOrEmpty(format) ? subTag : format;
+                    return FormatMissionTime(telem.MissionTime, fmt);
 
                 case "UT":
                 case "UNIVERSALTIME":
@@ -419,6 +590,24 @@ namespace ModularFlightPanel.Core
                 case "BURNTIME":
                     if (subTag == "TOTAL") return FormatTime(telem.TotalBurnTime);
                     return FormatTime(telem.StageBurnTime);
+
+                case "MN":
+                case "MANEUVER":
+                    if (!telem.HasManeuverNode) return "---";
+                    if (subTag == "TOTAL" || subTag == "TOTALDV") return FormatNumber(telem.ManeuverTotalDeltaV, format, "F1") + (format == "RAW" ? "" : " m/s");
+                    if (subTag == "TIME" || subTag == "TIMETONODE") return (telem.ManeuverTimeToNode < 0 ? "T+" : "T-") + FormatTime(Math.Abs(telem.ManeuverTimeToNode));
+                    if (subTag == "BURNTIME" || subTag == "DURATION") return FormatTime(Math.Max(0.0, telem.ManeuverBurnTime));
+                    if (subTag == "TIMETOBURN" || subTag == "STARTBURN") return (telem.ManeuverTimeToBurn < 0 ? "T+" : "T-") + FormatTime(Math.Abs(telem.ManeuverTimeToBurn));
+                    if (subTag == "STATUS") return telem.ManeuverTimeToBurn <= 0 ? "BURNING" : "ARMED";
+                    return FormatNumber(telem.ManeuverDeltaV, format, "F1") + (format == "RAW" ? "" : " m/s");
+
+                case "NODEDV":
+                    if (!telem.HasManeuverNode) return "---";
+                    return FormatNumber(telem.ManeuverDeltaV, format, "F1") + (format == "RAW" ? "" : " m/s");
+
+                case "TIMETONODE":
+                    if (!telem.HasManeuverNode) return "---";
+                    return (telem.ManeuverTimeToNode < 0 ? "T+" : "T-") + FormatTime(Math.Abs(telem.ManeuverTimeToNode));
 
                 case "STAGE":
                 case "STG":
@@ -482,6 +671,8 @@ namespace ModularFlightPanel.Core
 
                 case "ENG":
                 case "ENGINES":
+                    if (subTag == "TOTAL" || subTag == "STAGE" || subTag == "ALL") return telem.TotalStageEngines.ToString();
+                    if (subTag == "CLUSTER") return $"{telem.ActiveEngines}/{telem.TotalStageEngines}";
                     return telem.ActiveEngines.ToString();
 
                 case "CTRL_PITCH":
@@ -550,6 +741,32 @@ namespace ModularFlightPanel.Core
                 case "AVIONICS":
                     return ExternalProbeRegistry.ResolveString(tag, subTag, format);
 
+                case "PERF":
+                case "PROFILER":
+                    if (subTag == "STATUS") return MFPProfiler.IsMasterBypassed ? "BYPASS" : "ACTIVE";
+                    if (subTag == "FPS") return FormatNumber(MFPProfiler.CurrentFPS, format, "F0");
+                    if (subTag == "MS" || subTag == "TOTAL" || subTag == "TOTAL_MS" || subTag == "FRAMETIME") return FormatNumber(MFPProfiler.AvgTotalMs, format, "F2") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "LAST" || subTag == "LAST_MS") return FormatNumber(MFPProfiler.LastTotalMs, format, "F2") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "MIN" || subTag == "MIN_MS") return FormatNumber(MFPProfiler.MinTotalMs, format, "F2") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "MAX" || subTag == "MAX_MS") return FormatNumber(MFPProfiler.MaxTotalMs, format, "F2") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "BUDGET" || subTag == "BUDGET_PCT" || subTag == "PCT") return FormatNumber(MFPProfiler.FrameBudgetPercent, format, "F1") + "%";
+                    if (subTag == "TELEM" || subTag == "TELEMETRY") return FormatNumber(MFPProfiler.AvgTelemetryMs, format, "F3") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "PROBES" || subTag == "PROBE") return FormatNumber(MFPProfiler.AvgProbesMs, format, "F3") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "WIDGETS" || subTag == "WIDGET") return FormatNumber(MFPProfiler.AvgWidgetsMs, format, "F3") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "SILHOUETTE" || subTag == "SILH") return FormatNumber(MFPProfiler.AvgSilhouetteMs, format, "F3") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "HOOKS" || subTag == "HOOK") return FormatNumber(MFPProfiler.AvgHooksMs, format, "F3") + (format == "RAW" ? "" : " ms");
+                    if (subTag == "MEM" || subTag == "MEMORY" || subTag == "RAM") return FormatNumber(MFPProfiler.TotalMemoryMB, format, "F1", "perf_mem") + (format == "RAW" ? "" : " MB");
+                    if (subTag == "GC" || subTag == "GC0") return CacheManager.FastInt(MFPProfiler.Gc0Collections);
+                    if (subTag == "SPIKES" || subTag == "SPIKE") return CacheManager.FastInt(MFPProfiler.SpikeCount);
+                    if (subTag == "COUNT" || subTag == "ACTIVE" || subTag == "ACTIVE_WIDGETS") return CacheManager.FastInt(MFPProfiler.ActiveWidgetCount);
+                    if (subTag == "TOP" || subTag == "TOP_WIDGET") return MFPProfiler.TopOffenderWidgetId;
+                    if (subTag == "TOP_MS" || subTag == "TOP_WIDGET_MS") return FormatNumber(MFPProfiler.TopOffenderWidgetMs, format, "F3", "perf_top_ms") + " ms";
+                    if (subTag == "CACHE_HIT" || subTag == "HITRATE") return FormatNumber(CacheManager.Instance.HitRatePercent, format, "F1", "perf_hit") + "%";
+                    if (subTag == "CACHE_SAVED") return FormatNumber(CacheManager.Instance.EstimatedBytesSaved / 1024.0, format, "F1", "perf_saved") + " KB";
+                    if (subTag == "CACHE_SLOTS") return CacheManager.FastInt(CacheManager.Instance.DeadbandSlotCount);
+                    if (subTag == "CACHE_REQS") return CacheManager.FastInt((int)Math.Min(CacheManager.Instance.TotalRequests, 9999));
+                    return FormatNumber(MFPProfiler.AvgTotalMs, format, "F2", "perf_total_ms") + (format == "RAW" ? "" : " ms");
+
                 default:
                     string extVal = ExternalProbeRegistry.ResolveString(tag, subTag, format);
                     if (!string.IsNullOrEmpty(extVal) && extVal != "---" && !extVal.StartsWith("{"))
@@ -558,17 +775,19 @@ namespace ModularFlightPanel.Core
             }
         }
 
-        private static string FormatNumber(double val, string format, string defaultFmt)
+        private static string FormatNumber(double val, string format, string defaultFmt, string slotKey = null)
         {
             string fmt = string.IsNullOrEmpty(format) ? defaultFmt : format;
-            try
+            if (fmt == "F0" || fmt == "N0")
             {
-                return val.ToString(fmt);
+                long rounded = (long)Math.Round(val);
+                if (rounded >= -1000 && rounded <= 9999)
+                {
+                    return CacheManager.FastInt((int)rounded);
+                }
             }
-            catch
-            {
-                return val.ToString(defaultFmt);
-            }
+            string key = slotKey ?? fmt;
+            return CacheManager.Instance.FastDouble(key, val, fmt, 0.05);
         }
 
         private static string FormatDistance(double meters)
@@ -598,7 +817,14 @@ namespace ModularFlightPanel.Core
             int mins = (int)((absSec / 60) % 60);
             int totalHours = (int)(absSec / 3600);
 
-            if (format == "HMS" || format == "TIME")
+            string sign = negative ? "T- " : "T+ ";
+
+            if (format == "HMS" || format == "TIME" || format == "CLOCK")
+            {
+                return $"{sign}{totalHours:D2}:{mins:D2}:{secs:D2}";
+            }
+
+            if (format == "RAW_HMS")
             {
                 return (negative ? "-" : "") + $"{totalHours:D2}:{mins:D2}:{secs:D2}";
             }
@@ -607,7 +833,6 @@ namespace ModularFlightPanel.Core
             int days = (totalHours / 24) % 365;
             int years = totalHours / (24 * 365);
 
-            string sign = negative ? "T- " : "T+ ";
             if (format == "COMPACT")
             {
                 if (years > 0) return $"{sign}{years}y {days}d {hours:D2}:{mins:D2}:{secs:D2}";

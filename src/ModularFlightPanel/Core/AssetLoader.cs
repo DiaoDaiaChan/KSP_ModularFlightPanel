@@ -16,11 +16,33 @@ namespace ModularFlightPanel.Core
         public static Shader RadialMeterShader { get; private set; }
         public static Shader NeonGlowShader { get; private set; }
         public static Shader GlassCockpitShader { get; private set; }
+        public static Shader DotMatrixShader { get; private set; }
+        public static Shader PhosphorHoloShader { get; private set; }
+        public static Shader DigitalSegmentShader { get; private set; }
 
         public static void LoadBundle()
         {
             if (_attemptedLoad) return;
             _attemptedLoad = true;
+
+#if UNITY_EDITOR
+            // 在 Unity 编辑器与无头渲染环境下，优先加载当前工程源码着色器，保证修改即时热生效
+            ProceduralShader = Shader.Find("ModularFlightPanel/NavballProcedural");
+            EnhancedShader = Shader.Find("ModularFlightPanel/NavballEnhanced");
+            HalftoneShader = Shader.Find("ModularFlightPanel/NavballHalftone");
+            ModernShader = Shader.Find("ModularFlightPanel/NavballModern");
+            RadialMeterShader = Shader.Find("ModularFlightPanel/RadialSegmentedMeter");
+            NeonGlowShader = Shader.Find("ModularFlightPanel/NeonGlowUI");
+            GlassCockpitShader = Shader.Find("ModularFlightPanel/GlassCockpitUI");
+            DotMatrixShader = Shader.Find("ModularFlightPanel/DotMatrixUI");
+            PhosphorHoloShader = Shader.Find("ModularFlightPanel/PhosphorHoloUI");
+            DigitalSegmentShader = Shader.Find("ModularFlightPanel/DigitalSegmentUI");
+            if (ProceduralShader != null && EnhancedShader != null)
+            {
+                Debug.Log("[ModularFlightPanel] In Editor: Loaded live project shaders successfully!");
+                return;
+            }
+#endif
 
             string bundlePath = Path.Combine(AppPathHelper.RootPath, "GameData/ModularFlightPanel/AssetBundles/modularflightpanel.ksp");
             if (File.Exists(bundlePath))
@@ -37,6 +59,9 @@ namespace ModularFlightPanel.Core
                         RadialMeterShader = _bundle.LoadAsset<Shader>("Assets/Shaders/RadialSegmentedMeter.shader");
                         NeonGlowShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NeonGlowUI.shader");
                         GlassCockpitShader = _bundle.LoadAsset<Shader>("Assets/Shaders/GlassCockpitUI.shader");
+                        DotMatrixShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DotMatrixUI.shader");
+                        PhosphorHoloShader = _bundle.LoadAsset<Shader>("Assets/Shaders/PhosphorHoloUI.shader");
+                        DigitalSegmentShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DigitalSegmentUI.shader");
                         Debug.Log("[ModularFlightPanel] Successfully loaded custom shaders from AssetBundle!");
                     }
                 }
@@ -58,13 +83,16 @@ namespace ModularFlightPanel.Core
             if (RadialMeterShader == null) RadialMeterShader = Shader.Find("ModularFlightPanel/RadialSegmentedMeter") ?? Shader.Find("UI/Default");
             if (NeonGlowShader == null) NeonGlowShader = Shader.Find("ModularFlightPanel/NeonGlowUI") ?? Shader.Find("UI/Default");
             if (GlassCockpitShader == null) GlassCockpitShader = Shader.Find("ModularFlightPanel/GlassCockpitUI") ?? Shader.Find("UI/Default");
+            if (DotMatrixShader == null) DotMatrixShader = Shader.Find("ModularFlightPanel/DotMatrixUI") ?? Shader.Find("UI/Default");
+            if (PhosphorHoloShader == null) PhosphorHoloShader = Shader.Find("ModularFlightPanel/PhosphorHoloUI") ?? Shader.Find("UI/Default");
+            if (DigitalSegmentShader == null) DigitalSegmentShader = Shader.Find("ModularFlightPanel/DigitalSegmentUI") ?? Shader.Find("UI/Default");
         }
 
         public static void UnloadBundle()
         {
             if (_bundle != null)
             {
-                _bundle.Unload(true);
+                _bundle.Unload(false);
                 _bundle = null;
             }
             _attemptedLoad = false;

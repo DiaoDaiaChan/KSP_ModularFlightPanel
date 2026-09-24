@@ -77,7 +77,7 @@ namespace ModularFlightPanel.Core
             }
             else if (_instance != this)
             {
-                Destroy(gameObject);
+                Destroy(this);
                 return;
             }
 
@@ -121,8 +121,10 @@ namespace ModularFlightPanel.Core
 
             if (_silhouetteMaterial == null)
             {
-                Shader shader = Shader.Find("Sprites/Default")
-                             ?? Shader.Find("Unlit/Color")
+                Shader shader = Shader.Find("Unlit/Color")
+                             ?? Shader.Find("KSP/Unlit")
+                             ?? Shader.Find("Unlit/Texture")
+                             ?? Shader.Find("Sprites/Default")
                              ?? Shader.Find("UI/Default")
                              ?? Shader.Find("Hidden/Internal-Colored");
 
@@ -130,6 +132,10 @@ namespace ModularFlightPanel.Core
                 {
                     color = Color.white
                 };
+                if (shader != null && shader.name.IndexOf("texture", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _silhouetteMaterial.mainTexture = Texture2D.whiteTexture;
+                }
             }
         }
 
@@ -454,6 +460,9 @@ namespace ModularFlightPanel.Core
             _offscreenCamera.nearClipPlane = 0.5f;
             _offscreenCamera.farClipPlane = camDistance * 2f + spanZ + 50f;
 
+            _offscreenCamera.ResetWorldToCameraMatrix();
+            _offscreenCamera.ResetProjectionMatrix();
+
             // 5. 构筑并执行极轻量 CommandBuffer (GPU 直接显存渲染，无任何场景管线开销)
             // 注意：renderIntoTexture 设为 false，确保 DirectX 下输出的纹理与标准 UI RawImage 贴图坐标系完全一致（不产生上下颠倒反转）
             Matrix4x4 viewMatrix = _offscreenCamera.worldToCameraMatrix;
@@ -618,6 +627,11 @@ namespace ModularFlightPanel.Core
         private void OnDestroy()
         {
             UnregisterEvents();
+
+            if (VesselSilhouetteService.Provider == (IVesselSilhouetteProvider)this)
+            {
+                VesselSilhouetteService.Provider = null;
+            }
 
             if (_renderTexture != null)
             {
