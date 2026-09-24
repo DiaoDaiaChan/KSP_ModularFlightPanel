@@ -71,9 +71,10 @@ namespace ModularFlightPanel.UI.Widgets
             Color bgCol = theme.FrameBgColor;
             Color borderCol = theme.FrameBorderColor;
 
-            // 1. 胶囊底座 (全息极简 HUD 风格)
-            _capsuleBar = UIFactory.CreatePanel(transform, "CapsuleBar", baseSize, Vector2.zero, Color.clear,
-                WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Ghost), 1f * s);
+            // 1. 胶囊底座 (现代化暗晶毛玻璃背板 0.75 Alpha)
+            _capsuleBar = UIFactory.CreatePanel(transform, "CapsuleBar", baseSize, Vector2.zero,
+                WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f),
+                WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost), 1f * s);
             _panelBg = _capsuleBar.GetComponent<Image>();
             _panelOutline = _capsuleBar.GetComponent<Outline>();
             _panelOutline.effectDistance = new Vector2(1f * s, 1f * s);
@@ -385,11 +386,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             theme = WidgetStyleManager.ResolveTheme(theme);
 
-            if (_panelBg != null) _panelBg.color = Color.clear;
+            if (_panelBg != null) _panelBg.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
             if (_panelOutline != null)
             {
                 _panelOutline.enabled = true;
-                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
             }
             if (_targetNameText != null) ApplyText(_targetNameText, TextStyleRole.PrimaryValue, theme);
             if (_rateSummaryText != null) ApplyText(_rateSummaryText, TextStyleRole.SecondaryValue, theme);
@@ -399,8 +400,8 @@ namespace ModularFlightPanel.UI.Widgets
                 _matrixTitleText.text = title;
                 ApplyText(_matrixTitleText, TextStyleRole.Label, theme);
             }
-            if (_expandBtn != null) _expandBtn.GetComponent<Image>().color = Color.clear;
-            if (_stockBtn != null) _stockBtn.GetComponent<Image>().color = Color.clear;
+            if (_expandBtn != null) _expandBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_stockBtn != null) _stockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (_expandBtnText != null) ApplyText(_expandBtnText, TextStyleRole.SecondaryValue, theme);
             if (_stockBtnText != null) ApplyText(_stockBtnText, TextStyleRole.SecondaryValue, theme);
         }

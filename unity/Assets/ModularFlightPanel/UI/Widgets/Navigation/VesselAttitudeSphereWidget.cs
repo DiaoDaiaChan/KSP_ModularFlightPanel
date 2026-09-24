@@ -66,9 +66,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private static Texture2D _sharedBezelTexture;
 
         // 姿态缓存与脏标记
-        private Quaternion _lastRenderedAttitude = Quaternion.identity;
-        private float _lastCameraRenderTime = -1f;
-        private float _lastProfileCheckTime = -1f;
         private double _lastPitch = double.NaN;
         private double _lastRoll = double.NaN;
         private double _lastHeading = double.NaN;
@@ -552,22 +549,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             SyncAttitudeAndVisuals();
             SyncMarkers();
 
-            // 驱动离屏摄像机渲染
+            // 强制锁定离屏相机 FPS 跟随游戏每一帧满频同步渲染
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                float unscaledTime = Time.unscaledTime;
-
-                // 姿态机动满帧直驱与静止节流：当飞船发生姿态旋转机动时，必须满帧同步渲染离屏相机，彻底根除标线相对漂移；
-                // 仅在姿态完全静止滑行时跟随全局 RefreshProfile 节流调度
-                Quaternion currentAtt = _sphereObject != null ? _sphereObject.transform.localRotation : Quaternion.identity;
-                bool attitudeChanged = Quaternion.Angle(currentAtt, _lastRenderedAttitude) > 0.02f;
-
-                if (attitudeChanged || WidgetRenderManager.Instance.ShouldUpdateTier(WidgetRefreshTier.Critical, unscaledTime, ref _lastProfileCheckTime) || (unscaledTime - _lastCameraRenderTime) >= 0.1f)
-                {
-                    _lastRenderedAttitude = currentAtt;
-                    _lastCameraRenderTime = unscaledTime;
-                    _ballCamera.Render();
-                }
+                _ballCamera.Render();
             }
         }
 
@@ -582,13 +567,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     Quaternion camRot = hook.CameraRotation;
                     Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
-                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w);
+                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
                 }
                 else
                 {
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
                     Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
-                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w);
+                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
                 }
             }
 
@@ -704,10 +689,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
                     Vector2 targetPos = new Vector2(dir.x, dir.y) * _visualRadius;
-                    if ((img.rectTransform.anchoredPosition - targetPos).sqrMagnitude > 0.04f)
-                    {
-                        img.rectTransform.anchoredPosition = targetPos;
-                    }
+                    img.rectTransform.anchoredPosition = targetPos;
 
                     float alpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);
                     if (Mathf.Abs(img.color.a - alpha) > 0.02f)

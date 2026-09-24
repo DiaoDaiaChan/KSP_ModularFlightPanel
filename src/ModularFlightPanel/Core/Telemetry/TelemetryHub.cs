@@ -512,8 +512,12 @@ namespace ModularFlightPanel.Core
                             var rawImg = _stageIconImageField?.GetValue(icon) as UnityEngine.UI.RawImage;
                             if (rawImg != null)
                             {
-                                uv = rawImg.uvRect;
-                                hasUv = true;
+                                Rect rUv = rawImg.uvRect;
+                                if (rUv.width > 0.01f && rUv.width < 0.5f && rUv.height > 0.01f && rUv.height < 0.5f)
+                                {
+                                    uv = rUv;
+                                    hasUv = true;
+                                }
                             }
 
                             int existingIdx = iconList.FindIndex(p => p.IconType == typeStr);

@@ -63,9 +63,10 @@ namespace ModularFlightPanel.UI.Widgets
             Color secondaryAccent = theme.AccentSecondary;
             Color textPrimary = theme.TextPrimaryColor;
 
-            // 1. 主背板与淡轮廓 (全息极简 HUD 风格)
-            GameObject panel = UIFactory.CreatePanel(transform, "TimeWarpPanel", panelSize, Vector2.zero, Color.clear,
-                WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Ghost), 1f * s);
+            // 1. 主背板与淡轮廓 (现代化暗晶毛玻璃背板 0.75 Alpha)
+            GameObject panel = UIFactory.CreatePanel(transform, "TimeWarpPanel", panelSize, Vector2.zero,
+                WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f),
+                WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost), 1f * s);
             _panelBg = panel.GetComponent<Image>();
             _panelOutline = panel.GetComponent<Outline>();
             _panelOutline.effectDistance = new Vector2(1f * s, 1f * s);
@@ -97,7 +98,7 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 pauseBtnSize = new Vector2(38f * s, 15f * s);
             _pauseBtn = UIFactory.CreateButton(panel.transform, "Btn_Pause", pauseBtnSize,
                 new Vector2(panelSize.x * 0.5f - 42f * s, topY), OnTogglePause);
-            _pauseBtn.GetComponent<Image>().color = Color.clear;
+            _pauseBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             _pauseBtnText = UIFactory.CreateText(_pauseBtn.transform, "Text", "PAUSE",
                 Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _pauseBtnText.GetComponent<RectTransform>().sizeDelta = pauseBtnSize;
@@ -106,7 +107,7 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 stockBtnSize = new Vector2(22f * s, 15f * s);
             _stockBtn = UIFactory.CreateButton(panel.transform, "Btn_Stock", stockBtnSize,
                 new Vector2(panelSize.x * 0.5f - 11f * s, topY), OnToggleStock);
-            _stockBtn.GetComponent<Image>().color = Color.clear;
+            _stockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             _stockBtnText = UIFactory.CreateText(_stockBtn.transform, "Text", "KSP",
                 Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _stockBtnText.GetComponent<RectTransform>().sizeDelta = stockBtnSize;
@@ -321,25 +322,32 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             _currentTheme = theme;
-            _currentTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
 
-            if (_panelBg != null) _panelBg.color = Color.clear;
+            if (_panelBg != null) _panelBg.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
             if (_panelOutline != null)
             {
                 _panelOutline.enabled = true;
-                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
             }
 
             ApplyText(_clockText, TextStyleRole.PrimaryValue, theme);
             ApplyText(_warpRateText, TextStyleRole.Accent, theme);
-            ApplyText(_warpModeText, TextStyleRole.Label, theme);
+            ApplyText(_warpModeText, TextStyleRole.SecondaryValue, theme);
 
-            ApplyText(_modeBtnText, TextStyleRole.Label, theme);
-            ApplyText(_downBtnText, TextStyleRole.Label, theme);
-            ApplyText(_upBtnText, TextStyleRole.Label, theme);
-            ApplyText(_cancelBtnText, TextStyleRole.Label, theme);
-            ApplyText(_stockBtnText, TextStyleRole.Label, theme);
+            ApplyText(_modeBtnText, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_downBtnText, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_upBtnText, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_cancelBtnText, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_stockBtnText, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_pauseBtnText, TextStyleRole.SecondaryValue, theme);
+
+            if (_modeBtn != null) _modeBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_pauseBtn != null) _pauseBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_stockBtn != null) _stockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_downBtn != null) _downBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_upBtn != null) _upBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_cancelBtn != null) _cancelBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
 
             Material btnMat = WidgetStyleManager.Instance.GetUiMaterial(isText: false);
             if (_modeBtn != null) _modeBtn.GetComponent<Image>().material = btnMat;

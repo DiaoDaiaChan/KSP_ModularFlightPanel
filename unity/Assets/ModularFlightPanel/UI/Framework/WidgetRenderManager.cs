@@ -80,7 +80,7 @@ namespace ModularFlightPanel.UI
         public GlobalRefreshProfile CurrentProfile { get; set; } = GlobalRefreshProfile.Balanced;
         public int CurrentNavballResolution { get; private set; } = 512;
 
-        // 渲染分辨率与超采样倍率设置 (关闭自适应动态缩放，采用稳定高保真固定分辨率)
+        // 渲染分辨率与超采样倍率设置 (关闭自适应动态缩放，采用稳定高保真固定点对点分辨率)
         public bool AutoAdaptResolution { get; set; } = false;
         public float GlobalRenderScaleMultiplier { get; set; } = 1.0f;
 
@@ -368,6 +368,13 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public bool ShouldUpdateTier(WidgetRefreshTier tier, float unscaledTime, ref float lastUpdateTime, float customInterval = 0f)
         {
+            // 0. Critical 级核心航电组件 (姿态球等) 强制 100% 满帧直通游戏 FPS，杜绝任何阶梯节流
+            if (tier == WidgetRefreshTier.Critical)
+            {
+                lastUpdateTime = unscaledTime;
+                return true;
+            }
+
             // 1. 若组件定义了特定 UpdateInterval (或 CustomHz)，以组件自身设置为最高优先级
             if (customInterval > 0f)
             {

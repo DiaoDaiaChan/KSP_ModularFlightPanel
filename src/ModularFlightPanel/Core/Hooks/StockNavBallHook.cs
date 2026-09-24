@@ -203,18 +203,18 @@ namespace ModularFlightPanel.Core
 
         /// <summary>
         /// 获取官方/Principia 矢量标线 (Prograde, Retrograde, Normal, Target, Maneuver 等) 的前向视口单位方向与可见性
-        /// 权威直驱：优先读取 Stock/Principia 满帧更新的 Marker Transform HUD 坐标；当原版不存在时启用开普勒数学兜底
+        /// 权威直驱：优先直接读取游戏内 Stock/Principia 正在驱动的 Marker Transform 数据；仅在无原版实例时使用物理数学兜底
         /// </summary>
         public static bool GetMarkerDirection(string markerKey, out Vector3 dir, out bool isVisible)
         {
             dir = Vector3.forward;
             isVisible = false;
 
-            // 1. 优先尝试直接从原版/Principia 解算并正在渲染的 Marker Transform 获取
+            // 1. 优先读取游戏内原生/Principia 正在驱动的 Marker Transform 数据 (严格遵循游戏内权威数据源)
             if (HasStockNavBall && StockInstance != null)
             {
                 Transform marker = GetMarkerTransformByKey(markerKey);
-                if (marker != null && marker.gameObject.activeSelf)
+                if (marker != null && IsMarkerLogicallyActive(markerKey, marker))
                 {
                     Vector3 localPos = marker.localPosition;
                     if (localPos.sqrMagnitude > 0.0001f)
@@ -231,7 +231,7 @@ namespace ModularFlightPanel.Core
                 }
             }
 
-            // 2. 权威解耦数学模型兜底解算 (Bulletproof Math Fallback)
+            // 2. 仅当无官方 NavBall 实例时 (如无头验证或初始化前) 启用开普勒/轨道数学兜底解算
             return CalculateMarkerDirectionMath(markerKey, out dir, out isVisible);
         }
 

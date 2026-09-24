@@ -36,9 +36,6 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Dictionary<string, Image> _markerImages = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private float _ballDiameter;
         private float _visualRadius;
-        private Quaternion _lastRenderedAttitude = Quaternion.identity;
-        private float _lastCameraRenderTime = -1f;
-        private float _lastProfileCheckTime = -1f;
 
         private static Mesh _primitiveSphereMesh;
         private Image _crossWingL;
@@ -64,7 +61,7 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
-            // 1. 固定标准姿态球基准直径为 150px (关闭自适应形变，严格按设计尺寸呈现)
+            // 1. 固定标准姿态球基准直径为 150px (关闭自适应形变，严格按高保真物理点对点设计尺寸呈现)
             float ballDiameter = 150f;
             _ballDiameter = ballDiameter;
             float shellWidth = ballDiameter + 92f;
@@ -537,7 +534,7 @@ namespace ModularFlightPanel.UI.Widgets
                     Quaternion camRot = hook.CameraRotation;
                     Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
                     _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w)
+                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
                         : rawRot;
                 }
                 else
@@ -545,7 +542,7 @@ namespace ModularFlightPanel.UI.Widgets
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
                     Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
                     _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w)
+                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
                         : rawRot;
                 }
             }
@@ -639,22 +636,10 @@ namespace ModularFlightPanel.UI.Widgets
             SyncAttitudeAndVisuals();
             SyncMarkers();
 
-            // 显式驱动离屏相机渲染至 RenderTexture，确保采样到最新的 Principia 多参考系姿态
+            // 强制锁定离屏相机 FPS 跟随游戏每一帧满频同步渲染，彻底杜绝帧率不一致导致的标线与球体相对漂移
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                float unscaledTime = Time.unscaledTime;
-
-                // 1. 姿态机动满帧直驱与静止节流：当飞船发生姿态旋转机动时，必须满帧同步渲染离屏相机，彻底根除标线相对漂移；
-                // 仅在姿态完全静止滑行时跟随全局 RefreshProfile 节流调度
-                Quaternion currentAtt = _sphereObject != null ? _sphereObject.transform.localRotation : Quaternion.identity;
-                bool attitudeChanged = Quaternion.Angle(currentAtt, _lastRenderedAttitude) > 0.02f;
-
-                if (attitudeChanged || WidgetRenderManager.Instance.ShouldUpdateTier(WidgetRefreshTier.Critical, unscaledTime, ref _lastProfileCheckTime) || (unscaledTime - _lastCameraRenderTime) >= 0.1f)
-                {
-                    _lastRenderedAttitude = currentAtt;
-                    _lastCameraRenderTime = unscaledTime;
-                    _ballCamera.Render();
-                }
+                _ballCamera.Render();
             }
         }
 
@@ -686,12 +671,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
-                    // 正交平面投影: (x, y) * 半径，仅当位移超过微小阈值时才修改 RectTransform
-                    Vector2 targetPos = new Vector2(dir.x, dir.y) * _visualRadius;
-                    if ((img.rectTransform.anchoredPosition - targetPos).sqrMagnitude > 0.04f)
-                    {
-                        img.rectTransform.anchoredPosition = targetPos;
-                    }
+                    // 正交平面投影: (x, y) * 半径，每一帧直接贴合目标坐标，0 滞后、0 阈值量化步进
+                    img.rectTransform.anchoredPosition = new Vector2(dir.x, dir.y) * _visualRadius;
 
                     // 接近地平线边缘时平滑渐隐淡出，前向半球始终满不透明度保持高可见度
                     float alpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);

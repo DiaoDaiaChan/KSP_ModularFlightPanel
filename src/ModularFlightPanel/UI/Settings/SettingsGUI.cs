@@ -24,7 +24,10 @@ namespace ModularFlightPanel.UI
         private bool _isOpen = false;
         public bool IsOpen => _isOpen;
 
-        private Rect _windowRect = new Rect(100f, 60f, 1040f, 740f);
+        public const float WindowWidth = 1040f;
+        public const float WindowHeight = 740f;
+
+        private Rect _windowRect = new Rect(100f, 60f, WindowWidth, WindowHeight);
         private int _windowId = 849204;
         private bool _rectInitialized = false;
 
@@ -94,22 +97,19 @@ namespace ModularFlightPanel.UI
 
         private void EnsureWindowRect()
         {
-            float targetW = Mathf.Clamp(Screen.width * 0.72f, 960f, 1140f);
-            float targetH = Mathf.Clamp(Screen.height * 0.82f, 640f, 820f);
-
             if (!_rectInitialized)
             {
-                float x = (Screen.width - targetW) * 0.5f;
-                float y = (Screen.height - targetH) * 0.5f;
-                _windowRect = new Rect(x, y, targetW, targetH);
+                float x = Mathf.Max(0f, (Screen.width - WindowWidth) * 0.5f);
+                float y = Mathf.Max(0f, (Screen.height - WindowHeight) * 0.5f);
+                _windowRect = new Rect(x, y, WindowWidth, WindowHeight);
                 _rectInitialized = true;
             }
             else
             {
-                _windowRect.width = targetW;
-                _windowRect.height = targetH;
-                _windowRect.x = Mathf.Clamp(_windowRect.x, 10f, Screen.width - targetW - 10f);
-                _windowRect.y = Mathf.Clamp(_windowRect.y, 10f, Screen.height - targetH - 10f);
+                _windowRect.width = WindowWidth;
+                _windowRect.height = WindowHeight;
+                _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, Mathf.Max(0f, Screen.width - WindowWidth));
+                _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, Mathf.Max(0f, Screen.height - WindowHeight));
             }
         }
 
@@ -140,6 +140,10 @@ namespace ModularFlightPanel.UI
             MFPGuiSkin.EnsureInitialized();
             GUI.skin = HighLogic.Skin;
 
+            // 严格锁定固定物理尺寸，彻底关闭自适应拉伸与拖拽改变大小
+            _windowRect.width = WindowWidth;
+            _windowRect.height = WindowHeight;
+
             // 输入穿透安全防护
             bool isMouseOver = _windowRect.Contains(Event.current.mousePosition);
             MFPInputLock.SetWindowHoverLock(isMouseOver);
@@ -153,13 +157,17 @@ namespace ModularFlightPanel.UI
                 DrawWindowContent,
                 "",
                 MFPGuiSkin.WindowStyle,
-                GUILayout.Width(_windowRect.width),
-                GUILayout.Height(_windowRect.height)
+                GUILayout.Width(WindowWidth),
+                GUILayout.Height(WindowHeight)
             );
 
+            // 保持固定尺寸，防止 GUILayout.Window 内部内容推挤改变大小
+            _windowRect.width = WindowWidth;
+            _windowRect.height = WindowHeight;
+
             // 保持窗口在屏幕安全可视范围内
-            _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, Screen.width - _windowRect.width);
-            _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, Screen.height - _windowRect.height);
+            _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, Mathf.Max(0f, Screen.width - WindowWidth));
+            _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, Mathf.Max(0f, Screen.height - WindowHeight));
         }
 
         private void DrawWindowContent(int id)
@@ -303,8 +311,8 @@ namespace ModularFlightPanel.UI
 
             GUILayout.EndVertical();
 
-            // 限制拖拽响应区域为顶栏，防止吞噬窗口内部按钮点击
-            GUI.DragWindow(new Rect(0f, 0f, _windowRect.width, 42f));
+            // 限制拖拽响应区域为顶栏，防止吞噬窗口内部按钮点击；仅支持移动位置，彻底杜绝改变大小
+            GUI.DragWindow(new Rect(0f, 0f, WindowWidth, 42f));
         }
     }
 }

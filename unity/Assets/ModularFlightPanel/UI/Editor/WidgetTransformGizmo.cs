@@ -29,7 +29,13 @@ namespace ModularFlightPanel.UI
         private Outline _boxOutline;
         private Image _boxImage;
 
-        // 旋转手柄与立柱
+        // 4 角手柄
+        private RectTransform _handleTL;
+        private RectTransform _handleTR;
+        private RectTransform _handleBL;
+        private RectTransform _handleBR;
+
+        // 旋转手柄
         private GameObject _rotStemObj;
         private RectTransform _rotStemRt;
         private RectTransform _rotHandle;
@@ -39,17 +45,21 @@ namespace ModularFlightPanel.UI
         private RectTransform _infoBadgeRt;
         private Text _infoText;
 
-        // 拖拽手柄交互状态 (彻底杜绝拖动缩放手柄改变大小，仅保留精准旋转)
+        // 拖拽手柄交互状态
         public enum DragGizmoMode
         {
             None,
+            ScaleTL, ScaleTR, ScaleBL, ScaleBR,
             Rotate
         }
         private DragGizmoMode _currentDragMode = DragGizmoMode.None;
         private Vector2 _dragStartMousePos;
+        private float _initialScale;
         private float _initialAngle;
         private Rect _initialGroupBounds;
         private Vector2 _initialCenter;
+
+        private readonly Dictionary<BaseFlightWidget, float> _initialWidgetScales = new Dictionary<BaseFlightWidget, float>();
 
         private Color _cyanCol;
         private Color _goldCol;
@@ -119,7 +129,13 @@ namespace ModularFlightPanel.UI
             _boxOutline.effectColor = _cyanCol;
             _boxOutline.effectDistance = new Vector2(1.5f, 1.5f);
 
-            // 1. 创建顶部旋转手柄与延伸立柱 (仅保留姿态微调手柄，彻底禁用改变大小的手柄)
+            // 1. 创建 4 角缩放手柄
+            _handleTL = CreateHandle("Handle_TL", new Vector2(0f, 1f), DragGizmoMode.ScaleTL);
+            _handleTR = CreateHandle("Handle_TR", new Vector2(1f, 1f), DragGizmoMode.ScaleTR);
+            _handleBL = CreateHandle("Handle_BL", new Vector2(0f, 0f), DragGizmoMode.ScaleBL);
+            _handleBR = CreateHandle("Handle_BR", new Vector2(1f, 0f), DragGizmoMode.ScaleBR);
+
+            // 2. 创建顶部旋转手柄与延伸立柱
             _rotStemObj = new GameObject("RotStem", typeof(RectTransform), typeof(Image));
             _rotStemObj.transform.SetParent(_gizmoBox.transform, false);
             _rotStemRt = _rotStemObj.GetComponent<RectTransform>();
@@ -271,7 +287,6 @@ namespace ModularFlightPanel.UI
         // ==========================================
         public void StartGizmoDrag(DragGizmoMode mode, PointerEventData eventData)
         {
-            if (mode != DragGizmoMode.Rotate) return;
             _currentDragMode = mode;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(_rootRt, eventData.position, eventData.pressEventCamera, out _dragStartMousePos);
 
@@ -280,7 +295,16 @@ namespace ModularFlightPanel.UI
             var sel = WidgetSelectionManager.SelectedWidgets.ToList();
             if (sel.Count > 0)
             {
+                _initialScale = sel[0].Config?.Scale ?? 1f;
                 _initialAngle = sel[0].Config?.Rotation ?? 0f;
+                _initialWidgetScales.Clear();
+                foreach (var w in sel)
+                {
+                    if (w != null && w.Config != null)
+                    {
+                        _initialWidgetScales[w] = w.Config.Scale;
+                    }
+                }
 
                 float minX = sel.Min(w => WidgetSelectionManager.GetWidgetBounds(w).xMin);
                 float maxX = sel.Max(w => WidgetSelectionManager.GetWidgetBounds(w).xMax);
@@ -294,37 +318,77 @@ namespace ModularFlightPanel.UI
 
         private void HandleDragProcess()
         {
-            if (_currentDragMode != DragGizmoMode.Rotate) return;
-
             Camera cam = _canvas != null && _canvas.renderMode != RenderMode.ScreenSpaceOverlay ? _canvas.worldCamera : null;
             RectTransformUtility.ScreenPointToLocalPointInRectangle(_rootRt, Input.mousePosition, cam, out Vector2 curMousePos);
 
+            Vector2 mouseDelta = curMousePos - _dragStartMousePos;
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
 
-            // 旋转手柄拖拽解算：根据鼠标相对中心点的向量计算角度
-            Vector2 dirInitial = _dragStartMousePos - _initialCenter;
-            Vector2 dirCurrent = curMousePos - _initialCenter;
-
-            float angleDelta = Vector2.SignedAngle(dirInitial, dirCurrent);
-            float targetAngle = (_initialAngle + angleDelta) % 360f;
-            if (targetAngle < 0f) targetAngle += 360f;
-
-            // Shift 键吸附至 15° 步进
-            if (shift)
+            if (_currentDragMode == DragGizmoMode.Rotate)
             {
-                targetAngle = Mathf.Round(targetAngle / 15f) * 15f;
-            }
+                // 旋转手柄拖拽解算：根据鼠标相对中心点的向量计算角度
+                Vector2 dirInitial = _dragStartMousePos - _initialCenter;
+                Vector2 dirCurrent = curMousePos - _initialCenter;
 
-            WidgetSelectionManager.BatchSetRotation(targetAngle);
-            UpdateGizmoPosition();
+                float angleDelta = Vector2.SignedAngle(dirInitial, dirCurrent);
+                float targetAngle = (_initialAngle + angleDelta) % 360f;
+                if (targetAngle < 0f) targetAngle += 360f;
+
+                // Shift 键吸附至 15° 步进
+                if (shift)
+                {
+                    targetAngle = Mathf.Round(targetAngle / 15f) * 15f;
+                }
+
+                WidgetSelectionManager.BatchSetRotation(targetAngle);
+                UpdateGizmoPosition();
+            }
+            else
+            {
+                // 角手柄缩放拖拽解算 (按比例缩放，彻底消除多选比例坍塌)
+                float baseDiag = Mathf.Max(30f, Mathf.Sqrt(_initialGroupBounds.width * _initialGroupBounds.width + _initialGroupBounds.height * _initialGroupBounds.height));
+                float dist = Vector2.Dot(mouseDelta.normalized, GetHandleDirection(_currentDragMode)) * mouseDelta.magnitude;
+
+                float scaleFactor = Mathf.Max(0.1f, 1.0f + (dist / (baseDiag * 0.5f)));
+
+                // Shift 键吸附至 0.05x 步进
+                if (shift)
+                {
+                    scaleFactor = Mathf.Round(scaleFactor * 20f) / 20f;
+                }
+
+                if (_initialWidgetScales.Count > 1)
+                {
+                    WidgetSelectionManager.BatchScaleRelative(_initialWidgetScales, scaleFactor);
+                }
+                else
+                {
+                    float newScale = Mathf.Clamp(_initialScale * scaleFactor, 0.2f, 4.0f);
+                    WidgetSelectionManager.BatchSetScale(newScale);
+                }
+                UpdateGizmoPosition();
+            }
+        }
+
+        private Vector2 GetHandleDirection(DragGizmoMode mode)
+        {
+            switch (mode)
+            {
+                case DragGizmoMode.ScaleTR: return new Vector2(1f, 1f).normalized;
+                case DragGizmoMode.ScaleTL: return new Vector2(-1f, 1f).normalized;
+                case DragGizmoMode.ScaleBR: return new Vector2(1f, -1f).normalized;
+                case DragGizmoMode.ScaleBL: return new Vector2(-1f, -1f).normalized;
+                default: return Vector2.up;
+            }
         }
 
         public void EndGizmoDrag(PointerEventData eventData)
         {
             if (_currentDragMode != DragGizmoMode.None)
             {
+                string desc = _currentDragMode == DragGizmoMode.Rotate ? "手柄旋转" : "手柄缩放";
                 _currentDragMode = DragGizmoMode.None;
-                WidgetEditHistory.CommitAction("手柄旋转");
+                WidgetEditHistory.CommitAction(desc);
                 WidgetLayoutManager.Instance.SaveLayout();
                 UpdateGizmoPosition();
             }

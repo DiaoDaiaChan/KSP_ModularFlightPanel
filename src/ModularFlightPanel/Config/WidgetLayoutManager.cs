@@ -207,10 +207,38 @@ namespace ModularFlightPanel.Config
                 IsEnabled = true
             });
 
-            // 现代化分级与飞行姿态操纵台 (完美替代原版左下角粗糙方框)
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.stage_control", "分级与飞行操纵台", -340f, -120f)
+            // 现代化分级与飞行姿态操纵台 (左下角标准航电柱)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.stage_control", "分级与飞行操纵台", -360f, -120f)
             {
                 WidgetType = "stage_control",
+                IsEnabled = true
+            });
+
+            // 现代化垂直分级时序序列仪 (垂直挂载于操纵台上方)
+            CurrentLayout.Widgets.Add(new WidgetConfig("custom.staging_sequence", "垂直分级时序序列仪", -360f, 110f)
+            {
+                WidgetType = "staging_sequence",
+                IsEnabled = true
+            });
+
+            // 现代化平滑时间加速控制器 (左上角状态栏)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.time_warp", "AVIONICS 时间加速与任务时钟", -560f, 460f)
+            {
+                WidgetType = "time_warp",
+                IsEnabled = true
+            });
+
+            // 现代化天线通信网络监控仪 (右上角通信网络)
+            CurrentLayout.Widgets.Add(new WidgetConfig("custom.signal", "AVIONICS 通信网络与天线探针", 560f, 460f)
+            {
+                WidgetType = "signal",
+                IsEnabled = true
+            });
+
+            // 现代化折叠工具栏 (右侧边栏)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.toolbar", "AVIONICS 现代折叠工具栏", 890f, 0f)
+            {
+                WidgetType = "toolbar",
                 IsEnabled = true
             });
         }

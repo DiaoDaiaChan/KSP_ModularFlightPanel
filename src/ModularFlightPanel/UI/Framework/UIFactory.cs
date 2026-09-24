@@ -33,7 +33,7 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
-        /// 获取动态分辨率缩放比率 (固定返回 1.0f，彻底关闭全屏自适应拉伸与形变)
+        /// 获取动态分辨率缩放比率 (固定返回 1.0f，保证 1:1 绝对物理像素点对点光栅化，避免全屏拉伸与形变)
         /// </summary>
         public static float GetScreenDpiScale()
         {
@@ -43,7 +43,7 @@ namespace ModularFlightPanel.UI
         public static Func<float> CustomNavballUiScaleProvider = null;
 
         /// <summary>
-        /// 读取 KSP 姿态球比例 (固定返回 1.0f，彻底关闭随游戏原生设置自适应形变)
+        /// 读取 KSP 姿态球比例 (固定返回 1.0f，保持高保真设计尺寸，避免随游戏原生全局缩放拉伸形变)
         /// </summary>
         public static float GetKspNavballUiScale()
         {

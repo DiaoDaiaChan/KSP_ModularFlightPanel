@@ -140,10 +140,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             Vector2 size = new Vector2(DefaultWidth * s, DefaultHeight * s);
             RectTransform.sizeDelta = size;
 
-            // 2. 底板卡片 (全息透明 HUD / 极简淡框风格)
+            // 2. 底板卡片 (现代化暗晶毛玻璃背板 0.75 Alpha)
             _bgImage = gameObject.AddComponent<Image>();
+            _bgImage.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
             _bgOutline = gameObject.AddComponent<Outline>();
             _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
 
             // 3. 顶部总览行 (标题 + 全级总 ΔV)
             _titleText = UIFactory.CreateText(transform, "Title_Text", _titleTemplate, Mathf.RoundToInt(8.5f * s),
@@ -368,7 +370,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 外框模式着色
+            // 1. 外框模式着色 (现代化暗晶毛玻璃背板 0.75 Alpha)
             if (_frameMode == "NONE")
             {
                 if (_bgImage != null) _bgImage.color = Color.clear;
@@ -376,13 +378,13 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
             else if (_frameMode == "FAINT")
             {
-                if (_bgImage != null) _bgImage.color = Color.clear;
+                if (_bgImage != null) _bgImage.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
                 if (_bgOutline != null)
                 {
                     _bgOutline.enabled = true;
                     _bgOutline.effectColor = _currentCardRole == CardStyleRole.Emphasized
                         ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
-                        : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                        : WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
                 }
             }
             else
@@ -455,16 +457,69 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             int curStage = telemetry.CurrentStage;
 
             // 获取当前有效图集
-            Texture currentAtlas = StockStageIconService.Provider?.StockAtlas ?? StageIconAtlasGenerator.GetAtlas();
+            Texture stockAtlas = StockStageIconService.Provider?.StockAtlas;
+            bool isUsingStockAtlas = stockAtlas != null;
+            Texture currentAtlas = isUsingStockAtlas ? stockAtlas : StageIconAtlasGenerator.GetAtlas();
+
+            int displayCount = Mathf.Min(stageCount > 0 ? stageCount : 1, MaxDisplayedStages);
+
+            // 预估单级高度以实现自适应紧凑包围盒 (Auto-Compact)
+            float totalItemsHeight = 0f;
+            float[] itemHeights = new float[displayCount];
+            for (int k = 0; k < displayCount; k++)
+            {
+                StageDeltaVInfo stgSample;
+                if (stageCount > 0)
+                {
+                    stgSample = stages[k];
+                }
+                else
+                {
+                    stgSample = new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true);
+                }
+                bool sampleHasIcons = stgSample.PartIcons != null && stgSample.PartIcons.Count > 0;
+                bool sampleHasProp = stgSample.IsActive || (stgSample.Stage == curStage);
+                if (!sampleHasProp && stgSample.PartIcons != null)
+                {
+                    for (int p = 0; p < stgSample.PartIcons.Count; p++)
+                    {
+                        if (stgSample.PartIcons[p].PropellantFraction >= 0f) { sampleHasProp = true; break; }
+                    }
+                }
+                float h = 28f;
+                if (sampleHasIcons) h += 28f;
+                if (sampleHasProp) h += 14f;
+                itemHeights[k] = h;
+                totalItemsHeight += h + 3f;
+            }
+
+            // 自适应高度限制 (单级约 116px，最多 6 级约 260px)
+            float headerH = 28f;
+            float footerH = 24f;
+            float dynamicHeight = Mathf.Clamp(headerH + totalItemsHeight + footerH, 96f, 280f);
+
+            if (Mathf.Abs(RectTransform.sizeDelta.y - dynamicHeight * s) > 1f)
+            {
+                RectTransform.sizeDelta = new Vector2(DefaultWidth * s, dynamicHeight * s);
+            }
+
+            // 动态对齐顶栏与底栏
+            _titleText.rectTransform.anchoredPosition = new Vector2(-28f * s, (dynamicHeight * 0.5f - 14f) * s);
+            _totalDvText.rectTransform.anchoredPosition = new Vector2(44f * s, (dynamicHeight * 0.5f - 14f) * s);
+            _topDivider.rectTransform.anchoredPosition = new Vector2(0f, (dynamicHeight * 0.5f - 24f) * s);
+
+            _bottomDivider.rectTransform.anchoredPosition = new Vector2(0f, (-dynamicHeight * 0.5f + 20f) * s);
+            _statusBadgeText.rectTransform.anchoredPosition = new Vector2(-36f * s, (-dynamicHeight * 0.5f + 10f) * s);
+            _stageTriggerText.rectTransform.anchoredPosition = new Vector2(36f * s, (-dynamicHeight * 0.5f + 10f) * s);
 
             // 布局 Y 锚点起点 (自顶向下排列)
-            float currentY = (DefaultHeight * 0.5f - 28f) * s;
-            float bottomLimitY = (-DefaultHeight * 0.5f + 24f) * s;
+            float currentY = (dynamicHeight * 0.5f - 28f) * s;
+            float bottomLimitY = (-dynamicHeight * 0.5f + 24f) * s;
 
             for (int i = 0; i < _stageItems.Count; i++)
             {
                 StageItemUI item = _stageItems[i];
-                if (i >= stageCount && (i > 0 || stageCount > 0))
+                if (i >= displayCount)
                 {
                     item.Root.SetActive(false);
                     continue;
@@ -513,9 +568,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
 
                 // 计算当前分级行高
-                float itemH = 28f;
-                if (hasIcons) itemH += 28f;
-                if (hasProp) itemH += 14f;
+                float itemH = itemHeights[i];
 
                 // 视口底部溢出保护
                 if (currentY - itemH * s < bottomLimitY)
@@ -579,11 +632,30 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                 chip.IconRawImage.texture = currentAtlas;
                             }
 
-                            Rect uv = partData.HasStockUv 
-                                ? partData.StockUvRect 
-                                : (StockStageIconService.Provider != null 
-                                    ? StockStageIconService.Provider.GetStockIconUv(partData.IconTypeIndex) 
-                                    : StageIconAtlasGenerator.GetIconUv(partData.IconTypeIndex));
+                            Rect uv;
+                            int iconIndex = partData.IconTypeIndex > 0 
+                                ? partData.IconTypeIndex 
+                                : StageIconAtlasGenerator.GetIconIndex(partData.IconType);
+
+                            if (isUsingStockAtlas)
+                            {
+                                if (partData.HasStockUv && partData.StockUvRect.width > 0.01f && partData.StockUvRect.width < 0.5f)
+                                {
+                                    uv = partData.StockUvRect;
+                                }
+                                else if (StockStageIconService.Provider != null)
+                                {
+                                    uv = StockStageIconService.Provider.GetStockIconUv(iconIndex);
+                                }
+                                else
+                                {
+                                    uv = StageIconAtlasGenerator.GetIconUv(iconIndex);
+                                }
+                            }
+                            else
+                            {
+                                uv = StageIconAtlasGenerator.GetIconUv(iconIndex);
+                            }
                             chip.IconRawImage.uvRect = uv;
 
                             // 活跃级高亮主色，待命级保持白字

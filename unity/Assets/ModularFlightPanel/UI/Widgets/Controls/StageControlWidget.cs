@@ -34,16 +34,19 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _stageTwrEngText;
 
         // 三轴操纵量标尺 (Pitch, Roll, Yaw)
+        private Text _pitchLabel;
         private RectTransform _pitchFillRt;
         private Image _pitchFillImg;
         private RectTransform _pitchTrimRt;
         private Text _pitchValText;
 
+        private Text _rollLabel;
         private RectTransform _rollFillRt;
         private Image _rollFillImg;
         private RectTransform _rollTrimRt;
         private Text _rollValText;
 
+        private Text _yawLabel;
         private RectTransform _yawFillRt;
         private Image _yawFillImg;
         private RectTransform _yawTrimRt;
@@ -83,9 +86,10 @@ namespace ModularFlightPanel.UI.Widgets
             Color secondaryAccent = theme.AccentSecondary;
             Color textPrimary = theme.TextPrimaryColor;
 
-            // 1. 主背板与淡框 (全息极简 HUD 风格)
-            GameObject panel = UIFactory.CreatePanel(transform, "StageControlPanel", panelSize, Vector2.zero, Color.clear,
-                WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Ghost), 1f * s);
+            // 1. 主背板与淡框 (现代化暗晶毛玻璃背板 0.75 Alpha)
+            GameObject panel = UIFactory.CreatePanel(transform, "StageControlPanel", panelSize, Vector2.zero,
+                WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f),
+                WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost), 1f * s);
             _panelBg = panel.GetComponent<Image>();
             _panelOutline = panel.GetComponent<Outline>();
             _panelOutline.effectDistance = new Vector2(1f * s, 1f * s);
@@ -149,23 +153,23 @@ namespace ModularFlightPanel.UI.Widgets
             float axisStartY = stageY - 24f * s;
             float axisSpacing = 16f * s;
 
-            BuildAxisMeter(panel.transform, "Pitch", "PITCH", axisStartY, s, secondaryAccent,
-                out _pitchFillRt, out _pitchFillImg, out _pitchTrimRt, out _pitchValText);
+            BuildAxisMeter(panel.transform, "Pitch", "PITCH", axisStartY, s, theme.TextAccentColor,
+                out _pitchFillRt, out _pitchFillImg, out _pitchTrimRt, out _pitchValText, out _pitchLabel);
 
-            BuildAxisMeter(panel.transform, "Roll", "ROLL", axisStartY - axisSpacing, s, secondaryAccent,
-                out _rollFillRt, out _rollFillImg, out _rollTrimRt, out _rollValText);
+            BuildAxisMeter(panel.transform, "Roll", "ROLL", axisStartY - axisSpacing, s, theme.TextAccentColor,
+                out _rollFillRt, out _rollFillImg, out _rollTrimRt, out _rollValText, out _rollLabel);
 
-            BuildAxisMeter(panel.transform, "Yaw", "YAW", axisStartY - axisSpacing * 2f, s, secondaryAccent,
-                out _yawFillRt, out _yawFillImg, out _yawTrimRt, out _yawValText);
+            BuildAxisMeter(panel.transform, "Yaw", "YAW", axisStartY - axisSpacing * 2f, s, theme.TextAccentColor,
+                out _yawFillRt, out _yawFillImg, out _yawTrimRt, out _yawValText, out _yawLabel);
 
-            // 5. 分级推进剂指示条
+            // 5. 分级推进剂指示条 (左名称右百分比，杜绝重叠)
             float propY = axisStartY - axisSpacing * 2f - 20f * s;
 
-            _propNameText = UIFactory.CreateText(panel.transform, "PropName", "PROP: LH2 / OX",
-                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, secondaryAccent);
+            _propNameText = UIFactory.CreateText(panel.transform, "PropName", "PROPELLANT",
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, theme.TextAccentColor);
             RectTransform pNameRt = _propNameText.GetComponent<RectTransform>();
-            pNameRt.sizeDelta = new Vector2(120f * s, 12f * s);
-            pNameRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 68f * s, propY + 7f * s);
+            pNameRt.sizeDelta = new Vector2(110f * s, 12f * s);
+            pNameRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 65f * s, propY + 7f * s);
 
             _propPctText = UIFactory.CreateText(panel.transform, "PropPct", "100.0%",
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleRight, primaryAccent);
@@ -221,11 +225,12 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         private void BuildAxisMeter(Transform parent, string name, string label, float yPos, float s, Color accent,
-            out RectTransform fillRt, out Image fillImg, out RectTransform trimRt, out Text valText)
+            out RectTransform fillRt, out Image fillImg, out RectTransform trimRt, out Text valText, out Text lblText)
         {
-            // 轴名称 (PITCH / ROLL / YAW)
+            // 轴名称 (PITCH / ROLL / YAW) - 高对比度文字
             Text lbl = UIFactory.CreateText(parent, name + "_Label", label,
                 Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, accent);
+            lblText = lbl;
             RectTransform lblRt = lbl.GetComponent<RectTransform>();
             lblRt.sizeDelta = new Vector2(36f * s, 14f * s);
             lblRt.anchoredPosition = new Vector2(-76f * s, yPos);
@@ -361,7 +366,15 @@ namespace ModularFlightPanel.UI.Widgets
             float propFrac = Mathf.Clamp01(telem.StagePropellantFraction);
             if (_propNameText != null)
             {
-                string pNameStr = $"PROP: {telem.StagePropellantName}";
+                string rawName = telem.StagePropellantName;
+                if (string.IsNullOrEmpty(rawName)) rawName = "PROP";
+                if (rawName.StartsWith("PROP:", StringComparison.OrdinalIgnoreCase))
+                    rawName = rawName.Substring(5).Trim();
+                else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
+                    rawName = rawName.Substring(4).Trim();
+                if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
+
+                string pNameStr = rawName.ToUpperInvariant();
                 if (pNameStr != _lastPropNameStr)
                 {
                     _lastPropNameStr = pNameStr;
@@ -442,11 +455,11 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
 
-            if (_panelBg != null) _panelBg.color = Color.clear;
+            if (_panelBg != null) _panelBg.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
             if (_panelOutline != null)
             {
                 _panelOutline.enabled = true;
-                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
             }
 
             if (_titleText != null)
@@ -456,7 +469,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_stageDvText != null) ApplyText(_stageDvText, TextStyleRole.PrimaryValue, theme);
             if (_stageTwrEngText != null) ApplyText(_stageTwrEngText, TextStyleRole.SecondaryValue, theme);
-            if (_propNameText != null) ApplyText(_propNameText, TextStyleRole.Muted, theme);
+            if (_propNameText != null) ApplyText(_propNameText, TextStyleRole.SecondaryValue, theme);
+            if (_pitchLabel != null) ApplyText(_pitchLabel, TextStyleRole.SecondaryValue, theme);
+            if (_rollLabel != null) ApplyText(_rollLabel, TextStyleRole.SecondaryValue, theme);
+            if (_yawLabel != null) ApplyText(_yawLabel, TextStyleRole.SecondaryValue, theme);
             if (_pitchFillImg != null) _pitchFillImg.color = theme.AccentPrimary;
             if (_rollFillImg != null) _rollFillImg.color = theme.AccentPrimary;
             if (_yawFillImg != null) _yawFillImg.color = theme.AccentPrimary;

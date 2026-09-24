@@ -182,7 +182,7 @@ namespace ModularFlightPanel.UI
             _canvas.sortingOrder = 500;
 
             _scaler = _canvasObj.GetComponent<CanvasScaler>();
-            // 固定物理像素模式 (ConstantPixelSize)：1:1 像素映射，不随屏幕分辨率自动缩放/自适应形变
+            // 固定物理像素模式 (ConstantPixelSize)：1:1 绝对物理像素点对点光栅化，不随屏幕分辨率自动缩放/拉伸模糊
             _scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
             _scaler.scaleFactor = 1.0f;
 
