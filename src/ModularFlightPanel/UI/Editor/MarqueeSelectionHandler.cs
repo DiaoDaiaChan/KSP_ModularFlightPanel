@@ -39,17 +39,18 @@ namespace ModularFlightPanel.UI
             transform.SetAsFirstSibling();
 
             RectTransform rt = GetComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
-            rt.sizeDelta = Vector2.zero;
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(4000f, 4000f);
             rt.anchoredPosition = Vector2.zero;
 
             // 2. 创建视觉框选矩形
             _selectionBoxObj = new GameObject("MarqueeSelectionBox", typeof(RectTransform), typeof(Image), typeof(Outline));
             _selectionBoxObj.transform.SetParent(_parentRt, false);
             _selectionBoxRt = _selectionBoxObj.GetComponent<RectTransform>();
-            _selectionBoxRt.anchorMin = Vector2.zero;
-            _selectionBoxRt.anchorMax = Vector2.zero;
+            _selectionBoxRt.anchorMin = new Vector2(0.5f, 0.5f);
+            _selectionBoxRt.anchorMax = new Vector2(0.5f, 0.5f);
             _selectionBoxRt.pivot = Vector2.zero;
 
             _selectionBoxImage = _selectionBoxObj.GetComponent<Image>();
@@ -66,6 +67,15 @@ namespace ModularFlightPanel.UI
             _selectionBoxOutline.effectDistance = new Vector2(1.5f, 1.5f);
 
             _selectionBoxObj.SetActive(false);
+        }
+
+        private void OnDestroy()
+        {
+            if (_selectionBoxObj != null)
+            {
+                if (Application.isPlaying) Destroy(_selectionBoxObj);
+                else DestroyImmediate(_selectionBoxObj);
+            }
         }
 
         private void Update()

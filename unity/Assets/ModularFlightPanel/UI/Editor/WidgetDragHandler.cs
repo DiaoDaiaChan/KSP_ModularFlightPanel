@@ -181,8 +181,8 @@ namespace ModularFlightPanel.UI
                 }
                 if (_editTitleText != null)
                 {
-                    _editTitleText.text = $"<b>★ {_ownerWidget.DisplayName}</b>";
-                    _editTitleText.color = goldColor;
+                    // 选中态由顶层 TransformGizmo 的浮动徽标统一展示，避免文字重叠冲突
+                    _editTitleText.gameObject.SetActive(false);
                 }
             }
             else
@@ -207,6 +207,7 @@ namespace ModularFlightPanel.UI
                 }
                 if (_editTitleText != null)
                 {
+                    _editTitleText.gameObject.SetActive(true);
                     _editTitleText.text = $"{_ownerWidget.DisplayName}";
                     _editTitleText.color = WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Label, null);
                 }

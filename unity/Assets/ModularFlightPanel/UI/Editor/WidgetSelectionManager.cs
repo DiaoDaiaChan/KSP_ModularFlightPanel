@@ -144,8 +144,12 @@ namespace ModularFlightPanel.UI
             float w_px = (r.width > 10f ? r.width : 100f) * scale;
             float h_px = (r.height > 10f ? r.height : 80f) * scale;
             Vector2 pos = w.RectTransform.anchoredPosition;
+            Vector2 pivot = w.RectTransform.pivot;
 
-            return new Rect(pos.x - w_px * 0.5f, pos.y - h_px * 0.5f, w_px, h_px);
+            float centerX = pos.x + (0.5f - pivot.x) * w_px;
+            float centerY = pos.y + (0.5f - pivot.y) * h_px;
+
+            return new Rect(centerX - w_px * 0.5f, centerY - h_px * 0.5f, w_px, h_px);
         }
 
         // ==========================================

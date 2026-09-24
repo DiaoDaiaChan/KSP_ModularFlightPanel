@@ -58,6 +58,11 @@ namespace ModularFlightPanel.UI
                 RectTransform = gameObject.AddComponent<RectTransform>();
             }
 
+            // 统一锚点与轴心至中心 (0.5, 0.5)，彻底杜绝编辑模式包围盒与组件像素错位
+            RectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            RectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            RectTransform.pivot = new Vector2(0.5f, 0.5f);
+
             // 应用保存的绝对/相对坐标、缩放与旋转
             RectTransform.anchoredPosition = new Vector2(config.PositionX, config.PositionY);
             float s = config.Scale > 0.01f ? config.Scale : 1.0f;

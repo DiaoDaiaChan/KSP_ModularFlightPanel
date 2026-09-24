@@ -38,18 +38,29 @@ namespace ModularFlightPanel.UI
             _rootRt = parentRt;
             _canvas = canvas;
 
+            RectTransform myRt = GetComponent<RectTransform>();
+            if (myRt != null)
+            {
+                myRt.anchorMin = new Vector2(0.5f, 0.5f);
+                myRt.anchorMax = new Vector2(0.5f, 0.5f);
+                myRt.pivot = new Vector2(0.5f, 0.5f);
+                myRt.anchoredPosition = Vector2.zero;
+                myRt.sizeDelta = Vector2.zero;
+            }
+
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
             _axisCol = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.55f);
             _subAxisCol = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.25f);
             _gridCol = WidgetStyleManager.WithAlpha(theme.FrameBorderColor, 0.08f);
 
-            _gridRoot = new GameObject("CanvasBlueprintGrid", typeof(RectTransform));
-            _gridRoot.transform.SetParent(_rootRt, false);
+            _gridRoot = new GameObject("CanvasBlueprintGridRoot", typeof(RectTransform));
+            _gridRoot.transform.SetParent(transform, false);
             _gridRoot.transform.SetAsFirstSibling(); // 置于最底层
 
             RectTransform rt = _gridRoot.GetComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
             rt.sizeDelta = Vector2.zero;
             rt.anchoredPosition = Vector2.zero;
 
@@ -60,13 +71,13 @@ namespace ModularFlightPanel.UI
 
             // 顶部机体中心指示徽标 (X = 0 CENTERLINE)
             GameObject badgeObj = new GameObject("CenterlineBadge", typeof(RectTransform), typeof(Image), typeof(Outline));
-            badgeObj.transform.SetParent(_axisX.transform, false);
+            badgeObj.transform.SetParent(_gridRoot.transform, false);
             RectTransform bRt = badgeObj.GetComponent<RectTransform>();
-            bRt.anchorMin = new Vector2(0.5f, 1f);
-            bRt.anchorMax = new Vector2(0.5f, 1f);
-            bRt.pivot = new Vector2(0.5f, 1f);
+            bRt.anchorMin = new Vector2(0.5f, 0.5f);
+            bRt.anchorMax = new Vector2(0.5f, 0.5f);
+            bRt.pivot = new Vector2(0.5f, 0.5f);
             bRt.sizeDelta = new Vector2(86f, 16f);
-            bRt.anchoredPosition = new Vector2(0f, -2f);
+            bRt.anchoredPosition = new Vector2(0f, 320f);
 
             Image bImg = badgeObj.GetComponent<Image>();
             bImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
@@ -104,6 +115,7 @@ namespace ModularFlightPanel.UI
         private void OnDestroy()
         {
             WidgetDragHandler.OnEditModeChanged -= HandleEditModeChanged;
+            if (_instance == this) _instance = null;
         }
 
         private void BuildGridMesh()
@@ -137,19 +149,17 @@ namespace ModularFlightPanel.UI
             img.color = color;
             img.raycastTarget = false;
 
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+
             if (isVertical)
             {
-                rt.anchorMin = new Vector2(0.5f, 0f);
-                rt.anchorMax = new Vector2(0.5f, 1f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(thickness, 0f);
+                rt.sizeDelta = new Vector2(thickness, 4000f);
             }
             else
             {
-                rt.anchorMin = new Vector2(0f, 0.5f);
-                rt.anchorMax = new Vector2(1f, 0.5f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(0f, thickness);
+                rt.sizeDelta = new Vector2(4000f, thickness);
             }
 
             return img;
