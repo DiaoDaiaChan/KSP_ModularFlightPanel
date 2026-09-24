@@ -8,6 +8,7 @@ param(
     [string]$RenderMode = "",
     [string]$Frame = "surface",
     [string]$Preset = "",
+    [string]$Scenario = "",
     [string]$Theme = "",
     [string]$ArtifactDir = "C:\Users\43701\.gemini\antigravity\brain\02e37c8d-e015-4bcc-85e5-62fadb760e18",
     [string]$OutputName = "unity_headless_render.png"
@@ -84,6 +85,10 @@ if ($Render) {
     if (![string]::IsNullOrEmpty($Preset)) {
         Write-Host ">>> Targeting preset: $Preset" -ForegroundColor Yellow
         $argList += @("-preset", $Preset)
+    }
+    if (![string]::IsNullOrEmpty($Scenario)) {
+        Write-Host ">>> Targeting scenario: $Scenario" -ForegroundColor Yellow
+        $argList += @("-scenario", $Scenario)
     }
     if (![string]::IsNullOrEmpty($Theme)) {
         Write-Host ">>> Targeting theme: $Theme" -ForegroundColor Yellow

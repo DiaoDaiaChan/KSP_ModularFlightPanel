@@ -36,6 +36,17 @@ Shader "ModularFlightPanel/NavballProcedural"
         _SpecularColor ("Glass Specular Color", Color) = (1.0, 1.0, 1.0, 0.35)
         _Glossiness ("Glossiness", Range(4.0, 64.0)) = 28.0
         _SpecIntensity ("Specular Intensity", Range(0.0, 1.0)) = 0.18
+
+        // 动态数字滚转自适应与人机工效 (Dynamic Numeral Roll Alignment & Ergonomics)
+        _NumeralRollAngle ("Numeral Roll Angle (Rad)", Float) = 0.0
+        _NumeralUprightMode ("Numeral Upright Mode", Range(0.0, 1.0)) = 1.0
+        _NumeralTangentComp ("Tangent Foreshortening Comp", Range(0.0, 1.0)) = 1.0
+
+        // 合成视景近地防撞警示 (GPWS Ground Hazard Warning)
+        _GroundHazardAlert ("Ground Hazard Alert", Range(0.0, 1.0)) = 0.0
+
+        // 近地平精细游标阶梯 (Vernier Fine Scale Detail)
+        _VernierScaleDetail ("Vernier Scale Detail", Range(0.0, 1.0)) = 0.0
     }
 
     SubShader
@@ -131,6 +142,12 @@ Shader "ModularFlightPanel/NavballProcedural"
             float _Glossiness;
             float _SpecIntensity;
 
+            float _NumeralRollAngle;
+            float _NumeralUprightMode;
+            float _NumeralTangentComp;
+            float _GroundHazardAlert;
+            float _VernierScaleDetail;
+
             v2f vert(appdata v)
             {
                 v2f o;
@@ -165,6 +182,15 @@ Shader "ModularFlightPanel/NavballProcedural"
                 else
                 {
                     col = lerp(_GroundHorizonColor, _GroundNadirColor, pow(-p.y, 0.88));
+
+                    // GPWS / 近地大下沉率防撞动态斑马纹 (Ground Terrain Hazard Pull-Up Stripes)
+                    if (_GroundHazardAlert > 0.01)
+                    {
+                        float stripe = sin((p.x * 20.0 + p.y * 32.0 + p.z * 20.0) + _Time.y * 14.0);
+                        float isStripe = step(0.12, stripe) * _GroundHazardAlert;
+                        fixed3 hazardCol = fixed3(1.0, 0.82, 0.05); // 琥珀黄警戒色
+                        col.rgb = lerp(col.rgb, hazardCol, isStripe * 0.72);
+                    }
                 }
 
                 // 收敛高饱和度，让多参考系颜色更接近 Principia 的哑光质感。
@@ -195,12 +221,27 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pitchTens = floor(pitchLabelLevel / 10.0);
                 float pitchOnes = fmod(pitchLabelLevel, 10.0);
 
+                // 动态字形滚转正向对齐与切向反畸变展开 (Dynamic Upright Roll Rotation & Tangent Expansion)
+                float NdotV = saturate(dot(normal, viewDir));
+                float tangentAspect = lerp(1.0, clamp(1.0 / max(NdotV, 0.45), 1.0, 1.75), _NumeralTangentComp);
+                float numRoll = -_NumeralRollAngle * _NumeralUprightMode;
+                float cosNR = cos(numRoll);
+                float sinNR = sin(numRoll);
+
+                // 俯仰数字中心偏移与旋转
+                float2 pitchCenterOffset = float2(pitchHeadingOffset * tangentAspect, pitchLabelOffset);
+                float2 rotPitchOffset = float2(
+                    pitchCenterOffset.x * cosNR - pitchCenterOffset.y * sinNR,
+                    pitchCenterOffset.x * sinNR + pitchCenterOffset.y * cosNR
+                );
+
                 // 数字排版：两位数在中央留空处呈现
                 float pitchGlyphDistance = min(
-                    DigitDistance(float2(pitchHeadingOffset + 2.0, pitchLabelOffset), pitchTens),
-                    DigitDistance(float2(pitchHeadingOffset - 2.0, pitchLabelOffset), pitchOnes));
+                    DigitDistance(rotPitchOffset + float2(2.0, 0.0), pitchTens),
+                    DigitDistance(rotPitchOffset - float2(2.0, 0.0), pitchOnes));
                 float pitchGlyphEnabled = step(14.0, pitchLabelLevel) * (1.0 - step(76.0, pitchLabelLevel)) * polarLadderFade;
-                float pitchLabelGap = (absHOffset < 4.8 && absLabelOffset < 3.0) ? pitchGlyphEnabled : 0.0;
+                float pitchRadialSq = pitchHeadingOffset * pitchHeadingOffset + pitchLabelOffset * pitchLabelOffset;
+                float pitchLabelGap = (pitchRadialSq < 26.0) ? pitchGlyphEnabled : 0.0;
 
                 // 15° 主横杠 (横跨 ±10.0°，两端带有指向地平线的垂直末梢指示折角)
                 float isMajorBar15 = (absLabelOffset < 0.32 && absHOffset >= 4.8 && absHOffset < 10.0) ? 1.0 : 0.0;
@@ -232,6 +273,17 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float isTick5 = (isPure5 && pMod5 < 0.22 && absHOffset < 3.2) ? 0.50 : 0.0;
 
                 float combinedLadder = max(majorLadder15, max(isTick10, isTick5)) * polarLadderFade;
+
+                // 超精密 2.5° 游标微调刻度 (Vernier Scale Ticks near Horizon)
+                if (_VernierScaleDetail > 0.01 && absPitch < 8.0)
+                {
+                    float pMod25 = abs(pitchDeg - round(pitchDeg / 2.5) * 2.5);
+                    float pLevel25 = round(absPitch / 2.5) * 2.5;
+                    bool isPure25 = (fmod(pLevel25, 5.0) > 1.0);
+                    float isTick25 = (isPure25 && pMod25 < 0.18 && absHOffset < 2.0) ? 0.65 : 0.0;
+                    combinedLadder = max(combinedLadder, isTick25 * _VernierScaleDetail);
+                }
+
                 col = lerp(col, _PitchLadderColor, saturate(combinedLadder * _PitchLadderColor.a * 0.92));
 
                 // 5. 经度子午线：每 30° 一道经线，90° 主方向加亮
@@ -241,8 +293,9 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float isMeridian = max(isMeridian30, isMeridian90) * polarLadderFade;
 
                 // 在俯仰数字与赤道航向数字区域对子午线开辟净空区，严禁子午线贯穿数码管笔画
-                float pitchNumberMask = (absHOffset < 4.8 && absLabelOffset < 2.8) ? pitchGlyphEnabled : 0.0;
-                float headingNumberMask = (absHOffset < 6.2 && abs(pitchDeg - 3.8) < 2.8) ? (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) : 0.0;
+                float pitchNumberMask = (pitchRadialSq < 26.0) ? pitchGlyphEnabled : 0.0;
+                float headingRadialSq = pitchHeadingOffset * pitchHeadingOffset + (pitchDeg - 3.8) * (pitchDeg - 3.8);
+                float headingNumberMask = (headingRadialSq < 42.0) ? (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) : 0.0;
                 isMeridian *= (1.0 - max(pitchNumberMask, headingNumberMask));
 
                 col = lerp(col, _HeadingLineColor, saturate(isMeridian * _HeadingLineColor.a));
@@ -268,10 +321,16 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float headingTens = floor(fmod(headingNumber, 100.0) / 10.0);
                 float headingOnes = fmod(headingNumber, 10.0);
 
+                float2 headCenterOffset = float2(headingOffset * tangentAspect, pitchDeg - 3.8);
+                float2 rotHeadOffset = float2(
+                    headCenterOffset.x * cosNR - headCenterOffset.y * sinNR,
+                    headCenterOffset.x * sinNR + headCenterOffset.y * cosNR
+                );
+
                 float headingGlyphDistance = min(
-                    DigitDistance(float2(headingOffset + 3.8, pitchDeg - 3.8), headingHundreds),
-                    min(DigitDistance(float2(headingOffset, pitchDeg - 3.8), headingTens),
-                        DigitDistance(float2(headingOffset - 3.8, pitchDeg - 3.8), headingOnes)));
+                    DigitDistance(rotHeadOffset + float2(3.8, 0.0), headingHundreds),
+                    min(DigitDistance(rotHeadOffset, headingTens),
+                        DigitDistance(rotHeadOffset - float2(3.8, 0.0), headingOnes)));
                 float headingGlyphAA = clamp(max(fwidth(headingOffset), fwidth(pitchDeg)), 0.08, 0.32);
                 float headingTextOutline = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance - 0.45);
                 float headingTextFill = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance);
@@ -295,7 +354,6 @@ Shader "ModularFlightPanel/NavballProcedural"
                 }
 
                 // 7. 3D 球面深度边缘衰减 (Limb Darkening - 营造真实球体体积感)
-                float NdotV = saturate(dot(normal, viewDir));
                 float limbFalloff = pow(NdotV, _LimbPower);
                 float limbShade = lerp(1.0 - _LimbIntensity * 0.45, 1.0, limbFalloff);
                 col.rgb *= limbShade;

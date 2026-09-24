@@ -225,10 +225,12 @@ namespace ModularFlightPanel.UI
                 }
             }
 
+            var rescaledWidgets = new List<BaseFlightWidget>();
             foreach (var state in states)
             {
                 if (lookup.TryGetValue(state.WidgetId, out var widget) && widget != null)
                 {
+                    bool scaleChanged = Mathf.Abs(widget.CommittedScale - state.Scale) > 0.005f;
                     widget.UpdateTransform(state.PositionX, state.PositionY, state.Scale, state.Rotation);
                     widget.transform.SetSiblingIndex(state.SiblingIndex);
 
@@ -237,7 +239,13 @@ namespace ModularFlightPanel.UI
                         widget.Config.IsEnabled = state.IsEnabled;
                     }
                     widget.gameObject.SetActive(state.IsEnabled);
+                    if (scaleChanged) rescaledWidgets.Add(widget);
                 }
+            }
+
+            if (rescaledWidgets.Count > 0)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(rescaledWidgets);
             }
 
             WidgetLayoutManager.Instance.SaveLayout();

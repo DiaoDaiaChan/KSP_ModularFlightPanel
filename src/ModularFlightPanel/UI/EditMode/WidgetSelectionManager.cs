@@ -139,10 +139,11 @@ namespace ModularFlightPanel.UI
         {
             if (w == null || w.RectTransform == null) return Rect.zero;
 
-            float scale = (w.Config != null && w.Config.Scale > 0.01f) ? w.Config.Scale : 1f;
             Rect r = w.RectTransform.rect;
-            float w_px = (r.width > 10f ? r.width : 100f) * scale;
-            float h_px = (r.height > 10f ? r.height : 80f) * scale;
+            float scaleX = Mathf.Abs(w.RectTransform.localScale.x);
+            float scaleY = Mathf.Abs(w.RectTransform.localScale.y);
+            float w_px = (r.width > 10f ? r.width : 100f) * scaleX;
+            float h_px = (r.height > 10f ? r.height : 80f) * scaleY;
             Vector2 pos = w.RectTransform.anchoredPosition;
             Vector2 pivot = w.RectTransform.pivot;
 
@@ -401,7 +402,7 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        public static void BatchScale(float deltaScale)
+        public static void BatchScale(float deltaScale, bool commit = true)
         {
             foreach (var w in SelectedWidgets)
             {
@@ -414,9 +415,13 @@ namespace ModularFlightPanel.UI
                 }
             }
             WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
         }
 
-        public static void BatchSetScale(float targetScale)
+        public static void BatchSetScale(float targetScale, bool commit = true)
         {
             float clamped = Mathf.Clamp(targetScale, 0.2f, 4.0f);
             foreach (var w in SelectedWidgets)
@@ -427,6 +432,10 @@ namespace ModularFlightPanel.UI
                 }
             }
             WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
         }
 
         public static void BatchRotate(float deltaAngle)
@@ -477,10 +486,11 @@ namespace ModularFlightPanel.UI
                     if (w != null) w.UpdateTransform(scale: 1.0f);
                 }
                 WidgetLayoutManager.Instance.SaveLayout();
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
             });
         }
 
-        public static void BatchScaleRelative(Dictionary<BaseFlightWidget, float> initialScales, float scaleFactor)
+        public static void BatchScaleRelative(Dictionary<BaseFlightWidget, float> initialScales, float scaleFactor, bool commit = false)
         {
             if (initialScales == null || initialScales.Count == 0) return;
             foreach (var kvp in initialScales)
@@ -493,6 +503,10 @@ namespace ModularFlightPanel.UI
                 }
             }
             WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
         }
 
         /// <summary>

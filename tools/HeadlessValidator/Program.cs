@@ -152,7 +152,9 @@ namespace ModularFlightPanel.HeadlessValidator
             "STAGE_LOCK", "CTRL_MODE", "CTRL_PREC", "STAGE_PROP_NAME",
             "DV", "DELTAV", "BURNTIME", "MN", "MANEUVER", "NODEDV", "TIMETONODE",
             "WARP", "TIMEWARP", "MET", "MISSIONTIME", "UT", "UNIVERSALTIME",
-            "PERF", "PROFILER"
+            "PERF", "PROFILER",
+            "GPWS", "TAWS", "RF", "REALFUELS", "TF", "TESTFLIGHT", "DBS", "DYNAMICBATTERYSTORAGE",
+            "SH", "SYSTEMHEAT", "AA", "ATMOSPHEREAUTOPILOT", "KERBALISM", "KLSM", "RP1", "RA", "TRAJ", "DOCK"
         };
 
         public static int Main(string[] args)
@@ -661,6 +663,7 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "core.navball") return (154f, 154f);
             if (widgetId == "nav.vessel_navball" || widgetId == "nav.vessel_attitude_sphere" || widgetType == "vessel_navball" || widgetType == "vessel_attitude_sphere") return (150f, 178f);
             if (widgetId == "core.heading_arc" || widgetType == "heading_arc") return (180f, 60f);
+            if (widgetId == "core.master_warning" || widgetType == "master_warning" || widgetType == "warning_annunciator" || widgetType == "annunciator" || widgetType == "cws") return (184f, 20f);
             if (widgetId == "core.bottom_controls") return (184f, 22f);
             if (widgetId == "core.orbital_info") return (320f, 36f);
             if (widgetId == "core.ecam_status") return (380f, 32f);

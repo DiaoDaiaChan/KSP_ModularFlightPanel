@@ -268,10 +268,10 @@ namespace ModularFlightPanel.UI
         public static int QuantizeToOptimalPowerOfTwo(int targetPixels, int minRes = 512, int maxRes = 2048)
         {
             int res;
-            if (targetPixels <= 140) res = 128;
-            else if (targetPixels <= 280) res = 256;
-            else if (targetPixels <= 560) res = 512;
-            else if (targetPixels <= 1120) res = 1024;
+            if (targetPixels <= 128) res = 128;
+            else if (targetPixels <= 220) res = 256;
+            else if (targetPixels <= 360) res = 512;
+            else if (targetPixels <= 720) res = 1024;
             else res = 2048;
 
             return Mathf.Clamp(res, minRes, maxRes);

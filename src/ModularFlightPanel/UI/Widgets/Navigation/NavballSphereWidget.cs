@@ -46,6 +46,8 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _crossChevronR;
         private Image _crossDot;
         private readonly List<Outline> _crosshairOutlines = new List<Outline>();
+        private float _currentHazardAlert = 0.0f;
+        private float _currentVernierDetail = 0.0f;
 
         private static void EnsureDefaultSphereMesh()
         {
@@ -71,8 +73,7 @@ namespace ModularFlightPanel.UI.Widgets
             bool showHeadingBox = config != null && !string.IsNullOrEmpty(config.CustomTemplate) && config.CustomTemplate.IndexOf("heading_box", StringComparison.OrdinalIgnoreCase) >= 0;
 
             RectTransform.sizeDelta = showShell ? new Vector2(shellWidth, shellHeight) : new Vector2(ballDiameter, ballDiameter);
-            bool isProceduralInit = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
-            _visualRadius = ballDiameter * 0.5f * (isProceduralInit ? 0.94f : 1.0f);
+            _visualRadius = ballDiameter * 0.5f * 0.94f;
 
             // 0. 航电外壳 (当处于模块化 HUD 时默认隐藏矩形外壳，保持纯圆仪表面貌)
             ApplyCanvasIsolation(true);
@@ -128,8 +129,6 @@ namespace ModularFlightPanel.UI.Widgets
             _sphereObject.name = "Navball_3D_Sphere";
             _sphereObject.transform.SetParent(transform, false);
             _sphereObject.transform.localPosition = Vector3.zero;
-            // 设定 1.88f 直径 (半径 0.94f)，在 1.0f 正交视口内预留 6% 边缘柔和光晕空间，彻底根除视口硬裁切方块 Bug
-            _sphereObject.transform.localScale = Vector3.one * 1.88f;
             _sphereObject.layer = 31;
 
             Collider col = _sphereObject.GetComponent<Collider>();
@@ -139,32 +138,12 @@ namespace ModularFlightPanel.UI.Widgets
                 else DestroyImmediate(col);
             }
 
-            // 优先共享官方专属 NavBall Mesh，保障 UV 展开与官方贴图 100% 绝对契合 (仅贴图模式下使用)
-            var hook = NavBallHookService.Provider;
-            if (!isProceduralInit && hook != null && hook.HasStockNavBall && hook.StockMesh != null)
-            {
-                _sphereObject.GetComponent<MeshFilter>().sharedMesh = hook.StockMesh;
-            }
             // 程序化模式使用标准数学单位球 (PrimitiveType.Sphere，北极 +Y, 南极 -Y, 零极点畸变)
-            UpdateSphereMeshScale();
+            UpdateSphereScale();
 
             MeshRenderer mr = _sphereObject.GetComponent<MeshRenderer>();
-            Shader targetShader = isProceduralInit
-                ? (AssetLoader.ProceduralShader ?? AssetLoader.ModernShader)
-                : (AssetLoader.EnhancedShader ?? AssetLoader.ModernShader);
+            Shader targetShader = AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
             _sphereMaterial = new Material(targetShader);
-
-            // 读取官方/Principia/TextureReplacer 正在使用的贴图与 UV 缩放偏置
-            Texture stockTex = hook?.BallTexture;
-            if (stockTex != null)
-            {
-                _sphereMaterial.SetTexture("_MainTex", stockTex);
-            }
-            if (hook != null && hook.HasStockNavBall)
-            {
-                _sphereMaterial.mainTextureScale = hook.TextureScale;
-                _sphereMaterial.mainTextureOffset = hook.TextureOffset;
-            }
             mr.material = _sphereMaterial;
 
             // 5. RawImage 画布映射 (直接作为子物体渲染，彻底摒弃 1-bit Stencil UGUI Mask 硬锯齿)
@@ -252,18 +231,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateSphereMeshScale()
         {
-            if (_sphereObject == null) return;
-            MeshFilter meshFilter = _sphereObject.GetComponent<MeshFilter>();
-            if (meshFilter == null || meshFilter.sharedMesh == null) return;
-
-            Bounds bounds = meshFilter.sharedMesh.bounds;
-            float maxExtent = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z);
-            if (maxExtent > 0.0001f)
-            {
-                bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
-                float targetRadius = isProcedural ? 0.94f : 1.0f;
-                _sphereObject.transform.localScale = Vector3.one * (targetRadius / maxExtent);
-            }
+            UpdateSphereScale();
         }
 
         private void CreateMarkerOverlayLayer(Transform parent, float dpiScale)
@@ -526,28 +494,36 @@ namespace ModularFlightPanel.UI.Widgets
             bool hasHook = (hook != null && hook.HasStockNavBall);
 
             // 1. 姿态旋转：使用 localRotation 配合官方摄像机视口变换，杜绝任何外部画布/物体倾斜畸变
-            bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
             if (_sphereObject != null)
             {
                 if (hasHook)
                 {
                     Quaternion camRot = hook.CameraRotation;
                     Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
-                    _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
-                        : rawRot;
+                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
                 }
                 else
                 {
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
                     Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
-                    _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
-                        : rawRot;
+                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
+                }
+
+                // 动态滚转角度解算并注入着色器 (Screen-Upright / Zero-Roll Dynamic Numeral Alignment)
+                if (_sphereMaterial != null && _sphereMaterial.HasProperty("_NumeralRollAngle"))
+                {
+                    float rollRad = 0f;
+                    IFlightTelemetry curTelem = FlightTelemetryContext.Current;
+                    if (curTelem != null)
+                    {
+                        // 航电物理权威 Roll 角度 (度转弧度，正向航向绝对正交，彻底杜绝航向泄漏进滚转)
+                        rollRad = curTelem.Roll * Mathf.Deg2Rad;
+                    }
+                    _sphereMaterial.SetFloat("_NumeralRollAngle", rollRad);
                 }
             }
 
-            // 2. 贴图与程序化多参考系自适应变色 (Principia / Stock 多参考系高保真映射)
+            // 2. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
             string category = hook?.ReferenceFrameCategory ?? "SURFACE";
 
             if (category != _lastFrameCategory || !_paletteInitialized)
@@ -561,7 +537,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastFrameCategory = category;
             }
 
-            if (isProcedural && _sphereMaterial != null)
+            if (_sphereMaterial != null)
             {
                 float dt = Time.deltaTime;
                 float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
@@ -584,20 +560,31 @@ namespace ModularFlightPanel.UI.Widgets
                         _sphereMaterial.SetColor("_LabelOutlineColor", curTheme.TextInverseColor);
                     }
                 }
-            }
-            else if (!isProcedural && hasHook && hook.BallTexture != null && _sphereMaterial != null)
-            {
-                if (_sphereMaterial.HasProperty("_MainTex") && _sphereMaterial.GetTexture("_MainTex") != hook.BallTexture)
+
+                // GPWS / 近地大下沉率防撞动态斑马纹警示驱动 (Ground Terrain Hazard Pull-Up Alert)
+                IFlightTelemetry curTelem = FlightTelemetryContext.Current;
+                bool isHazard = false;
+                if (curTelem != null && curTelem.HasVessel)
                 {
-                    _sphereMaterial.SetTexture("_MainTex", hook.BallTexture);
+                    if ((curTelem.AltitudeAGL > 0 && curTelem.AltitudeAGL < 300.0 && curTelem.VerticalSpeed < -8.0) || curTelem.IsTouchdownAlert)
+                    {
+                        isHazard = true;
+                    }
                 }
-                if (_sphereMaterial.HasProperty("_RimColor"))
+                float targetHazard = isHazard ? 1.0f : 0.0f;
+                _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dt * 6.0f));
+                if (_sphereMaterial.HasProperty("_GroundHazardAlert"))
                 {
-                    _sphereMaterial.SetColor("_RimColor", _currentPalette.Rim);
+                    _sphereMaterial.SetFloat("_GroundHazardAlert", _currentHazardAlert);
                 }
-                if (_sphereMaterial.HasProperty("_AtmosphereGlowColor"))
+
+                // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
+                float pitchVal = (curTelem != null) ? Mathf.Abs(curTelem.Pitch) : 0f;
+                float targetVernier = (pitchVal < 6.0f) ? Mathf.Clamp01((6.0f - pitchVal) / 3.0f) : 0f;
+                _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dt * 4.0f));
+                if (_sphereMaterial.HasProperty("_VernierScaleDetail"))
                 {
-                    _sphereMaterial.SetColor("_AtmosphereGlowColor", _currentPalette.Rim);
+                    _sphereMaterial.SetFloat("_VernierScaleDetail", _currentVernierDetail);
                 }
             }
 
@@ -628,8 +615,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        protected virtual void LateUpdate()
+        protected override void LateUpdate()
         {
+            base.LateUpdate();
             if (!gameObject.activeInHierarchy) return;
 
             // 在 Principia/官方 LateUpdate 彻底执行完毕后，执行最终高保真姿态与标线同步
@@ -716,53 +704,17 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_sphereMaterial != null)
             {
-                bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
-                Shader targetShader = null;
-
-                if (isProcedural)
-                {
-                    targetShader = AssetLoader.ProceduralShader;
-                }
-                else if (!string.IsNullOrEmpty(theme.ShaderName))
-                {
-                    if (theme.ShaderName.EndsWith("NavballHalftone"))
-                        targetShader = AssetLoader.HalftoneShader;
-                    else if (theme.ShaderName.EndsWith("NavballModern"))
-                        targetShader = AssetLoader.ModernShader ?? AssetLoader.EnhancedShader;
-                    else if (theme.ShaderName.EndsWith("NavballEnhanced"))
-                        targetShader = AssetLoader.EnhancedShader;
-                    else if (theme.ShaderName.EndsWith("NavballProcedural"))
-                        targetShader = AssetLoader.ProceduralShader;
-                }
-
-                if (targetShader == null)
-                {
-                    targetShader = isProcedural
-                        ? (AssetLoader.ProceduralShader ?? AssetLoader.ModernShader)
-                        : (AssetLoader.EnhancedShader ?? AssetLoader.ModernShader);
-                }
-
+                Shader targetShader = AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
                 if (_sphereMaterial.shader != targetShader && targetShader != null)
                 {
                     _sphereMaterial.shader = targetShader;
                 }
 
-                // 1. 贴图与融合因子统一 (以 JSON / Theme 设置为准)
-                Texture stockTex = NavBallHookService.Provider?.BallTexture;
-                bool isModern = targetShader == AssetLoader.ModernShader;
-                if (!isProcedural && !isModern && stockTex != null)
-                {
-                    if (_sphereMaterial.HasProperty("_MainTex")) _sphereMaterial.SetTexture("_MainTex", stockTex);
-                    if (_sphereMaterial.HasProperty("_TextureBlend")) _sphereMaterial.SetFloat("_TextureBlend", 1.0f);
-                }
-                else
-                {
-                    if (_sphereMaterial.HasProperty("_MainTex")) _sphereMaterial.SetTexture("_MainTex", stockTex != null ? stockTex : Texture2D.whiteTexture);
-                    // Modern 着色器使用高保真矢量地平线渐变与俯仰梯级，默认保持纯净矢量质感
-                    if (_sphereMaterial.HasProperty("_TextureBlend")) _sphereMaterial.SetFloat("_TextureBlend", 0.0f);
-                }
+                if (_sphereMaterial.HasProperty("_NumeralUprightMode")) _sphereMaterial.SetFloat("_NumeralUprightMode", 1.0f);
+                if (_sphereMaterial.HasProperty("_NumeralTangentComp")) _sphereMaterial.SetFloat("_NumeralTangentComp", 1.0f);
 
                 // 2. 天地与网格色彩统一注入：无论何种 Shader，属性存在即注入，杜绝硬编码与色彩脱节
+                bool isModern = (targetShader == AssetLoader.ModernShader);
                 Color skyZenith = theme.SkyColor;
                 Color skyHrz = isModern ? WidgetStyleManager.Lighten(skyZenith, 0.16f) : (Color)theme.AccentSecondary;
 

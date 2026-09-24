@@ -307,6 +307,98 @@ namespace ModularFlightPanel.UI
             return w;
         }
 
+        /// <summary>
+        /// 权威无缝重构单个小组件以应用全新原生点对点分辨率 (Native Point-to-Point Sharpness)
+        /// 彻底解决由于 localScale 放大导致的 2D UGUI 字体与矢量边框模糊、以及姿态球分辨率未同步的问题。
+        /// </summary>
+        public BaseFlightWidget RespawnWidget(BaseFlightWidget oldWidget)
+        {
+            if (oldWidget == null || oldWidget.Config == null || _hudRoot == null) return null;
+
+            int index = _modularWidgets.IndexOf(oldWidget);
+            bool wasSelected = WidgetSelectionManager.IsSelected(oldWidget);
+
+            WidgetSelectionManager.Deselect(oldWidget);
+            WidgetRenderManager.Instance?.UnregisterWidget(oldWidget);
+            _modularWidgets.Remove(oldWidget);
+
+            WidgetConfig cfg = oldWidget.Config;
+            if (Application.isPlaying) Destroy(oldWidget.gameObject);
+            else DestroyImmediate(oldWidget.gameObject);
+
+            ThemeConfig theme = ThemeManager.Instance.CurrentTheme;
+            BaseFlightWidget newWidget = WidgetRegistry.Spawn(cfg, theme, _hudRoot.transform, _canvas, CustomScale);
+
+            if (newWidget != null)
+            {
+                if (index >= 0 && index <= _modularWidgets.Count)
+                {
+                    _modularWidgets.Insert(index, newWidget);
+                }
+                else
+                {
+                    _modularWidgets.Add(newWidget);
+                }
+
+                WidgetRenderManager.Instance?.RegisterWidget(newWidget, newWidget.RefreshTier);
+                newWidget.IsManagedByRenderManager = true;
+
+                if (wasSelected)
+                {
+                    WidgetSelectionManager.Select(newWidget, addToSelection: true);
+                }
+            }
+
+            return newWidget;
+        }
+
+        /// <summary>
+        /// 批量更新组件原生清晰度
+        /// </summary>
+        public void RespawnWidgets(IEnumerable<BaseFlightWidget> widgets)
+        {
+            if (widgets == null) return;
+            var list = new List<BaseFlightWidget>(widgets);
+            if (list.Count == 0) return;
+
+            var selectedIds = new HashSet<string>();
+            foreach (var w in WidgetSelectionManager.SelectedWidgets)
+            {
+                if (w != null && !string.IsNullOrEmpty(w.WidgetId))
+                {
+                    selectedIds.Add(w.WidgetId);
+                }
+            }
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                RespawnWidget(list[i]);
+            }
+
+            // 恢复选中状态
+            foreach (var id in selectedIds)
+            {
+                for (int i = 0; i < _modularWidgets.Count; i++)
+                {
+                    if (_modularWidgets[i] != null && _modularWidgets[i].WidgetId == id)
+                    {
+                        if (!WidgetSelectionManager.IsSelected(_modularWidgets[i]))
+                        {
+                            WidgetSelectionManager.Select(_modularWidgets[i], addToSelection: true);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // 刷新手柄位置与包围盒
+            var gizmo = _hudRoot.GetComponentInChildren<WidgetTransformGizmo>();
+            if (gizmo != null)
+            {
+                gizmo.UpdateGizmoPosition();
+            }
+        }
+
         public void AddNewCustomWidget(string title, string template)
         {
             Vector2 pos = new Vector2(UnityEngine.Random.Range(-200f, 200f), UnityEngine.Random.Range(50f, 250f));
@@ -590,33 +682,27 @@ namespace ModularFlightPanel.UI
             GUILayout.Label("<color=#00E5FF><b>缩放:</b></color>", GUILayout.Width(35f));
             if (GUILayout.Button("－", GUILayout.Width(25f), GUILayout.Height(20f)))
             {
-                if (selCount > 1) WidgetSelectionManager.BatchScale(-0.1f);
-                else { primary.UpdateTransform(scale: Mathf.Clamp(curScale - 0.1f, 0.2f, 4.0f)); WidgetLayoutManager.Instance.SaveLayout(); }
+                WidgetSelectionManager.BatchScale(-0.1f);
             }
             if (GUILayout.Button("＋", GUILayout.Width(25f), GUILayout.Height(20f)))
             {
-                if (selCount > 1) WidgetSelectionManager.BatchScale(+0.1f);
-                else { primary.UpdateTransform(scale: Mathf.Clamp(curScale + 0.1f, 0.2f, 4.0f)); WidgetLayoutManager.Instance.SaveLayout(); }
+                WidgetSelectionManager.BatchScale(+0.1f);
             }
             if (GUILayout.Button("0.8x", GUILayout.Width(40f), GUILayout.Height(20f)))
             {
-                if (selCount > 1) WidgetSelectionManager.BatchSetScale(0.8f);
-                else { primary.UpdateTransform(scale: 0.8f); WidgetLayoutManager.Instance.SaveLayout(); }
+                WidgetSelectionManager.BatchSetScale(0.8f);
             }
             if (GUILayout.Button("1.0x", GUILayout.Width(40f), GUILayout.Height(20f)))
             {
-                if (selCount > 1) WidgetSelectionManager.BatchSetScale(1.0f);
-                else { primary.UpdateTransform(scale: 1.0f); WidgetLayoutManager.Instance.SaveLayout(); }
+                WidgetSelectionManager.BatchSetScale(1.0f);
             }
             if (GUILayout.Button("1.2x", GUILayout.Width(40f), GUILayout.Height(20f)))
             {
-                if (selCount > 1) WidgetSelectionManager.BatchSetScale(1.2f);
-                else { primary.UpdateTransform(scale: 1.2f); WidgetLayoutManager.Instance.SaveLayout(); }
+                WidgetSelectionManager.BatchSetScale(1.2f);
             }
             if (GUILayout.Button("1.5x", GUILayout.Width(40f), GUILayout.Height(20f)))
             {
-                if (selCount > 1) WidgetSelectionManager.BatchSetScale(1.5f);
-                else { primary.UpdateTransform(scale: 1.5f); WidgetLayoutManager.Instance.SaveLayout(); }
+                WidgetSelectionManager.BatchSetScale(1.5f);
             }
             GUILayout.EndHorizontal();
 

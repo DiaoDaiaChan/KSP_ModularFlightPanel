@@ -45,11 +45,21 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public bool IsManagedByRenderManager { get; set; } = false;
 
+        /// <summary>
+        /// 当前组件在初始化时实际固化的设计缩放系数 (Committed Widget Scale)
+        /// </summary>
+        public float CommittedScale { get; private set; } = 1.0f;
+
         public virtual void BaseInitialize(Transform parent, Canvas canvas, WidgetConfig config, ThemeConfig theme, float scale)
         {
             Config = config;
             RootCanvas = canvas;
-            CurrentDpiScale = scale;
+            float widgetScale = (config != null && config.Scale > 0.01f) ? config.Scale : 1.0f;
+            CommittedScale = widgetScale;
+            // 核心分辨率铁律：将组件配置的自身缩放 (Widget Scale) 与屏幕物理 DPI 缩放融为一体，
+            // 确保派生类在 OnInitialize 中创建的一切文本、线宽与 RenderTexture 均以物理 1:1 原生分辨率栅格化，
+            // 彻底告别 GPU localScale 双线性模糊拉伸。
+            CurrentDpiScale = scale * widgetScale;
 
             transform.SetParent(parent, false);
             RectTransform = GetComponent<RectTransform>();
@@ -63,10 +73,9 @@ namespace ModularFlightPanel.UI
             RectTransform.anchorMax = new Vector2(0.5f, 0.5f);
             RectTransform.pivot = new Vector2(0.5f, 0.5f);
 
-            // 应用保存的绝对/相对坐标、缩放与旋转
+            // 应用保存的绝对/相对坐标、缩放与旋转 (以原生 1:1 坐标系建立)
             RectTransform.anchoredPosition = new Vector2(config.PositionX, config.PositionY);
-            float s = config.Scale > 0.01f ? config.Scale : 1.0f;
-            RectTransform.localScale = new Vector3(s, s, 1.0f);
+            RectTransform.localScale = Vector3.one;
             RectTransform.localEulerAngles = new Vector3(0f, 0f, config.Rotation);
 
             // 独立画布绘制优化 (Sub-Canvas Isolation)：
@@ -403,8 +412,10 @@ namespace ModularFlightPanel.UI
                 }
                 if (scale.HasValue)
                 {
-                    float s = (Config != null && Config.Scale > 0.01f) ? Config.Scale : 1.0f;
-                    RectTransform.localScale = new Vector3(s, s, 1.0f);
+                    float targetScale = (Config != null && Config.Scale > 0.01f) ? Config.Scale : 1.0f;
+                    float ratio = CommittedScale > 0.001f ? (targetScale / CommittedScale) : targetScale;
+                    RectTransform.localScale = new Vector3(ratio, ratio, 1.0f);
+                    OnScaleChanged(targetScale, ratio);
                 }
                 if (rotation.HasValue)
                 {
@@ -417,6 +428,15 @@ namespace ModularFlightPanel.UI
             {
                 DragHandler.UpdateSelectionAppearance();
             }
+        }
+
+        /// <summary>
+        /// 当组件缩放动态变动时触发 (例如编辑模式实时手柄拖拽)
+        /// </summary>
+        /// <param name="targetScale">目标总缩放倍率 (例如 1.5x)</param>
+        /// <param name="relativeRatio">相对初始化固化尺寸的比例 (例如 1.5 / 1.0 = 1.5)</param>
+        protected virtual void OnScaleChanged(float targetScale, float relativeRatio)
+        {
         }
 
         public void SetVisible(bool visible)

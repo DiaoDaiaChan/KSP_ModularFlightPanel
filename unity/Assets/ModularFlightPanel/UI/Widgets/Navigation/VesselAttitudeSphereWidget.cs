@@ -188,8 +188,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _sphereObject.name = "Navball_Vessel_Sphere";
             _sphereObject.transform.SetParent(transform, false);
             _sphereObject.transform.localPosition = Vector3.zero;
-            _sphereObject.transform.localScale = Vector3.one * 1.88f;
             _sphereObject.layer = 31;
+            UpdateSphereScale();
 
             Collider col = _sphereObject.GetComponent<Collider>();
             if (col != null)
@@ -542,8 +542,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
         }
 
-        protected virtual void LateUpdate()
+        protected override void LateUpdate()
         {
+            base.LateUpdate();
             if (!gameObject.activeInHierarchy) return;
 
             SyncAttitudeAndVisuals();
@@ -980,6 +981,27 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         }
 
         #endregion
+
+        protected override void OnRenderTextureRecreated(RenderTexture newRt)
+        {
+            base.OnRenderTextureRecreated(newRt);
+            if (_ballCamera != null) _ballCamera.targetTexture = newRt;
+            if (_sphereDisplayImage != null) _sphereDisplayImage.texture = newRt;
+        }
+
+        protected override void HandleRenderSettingChanged()
+        {
+            if (WidgetRenderManager.Instance == null) return;
+            float ballDiameter = _visualRadius * 2.0f;
+            int optimalRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
+                new Vector2(ballDiameter, ballDiameter),
+                Config != null ? Config.Scale : 1.0f,
+                Config != null ? Config.RenderScale : 1.0f);
+            if (_renderTexture == null || _renderTexture.width != optimalRes)
+            {
+                HandleResolutionChanged(optimalRes);
+            }
+        }
 
         protected override void OnDestroy()
         {

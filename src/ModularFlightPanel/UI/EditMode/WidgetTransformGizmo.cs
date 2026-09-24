@@ -359,12 +359,12 @@ namespace ModularFlightPanel.UI
 
                 if (_initialWidgetScales.Count > 1)
                 {
-                    WidgetSelectionManager.BatchScaleRelative(_initialWidgetScales, scaleFactor);
+                    WidgetSelectionManager.BatchScaleRelative(_initialWidgetScales, scaleFactor, commit: false);
                 }
                 else
                 {
                     float newScale = Mathf.Clamp(_initialScale * scaleFactor, 0.2f, 4.0f);
-                    WidgetSelectionManager.BatchSetScale(newScale);
+                    WidgetSelectionManager.BatchSetScale(newScale, commit: false);
                 }
                 UpdateGizmoPosition();
             }
@@ -387,9 +387,15 @@ namespace ModularFlightPanel.UI
             if (_currentDragMode != DragGizmoMode.None)
             {
                 string desc = _currentDragMode == DragGizmoMode.Rotate ? "手柄旋转" : "手柄缩放";
+                bool wasScale = _currentDragMode != DragGizmoMode.Rotate;
                 _currentDragMode = DragGizmoMode.None;
                 WidgetEditHistory.CommitAction(desc);
                 WidgetLayoutManager.Instance.SaveLayout();
+
+                if (wasScale)
+                {
+                    FlightHUDManager.Instance?.RespawnWidgets(WidgetSelectionManager.SelectedWidgets);
+                }
                 UpdateGizmoPosition();
             }
         }

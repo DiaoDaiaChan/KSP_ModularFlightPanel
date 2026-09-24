@@ -180,8 +180,7 @@ namespace ModularFlightPanel.Editor
                 if ((cmdArgs[i] == "-renderMode" || cmdArgs[i] == "--renderMode") && i + 1 < cmdArgs.Length)
                 {
                     string rm = cmdArgs[i + 1].Trim().ToLowerInvariant();
-                    if (rm.Contains("proc")) ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Procedural;
-                    else if (rm.Contains("tex")) ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Texture;
+                    ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Procedural;
                 }
                 if ((cmdArgs[i] == "-frame" || cmdArgs[i] == "--frame") && i + 1 < cmdArgs.Length)
                 {
@@ -226,6 +225,23 @@ namespace ModularFlightPanel.Editor
             {
                 simEngine.ApplyScenario(FlightScenario.MECOAndStaging);
                 simEngine.SetFlightParameters(5642.0 / 3.6, 132000.0, 14f, 90f, 0.95f, 5, 6, 504.0);
+            }
+            else if (!string.IsNullOrEmpty(targetScenario))
+            {
+                if (targetScenario.IndexOf("power", StringComparison.OrdinalIgnoreCase) >= 0)
+                    simEngine.ApplyScenario(FlightScenario.PowerCrisis);
+                else if (targetScenario.IndexOf("reentry", StringComparison.OrdinalIgnoreCase) >= 0 || targetScenario.IndexOf("blackout", StringComparison.OrdinalIgnoreCase) >= 0)
+                    simEngine.ApplyScenario(FlightScenario.ReentryBlackout);
+                else if (targetScenario.IndexOf("maxq", StringComparison.OrdinalIgnoreCase) >= 0)
+                    simEngine.ApplyScenario(FlightScenario.MaxQ);
+                else if (targetScenario.IndexOf("meco", StringComparison.OrdinalIgnoreCase) >= 0 || targetScenario.IndexOf("stage", StringComparison.OrdinalIgnoreCase) >= 0)
+                    simEngine.ApplyScenario(FlightScenario.MECOAndStaging);
+                else if (targetScenario.IndexOf("cruise", StringComparison.OrdinalIgnoreCase) >= 0 || targetScenario.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0)
+                    simEngine.ApplyScenario(FlightScenario.OrbitalCruise);
+                else if (targetScenario.IndexOf("pad", StringComparison.OrdinalIgnoreCase) >= 0)
+                    simEngine.ApplyScenario(FlightScenario.PadHold);
+                else
+                    simEngine.ApplyScenario(FlightScenario.AscentTransonic);
             }
             else if (!string.IsNullOrEmpty(targetWidgetId) && targetWidgetId.IndexOf("maneuver", StringComparison.OrdinalIgnoreCase) >= 0)
             {

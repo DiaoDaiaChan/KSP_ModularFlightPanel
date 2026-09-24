@@ -159,7 +159,7 @@ namespace ModularFlightPanel.Config
         public string ThemeId = "modern_aero";
         public string DisplayName = "Modern Glass Cockpit (极简全息)";
         public NavballStyleType Style = NavballStyleType.Modern_Aero;
-        public NavballRenderMode RenderMode = NavballRenderMode.Texture;
+        public NavballRenderMode RenderMode = NavballRenderMode.Procedural;
         public UiShaderStyle UiStyle = UiShaderStyle.Modern_Glass;
 
         // UI 专属着色器参数 (点阵、全息、数码管、玻璃)

@@ -122,6 +122,26 @@
       "IsLeftOrientation": false
     },
     {
+      "WidgetId": "core.master_warning",
+      "DisplayName": "中央主告警光字牌",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": -66,
+      "Scale": 1.0,
+      "CustomTemplate": "",
+      "WidgetType": "master_warning",
+      "NumericToken": "",
+      "MinValue": 0,
+      "MaxValue": 100,
+      "CautionThreshold": 20,
+      "WarningThreshold": 5,
+      "IsSoftLimit": false,
+      "LimitMode": "none",
+      "UnitLabel": "",
+      "StepInterval": 1,
+      "IsLeftOrientation": true
+    },
+    {
       "WidgetId": "core.bottom_controls",
       "DisplayName": "RCS与SAS底控台",
       "IsEnabled": true,

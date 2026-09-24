@@ -75,16 +75,65 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _sphereObject.name = "Navball_Sphere_Mesh";
             _sphereObject.transform.SetParent(transform, false);
             _sphereObject.transform.localPosition = Vector3.zero;
-            _sphereObject.transform.localScale = Vector3.one * sphereScale;
             _sphereObject.layer = NavballOffscreenLayer;
 
             Collider col = _sphereObject.GetComponent<Collider>();
             if (col != null) Destroy(col);
 
+            UpdateSphereScale();
+
             if (WidgetRenderManager.Instance != null)
             {
                 WidgetRenderManager.Instance.OnRenderResolutionChanged += HandleResolutionChanged;
                 WidgetRenderManager.Instance.OnRenderSettingChanged += HandleRenderSettingChanged;
+            }
+        }
+
+        /// <summary>
+        /// 核心反向补偿缩放算法 (Counter-Scaling Engine)
+        /// 使得 _sphereObject 在 Unity 3D 世界空间中的绝对物理尺寸恒定为 baseScale (默认直径 1.88f)，
+        /// 彻底消除因 UGUI 根节点 localScale 放大导致正交摄像机视口内球体被放大裁切 (Zoom Bug) 与三轴非等比拉伸畸变！
+        /// </summary>
+        public virtual void UpdateSphereScale()
+        {
+            if (_sphereObject == null) return;
+            float sx = transform.localScale.x;
+            float sy = transform.localScale.y;
+            float sz = transform.localScale.z;
+            if (Mathf.Abs(sx) < 0.0001f) sx = 1f;
+            if (Mathf.Abs(sy) < 0.0001f) sy = 1f;
+            if (Mathf.Abs(sz) < 0.0001f) sz = 1f;
+
+            float targetRadius = 0.94f;
+            float baseScale = 1.88f;
+
+            MeshFilter mf = _sphereObject.GetComponent<MeshFilter>();
+            if (mf != null && mf.sharedMesh != null)
+            {
+                Bounds bounds = mf.sharedMesh.bounds;
+                float maxExtent = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z);
+                if (maxExtent > 0.0001f)
+                {
+                    baseScale = targetRadius / maxExtent;
+                }
+            }
+
+            _sphereObject.transform.localScale = new Vector3(baseScale / sx, baseScale / sy, baseScale / sz);
+        }
+
+        protected override void OnScaleChanged(float targetScale, float relativeRatio)
+        {
+            base.OnScaleChanged(targetScale, relativeRatio);
+            UpdateSphereScale();
+            HandleRenderSettingChanged();
+        }
+
+        protected virtual void LateUpdate()
+        {
+            if (_sphereObject != null && transform.hasChanged)
+            {
+                transform.hasChanged = false;
+                UpdateSphereScale();
             }
         }
 

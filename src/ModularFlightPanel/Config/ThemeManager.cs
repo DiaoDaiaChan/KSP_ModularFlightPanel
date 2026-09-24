@@ -99,12 +99,13 @@ namespace ModularFlightPanel.Config
         private NavballRenderMode _globalRenderMode = NavballRenderMode.Procedural;
         public NavballRenderMode GlobalRenderMode
         {
-            get => _globalRenderMode;
+            get => NavballRenderMode.Procedural;
             set
             {
-                if (_globalRenderMode != value)
+                // 姿态球已永久固化为全量矢量程序化模式，忽略非 Procedural 模式切换
+                if (_globalRenderMode != NavballRenderMode.Procedural)
                 {
-                    _globalRenderMode = value;
+                    _globalRenderMode = NavballRenderMode.Procedural;
                     SaveSettings();
                     NotifyThemeChanged();
                 }
@@ -189,10 +190,7 @@ namespace ModularFlightPanel.Config
                         var found = AvailableThemes.Find(t => t.ThemeId == data.SelectedThemeId);
                         if (found != null) CurrentTheme = found;
                     }
-                    if (Enum.IsDefined(typeof(NavballRenderMode), data.RenderMode))
-                    {
-                        _globalRenderMode = (NavballRenderMode)data.RenderMode;
-                    }
+                    _globalRenderMode = NavballRenderMode.Procedural;
                     IsStockNavballHidden = data.HideStockNavball;
                     IsStockAltimeterHidden = data.HideStockAltimeter;
                     IsStockBottomLeftHidden = data.HideStockBottomLeft;

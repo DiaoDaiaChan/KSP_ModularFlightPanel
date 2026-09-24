@@ -274,30 +274,11 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.BeginCard();
             MFPGuiSkin.DrawHeader("🎯 姿态球生成模式与视网膜超采样 (Navball Quality & Resolution)");
 
-            // 1. 生成模式
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("姿态球生成模式:", GUILayout.Width(130f));
-            bool isTex = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Texture;
-            bool isProc = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
-
-            if (GUILayout.Button(isProc ? "● 矢量程序化模式 (现代超清)" : "○ 矢量程序化模式 (现代超清)", isProc ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
-            {
-                if (!isProc)
-                {
-                    ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Procedural;
-                    ThemeManager.Instance.NotifyThemeChanged();
-                }
-            }
-
-            if (GUILayout.Button(isTex ? "● 贴图增强模式 (原版材质+HDRP)" : "○ 贴图增强模式 (原版材质+HDRP)", isTex ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
-            {
-                if (!isTex)
-                {
-                    ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Texture;
-                    ThemeManager.Instance.NotifyThemeChanged();
-                }
-            }
-            GUILayout.EndHorizontal();
+            // 1. 生成模式说明 (已固化为纯矢量程序化解算管线)
+            MFPGuiSkin.BeginInset();
+            GUILayout.Label("<color=#00E5FF><b>姿态球渲染引擎:</b></color> <color=#00FF88>全量矢量程序化解算 (Procedural Vector Engine)</color>");
+            GUILayout.Label("<color=#7088A8><size=11>• 彻底脱离原版 2D 贴图依赖，消除极点 UV 挤压畸变，实现无极视网膜矢量精度。</size></color>");
+            MFPGuiSkin.EndInset();
 
             GUILayout.Space(4f);
 

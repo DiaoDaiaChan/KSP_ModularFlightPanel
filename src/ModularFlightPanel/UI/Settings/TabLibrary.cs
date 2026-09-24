@@ -143,6 +143,9 @@ namespace ModularFlightPanel.UI.Settings
                 DrawSubsystemPresetItem("SYS PERF 航电性能探针监控屏", "custom.perf_monitor", "performance_monitor", 440f, -40f,
                     "⚡ 实时监控 MFP 遥测、外部探针、组件渲染耗时与帧率 FPS，支持一键主干旁路。");
 
+                DrawSubsystemPresetItem("中央主告警光字牌 (Master Warning)", "core.master_warning", "master_warning", 0f, -66f,
+                    "🚨 双等级航电警告光字牌：黄色注意 (Caution) 与红色危急 (Warning) 双通道轮播，支持拉起、失速、低油、低电、缺氧全量监测，点击可消警。");
+
                 GUILayout.Space(8f);
             }
 

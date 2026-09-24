@@ -106,6 +106,7 @@ namespace ModularFlightPanel.UI
             Register<ModernToolbarWidget>("toolbar", "modern_toolbar", "dock");
 
             // Systems
+            Register<MasterWarningWidget>("master_warning", "warning_annunciator", "annunciator", "cws");
             Register<EcamStatusWidget>("ecam_status", "status_memo");
             Register<B747EicasWidget>("b747_eicas", "boeing_eicas", "eicas");
             Register<B747LowerEicasWidget>("b747_lower_eicas", "eicas_lower");
@@ -129,6 +130,7 @@ namespace ModularFlightPanel.UI
             Register<SpaceXEngineWidget>("spacex_engines", "dragon_engines");
 
             // 精准 WidgetId 映射 (针对原版/预设中的固定标识)
+            RegisterExactId<MasterWarningWidget>("core.master_warning");
             RegisterExactId<NavballSphereWidget>("core.navball");
             RegisterExactId<VesselAttitudeSphereWidget>("nav.vessel_navball");
             RegisterExactId<VesselAttitudeSphereWidget>("nav.vessel_attitude_sphere");
