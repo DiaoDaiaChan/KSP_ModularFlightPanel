@@ -194,6 +194,9 @@ namespace ModularFlightPanel.Core
                     if (subTag == "TIME" || subTag == "TIMETONODE") return telemetry.ManeuverTimeToNode;
                     if (subTag == "BURNTIME" || subTag == "DURATION") return telemetry.ManeuverBurnTime;
                     if (subTag == "TIMETOBURN" || subTag == "STARTBURN") return telemetry.ManeuverTimeToBurn;
+                    if (subTag == "PRO" || subTag == "PROGRADE") return telemetry.ManeuverDeltaVPrograde;
+                    if (subTag == "NORM" || subTag == "NORMAL") return telemetry.ManeuverDeltaVNormal;
+                    if (subTag == "RAD" || subTag == "RADIAL") return telemetry.ManeuverDeltaVRadial;
                     return telemetry.ManeuverDeltaV;
 
                 case "NODEDV":
@@ -594,11 +597,27 @@ namespace ModularFlightPanel.Core
                 case "MN":
                 case "MANEUVER":
                     if (!telem.HasManeuverNode) return "---";
+                    if (subTag == "SOURCE") return telem.ManeuverSource;
                     if (subTag == "TOTAL" || subTag == "TOTALDV") return FormatNumber(telem.ManeuverTotalDeltaV, format, "F1") + (format == "RAW" ? "" : " m/s");
                     if (subTag == "TIME" || subTag == "TIMETONODE") return (telem.ManeuverTimeToNode < 0 ? "T+" : "T-") + FormatTime(Math.Abs(telem.ManeuverTimeToNode));
                     if (subTag == "BURNTIME" || subTag == "DURATION") return FormatTime(Math.Max(0.0, telem.ManeuverBurnTime));
                     if (subTag == "TIMETOBURN" || subTag == "STARTBURN") return (telem.ManeuverTimeToBurn < 0 ? "T+" : "T-") + FormatTime(Math.Abs(telem.ManeuverTimeToBurn));
-                    if (subTag == "STATUS") return telem.ManeuverTimeToBurn <= 0 ? "BURNING" : "ARMED";
+                    if (subTag == "STATUS") return telem.ManeuverTimeToBurn <= 0 ? (telem.ManeuverDeltaV <= 0.1 ? "COMPLETE" : "BURNING") : "ARMED";
+                    if (subTag == "PRO" || subTag == "PROGRADE")
+                    {
+                        string sign = telem.ManeuverDeltaVPrograde >= 0.0 ? "+" : "";
+                        return sign + FormatNumber(telem.ManeuverDeltaVPrograde, format, "F1") + (format == "RAW" ? "" : " m/s");
+                    }
+                    if (subTag == "NORM" || subTag == "NORMAL")
+                    {
+                        string sign = telem.ManeuverDeltaVNormal >= 0.0 ? "+" : "";
+                        return sign + FormatNumber(telem.ManeuverDeltaVNormal, format, "F1") + (format == "RAW" ? "" : " m/s");
+                    }
+                    if (subTag == "RAD" || subTag == "RADIAL")
+                    {
+                        string sign = telem.ManeuverDeltaVRadial >= 0.0 ? "+" : "";
+                        return sign + FormatNumber(telem.ManeuverDeltaVRadial, format, "F1") + (format == "RAW" ? "" : " m/s");
+                    }
                     return FormatNumber(telem.ManeuverDeltaV, format, "F1") + (format == "RAW" ? "" : " m/s");
 
                 case "NODEDV":

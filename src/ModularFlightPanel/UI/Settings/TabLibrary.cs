@@ -97,6 +97,9 @@ namespace ModularFlightPanel.UI.Settings
                 DrawSubsystemPreset("MANEUVER 机动节点指示器", "core.maneuver", "maneuver", 440f, 160f,
                     "🎯 实时机动节点指示器：剩余 Delta-V 进度条、节点倒计时、燃烧时长预估、点火倒计时与一键时间加速/删除");
 
+                DrawSubsystemPreset("MANEUVER 轨道机动时序与三轴矢量轴", "custom.maneuver_timeline", "maneuver_timeline", 0f, 260f,
+                    "⏱️ 横排时间轴形式机动节点指示器：点火窗口时序轨、T0 节点、动态推进光标与 Prograde/Normal/Radial 三轴矢量分量分解 (Principia Hook + 原版兜底)");
+
                 DrawSubsystemPreset("SPACEX 载人龙飞船任务遥测顶栏", "spacex.header", "spacex_header", 0f, 420f,
                     "🐉 SpaceX Crew Dragon 顶部贯通式航电状态栏：主动飞行阶段胶囊徽章、倒计时与 5 组高对比度轨道数显列");
 

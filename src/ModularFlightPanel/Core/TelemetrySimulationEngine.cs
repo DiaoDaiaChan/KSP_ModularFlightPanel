@@ -85,6 +85,10 @@ namespace ModularFlightPanel.Core
         public double ManeuverTimeToNode { get; private set; } = 0.0;
         public double ManeuverBurnTime { get; private set; } = 0.0;
         public double ManeuverTimeToBurn { get; private set; } = 0.0;
+        public double ManeuverDeltaVPrograde { get; private set; } = 0.0;
+        public double ManeuverDeltaVNormal { get; private set; } = 0.0;
+        public double ManeuverDeltaVRadial { get; private set; } = 0.0;
+        public string ManeuverSource { get; private set; } = "STANDBY";
 
         // 电气系统
         public double ElectricCharge { get; private set; } = 400.0;
@@ -238,6 +242,10 @@ namespace ModularFlightPanel.Core
             ManeuverTimeToNode = 0.0;
             ManeuverBurnTime = 0.0;
             ManeuverTimeToBurn = 0.0;
+            ManeuverDeltaVPrograde = 0.0;
+            ManeuverDeltaVNormal = 0.0;
+            ManeuverDeltaVRadial = 0.0;
+            ManeuverSource = "STANDBY";
 
             switch (scenario)
             {
@@ -421,8 +429,12 @@ namespace ModularFlightPanel.Core
                     IsConnected = true;
                     ControlLevelStr = "FULL CONTROL";
                     HasManeuverNode = true;
+                    ManeuverSource = "SIMULATION";
                     ManeuverTotalDeltaV = 320.0;
                     ManeuverDeltaV = 320.0;
+                    ManeuverDeltaVPrograde = 310.0;
+                    ManeuverDeltaVNormal = 75.0;
+                    ManeuverDeltaVRadial = -25.0;
                     ManeuverTimeToNode = 180.0;
                     ManeuverBurnTime = 24.0;
                     ManeuverTimeToBurn = 168.0;
@@ -569,8 +581,13 @@ namespace ModularFlightPanel.Core
                     ManeuverTimeToBurn = ManeuverTimeToNode - (ManeuverBurnTime * 0.5);
                     if (ManeuverTimeToBurn <= 0.0 && ManeuverDeltaV > 0.0)
                     {
+                        double prevDv = ManeuverDeltaV;
                         double burnRate = ManeuverBurnTime > 0.1 ? (ManeuverTotalDeltaV / ManeuverBurnTime) : 10.0;
                         ManeuverDeltaV = Math.Max(0.0, ManeuverDeltaV - burnRate * dt);
+                        double fraction = prevDv > 0.001 ? (ManeuverDeltaV / prevDv) : 0.0;
+                        ManeuverDeltaVPrograde *= fraction;
+                        ManeuverDeltaVNormal *= fraction;
+                        ManeuverDeltaVRadial *= fraction;
                     }
                 }
             }
@@ -588,11 +605,15 @@ namespace ModularFlightPanel.Core
         public void DeleteManeuverNode()
         {
             HasManeuverNode = false;
+            ManeuverSource = "STANDBY";
             ManeuverDeltaV = 0.0;
             ManeuverTotalDeltaV = 0.0;
             ManeuverTimeToNode = 0.0;
             ManeuverBurnTime = 0.0;
             ManeuverTimeToBurn = 0.0;
+            ManeuverDeltaVPrograde = 0.0;
+            ManeuverDeltaVNormal = 0.0;
+            ManeuverDeltaVRadial = 0.0;
         }
     }
 }

@@ -55,7 +55,8 @@ namespace ModularFlightPanel.UI.Widgets
             bool showHeadingBox = config != null && !string.IsNullOrEmpty(config.CustomTemplate) && config.CustomTemplate.IndexOf("heading_box", StringComparison.OrdinalIgnoreCase) >= 0;
 
             RectTransform.sizeDelta = showShell ? new Vector2(shellWidth, shellHeight) : new Vector2(ballDiameter, ballDiameter);
-            _visualRadius = ballDiameter * 0.5f;
+            bool isProceduralInit = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
+            _visualRadius = ballDiameter * 0.5f * (isProceduralInit ? 0.94f : 1.0f);
 
             // 0. 航电外壳 (当处于模块化 HUD 时默认隐藏矩形外壳，保持纯圆仪表面貌)
             ApplyCanvasIsolation(true);
@@ -123,7 +124,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 优先共享官方专属 NavBall Mesh，保障 UV 展开与官方贴图 100% 绝对契合 (仅贴图模式下使用)
-            bool isProceduralInit = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
             var hook = NavBallHookService.Provider;
             if (!isProceduralInit && hook != null && hook.HasStockNavBall && hook.StockMesh != null)
             {
@@ -244,8 +244,9 @@ namespace ModularFlightPanel.UI.Widgets
             float maxExtent = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z);
             if (maxExtent > 0.0001f)
             {
-                // Keep the visual radius at one world unit for both stock and replacement navball meshes.
-                _sphereObject.transform.localScale = Vector3.one * (1f / maxExtent);
+                bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
+                float targetRadius = isProcedural ? 0.94f : 1.0f;
+                _sphereObject.transform.localScale = Vector3.one * (targetRadius / maxExtent);
             }
         }
 
@@ -560,6 +561,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        private float _lastMarkerDiagLogTime = -10f;
+
         private void SyncMarkers()
         {
             var hook = NavBallHookService.Provider;
@@ -607,6 +610,24 @@ namespace ModularFlightPanel.UI.Widgets
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
                 }
             }
+
+            if (Application.isPlaying && Time.unscaledTime - _lastMarkerDiagLogTime > 5.0f)
+            {
+                _lastMarkerDiagLogTime = Time.unscaledTime;
+                System.Text.StringBuilder sb = new System.Text.StringBuilder(128);
+                sb.Append("[ModularFlightPanel][NavballDiag] Active Markers: ");
+                int count = 0;
+                foreach (var kvp in _markerImages)
+                {
+                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf)
+                    {
+                        sb.Append(kvp.Key).Append(" ");
+                        count++;
+                    }
+                }
+                if (count == 0) sb.Append("(none)");
+                Debug.Log(sb.ToString());
+            }
         }
 
         public override void ApplyTheme(ThemeConfig theme)
@@ -625,7 +646,7 @@ namespace ModularFlightPanel.UI.Widgets
                     if (theme.ShaderName.EndsWith("NavballHalftone"))
                         targetShader = AssetLoader.HalftoneShader;
                     else if (theme.ShaderName.EndsWith("NavballModern"))
-                        targetShader = isProcedural ? (AssetLoader.ProceduralShader ?? AssetLoader.ModernShader) : (AssetLoader.EnhancedShader ?? AssetLoader.ModernShader);
+                        targetShader = AssetLoader.ModernShader ?? AssetLoader.EnhancedShader;
                     else if (theme.ShaderName.EndsWith("NavballEnhanced"))
                         targetShader = AssetLoader.EnhancedShader;
                     else if (theme.ShaderName.EndsWith("NavballProcedural"))
@@ -646,22 +667,27 @@ namespace ModularFlightPanel.UI.Widgets
 
                 // 1. 贴图与融合因子统一 (以 JSON / Theme 设置为准)
                 Texture stockTex = NavBallHookService.Provider?.BallTexture;
-                if (!isProcedural && stockTex != null)
+                bool isModern = targetShader == AssetLoader.ModernShader;
+                if (!isProcedural && !isModern && stockTex != null)
                 {
                     if (_sphereMaterial.HasProperty("_MainTex")) _sphereMaterial.SetTexture("_MainTex", stockTex);
                     if (_sphereMaterial.HasProperty("_TextureBlend")) _sphereMaterial.SetFloat("_TextureBlend", 1.0f);
                 }
                 else
                 {
-                    if (_sphereMaterial.HasProperty("_MainTex")) _sphereMaterial.SetTexture("_MainTex", Texture2D.whiteTexture);
+                    if (_sphereMaterial.HasProperty("_MainTex")) _sphereMaterial.SetTexture("_MainTex", stockTex != null ? stockTex : Texture2D.whiteTexture);
+                    // Modern 着色器使用高保真矢量地平线渐变与俯仰梯级，默认保持纯净矢量质感
                     if (_sphereMaterial.HasProperty("_TextureBlend")) _sphereMaterial.SetFloat("_TextureBlend", 0.0f);
                 }
 
                 // 2. 天地与网格色彩统一注入：无论何种 Shader，属性存在即注入，杜绝硬编码与色彩脱节
-                if (_sphereMaterial.HasProperty("_SkyColor")) _sphereMaterial.SetColor("_SkyColor", theme.SkyColor);
+                Color skyZenith = theme.SkyColor;
+                Color skyHrz = isModern ? WidgetStyleManager.Lighten(skyZenith, 0.16f) : (Color)theme.AccentSecondary;
+
+                if (_sphereMaterial.HasProperty("_SkyColor")) _sphereMaterial.SetColor("_SkyColor", skyZenith);
                 if (_sphereMaterial.HasProperty("_GroundColor")) _sphereMaterial.SetColor("_GroundColor", theme.GroundColor);
-                if (_sphereMaterial.HasProperty("_SkyZenithColor")) _sphereMaterial.SetColor("_SkyZenithColor", theme.SkyColor);
-                if (_sphereMaterial.HasProperty("_SkyHorizonColor")) _sphereMaterial.SetColor("_SkyHorizonColor", theme.AccentSecondary);
+                if (_sphereMaterial.HasProperty("_SkyZenithColor")) _sphereMaterial.SetColor("_SkyZenithColor", skyZenith);
+                if (_sphereMaterial.HasProperty("_SkyHorizonColor")) _sphereMaterial.SetColor("_SkyHorizonColor", skyHrz);
                 if (_sphereMaterial.HasProperty("_GroundHorizonColor")) _sphereMaterial.SetColor("_GroundHorizonColor", theme.GroundColor);
                 if (_sphereMaterial.HasProperty("_GroundNadirColor")) _sphereMaterial.SetColor("_GroundNadirColor", WidgetStyleManager.Darken(theme.GroundColor, 0.4f));
 

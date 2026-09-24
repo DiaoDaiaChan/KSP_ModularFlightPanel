@@ -8,22 +8,21 @@ using ModularFlightPanel.Core;
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
-    /// PFD 标尺带套件 (Speed Tape / Altitude Tape Kit) - 次世代航电重构版
-    /// 核心特性：
-    /// 1. 太空全场景动态无极工程量纲引擎 (m/km/Mm/Gm, m/s/km/s/c, 15% 滞后死区平滑防抖)
-    /// 2. 标尺步长自愈系统 (按量纲自适应阶梯，彻底根除高轨百万刻度线与 283k 多胞胎同名 Bug)
-    /// 3. 100% 实体高对比度中央读数窗 (Solid Odometer Cassette)，彻底杜绝背景刻度穿透重叠
-    /// 4. 一体化多边形指针凸嘴 (Chevron Pointer) 与发光准星发丝线 (Luminescent Index Ray)
-    /// 5. 真实民航 6 秒空速动态预测条 (Speed Trend Vector) 与零位严格平齐的 VSI 升降率指示
-    /// 6. 贴地雷达地形感知警戒带 (Radar Ground Ribbon, 45度航空黄黑斑马纹，<500m AGL 自动升起)
-    /// 7. 8 大航电微设计：激光光栅三级阶梯导轨、LED 模式通电微灯、滚轮沉降接缝、CNC 角标、端部 Alpha 羽化消隐
-    /// 8. 严格遵照 MFP-SPEC-001..007 标准化铁律，0 颜色字面量，100% 通配符双驱动，零 GC
+    /// PFD 标尺带套件 (Speed Tape / Altitude Tape Kit) - 次世代航电重构版 (v2)
+    /// 核心升级：
+    /// 1. 黄金航电纵横比：高度拉伸至 240px，真实再现波音 787 / 空客 A350 PFD 舒展比例
+    /// 2. 单位与数值直接合璧：单位（m, km, Mm, m/s, km/s, c）直接集成在中央高对比度读数窗内，一眼洞悉
+    /// 3. 速度带四级激光精密刻度阶梯（主刻度、半步长中刻度、微齿刻度），告别稀疏粗糙感
+    /// 4. 速度动力学双指示：除 ACC (G 载荷) 外，新增“速度变化率” (dV/dt，以 m/s² 实时呈现)
+    /// 5. 底部信息窗功能升级：速度带底部集成 Mach 马赫数数显，高度带底部集成雷达真实高度
+    /// 6. 太空全场景动态无极工程量纲引擎 (带 15% 滞后死区平滑防抖)
+    /// 7. 严格遵照 MFP-SPEC-001..007 标准化铁律，0 颜色字面量，100% 通配符双驱动，零 GC
     /// </summary>
     public class TapeGaugeWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
-        private const int TICK_POOL_SIZE = 32;
+        private const int TICK_POOL_SIZE = 40;
 
         public enum DynamicUnitTier
         {
@@ -51,7 +50,7 @@ namespace ModularFlightPanel.UI.Widgets
         private RectTransform _groundRibbonRt;
         private Image _groundRibbonImg;
 
-        // 刻度池项 (主/副/微三级刻度阶梯)
+        // 刻度池项 (支持主/中/微多级刻度阶梯)
         private struct TickItem
         {
             public GameObject Root;
@@ -60,8 +59,6 @@ namespace ModularFlightPanel.UI.Widgets
             public RectTransform LineRt;
             public Text Label;
             public RectTransform LabelRt;
-            public Image SubTick;
-            public RectTransform SubTickRt;
         }
         private readonly List<TickItem> _tickPool = new List<TickItem>(TICK_POOL_SIZE);
 
@@ -70,6 +67,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _centerBoxBg;
         private Outline _centerBoxOutline;
         private Text _centerValueText;
+        private Text _centerUnitText;
         private Button _centerBoxBtn;
 
         // 一体化五边形指针凸嘴 (Chevron Pointer) 与发光准星发丝线 (Luminescent Index Ray)
@@ -82,7 +80,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _centerSeamImg;
         private readonly List<Image> _cornerAccents = new List<Image>(4);
 
-        // 模式与顶部/底部标牌 (Top Mode Capsule & Bottom Unit Plate)
+        // 顶部模式胶囊盒 (Top Mode Capsule)
         private GameObject _topModeBox;
         private Image _topModeBg;
         private Outline _topModeOutline;
@@ -90,12 +88,22 @@ namespace ModularFlightPanel.UI.Widgets
         private Button _topModeBtn;
         private Image _topLedDot;
 
-        private GameObject _bottomUnitBox;
-        private Image _bottomUnitBg;
-        private Outline _bottomUnitOutline;
-        private Text _bottomUnitText;
+        // 速度带专属：速度动力学双通道微舱 (ACC 载荷 G + 速度变化率 dV/dt m/s²)
+        private GameObject _speedDynamicsBox;
+        private Image _speedDynamicsBg;
+        private Outline _speedDynamicsOutline;
+        private Text _accLabelText;
+        private Text _accValText;
+        private Text _rateLabelText;
+        private Text _rateValText;
 
-        // 真实民航 6 秒空速趋势条 / 水平对齐垂直速度指示器 (VSI / Trend Indicator)
+        // 底部次级航电窗 (Bottom Secondary Box: 速度带显示 Mach，高度带显示 AGL)
+        private GameObject _bottomSecBox;
+        private Image _bottomSecBg;
+        private Outline _bottomSecOutline;
+        private Text _bottomSecText;
+
+        // 高度带专属：侧边精密升降率 (VSI)
         private RectTransform _trendRoot;
         private GameObject _trendTagBox;
         private Outline _trendTagOutline;
@@ -116,10 +124,9 @@ namespace ModularFlightPanel.UI.Widgets
         // 通配符通道与配置
         private string _valueToken = "{SPD}";
         private string _topModeTemplate = "SPD";
-        private string _bottomUnitTemplate = "m/s";
+        private string _bottomSecTemplate = "{MACH}";
         private string _trendToken = "{GFORCE}";
         private string _trendTagTemplate = "ACC";
-        private string _trendUnitTemplate = "G";
         private string _terrainToken = "{ALT:AGL}";
         private float _trendMaxScale = 4.0f;
         private bool _isSpeedTape = false;
@@ -131,15 +138,22 @@ namespace ModularFlightPanel.UI.Widgets
         private string _activeUnitStr = "m";
         private float _activeStep = 100f;
 
+        // 速度变化率高精度微分采样 (Velocity Rate of Change: dV/dt)
+        private double _lastSampleSpeed = double.NaN;
+        private float _lastSampleTime = 0f;
+        private double _calculatedAccelMps2 = 0.0;
+
         // 脏检查与状态缓存
         private double _lastRawVal = double.NaN;
         private double _lastTrendVal = double.NaN;
         private double _lastTerrainVal = double.NaN;
         private string _lastCenterText = string.Empty;
+        private string _lastUnitText = string.Empty;
         private string _lastTopText = string.Empty;
         private string _lastBottomText = string.Empty;
-        private string _lastTrendTagText = string.Empty;
         private string _lastTrendRateText = string.Empty;
+        private string _lastAccText = string.Empty;
+        private string _lastRateText = string.Empty;
         private bool _lastTrendPositive = true;
 
         public static Action OnCycleSpeedModeAction;
@@ -150,7 +164,7 @@ namespace ModularFlightPanel.UI.Widgets
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             float width = 50f * s;
-            float height = 210f * s;
+            float height = 240f * s; // 拉长高度至 240px，符合民航/航天 PFD 真实比例
             RectTransform.sizeDelta = new Vector2(width, height);
 
             ParseCustomTemplate(config);
@@ -188,19 +202,19 @@ namespace ModularFlightPanel.UI.Widgets
             // 贴地雷达地形感知警戒带 (Radar Ground Ribbon)
             BuildGroundRibbon(theme);
 
-            // 初始化激光光栅三级刻度对象池
+            // 初始化激光光栅四级刻度对象池
             BuildTickPool(theme);
 
             // 视口端部镜面反光线与羽化遮罩 (Gloss Horizon Rim & Fade)
             BuildGlossRimsAndFades(theme);
 
-            // 3. 中央实体高对比度读数窗口 (Center Odometer Readout Box)
+            // 3. 中央高对比度实体读数窗口 (数值与单位直接合并并排展示)
             BuildCenterReadoutBox(theme);
 
-            // 4. 顶部模式胶囊与底部单位铭牌 (Top Mode Capsule & Bottom Unit Plate)
+            // 4. 顶部模式胶囊与底部次级航电窗 (Top Mode Capsule & Bottom Secondary Box)
             BuildCapsuleLabels(theme);
 
-            // 5. 趋势指示器 (速度带内置 6 秒预测条 / 高度带水平对齐 VSI)
+            // 5. 趋势指示器 (速度带内置 6 秒预测条 + 动力学微舱 / 高度带水平对齐 VSI)
             BuildTrendIndicator(theme);
         }
 
@@ -214,25 +228,22 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
                 _topModeTemplate = "SPD";
-                _bottomUnitTemplate = !string.IsNullOrEmpty(config?.UnitLabel) ? config.UnitLabel : "m/s";
+                _bottomSecTemplate = "{MACH}";
                 _trendToken = "{GFORCE}";
                 _trendTagTemplate = "ACC";
-                _trendUnitTemplate = "G";
                 _trendMaxScale = 4.0f;
             }
             else
             {
                 _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{ALT}";
                 _topModeTemplate = "ALT";
-                _bottomUnitTemplate = !string.IsNullOrEmpty(config?.UnitLabel) ? config.UnitLabel : "m";
+                _bottomSecTemplate = "RDR {ALT:AGL:DIST}";
                 _trendToken = "{VS}";
                 _trendTagTemplate = "V/S";
-                _trendUnitTemplate = "m/s";
                 _trendMaxScale = 100.0f;
                 _terrainToken = "{ALT:AGL}";
             }
 
-            // 严禁长中文直接挤入微型胶囊：若 DisplayName 为标准短标则保留，长标题自动提炼为紧凑模式
             if (!string.IsNullOrEmpty(config?.DisplayName))
             {
                 if (config.DisplayName.Length <= 4 && !config.DisplayName.Contains("标尺带"))
@@ -262,21 +273,14 @@ namespace ModularFlightPanel.UI.Widgets
                     case "TOP_LABEL":
                         _topModeTemplate = v;
                         break;
-                    case "UNIT":
                     case "BOTTOM":
                     case "BOTTOM_LABEL":
-                        _bottomUnitTemplate = v;
+                    case "SEC":
+                        _bottomSecTemplate = v;
                         break;
                     case "TREND_VAL":
                     case "TREND_TOKEN":
                         _trendToken = v;
-                        break;
-                    case "TREND_TAG":
-                    case "TREND_LABEL":
-                        _trendTagTemplate = v;
-                        break;
-                    case "TREND_UNIT":
-                        _trendUnitTemplate = v;
                         break;
                     case "TERRAIN":
                     case "AGL_TOKEN":
@@ -331,29 +335,26 @@ namespace ModularFlightPanel.UI.Widgets
             float w = RectTransform.sizeDelta.x;
             float halfH = (_viewportRt.sizeDelta.y) * 0.5f;
 
-            // 1. 顶端镜面反光线 (Gloss Horizon Rim)
             GameObject topRimObj = UIFactory.CreatePanel(_viewportRt, "Top_Gloss_Rim",
                 new Vector2(w - 2f * s, 1f * s), new Vector2(0f, halfH - 1f * s),
                 WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Primary, theme), 0.35f));
             _topGlossRim = topRimObj.GetComponent<Image>();
 
-            // 2. 底端镜面反光线
             GameObject btmRimObj = UIFactory.CreatePanel(_viewportRt, "Btm_Gloss_Rim",
                 new Vector2(w - 2f * s, 1f * s), new Vector2(0f, -halfH + 1f * s),
                 WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Primary, theme), 0.35f));
             _bottomGlossRim = btmRimObj.GetComponent<Image>();
 
-            // 3. 顶底柔和消隐遮罩色带
             ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
             GameObject topFade = UIFactory.CreatePanel(_viewportRt, "Top_Edge_Fade",
-                new Vector2(w, 14f * s), new Vector2(0f, halfH - 7f * s),
-                WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.65f));
+                new Vector2(w, 16f * s), new Vector2(0f, halfH - 8f * s),
+                WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.70f));
             _topFadeImg = topFade.GetComponent<Image>();
             _topFadeImg.raycastTarget = false;
 
             GameObject btmFade = UIFactory.CreatePanel(_viewportRt, "Btm_Edge_Fade",
-                new Vector2(w, 14f * s), new Vector2(0f, -halfH + 7f * s),
-                WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.65f));
+                new Vector2(w, 16f * s), new Vector2(0f, -halfH + 8f * s),
+                WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.70f));
             _bottomFadeImg = btmFade.GetComponent<Image>();
             _bottomFadeImg.raycastTarget = false;
         }
@@ -372,7 +373,7 @@ namespace ModularFlightPanel.UI.Widgets
                 RectTransform rt = itemObj.GetComponent<RectTransform>();
                 rt.sizeDelta = new Vector2(48f * s, 16f * s);
 
-                // 主/副刻度齿线
+                // 刻度线 (主/中/微阶梯)
                 GameObject lineObj = new GameObject("Tick_Line", typeof(RectTransform), typeof(Image));
                 lineObj.transform.SetParent(itemObj.transform, false);
                 RectTransform lineRt = lineObj.GetComponent<RectTransform>();
@@ -381,17 +382,7 @@ namespace ModularFlightPanel.UI.Widgets
                 Image lineImg = lineObj.GetComponent<Image>();
                 lineImg.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
 
-                // 微副刻度齿线 (Sub-tick)
-                GameObject subObj = new GameObject("Sub_Line", typeof(RectTransform), typeof(Image));
-                subObj.transform.SetParent(itemObj.transform, false);
-                RectTransform subRt = subObj.GetComponent<RectTransform>();
-                subRt.sizeDelta = new Vector2(6f * s, 1f * s);
-                subRt.anchoredPosition = new Vector2(tickX, 0f);
-                Image subImg = subObj.GetComponent<Image>();
-                subImg.color = WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Track, theme), 0.6f);
-                subObj.SetActive(false);
-
-                // 刻度标牌数字
+                // 刻度数字标牌
                 int fontSize = Mathf.RoundToInt(9f * s);
                 TextAnchor align = Config.IsLeftOrientation ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
                 Text labelTxt = UIFactory.CreateText(itemObj.transform, "Tick_Text", "0", fontSize, align,
@@ -408,9 +399,7 @@ namespace ModularFlightPanel.UI.Widgets
                     Line = lineImg,
                     LineRt = lineRt,
                     Label = labelTxt,
-                    LabelRt = labelRt,
-                    SubTick = subImg,
-                    SubTickRt = subRt
+                    LabelRt = labelRt
                 });
             }
         }
@@ -418,7 +407,7 @@ namespace ModularFlightPanel.UI.Widgets
         private void BuildCenterReadoutBox(ThemeConfig theme)
         {
             float s = CurrentDpiScale;
-            float boxW = 54f * s;
+            float boxW = 58f * s; // 拓宽以完美容纳数值与右侧微型单位铭牌
             float boxH = 24f * s;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
@@ -435,7 +424,6 @@ namespace ModularFlightPanel.UI.Widgets
             _centerBoxOutline.effectDistance = new Vector2(1f * s, 1f * s);
             ApplyCard(_centerBoxBg, _centerBoxOutline, CardStyleRole.Normal, theme);
 
-            // 100% 实体高对比深色底板，彻底遮蔽穿透刻度
             ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
             _centerBoxBg.color = WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 1.0f);
             _centerBoxOutline.effectColor = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
@@ -467,9 +455,10 @@ namespace ModularFlightPanel.UI.Widgets
             _hairlineRayImg = rayObj.GetComponent<Image>();
             _hairlineRayImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 
-            // 3. 机械沉降微分割缝 (Odometer Divider Seam)
+            // 3. 机械沉降微分割缝 (Odometer Seam)
+            float seamX = Config.IsLeftOrientation ? (boxW * 0.16f) : (-boxW * 0.16f);
             GameObject seamObj = UIFactory.CreatePanel(boxObj.transform, "Seam_Slit",
-                new Vector2(1f * s, boxH - 6f * s), new Vector2(boxW * 0.18f, 0f),
+                new Vector2(1f * s, boxH - 6f * s), new Vector2(seamX, 0f),
                 WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Track, theme), 0.45f));
             _centerSeamImg = seamObj.GetComponent<Image>();
 
@@ -488,14 +477,42 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 5. 中央高对比度主读数数字
-            int valFontSize = Mathf.RoundToInt(12f * s);
-            _centerValueText = UIFactory.CreateText(boxObj.transform, "Readout_Value", "0", valFontSize, TextAnchor.MiddleCenter,
-                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            _centerValueText.fontStyle = FontStyle.Bold;
-            RectTransform valRt = _centerValueText.GetComponent<RectTransform>();
-            valRt.sizeDelta = new Vector2(boxW - 4f * s, boxH);
-            valRt.anchoredPosition = Vector2.zero;
+            // 5. 中央主读数与单位直接并排展示 (优化设计：单位紧随数值，告别视线移动)
+            int valFontSize = Mathf.RoundToInt(11.5f * s);
+            int unitFontSize = Mathf.Max(6, Mathf.RoundToInt(7.5f * s));
+
+            if (Config.IsLeftOrientation)
+            {
+                // 速度带：数字偏左，单位紧随右侧
+                _centerValueText = UIFactory.CreateText(boxObj.transform, "Readout_Value", "0", valFontSize,
+                    TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                _centerValueText.fontStyle = FontStyle.Bold;
+                RectTransform valRt = _centerValueText.GetComponent<RectTransform>();
+                valRt.sizeDelta = new Vector2(38f * s, boxH);
+                valRt.anchoredPosition = new Vector2(-7f * s, 0f);
+
+                _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
+                    TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
+                RectTransform unitRt = _centerUnitText.GetComponent<RectTransform>();
+                unitRt.sizeDelta = new Vector2(16f * s, boxH);
+                unitRt.anchoredPosition = new Vector2(19f * s, -1f * s);
+            }
+            else
+            {
+                // 高度带：指针在左，单位在最左/右配合数字展示
+                _centerValueText = UIFactory.CreateText(boxObj.transform, "Readout_Value", "0", valFontSize,
+                    TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                _centerValueText.fontStyle = FontStyle.Bold;
+                RectTransform valRt = _centerValueText.GetComponent<RectTransform>();
+                valRt.sizeDelta = new Vector2(38f * s, boxH);
+                valRt.anchoredPosition = new Vector2(-6f * s, 0f);
+
+                _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
+                    TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
+                RectTransform unitRt = _centerUnitText.GetComponent<RectTransform>();
+                unitRt.sizeDelta = new Vector2(16f * s, boxH);
+                unitRt.anchoredPosition = new Vector2(20f * s, -1f * s);
+            }
         }
 
         private void BuildCapsuleLabels(ThemeConfig theme)
@@ -517,13 +534,12 @@ namespace ModularFlightPanel.UI.Widgets
             _topModeBtn = _topModeBox.AddComponent<Button>();
             _topModeBtn.onClick.AddListener(OnBoxClicked);
 
-            // 1.1 通电 LED 指示灯微标 (LED Status Pill)
+            // 通电 LED 指示灯微标
             GameObject ledObj = UIFactory.CreatePanel(_topModeBox.transform, "LED_Dot",
                 new Vector2(3f * s, 3f * s), new Vector2(-w * 0.5f + 6f * s, 0f),
                 WidgetStyleManager.Meter(MeterStyleRole.Primary, theme));
             _topLedDot = ledObj.GetComponent<Image>();
 
-            // 1.2 顶部模式文本 (杜绝横向溢出)
             int topFontSize = Mathf.RoundToInt(8.5f * s);
             _topModeText = UIFactory.CreateText(_topModeBox.transform, "Top_Mode", _topModeTemplate, topFontSize, TextAnchor.MiddleCenter,
                 style.GetTextColor(TextStyleRole.Cardinal, theme));
@@ -532,22 +548,22 @@ namespace ModularFlightPanel.UI.Widgets
             topRt.anchoredPosition = new Vector2(2f * s, 0f);
             _topModeText.horizontalOverflow = HorizontalWrapMode.Wrap;
 
-            // 2. 底部单位沉降铭牌 (Bottom Unit Plate)
+            // 2. 底部次级航电窗 (Bottom Secondary Box: Mach / Radar Alt)
             Vector2 btmBoxSize = new Vector2(w, 16f * s);
             Vector2 btmBoxPos = new Vector2(0f, -halfH - 10f * s);
-            _bottomUnitBox = UIFactory.CreatePanel(transform, "Bottom_Unit_Box", btmBoxSize, btmBoxPos, Color.clear);
-            _bottomUnitBg = _bottomUnitBox.GetComponent<Image>();
-            _bottomUnitOutline = _bottomUnitBox.AddComponent<Outline>();
-            _bottomUnitOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_bottomUnitBg, _bottomUnitOutline, CardStyleRole.SubtleSlot, theme);
+            _bottomSecBox = UIFactory.CreatePanel(transform, "Bottom_Sec_Box", btmBoxSize, btmBoxPos, Color.clear);
+            _bottomSecBg = _bottomSecBox.GetComponent<Image>();
+            _bottomSecOutline = _bottomSecBox.AddComponent<Outline>();
+            _bottomSecOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            ApplyCard(_bottomSecBg, _bottomSecOutline, CardStyleRole.SubtleSlot, theme);
 
             int btmFontSize = Mathf.RoundToInt(8f * s);
-            _bottomUnitText = UIFactory.CreateText(_bottomUnitBox.transform, "Bottom_Unit", _activeUnitStr, btmFontSize, TextAnchor.MiddleCenter,
+            _bottomSecText = UIFactory.CreateText(_bottomSecBox.transform, "Bottom_Sec", "---", btmFontSize, TextAnchor.MiddleCenter,
                 style.GetTextColor(TextStyleRole.Unit, theme));
-            RectTransform btmRt = _bottomUnitText.GetComponent<RectTransform>();
+            RectTransform btmRt = _bottomSecText.GetComponent<RectTransform>();
             btmRt.sizeDelta = btmBoxSize;
             btmRt.anchoredPosition = Vector2.zero;
-            _bottomUnitText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            _bottomSecText.horizontalOverflow = HorizontalWrapMode.Wrap;
         }
 
         private void BuildTrendIndicator(ThemeConfig theme)
@@ -558,7 +574,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_isSpeedTape)
             {
-                // 空速趋势向量：直接内置在速度标尺内侧导轨 (6-Second Trend Vector)
+                // 1. 空速 6 秒趋势预测条 (在刻度导轨上展开)
                 float railX = Config.IsLeftOrientation ? (16f * s) : (-16f * s);
 
                 GameObject barObj = new GameObject("Speed_Trend_Bar", typeof(RectTransform), typeof(Image));
@@ -579,6 +595,49 @@ namespace ModularFlightPanel.UI.Widgets
                 _trendArrowImg = arrowObj.GetComponent<Image>();
                 _trendArrowImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                 _trendArrowImg.gameObject.SetActive(false);
+
+                // 2. 速度动力学双通道微舱：ACC (G) + 速度变化率 (dV/dt m/s²)
+                float dynX = -(width * 0.5f + 16f * s);
+                Vector2 dynSize = new Vector2(24f * s, 34f * s);
+                Vector2 dynPos = new Vector2(dynX, 102f * s);
+
+                _speedDynamicsBox = UIFactory.CreatePanel(transform, "Speed_Dynamics_Box", dynSize, dynPos, Color.clear);
+                _speedDynamicsBg = _speedDynamicsBox.GetComponent<Image>();
+                _speedDynamicsOutline = _speedDynamicsBox.AddComponent<Outline>();
+                _speedDynamicsOutline.effectDistance = new Vector2(1f * s, 1f * s);
+                ApplyCard(_speedDynamicsBg, _speedDynamicsOutline, CardStyleRole.Normal, theme);
+
+                // ACC 载荷行
+                _accLabelText = UIFactory.CreateText(_speedDynamicsBox.transform, "ACC_Tag", "ACC",
+                    Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter,
+                    style.GetTextColor(TextStyleRole.Cardinal, theme));
+                RectTransform accTagRt = _accLabelText.GetComponent<RectTransform>();
+                accTagRt.sizeDelta = new Vector2(dynSize.x, 8f * s);
+                accTagRt.anchoredPosition = new Vector2(0f, 10.5f * s);
+
+                _accValText = UIFactory.CreateText(_speedDynamicsBox.transform, "ACC_Val", "0.0G",
+                    Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter,
+                    style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                _accValText.fontStyle = FontStyle.Bold;
+                RectTransform accValRt = _accValText.GetComponent<RectTransform>();
+                accValRt.sizeDelta = new Vector2(dynSize.x, 9f * s);
+                accValRt.anchoredPosition = new Vector2(0f, 3f * s);
+
+                // 速度变化率行 (dV/dt)
+                _rateLabelText = UIFactory.CreateText(_speedDynamicsBox.transform, "Rate_Tag", "dV/dt",
+                    Mathf.Max(5, Mathf.RoundToInt(6f * s)), TextAnchor.MiddleCenter,
+                    style.GetTextColor(TextStyleRole.Unit, theme));
+                RectTransform rateTagRt = _rateLabelText.GetComponent<RectTransform>();
+                rateTagRt.sizeDelta = new Vector2(dynSize.x, 7f * s);
+                rateTagRt.anchoredPosition = new Vector2(0f, -4f * s);
+
+                _rateValText = UIFactory.CreateText(_speedDynamicsBox.transform, "Rate_Val", "+0.0",
+                    Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter,
+                    style.GetTextColor(TextStyleRole.Accent, theme));
+                _rateValText.fontStyle = FontStyle.Bold;
+                RectTransform rateValRt = _rateValText.GetComponent<RectTransform>();
+                rateValRt.sizeDelta = new Vector2(dynSize.x, 8f * s);
+                rateValRt.anchoredPosition = new Vector2(0f, -11f * s);
             }
             else
             {
@@ -588,12 +647,12 @@ namespace ModularFlightPanel.UI.Widgets
                 GameObject root = new GameObject("Trend_Indicator_Root", typeof(RectTransform));
                 root.transform.SetParent(transform, false);
                 _trendRoot = root.GetComponent<RectTransform>();
-                _trendRoot.sizeDelta = new Vector2(20f * s, 210f * s);
+                _trendRoot.sizeDelta = new Vector2(20f * s, 240f * s);
                 _trendRoot.anchoredPosition = new Vector2(trendX, 0f);
 
                 // 1. 顶部 VSI 数字读数微胶囊盒
                 Vector2 boxSize = new Vector2(20f * s, 26f * s);
-                Vector2 boxPos = new Vector2(0f, 88f * s);
+                Vector2 boxPos = new Vector2(0f, 103f * s);
                 _trendTagBox = UIFactory.CreatePanel(_trendRoot.transform, "Trend_Tag_Box", boxSize, boxPos, Color.clear);
                 _trendTagBg = _trendTagBox.GetComponent<Image>();
                 _trendTagOutline = _trendTagBox.AddComponent<Outline>();
@@ -616,7 +675,7 @@ namespace ModularFlightPanel.UI.Widgets
                 rateRt.anchoredPosition = new Vector2(0f, -4f * s);
 
                 // 2. 垂直基准轨道暗色遮光背景槽 (严格对齐 y = 0)
-                Vector2 trackBgSize = new Vector2(16f * s, 134f * s);
+                Vector2 trackBgSize = new Vector2(16f * s, 146f * s);
                 _trendTrackBgObj = UIFactory.CreatePanel(_trendRoot.transform, "Trend_Track_Bg", trackBgSize, Vector2.zero, Color.clear);
                 _trendTrackBg = _trendTrackBgObj.GetComponent<Image>();
                 _trendTrackOutline = _trendTrackBgObj.AddComponent<Outline>();
@@ -625,7 +684,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 // 垂直轨道基准线
                 GameObject trackObj = UIFactory.CreatePanel(_trendTrackBgObj.transform, "Trend_Track",
-                    new Vector2(1.5f * s, 120f * s), Vector2.zero,
+                    new Vector2(1.5f * s, 134f * s), Vector2.zero,
                     style.GetMeterColor(MeterStyleRole.Track, theme));
                 _trendTrack = trackObj.GetComponent<Image>();
 
@@ -700,11 +759,11 @@ namespace ModularFlightPanel.UI.Widgets
                 UpdateRollingTape(displayVal);
             }
 
-            // 3. 动态求值并更新模式与单位标签
+            // 3. 动态求值并更新模式与次级航电标签
             UpdateLabels(telemetry);
 
-            // 4. 动态更新趋势指示器 (6秒空速预测或水平对齐 VSI)
-            UpdateDynamicTrendIndicator(telemetry);
+            // 4. 动态更新趋势指示器 (6秒空速预测 + 速度变化率 dV/dt 或水平对齐 VSI)
+            UpdateDynamicTrendIndicator(telemetry, rawVal);
 
             // 5. 贴地雷达地形感知警戒带
             UpdateTerrainRibbon(telemetry, rawVal);
@@ -726,8 +785,8 @@ namespace ModularFlightPanel.UI.Widgets
                         if (abs >= 10000.0) nextTier = DynamicUnitTier.Kilo;
                         break;
                     case DynamicUnitTier.Kilo:
-                        if (abs >= 3000000.0) nextTier = DynamicUnitTier.Mega; // >= 0.01c
-                        else if (abs < 8500.0) nextTier = DynamicUnitTier.Base; // 15% 滞后防抖
+                        if (abs >= 3000000.0) nextTier = DynamicUnitTier.Mega;
+                        else if (abs < 8500.0) nextTier = DynamicUnitTier.Base;
                         break;
                     case DynamicUnitTier.Mega:
                         if (abs < 2500000.0) nextTier = DynamicUnitTier.Kilo;
@@ -743,12 +802,12 @@ namespace ModularFlightPanel.UI.Widgets
                         if (abs >= 10000.0) nextTier = DynamicUnitTier.Kilo;
                         break;
                     case DynamicUnitTier.Kilo:
-                        if (abs >= 10000000.0) nextTier = DynamicUnitTier.Mega; // >= 10,000 km = 10 Mm
-                        else if (abs < 8500.0) nextTier = DynamicUnitTier.Base; // 15% 滞后防抖
+                        if (abs >= 10000000.0) nextTier = DynamicUnitTier.Mega;
+                        else if (abs < 8500.0) nextTier = DynamicUnitTier.Base;
                         break;
                     case DynamicUnitTier.Mega:
-                        if (abs >= 10000000000.0) nextTier = DynamicUnitTier.Giga; // >= 10 Gm
-                        else if (abs < 8500000.0) nextTier = DynamicUnitTier.Kilo; // 15% 滞后防抖
+                        if (abs >= 10000000000.0) nextTier = DynamicUnitTier.Giga;
+                        else if (abs < 8500000.0) nextTier = DynamicUnitTier.Kilo;
                         break;
                     case DynamicUnitTier.Giga:
                         if (abs < 8500000000.0) nextTier = DynamicUnitTier.Mega;
@@ -813,7 +872,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            SetTextIfChanged(_bottomUnitText, _activeUnitStr);
+            SetTextIfChanged(_centerUnitText, _activeUnitStr);
         }
 
         private void UpdateCenterReadout(double displayVal)
@@ -821,7 +880,7 @@ namespace ModularFlightPanel.UI.Widgets
             string formatted;
             if (_currentTier == DynamicUnitTier.Mega && _isSpeedTape)
             {
-                formatted = $"{displayVal:F2} c";
+                formatted = $"{displayVal:F2}";
             }
             else if (Math.Abs(displayVal) >= 1000.0)
             {
@@ -841,6 +900,12 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastCenterText = formatted;
                 if (_centerValueText != null) _centerValueText.text = formatted;
             }
+
+            if (_activeUnitStr != _lastUnitText)
+            {
+                _lastUnitText = _activeUnitStr;
+                if (_centerUnitText != null) _centerUnitText.text = _activeUnitStr;
+            }
         }
 
         private void UpdateLabels(IFlightTelemetry telemetry)
@@ -852,29 +917,29 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_topModeText != null) _topModeText.text = evalTop;
             }
 
-            string evalUnit = _autoUnitEnabled ? _activeUnitStr : TelemetryTokenEngine.Evaluate(_bottomUnitTemplate, telemetry);
-            if (evalUnit != _lastBottomText)
+            string evalSec = TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry);
+            if (evalSec != _lastBottomText)
             {
-                _lastBottomText = evalUnit;
-                if (_bottomUnitText != null) _bottomUnitText.text = evalUnit;
+                _lastBottomText = evalSec;
+                if (_bottomSecText != null) _bottomSecText.text = evalSec;
             }
         }
 
         private void UpdateRollingTape(double currentDisplayVal)
         {
             float step = _activeStep > 0f ? _activeStep : 100f;
+            // 如果是速度带，生成四级精致刻度划分 (sub-divisions)
+            float subStep = _isSpeedTape ? (step * 0.5f) : step;
             float pixelsPerUnit = (28f * CurrentDpiScale) / step;
             float visibleHalfSpan = (_viewportRt.sizeDelta.y * 0.5f) / pixelsPerUnit;
 
-            // 向下对齐整刻度基准点
-            double startTick = Math.Floor((currentDisplayVal - visibleHalfSpan) / step) * step;
+            double startTick = Math.Floor((currentDisplayVal - visibleHalfSpan) / subStep) * subStep;
 
             for (int i = 0; i < _tickPool.Count; i++)
             {
                 TickItem item = _tickPool[i];
-                double tickVal = startTick + i * step;
+                double tickVal = startTick + i * subStep;
 
-                // 速度带不展示负刻度
                 if (tickVal < 0.0 && _isSpeedTape)
                 {
                     item.Root.SetActive(false);
@@ -882,7 +947,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 float y = (float)(tickVal - currentDisplayVal) * pixelsPerUnit;
-                if (Math.Abs(y) > (_viewportRt.sizeDelta.y * 0.5f) + 12f * CurrentDpiScale)
+                if (Math.Abs(y) > (_viewportRt.sizeDelta.y * 0.5f) + 14f * CurrentDpiScale)
                 {
                     item.Root.SetActive(false);
                     continue;
@@ -891,15 +956,15 @@ namespace ModularFlightPanel.UI.Widgets
                 item.Root.SetActive(true);
                 item.Rect.anchoredPosition = new Vector2(0f, y);
 
-                long tickIndex = (long)Math.Round(tickVal / step);
-                bool isMajor = (tickIndex % 2 == 0);
+                long majorIndex = (long)Math.Round(tickVal / step);
+                bool isMajor = Math.Abs(tickVal - majorIndex * step) < (subStep * 0.1f);
 
                 if (isMajor)
                 {
-                    item.LineRt.sizeDelta = new Vector2(14f * CurrentDpiScale, 2f * CurrentDpiScale);
+                    // 主刻度：长齿线 + 数字标牌
+                    item.LineRt.sizeDelta = new Vector2(15f * CurrentDpiScale, 2f * CurrentDpiScale);
                     item.Label.gameObject.SetActive(true);
 
-                    // 彻底解决 283k 多胞胎同名 Bug：按当前单位与步长智能精度格式化
                     string labelStr;
                     if (_currentTier == DynamicUnitTier.Mega && _isSpeedTape)
                         labelStr = $"{tickVal:F2}";
@@ -912,31 +977,47 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else
                 {
-                    item.LineRt.sizeDelta = new Vector2(8f * CurrentDpiScale, 1.5f * CurrentDpiScale);
+                    // 中刻度 / 精致副刻度：中长齿线，无文字
+                    item.LineRt.sizeDelta = new Vector2(9f * CurrentDpiScale, 1.5f * CurrentDpiScale);
                     item.Label.gameObject.SetActive(false);
                 }
             }
         }
 
-        private void UpdateDynamicTrendIndicator(IFlightTelemetry telemetry)
+        private void UpdateDynamicTrendIndicator(IFlightTelemetry telemetry, double rawSpeed)
         {
-            if (_trendBarRt == null || telemetry == null) return;
+            if (telemetry == null) return;
 
             float s = CurrentDpiScale;
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
 
             if (_isSpeedTape)
             {
-                // 空速 6 秒真实预测条: deltaV = a * 6s
+                // 1. 空速 6 秒真实预测条: deltaV = a * 6s
                 double gForce = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
                 if (double.IsNaN(gForce)) gForce = 0.0;
 
-                // 加速度转换为 m/s^2 (扣除 1G 后的有效轴向/正向加速度)
-                double accel = gForce * 9.80665;
-                double deltaV6s = accel * 6.0;
+                // 2. 实时解算速度变化率 (dV/dt: m/s²)
+                float now = Time.time;
+                if (!double.IsNaN(_lastSampleSpeed) && now > _lastSampleTime + 0.05f)
+                {
+                    float dt = now - _lastSampleTime;
+                    double instantaneousAccel = (rawSpeed - _lastSampleSpeed) / dt;
+                    _calculatedAccelMps2 = Mathf.Lerp((float)_calculatedAccelMps2, (float)instantaneousAccel, 0.35f);
+                    _lastSampleSpeed = rawSpeed;
+                    _lastSampleTime = now;
+                }
+                else if (double.IsNaN(_lastSampleSpeed))
+                {
+                    _lastSampleSpeed = rawSpeed;
+                    _lastSampleTime = now;
+                    _calculatedAccelMps2 = gForce * 9.80665;
+                }
 
+                // 动态预测条伸长计算
+                double deltaV6s = _calculatedAccelMps2 * 6.0;
                 float pixelsPerUnit = (28f * s) / _activeStep;
-                float dynamicLen = Mathf.Clamp((float)(deltaV6s / _tierScale) * pixelsPerUnit, -65f * s, 65f * s);
+                float dynamicLen = Mathf.Clamp((float)(deltaV6s / _tierScale) * pixelsPerUnit, -75f * s, 75f * s);
 
                 bool isPositive = dynamicLen >= 0f;
                 MeterStyleRole trendRole = isPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
@@ -945,28 +1026,54 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_trendArrowImg != null) _trendArrowImg.color = WidgetStyleManager.Meter(trendRole, theme);
 
                 float absLen = Mathf.Abs(dynamicLen);
-                if (isPositive)
+                if (_trendBarRt != null)
                 {
-                    _trendBarRt.pivot = new Vector2(0.5f, 0f);
-                    _trendBarRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, 0f);
-                    _trendBarRt.sizeDelta = new Vector2(3f * s, absLen);
+                    if (isPositive)
+                    {
+                        _trendBarRt.pivot = new Vector2(0.5f, 0f);
+                        _trendBarRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, 0f);
+                        _trendBarRt.sizeDelta = new Vector2(3f * s, absLen);
 
-                    _trendArrowRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, absLen + 3f * s);
-                    _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                        _trendArrowRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, absLen + 3f * s);
+                        _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                    }
+                    else
+                    {
+                        _trendBarRt.pivot = new Vector2(0.5f, 1f);
+                        _trendBarRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, 0f);
+                        _trendBarRt.sizeDelta = new Vector2(3f * s, absLen);
+
+                        _trendArrowRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, -absLen - 3f * s);
+                        _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                    }
+
+                    if (_trendArrowImg != null)
+                    {
+                        _trendArrowImg.gameObject.SetActive(absLen > 3f * s);
+                    }
                 }
-                else
-                {
-                    _trendBarRt.pivot = new Vector2(0.5f, 1f);
-                    _trendBarRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, 0f);
-                    _trendBarRt.sizeDelta = new Vector2(3f * s, absLen);
 
-                    _trendArrowRt.anchoredPosition = new Vector2(_trendBarRt.anchoredPosition.x, -absLen - 3f * s);
-                    _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                // 3. 刷新速度动力学双通道微舱：ACC (G) + 速度变化率 (m/s²)
+                string accStr = $"{gForce:F1}G";
+                if (accStr != _lastAccText)
+                {
+                    _lastAccText = accStr;
+                    if (_accValText != null) _accValText.text = accStr;
                 }
 
-                if (_trendArrowImg != null)
+                string rateStr;
+                if (Math.Abs(_calculatedAccelMps2) < 0.05) rateStr = "0.0";
+                else rateStr = _calculatedAccelMps2 > 0 ? $"+{_calculatedAccelMps2:F1}" : $"{_calculatedAccelMps2:F1}";
+
+                if (rateStr != _lastRateText)
                 {
-                    _trendArrowImg.gameObject.SetActive(absLen > 3f * s);
+                    _lastRateText = rateStr;
+                    if (_rateValText != null)
+                    {
+                        _rateValText.text = rateStr;
+                        TextStyleRole rateRole = _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
+                        ApplyText(_rateValText, rateRole, theme);
+                    }
                 }
             }
             else
@@ -1009,29 +1116,32 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                float dynamicLen = Mathf.Abs(rateFraction) * (50f * s);
-                if (isPositive)
+                float dynamicLen = Mathf.Abs(rateFraction) * (58f * s);
+                if (_trendBarRt != null)
                 {
-                    _trendBarRt.pivot = new Vector2(0.5f, 0f);
-                    _trendBarRt.anchoredPosition = Vector2.zero;
-                    _trendBarRt.sizeDelta = new Vector2(3f * s, dynamicLen);
+                    if (isPositive)
+                    {
+                        _trendBarRt.pivot = new Vector2(0.5f, 0f);
+                        _trendBarRt.anchoredPosition = Vector2.zero;
+                        _trendBarRt.sizeDelta = new Vector2(3f * s, dynamicLen);
 
-                    _trendArrowRt.anchoredPosition = new Vector2(0f, dynamicLen + 3f * s);
-                    _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
-                }
-                else
-                {
-                    _trendBarRt.pivot = new Vector2(0.5f, 1f);
-                    _trendBarRt.anchoredPosition = Vector2.zero;
-                    _trendBarRt.sizeDelta = new Vector2(3f * s, dynamicLen);
+                        _trendArrowRt.anchoredPosition = new Vector2(0f, dynamicLen + 3f * s);
+                        _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                    }
+                    else
+                    {
+                        _trendBarRt.pivot = new Vector2(0.5f, 1f);
+                        _trendBarRt.anchoredPosition = Vector2.zero;
+                        _trendBarRt.sizeDelta = new Vector2(3f * s, dynamicLen);
 
-                    _trendArrowRt.anchoredPosition = new Vector2(0f, -dynamicLen - 3f * s);
-                    _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
-                }
+                        _trendArrowRt.anchoredPosition = new Vector2(0f, -dynamicLen - 3f * s);
+                        _trendArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                    }
 
-                if (_trendArrowImg != null)
-                {
-                    _trendArrowImg.gameObject.SetActive(dynamicLen > 2f * s);
+                    if (_trendArrowImg != null)
+                    {
+                        _trendArrowImg.gameObject.SetActive(dynamicLen > 2f * s);
+                    }
                 }
             }
         }
@@ -1040,11 +1150,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_groundRibbonObj == null || _isSpeedTape || telemetry == null) return;
 
-            // 采样真实离地高度
             double agl = TelemetryTokenEngine.EvaluateNumeric(_terrainToken, telemetry);
             if (double.IsNaN(agl)) agl = currentAlt;
 
-            // 当离地高度 < 500m 时展示地面态势感知带
             if (agl < 500.0 && agl >= -10.0)
             {
                 if (!double.IsNaN(_lastTerrainVal) && Math.Abs(agl - _lastTerrainVal) < 0.2 && _groundRibbonObj.activeSelf) return;
@@ -1056,7 +1164,6 @@ namespace ModularFlightPanel.UI.Widgets
                 float step = _activeStep > 0f ? _activeStep : 100f;
                 float pixelsPerUnit = (28f * s) / step;
 
-                // 地面在标尺带上的相对垂直高度 (触地时刚好与中央游标平齐 y = 0)
                 float groundY = -(float)(agl / _tierScale) * pixelsPerUnit;
                 float ribbonHeight = Mathf.Clamp(groundY + (_viewportRt.sizeDelta.y * 0.5f), 0f, _viewportRt.sizeDelta.y);
 
@@ -1106,6 +1213,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             ApplyText(_centerValueText, TextStyleRole.PrimaryValue, theme);
+            ApplyText(_centerUnitText, TextStyleRole.Unit, theme);
 
             ApplyCard(_topModeBg, _topModeOutline, CardStyleRole.Normal, theme);
             ApplyText(_topModeText, TextStyleRole.Cardinal, theme);
@@ -1114,8 +1222,17 @@ namespace ModularFlightPanel.UI.Widgets
                 _topLedDot.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
             }
 
-            ApplyCard(_bottomUnitBg, _bottomUnitOutline, CardStyleRole.SubtleSlot, theme);
-            ApplyText(_bottomUnitText, TextStyleRole.Unit, theme);
+            ApplyCard(_bottomSecBg, _bottomSecOutline, CardStyleRole.SubtleSlot, theme);
+            ApplyText(_bottomSecText, TextStyleRole.Unit, theme);
+
+            if (_speedDynamicsBg != null)
+            {
+                ApplyCard(_speedDynamicsBg, _speedDynamicsOutline, CardStyleRole.Normal, theme);
+                ApplyText(_accLabelText, TextStyleRole.Cardinal, theme);
+                ApplyText(_accValText, TextStyleRole.PrimaryValue, theme);
+                ApplyText(_rateLabelText, TextStyleRole.Unit, theme);
+                ApplyText(_rateValText, _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
+            }
 
             if (_backboneRail != null)
             {
@@ -1131,11 +1248,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_topFadeImg != null)
             {
-                _topFadeImg.color = WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.65f);
+                _topFadeImg.color = WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.70f);
             }
             if (_bottomFadeImg != null)
             {
-                _bottomFadeImg.color = WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.65f);
+                _bottomFadeImg.color = WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 0.70f);
             }
 
             if (_groundRibbonImg != null)
@@ -1176,10 +1293,6 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_tickPool[i].Line != null)
                 {
                     _tickPool[i].Line.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
-                }
-                if (_tickPool[i].SubTick != null)
-                {
-                    _tickPool[i].SubTick.color = WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Track, theme), 0.6f);
                 }
             }
         }

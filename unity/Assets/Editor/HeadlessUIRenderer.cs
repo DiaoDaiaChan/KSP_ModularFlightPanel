@@ -677,6 +677,15 @@ namespace ModularFlightPanel.Editor
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(pm);
                 }
+                else if (id == "custom.maneuver_timeline" || id == "maneuver_timeline")
+                {
+                    var mt = new WidgetConfig("custom.maneuver_timeline", "MANEUVER 轨道机动时序与三轴矢量轴", x, y, 1.0f)
+                    {
+                        WidgetType = "maneuver_timeline",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(mt);
+                }
                 else if (id == "core.maneuver" || id == "maneuver")
                 {
                     var mn = new WidgetConfig("core.maneuver", "AVIONICS 机动节点指示器", x, y, 1.0f)

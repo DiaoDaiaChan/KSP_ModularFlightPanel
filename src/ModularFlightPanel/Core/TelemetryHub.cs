@@ -940,7 +940,39 @@ namespace ModularFlightPanel.Core
                     return;
                 }
 
-                // 1. 原版 PatchedConicSolver 机动节点
+                // 1. Principia 飞行计划优先 (高保真 N 体数值积分机动)
+                if (PrincipiaProbe.IsAvailable && PrincipiaProbe.HasActiveFlightPlan)
+                {
+                    double pDv = PrincipiaProbe.ManeuverDeltaV;
+                    if (!double.IsNaN(pDv) && pDv > 0.001)
+                    {
+                        HasManeuverNode = true;
+                        ManeuverSource = "PRINCIPIA";
+                        ManeuverDeltaV = pDv;
+                        ManeuverTotalDeltaV = pDv;
+                        double pDur = PrincipiaProbe.ManeuverDuration;
+                        ManeuverBurnTime = (double.IsNaN(pDur) || pDur < 0.0) ? 0.0 : pDur;
+                        double pTime = PrincipiaProbe.TimeToManeuver;
+                        ManeuverTimeToNode = (double.IsNaN(pTime) || pTime < 0.0) ? 0.0 : pTime;
+                        ManeuverTimeToBurn = ManeuverTimeToNode;
+
+                        if (PrincipiaProbe.TryGetManeuverVector(out double pro, out double norm, out double rad))
+                        {
+                            ManeuverDeltaVPrograde = pro;
+                            ManeuverDeltaVNormal = norm;
+                            ManeuverDeltaVRadial = rad;
+                        }
+                        else
+                        {
+                            ManeuverDeltaVPrograde = pDv;
+                            ManeuverDeltaVNormal = 0.0;
+                            ManeuverDeltaVRadial = 0.0;
+                        }
+                        return;
+                    }
+                }
+
+                // 2. 原版 PatchedConicSolver 机动节点 (开普勒两体圆锥拼接)
                 if (v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
                 {
                     var node = v.patchedConicSolver.maneuverNodes[0];
@@ -948,6 +980,7 @@ namespace ModularFlightPanel.Core
                     {
                         Vector3d burnVec = node.GetBurnVector(node.patch ?? v.orbit);
                         HasManeuverNode = true;
+                        ManeuverSource = "STOCK";
                         ManeuverDeltaV = double.IsNaN(burnVec.magnitude) ? 0.0 : burnVec.magnitude;
                         ManeuverTotalDeltaV = node.DeltaV != null ? node.DeltaV.magnitude : ManeuverDeltaV;
                         if (double.IsNaN(ManeuverTotalDeltaV)) ManeuverTotalDeltaV = ManeuverDeltaV;
@@ -966,24 +999,31 @@ namespace ModularFlightPanel.Core
                         }
                         ManeuverBurnTime = (double.IsNaN(burnDur) || burnDur < 0.0) ? 0.0 : burnDur;
                         ManeuverTimeToBurn = ManeuverTimeToNode - (ManeuverBurnTime * 0.5);
-                        return;
-                    }
-                }
 
-                // 2. Principia 飞行计划兜底
-                if (PrincipiaProbe.IsAvailable && PrincipiaProbe.HasActiveFlightPlan)
-                {
-                    double pDv = PrincipiaProbe.ManeuverDeltaV;
-                    if (!double.IsNaN(pDv) && pDv > 0.001)
-                    {
-                        HasManeuverNode = true;
-                        ManeuverDeltaV = pDv;
-                        ManeuverTotalDeltaV = pDv;
-                        double pDur = PrincipiaProbe.ManeuverDuration;
-                        ManeuverBurnTime = (double.IsNaN(pDur) || pDur < 0.0) ? 0.0 : pDur;
-                        double pTime = PrincipiaProbe.TimeToManeuver;
-                        ManeuverTimeToNode = (double.IsNaN(pTime) || pTime < 0.0) ? 0.0 : pTime;
-                        ManeuverTimeToBurn = ManeuverTimeToNode;
+                        // 三轴矢量解算 (Prograde, Normal, Radial)
+                        // KSP node.DeltaV: x=Radial, y=Normal, z=Prograde
+                        if (node.patch != null && !double.IsNaN(burnVec.magnitude) && burnVec.magnitude > 0.01)
+                        {
+                            Vector3d proDir = node.patch.getOrbitalVelocityAtUT(node.UT).normalized;
+                            Vector3d nrmDir = node.patch.GetOrbitNormal().normalized;
+                            Vector3d radDir = Vector3d.Cross(nrmDir, proDir).normalized;
+
+                            ManeuverDeltaVPrograde = Vector3d.Dot(burnVec, proDir);
+                            ManeuverDeltaVNormal = Vector3d.Dot(burnVec, nrmDir);
+                            ManeuverDeltaVRadial = Vector3d.Dot(burnVec, radDir);
+                        }
+                        else if (node.DeltaV != null)
+                        {
+                            ManeuverDeltaVRadial = node.DeltaV.x;
+                            ManeuverDeltaVNormal = node.DeltaV.y;
+                            ManeuverDeltaVPrograde = node.DeltaV.z;
+                        }
+                        else
+                        {
+                            ManeuverDeltaVPrograde = ManeuverDeltaV;
+                            ManeuverDeltaVNormal = 0.0;
+                            ManeuverDeltaVRadial = 0.0;
+                        }
                         return;
                     }
                 }
@@ -995,6 +1035,7 @@ namespace ModularFlightPanel.Core
                     if (!double.IsNaN(mjDv) && mjDv > 0.001)
                     {
                         HasManeuverNode = true;
+                        ManeuverSource = "MECHJEB";
                         ManeuverDeltaV = mjDv;
                         ManeuverTotalDeltaV = mjDv;
                         double mjDur = MechJebProbe.ResolveNumeric("NODEBURNTIME");
@@ -1002,6 +1043,10 @@ namespace ModularFlightPanel.Core
                         double mjTime = MechJebProbe.ResolveNumeric("TIMETONODE");
                         ManeuverTimeToNode = (double.IsNaN(mjTime) || mjTime < 0.0) ? 0.0 : mjTime;
                         ManeuverTimeToBurn = ManeuverTimeToNode - (ManeuverBurnTime * 0.5);
+
+                        ManeuverDeltaVPrograde = mjDv;
+                        ManeuverDeltaVNormal = 0.0;
+                        ManeuverDeltaVRadial = 0.0;
                         return;
                     }
                 }
@@ -1017,11 +1062,15 @@ namespace ModularFlightPanel.Core
         private void ResetManeuverParameters()
         {
             HasManeuverNode = false;
+            ManeuverSource = "STANDBY";
             ManeuverDeltaV = 0.0;
             ManeuverTotalDeltaV = 0.0;
             ManeuverTimeToNode = 0.0;
             ManeuverBurnTime = 0.0;
             ManeuverTimeToBurn = 0.0;
+            ManeuverDeltaVPrograde = 0.0;
+            ManeuverDeltaVNormal = 0.0;
+            ManeuverDeltaVRadial = 0.0;
         }
 
         private void UpdateFlightControls()

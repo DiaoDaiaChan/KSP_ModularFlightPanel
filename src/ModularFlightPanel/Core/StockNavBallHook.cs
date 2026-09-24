@@ -209,26 +209,23 @@ namespace ModularFlightPanel.Core
             dir = Vector3.forward;
             isVisible = false;
 
-            // 1. 优先尝试直接从原版/Principia 解算的 Marker Transform 获取
+            // 1. 优先尝试直接从原版/Principia 解算并正在渲染的 Marker Transform 获取
             if (HasStockNavBall && StockInstance != null)
             {
                 Transform marker = GetMarkerTransformByKey(markerKey);
-                if (marker != null)
+                if (marker != null && marker.gameObject.activeSelf)
                 {
-                    if (IsMarkerLogicallyActive(markerKey, marker))
+                    Vector3 localPos = marker.localPosition;
+                    if (localPos.sqrMagnitude > 0.0001f)
                     {
-                        Vector3 localPos = marker.localPosition;
-                        if (localPos.sqrMagnitude > 0.0001f)
-                        {
-                            // 原版与 Principia 已将矢量投影为 HUD 坐标:
-                            // localPos.x -> 水平 (右为正)
-                            // localPos.y -> 垂直 (上为正)
-                            // localPos.z -> 视口深度 (> -0.15f 允许地平线边缘微溢出可见，杜绝极值截断)
-                            Vector3 hudDir = localPos.normalized;
-                            isVisible = (hudDir.z >= -0.15f);
-                            dir = hudDir;
-                            return true;
-                        }
+                        // 原版与 Principia 已将矢量投影为 HUD 坐标:
+                        // localPos.x -> 水平 (右为正)
+                        // localPos.y -> 垂直 (上为正)
+                        // localPos.z -> 视口深度 (> -0.15f 允许地平线边缘微溢出可见，杜绝极值截断)
+                        Vector3 hudDir = localPos.normalized;
+                        isVisible = (hudDir.z >= -0.15f);
+                        dir = hudDir;
+                        return true;
                     }
                 }
             }
@@ -416,6 +413,25 @@ namespace ModularFlightPanel.Core
                             }
                         }
                     }
+                    else if (PrincipiaProbe.IsAvailable && PrincipiaProbe.TryGetManeuverVector(out double p, out double n, out double r))
+                    {
+                        if (p * p + n * n + r * r > 0.001)
+                        {
+                            if (vessel.orbit != null)
+                            {
+                                Vector3d pos = vessel.orbit.pos;
+                                Vector3d vel = vessel.orbit.vel;
+                                Vector3d norm = Vector3d.Cross(pos, vel);
+                                if (vel.sqrMagnitude > 0.0001 && norm.sqrMagnitude > 0.0001)
+                                {
+                                    Vector3d rad = Vector3d.Cross(vel, norm);
+                                    Vector3d totalVec = vel.normalized * p + norm.normalized * n + rad.normalized * r;
+                                    worldVec = (Vector3)totalVec.normalized;
+                                    hasValidVector = true;
+                                }
+                            }
+                        }
+                    }
                     break;
                 }
             }
@@ -435,6 +451,7 @@ namespace ModularFlightPanel.Core
 
             Vector3 screenVec = attitudeGymbal * worldVec;
             // 对齐 UGUI 屏幕坐标 (+y 为上)
+            dir = screenVec.normalized;
             // 允许地平线边缘微溢出可见，杜绝极值截断
             isVisible = (dir.z >= -0.15f);
             return true;

@@ -81,6 +81,10 @@ namespace ModularFlightPanel.Core
         double ManeuverTimeToNode { get; }
         double ManeuverBurnTime { get; }
         double ManeuverTimeToBurn { get; }
+        double ManeuverDeltaVPrograde { get; }
+        double ManeuverDeltaVNormal { get; }
+        double ManeuverDeltaVRadial { get; }
+        string ManeuverSource { get; }
 
         // 电气系统
         double ElectricCharge { get; }

@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI.Widgets;
+using ModularFlightPanel.UI.Widgets.Navigation;
 using ModularFlightPanel.UI.Widgets.SpaceX;
 
 namespace ModularFlightPanel.UI
@@ -349,6 +350,12 @@ namespace ModularFlightPanel.UI
                     continue;
                 }
 
+                if (cfg.WidgetType == "maneuver_timeline" || cfg.WidgetId == "custom.maneuver_timeline")
+                {
+                    SpawnManeuverTimelineWidget(cfg, theme);
+                    continue;
+                }
+
                 if (cfg.WidgetType == "maneuver" || cfg.WidgetType == "maneuver_node" || cfg.WidgetId == "core.maneuver" || cfg.WidgetId.StartsWith("maneuver."))
                 {
                     SpawnManeuverNodeWidget(cfg, theme);
@@ -450,6 +457,9 @@ namespace ModularFlightPanel.UI
                     case "core.performance_monitor":
                     case "custom.perf_monitor":
                         SpawnPerformanceMonitorWidget(cfg, theme);
+                        break;
+                    case "custom.maneuver_timeline":
+                        SpawnManeuverTimelineWidget(cfg, theme);
                         break;
                     default:
                         // 自定义通配符组件 (CustomTokenTextWidget)
@@ -682,6 +692,14 @@ namespace ModularFlightPanel.UI
         {
             GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
             var w = go.AddComponent<ManeuverNodeWidget>();
+            w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
+            _modularWidgets.Add(w);
+        }
+
+        private void SpawnManeuverTimelineWidget(WidgetConfig cfg, ThemeConfig theme)
+        {
+            GameObject go = new GameObject($"Widget_{cfg.WidgetId}");
+            var w = go.AddComponent<ManeuverTimelineWidget>();
             w.BaseInitialize(_hudRoot.transform, _canvas, cfg, theme, CustomScale);
             _modularWidgets.Add(w);
         }
