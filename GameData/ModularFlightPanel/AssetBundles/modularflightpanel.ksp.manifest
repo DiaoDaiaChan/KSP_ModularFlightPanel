@@ -1,9 +1,9 @@
 ManifestFileVersion: 0
-CRC: 961490066
+CRC: 15682824
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: 2e2d502b190f9634d9d26615c7ddf15f
+    Hash: 228fe1df8beab3bab5ceeb0a2e242036
   TypeTreeHash:
     serializedVersion: 2
     Hash: 55d48f4ad9c3b13330b9eb5ee5686477
@@ -14,13 +14,16 @@ ClassTypes:
 SerializeReferenceClassIdentifiers: []
 Assets:
 - Assets/Shaders/DigitalSegmentUI.shader
+- Assets/Shaders/MinimalistAttitudeSphere.shader
 - Assets/Shaders/PhosphorHoloUI.shader
 - Assets/Shaders/GlassCockpitUI.shader
 - Assets/Shaders/NavballEnhanced.shader
 - Assets/Shaders/RadialSegmentedMeter.shader
 - Assets/Shaders/NavballHalftone.shader
 - Assets/Shaders/NeonGlowUI.shader
+- Assets/Shaders/Vessel3DTechnical.shader
 - Assets/Shaders/DotMatrixUI.shader
 - Assets/Shaders/NavballProcedural.shader
 - Assets/Shaders/NavballModern.shader
+- Assets/Shaders/CrispAvionicsText.shader
 Dependencies: []

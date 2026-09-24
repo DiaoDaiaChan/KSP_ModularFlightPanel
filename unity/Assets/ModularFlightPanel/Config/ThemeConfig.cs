@@ -97,8 +97,8 @@ namespace ModularFlightPanel.Config
         public float ButtonPressedAlpha = 0.95f;
 
         // ---- 文本 ----
-        public float TextUnitAlphaScale = 0.80f;
-        public float TextMutedAlphaScale = 0.45f;
+        public float TextUnitAlphaScale = 0.88f;       // 保证单位文本清晰明快
+        public float TextMutedAlphaScale = 0.70f;      // 原 0.45f 升至 0.70f，彻底消除次级遥测低对比度发虚导致的阅读疲劳
 
         // ---- 表面材质系数 (SurfaceStyleRole) ----
         // 底色一律由 ThemeConfig.FrameBgColor 派生：向 AccentSecondary 混色 + 指定透明度。
@@ -132,15 +132,15 @@ namespace ModularFlightPanel.Config
         public float StatusPanelAlpha = 0.95f;
 
         // ---- 线条/描边视觉权重 (LineWeight) ----
-        public float LineAlphaGhost = 0.15f;   // 幽灵级：水印底纹、极弱指示
-        public float LineAlphaFaint = 0.18f;   // 极弱：栅格线、弱分隔
-        public float LineAlphaSubtle = 0.22f;  // 次级：次级描边、内圈
-        public float LineAlphaLight = 0.28f;   // 轻：装饰环、外圈过渡
-        public float LineAlphaNormal = 0.35f;  // 标准：常规边框
-        public float LineAlphaStrong = 0.45f;  // 强化：强调描边、主框线
-        public float LineAlphaBold = 0.60f;    // 粗显：刻度线、主导引线
-        public float LineAlphaHeavy = 0.75f;   // 重：显著前景线
-        public float LineAlphaSolid = 0.90f;   // 实心：接近不透明
+        public float LineAlphaGhost = 0.25f;   // 幽灵级：水印底纹、弱指示 (原 0.15f)
+        public float LineAlphaFaint = 0.30f;   // 极弱：栅格线、弱分隔 (原 0.18f)
+        public float LineAlphaSubtle = 0.36f;  // 次级：次级描边、内圈 (原 0.22f)
+        public float LineAlphaLight = 0.42f;   // 轻：装饰环、外圈过渡 (原 0.28f)
+        public float LineAlphaNormal = 0.50f;  // 标准：常规边框 (原 0.35f)
+        public float LineAlphaStrong = 0.65f;  // 强化：强调描边、主框线 (原 0.45f)
+        public float LineAlphaBold = 0.78f;    // 粗显：刻度线、主导引线 (原 0.60f)
+        public float LineAlphaHeavy = 0.88f;   // 重：显著前景线 (原 0.75f)
+        public float LineAlphaSolid = 0.95f;   // 实心：接近不透明 (原 0.90f)
 
         // ---- 姿态球参考系调色板派生系数 ----
         // 惯性 / 质心 / 目标 / 机体 四个抽象参考系只提供"身份色"（主题语义色），
@@ -203,8 +203,8 @@ namespace ModularFlightPanel.Config
         public ColorHex InactiveMeterColor = ColorHex.FromColor(new Color(0.12f, 0.18f, 0.25f, 0.45f));
 
         // 文本色彩
-        public ColorHex TextPrimaryColor = ColorHex.FromColor(new Color(0.94f, 0.96f, 0.99f, 1.0f));  // 纯净高对比白
-        public ColorHex TextAccentColor = ColorHex.FromColor(new Color(0.55f, 0.65f, 0.78f, 1.0f));   // 技术钛钢灰
+        public ColorHex TextPrimaryColor = ColorHex.FromColor(new Color(0.98f, 0.99f, 1.0f, 1.0f));  // 纯净高对比冷白
+        public ColorHex TextAccentColor = ColorHex.FromColor(new Color(0.76f, 0.86f, 0.95f, 1.0f));   // 航电冰蓝银钛 (~85% 明度，高反差无疲劳)
         public ColorHex TextInverseColor = ColorHex.FromColor(new Color(0.03f, 0.05f, 0.08f, 1.0f));  // 反色墨字（绘制在强调色实底之上）
 
         /// <summary>
@@ -298,8 +298,8 @@ namespace ModularFlightPanel.Config
                 FrameBgColor = ColorHex.FromColor(new Color(0.04f, 0.06f, 0.09f, 0.80f)),   // 半透深石墨航电座舱玻璃
                 FrameBorderColor = ColorHex.FromColor(new Color(0.35f, 0.65f, 0.95f, 0.28f)), // 细腻极细冰蓝边框
                 InactiveMeterColor = ColorHex.FromColor(new Color(0.12f, 0.18f, 0.25f, 0.45f)),
-                TextPrimaryColor = ColorHex.FromColor(new Color(0.94f, 0.96f, 0.99f, 1.0f)),  // 纯净高对比白
-                TextAccentColor = ColorHex.FromColor(new Color(0.55f, 0.65f, 0.78f, 1.0f))   // 技术钛钢灰
+                TextPrimaryColor = ColorHex.FromColor(new Color(0.98f, 0.99f, 1.0f, 1.0f)),  // 纯净高对比冷白
+                TextAccentColor = ColorHex.FromColor(new Color(0.76f, 0.86f, 0.95f, 1.0f))   // 航电冰蓝银钛
             };
         }
 

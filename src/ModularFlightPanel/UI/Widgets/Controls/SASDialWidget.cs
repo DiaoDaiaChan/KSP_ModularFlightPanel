@@ -81,6 +81,10 @@ namespace ModularFlightPanel.UI.Widgets
         private SASDialDisplayMode _displayMode = SASDialDisplayMode.Mode2D;
         private bool _is3DMode = false;
         private bool _isDirectorLocked = false;
+        private Vector3 _currentMarkerDir = Vector3.forward;
+        private bool _currentMarkerVisible = false;
+        private bool _currentMarkerHasDir = false;
+        private float _currentMarkerAngleDeg = 0f;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -271,7 +275,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_sasDirectorRoot != null)
             {
-                _sasDirectorRoot.gameObject.SetActive(is3D && (FlightTelemetryContext.Current?.IsSASEnabled ?? false));
+                _sasDirectorRoot.gameObject.SetActive(FlightTelemetryContext.Current?.IsSASEnabled ?? false);
             }
             if (_shipSilhouette != null && !is3D)
             {
@@ -449,50 +453,8 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 2. 飞船云台旋转与 3D 俯仰透视收缩 (2D 模式保持纯 Roll 旋转与 1:1 比例，保护 2D 效果绝不形变)
-            if (_shipSilhouette != null && attDirty)
-            {
-                _shipSilhouette.transform.localRotation = Quaternion.Euler(0f, 0f, (float)-telemetry.Roll);
-
-                if (_displayMode == SASDialDisplayMode.Mode3D)
-                {
-                    float pitchRad = (float)telemetry.Pitch * Mathf.Deg2Rad;
-                    float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.6f), 0.76f, 1.0f);
-                    _shipSilhouette.transform.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
-                }
-                else
-                {
-                    if (_shipSilhouette.transform.localScale != Vector3.one)
-                    {
-                        _shipSilhouette.transform.localScale = Vector3.one;
-                    }
-                }
-            }
-
-            _lastRoll = telemetry.Roll;
-            _lastPitch = telemetry.Pitch;
-
-            // 3. 纹理保底检查
-            if (_silhouetteRawImage != null && _silhouetteRawImage.texture == null)
-            {
-                UpdateActiveTexture();
-            }
-
-            // 4. 机头朝向标动态微调 (与正向烘焙包围盒严格对齐)
-            if (_noseTipRawImage != null)
-            {
-                float tipY = 16.5f * s;
-                if (VesselSilhouetteService.Provider != null)
-                {
-                    float halfSpan = 18f * s;
-                    float normY = VesselSilhouetteService.Provider.NormalizedNoseTipY;
-                    tipY = Mathf.Clamp(normY * halfSpan, 8f * s, halfSpan + 1f * s);
-                }
-                _noseTipRawImage.rectTransform.anchoredPosition = new Vector2(0f, tipY);
-            }
-
-            // 5. 3D SAS 目标航向指引微调 (仅在 3D 模式下激活)
-            if (_displayMode == SASDialDisplayMode.Mode3D)
+            // 2. 目标航向导引计算 (2D 与 3D 模式均实时解算锁定状态与误差矢量)
+            if (telemetry.IsSASEnabled)
             {
                 UpdateSASFlightDirector(telemetry, s, theme);
             }
@@ -503,6 +465,34 @@ namespace ModularFlightPanel.UI.Widgets
                     _sasDirectorRoot.gameObject.SetActive(false);
                 }
                 _isDirectorLocked = false;
+                _currentMarkerHasDir = false;
+                _currentMarkerVisible = false;
+                _currentMarkerAngleDeg = 0f;
+            }
+
+            // 3. 飞船云台旋转与 3D 俯仰透视收缩 (2D/3D 模式统一由当前姿态与导引状态权威驱动)
+            UpdateSilhouetteAttitude(telemetry, s);
+
+            _lastRoll = telemetry.Roll;
+            _lastPitch = telemetry.Pitch;
+
+            // 4. 纹理保底检查
+            if (_silhouetteRawImage != null && _silhouetteRawImage.texture == null)
+            {
+                UpdateActiveTexture();
+            }
+
+            // 5. 机头朝向标动态微调 (与正向烘焙包围盒严格对齐)
+            if (_noseTipRawImage != null)
+            {
+                float tipY = 16.5f * s;
+                if (VesselSilhouetteService.Provider != null)
+                {
+                    float halfSpan = 18f * s;
+                    float normY = VesselSilhouetteService.Provider.NormalizedNoseTipY;
+                    tipY = Mathf.Clamp(normY * halfSpan, 8f * s, halfSpan + 1f * s);
+                }
+                _noseTipRawImage.rectTransform.anchoredPosition = new Vector2(0f, tipY);
             }
 
             // 6. 当前 SAS 模式与开关高亮指示 (Dirty Checking + 100% 语义化驱动)
@@ -529,6 +519,49 @@ namespace ModularFlightPanel.UI.Widgets
             UpdateStatusBadge(currentMode, sasOn, theme);
         }
 
+        private void UpdateSilhouetteAttitude(IFlightTelemetry telemetry, float s)
+        {
+            if (_shipSilhouette == null) return;
+
+            float rotZ;
+            FlightSASMode mode = telemetry.CurrentSASMode;
+            if (!telemetry.IsSASEnabled || mode == FlightSASMode.StabilityAssist)
+            {
+                rotZ = (float)-telemetry.Roll;
+            }
+            else
+            {
+                float baseRotZ = GetSASModeDialAngle(mode) - 90f;
+                if (_isDirectorLocked || !_currentMarkerHasDir || !_currentMarkerVisible)
+                {
+                    // 已精准对齐锁定：小飞船剪影鼻锥 100% 绝对指向该激活模式按键
+                    rotZ = baseRotZ;
+                }
+                else
+                {
+                    // 正在机动转向：根据横向角偏差动态过渡指向
+                    float beta = Mathf.Atan2(_currentMarkerDir.x, _currentMarkerDir.y) * Mathf.Rad2Deg;
+                    rotZ = baseRotZ + beta;
+                }
+            }
+
+            _shipSilhouette.transform.localRotation = Quaternion.Euler(0f, 0f, rotZ);
+
+            if (_displayMode == SASDialDisplayMode.Mode3D)
+            {
+                float pitchRad = (float)telemetry.Pitch * Mathf.Deg2Rad;
+                float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.6f), 0.76f, 1.0f);
+                _shipSilhouette.transform.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
+            }
+            else
+            {
+                if (_shipSilhouette.transform.localScale != Vector3.one)
+                {
+                    _shipSilhouette.transform.localScale = Vector3.one;
+                }
+            }
+        }
+
         private void UpdateSASFlightDirector(IFlightTelemetry telemetry, float s, ThemeConfig theme)
         {
             if (_sasDirectorRoot == null || _sasDirectorRawImage == null) return;
@@ -540,6 +573,9 @@ namespace ModularFlightPanel.UI.Widgets
                     _sasDirectorRoot.gameObject.SetActive(false);
                 }
                 _isDirectorLocked = false;
+                _currentMarkerHasDir = false;
+                _currentMarkerVisible = false;
+                _currentMarkerAngleDeg = 0f;
                 return;
             }
 
@@ -552,6 +588,9 @@ namespace ModularFlightPanel.UI.Widgets
             if (mode == FlightSASMode.StabilityAssist)
             {
                 _isDirectorLocked = true;
+                _currentMarkerHasDir = true;
+                _currentMarkerVisible = true;
+                _currentMarkerAngleDeg = 0f;
                 _sasDirectorRoot.anchoredPosition = Vector2.zero;
                 _sasDirectorRoot.localRotation = Quaternion.identity;
                 _sasDirectorRawImage.color = theme.AccentPrimary;
@@ -573,6 +612,10 @@ namespace ModularFlightPanel.UI.Widgets
                 hasDir = NavBallHookService.MarkerDirectionFallback(markerKey, out dir, out isVisible);
             }
 
+            _currentMarkerDir = dir;
+            _currentMarkerHasDir = hasDir;
+            _currentMarkerVisible = isVisible;
+
             if (hasDir && isVisible)
             {
                 Vector2 screenDir = new Vector2(dir.x, dir.y);
@@ -582,6 +625,7 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     angleDeg = 180f - angleDeg;
                 }
+                _currentMarkerAngleDeg = angleDeg;
 
                 if (angleDeg <= 1.5f)
                 {
@@ -609,6 +653,7 @@ namespace ModularFlightPanel.UI.Widgets
             else
             {
                 _isDirectorLocked = false;
+                _currentMarkerAngleDeg = 0f;
                 _sasDirectorRoot.anchoredPosition = Vector2.zero;
                 _sasDirectorRawImage.color = WidgetStyleManager.WithAlpha(theme.TextAccentColor, 0.35f);
             }
@@ -629,9 +674,9 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 string prefix = GetTemplateChannel("BADGE_PREFIX", "SAS: ");
                 string modeStr = GetSASModeDisplayName(currentMode);
-                string lockSuffix = (_displayMode == SASDialDisplayMode.Mode3D && _isDirectorLocked) ? " [LOCK]" : "";
+                string lockSuffix = _isDirectorLocked ? " [LOCK]" : "";
                 statusText = $"{prefix}{modeStr}{lockSuffix}";
-                textRole = (_displayMode == SASDialDisplayMode.Mode3D && _isDirectorLocked) ? TextStyleRole.Accent : TextStyleRole.PrimaryValue;
+                textRole = _isDirectorLocked ? TextStyleRole.Accent : TextStyleRole.PrimaryValue;
             }
 
             if (statusText != _lastStatusText || _isDirectorLocked != _lastDirectorLocked)
@@ -644,6 +689,23 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _statusOutline.effectColor = WidgetStyleManager.Instance.GetTextColor(textRole, theme);
                 }
+            }
+        }
+
+        public static float GetSASModeDialAngle(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.StabilityAssist: return 90f;
+                case FlightSASMode.Prograde: return 45f;
+                case FlightSASMode.Retrograde: return 135f;
+                case FlightSASMode.Normal: return 0f;
+                case FlightSASMode.Antinormal: return 180f;
+                case FlightSASMode.RadialIn: return 315f;
+                case FlightSASMode.RadialOut: return 225f;
+                case FlightSASMode.Maneuver: return 285f;
+                case FlightSASMode.Target: return 255f;
+                default: return 90f;
             }
         }
 

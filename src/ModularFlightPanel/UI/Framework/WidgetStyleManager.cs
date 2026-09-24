@@ -190,7 +190,7 @@ namespace ModularFlightPanel.UI
                     break;
                 case UiShaderStyle.Modern_Glass:
                 default:
-                    s = isText ? null : AssetLoader.GlassCockpitShader;
+                    s = isText ? AssetLoader.CrispAvionicsTextShader : AssetLoader.GlassCockpitShader;
                     break;
             }
 
@@ -256,22 +256,8 @@ namespace ModularFlightPanel.UI
             if (text == null) return;
             theme = ResolveTheme(theme);
 
-            // 当主题属于点阵 (Dot_Matrix)、全息 (Phosphor_HUD)、数码管 (Digital_Segment) 或赛博霓虹时，文字统一挂载专属着色器，呈现纯正物理点阵或全息扫描线！
-            bool isPixelOrHoloTheme = (theme.UiStyle == UiShaderStyle.Dot_Matrix ||
-                                       theme.UiStyle == UiShaderStyle.Phosphor_HUD ||
-                                       theme.UiStyle == UiShaderStyle.Digital_Segment ||
-                                       theme.UiStyle == UiShaderStyle.Cyber_Neon);
-
-            bool needsShader = isPixelOrHoloTheme || (role == TextStyleRole.PrimaryValue || role == TextStyleRole.SecondaryValue || role == TextStyleRole.Warning || role == TextStyleRole.Danger);
-            if (needsShader)
-            {
-                text.material = GetUiMaterial(isText: true);
-            }
-            else
-            {
-                text.material = null;
-            }
-
+            // 统一为文字挂载高清晰度/抗蚀刻专用材质 (点阵/全息/数码管/抗蚀刻高清航电文字)
+            text.material = GetUiMaterial(isText: true);
             text.color = GetTextColor(role, theme);
         }
 

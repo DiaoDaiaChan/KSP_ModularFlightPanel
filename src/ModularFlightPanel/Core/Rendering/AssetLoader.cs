@@ -21,6 +21,7 @@ namespace ModularFlightPanel.Core
         public static Shader DigitalSegmentShader { get; private set; }
         public static Shader Vessel3DShader { get; private set; }
         public static Shader MinimalistAttitudeShader { get; private set; }
+        public static Shader CrispAvionicsTextShader { get; private set; }
 
         public static void LoadBundle()
         {
@@ -41,6 +42,7 @@ namespace ModularFlightPanel.Core
             DigitalSegmentShader = Shader.Find("ModularFlightPanel/DigitalSegmentUI");
             Vessel3DShader = Shader.Find("ModularFlightPanel/Vessel3DTechnical");
             MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere");
+            CrispAvionicsTextShader = Shader.Find("ModularFlightPanel/CrispAvionicsText");
             if (ProceduralShader != null && EnhancedShader != null)
             {
                 MFPLogger.Info(MFPLogger.CatRender, "In Editor: Loaded live project shaders successfully!");
@@ -66,6 +68,7 @@ namespace ModularFlightPanel.Core
                         DotMatrixShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DotMatrixUI.shader");
                         PhosphorHoloShader = _bundle.LoadAsset<Shader>("Assets/Shaders/PhosphorHoloUI.shader");
                         DigitalSegmentShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DigitalSegmentUI.shader");
+                        CrispAvionicsTextShader = _bundle.LoadAsset<Shader>("Assets/Shaders/CrispAvionicsText.shader");
                         MFPLogger.Info(MFPLogger.CatRender, "Successfully loaded custom shaders from AssetBundle!");
                     }
                 }
@@ -90,6 +93,7 @@ namespace ModularFlightPanel.Core
             if (DotMatrixShader == null) DotMatrixShader = Shader.Find("ModularFlightPanel/DotMatrixUI") ?? Shader.Find("UI/Default");
             if (PhosphorHoloShader == null) PhosphorHoloShader = Shader.Find("ModularFlightPanel/PhosphorHoloUI") ?? Shader.Find("UI/Default");
             if (DigitalSegmentShader == null) DigitalSegmentShader = Shader.Find("ModularFlightPanel/DigitalSegmentUI") ?? Shader.Find("UI/Default");
+            if (CrispAvionicsTextShader == null) CrispAvionicsTextShader = Shader.Find("ModularFlightPanel/CrispAvionicsText") ?? Shader.Find("UI/Default");
             if (Vessel3DShader == null) Vessel3DShader = Shader.Find("ModularFlightPanel/Vessel3DTechnical") ?? Shader.Find("Diffuse") ?? Shader.Find("Unlit/Color");
             if (MinimalistAttitudeShader == null) MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere") ?? ProceduralShader ?? ModernShader ?? Shader.Find("Diffuse");
         }

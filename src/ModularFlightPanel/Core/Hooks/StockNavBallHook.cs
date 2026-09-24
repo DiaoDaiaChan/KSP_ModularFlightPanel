@@ -214,7 +214,7 @@ namespace ModularFlightPanel.Core
             if (HasStockNavBall && StockInstance != null)
             {
                 Transform marker = GetMarkerTransformByKey(markerKey);
-                if (marker != null && IsMarkerLogicallyActive(markerKey, marker))
+                if (marker != null && marker.gameObject.activeSelf)
                 {
                     Vector3 localPos = marker.localPosition;
                     if (localPos.sqrMagnitude > 0.0001f)
@@ -229,9 +229,25 @@ namespace ModularFlightPanel.Core
                         return true;
                     }
                 }
+                else if (marker != null)
+                {
+                    // 若当前 marker 处于背球暗面 (activeSelf 为 false)，检查其反向对偶 marker 是否激活
+                    Transform oppMarker = GetOppositeMarkerTransformByKey(markerKey);
+                    if (oppMarker != null && oppMarker.gameObject.activeSelf)
+                    {
+                        Vector3 oppPos = oppMarker.localPosition;
+                        if (oppPos.sqrMagnitude > 0.0001f)
+                        {
+                            Vector3 hudDir = -oppPos.normalized;
+                            isVisible = (hudDir.z >= -0.15f);
+                            dir = hudDir;
+                            return true;
+                        }
+                    }
+                }
             }
 
-            // 2. 仅当无官方 NavBall 实例时 (如无头验证或初始化前) 启用开普勒/轨道数学兜底解算
+            // 2. 仅当无官方 NavBall 实例或官方未绘制对应标线时 (如地表模式、Principia 或离线无头)，启用开普勒/轨道数学兜底解算
             return CalculateMarkerDirectionMath(markerKey, out dir, out isVisible);
         }
 
@@ -266,6 +282,23 @@ namespace ModularFlightPanel.Core
 
                 default:
                     return marker != null && marker.gameObject.activeSelf;
+            }
+        }
+
+        private static Transform GetOppositeMarkerTransformByKey(string markerKey)
+        {
+            if (!HasStockNavBall) return null;
+            switch (markerKey.ToLowerInvariant())
+            {
+                case "prograde": return StockInstance.retrogradeVector;
+                case "retrograde": return StockInstance.progradeVector;
+                case "normal": return StockInstance.antiNormalVector;
+                case "antinormal": return StockInstance.normalVector;
+                case "radialin": return StockInstance.radialOutVector;
+                case "radialout": return StockInstance.radialInVector;
+                case "target": return StockInstance.retrogradeWaypoint;
+                case "antitarget": return StockInstance.progradeWaypoint;
+                default: return null;
             }
         }
 
@@ -343,16 +376,23 @@ namespace ModularFlightPanel.Core
                 case "normal":
                 case "antinormal":
                 {
-                    if (vessel.orbit != null)
+                    if (vessel.orbit != null && vessel.mainBody != null)
                     {
-                        Vector3d pos = vessel.orbit.pos;
-                        Vector3d vel = vessel.orbit.vel;
-                        Vector3d norm = Vector3d.Cross(pos, vel);
-                        if (norm.sqrMagnitude > 0.0001)
+                        Vector3 wCoM = vessel.CurrentCoM;
+                        Vector3 cbPos = vessel.mainBody.position;
+                        Vector3 obtVel = (Vector3)vessel.orbit.GetVel();
+                        if (obtVel.sqrMagnitude > 0.0001f)
                         {
-                            Vector3 n = (Vector3)norm.normalized;
-                            worldVec = (key == "normal") ? n : -n;
-                            hasValidVector = true;
+                            Vector3 rad = Vector3.ProjectOnPlane((wCoM - cbPos).normalized, obtVel).normalized;
+                            Vector3 n = Vector3.Cross(rad, obtVel.normalized).normalized;
+                            if (n.sqrMagnitude > 0.0001f)
+                            {
+                                // 与 KSP 原生 NavBall.DrawOrbitalCues 严格一致：
+                                // antiNormalVector.localPosition = normal;
+                                // normalVector.localPosition = -normal;
+                                worldVec = (key == "normal") ? -n : n;
+                                hasValidVector = true;
+                            }
                         }
                     }
                     break;
@@ -361,18 +401,20 @@ namespace ModularFlightPanel.Core
                 case "radialin":
                 case "radialout":
                 {
-                    if (vessel.orbit != null)
+                    if (vessel.orbit != null && vessel.mainBody != null)
                     {
-                        Vector3d pos = vessel.orbit.pos;
-                        Vector3d vel = vessel.orbit.vel;
-                        Vector3d norm = Vector3d.Cross(pos, vel);
-                        if (norm.sqrMagnitude > 0.0001)
+                        Vector3 wCoM = vessel.CurrentCoM;
+                        Vector3 cbPos = vessel.mainBody.position;
+                        Vector3 obtVel = (Vector3)vessel.orbit.GetVel();
+                        if (obtVel.sqrMagnitude > 0.0001f)
                         {
-                            Vector3d rad = Vector3d.Cross(vel, norm);
-                            if (rad.sqrMagnitude > 0.0001)
+                            Vector3 rad = Vector3.ProjectOnPlane((wCoM - cbPos).normalized, obtVel).normalized;
+                            if (rad.sqrMagnitude > 0.0001f)
                             {
-                                Vector3 r = (Vector3)rad.normalized;
-                                worldVec = (key == "radialout") ? r : -r;
+                                // 与 KSP 原生 NavBall.DrawOrbitalCues 严格一致：
+                                // radialOutVector.localPosition = radial;
+                                // radialInVector.localPosition = -radial;
+                                worldVec = (key == "radialout") ? rad : -rad;
                                 hasValidVector = true;
                             }
                         }

@@ -186,10 +186,10 @@ namespace ModularFlightPanel.UI
             _scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
             _scaler.scaleFactor = 1.0f;
 
-            // 航电级超采样动态像素密度 (Avionics High-DPI Dynamic Supersampling):
-            // 将默认字体与动态矢量光栅化清晰度与全局渲染倍率挂钩 (2.5x * GlobalRenderScaleMultiplier)
-            float renderScale = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalRenderScaleMultiplier : 1.0f;
-            _scaler.dynamicPixelsPerUnit = 2.5f * Mathf.Clamp(renderScale, 0.5f, 2.5f);
+            // 航电级点对点点阵光栅化 (Avionics Pixel-Perfect Text Rasterization):
+            // 1:1 绝对物理像素点对点模式下，dynamicPixelsPerUnit 严格设为 1.0f，
+            // 彻底杜绝 FreeType 矢量字体在超采样后因缺乏 Mipmap 的双线性插值降采样导致的字体虚化、发毛与边缘蚀刻！
+            _scaler.dynamicPixelsPerUnit = 1.0f;
             _scaler.referencePixelsPerUnit = 100f;
 
             _raycaster = _canvasObj.GetComponent<GraphicRaycaster>();

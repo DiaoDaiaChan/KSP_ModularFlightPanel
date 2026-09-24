@@ -13,8 +13,9 @@ namespace ModularFlightPanel.UI
         {
             try
             {
-                // 优先加载高分辨率现代无衬线航电字体 (如 Windows 原生 Segoe UI 或 Calibri)，显著提升小字号排版清晰度
-                DefaultFont = Font.CreateDynamicFontFromOSFont(new string[] { "Segoe UI Semibold", "Segoe UI", "Calibri", "Arial" }, 16);
+                // 优先加载国际公认航空仪表与航电标杆字体 (Bahnschrift / DIN 1451，字腔开阔、笔画均匀)，
+                // 彻底杜绝小字号笔画粘连与阅读疲劳；若未安装则平滑回退至 Segoe UI、Calibri、Arial
+                DefaultFont = Font.CreateDynamicFontFromOSFont(new string[] { "Bahnschrift", "Segoe UI", "Calibri", "Arial" }, 16);
             }
             catch { }
 
@@ -90,7 +91,7 @@ namespace ModularFlightPanel.UI
             return go;
         }
 
-        public static Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment, Color color, Material customMaterial = null, bool addShadow = true)
+        public static Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment, Color color, Material customMaterial = null, bool addShadow = false)
         {
             GameObject go = new GameObject(name, typeof(RectTransform), typeof(Text));
             go.transform.SetParent(parent, false);
@@ -109,13 +110,19 @@ namespace ModularFlightPanel.UI
             {
                 txt.material = customMaterial;
             }
+            else
+            {
+                // 默认接入航电抗蚀刻高清文本材质 (若已初始化)
+                Material textMat = WidgetStyleManager.Instance?.GetUiMaterial(isText: true);
+                if (textMat != null) txt.material = textMat;
+            }
 
             if (addShadow)
             {
-                // 抗炫光高对比微投影：无论直视恒星太阳还是明亮大气背景，均确保 100% 锐利可读
+                // 仅在明确指定时开启柔和环境阴影，禁止粗暴的 (1, -1) 偏移造成小字号粘连与糊字
                 Shadow shadow = go.AddComponent<Shadow>();
                 Color shadowCol = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep);
-                shadowCol.a = 0.78f;
+                shadowCol.a = 0.50f;
                 shadow.effectColor = shadowCol;
                 shadow.effectDistance = new Vector2(1f, -1f);
                 shadow.useGraphicAlpha = true;
