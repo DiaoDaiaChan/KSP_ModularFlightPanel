@@ -38,6 +38,7 @@ namespace ModularFlightPanel.Config
         // 收纳坞按钮自定义过滤与别名配置
         public List<DockButtonRule> DockRules = new List<DockButtonRule>();
         public bool DockShowHiddenDrawer = false;
+        public int DockOrientation = 0; // 0 = 纵向双列, 1 = 横向双行, 2 = 横向单行
     }
 
     public class ThemeManager
@@ -54,6 +55,7 @@ namespace ModularFlightPanel.Config
         public int ToolbarStyleMode { get; set; } = 1;
         public List<DockButtonRule> DockRules { get; set; } = new List<DockButtonRule>();
         public bool DockShowHiddenDrawer { get; set; } = false;
+        public int DockOrientation { get; set; } = 0;
 
         public DockButtonRule GetOrCreateDockRule(string key, string defaultName)
         {
@@ -153,7 +155,8 @@ namespace ModularFlightPanel.Config
                     AutoAdaptResolution = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.AutoAdaptResolution : true,
                     GlobalRenderScaleMultiplier = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalRenderScaleMultiplier : 1.0f,
                     DockRules = DockRules != null ? new List<DockButtonRule>(DockRules) : new List<DockButtonRule>(),
-                    DockShowHiddenDrawer = DockShowHiddenDrawer
+                    DockShowHiddenDrawer = DockShowHiddenDrawer,
+                    DockOrientation = DockOrientation
                 };
                 string json = JsonUtility.ToJson(data, true);
                 File.WriteAllText(SettingsFilePath, json);
@@ -198,6 +201,7 @@ namespace ModularFlightPanel.Config
                     ShowPerformanceBadge = data.ShowPerformanceBadge;
                     if (data.DockRules != null) DockRules = data.DockRules;
                     DockShowHiddenDrawer = data.DockShowHiddenDrawer;
+                    DockOrientation = data.DockOrientation;
 
                     if (WidgetRenderManager.Instance != null)
                     {
@@ -248,13 +252,23 @@ namespace ModularFlightPanel.Config
 
         public void SetTheme(string themeId)
         {
-            ThemeConfig target = AvailableThemes.Find(t => t.ThemeId == themeId);
+            if (string.IsNullOrEmpty(themeId)) return;
+            string cleanId = themeId.Trim();
+            ThemeConfig target = AvailableThemes.Find(t =>
+                string.Equals(t.ThemeId, cleanId, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(t.ThemeId.Replace("_", ""), cleanId.Replace("_", ""), StringComparison.OrdinalIgnoreCase) ||
+                t.DisplayName.IndexOf(cleanId, StringComparison.OrdinalIgnoreCase) >= 0);
+
             if (target != null)
             {
                 CurrentTheme = target;
                 SaveSettings();
                 OnThemeChanged?.Invoke(CurrentTheme);
                 Debug.Log($"[ModularFlightPanel] Switched theme to: {CurrentTheme.DisplayName}");
+            }
+            else
+            {
+                Debug.LogWarning($"[ModularFlightPanel] Theme not found for query: '{themeId}'");
             }
         }
 
@@ -349,16 +363,16 @@ namespace ModularFlightPanel.Config
             switch (theme.UiStyle)
             {
                 case UiShaderStyle.Dot_Matrix:
-                    s = AssetLoader.DotMatrixShader;
+                    s = isText ? AssetLoader.DotMatrixShader : AssetLoader.GlassCockpitShader;
                     break;
                 case UiShaderStyle.Phosphor_HUD:
-                    s = AssetLoader.PhosphorHoloShader;
+                    s = isText ? AssetLoader.PhosphorHoloShader : AssetLoader.GlassCockpitShader;
                     break;
                 case UiShaderStyle.Digital_Segment:
-                    s = AssetLoader.DigitalSegmentShader;
+                    s = isText ? AssetLoader.DigitalSegmentShader : AssetLoader.GlassCockpitShader;
                     break;
                 case UiShaderStyle.Cyber_Neon:
-                    s = AssetLoader.NeonGlowShader;
+                    s = isText ? AssetLoader.NeonGlowShader : AssetLoader.GlassCockpitShader;
                     break;
                 case UiShaderStyle.Modern_Glass:
                 default:

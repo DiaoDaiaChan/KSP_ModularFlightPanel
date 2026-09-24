@@ -13,31 +13,31 @@ namespace ModularFlightPanel.UI.Widgets
     /// </summary>
     public class ModernToolbarButtonProxy : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
     {
-        public Action OnLeftClick;
-        public Action OnRightClick;
-        public Action OnHoverEnter;
-        public Action OnHoverExit;
+        public Action<PointerEventData> OnLeftClick;
+        public Action<PointerEventData> OnRightClick;
+        public Action<PointerEventData> OnHoverEnter;
+        public Action<PointerEventData> OnHoverExit;
 
         public void OnPointerClick(PointerEventData eventData)
         {
             if (eventData.button == PointerEventData.InputButton.Left)
             {
-                OnLeftClick?.Invoke();
+                OnLeftClick?.Invoke(eventData);
             }
             else if (eventData.button == PointerEventData.InputButton.Right)
             {
-                OnRightClick?.Invoke();
+                OnRightClick?.Invoke(eventData);
             }
         }
 
         public void OnPointerEnter(PointerEventData eventData)
         {
-            OnHoverEnter?.Invoke();
+            OnHoverEnter?.Invoke(eventData);
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
-            OnHoverExit?.Invoke();
+            OnHoverExit?.Invoke(eventData);
         }
     }
 
@@ -48,12 +48,14 @@ namespace ModularFlightPanel.UI.Widgets
     /// 1. 完整保留所有模组原始高清贴图图标 (RawImage Icon Texture Preservation)
     /// 2. 动态自动适配全量模组无上限 (Dynamic Mod Auto-Discovery & Hot-Plug)
     /// 3. 完整支持左键开关、右键设置菜单与悬浮工具提示 (Full Event Proxying: Left/Right Click & Tooltips)
-    /// 4. 智能自适应高度与平滑滚动视口 (2-Column Auto-Sizing & ScrollRect Matrix)
-    /// 5. 极简微光折叠胶囊 (Collapsed 36x36px Pill)：随时收纳，还给驾驶舱纯净视野
+    /// 4. 多构型自适应矩阵：支持纵向双列、横向双行、横向单行 (Multi-Orientation Matrix Layout)
+    /// 5. 极简微光折叠胶囊 (Collapsed 38x38px Pill)：随时收纳，还给驾驶舱纯净视野
     /// </summary>
     public class ModernToolbarWidget : BaseFlightWidget
     {
         public static ModernToolbarWidget Instance { get; private set; }
+
+        public override bool IsInteractive => true;
 
         private Image _panelBg;
         private Outline _panelOutline;
@@ -79,8 +81,8 @@ namespace ModularFlightPanel.UI.Widgets
             public ModernToolbarButtonProxy Proxy;
             public string Name;
             public bool IsActive;
-            public Action OnLeftClick;
-            public Action OnRightClick;
+            public Action<PointerEventData> OnLeftClick;
+            public Action<PointerEventData> OnRightClick;
 
 #if KSP_RUNTIME
             public KSP.UI.Screens.ApplicationLauncherButton KspButton;
@@ -91,6 +93,7 @@ namespace ModularFlightPanel.UI.Widgets
         private float _lastSyncTime = -1f;
         private int _cachedButtonCount = -1;
         private ThemeConfig _currentTheme;
+        private float _currentPanelWidth = 240f;
         private float _currentPanelHeight = 240f;
 
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
@@ -103,6 +106,14 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        public void RebuildDockLayout()
+        {
+            if (RectTransform == null) return;
+            SetupDockStructure();
+            PopulateToolbarButtons(_contentRt, CurrentDpiScale);
+            AutoDetectInteractivityAndPruneRaycasts();
+        }
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             Instance = this;
@@ -110,72 +121,7 @@ namespace ModularFlightPanel.UI.Widgets
             _currentTheme = theme;
             float s = CurrentDpiScale;
 
-            Color bgCol = theme.FrameBgColor;
-            Color borderCol = theme.FrameBorderColor;
-            Color primaryAccent = theme.AccentPrimary;
-
-            // 初始尺寸 (双列宽度约 88px)
-            _currentPanelHeight = 240f * s;
-            Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
-            RectTransform.sizeDelta = panelSize;
-
-            // 1. 主面板背板与外发光轮廓
-            GameObject panel = UIFactory.CreatePanel(transform, "ToolbarPanel", panelSize, Vector2.zero, bgCol, borderCol, 1.2f * s);
-            _panelBg = panel.GetComponent<Image>();
-            _panelOutline = panel.GetComponent<Outline>();
-
-            // 2. 顶部微光装饰线
-            _topStripe = UIFactory.CreatePanel(panel.transform, "TopStripe", new Vector2(panelSize.x, 2f * s),
-                new Vector2(0f, panelSize.y * 0.5f - 1f * s), primaryAccent).GetComponent<Image>();
-
-            // 3. 顶部收拢 / 展开按键
-            float headerH = 22f * s;
-            Button btn = UIFactory.CreateCockpitButton(panel.transform, "CollapseToggleBtn",
-                "« DOCK",
-                new Vector2(panelSize.x - 8f * s, headerH),
-                new Vector2(0f, panelSize.y * 0.5f - (headerH * 0.5f + 4f * s)),
-                WidgetStyleManager.Surface(SurfaceStyleRole.SlotActive), borderCol, primaryAccent,
-                () => ToggleCollapse());
-            _collapseBtn = btn;
-            _collapseBtnText = btn.GetComponentInChildren<Text>();
-
-            // 4. 按钮矩阵滚动视口 (Scroll View + Viewport + Content)
-            _dockContent = new GameObject("DockScrollView", typeof(RectTransform), typeof(ScrollRect));
-            _dockContent.transform.SetParent(panel.transform, false);
-            RectTransform scrollRt = _dockContent.GetComponent<RectTransform>();
-            scrollRt.anchorMin = new Vector2(0f, 0f);
-            scrollRt.anchorMax = new Vector2(1f, 1f);
-            scrollRt.offsetMin = new Vector2(4f * s, 4f * s);
-            scrollRt.offsetMax = new Vector2(-4f * s, -(headerH + 8f * s));
-
-            _scrollRect = _dockContent.GetComponent<ScrollRect>();
-            _scrollRect.horizontal = false;
-            _scrollRect.vertical = true;
-            _scrollRect.movementType = ScrollRect.MovementType.Clamped;
-            _scrollRect.scrollSensitivity = 18f * s;
-
-            // Viewport with RectMask2D
-            GameObject viewportObj = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
-            viewportObj.transform.SetParent(_dockContent.transform, false);
-            RectTransform vpRt = viewportObj.GetComponent<RectTransform>();
-            vpRt.anchorMin = Vector2.zero;
-            vpRt.anchorMax = Vector2.one;
-            vpRt.offsetMin = Vector2.zero;
-            vpRt.offsetMax = Vector2.zero;
-            _scrollRect.viewport = vpRt;
-
-            // Content RectTransform
-            GameObject contentObj = new GameObject("Content", typeof(RectTransform));
-            contentObj.transform.SetParent(viewportObj.transform, false);
-            _contentRt = contentObj.GetComponent<RectTransform>();
-            _contentRt.anchorMin = new Vector2(0f, 1f);
-            _contentRt.anchorMax = new Vector2(1f, 1f);
-            _contentRt.pivot = new Vector2(0.5f, 1f);
-            _contentRt.offsetMin = Vector2.zero;
-            _contentRt.offsetMax = Vector2.zero;
-            _scrollRect.content = _contentRt;
-
-            // 5. 组装按钮列表 (真机读 ApplicationLauncher，离线读 Mock)
+            SetupDockStructure();
             PopulateToolbarButtons(_contentRt, s);
 
             // 模式 2 激活时隐藏原版工具栏
@@ -183,12 +129,173 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 StockToolbarHook.HideStockToolbar(true);
             }
+
+            AutoDetectInteractivityAndPruneRaycasts();
+        }
+
+        private void SetupDockStructure()
+        {
+            float s = CurrentDpiScale;
+            ThemeConfig theme = _currentTheme ?? WidgetStyleManager.Instance.CurrentTheme;
+            Color bgCol = theme.FrameBgColor;
+            Color borderCol = theme.FrameBorderColor;
+            Color primaryAccent = theme.AccentPrimary;
+            int orient = ThemeManager.Instance.DockOrientation;
+
+            // 1. 根据构型计算初始面板尺寸与外发光轮廓
+            Vector2 initialSize;
+            if (orient == 0)
+            {
+                // 纵向双列
+                _currentPanelHeight = 240f * s;
+                initialSize = new Vector2(88f * s, _currentPanelHeight);
+            }
+            else if (orient == 1)
+            {
+                // 横向双行
+                _currentPanelWidth = 240f * s;
+                initialSize = new Vector2(_currentPanelWidth, 88f * s);
+            }
+            else
+            {
+                // 横向单行
+                _currentPanelWidth = 240f * s;
+                initialSize = new Vector2(_currentPanelWidth, 48f * s);
+            }
+
+            RectTransform.sizeDelta = initialSize;
+
+            if (_panelBg == null)
+            {
+                GameObject panel = UIFactory.CreatePanel(transform, "ToolbarPanel", initialSize, Vector2.zero, bgCol, borderCol, 1.2f * s);
+                _panelBg = panel.GetComponent<Image>();
+                _panelOutline = panel.GetComponent<Outline>();
+            }
+            else
+            {
+                _panelBg.rectTransform.sizeDelta = initialSize;
+            }
+
+            // 2. 装饰微光边条
+            if (_topStripe == null)
+            {
+                _topStripe = UIFactory.CreatePanel(_panelBg.transform, "AccentStripe", Vector2.one, Vector2.zero, primaryAccent).GetComponent<Image>();
+            }
+            if (orient == 0)
+            {
+                _topStripe.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                _topStripe.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                _topStripe.rectTransform.sizeDelta = new Vector2(initialSize.x, 2f * s);
+                _topStripe.rectTransform.anchoredPosition = new Vector2(0f, initialSize.y * 0.5f - 1f * s);
+            }
+            else
+            {
+                _topStripe.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                _topStripe.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                _topStripe.rectTransform.sizeDelta = new Vector2(2f * s, initialSize.y);
+                _topStripe.rectTransform.anchoredPosition = new Vector2(-initialSize.x * 0.5f + 1f * s, 0f);
+            }
+
+            // 3. 折叠/展开按键
+            if (_collapseBtn == null)
+            {
+                Button btn = UIFactory.CreateCockpitButton(_panelBg.transform, "CollapseToggleBtn",
+                    orient == 0 ? "« DOCK" : "«",
+                    new Vector2(32f * s, 22f * s),
+                    Vector2.zero,
+                    WidgetStyleManager.Surface(SurfaceStyleRole.SlotActive), borderCol, primaryAccent,
+                    () => ToggleCollapse());
+                _collapseBtn = btn;
+                _collapseBtnText = btn.GetComponentInChildren<Text>();
+            }
+
+            if (orient == 0)
+            {
+                float headerH = 22f * s;
+                _collapseBtn.image.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                _collapseBtn.image.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                _collapseBtn.image.rectTransform.sizeDelta = new Vector2(initialSize.x - 8f * s, headerH);
+                _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, initialSize.y * 0.5f - (headerH * 0.5f + 4f * s));
+                if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "»" : "« DOCK";
+            }
+            else
+            {
+                float btnW = 22f * s;
+                _collapseBtn.image.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                _collapseBtn.image.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnW, initialSize.y - 8f * s);
+                _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-initialSize.x * 0.5f + (btnW * 0.5f + 4f * s), 0f);
+                if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "»" : "«";
+            }
+
+            // 4. 滚动视口容器
+            if (_dockContent == null)
+            {
+                _dockContent = new GameObject("DockScrollView", typeof(RectTransform), typeof(ScrollRect));
+                _dockContent.transform.SetParent(_panelBg.transform, false);
+                _scrollRect = _dockContent.GetComponent<ScrollRect>();
+                _scrollRect.movementType = ScrollRect.MovementType.Clamped;
+                _scrollRect.scrollSensitivity = 18f * s;
+
+                // Viewport with RectMask2D
+                GameObject viewportObj = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+                viewportObj.transform.SetParent(_dockContent.transform, false);
+                RectTransform vpRt = viewportObj.GetComponent<RectTransform>();
+                vpRt.anchorMin = Vector2.zero;
+                vpRt.anchorMax = Vector2.one;
+                vpRt.offsetMin = Vector2.zero;
+                vpRt.offsetMax = Vector2.zero;
+                _scrollRect.viewport = vpRt;
+
+                // Content RectTransform
+                GameObject contentObj = new GameObject("Content", typeof(RectTransform));
+                contentObj.transform.SetParent(viewportObj.transform, false);
+                _contentRt = contentObj.GetComponent<RectTransform>();
+                _scrollRect.content = _contentRt;
+            }
+
+            RectTransform scrollRt = _dockContent.GetComponent<RectTransform>();
+            if (orient == 0)
+            {
+                float headerH = 22f * s;
+                scrollRt.anchorMin = new Vector2(0f, 0f);
+                scrollRt.anchorMax = new Vector2(1f, 1f);
+                scrollRt.offsetMin = new Vector2(4f * s, 4f * s);
+                scrollRt.offsetMax = new Vector2(-4f * s, -(headerH + 8f * s));
+
+                _scrollRect.horizontal = false;
+                _scrollRect.vertical = true;
+
+                _contentRt.anchorMin = new Vector2(0f, 1f);
+                _contentRt.anchorMax = new Vector2(1f, 1f);
+                _contentRt.pivot = new Vector2(0.5f, 1f);
+                _contentRt.offsetMin = Vector2.zero;
+                _contentRt.offsetMax = Vector2.zero;
+            }
+            else
+            {
+                float leftGripW = 28f * s;
+                scrollRt.anchorMin = new Vector2(0f, 0f);
+                scrollRt.anchorMax = new Vector2(1f, 1f);
+                scrollRt.offsetMin = new Vector2(leftGripW, 4f * s);
+                scrollRt.offsetMax = new Vector2(-4f * s, -4f * s);
+
+                _scrollRect.horizontal = true;
+                _scrollRect.vertical = false;
+
+                _contentRt.anchorMin = new Vector2(0f, 0f);
+                _contentRt.anchorMax = new Vector2(0f, 1f);
+                _contentRt.pivot = new Vector2(0f, 0.5f);
+                _contentRt.offsetMin = Vector2.zero;
+                _contentRt.offsetMax = Vector2.zero;
+            }
         }
 
         private void ToggleCollapse()
         {
             _isCollapsed = !_isCollapsed;
             float s = CurrentDpiScale;
+            int orient = ThemeManager.Instance.DockOrientation;
 
             if (_isCollapsed)
             {
@@ -205,22 +312,65 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
-                RectTransform.sizeDelta = panelSize;
-                if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
-                if (_topStripe != null)
+                if (orient == 0)
                 {
-                    _topStripe.gameObject.SetActive(true);
-                    _topStripe.rectTransform.sizeDelta = new Vector2(panelSize.x, 2f * s);
-                    _topStripe.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - 1f * s);
+                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.gameObject.SetActive(true);
+                        _topStripe.rectTransform.sizeDelta = new Vector2(panelSize.x, 2f * s);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - 1f * s);
+                    }
+                    if (_dockContent != null) _dockContent.SetActive(true);
+                    if (_collapseBtn != null)
+                    {
+                        float headerH = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(panelSize.x - 8f * s, headerH);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - (headerH * 0.5f + 4f * s));
+                        if (_collapseBtnText != null) _collapseBtnText.text = "« DOCK";
+                    }
                 }
-                if (_dockContent != null) _dockContent.SetActive(true);
-                if (_collapseBtn != null)
+                else if (orient == 1)
                 {
-                    float headerH = 22f * s;
-                    _collapseBtn.image.rectTransform.sizeDelta = new Vector2(panelSize.x - 8f * s, headerH);
-                    _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - (headerH * 0.5f + 4f * s));
-                    if (_collapseBtnText != null) _collapseBtnText.text = "« DOCK";
+                    Vector2 panelSize = new Vector2(_currentPanelWidth, 88f * s);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.gameObject.SetActive(true);
+                        _topStripe.rectTransform.sizeDelta = new Vector2(2f * s, panelSize.y);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 1f * s, 0f);
+                    }
+                    if (_dockContent != null) _dockContent.SetActive(true);
+                    if (_collapseBtn != null)
+                    {
+                        float btnW = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnW, panelSize.y - 8f * s);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + (btnW * 0.5f + 4f * s), 0f);
+                        if (_collapseBtnText != null) _collapseBtnText.text = "«";
+                    }
+                }
+                else
+                {
+                    Vector2 panelSize = new Vector2(_currentPanelWidth, 48f * s);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.gameObject.SetActive(true);
+                        _topStripe.rectTransform.sizeDelta = new Vector2(2f * s, panelSize.y);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 1f * s, 0f);
+                    }
+                    if (_dockContent != null) _dockContent.SetActive(true);
+                    if (_collapseBtn != null)
+                    {
+                        float btnW = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnW, panelSize.y - 8f * s);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + (btnW * 0.5f + 4f * s), 0f);
+                        if (_collapseBtnText != null) _collapseBtnText.text = "«";
+                    }
                 }
             }
         }
@@ -316,7 +466,7 @@ namespace ModularFlightPanel.UI.Widgets
             float btnW = 36f * s;
             float btnH = 36f * s;
             float spacing = 4f * s;
-            float startX = -(btnW * 0.5f + spacing * 0.5f);
+            int orient = ThemeManager.Instance.DockOrientation;
 
             var primaryBtns = new List<KeyValuePair<KSP.UI.Screens.ApplicationLauncherButton, DockButtonRule>>();
             var hiddenBtns = new List<KeyValuePair<KSP.UI.Screens.ApplicationLauncherButton, DockButtonRule>>();
@@ -338,178 +488,354 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             bool showDrawer = ThemeManager.Instance.DockShowHiddenDrawer && hiddenBtns.Count > 0;
-            float drawerH = 18f * s;
 
-            int pRows = Mathf.Max(0, Mathf.CeilToInt(primaryBtns.Count / 2f));
-            float pHeight = pRows > 0 ? (pRows * (btnH + spacing)) : 0f;
-
-            float totalContentHeight = pHeight + 4f * s;
-            if (showDrawer)
+            if (orient == 0)
             {
-                totalContentHeight += drawerH + spacing;
-                if (_drawerExpanded)
+                // === 构型 0: 纵向双列 ===
+                float drawerH = 18f * s;
+                int pRows = Mathf.Max(0, Mathf.CeilToInt(primaryBtns.Count / 2f));
+                float pHeight = pRows > 0 ? (pRows * (btnH + spacing)) : 0f;
+                float totalContentHeight = pHeight + 4f * s;
+                if (showDrawer)
                 {
-                    int hRows = Mathf.CeilToInt(hiddenBtns.Count / 2f);
-                    totalContentHeight += hRows * (btnH + spacing);
-                }
-            }
-            if (totalContentHeight < 36f * s) totalContentHeight = 36f * s;
-
-            parent.sizeDelta = new Vector2(parent.sizeDelta.x, totalContentHeight);
-
-            // 自适应外框高度：在 140px ~ 420px 之间弹性调节
-            float preferredH = Mathf.Clamp(totalContentHeight + 36f * s, 140f * s, 420f * s);
-            _currentPanelHeight = preferredH;
-            if (!_isCollapsed)
-            {
-                RectTransform.sizeDelta = new Vector2(88f * s, _currentPanelHeight);
-                if (_panelBg != null) _panelBg.rectTransform.sizeDelta = RectTransform.sizeDelta;
-                if (_topStripe != null) _topStripe.rectTransform.anchoredPosition = new Vector2(0f, _currentPanelHeight * 0.5f - 1f * s);
-                if (_collapseBtn != null)
-                {
-                    float headerH = 22f * s;
-                    _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, _currentPanelHeight * 0.5f - (headerH * 0.5f + 4f * s));
-                }
-            }
-
-            for (int i = 0; i < primaryBtns.Count; i++)
-            {
-                var kvp = primaryBtns[i];
-                var kspBtn = kvp.Key;
-                var rule = kvp.Value;
-
-                int col = i % 2;
-                int row = i / 2;
-                float x = col == 0 ? startX : -startX;
-                float y = -(row * (btnH + spacing) + btnH * 0.5f + 2f * s);
-
-                Texture iconTex = (kspBtn.sprite != null) ? kspBtn.sprite.texture : null;
-                bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
-                string displayLabel = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
-
-                CreateButtonItem(parent, x, y, btnW, btnH, displayLabel, iconTex, null,
-                    onLeftClick: () =>
+                    totalContentHeight += drawerH + spacing;
+                    if (_drawerExpanded)
                     {
-                        try
+                        int hRows = Mathf.CeilToInt(hiddenBtns.Count / 2f);
+                        totalContentHeight += hRows * (btnH + spacing);
+                    }
+                }
+                if (totalContentHeight < 36f * s) totalContentHeight = 36f * s;
+
+                parent.sizeDelta = new Vector2(parent.sizeDelta.x, totalContentHeight);
+                float preferredH = Mathf.Clamp(totalContentHeight + 36f * s, 140f * s, 420f * s);
+                _currentPanelHeight = preferredH;
+
+                if (!_isCollapsed)
+                {
+                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.rectTransform.sizeDelta = new Vector2(panelSize.x, 2f * s);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - 1f * s);
+                    }
+                    if (_collapseBtn != null)
+                    {
+                        float headerH = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(panelSize.x - 8f * s, headerH);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - (headerH * 0.5f + 4f * s));
+                    }
+                }
+
+                float startX = -(btnW * 0.5f + spacing * 0.5f);
+                Vector2 anchor = new Vector2(0.5f, 1f);
+
+                for (int i = 0; i < primaryBtns.Count; i++)
+                {
+                    var kvp = primaryBtns[i];
+                    var kspBtn = kvp.Key;
+                    var rule = kvp.Value;
+
+                    int col = i % 2;
+                    int row = i / 2;
+                    float x = col == 0 ? startX : -startX;
+                    float y = -(row * (btnH + spacing) + btnH * 0.5f + 2f * s);
+
+                    RenderKspButton(parent, kspBtn, rule, x, y, btnW, btnH, anchor, s);
+                }
+
+                if (showDrawer)
+                {
+                    float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
+                    string drawerText = _drawerExpanded ? "▲ 收起" : $"▼ 更多 ({hiddenBtns.Count})";
+                    CreateVerticalDrawerButton(parent, 0f, drawerY, 78f * s, drawerH, drawerText, s);
+
+                    if (_drawerExpanded)
+                    {
+                        float hiddenStartY = -(pRows * (btnH + spacing) + drawerH + spacing + 2f * s);
+                        for (int j = 0; j < hiddenBtns.Count; j++)
                         {
-                            if (kspBtn.toggleButton != null)
-                            {
-                                if (kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True)
-                                    kspBtn.SetFalse(true);
-                                else
-                                    kspBtn.SetTrue(true);
-                            }
-                            else if (kspBtn.onLeftClick != null)
-                            {
-                                kspBtn.onLeftClick.Invoke();
-                            }
+                            var kvp = hiddenBtns[j];
+                            var kspBtn = kvp.Key;
+                            var rule = kvp.Value;
+
+                            int col = j % 2;
+                            int row = j / 2;
+                            float x = col == 0 ? startX : -startX;
+                            float y = hiddenStartY - (row * (btnH + spacing) + btnH * 0.5f);
+
+                            RenderKspButton(parent, kspBtn, rule, x, y, btnW, btnH, anchor, s);
                         }
-                        catch { }
-                    },
-                    onRightClick: () =>
-                    {
-                        try { if (kspBtn.onRightClick != null) kspBtn.onRightClick.Invoke(); } catch { }
-                    },
-                    onHoverEnter: () =>
-                    {
-                        try { if (kspBtn.onHover != null) kspBtn.onHover.Invoke(); } catch { }
-                    },
-                    onHoverExit: () =>
-                    {
-                        try { if (kspBtn.onHoverOut != null) kspBtn.onHoverOut.Invoke(); } catch { }
-                    },
-                    s: s,
-                    initialActive: active,
-                    hasExplicitCustomLabel: !string.IsNullOrEmpty(rule.CustomLabel),
-                    kspBtnRef: kspBtn);
-            }
-
-            if (showDrawer)
-            {
-                float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
-                string drawerText = _drawerExpanded ? "▲ 收起" : $"▼ 更多 ({hiddenBtns.Count})";
-                GameObject drawerBtnObj = UIFactory.CreatePanel(parent, "DrawerToggleBtn",
-                    new Vector2(78f * s, drawerH),
-                    new Vector2(0f, drawerY),
-                    WidgetStyleManager.Surface(SurfaceStyleRole.Tile),
-                    _currentTheme.FrameBorderColor, 1f * s);
-                RectTransform drawerRt = drawerBtnObj.GetComponent<RectTransform>();
-                drawerRt.anchorMin = new Vector2(0.5f, 1f);
-                drawerRt.anchorMax = new Vector2(0.5f, 1f);
-                drawerRt.pivot = new Vector2(0.5f, 0.5f);
-                drawerRt.anchoredPosition = new Vector2(0f, drawerY);
-
-                Button drawerBtn = drawerBtnObj.AddComponent<Button>();
-                drawerBtn.transition = Selectable.Transition.ColorTint;
-                drawerBtn.targetGraphic = drawerBtnObj.GetComponent<Image>();
-
-                Text drawerLbl = UIFactory.CreateText(drawerBtnObj.transform, "Label", drawerText,
-                    Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
-                drawerLbl.rectTransform.anchoredPosition = Vector2.zero;
-                drawerLbl.rectTransform.sizeDelta = new Vector2(76f * s, drawerH);
-
-                drawerBtn.onClick.AddListener(() =>
-                {
-                    _drawerExpanded = !_drawerExpanded;
-                    PopulateToolbarButtons(parent, s);
-                });
-
-                if (_drawerExpanded)
-                {
-                    float hiddenStartY = -(pRows * (btnH + spacing) + drawerH + spacing + 2f * s);
-                    for (int j = 0; j < hiddenBtns.Count; j++)
-                    {
-                        var kvp = hiddenBtns[j];
-                        var kspBtn = kvp.Key;
-                        var rule = kvp.Value;
-
-                        int col = j % 2;
-                        int row = j / 2;
-                        float x = col == 0 ? startX : -startX;
-                        float y = hiddenStartY - (row * (btnH + spacing) + btnH * 0.5f);
-
-                        Texture iconTex = (kspBtn.sprite != null) ? kspBtn.sprite.texture : null;
-                        bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
-                        string displayLabel = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
-
-                        CreateButtonItem(parent, x, y, btnW, btnH, displayLabel, iconTex, null,
-                            onLeftClick: () =>
-                            {
-                                try
-                                {
-                                    if (kspBtn.toggleButton != null)
-                                    {
-                                        if (kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True)
-                                            kspBtn.SetFalse(true);
-                                        else
-                                            kspBtn.SetTrue(true);
-                                    }
-                                    else if (kspBtn.onLeftClick != null)
-                                    {
-                                        kspBtn.onLeftClick.Invoke();
-                                    }
-                                }
-                                catch { }
-                            },
-                            onRightClick: () =>
-                            {
-                                try { if (kspBtn.onRightClick != null) kspBtn.onRightClick.Invoke(); } catch { }
-                            },
-                            onHoverEnter: () =>
-                            {
-                                try { if (kspBtn.onHover != null) kspBtn.onHover.Invoke(); } catch { }
-                            },
-                            onHoverExit: () =>
-                            {
-                                try { if (kspBtn.onHoverOut != null) kspBtn.onHoverOut.Invoke(); } catch { }
-                            },
-                            s: s,
-                            initialActive: active,
-                            hasExplicitCustomLabel: !string.IsNullOrEmpty(rule.CustomLabel),
-                            kspBtnRef: kspBtn);
                     }
                 }
             }
+            else if (orient == 1)
+            {
+                // === 构型 1: 横向双行 ===
+                float drawerW = 24f * s;
+                int pCols = Mathf.Max(0, Mathf.CeilToInt(primaryBtns.Count / 2f));
+                float pWidth = pCols > 0 ? (pCols * (btnW + spacing)) : 0f;
+                float totalContentWidth = pWidth + 4f * s;
+                if (showDrawer)
+                {
+                    totalContentWidth += drawerW + spacing;
+                    if (_drawerExpanded)
+                    {
+                        int hCols = Mathf.CeilToInt(hiddenBtns.Count / 2f);
+                        totalContentWidth += hCols * (btnW + spacing);
+                    }
+                }
+                if (totalContentWidth < 36f * s) totalContentWidth = 36f * s;
+
+                parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
+                float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 160f * s, 680f * s);
+                _currentPanelWidth = preferredW;
+
+                if (!_isCollapsed)
+                {
+                    Vector2 panelSize = new Vector2(_currentPanelWidth, 88f * s);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.rectTransform.sizeDelta = new Vector2(2f * s, panelSize.y);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 1f * s, 0f);
+                    }
+                    if (_collapseBtn != null)
+                    {
+                        float btnCollapseW = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnCollapseW, panelSize.y - 8f * s);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + (btnCollapseW * 0.5f + 4f * s), 0f);
+                    }
+                }
+
+                float startY = (btnH * 0.5f + spacing * 0.5f);
+                Vector2 anchor = new Vector2(0f, 0.5f);
+
+                for (int i = 0; i < primaryBtns.Count; i++)
+                {
+                    var kvp = primaryBtns[i];
+                    var kspBtn = kvp.Key;
+                    var rule = kvp.Value;
+
+                    int row = i % 2;
+                    int col = i / 2;
+                    float y = (row == 0) ? startY : -startY;
+                    float x = col * (btnW + spacing) + btnW * 0.5f + 2f * s;
+
+                    RenderKspButton(parent, kspBtn, rule, x, y, btnW, btnH, anchor, s);
+                }
+
+                if (showDrawer)
+                {
+                    float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
+                    string drawerText = _drawerExpanded ? "◀" : $"▶\n{hiddenBtns.Count}";
+                    CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 76f * s, drawerText, s);
+
+                    if (_drawerExpanded)
+                    {
+                        float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
+                        for (int j = 0; j < hiddenBtns.Count; j++)
+                        {
+                            var kvp = hiddenBtns[j];
+                            var kspBtn = kvp.Key;
+                            var rule = kvp.Value;
+
+                            int row = j % 2;
+                            int col = j / 2;
+                            float y = (row == 0) ? startY : -startY;
+                            float x = hiddenStartX + col * (btnW + spacing) + btnW * 0.5f;
+
+                            RenderKspButton(parent, kspBtn, rule, x, y, btnW, btnH, anchor, s);
+                        }
+                    }
+                }
+            }
+            else // orient == 2
+            {
+                // === 构型 2: 横向单行 ===
+                float drawerW = 24f * s;
+                int pCols = primaryBtns.Count;
+                float pWidth = pCols * (btnW + spacing);
+                float totalContentWidth = pWidth + 4f * s;
+                if (showDrawer)
+                {
+                    totalContentWidth += drawerW + spacing;
+                    if (_drawerExpanded)
+                    {
+                        int hCols = hiddenBtns.Count;
+                        totalContentWidth += hCols * (btnW + spacing);
+                    }
+                }
+                if (totalContentWidth < 36f * s) totalContentWidth = 36f * s;
+
+                parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
+                float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 140f * s, 760f * s);
+                _currentPanelWidth = preferredW;
+
+                if (!_isCollapsed)
+                {
+                    Vector2 panelSize = new Vector2(_currentPanelWidth, 48f * s);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.rectTransform.sizeDelta = new Vector2(2f * s, panelSize.y);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 1f * s, 0f);
+                    }
+                    if (_collapseBtn != null)
+                    {
+                        float btnCollapseW = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnCollapseW, panelSize.y - 8f * s);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + (btnCollapseW * 0.5f + 4f * s), 0f);
+                    }
+                }
+
+                Vector2 anchor = new Vector2(0f, 0.5f);
+
+                for (int i = 0; i < primaryBtns.Count; i++)
+                {
+                    var kvp = primaryBtns[i];
+                    var kspBtn = kvp.Key;
+                    var rule = kvp.Value;
+
+                    int col = i;
+                    float y = 0f;
+                    float x = col * (btnW + spacing) + btnW * 0.5f + 2f * s;
+
+                    RenderKspButton(parent, kspBtn, rule, x, y, btnW, btnH, anchor, s);
+                }
+
+                if (showDrawer)
+                {
+                    float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
+                    string drawerText = _drawerExpanded ? "◀" : $"▶{hiddenBtns.Count}";
+                    CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 36f * s, drawerText, s);
+
+                    if (_drawerExpanded)
+                    {
+                        float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
+                        for (int j = 0; j < hiddenBtns.Count; j++)
+                        {
+                            var kvp = hiddenBtns[j];
+                            var kspBtn = kvp.Key;
+                            var rule = kvp.Value;
+
+                            int col = j;
+                            float y = 0f;
+                            float x = hiddenStartX + col * (btnW + spacing) + btnW * 0.5f;
+
+                            RenderKspButton(parent, kspBtn, rule, x, y, btnW, btnH, anchor, s);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void RenderKspButton(RectTransform parent, KSP.UI.Screens.ApplicationLauncherButton kspBtn, DockButtonRule rule,
+            float x, float y, float w, float h, Vector2 anchor, float s)
+        {
+            Texture iconTex = (kspBtn.sprite != null) ? kspBtn.sprite.texture : null;
+            bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
+            string displayLabel = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
+
+            CreateButtonItem(parent, x, y, w, h, anchor, displayLabel, iconTex, null,
+                onLeftClick: (pe) => TriggerKspButtonClick(kspBtn, pe, false),
+                onRightClick: (pe) => TriggerKspButtonClick(kspBtn, pe, true),
+                onHoverEnter: (pe) => TriggerKspButtonHover(kspBtn, pe, true),
+                onHoverExit: (pe) => TriggerKspButtonHover(kspBtn, pe, false),
+                s: s,
+                initialActive: active,
+                hasExplicitCustomLabel: !string.IsNullOrEmpty(rule.CustomLabel),
+                kspBtnRef: kspBtn);
+        }
+
+        private static void TriggerKspButtonClick(KSP.UI.Screens.ApplicationLauncherButton kspBtn, PointerEventData pe, bool isRightClick = false)
+        {
+            if (kspBtn == null) return;
+            try
+            {
+                if (kspBtn.toggleButton != null)
+                {
+                    kspBtn.toggleButton.Interactable = true;
+                }
+
+                if (pe == null && EventSystem.current != null)
+                {
+                    pe = new PointerEventData(EventSystem.current)
+                    {
+                        button = isRightClick ? PointerEventData.InputButton.Right : PointerEventData.InputButton.Left
+                    };
+                }
+
+                bool handled = false;
+                if (kspBtn.toggleButton != null && pe != null)
+                {
+                    try
+                    {
+                        ((IPointerClickHandler)kspBtn.toggleButton).OnPointerClick(pe);
+                        handled = true;
+                    }
+                    catch { }
+                }
+
+                if (!isRightClick)
+                {
+                    if (!handled)
+                    {
+                        if (kspBtn.toggleButton != null)
+                        {
+                            if (kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True)
+                                kspBtn.SetFalse(true);
+                            else
+                                kspBtn.SetTrue(true);
+                        }
+                        kspBtn.onLeftClick?.Invoke();
+                        if (kspBtn.toggleButton != null)
+                        {
+                            kspBtn.onLeftClickBtn?.Invoke(kspBtn.toggleButton);
+                        }
+                    }
+                }
+                else
+                {
+                    if (!handled)
+                    {
+                        kspBtn.onRightClick?.Invoke();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[MFP] Error triggering KSP toolbar button: {ex.Message}");
+            }
+        }
+
+        private static void TriggerKspButtonHover(KSP.UI.Screens.ApplicationLauncherButton kspBtn, PointerEventData pe, bool isEnter)
+        {
+            if (kspBtn == null) return;
+            try
+            {
+                if (isEnter)
+                {
+                    if (pe != null && kspBtn.toggleButton != null)
+                    {
+                        try { ((IPointerEnterHandler)kspBtn.toggleButton).OnPointerEnter(pe); } catch { }
+                    }
+                    kspBtn.onHover?.Invoke();
+                }
+                else
+                {
+                    if (pe != null && kspBtn.toggleButton != null)
+                    {
+                        try { ((IPointerExitHandler)kspBtn.toggleButton).OnPointerExit(pe); } catch { }
+                    }
+                    kspBtn.onHoverOut?.Invoke();
+                }
+            }
+            catch { }
         }
 #endif
 
@@ -527,7 +853,7 @@ namespace ModularFlightPanel.UI.Widgets
             float btnW = 36f * s;
             float btnH = 36f * s;
             float spacing = 4f * s;
-            float startX = -(btnW * 0.5f + spacing * 0.5f);
+            int orient = ThemeManager.Instance.DockOrientation;
 
             var primaryItems = new List<int>();
             var hiddenItems = new List<int>();
@@ -542,110 +868,307 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             bool showDrawer = ThemeManager.Instance.DockShowHiddenDrawer && hiddenItems.Count > 0;
-            float drawerH = 18f * s;
 
-            int pRows = Mathf.Max(0, Mathf.CeilToInt(primaryItems.Count / 2f));
-            float pHeight = pRows > 0 ? (pRows * (btnH + spacing)) : 0f;
-
-            float totalContentHeight = pHeight + 4f * s;
-            if (showDrawer)
+            if (orient == 0)
             {
-                totalContentHeight += drawerH + spacing;
-                if (_drawerExpanded)
+                // === 构型 0: 纵向双列 ===
+                float drawerH = 18f * s;
+                int pRows = Mathf.Max(0, Mathf.CeilToInt(primaryItems.Count / 2f));
+                float pHeight = pRows > 0 ? (pRows * (btnH + spacing)) : 0f;
+                float totalContentHeight = pHeight + 4f * s;
+                if (showDrawer)
                 {
-                    int hRows = Mathf.CeilToInt(hiddenItems.Count / 2f);
-                    totalContentHeight += hRows * (btnH + spacing);
-                }
-            }
-            if (totalContentHeight < 36f * s) totalContentHeight = 36f * s;
-
-            parent.sizeDelta = new Vector2(parent.sizeDelta.x, totalContentHeight);
-
-            float preferredH = Mathf.Clamp(totalContentHeight + 36f * s, 140f * s, 420f * s);
-            _currentPanelHeight = preferredH;
-            if (!_isCollapsed)
-            {
-                RectTransform.sizeDelta = new Vector2(88f * s, _currentPanelHeight);
-                if (_panelBg != null) _panelBg.rectTransform.sizeDelta = RectTransform.sizeDelta;
-                if (_topStripe != null) _topStripe.rectTransform.anchoredPosition = new Vector2(0f, _currentPanelHeight * 0.5f - 1f * s);
-                if (_collapseBtn != null)
-                {
-                    float headerH = 22f * s;
-                    _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, _currentPanelHeight * 0.5f - (headerH * 0.5f + 4f * s));
-                }
-            }
-
-            for (int i = 0; i < primaryItems.Count; i++)
-            {
-                int idx = primaryItems[i];
-                int col = i % 2;
-                int row = i / 2;
-                float x = col == 0 ? startX : -startX;
-                float y = -(row * (btnH + spacing) + btnH * 0.5f + 2f * s);
-
-                var rule = ThemeManager.Instance.GetOrCreateDockRule("MOCK_" + mockNames[idx], mockNames[idx]);
-                string label = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
-                Color ledCol = mockColors[idx % mockColors.Length];
-                bool active = (idx % 3 == 0);
-
-                CreateButtonItem(parent, x, y, btnW, btnH, label, null, ledCol, null, null, null, null, s, active, !string.IsNullOrEmpty(rule.CustomLabel));
-            }
-
-            if (showDrawer)
-            {
-                float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
-                string drawerText = _drawerExpanded ? "▲ 收起" : $"▼ 更多 ({hiddenItems.Count})";
-                GameObject drawerBtnObj = UIFactory.CreatePanel(parent, "DrawerToggleBtn",
-                    new Vector2(78f * s, drawerH),
-                    new Vector2(0f, drawerY),
-                    WidgetStyleManager.Surface(SurfaceStyleRole.Tile),
-                    _currentTheme.FrameBorderColor, 1f * s);
-                RectTransform drawerRt = drawerBtnObj.GetComponent<RectTransform>();
-                drawerRt.anchorMin = new Vector2(0.5f, 1f);
-                drawerRt.anchorMax = new Vector2(0.5f, 1f);
-                drawerRt.pivot = new Vector2(0.5f, 0.5f);
-                drawerRt.anchoredPosition = new Vector2(0f, drawerY);
-
-                Button drawerBtn = drawerBtnObj.AddComponent<Button>();
-                drawerBtn.transition = Selectable.Transition.ColorTint;
-                drawerBtn.targetGraphic = drawerBtnObj.GetComponent<Image>();
-
-                Text drawerLbl = UIFactory.CreateText(drawerBtnObj.transform, "Label", drawerText,
-                    Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
-                drawerLbl.rectTransform.anchoredPosition = Vector2.zero;
-                drawerLbl.rectTransform.sizeDelta = new Vector2(76f * s, drawerH);
-
-                drawerBtn.onClick.AddListener(() =>
-                {
-                    _drawerExpanded = !_drawerExpanded;
-                    PopulateToolbarButtons(parent, s);
-                });
-
-                if (_drawerExpanded)
-                {
-                    float hiddenStartY = -(pRows * (btnH + spacing) + drawerH + spacing + 2f * s);
-                    for (int j = 0; j < hiddenItems.Count; j++)
+                    totalContentHeight += drawerH + spacing;
+                    if (_drawerExpanded)
                     {
-                        int idx = hiddenItems[j];
-                        int col = j % 2;
-                        int row = j / 2;
-                        float x = col == 0 ? startX : -startX;
-                        float y = hiddenStartY - (row * (btnH + spacing) + btnH * 0.5f);
+                        int hRows = Mathf.CeilToInt(hiddenItems.Count / 2f);
+                        totalContentHeight += hRows * (btnH + spacing);
+                    }
+                }
+                if (totalContentHeight < 36f * s) totalContentHeight = 36f * s;
 
-                        var rule = ThemeManager.Instance.GetOrCreateDockRule("MOCK_" + mockNames[idx], mockNames[idx]);
-                        string label = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
-                        Color ledCol = mockColors[idx % mockColors.Length];
-                        bool active = (idx % 3 == 0);
+                parent.sizeDelta = new Vector2(parent.sizeDelta.x, totalContentHeight);
+                float preferredH = Mathf.Clamp(totalContentHeight + 36f * s, 140f * s, 420f * s);
+                _currentPanelHeight = preferredH;
 
-                        CreateButtonItem(parent, x, y, btnW, btnH, label, null, ledCol, null, null, null, null, s, active, !string.IsNullOrEmpty(rule.CustomLabel));
+                if (!_isCollapsed)
+                {
+                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.rectTransform.sizeDelta = new Vector2(panelSize.x, 2f * s);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - 1f * s);
+                    }
+                    if (_collapseBtn != null)
+                    {
+                        float headerH = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(panelSize.x - 8f * s, headerH);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - (headerH * 0.5f + 4f * s));
+                    }
+                }
+
+                float startX = -(btnW * 0.5f + spacing * 0.5f);
+                Vector2 anchor = new Vector2(0.5f, 1f);
+
+                for (int i = 0; i < primaryItems.Count; i++)
+                {
+                    int idx = primaryItems[i];
+                    int col = i % 2;
+                    int row = i / 2;
+                    float x = col == 0 ? startX : -startX;
+                    float y = -(row * (btnH + spacing) + btnH * 0.5f + 2f * s);
+
+                    RenderMockButton(parent, idx, mockNames, mockColors, x, y, btnW, btnH, anchor, s);
+                }
+
+                if (showDrawer)
+                {
+                    float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
+                    string drawerText = _drawerExpanded ? "▲ 收起" : $"▼ 更多 ({hiddenItems.Count})";
+                    CreateVerticalDrawerButton(parent, 0f, drawerY, 78f * s, drawerH, drawerText, s);
+
+                    if (_drawerExpanded)
+                    {
+                        float hiddenStartY = -(pRows * (btnH + spacing) + drawerH + spacing + 2f * s);
+                        for (int j = 0; j < hiddenItems.Count; j++)
+                        {
+                            int idx = hiddenItems[j];
+                            int col = j % 2;
+                            int row = j / 2;
+                            float x = col == 0 ? startX : -startX;
+                            float y = hiddenStartY - (row * (btnH + spacing) + btnH * 0.5f);
+
+                            RenderMockButton(parent, idx, mockNames, mockColors, x, y, btnW, btnH, anchor, s);
+                        }
+                    }
+                }
+            }
+            else if (orient == 1)
+            {
+                // === 构型 1: 横向双行 ===
+                float drawerW = 24f * s;
+                int pCols = Mathf.Max(0, Mathf.CeilToInt(primaryItems.Count / 2f));
+                float pWidth = pCols > 0 ? (pCols * (btnW + spacing)) : 0f;
+                float totalContentWidth = pWidth + 4f * s;
+                if (showDrawer)
+                {
+                    totalContentWidth += drawerW + spacing;
+                    if (_drawerExpanded)
+                    {
+                        int hCols = Mathf.CeilToInt(hiddenItems.Count / 2f);
+                        totalContentWidth += hCols * (btnW + spacing);
+                    }
+                }
+                if (totalContentWidth < 36f * s) totalContentWidth = 36f * s;
+
+                parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
+                float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 160f * s, 680f * s);
+                _currentPanelWidth = preferredW;
+
+                if (!_isCollapsed)
+                {
+                    Vector2 panelSize = new Vector2(_currentPanelWidth, 88f * s);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.rectTransform.sizeDelta = new Vector2(2f * s, panelSize.y);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 1f * s, 0f);
+                    }
+                    if (_collapseBtn != null)
+                    {
+                        float btnCollapseW = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnCollapseW, panelSize.y - 8f * s);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + (btnCollapseW * 0.5f + 4f * s), 0f);
+                    }
+                }
+
+                float startY = (btnH * 0.5f + spacing * 0.5f);
+                Vector2 anchor = new Vector2(0f, 0.5f);
+
+                for (int i = 0; i < primaryItems.Count; i++)
+                {
+                    int idx = primaryItems[i];
+                    int row = i % 2;
+                    int col = i / 2;
+                    float y = (row == 0) ? startY : -startY;
+                    float x = col * (btnW + spacing) + btnW * 0.5f + 2f * s;
+
+                    RenderMockButton(parent, idx, mockNames, mockColors, x, y, btnW, btnH, anchor, s);
+                }
+
+                if (showDrawer)
+                {
+                    float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
+                    string drawerText = _drawerExpanded ? "◀" : $"▶\n{hiddenItems.Count}";
+                    CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 76f * s, drawerText, s);
+
+                    if (_drawerExpanded)
+                    {
+                        float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
+                        for (int j = 0; j < hiddenItems.Count; j++)
+                        {
+                            int idx = hiddenItems[j];
+                            int row = j % 2;
+                            int col = j / 2;
+                            float y = (row == 0) ? startY : -startY;
+                            float x = hiddenStartX + col * (btnW + spacing) + btnW * 0.5f;
+
+                            RenderMockButton(parent, idx, mockNames, mockColors, x, y, btnW, btnH, anchor, s);
+                        }
+                    }
+                }
+            }
+            else // orient == 2
+            {
+                // === 构型 2: 横向单行 ===
+                float drawerW = 24f * s;
+                int pCols = primaryItems.Count;
+                float pWidth = pCols * (btnW + spacing);
+                float totalContentWidth = pWidth + 4f * s;
+                if (showDrawer)
+                {
+                    totalContentWidth += drawerW + spacing;
+                    if (_drawerExpanded)
+                    {
+                        int hCols = hiddenItems.Count;
+                        totalContentWidth += hCols * (btnW + spacing);
+                    }
+                }
+                if (totalContentWidth < 36f * s) totalContentWidth = 36f * s;
+
+                parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
+                float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 140f * s, 760f * s);
+                _currentPanelWidth = preferredW;
+
+                if (!_isCollapsed)
+                {
+                    Vector2 panelSize = new Vector2(_currentPanelWidth, 48f * s);
+                    RectTransform.sizeDelta = panelSize;
+                    if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
+                    if (_topStripe != null)
+                    {
+                        _topStripe.rectTransform.sizeDelta = new Vector2(2f * s, panelSize.y);
+                        _topStripe.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 1f * s, 0f);
+                    }
+                    if (_collapseBtn != null)
+                    {
+                        float btnCollapseW = 22f * s;
+                        _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnCollapseW, panelSize.y - 8f * s);
+                        _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + (btnCollapseW * 0.5f + 4f * s), 0f);
+                    }
+                }
+
+                Vector2 anchor = new Vector2(0f, 0.5f);
+
+                for (int i = 0; i < primaryItems.Count; i++)
+                {
+                    int idx = primaryItems[i];
+                    int col = i;
+                    float y = 0f;
+                    float x = col * (btnW + spacing) + btnW * 0.5f + 2f * s;
+
+                    RenderMockButton(parent, idx, mockNames, mockColors, x, y, btnW, btnH, anchor, s);
+                }
+
+                if (showDrawer)
+                {
+                    float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
+                    string drawerText = _drawerExpanded ? "◀" : $"▶{hiddenItems.Count}";
+                    CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 36f * s, drawerText, s);
+
+                    if (_drawerExpanded)
+                    {
+                        float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
+                        for (int j = 0; j < hiddenItems.Count; j++)
+                        {
+                            int idx = hiddenItems[j];
+                            int col = j;
+                            float y = 0f;
+                            float x = hiddenStartX + col * (btnW + spacing) + btnW * 0.5f;
+
+                            RenderMockButton(parent, idx, mockNames, mockColors, x, y, btnW, btnH, anchor, s);
+                        }
                     }
                 }
             }
         }
 
+        private void RenderMockButton(RectTransform parent, int idx, string[] mockNames, Color[] mockColors,
+            float x, float y, float w, float h, Vector2 anchor, float s)
+        {
+            var rule = ThemeManager.Instance.GetOrCreateDockRule("MOCK_" + mockNames[idx], mockNames[idx]);
+            string label = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
+            Color ledCol = mockColors[idx % mockColors.Length];
+            bool active = (idx % 3 == 0);
+
+            CreateButtonItem(parent, x, y, w, h, anchor, label, null, ledCol, null, null, null, null, s, active, !string.IsNullOrEmpty(rule.CustomLabel));
+        }
+
+        private void CreateVerticalDrawerButton(RectTransform parent, float x, float y, float w, float h, string text, float s)
+        {
+            GameObject drawerBtnObj = UIFactory.CreatePanel(parent, "DrawerToggleBtn",
+                new Vector2(w, h), new Vector2(x, y),
+                WidgetStyleManager.Surface(SurfaceStyleRole.Tile),
+                _currentTheme.FrameBorderColor, 1f * s);
+            RectTransform drawerRt = drawerBtnObj.GetComponent<RectTransform>();
+            drawerRt.anchorMin = new Vector2(0.5f, 1f);
+            drawerRt.anchorMax = new Vector2(0.5f, 1f);
+            drawerRt.pivot = new Vector2(0.5f, 0.5f);
+            drawerRt.anchoredPosition = new Vector2(x, y);
+
+            Button drawerBtn = drawerBtnObj.AddComponent<Button>();
+            drawerBtn.transition = Selectable.Transition.ColorTint;
+            drawerBtn.targetGraphic = drawerBtnObj.GetComponent<Image>();
+
+            Text drawerLbl = UIFactory.CreateText(drawerBtnObj.transform, "Label", text,
+                Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
+            drawerLbl.raycastTarget = false;
+            drawerLbl.rectTransform.anchoredPosition = Vector2.zero;
+            drawerLbl.rectTransform.sizeDelta = new Vector2(w - 2f * s, h);
+
+            drawerBtn.onClick.AddListener(() =>
+            {
+                _drawerExpanded = !_drawerExpanded;
+                PopulateToolbarButtons(parent, s);
+            });
+        }
+
+        private void CreateHorizontalDrawerButton(RectTransform parent, float x, float y, float w, float h, string text, float s)
+        {
+            GameObject drawerBtnObj = UIFactory.CreatePanel(parent, "DrawerToggleBtn",
+                new Vector2(w, h), new Vector2(x, y),
+                WidgetStyleManager.Surface(SurfaceStyleRole.Tile),
+                _currentTheme.FrameBorderColor, 1f * s);
+            RectTransform drawerRt = drawerBtnObj.GetComponent<RectTransform>();
+            drawerRt.anchorMin = new Vector2(0f, 0.5f);
+            drawerRt.anchorMax = new Vector2(0f, 0.5f);
+            drawerRt.pivot = new Vector2(0.5f, 0.5f);
+            drawerRt.anchoredPosition = new Vector2(x, y);
+
+            Button drawerBtn = drawerBtnObj.AddComponent<Button>();
+            drawerBtn.transition = Selectable.Transition.ColorTint;
+            drawerBtn.targetGraphic = drawerBtnObj.GetComponent<Image>();
+
+            Text drawerLbl = UIFactory.CreateText(drawerBtnObj.transform, "Label", text,
+                Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
+            drawerLbl.raycastTarget = false;
+            drawerLbl.rectTransform.anchoredPosition = Vector2.zero;
+            drawerLbl.rectTransform.sizeDelta = new Vector2(w - 2f * s, h - 2f * s);
+
+            drawerBtn.onClick.AddListener(() =>
+            {
+                _drawerExpanded = !_drawerExpanded;
+                PopulateToolbarButtons(parent, s);
+            });
+        }
+
         private void CreateButtonItem(RectTransform parent, float x, float y, float w, float h,
-            string label, Texture iconTex, Color? accent,
-            Action onLeftClick, Action onRightClick, Action onHoverEnter, Action onHoverExit,
+            Vector2 anchor, string label, Texture iconTex, Color? accent,
+            Action<PointerEventData> onLeftClick, Action<PointerEventData> onRightClick,
+            Action<PointerEventData> onHoverEnter, Action<PointerEventData> onHoverExit,
             float s, bool initialActive = false, bool hasExplicitCustomLabel = false
 #if KSP_RUNTIME
             , KSP.UI.Screens.ApplicationLauncherButton kspBtnRef = null
@@ -658,12 +1181,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             GameObject itemObj = UIFactory.CreatePanel(parent, $"Item_{label}", new Vector2(w, h), new Vector2(x, y), tileBg, borderCol, 1f * s);
             RectTransform itemRt = itemObj.GetComponent<RectTransform>();
-            itemRt.anchorMin = new Vector2(0.5f, 1f);
-            itemRt.anchorMax = new Vector2(0.5f, 1f);
+            itemRt.anchorMin = anchor;
+            itemRt.anchorMax = anchor;
             itemRt.pivot = new Vector2(0.5f, 0.5f);
             itemRt.anchoredPosition = new Vector2(x, y);
 
             Image bg = itemObj.GetComponent<Image>();
+            bg.raycastTarget = true;
 
             // 1. 图标渲染层 (RawImage) - 完美保留所有模组原始 Icon 质感
             RawImage rawImg = null;
@@ -671,12 +1195,14 @@ namespace ModularFlightPanel.UI.Widgets
             iconObj.transform.SetParent(itemObj.transform, false);
             rawImg = iconObj.GetComponent<RawImage>();
             rawImg.color = WidgetStyleManager.NeutralOpaque; // 直通原始图标贴图，不做任何着色
+            rawImg.raycastTarget = false; // 绝不阻拦点击穿透至 itemObj
             RectTransform irt = rawImg.rectTransform;
             irt.anchorMin = new Vector2(0.5f, 0.5f);
             irt.anchorMax = new Vector2(0.5f, 0.5f);
 
             // 2. 文本标签
             Text lbl = UIFactory.CreateText(itemObj.transform, "Label", label, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.PrimaryValue));
+            lbl.raycastTarget = false; // 绝不阻拦点击穿透至 itemObj
             RectTransform lblRt = lbl.GetComponent<RectTransform>();
 
             if (iconTex != null)
@@ -719,13 +1245,15 @@ namespace ModularFlightPanel.UI.Widgets
             GameObject ledObj = UIFactory.CreatePanel(itemObj.transform, "ActiveLed", new Vector2(3.5f * s, 3.5f * s),
                 new Vector2(-w * 0.5f + 3.5f * s, h * 0.5f - 3.5f * s), initialActive ? ledCol : WidgetStyleManager.Surface(SurfaceStyleRole.LedOff));
             Image ledImg = ledObj.GetComponent<Image>();
+            ledImg.raycastTarget = false;
 
-            // 4. 事件转发代理 (左键开/关、右键菜单、悬浮提示)
+            // 4. 标准 Button 与事件转发代理通道驱动
+            Button itemBtn = itemObj.AddComponent<Button>();
+            itemBtn.transition = Selectable.Transition.ColorTint;
+            itemBtn.targetGraphic = bg;
+
             ModernToolbarButtonProxy proxy = itemObj.AddComponent<ModernToolbarButtonProxy>();
-            proxy.OnLeftClick = () =>
-            {
-                onLeftClick?.Invoke();
-            };
+            proxy.OnLeftClick = onLeftClick;
             proxy.OnRightClick = onRightClick;
             proxy.OnHoverEnter = onHoverEnter;
             proxy.OnHoverExit = onHoverExit;
@@ -837,7 +1365,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (_topStripe != null) _topStripe.color = (Color)theme.AccentPrimary;
             if (_collapseBtn != null)
             {
-                string dockLabel = GetTemplateChannel("DOCK_LABEL", "« DOCK");
+                int orient = ThemeManager.Instance.DockOrientation;
+                string dockLabel = (orient == 0) ? GetTemplateChannel("DOCK_LABEL", "« DOCK") : "«";
                 string collIcon = GetTemplateChannel("COLLAPSE_ICON", "»");
                 if (_collapseBtnText != null)
                 {

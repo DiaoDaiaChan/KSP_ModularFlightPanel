@@ -111,7 +111,8 @@ namespace ModularFlightPanel.UI.Widgets
             _sphereObject.name = "Navball_3D_Sphere";
             _sphereObject.transform.SetParent(transform, false);
             _sphereObject.transform.localPosition = Vector3.zero;
-            _sphereObject.transform.localScale = Vector3.one * 2.0f;
+            // 设定 1.88f 直径 (半径 0.94f)，在 1.0f 正交视口内预留 6% 边缘柔和光晕空间，彻底根除视口硬裁切方块 Bug
+            _sphereObject.transform.localScale = Vector3.one * 1.88f;
             _sphereObject.layer = 31;
 
             Collider col = _sphereObject.GetComponent<Collider>();
@@ -431,12 +432,18 @@ namespace ModularFlightPanel.UI.Widgets
                 if (hasHook)
                 {
                     Quaternion camRot = hook.CameraRotation;
-                    _sphereObject.transform.localRotation = Quaternion.Inverse(camRot) * hook.BallRotation;
+                    Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
+                    _sphereObject.transform.localRotation = isProcedural
+                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
+                        : rawRot;
                 }
                 else
                 {
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
-                    _sphereObject.transform.localRotation = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
+                    Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
+                    _sphereObject.transform.localRotation = isProcedural
+                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
+                        : rawRot;
                 }
             }
 
@@ -575,7 +582,7 @@ namespace ModularFlightPanel.UI.Widgets
                     hasDir = NavBallHookService.MarkerDirectionFallback(key, out dir, out isVisible);
                 }
 
-                if (hasDir && isVisible && dir.z > -0.05f)
+                if (hasDir && isVisible && dir.z > -0.15f)
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
@@ -586,8 +593,8 @@ namespace ModularFlightPanel.UI.Widgets
                         img.rectTransform.anchoredPosition = targetPos;
                     }
 
-                    // 接近地平线边缘时平滑渐隐淡出
-                    float alpha = Mathf.Clamp01((dir.z + 0.05f) / 0.20f);
+                    // 接近地平线边缘时平滑渐隐淡出，前向半球始终满不透明度保持高可见度
+                    float alpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);
                     if (Mathf.Abs(img.color.a - alpha) > 0.02f)
                     {
                         Color c = WidgetStyleManager.NeutralOpaque;

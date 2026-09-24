@@ -672,7 +672,7 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "core.b747_eicas" || widgetType == "b747_eicas" || widgetType == "boeing_eicas" || widgetType == "eicas" || widgetId.Contains("b747_eicas")) return (260f, 275f);
             if (widgetId == "core.b747_lower_eicas" || widgetType == "b747_lower_eicas" || widgetType == "eicas_lower" || widgetId.Contains("b747_lower_eicas")) return (260f, 275f);
             if (widgetId == "core.maneuver" || widgetType == "maneuver" || widgetId.Contains("maneuver")) return (200f, 105f);
-            if (widgetType == "tape" || widgetId.StartsWith("tape.")) return (46f, 210f);
+            if (widgetType == "tape" || widgetId.StartsWith("tape.")) return (50f, 210f);
             if (widgetType == "ecam_dial" || widgetId.StartsWith("ecam.")) return (110f, 110f);
             if (widgetType == "electrical" || widgetId.Contains("elec")) return (180f, 160f);
             if (widgetType == "rocket2d" || widgetId.Contains("rocket")) return (160f, 200f);

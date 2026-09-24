@@ -223,18 +223,12 @@ namespace ModularFlightPanel.Core
                             // 原版与 Principia 已将矢量投影为 HUD 坐标:
                             // localPos.x -> 水平 (右为正)
                             // localPos.y -> 垂直 (上为正)
-                            // localPos.z -> 视口深度 (> cutoff 可见)
+                            // localPos.z -> 视口深度 (> -0.15f 允许地平线边缘微溢出可见，杜绝极值截断)
                             Vector3 hudDir = localPos.normalized;
-                            float cutoff = StockInstance.VectorUnitCutoff != 0f ? StockInstance.VectorUnitCutoff : 0.022f;
-                            isVisible = (hudDir.z > cutoff);
+                            isVisible = (hudDir.z >= -0.15f);
                             dir = hudDir;
                             return true;
                         }
-                    }
-                    else
-                    {
-                        isVisible = false;
-                        return true;
                     }
                 }
             }
@@ -245,45 +239,35 @@ namespace ModularFlightPanel.Core
 
         private static bool IsMarkerLogicallyActive(string markerKey, Transform marker)
         {
-            if (marker == null) return false;
+            if (marker != null && marker.gameObject.activeSelf) return true;
+
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null) return false;
 
             string key = markerKey.ToLowerInvariant();
             switch (key)
             {
                 case "prograde":
                 case "retrograde":
-                {
-                    Vessel v = FlightGlobals.ActiveVessel;
-                    if (v != null && v.srf_velocity.sqrMagnitude < 0.01 && v.obt_velocity.sqrMagnitude < 0.01)
-                        return false;
-                    return true;
-                }
+                    return v.srf_velocity.sqrMagnitude >= 0.01 || v.obt_velocity.sqrMagnitude >= 0.01;
 
                 case "normal":
                 case "antinormal":
                 case "radialin":
                 case "radialout":
-                {
-                    if (PrincipiaProbe.IsAvailable) return true;
-                    return FlightGlobals.speedDisplayMode == FlightGlobals.SpeedDisplayModes.Orbit;
-                }
+                    // 轨道状态下法向与向径方向在轨道力学中始终物理有效，不受地表/轨道速度显示模式切换阻断
+                    return v.orbit != null && v.orbit.vel.sqrMagnitude > 0.01;
 
                 case "target":
                 case "antitarget":
-                {
                     return FlightGlobals.fetch != null && FlightGlobals.fetch.VesselTarget != null;
-                }
 
                 case "maneuver":
-                {
-                    Vessel v = FlightGlobals.ActiveVessel;
-                    if (v != null && v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
-                        return true;
-                    return marker.gameObject.activeSelf;
-                }
+                    return (v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
+                        || (_cachedBurnVector != null && _cachedBurnVector.gameObject.activeSelf);
 
                 default:
-                    return marker.gameObject.activeSelf;
+                    return marker != null && marker.gameObject.activeSelf;
             }
         }
 
@@ -451,9 +435,8 @@ namespace ModularFlightPanel.Core
 
             Vector3 screenVec = attitudeGymbal * worldVec;
             // 对齐 UGUI 屏幕坐标 (+y 为上)
-            dir = new Vector3(screenVec.x, screenVec.y, screenVec.z).normalized;
-            float cutoff = (HasStockNavBall && StockInstance.VectorUnitCutoff != 0f) ? StockInstance.VectorUnitCutoff : 0.022f;
-            isVisible = (dir.z > cutoff);
+            // 允许地平线边缘微溢出可见，杜绝极值截断
+            isVisible = (dir.z >= -0.15f);
             return true;
         }
 

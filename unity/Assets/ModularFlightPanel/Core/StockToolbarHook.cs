@@ -79,7 +79,7 @@ namespace ModularFlightPanel.Core
                         if (cg == null) cg = go.AddComponent<CanvasGroup>();
                         cg.alpha = hide ? 0f : 1f;
                         cg.blocksRaycasts = !hide;
-                        cg.interactable = !hide;
+                        cg.interactable = true;
                     }
                 }
 #endif

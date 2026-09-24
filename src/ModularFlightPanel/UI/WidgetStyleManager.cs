@@ -168,8 +168,8 @@ namespace ModularFlightPanel.UI
             switch (theme.UiStyle)
             {
                 case UiShaderStyle.Dot_Matrix:
-                    // 物理点阵主题背景与文字均使用 DotMatrixUI，呈现深空旅行者般的微粒点阵机械底板与发光点阵字符
-                    s = AssetLoader.DotMatrixShader;
+                    // 物理点阵主题：文字与数值使用物理点阵，卡片面板使用座舱黑晶玻璃，防止大面积圆孔穿透
+                    s = isText ? AssetLoader.DotMatrixShader : AssetLoader.GlassCockpitShader;
                     break;
                 case UiShaderStyle.Phosphor_HUD:
                     // 全息磷光主题：文字与标度使用高动态磷光扫描线着色器，背景卡片面板使用座舱黑晶玻璃着色器，防止大面积白热过载

@@ -111,25 +111,25 @@ namespace ModularFlightPanel.UI.Widgets
             _needleImage.color = WidgetStyleManager.Meter(MeterStyleRole.Secondary, theme);
 
             // 4. 标题、数显与单位 (ECAM 风格排版)
-            int titleSize = Mathf.RoundToInt(10f * s);
+            int titleSize = Mathf.RoundToInt(8.5f * s);
             _titleText = UIFactory.CreateText(transform, "ECAM_Title", _titleTemplate, titleSize, TextAnchor.MiddleCenter,
                 WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Cardinal, theme));
             RectTransform trt = _titleText.GetComponent<RectTransform>();
-            trt.sizeDelta = new Vector2(size - 10f * s, 16f * s);
+            trt.sizeDelta = new Vector2(size - 14f * s, 14f * s);
             trt.anchoredPosition = new Vector2(0f, 22f * s);
 
-            int valSize = Mathf.RoundToInt(17f * s);
+            int valSize = Mathf.RoundToInt(16f * s);
             _valueText = UIFactory.CreateText(transform, "ECAM_Value", "0.0", valSize, TextAnchor.MiddleCenter,
                 WidgetStyleManager.Instance.GetTextColor(TextStyleRole.PrimaryValue, theme));
             RectTransform vrt = _valueText.GetComponent<RectTransform>();
-            vrt.sizeDelta = new Vector2(size - 10f * s, 24f * s);
-            vrt.anchoredPosition = new Vector2(0f, -2f * s);
+            vrt.sizeDelta = new Vector2(size - 14f * s, 22f * s);
+            vrt.anchoredPosition = new Vector2(0f, -3f * s);
 
-            int unitSize = Mathf.RoundToInt(9f * s);
+            int unitSize = Mathf.RoundToInt(8.5f * s);
             _unitText = UIFactory.CreateText(transform, "ECAM_Unit", _unitTemplate, unitSize, TextAnchor.MiddleCenter,
                 WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, theme));
             RectTransform urt = _unitText.GetComponent<RectTransform>();
-            urt.sizeDelta = new Vector2(size - 10f * s, 14f * s);
+            urt.sizeDelta = new Vector2(size - 14f * s, 12f * s);
             urt.anchoredPosition = new Vector2(0f, -22f * s);
 
             // 刻度两端标称数字 (左下起点与右下满格)
@@ -160,7 +160,20 @@ namespace ModularFlightPanel.UI.Widgets
             if (config != null)
             {
                 if (!string.IsNullOrEmpty(config.NumericToken)) _valueToken = config.NumericToken;
-                if (!string.IsNullOrEmpty(config.DisplayName)) _titleTemplate = config.DisplayName;
+                if (!string.IsNullOrEmpty(config.DisplayName))
+                {
+                    string name = config.DisplayName.Trim();
+                    if (name.StartsWith("ECAM ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        name = name.Substring(5).Trim();
+                    }
+                    if (name.EndsWith("监控表")) name = name.Substring(0, name.Length - 3).Trim();
+                    else if (name.EndsWith("过载表")) name = name.Substring(0, name.Length - 3).Trim();
+                    else if (name.EndsWith("推力表")) name = name.Substring(0, name.Length - 3).Trim();
+                    else if (name.EndsWith("表") && name.Length > 2) name = name.Substring(0, name.Length - 1).Trim();
+
+                    _titleTemplate = name;
+                }
                 if (!string.IsNullOrEmpty(config.UnitLabel)) _unitTemplate = config.UnitLabel;
             }
 

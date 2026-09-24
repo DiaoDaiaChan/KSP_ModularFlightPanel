@@ -7,7 +7,7 @@ Shader "ModularFlightPanel/PhosphorHoloUI"
 
         _PhosphorColor ("Phosphor Emission Color", Color) = (0.2, 0.95, 0.65, 1.0)
         _CoreHotColor ("Beam Overdrive Hot Core", Color) = (0.95, 1.0, 0.98, 1.0)
-        _Aberration ("Chromatic Aberration Offset", Range(0.0, 0.006)) = 0.0018
+        _Aberration ("Chromatic Aberration Offset", Range(0.0, 0.006)) = 0.0003
         _ScanlineFreq ("Micro Scanline Frequency", Float) = 320.0
         _ScanlineDepth ("Scanline Shadow Depth", Range(0.0, 0.5)) = 0.18
         _BloomStrength ("Phosphor Halo Bloom", Range(0.0, 1.0)) = 0.35

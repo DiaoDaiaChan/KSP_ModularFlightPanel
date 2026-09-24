@@ -554,27 +554,28 @@ namespace ModularFlightPanel.Config
                 ThemeId = "sr71_blackbird",
                 DisplayName = "SR-71 Blackbird (黑鸟高空战术暗红)",
                 Style = NavballStyleType.Modern_Aero,
-                UiStyle = UiShaderStyle.Phosphor_HUD,
+                UiStyle = UiShaderStyle.Modern_Glass,
                 ShaderName = "ModularFlightPanel/NavballModern",
                 EnableHalftoneDither = false,
-                EnableScanlines = true,
-                UiScanlineStrength = 0.20f,
-                UiGlowStrength = 0.45f,
-                SkyColor = ColorHex.FromColor(new Color(0.012f, 0.016f, 0.035f, 1.0f)),      // 85000英尺平流层天顶深黑紫
-                GroundColor = ColorHex.FromColor(new Color(0.18f, 0.035f, 0.045f, 1.0f)),   // 战术红外地面暗焦红
-                HorizonLineColor = ColorHex.FromColor(new Color(1.0f, 0.35f, 0.40f, 1.0f)), // 战术激光血红炽白地平线
-                GridColor = ColorHex.FromColor(new Color(1.0f, 0.20f, 0.25f, 0.35f)),       // 红外扫描纤细格线
-                RimGlowColor = ColorHex.FromColor(new Color(1.0f, 0.12f, 0.16f, 0.45f)),    // 超音速激波纯红光晕
-                AccentPrimary = ColorHex.FromColor(new Color(1.0f, 0.15f, 0.20f, 1.0f)),    // 战术激光鲜血红 (#FF2633)
-                AccentSecondary = ColorHex.FromColor(new Color(1.0f, 0.45f, 0.15f, 1.0f)),  // 战术次级橙红 (#FF7326)
-                AccentMagenta = ColorHex.FromColor(new Color(0.92f, 0.10f, 0.45f, 1.0f)),
-                WarningColor = ColorHex.FromColor(new Color(1.0f, 0.70f, 0.05f, 1.0f)),     // 烈焰金红琥珀
-                DangerColor = ColorHex.FromColor(new Color(1.0f, 0.08f, 0.10f, 1.0f)),      // 极限马赫闪烁红
-                FrameBgColor = ColorHex.FromColor(new Color(0.012f, 0.006f, 0.008f, 0.94f)), // 吸波碳纤纯黑底板 (无红雾)
-                FrameBorderColor = ColorHex.FromColor(new Color(0.85f, 0.15f, 0.20f, 0.50f)), // 锐利战术暗红框
-                InactiveMeterColor = ColorHex.FromColor(new Color(0.08f, 0.02f, 0.03f, 0.60f)),
-                TextPrimaryColor = ColorHex.FromColor(new Color(0.98f, 0.92f, 0.94f, 1.0f)), // 极高对比度白红激光主读数
-                TextAccentColor = ColorHex.FromColor(new Color(1.0f, 0.25f, 0.30f, 0.95f))   // 战术血红副标
+                EnableScanlines = false,
+                UiGlassChamfer = 0.035f,
+                UiGlassBorderWidth = 0.025f,
+                UiGlassGradientStrength = 0.06f,
+                SkyColor = ColorHex.FromColor(new Color(0.035f, 0.050f, 0.080f, 1.0f)),      // 85000英尺平流层天顶深邃炭黑蓝
+                GroundColor = ColorHex.FromColor(new Color(0.110f, 0.045f, 0.060f, 1.0f)),   // 红外前视夜视暗地表
+                HorizonLineColor = ColorHex.FromColor(new Color(1.0f, 0.28f, 0.32f, 1.0f)), // 战术高光鲜红地平线
+                GridColor = ColorHex.FromColor(new Color(0.70f, 0.25f, 0.30f, 0.38f)),       // 战术雷达经纬微刻线
+                RimGlowColor = ColorHex.FromColor(new Color(1.0f, 0.15f, 0.22f, 0.40f)),    // 超音速激波血红光晕
+                AccentPrimary = ColorHex.FromColor(new Color(1.0f, 0.22f, 0.28f, 1.0f)),    // 战术激光鲜红 (#FF3847, 关键指示与活动状态)
+                AccentSecondary = ColorHex.FromColor(new Color(0.95f, 0.42f, 0.30f, 1.0f)),  // 战术次级暖珊瑚红 (#F26B4D)
+                AccentMagenta = ColorHex.FromColor(new Color(0.92f, 0.18f, 0.55f, 1.0f)),
+                WarningColor = ColorHex.FromColor(new Color(1.0f, 0.72f, 0.12f, 1.0f)),     // 告警琥珀金 (#FFB81F, 保证绝佳辨识度)
+                DangerColor = ColorHex.FromColor(new Color(1.0f, 0.12f, 0.16f, 1.0f)),      // 极限超速闪烁红 (#FF1F29)
+                FrameBgColor = ColorHex.FromColor(new Color(0.022f, 0.018f, 0.022f, 0.92f)), // 吸波碳纤纯黑微晶底板
+                FrameBorderColor = ColorHex.FromColor(new Color(0.75f, 0.16f, 0.22f, 0.52f)), // 战术阳极氧化红细边框
+                InactiveMeterColor = ColorHex.FromColor(new Color(0.15f, 0.06f, 0.08f, 0.55f)), // 暗炭灰红未激活槽位
+                TextPrimaryColor = ColorHex.FromColor(new Color(0.96f, 0.94f, 0.95f, 1.0f)), // 极高对比冷白读数 (一眼即可辨识数值)
+                TextAccentColor = ColorHex.FromColor(new Color(1.0f, 0.40f, 0.45f, 1.0f))   // 战术高亮红单位标签 (#FF6673)
             };
         }
 

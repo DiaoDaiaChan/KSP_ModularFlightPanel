@@ -24,7 +24,7 @@
       "DisplayName": "轨道数据面板",
       "IsEnabled": true,
       "PositionX": 0,
-      "PositionY": -108,
+      "PositionY": -122,
       "Scale": 1,
       "WidgetType": "core"
     },
@@ -33,7 +33,7 @@
       "DisplayName": "ECAM 飞行状态",
       "IsEnabled": true,
       "PositionX": 0,
-      "PositionY": -185,
+      "PositionY": -186,
       "Scale": 1,
       "WidgetType": "core"
     },

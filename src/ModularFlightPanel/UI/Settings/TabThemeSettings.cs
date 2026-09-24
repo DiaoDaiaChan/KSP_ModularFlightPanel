@@ -490,18 +490,60 @@ namespace ModularFlightPanel.UI.Settings
             {
                 GUILayout.Space(4f);
 
+                // 排布构型选择 (0 = 纵向双列, 1 = 横向双行, 2 = 横向单行)
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("<b>排布构型:</b>", GUILayout.Width(70f));
+                int curOrient = ThemeManager.Instance.DockOrientation;
+
+                GUI.color = (curOrient == 0) ? Color.cyan : Color.white;
+                if (GUILayout.Button((curOrient == 0 ? "● " : "○ ") + "纵向双列", GUILayout.Height(22f)))
+                {
+                    if (curOrient != 0)
+                    {
+                        ThemeManager.Instance.DockOrientation = 0;
+                        ThemeManager.Instance.SaveSettings();
+                        Widgets.ModernToolbarWidget.Instance?.RebuildDockLayout();
+                    }
+                }
+
+                GUI.color = (curOrient == 1) ? Color.cyan : Color.white;
+                if (GUILayout.Button((curOrient == 1 ? "● " : "○ ") + "横向双行", GUILayout.Height(22f)))
+                {
+                    if (curOrient != 1)
+                    {
+                        ThemeManager.Instance.DockOrientation = 1;
+                        ThemeManager.Instance.SaveSettings();
+                        Widgets.ModernToolbarWidget.Instance?.RebuildDockLayout();
+                    }
+                }
+
+                GUI.color = (curOrient == 2) ? Color.cyan : Color.white;
+                if (GUILayout.Button((curOrient == 2 ? "● " : "○ ") + "横向单行", GUILayout.Height(22f)))
+                {
+                    if (curOrient != 2)
+                    {
+                        ThemeManager.Instance.DockOrientation = 2;
+                        ThemeManager.Instance.SaveSettings();
+                        Widgets.ModernToolbarWidget.Instance?.RebuildDockLayout();
+                    }
+                }
+                GUI.color = Color.white;
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(4f);
+
                 // 抽屉开关选项
                 GUILayout.BeginHorizontal();
                 bool drawerOn = ThemeManager.Instance.DockShowHiddenDrawer;
                 GUI.color = drawerOn ? Color.cyan : Color.white;
                 string drawerText = drawerOn 
-                    ? "✔ 底部折叠抽屉已开启 (隐藏项可通过坞底 '··· 更多' 抽屉访问)" 
-                    : "✖ 底部折叠抽屉已关闭 (未勾选项被彻底剔除，坞面最精简)";
+                    ? "✔ 更多抽屉已开启 (隐藏项可通过坞边 '··· 更多' 抽屉访问)" 
+                    : "✖ 更多抽屉已关闭 (未勾选项被彻底剔除，坞面最精简)";
                 if (GUILayout.Button(drawerText, GUILayout.Height(22f)))
                 {
                     ThemeManager.Instance.DockShowHiddenDrawer = !drawerOn;
                     ThemeManager.Instance.SaveSettings();
-                    Widgets.ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                    Widgets.ModernToolbarWidget.Instance?.RebuildDockLayout();
                 }
                 GUI.color = Color.white;
                 GUILayout.EndHorizontal();

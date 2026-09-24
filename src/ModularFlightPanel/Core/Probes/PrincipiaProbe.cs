@@ -294,6 +294,10 @@ namespace ModularFlightPanel.Core.Probes
                 return double.NaN;
             }, "Principia 飞行计划 (FlightPlanner)", "Principia 计划变轨 Delta-V", new[] { "DV", "MANEUVERDV", "DELTAV" });
 
+            Traverser.RegisterCustom("ManeuverDeltaVPrograde", typeof(double), () => ManeuverDeltaVPrograde, "Principia 飞行计划 (FlightPlanner)", "计划变轨切向/前向 Delta-V", new[] { "PROGRADE", "TANGENT", "DV_PRO" });
+            Traverser.RegisterCustom("ManeuverDeltaVNormal", typeof(double), () => ManeuverDeltaVNormal, "Principia 飞行计划 (FlightPlanner)", "计划变轨法向/平面外 Delta-V", new[] { "NORMAL", "BINORMAL", "DV_NORM" });
+            Traverser.RegisterCustom("ManeuverDeltaVRadial", typeof(double), () => ManeuverDeltaVRadial, "Principia 飞行计划 (FlightPlanner)", "计划变轨径向 Delta-V", new[] { "RADIAL", "DV_RAD" });
+
             Traverser.RegisterCustom("ManeuverDuration", typeof(double), () =>
             {
                 object man = GetCurrentManoeuvreOrEditor();
@@ -704,6 +708,100 @@ namespace ModularFlightPanel.Core.Probes
         public static double ManeuverDuration => HasFlightPlan() ? ResolveNumeric("ManeuverDuration") : double.NaN;
         public static double TimeToManeuver => HasFlightPlan() ? ResolveNumeric("TimeToManeuver") : double.NaN;
         public static string OrbitDescription => ResolveString("OrbitDescription");
+        public static double ManeuverDeltaVPrograde => TryGetManeuverVector(out double p, out _, out _) ? p : double.NaN;
+        public static double ManeuverDeltaVNormal => TryGetManeuverVector(out _, out double n, out _) ? n : double.NaN;
+        public static double ManeuverDeltaVRadial => TryGetManeuverVector(out _, out _, out double r) ? r : double.NaN;
+
+        public static bool TryGetManeuverVector(out double prograde, out double normal, out double radial)
+        {
+            prograde = 0.0;
+            normal = 0.0;
+            radial = 0.0;
+            if (!HasFlightPlan()) return false;
+
+            object man = GetCurrentManoeuvreOrEditor();
+            if (man == null) return false;
+
+            // 1. 尝试从 burn.delta_v 读取 (Frenet frame: x=Tangent/Prograde, y=Normal/Radial, z=Binormal/Normal)
+            try
+            {
+                FieldInfo burnFi = man.GetType().GetField("burn", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                if (burnFi != null)
+                {
+                    object burn = burnFi.GetValue(man);
+                    if (burn != null)
+                    {
+                        FieldInfo dvFi = burn.GetType().GetField("delta_v", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                        if (dvFi != null)
+                        {
+                            object xyz = dvFi.GetValue(burn);
+                            if (xyz != null)
+                            {
+                                FieldInfo xf = xyz.GetType().GetField("x", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                                FieldInfo yf = xyz.GetType().GetField("y", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                                FieldInfo zf = xyz.GetType().GetField("z", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                                if (xf != null && yf != null && zf != null)
+                                {
+                                    prograde = Convert.ToDouble(xf.GetValue(xyz));
+                                    radial = Convert.ToDouble(yf.GetValue(xyz));
+                                    normal = Convert.ToDouble(zf.GetValue(xyz));
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // 2. 尝试从 BurnEditor 的各个分量读取
+            try
+            {
+                FieldInfo fiTangent = man.GetType().GetField("Δv_tangent_", BindingFlags.NonPublic | BindingFlags.Instance)
+                                   ?? man.GetType().GetField("Δv_tangent", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo fiNormal = man.GetType().GetField("Δv_normal_", BindingFlags.NonPublic | BindingFlags.Instance)
+                                  ?? man.GetType().GetField("Δv_normal", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                FieldInfo fiBinormal = man.GetType().GetField("Δv_binormal_", BindingFlags.NonPublic | BindingFlags.Instance)
+                                    ?? man.GetType().GetField("Δv_binormal", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                if (fiTangent != null && fiNormal != null && fiBinormal != null)
+                {
+                    prograde = Convert.ToDouble(fiTangent.GetValue(man));
+                    radial = Convert.ToDouble(fiNormal.GetValue(man));
+                    normal = Convert.ToDouble(fiBinormal.GetValue(man));
+                    return true;
+                }
+            }
+            catch { }
+
+            // 3. 尝试从 first_component_, second_component_, third_component_ 读取 (Principia GUI 输入框)
+            try
+            {
+                FieldInfo fc1 = man.GetType().GetField("first_component_", BindingFlags.NonPublic | BindingFlags.Instance);
+                FieldInfo fc2 = man.GetType().GetField("second_component_", BindingFlags.NonPublic | BindingFlags.Instance);
+                FieldInfo fc3 = man.GetType().GetField("third_component_", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (fc1 != null && fc2 != null && fc3 != null)
+                {
+                    object v1 = fc1.GetValue(man);
+                    object v2 = fc2.GetValue(man);
+                    object v3 = fc3.GetValue(man);
+                    if (v1 != null && v2 != null && v3 != null)
+                    {
+                        if (double.TryParse(v1.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double d1) &&
+                            double.TryParse(v2.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double d2) &&
+                            double.TryParse(v3.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double d3))
+                        {
+                            prograde = d1;
+                            normal = d2;
+                            radial = d3;
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
 
         public static bool IsTargetFrameSelected
         {

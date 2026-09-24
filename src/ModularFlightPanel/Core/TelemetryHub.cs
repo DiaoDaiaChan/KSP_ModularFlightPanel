@@ -111,6 +111,10 @@ namespace ModularFlightPanel.Core
         public double ManeuverTimeToNode { get; private set; } = 0.0;
         public double ManeuverBurnTime { get; private set; } = 0.0;
         public double ManeuverTimeToBurn { get; private set; } = 0.0;
+        public double ManeuverDeltaVPrograde { get; private set; } = 0.0;
+        public double ManeuverDeltaVNormal { get; private set; } = 0.0;
+        public double ManeuverDeltaVRadial { get; private set; } = 0.0;
+        public string ManeuverSource { get; private set; } = "STANDBY";
 
         // 电气系统 (通用解耦读取)
         public double ElectricCharge { get; private set; } = 0.0;

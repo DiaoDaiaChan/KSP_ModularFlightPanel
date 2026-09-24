@@ -78,7 +78,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _kind = BarGaugeKind.AtmosphericPressure;
                 _valueToken = "{ATM}";
-                _titleTemplate = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : "ATM";
+                _titleTemplate = "ATM";
                 _bottomTagTemplate = "SEA";
                 _minVal = config.MinValue != 0 ? config.MinValue : 0.0;
                 _maxVal = config.MaxValue > 0 ? config.MaxValue : 1.0;
@@ -87,7 +87,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _kind = BarGaugeKind.DynamicPressure;
                 _valueToken = "{Q}";
-                _titleTemplate = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : "Q";
+                _titleTemplate = "Q";
                 _bottomTagTemplate = "MAX Q";
                 _minVal = config.MinValue != 0 ? config.MinValue : 0.0;
                 _maxVal = config.MaxValue > 0 ? config.MaxValue : 35.0;
@@ -98,10 +98,15 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _kind = BarGaugeKind.Throttle;
                 _valueToken = !string.IsNullOrEmpty(config?.NumericToken) ? config.NumericToken : "{THR}";
-                _titleTemplate = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName : "THR";
+                _titleTemplate = "THR";
                 _bottomTagTemplate = "IDLE";
                 _minVal = config != null && config.MinValue != 0 ? config.MinValue : 0.0;
                 _maxVal = config != null && config.MaxValue > 0 ? config.MaxValue : 100.0;
+            }
+
+            if (!string.IsNullOrEmpty(config?.DisplayName) && config.DisplayName.Length <= 4 && !config.DisplayName.Contains("带"))
+            {
+                _titleTemplate = config.DisplayName;
             }
 
             ParseCustomTemplate(config?.CustomTemplate);
