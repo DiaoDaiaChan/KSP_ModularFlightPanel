@@ -38,6 +38,7 @@ namespace ModularFlightPanel.Config
         // 收纳坞按钮自定义过滤与别名配置
         public List<DockButtonRule> DockRules = new List<DockButtonRule>();
         public bool DockShowHiddenDrawer = false;
+        public int DockOrientation = 0; // 0 = 纵向双列, 1 = 横向双行, 2 = 横向单行
     }
 
     public class ThemeManager
@@ -54,6 +55,7 @@ namespace ModularFlightPanel.Config
         public int ToolbarStyleMode { get; set; } = 1;
         public List<DockButtonRule> DockRules { get; set; } = new List<DockButtonRule>();
         public bool DockShowHiddenDrawer { get; set; } = false;
+        public int DockOrientation { get; set; } = 0;
 
         public DockButtonRule GetOrCreateDockRule(string key, string defaultName)
         {
@@ -153,7 +155,8 @@ namespace ModularFlightPanel.Config
                     AutoAdaptResolution = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.AutoAdaptResolution : true,
                     GlobalRenderScaleMultiplier = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalRenderScaleMultiplier : 1.0f,
                     DockRules = DockRules != null ? new List<DockButtonRule>(DockRules) : new List<DockButtonRule>(),
-                    DockShowHiddenDrawer = DockShowHiddenDrawer
+                    DockShowHiddenDrawer = DockShowHiddenDrawer,
+                    DockOrientation = DockOrientation
                 };
                 string json = JsonUtility.ToJson(data, true);
                 File.WriteAllText(SettingsFilePath, json);
@@ -198,6 +201,7 @@ namespace ModularFlightPanel.Config
                     ShowPerformanceBadge = data.ShowPerformanceBadge;
                     if (data.DockRules != null) DockRules = data.DockRules;
                     DockShowHiddenDrawer = data.DockShowHiddenDrawer;
+                    DockOrientation = data.DockOrientation;
 
                     if (WidgetRenderManager.Instance != null)
                     {
