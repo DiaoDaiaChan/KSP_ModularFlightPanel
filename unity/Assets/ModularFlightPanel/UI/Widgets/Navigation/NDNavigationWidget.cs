@@ -421,7 +421,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             double evalHdg = TelemetryTokenEngine.EvaluateNumeric(_headingToken, telemetry);
             float heading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)telemetry.Heading;

@@ -296,8 +296,8 @@ namespace ModularFlightPanel.Editor
             renderCam.targetTexture = rt;
 
             // 6. 实例化 HUD 根管理器与全套 UGUI 组件
-            GameObject hudHost = new GameObject("NavballHUD_HeadlessHost", typeof(NavballHUD));
-            NavballHUD hud = hudHost.GetComponent<NavballHUD>();
+            GameObject hudHost = new GameObject("FlightHUDManager_HeadlessHost", typeof(FlightHUDManager));
+            FlightHUDManager hud = hudHost.GetComponent<FlightHUDManager>();
             hud.Initialize(renderCam);
 
             if (!string.IsNullOrEmpty(targetPreset))

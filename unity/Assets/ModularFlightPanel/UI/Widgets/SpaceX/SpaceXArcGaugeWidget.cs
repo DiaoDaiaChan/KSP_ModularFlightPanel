@@ -181,7 +181,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null || Config == null) return;
+            if (telemetry == null || !telemetry.HasVessel || Config == null) return;
             ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
 
             // 1. 通过通配符引擎求值 (优先使用 _tokenKey 或 Config.NumericToken，例如 {SPD:SURF:KMH} 或 {ALT:ASL:KM})

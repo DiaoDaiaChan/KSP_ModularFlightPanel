@@ -101,7 +101,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             string newTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
             if (newTitle != _lastTitleText)

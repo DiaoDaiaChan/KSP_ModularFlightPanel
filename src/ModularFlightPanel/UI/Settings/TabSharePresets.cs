@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -74,7 +75,7 @@ namespace ModularFlightPanel.UI.Settings
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets = importedLayout.Widgets;
                     WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = importedLayout.GlobalScale;
                     WidgetLayoutManager.Instance.SaveLayout();
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     _toastMsg = $"成功导入并套用布局！(共加载 {importedLayout.Widgets.Count} 个组件)";
                     _toastTimer = 3.0f;
                 }
@@ -113,7 +114,7 @@ namespace ModularFlightPanel.UI.Settings
                         WidgetLayoutManager.Instance.CurrentLayout.Widgets = presetData.Widgets;
                         WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = presetData.GlobalScale;
                         WidgetLayoutManager.Instance.SaveLayout();
-                        NavballHUD.Instance?.RebuildHUD();
+                        FlightHUDManager.Instance?.RebuildHUD();
                         _toastMsg = $"已成功套用预设「{p.Name}」！";
                         _toastTimer = 3.0f;
                     }

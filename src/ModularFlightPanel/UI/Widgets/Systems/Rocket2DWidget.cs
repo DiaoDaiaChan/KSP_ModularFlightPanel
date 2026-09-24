@@ -281,7 +281,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             string stageToken = GetTemplateChannel("SUM_STAGE", "{STAGE}");
             string twrToken = GetTemplateChannel("SUM_TWR", "TWR {TWR:F2}");
@@ -392,21 +392,6 @@ namespace ModularFlightPanel.UI.Widgets
                     fillImg.color = WidgetStyleManager.Meter(role, theme);
                 }
             }
-        }
-
-        private string GetTemplateChannel(string key, string fallback)
-        {
-            if (string.IsNullOrEmpty(Config?.CustomTemplate)) return fallback;
-            string[] pairs = Config.CustomTemplate.Split(';');
-            foreach (string pair in pairs)
-            {
-                string[] kv = pair.Split('=');
-                if (kv.Length == 2 && kv[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    return kv[1].Trim();
-                }
-            }
-            return fallback;
         }
 
         public override void ApplyTheme(ThemeConfig theme)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -63,7 +64,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 for (int i = 0; i < widgets.Count; i++) widgets[i].IsEnabled = true;
                 WidgetLayoutManager.Instance.SaveLayout();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
                 ShowToast("已全部启用显示！");
             }
 
@@ -71,7 +72,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 for (int i = 0; i < widgets.Count; i++) widgets[i].IsEnabled = false;
                 WidgetLayoutManager.Instance.SaveLayout();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
                 ShowToast("已全部挂起隐藏！");
             }
 
@@ -83,7 +84,7 @@ namespace ModularFlightPanel.UI.Settings
                     widgets[i].PositionY = Mathf.Round(widgets[i].PositionY / 10f) * 10f;
                 }
                 WidgetLayoutManager.Instance.SaveLayout();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
                 ShowToast("已完成全量组件网格对齐！");
             }
 
@@ -140,7 +141,7 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("✔ 确认覆盖恢复", MFPGuiSkin.DangerButtonStyle, GUILayout.Height(24f), GUILayout.Width(130f)))
                 {
                     WidgetLayoutManager.Instance.ResetToDefaultLayout();
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     _confirmReset = false;
                     ShowToast("已恢复出厂默认布局！");
                 }
@@ -155,7 +156,7 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("✔ 确认全部清空", MFPGuiSkin.DangerButtonStyle, GUILayout.Height(24f), GUILayout.Width(130f)))
                 {
                     WidgetLayoutManager.Instance.ClearAllCustomWidgets();
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     _confirmClear = false;
                     ShowToast("已清空全部自定义扩展组件！");
                 }
@@ -195,7 +196,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 w.IsEnabled = !w.IsEnabled;
                 WidgetLayoutManager.Instance.SaveLayout();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             }
 
             // 2. 类别徽章
@@ -256,7 +257,7 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("➕ 复制", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(55f), GUILayout.Height(22f)))
                 {
                     WidgetLayoutManager.Instance.DuplicateWidget(w.WidgetId);
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     ShowToast($"已创建「{w.DisplayName}」副本！");
                 }
 
@@ -264,7 +265,7 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("🗑️", MFPGuiSkin.DangerButtonStyle, GUILayout.Width(28f), GUILayout.Height(22f)))
                 {
                     WidgetLayoutManager.Instance.RemoveWidget(w.WidgetId);
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     ShowToast($"已移除「{w.DisplayName}」！");
                 }
             }
@@ -276,9 +277,9 @@ namespace ModularFlightPanel.UI.Settings
         private static void ApplyWidgetTransform(WidgetConfig w)
         {
             WidgetLayoutManager.Instance.SaveLayout();
-            if (NavballHUD.Instance != null && NavballHUD.Instance.ModularWidgets != null)
+            if (FlightHUDManager.Instance != null && FlightHUDManager.Instance.ModularWidgets != null)
             {
-                var target = NavballHUD.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
+                var target = FlightHUDManager.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
                 if (target != null)
                 {
                     target.UpdateTransform(w.PositionX, w.PositionY, w.Scale, w.Rotation);

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Widgets.Navigation;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -16,14 +17,10 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 自适应 KSP 原生 UI_SCALE_NAVBALL 与屏幕物理 DPI 缩放
     /// </summary>
     [DefaultExecutionOrder(10000)]
-    public class NavballSphereWidget : BaseFlightWidget
+    public class NavballSphereWidget : BaseNavballSphereWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
-        private RenderTexture _renderTexture;
-        private Camera _ballCamera;
-        private GameObject _sphereObject;
-        private Material _sphereMaterial;
         private RawImage _displayImage;
 
         private Text _headingText;
@@ -338,6 +335,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
+            if (telemetry == null || !telemetry.HasVessel) return;
             var hook = NavBallHookService.Provider;
             bool hasHook = (hook != null && hook.HasStockNavBall);
 
@@ -733,7 +731,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void HandleResolutionChanged(int newRes)
+        protected override void HandleResolutionChanged(int newRes)
         {
             if (_renderTexture != null)
             {
@@ -753,7 +751,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_displayImage != null) _displayImage.texture = _renderTexture;
         }
 
-        private void HandleRenderSettingChanged()
+        protected override void HandleRenderSettingChanged()
         {
             if (WidgetRenderManager.Instance == null) return;
             float ballDiameter = _visualRadius * 2.0f;
@@ -769,22 +767,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnDestroy()
         {
-            if (WidgetRenderManager.Instance != null)
-            {
-                WidgetRenderManager.Instance.OnRenderResolutionChanged -= HandleResolutionChanged;
-                WidgetRenderManager.Instance.OnRenderSettingChanged -= HandleRenderSettingChanged;
-            }
             _markerImages.Clear();
-
-            if (_renderTexture != null)
-            {
-                _renderTexture.Release();
-                Destroy(_renderTexture);
-            }
-            if (_sphereMaterial != null)
-            {
-                Destroy(_sphereMaterial);
-            }
             if (_sphereObject != null)
             {
                 Destroy(_sphereObject);

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -170,7 +171,7 @@ namespace ModularFlightPanel.UI.Settings
                 {
                     w.IsEnabled = !w.IsEnabled;
                     MarkDirty();
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                 }
 
                 // 点击条目选中
@@ -280,7 +281,7 @@ namespace ModularFlightPanel.UI.Settings
             if (prevEnabled != w.IsEnabled)
             {
                 MarkDirty();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             }
 
             GUILayout.EndHorizontal();
@@ -377,7 +378,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 w.NumericToken = "";
                 MarkDirty();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             }
             GUILayout.EndHorizontal();
 
@@ -639,7 +640,7 @@ namespace ModularFlightPanel.UI.Settings
                     if (curWidget.WidgetType == "tape") curWidget.StepInterval = p.DefaultStep;
 
                     CommitPendingSaves();
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     ShowToast($"已绑定「{p.DisplayName}」至仪表！");
                 }
             }
@@ -650,7 +651,7 @@ namespace ModularFlightPanel.UI.Settings
                     string prefix = string.IsNullOrEmpty(curWidget.CustomTemplate) ? "" : (curWidget.CustomTemplate.EndsWith(" ") ? "" : " | ");
                     curWidget.CustomTemplate = (curWidget.CustomTemplate ?? "") + prefix + $"{p.DisplayName}: {p.Token}";
                     CommitPendingSaves();
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     ShowToast($"已插入「{p.DisplayName}」到模板！");
                 }
             }
@@ -683,7 +684,7 @@ namespace ModularFlightPanel.UI.Settings
             if (w.IsolateCanvas != prevIsolate)
             {
                 MarkDirty();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
                 ShowToast($"已{(w.IsolateCanvas ? "开启" : "关闭")}画布隔离");
             }
 
@@ -716,9 +717,9 @@ namespace ModularFlightPanel.UI.Settings
         private static void ApplyTransformRuntime(WidgetConfig w)
         {
             MarkDirty();
-            if (NavballHUD.Instance != null && NavballHUD.Instance.ModularWidgets != null)
+            if (FlightHUDManager.Instance != null && FlightHUDManager.Instance.ModularWidgets != null)
             {
-                var target = NavballHUD.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
+                var target = FlightHUDManager.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
                 if (target != null)
                 {
                     target.UpdateTransform(w.PositionX, w.PositionY, w.Scale, w.Rotation);

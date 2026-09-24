@@ -305,7 +305,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
 

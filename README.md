@@ -116,7 +116,7 @@ KSP_naviball/
 │       └── UI/
 │           ├── BaseFlightWidget.cs     <- 统一小组件抽象基类
 │           ├── WidgetDragHandler.cs    <- 自由鼠标拖拽与网格吸附
-│           ├── NavballHUD.cs           <- 画布容器与小组件装配总管
+│           ├── FlightHUDManager.cs     <- 画布容器与小组件装配总管
 │           ├── UIFactory.cs            <- 响应式 UGUI 辅助类
 │           ├── SettingsGUI.cs          <- 游戏内设置面板 (Alt+N)
 │           └── Widgets/
@@ -139,4 +139,3 @@ KSP_naviball/
         ├── AssetBundles/modularflightpanel.ksp
         └── Themes/*.json
 ```
->>>>>>> c218bb8 (Initial commit: Modular Flight Panel (MFP) v1.0.0)

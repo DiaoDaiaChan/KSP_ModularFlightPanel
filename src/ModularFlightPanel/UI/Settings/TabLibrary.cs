@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -225,7 +226,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 Vector2 pos = GetSmartSpawnPosition();
                 string newId = WidgetLayoutManager.Instance.AddEcamDialWidget(title, token, min, max, caution, warning, isSoft, unit, pos);
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
                 OnWidgetAdded(newId, title);
             }
             GUILayout.EndHorizontal();
@@ -247,7 +248,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 Vector2 pos = isLeft ? new Vector2(-235f, 0f) : new Vector2(235f, 0f);
                 string newId = WidgetLayoutManager.Instance.AddTapeWidget(title, token, isLeft, step, pos);
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
                 OnWidgetAdded(newId, title);
             }
             GUILayout.EndHorizontal();
@@ -269,7 +270,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 Vector2 pos = GetSmartSpawnPosition();
                 string newId = WidgetLayoutManager.Instance.AddCustomWidget(title, template, pos);
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
                 OnWidgetAdded(newId, title);
             }
             GUILayout.EndHorizontal();
@@ -295,7 +296,7 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("● 运行中 (点击隐藏)", MFPGuiSkin.WarningButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
                 {
                     cfg.IsEnabled = false;
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     ShowToast($"已隐藏「{title}」！");
                 }
             }
@@ -312,7 +313,7 @@ namespace ModularFlightPanel.UI.Settings
                         cfg = new WidgetConfig(widgetId, title, 0f, 0f) { IsEnabled = true };
                         WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
                     }
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     OnWidgetAdded(widgetId, title);
                 }
             }
@@ -338,7 +339,7 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("● 运行中 (点击隐藏)", MFPGuiSkin.WarningButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
                 {
                     cfg.IsEnabled = false;
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     ShowToast($"已隐藏「{title}」！");
                 }
             }
@@ -360,7 +361,7 @@ namespace ModularFlightPanel.UI.Settings
                         };
                         WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
                     }
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     OnWidgetAdded(widgetId, title);
                 }
             }

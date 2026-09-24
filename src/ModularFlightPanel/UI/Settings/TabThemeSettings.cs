@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -123,7 +124,7 @@ namespace ModularFlightPanel.UI.Settings
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(navCfg);
                 }
                 WidgetLayoutManager.Instance.SaveLayout();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             }
             GUILayout.EndHorizontal();
 
@@ -186,21 +187,21 @@ namespace ModularFlightPanel.UI.Settings
                 ThemeManager.Instance.ToolbarStyleMode = 0;
                 StockToolbarHook.ApplyStyleMode(0);
                 ThemeManager.Instance.SaveSettings();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             }
             if (GUILayout.Button(curTbMode == 1 ? "● 黑晶重肤 (1)" : "○ 黑晶重肤 (1)", curTbMode == 1 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
             {
                 ThemeManager.Instance.ToolbarStyleMode = 1;
                 StockToolbarHook.ApplyStyleMode(1);
                 ThemeManager.Instance.SaveSettings();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             }
             if (GUILayout.Button(curTbMode == 2 ? "● 折叠收纳坞 (2)" : "○ 折叠收纳坞 (2)", curTbMode == 2 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
             {
                 ThemeManager.Instance.ToolbarStyleMode = 2;
                 StockToolbarHook.ApplyStyleMode(2);
                 ThemeManager.Instance.SaveSettings();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             }
             GUILayout.EndHorizontal();
 

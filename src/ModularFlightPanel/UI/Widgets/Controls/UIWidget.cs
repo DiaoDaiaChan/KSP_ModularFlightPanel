@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Widgets.Controls
 {
@@ -254,7 +255,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(8f * s + fBtnW * 3f, 0f), () =>
                 {
                     WidgetLayoutManager.Instance.ResetToDefaultLayout();
-                    NavballHUD.Instance?.RebuildHUD();
+                    FlightHUDManager.Instance?.RebuildHUD();
                     RefreshWidgetRows();
                 });
 
@@ -490,7 +491,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 row.ToggleLed.color = w.IsEnabled ? style.GetTextColor(TextStyleRole.PrimaryValue, _cachedTheme)
                                                   : style.GetTextColor(TextStyleRole.Muted, _cachedTheme);
                 WidgetLayoutManager.Instance.SaveLayout();
-                NavballHUD.Instance?.RebuildHUD();
+                FlightHUDManager.Instance?.RebuildHUD();
             });
         }
 
@@ -503,7 +504,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 widgets[i].IsEnabled = active;
             }
             WidgetLayoutManager.Instance.SaveLayout();
-            NavballHUD.Instance?.RebuildHUD();
+            FlightHUDManager.Instance?.RebuildHUD();
             RefreshWidgetRows();
         }
 
@@ -517,7 +518,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 widgets[i].PositionY = Mathf.Round(widgets[i].PositionY / grid) * grid;
             }
             WidgetLayoutManager.Instance.SaveLayout();
-            NavballHUD.Instance?.RebuildHUD();
+            FlightHUDManager.Instance?.RebuildHUD();
             RefreshWidgetRows();
         }
 

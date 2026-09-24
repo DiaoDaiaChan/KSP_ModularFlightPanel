@@ -408,7 +408,10 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                MFPLogger.WarnThrottled("ModernToolbar_BuildDynamicButtons", $"Failed reading ApplicationLauncher: {ex.Message}");
+            }
 #endif
 
             if (!hasRealLauncher)
@@ -778,7 +781,10 @@ namespace ModularFlightPanel.UI.Widgets
                         ((IPointerClickHandler)kspBtn.toggleButton).OnPointerClick(pe);
                         handled = true;
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        MFPLogger.WarnThrottled("ModernToolbar_ClickProxy", $"Failed invoking toggleButton OnPointerClick: {ex.Message}");
+                    }
                 }
 
                 if (!isRightClick)
@@ -809,7 +815,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[MFP] Error triggering KSP toolbar button: {ex.Message}");
+                MFPLogger.WarnThrottled("ModernToolbar_TriggerClick", $"Error triggering KSP toolbar button: {ex.Message}");
             }
         }
 
@@ -822,7 +828,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     if (pe != null && kspBtn.toggleButton != null)
                     {
-                        try { ((IPointerEnterHandler)kspBtn.toggleButton).OnPointerEnter(pe); } catch { }
+                        try { ((IPointerEnterHandler)kspBtn.toggleButton).OnPointerEnter(pe); }
+                        catch (Exception ex) { MFPLogger.WarnThrottled("ModernToolbar_HoverEnter", $"Failed hover enter: {ex.Message}"); }
                     }
                     kspBtn.onHover?.Invoke();
                 }
@@ -830,12 +837,16 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     if (pe != null && kspBtn.toggleButton != null)
                     {
-                        try { ((IPointerExitHandler)kspBtn.toggleButton).OnPointerExit(pe); } catch { }
+                        try { ((IPointerExitHandler)kspBtn.toggleButton).OnPointerExit(pe); }
+                        catch (Exception ex) { MFPLogger.WarnThrottled("ModernToolbar_HoverExit", $"Failed hover exit: {ex.Message}"); }
                     }
                     kspBtn.onHoverOut?.Invoke();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                MFPLogger.WarnThrottled("ModernToolbar_TriggerHover", $"Failed triggering button hover: {ex.Message}");
+            }
         }
 #endif
 
@@ -1336,24 +1347,13 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                MFPLogger.WarnThrottled("ModernToolbar_SyncStates", $"Failed syncing KSP button states: {ex.Message}");
+            }
 #endif
         }
 
-        private string GetTemplateChannel(string key, string fallback)
-        {
-            if (string.IsNullOrEmpty(Config?.CustomTemplate)) return fallback;
-            string[] pairs = Config.CustomTemplate.Split(';');
-            foreach (string pair in pairs)
-            {
-                string[] kv = pair.Split('=');
-                if (kv.Length == 2 && kv[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    return kv[1].Trim();
-                }
-            }
-            return fallback;
-        }
 
         public override void ApplyTheme(ThemeConfig theme)
         {

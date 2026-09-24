@@ -62,7 +62,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             // 1. 标题通配符求值与脏检查
             if (_titleText != null)

@@ -240,7 +240,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             // 1. 任务时钟更新 (T+ 00:08:03 格式)
             double mTime = telemetry.MissionTime;

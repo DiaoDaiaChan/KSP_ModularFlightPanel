@@ -297,7 +297,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telem)
         {
-            if (telem == null) return;
+            if (telem == null || !telem.HasVessel) return;
             float s = CurrentDpiScale;
 
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
@@ -374,9 +374,12 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastPropFrac = propFrac;
                 if (_propPctText != null)
                 {
+                    float warnThresh = float.TryParse(GetTemplateChannel("WARN_THRESHOLD", "0.25"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wt) ? wt : 0.25f;
+                    float dangerThresh = float.TryParse(GetTemplateChannel("DANGER_THRESHOLD", "0.10"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dt) ? dt : 0.10f;
+
                     string pPctStr = $"{propFrac * 100f:F1}%";
                     _propPctText.text = pPctStr;
-                    TextStyleRole pRole = (propFrac > 0.25f) ? TextStyleRole.PrimaryValue : ((propFrac > 0.10f) ? TextStyleRole.Warning : TextStyleRole.Danger);
+                    TextStyleRole pRole = (propFrac > warnThresh) ? TextStyleRole.PrimaryValue : ((propFrac > dangerThresh) ? TextStyleRole.Warning : TextStyleRole.Danger);
                     ApplyText(_propPctText, pRole, theme);
                 }
                 if (_propFillRt != null)
@@ -385,7 +388,9 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 if (_propFillImg != null)
                 {
-                    MeterStyleRole fillRole = (propFrac > 0.25f) ? MeterStyleRole.Primary : ((propFrac > 0.10f) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
+                    float warnThresh = float.TryParse(GetTemplateChannel("WARN_THRESHOLD", "0.25"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wt) ? wt : 0.25f;
+                    float dangerThresh = float.TryParse(GetTemplateChannel("DANGER_THRESHOLD", "0.10"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dt) ? dt : 0.10f;
+                    MeterStyleRole fillRole = (propFrac > warnThresh) ? MeterStyleRole.Primary : ((propFrac > dangerThresh) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
                     _propFillImg.color = WidgetStyleManager.Meter(fillRole, theme);
                 }
             }
@@ -427,21 +432,6 @@ namespace ModularFlightPanel.UI.Widgets
                 int pct = Mathf.RoundToInt(clampedInput * 100f);
                 valText.text = (pct > 0) ? $"+{pct}%" : $"{pct}%";
             }
-        }
-
-        private string GetTemplateChannel(string key, string fallback)
-        {
-            if (string.IsNullOrEmpty(Config?.CustomTemplate)) return fallback;
-            string[] pairs = Config.CustomTemplate.Split(';');
-            foreach (string pair in pairs)
-            {
-                string[] kv = pair.Split('=');
-                if (kv.Length == 2 && kv[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    return kv[1].Trim();
-                }
-            }
-            return fallback;
         }
 
         private ThemeConfig _cachedTheme;

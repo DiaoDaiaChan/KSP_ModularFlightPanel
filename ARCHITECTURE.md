@@ -30,7 +30,7 @@ flowchart TD
     end
 
     subgraph AssemblyAndWidgets["三、装配与组件呈现层"]
-        HUD["【HUD 装配总管】NavballHUD [Order: +100]<br/>MasterUpdate 单点调度分发 / Sub-Canvas 隔离 / 拖拽把手"]
+        HUD["【HUD 装配总管】FlightHUDManager [Order: +100]<br/>MasterUpdate 单点调度分发 / Sub-Canvas 隔离 / 拖拽把手"]
         
         BFW["【组件通用基类】BaseFlightWidget<br/>FastFormat / SetTextIfChanged / SetImageFillIfChanged"]
         
@@ -84,7 +84,7 @@ sequenceDiagram
     participant Unity as Unity Engine
     participant TH as TelemetryHub<br/>[Order: -500]
     participant CM as CacheManager<br/>(统一缓存)
-    participant HUD as NavballHUD<br/>[Order: +100]
+    participant HUD as FlightHUDManager<br/>[Order: +100]
     participant WRM as WidgetRenderManager<br/>(阶梯调度)
     participant W as BaseFlightWidget<br/>(34 个小组件)
     participant PRF as MFPProfiler<br/>(性能采集)

@@ -30,7 +30,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     ///    - 右键点击中央飞船切换观察视角（追尾 3D / 俯视 3D）。
     /// 6. 严格落实 MFP-SPEC-001..007 铁律（0 颜色字面量、0 场景查询、分频阶梯 Critical 60Hz、零 GC 缓存守卫）。
     /// </summary>
-    public class VesselNavballWidget : BaseFlightWidget, IPointerClickHandler
+    public class VesselAttitudeSphereWidget : BaseNavballSphereWidget, IPointerClickHandler
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
@@ -38,10 +38,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private Image _bgImage;
         private Outline _bgOutline;
         private RawImage _sphereDisplayImage;
-        private RenderTexture _renderTexture;
-        private Camera _ballCamera;
-        private GameObject _sphereObject;
-        private Material _sphereMaterial;
 
         // 中央 3D 飞船机构
         private RectTransform _centerShipRoot;
@@ -418,7 +414,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
             ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
@@ -1007,23 +1003,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         protected override void OnDestroy()
         {
-            if (_renderTexture != null)
-            {
-                _renderTexture.Release();
-                Destroy(_renderTexture);
-                _renderTexture = null;
-            }
-
             if (_sphereObject != null)
             {
                 Destroy(_sphereObject);
                 _sphereObject = null;
-            }
-
-            if (_sphereMaterial != null)
-            {
-                Destroy(_sphereMaterial);
-                _sphereMaterial = null;
             }
 
             if (_ballCamera != null)
@@ -1034,5 +1017,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             base.OnDestroy();
         }
+    }
+
+    /// <summary>
+    /// 向后兼容类型别名 (与文件名 VesselAttitudeSphereWidget.cs 对齐)
+    /// </summary>
+    [Obsolete("Use VesselAttitudeSphereWidget instead.")]
+    public class VesselNavballWidget : VesselAttitudeSphereWidget
+    {
     }
 }

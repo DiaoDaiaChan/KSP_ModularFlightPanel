@@ -187,7 +187,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             // 纹理保底与热插拔自愈检查
             if (_shipSilhouetteRawImage != null && _shipSilhouetteRawImage.texture == null)

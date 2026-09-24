@@ -17,26 +17,22 @@
 # ==========================================================================================
 
 # ── KSP 运行时胶水：插件启动、Harmony 补丁、原版姿态球挂钩、剪影烘焙 ──
-!Core/NavballPlugin.cs
-!Core/HarmonyPatches.cs
-!Core/StockNavBallHook.cs
-!Core/StockStageIconHook.cs
-!Core/MFPToolbarButton.cs
-!Core/VesselSilhouetteBaker.cs
-!Core/Vessel3DBaker.cs
+!Core/Hooks/NavballPlugin.cs
+!Core/Hooks/HarmonyPatches.cs
+!Core/Hooks/StockNavBallHook.cs
+!Core/Hooks/StockStageIconHook.cs
+!Core/Hooks/MFPToolbarButton.cs
+!Core/Rendering/VesselSilhouetteBaker.cs
+!Core/Rendering/Vessel3DBaker.cs
 
 # ── 遥测采集层：探针中枢 + 各 Mod 适配探针 + 反射遍历器（全部依赖 KSP 程序集与真实场景）──
-!Core/ProbeManager.cs
 !Core/Probes/*
 
 # ── 遥测汇聚（依赖 Core/Probes 的探针结果）──
-!Core/TelemetryHub.cs
+!Core/Telemetry/TelemetryHub.cs
 
 # ── IMGUI 设置面板：KSP 游戏内配置界面，不参与 UI 预览渲染 ──
-!UI/SettingsGUI.cs
 !UI/Settings/*
 
 # ── 构建期审计工具链：只在插件编译期/无头 CI 使用，不进 Unity 工程 ──
-!UI/WidgetSpecificationValidator.cs
-!UI/WidgetColorLiteralAudit.cs
-!UI/WidgetSourceAudit.cs
+!UI/Auditing/*

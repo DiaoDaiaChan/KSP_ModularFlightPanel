@@ -268,7 +268,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null || Config == null) return;
+            if (telemetry == null || !telemetry.HasVessel || Config == null) return;
 
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
 

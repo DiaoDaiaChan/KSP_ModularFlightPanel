@@ -422,7 +422,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
             float s = CurrentDpiScale;
             ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
 
@@ -661,21 +661,6 @@ namespace ModularFlightPanel.UI.Widgets
                 case FlightSASMode.Maneuver: return "maneuver";
                 default: return null;
             }
-        }
-
-        private string GetTemplateChannel(string key, string fallback)
-        {
-            if (string.IsNullOrEmpty(Config?.CustomTemplate)) return fallback;
-            string[] pairs = Config.CustomTemplate.Split(';');
-            foreach (string pair in pairs)
-            {
-                string[] kv = pair.Split('=');
-                if (kv.Length == 2 && kv[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    return kv[1].Trim();
-                }
-            }
-            return fallback;
         }
 
         private static string GetSASModeDisplayName(FlightSASMode mode)

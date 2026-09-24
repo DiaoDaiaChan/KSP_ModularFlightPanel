@@ -186,7 +186,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (_meterMaterial == null || telemetry == null) return;
+            if (_meterMaterial == null || telemetry == null || !telemetry.HasVessel) return;
 
             // 1. 动态标签求值 (文案 100% 通配符可自定义)
             if (_topLabelText != null)

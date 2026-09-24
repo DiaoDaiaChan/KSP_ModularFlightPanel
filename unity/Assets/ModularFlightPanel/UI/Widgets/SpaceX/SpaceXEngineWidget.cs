@@ -280,7 +280,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             int activeEngines = telemetry.ActiveEngines;
             int totalEngines = telemetry.TotalStageEngines > 0 ? telemetry.TotalStageEngines : 6;

@@ -617,21 +617,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private string GetTemplateChannel(string key, string fallback)
-        {
-            if (string.IsNullOrEmpty(Config?.CustomTemplate)) return fallback;
-            string[] pairs = Config.CustomTemplate.Split(';');
-            foreach (string pair in pairs)
-            {
-                string[] kv = pair.Split('=');
-                if (kv.Length == 2 && kv[0].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
-                {
-                    return kv[1].Trim();
-                }
-            }
-            return fallback;
-        }
-
         public override void ApplyTheme(ThemeConfig theme)
         {
             _currentTheme = theme;

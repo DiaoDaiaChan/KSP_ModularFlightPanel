@@ -1155,7 +1155,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateDynamicTrendIndicator(IFlightTelemetry telemetry, double rawSpeed)
         {
-            if (telemetry == null) return;
+            if (telemetry == null || !telemetry.HasVessel) return;
 
             float s = CurrentDpiScale;
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
