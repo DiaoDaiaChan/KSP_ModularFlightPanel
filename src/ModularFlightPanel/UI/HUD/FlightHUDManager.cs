@@ -180,6 +180,7 @@ namespace ModularFlightPanel.UI
             _canvas = _canvasObj.GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             _canvas.sortingOrder = 500;
+            _canvas.pixelPerfect = true;
 
             _scaler = _canvasObj.GetComponent<CanvasScaler>();
             // 固定物理像素模式 (ConstantPixelSize)：1:1 绝对物理像素点对点光栅化，不随屏幕分辨率自动缩放/拉伸模糊

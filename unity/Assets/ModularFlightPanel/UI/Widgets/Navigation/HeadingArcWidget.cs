@@ -197,11 +197,12 @@ namespace ModularFlightPanel.UI.Widgets
                 lineImg.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
 
                 // 刻度数字 / 罗盘主方位
-                int fontSize = Mathf.Max(7, Mathf.RoundToInt(8.5f * s));
+                int fontSize = Mathf.Max(8, Mathf.RoundToInt(9.5f * s));
                 Text lbl = UIFactory.CreateText(root.transform, "Label", "", fontSize, TextAnchor.MiddleCenter,
                     style.GetTextColor(TextStyleRole.PrimaryValue, theme), null, addShadow: false);
+                lbl.fontStyle = FontStyle.Bold;
                 RectTransform lblRt = lbl.GetComponent<RectTransform>();
-                lblRt.sizeDelta = new Vector2(28f * s, 14f * s);
+                lblRt.sizeDelta = new Vector2(32f * s, 16f * s);
                 lblRt.anchoredPosition = new Vector2(0f, -10f * s);
 
                 _tickPool.Add(new HeadingTickUI
@@ -224,7 +225,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildSpeechBubble(float radius, float s, ThemeConfig theme)
         {
-            Vector2 boxSize = new Vector2(56f * s, 20f * s);
+            Vector2 boxSize = new Vector2(76f * s, 22f * s);
             Vector2 bubblePos = new Vector2(0f, radius + 15f * s);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
@@ -248,10 +249,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 气泡框向下尖角指针
-            GameObject tipObj = new GameObject("Bubble_PointerTip", typeof(RectTransform), typeof(Image));
+            GameObject tipObj = new GameObject("Bubble_Pointer_Tip", typeof(RectTransform), typeof(Image));
             tipObj.transform.SetParent(_speechBubbleRoot.transform, false);
             RectTransform tipRt = tipObj.GetComponent<RectTransform>();
-            tipRt.sizeDelta = new Vector2(6f * s, 6f * s);
+            tipRt.sizeDelta = new Vector2(7f * s, 7f * s);
             tipRt.anchoredPosition = new Vector2(0f, -boxSize.y * 0.5f + 0.5f * s);
             tipRt.localEulerAngles = new Vector3(0f, 0f, 45f);
             _bubblePointerTip = tipObj.GetComponent<Image>();
@@ -265,19 +266,21 @@ namespace ModularFlightPanel.UI.Widgets
             int fontSize = Mathf.RoundToInt(13f * s);
             _headingText = UIFactory.CreateText(_speechBubbleRoot.transform, "Heading_Value", "000°", fontSize,
                 TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            _headingText.fontStyle = FontStyle.Bold;
             RectTransform textRt = _headingText.GetComponent<RectTransform>();
             textRt.anchorMin = new Vector2(0.02f, 0f);
-            textRt.anchorMax = new Vector2(0.66f, 1f);
+            textRt.anchorMax = new Vector2(0.56f, 1f);
             textRt.sizeDelta = Vector2.zero;
             textRt.anchoredPosition = Vector2.zero;
 
-            // 模式角标 (如 SRF / OBT)
+            // 模式角标 (如 SRF / OBT / 地心惯性)
             _frameModeText = UIFactory.CreateText(_speechBubbleRoot.transform, "Mode_Tag", "SRF",
-                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleLeft,
+                Mathf.Max(8, Mathf.RoundToInt(8.5f * s)), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.Label, theme));
+            _frameModeText.fontStyle = FontStyle.Bold;
             _frameModeText.horizontalOverflow = HorizontalWrapMode.Overflow;
             RectTransform modeRt = _frameModeText.GetComponent<RectTransform>();
-            modeRt.anchorMin = new Vector2(0.68f, 0f);
+            modeRt.anchorMin = new Vector2(0.58f, 0f);
             modeRt.anchorMax = new Vector2(0.98f, 1f);
             modeRt.sizeDelta = Vector2.zero;
             modeRt.anchoredPosition = Vector2.zero;

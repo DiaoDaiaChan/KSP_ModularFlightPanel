@@ -14,9 +14,9 @@ namespace ModularFlightPanel.UI
         {
             try
             {
-                // 优先加载国际公认航空仪表与航电标杆字体 (Bahnschrift / DIN 1451，字腔开阔、笔画均匀)，
-                // 彻底杜绝小字号笔画粘连与阅读疲劳；若未安装则平滑回退至 Segoe UI、Calibri、Arial
-                DefaultFont = Font.CreateDynamicFontFromOSFont(new string[] { "Bahnschrift", "Segoe UI", "Calibri", "Arial" }, 16);
+                // 优先加载清晰锐利、全字重且完美支持中英双语的 Windows 标杆显示字体 (Segoe UI / 微软雅黑 / Arial)，
+                // 彻底杜绝可变字体在旧版 Unity 引擎中笔画发虚发灰、小字号粘连与 CJK 缺失模糊的问题
+                DefaultFont = Font.CreateDynamicFontFromOSFont(new string[] { "Segoe UI", "Microsoft YaHei", "Arial", "Calibri", "Bahnschrift" }, 16);
             }
             catch { }
 
@@ -106,6 +106,7 @@ namespace ModularFlightPanel.UI
             txt.raycastTarget = false;
             txt.horizontalOverflow = HorizontalWrapMode.Overflow;
             txt.verticalOverflow = VerticalWrapMode.Overflow;
+            txt.alignByGeometry = true;
 
             if (customMaterial != null)
             {

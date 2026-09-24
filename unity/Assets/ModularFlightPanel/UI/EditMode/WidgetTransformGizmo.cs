@@ -213,7 +213,14 @@ namespace ModularFlightPanel.UI
 
             if (_currentDragMode != DragGizmoMode.None)
             {
-                HandleDragProcess();
+                if (!Input.GetMouseButton(0))
+                {
+                    EndGizmoDrag(null);
+                }
+                else
+                {
+                    HandleDragProcess();
+                }
             }
             else
             {
@@ -403,7 +410,7 @@ namespace ModularFlightPanel.UI
         // ==========================================
         // 内部手柄点击触发器
         // ==========================================
-        private class GizmoHandleTrigger : MonoBehaviour, IPointerDownHandler, IEndDragHandler, IDragHandler
+        private class GizmoHandleTrigger : MonoBehaviour, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerUpHandler
         {
             public DragGizmoMode Mode;
             public WidgetTransformGizmo Gizmo;
@@ -413,9 +420,16 @@ namespace ModularFlightPanel.UI
                 Gizmo?.StartGizmoDrag(Mode, eventData);
             }
 
+            public void OnBeginDrag(PointerEventData eventData) { }
+
             public void OnDrag(PointerEventData eventData) { }
 
             public void OnEndDrag(PointerEventData eventData)
+            {
+                Gizmo?.EndGizmoDrag(eventData);
+            }
+
+            public void OnPointerUp(PointerEventData eventData)
             {
                 Gizmo?.EndGizmoDrag(eventData);
             }

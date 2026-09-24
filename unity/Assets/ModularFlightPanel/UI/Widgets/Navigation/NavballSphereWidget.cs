@@ -63,11 +63,12 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
-            // 1. 固定标准姿态球基准直径为 150px (关闭自适应形变，严格按高保真物理点对点设计尺寸呈现)
-            float ballDiameter = 150f;
+            float s = CurrentDpiScale;
+            // 1. 标准姿态球基准直径为 150px * s (结合物理 DPI 与组件自身缩放统一构建原生点对点尺寸)
+            float ballDiameter = 150f * s;
             _ballDiameter = ballDiameter;
-            float shellWidth = ballDiameter + 92f;
-            float shellHeight = ballDiameter + 116f;
+            float shellWidth = ballDiameter + 92f * s;
+            float shellHeight = ballDiameter + 116f * s;
 
             bool showShell = config != null && !string.IsNullOrEmpty(config.CustomTemplate) && config.CustomTemplate.IndexOf("shell", StringComparison.OrdinalIgnoreCase) >= 0;
             bool showHeadingBox = config != null && !string.IsNullOrEmpty(config.CustomTemplate) && config.CustomTemplate.IndexOf("heading_box", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -80,7 +81,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (showShell)
             {
-                CreateNavballShell(shellWidth, shellHeight, CurrentDpiScale, theme);
+                CreateNavballShell(shellWidth, shellHeight, s, theme);
             }
 
             // 2. 动态自适应刚刚好高效 RenderTexture (依据 WidgetRenderManager 结合物理占用与倍率自适应)
@@ -88,13 +89,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (WidgetRenderManager.Instance != null)
             {
                 rtResolution = WidgetRenderManager.Instance.CalculateOptimalResolution(
-                    new Vector2(ballDiameter, ballDiameter),
+                    new Vector2(150f, 150f),
                     config != null ? config.Scale : 1.0f,
                     config != null ? config.RenderScale : 1.0f);
             }
             _renderTexture = new RenderTexture(rtResolution, rtResolution, 16, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 1,
+                antiAliasing = 2,
                 anisoLevel = 4,
                 useMipMap = false,
                 autoGenerateMips = false,
@@ -803,9 +804,8 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void HandleRenderSettingChanged()
         {
             if (WidgetRenderManager.Instance == null) return;
-            float ballDiameter = _visualRadius * 2.0f;
             int optimalRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
-                new Vector2(ballDiameter, ballDiameter),
+                new Vector2(150f, 150f),
                 Config != null ? Config.Scale : 1.0f,
                 Config != null ? Config.RenderScale : 1.0f);
             if (_renderTexture == null || _renderTexture.width != optimalRes)

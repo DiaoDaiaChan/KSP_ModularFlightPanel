@@ -417,12 +417,13 @@ namespace ModularFlightPanel.UI.Widgets
                 lineImg.color = majorCol;
 
                 // 刻度数字标牌 (整齐呼吸间距，严禁贴面与遮挡)
-                int fontSize = Mathf.RoundToInt(8.5f * s);
+                int fontSize = Mathf.Max(9, Mathf.RoundToInt(10.5f * s));
                 Text labelTxt = UIFactory.CreateText(itemObj.transform, "Tick_Text", "0", fontSize, align,
                     style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                labelTxt.fontStyle = FontStyle.Bold;
                 RectTransform labelRt = labelTxt.GetComponent<RectTransform>();
                 labelRt.pivot = textPivot;
-                labelRt.sizeDelta = new Vector2(28f * s, 14f * s);
+                labelRt.sizeDelta = new Vector2(32f * s, 16f * s);
                 labelRt.anchoredPosition = new Vector2(labelX, 0f);
 
                 _tickPool.Add(new TickItem
@@ -511,8 +512,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 双列并排排版：数值紧贴单位 (字号与间距精心微调)
-            int valFontSize = Mathf.RoundToInt(11f * s);
-            int unitFontSize = Mathf.Max(6, Mathf.RoundToInt(7f * s));
+            int valFontSize = Mathf.RoundToInt(13.5f * s);
+            int unitFontSize = Mathf.Max(7, Mathf.RoundToInt(8f * s));
 
             if (Config.IsLeftOrientation)
             {
@@ -522,15 +523,16 @@ namespace ModularFlightPanel.UI.Widgets
                 _centerValueText.fontStyle = FontStyle.Bold;
                 RectTransform valRt = _centerValueText.GetComponent<RectTransform>();
                 valRt.pivot = new Vector2(1f, 0.5f);
-                valRt.sizeDelta = new Vector2(34f * s, boxH);
+                valRt.sizeDelta = new Vector2(36f * s, boxH);
                 valRt.anchoredPosition = new Vector2(4f * s, 0f);
 
                 _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
+                _centerUnitText.fontStyle = FontStyle.Bold;
                 RectTransform unitRt = _centerUnitText.GetComponent<RectTransform>();
                 unitRt.pivot = new Vector2(0f, 0.5f);
                 unitRt.sizeDelta = new Vector2(18f * s, boxH);
-                unitRt.anchoredPosition = new Vector2(5.5f * s, -1f * s);
+                unitRt.anchoredPosition = new Vector2(5.5f * s, -0.5f * s);
             }
             else
             {
@@ -540,15 +542,16 @@ namespace ModularFlightPanel.UI.Widgets
                 _centerValueText.fontStyle = FontStyle.Bold;
                 RectTransform valRt = _centerValueText.GetComponent<RectTransform>();
                 valRt.pivot = new Vector2(1f, 0.5f);
-                valRt.sizeDelta = new Vector2(34f * s, boxH);
+                valRt.sizeDelta = new Vector2(36f * s, boxH);
                 valRt.anchoredPosition = new Vector2(6f * s, 0f);
 
                 _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
+                _centerUnitText.fontStyle = FontStyle.Bold;
                 RectTransform unitRt = _centerUnitText.GetComponent<RectTransform>();
                 unitRt.pivot = new Vector2(0f, 0.5f);
                 unitRt.sizeDelta = new Vector2(17f * s, boxH);
-                unitRt.anchoredPosition = new Vector2(7.5f * s, -1f * s);
+                unitRt.anchoredPosition = new Vector2(7.5f * s, -0.5f * s);
             }
         }
 
@@ -1113,7 +1116,7 @@ namespace ModularFlightPanel.UI.Widgets
                     continue;
                 }
 
-                float y = (float)(tickVal - currentDisplayVal) * pixelsPerUnit;
+                float y = Mathf.Round((float)(tickVal - currentDisplayVal) * pixelsPerUnit);
                 if (Math.Abs(y) > (_viewportRt.sizeDelta.y * 0.5f) + 12f * s)
                 {
                     item.Root.SetActive(false);

@@ -148,6 +148,7 @@ namespace ModularFlightPanel.UI
                     SubCanvas = gameObject.AddComponent<Canvas>();
                 }
                 SubCanvas.overrideSorting = false;
+                SubCanvas.pixelPerfect = true;
                 UpdateRaycasterState();
             }
             else
