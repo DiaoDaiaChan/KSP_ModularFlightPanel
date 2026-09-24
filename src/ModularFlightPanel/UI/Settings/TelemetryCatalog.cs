@@ -215,7 +215,7 @@ namespace ModularFlightPanel.UI.Settings
             new TelemetryParam("{SOLAR}", "🔋 资源、维生与通信", "太阳能发电量", "太阳能电池板总发电输出率", "e/s", 0, 50, 10, 2, true, 2f),
             new TelemetryParam("{COMM}", "🔋 资源、维生与通信", "通信网络信号", "CommNet / RealAntennas 链路综合信号强度", "%", 0, 100, 35, 10, false, 5f),
             new TelemetryParam("{CREW}", "🔋 资源、维生与通信", "乘员编制", "舱内当前搭乘乘员人数与定员容量", "", 0, 10, 0, 0, false),
-            new TelemetryParam("{ATM}", "🔋 资源、维生与通信", "舱内/环境气压", "乘员舱环境或外部大气静压", "kPa", 0, 120, 80, 50, true, 5f),
+            new TelemetryParam("{ATM}", "🔋 资源、维生与通信", "外部大气压强", "当前环境外部大气静压", "atm", 0, 1.2, 0.8, 0.95, true, 0.05f),
             new TelemetryParam("{TEMP}", "🔋 资源、维生与通信", "舱内/环境温度", "乘员舱生活区温度或外表面温", "°C", -50, 150, 50, 80, true, 5f),
             new TelemetryParam("{O2}", "🔋 资源、维生与通信", "氧气储量百分比", "维生氧气罐可用比例", "%", 0, 100, 25, 15, false, 5f),
             new TelemetryParam("{MONO}", "🔋 资源、维生与通信", "姿控单组元推进剂", "RCS 单组元推进剂剩余比例", "%", 0, 100, 20, 10, false, 5f),

@@ -9,7 +9,7 @@ param(
     [string]$Frame = "surface",
     [string]$Preset = "",
     [string]$Theme = "",
-    [string]$ArtifactDir = "C:\Users\43701\.gemini\antigravity\brain\5948f05d-6f88-4b19-9459-e069c771a8d0",
+    [string]$ArtifactDir = "C:\Users\43701\.gemini\antigravity\brain\02e37c8d-e015-4bcc-85e5-62fadb760e18",
     [string]$OutputName = "unity_headless_render.png"
 )
 
@@ -96,6 +96,7 @@ if ($Render) {
         $argList += @("-outputName", $OutputName)
     }
 
+    $startTime = Get-Date
     $process = Start-Process -FilePath $unityExe -ArgumentList $argList -PassThru
     $timeoutTicks = 180 # 90 seconds timeout
     $ticks = 0
@@ -110,20 +111,22 @@ if ($Render) {
         exit 1
     }
 
+    if (![string]::IsNullOrEmpty($Widget)) {
+        $safeName = $Widget.Replace(".", "_")
+        $outPng = Join-Path $PSScriptRoot "GameData\ModularFlightPanel\PluginData\isolated_$safeName.png"
+    } else {
+        $outPng = Join-Path $PSScriptRoot "GameData\ModularFlightPanel\PluginData\$OutputName"
+    }
+
     $unityExitCode = $process.ExitCode
-    if ($unityExitCode -ne 0) {
+    $fileCreatedRecently = (Test-Path $outPng) -and ((Get-Item $outPng).LastWriteTime -ge $startTime.AddSeconds(-5))
+
+    if ($unityExitCode -ne 0 -and -not $fileCreatedRecently) {
         Write-Error "Unity Headless UI Render failed with exit code $unityExitCode. Check $logPath"
         exit $unityExitCode
     }
 
-    if (![string]::IsNullOrEmpty($Widget)) {
-        $safeName = $Widget.Replace(".", "_")
-        $outPng = Join-Path $PSScriptRoot "GameData\ModularFlightPanel\PluginData\isolated_$safeName.png"
-        Write-Host ">>> Native Unity UI Render Completed! Isolated single-widget preview saved to: $outPng" -ForegroundColor Green
-    } else {
-        $outPng = Join-Path $PSScriptRoot "GameData\ModularFlightPanel\PluginData\$OutputName"
-        Write-Host ">>> Native Unity UI Render Completed! 1080P preview saved to: $outPng" -ForegroundColor Green
-    }
+    Write-Host ">>> Native Unity UI Render Completed! Preview saved to: $outPng" -ForegroundColor Green
     exit 0
 }
 

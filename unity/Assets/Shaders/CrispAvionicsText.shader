@@ -103,8 +103,8 @@ Shader "ModularFlightPanel/CrispAvionicsText"
                 float rawAlpha = fontTex.a;
                 float crispAlpha = saturate(pow(max(0.0, rawAlpha), _GammaBoost) * _AlphaScale);
 
-                fixed4 finalCol = IN.color;
-                finalCol.a *= crispAlpha;
+                fixed4 finalCol = fontTex * IN.color;
+                finalCol.a = crispAlpha * IN.color.a;
 
                 // 3. UGUI 视口裁切保护
                 #ifdef UNITY_UI_CLIP_RECT

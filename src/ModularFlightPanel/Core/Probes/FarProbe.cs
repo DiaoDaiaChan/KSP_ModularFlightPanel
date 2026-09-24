@@ -18,6 +18,8 @@ namespace ModularFlightPanel.Core.Probes
 
         private static MethodInfo _vesselFlightInfoMethod;
         private static PropertyInfo _infoParametersProp;
+        private static MethodInfo _farAtmosphereGetPressureMethod;
+        private static MethodInfo _farAtmosphereGetTemperatureMethod;
 
         public static void Initialize()
         {
@@ -66,7 +68,27 @@ namespace ModularFlightPanel.Core.Probes
                         }
                     }
 
-                    // 3. 注册自定义便捷计算属性 (L/D 升阻比)
+                    // 3. 挂接 FAR 大气模型类 (FARAtmosphere)，直读环境气压与温度
+                    Type farAtmosphereType = farAssembly?.GetType("FerramAerospaceResearch.FARAtmosphere");
+                    if (farAtmosphereType == null)
+                    {
+                        foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                        {
+                            if (asm.GetName().Name.StartsWith("FerramAerospaceResearch"))
+                            {
+                                farAtmosphereType = asm.GetType("FerramAerospaceResearch.FARAtmosphere");
+                                if (farAtmosphereType != null) break;
+                            }
+                        }
+                    }
+
+                    if (farAtmosphereType != null)
+                    {
+                        _farAtmosphereGetPressureMethod = farAtmosphereType.GetMethod("GetPressure", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(Vessel) }, null);
+                        _farAtmosphereGetTemperatureMethod = farAtmosphereType.GetMethod("GetTemperature", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(Vessel) }, null);
+                    }
+
+                    // 4. 注册自定义便捷计算属性 (L/D 升阻比、大气气压 atm/kPa/Pa、环境温度)
                     Traverser.RegisterCustom("LiftToDragRatio", typeof(double), () =>
                     {
                         double drag = Traverser.ResolveNumeric("ActiveVesselDragCoeff");
@@ -75,7 +97,33 @@ namespace ModularFlightPanel.Core.Probes
                         return lift / drag;
                     }, "FAR 气动解算 (VesselFlightInfo)", "即时气动升阻效率比 (L/D)", new[] { "LD", "LIFTTODRAG" });
 
-                    // 4. 注册标准高频别名，保持 100% 向后兼容
+                    Traverser.RegisterCustom("AtmosphericPressureAtm", typeof(double), () =>
+                    {
+                        Vessel v = FlightGlobals.ActiveVessel;
+                        return v != null ? GetAtmosphericPressureAtm(v) : double.NaN;
+                    }, "FAR 大气物理 (FARAtmosphere)", "当前环境大气压强 (atm)", new[] { "ATM", "PRESSURE", "BARO", "ATMPRESSURE" });
+
+                    Traverser.RegisterCustom("AtmosphericPressurekPa", typeof(double), () =>
+                    {
+                        Vessel v = FlightGlobals.ActiveVessel;
+                        if (v == null) return double.NaN;
+                        double pa = GetAtmosphericPressurePa(v);
+                        return double.IsNaN(pa) ? double.NaN : (pa / 1000.0);
+                    }, "FAR 大气物理 (FARAtmosphere)", "当前环境静压 (kPa)", new[] { "STATICPRESSURE", "KPA", "STATPRES" });
+
+                    Traverser.RegisterCustom("AtmosphericPressurePa", typeof(double), () =>
+                    {
+                        Vessel v = FlightGlobals.ActiveVessel;
+                        return v != null ? GetAtmosphericPressurePa(v) : double.NaN;
+                    }, "FAR 大气物理 (FARAtmosphere)", "当前环境静压 (Pa)", new[] { "PA", "PRES_PA" });
+
+                    Traverser.RegisterCustom("AtmosphericTemperature", typeof(double), () =>
+                    {
+                        Vessel v = FlightGlobals.ActiveVessel;
+                        return v != null ? GetAtmosphericTemperature(v) : double.NaN;
+                    }, "FAR 大气物理 (FARAtmosphere)", "当前环境外部大气温度 (K)", new[] { "ATMTEMP", "AMB_TEMP" });
+
+                    // 5. 注册标准高频别名，保持 100% 向后兼容
                     Traverser.RegisterAlias("IAS", "ActiveVesselIAS");
                     Traverser.RegisterAlias("EAS", "ActiveVesselEAS");
                     Traverser.RegisterAlias("Q", "ActiveVesselDynPres");
@@ -146,6 +194,46 @@ namespace ModularFlightPanel.Core.Probes
             return _isAvailable ? Traverser.ResolveString(subTag, format, modifier) : "---";
         }
 
+        /// <summary>
+        /// 获取由 FAR 大气模型解算的当前载具环境静压 (单位: Pa)
+        /// </summary>
+        public static double GetAtmosphericPressurePa(Vessel vessel)
+        {
+            if (vessel == null || _farAtmosphereGetPressureMethod == null) return double.NaN;
+            try
+            {
+                object res = _farAtmosphereGetPressureMethod.Invoke(null, new object[] { vessel });
+                if (res is double d) return d;
+            }
+            catch { }
+            return double.NaN;
+        }
+
+        /// <summary>
+        /// 获取由 FAR 大气模型解算的当前载具环境气压 (单位: atm，标准大气压 1 atm = 101325 Pa)
+        /// </summary>
+        public static double GetAtmosphericPressureAtm(Vessel vessel)
+        {
+            double pa = GetAtmosphericPressurePa(vessel);
+            if (double.IsNaN(pa) || pa < 0.0) return double.NaN;
+            return pa / 101325.0;
+        }
+
+        /// <summary>
+        /// 获取由 FAR 大气模型解算的当前载具环境外部大气温度 (单位: K)
+        /// </summary>
+        public static double GetAtmosphericTemperature(Vessel vessel)
+        {
+            if (vessel == null || _farAtmosphereGetTemperatureMethod == null) return double.NaN;
+            try
+            {
+                object res = _farAtmosphereGetTemperatureMethod.Invoke(null, new object[] { vessel });
+                if (res is double d) return d;
+            }
+            catch { }
+            return double.NaN;
+        }
+
         // 向后兼容强类型静态属性
         public static double IAS => ResolveNumeric("IAS");
         public static double EAS => ResolveNumeric("EAS");
@@ -157,5 +245,8 @@ namespace ModularFlightPanel.Core.Probes
         public static double StallFraction => ResolveNumeric("STALL");
         public static double BallisticCoeff => ResolveNumeric("BALLISTIC");
         public static double LiftToDragRatio => ResolveNumeric("LD");
+        public static double AtmosphericPressureAtm => FlightGlobals.ActiveVessel != null ? GetAtmosphericPressureAtm(FlightGlobals.ActiveVessel) : double.NaN;
+        public static double StaticPressurekPa => FlightGlobals.ActiveVessel != null ? (GetAtmosphericPressurePa(FlightGlobals.ActiveVessel) / 1000.0) : double.NaN;
+        public static double AtmosphericTemperature => FlightGlobals.ActiveVessel != null ? GetAtmosphericTemperature(FlightGlobals.ActiveVessel) : double.NaN;
     }
 }

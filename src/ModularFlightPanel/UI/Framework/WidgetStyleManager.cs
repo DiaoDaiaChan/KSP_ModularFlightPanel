@@ -262,6 +262,17 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
+        /// 统一为图标与矢量图元 (Image / RawImage) 挂载航电高清抗蚀刻 Shader 并应用语义颜色
+        /// </summary>
+        public void ApplyIconStyle(Graphic iconGraphic, TextStyleRole role = TextStyleRole.PrimaryValue, ThemeConfig theme = null)
+        {
+            if (iconGraphic == null) return;
+            theme = ResolveTheme(theme);
+            iconGraphic.material = GetUiMaterial(isText: true);
+            iconGraphic.color = GetTextColor(role, theme);
+        }
+
+        /// <summary>
         /// 统一为交互按钮应用规范的默认/按下/激活态视觉
         /// </summary>
         public void ApplyButtonStyle(Button btn, Image bg, Text label, ButtonVisualRole role = ButtonVisualRole.Normal, bool isPressed = false, ThemeConfig theme = null)

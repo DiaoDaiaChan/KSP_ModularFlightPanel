@@ -895,8 +895,44 @@ namespace ModularFlightPanel.Core
         {
             AltitudeASL = ActiveVessel.altitude;
             AltitudeAGL = ActiveVessel.radarAltitude;
-            DynamicPressure = ActiveVessel.dynamicPressurekPa;
-            AtmosphericPressure = (ActiveVessel.staticPressurekPa > 0.0) ? (ActiveVessel.staticPressurekPa / 101.325) : 0.0;
+
+            // 动压 (Q)：优先读 ActiveVessel.dynamicPressurekPa，若在 FAR 下为 0 则尝试从 FarProbe 获取
+            double q = ActiveVessel.dynamicPressurekPa;
+            if (q <= 0.00001 && FarProbe.IsAvailable)
+            {
+                double farQ = FarProbe.DynamicPressure;
+                if (!double.IsNaN(farQ) && farQ > 0.0) q = farQ;
+            }
+            DynamicPressure = q;
+
+            // 环境大气压强解算：优先从 FARC (Ferram Aerospace Research) 探针解算，次选原生 staticPressurekPa，最后回退至天体大气模型 GetPressure
+            double atm = double.NaN;
+            if (FarProbe.IsAvailable)
+            {
+                atm = FarProbe.GetAtmosphericPressureAtm(ActiveVessel);
+            }
+
+            // Fallback 原版 KSP：若 FAR 未安装、解算返回 NaN 或处于大气层内但取值为 0，触发原版多级保底
+            bool inAtmosphere = ActiveVessel.mainBody != null && ActiveVessel.mainBody.atmosphere && ActiveVessel.altitude < ActiveVessel.mainBody.atmosphereDepth;
+            if (double.IsNaN(atm) || (atm <= 0.0 && inAtmosphere))
+            {
+                if (ActiveVessel.staticPressurekPa > 0.0)
+                {
+                    atm = ActiveVessel.staticPressurekPa / 101.325;
+                }
+                else if (inAtmosphere)
+                {
+                    // 应对 launchpad / pre-launch / rails / physics unready 等 staticPressurekPa 尚未刷新的场景，直读天体大气物理模型
+                    double staticKpa = ActiveVessel.mainBody.GetPressure(ActiveVessel.altitude);
+                    atm = (staticKpa > 0.0) ? (staticKpa / 101.325) : 0.0;
+                }
+                else
+                {
+                    atm = 0.0;
+                }
+            }
+
+            AtmosphericPressure = !double.IsNaN(atm) ? Math.Max(0.0, atm) : 0.0;
             GForce = ActiveVessel.geeForce;
 
             if (double.IsNaN(AltitudeASL)) AltitudeASL = 0.0;
