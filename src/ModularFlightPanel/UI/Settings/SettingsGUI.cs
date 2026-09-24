@@ -92,6 +92,8 @@ namespace ModularFlightPanel.UI
             else
             {
                 EnsureWindowRect();
+                // 进入工作台时默认开启自由拖拽编辑模式
+                WidgetDragHandler.IsEditModeActive = true;
             }
             OnWindowStateChanged?.Invoke(_isOpen);
         }
