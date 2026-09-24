@@ -108,6 +108,13 @@ namespace ModularFlightPanel.Core
             new CommLinkInfo("KSAT - Singapore", 15800.0, 1.0f, true)
         };
 
+        private static readonly AntennaTelemetryInfo[] DefaultSimulationAntennas = new AntennaTelemetryInfo[]
+        {
+            new AntennaTelemetryInfo("Communotron 16", "DIRECT", 500000.0, "500k", 0.95f, "LINKED", true),
+            new AntennaTelemetryInfo("RA-2 Relay Antenna", "RELAY", 2000000000.0, "2.0G", 1.0f, "LINKED", true),
+            new AntennaTelemetryInfo("Internal Pod Antenna", "INTERNAL", 5000.0, "5.0k", 0.90f, "LINKED", true)
+        };
+
         // 通信网络
         public double CommSignal { get; private set; } = 0.90;
         public bool IsConnected { get; private set; } = true;
@@ -118,6 +125,7 @@ namespace ModularFlightPanel.Core
         public double DataRateBps { get; private set; } = 15800.0;
         public string DirectLinkTarget { get; private set; } = "KSAT - Singapore";
         public IReadOnlyList<CommLinkInfo> ActiveCommLinks { get; private set; } = DefaultSimulationLinks;
+        public IReadOnlyList<AntennaTelemetryInfo> Antennas { get; private set; } = DefaultSimulationAntennas;
 
         // 时间加速与时钟遥测
         public double MissionTime { get; set; } = 9856.0; // 02:44:16

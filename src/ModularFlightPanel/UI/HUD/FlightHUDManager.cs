@@ -182,10 +182,9 @@ namespace ModularFlightPanel.UI
             _canvas.sortingOrder = 500;
 
             _scaler = _canvasObj.GetComponent<CanvasScaler>();
-            _scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            _scaler.referenceResolution = new Vector2(1920f, 1080f);
-            _scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            _scaler.matchWidthOrHeight = 1.0f;
+            // 固定物理像素模式 (ConstantPixelSize)：1:1 像素映射，不随屏幕分辨率自动缩放/自适应形变
+            _scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+            _scaler.scaleFactor = 1.0f;
 
             // 航电级超采样动态像素密度 (Avionics High-DPI Dynamic Supersampling):
             // 将默认字体与动态矢量光栅化清晰度与全局渲染倍率挂钩 (2.5x * GlobalRenderScaleMultiplier)

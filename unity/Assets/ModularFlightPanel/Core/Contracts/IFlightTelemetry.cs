@@ -104,6 +104,7 @@ namespace ModularFlightPanel.Core
         double DataRateBps { get; }
         string DirectLinkTarget { get; }
         IReadOnlyList<CommLinkInfo> ActiveCommLinks { get; }
+        IReadOnlyList<AntennaTelemetryInfo> Antennas { get; }
 
         // 时间加速与时钟遥测
         double MissionTime { get; }

@@ -9,9 +9,9 @@
 
 项目已经形成可辨识的模块边界：KSP 遥测、第三方 Mod 探针、UI 生命周期/刷新调度、样式、配置和 Unity 预览分别有相应组件；源代码到 Unity 预览工程也有明确的镜像清单。多个性能优化已经落入当前源码，包括模板预编译缓存、数值 token 解析缓存、控件刷新分级、只读控件按需关闭射线检测，以及 ElectricCharge 优先使用 KSP 资源总量 API。
 
-当前主要短板在**交付链路的失败判定、用户配置恢复能力、导入数据的资源限制、跨机器构建复现和证据可信度**。部署脚本可在编译失败后继续并打印成功；布局读取失败后会将默认数据写回原配置；分享码解压没有大小上限。仓库内跟踪有构建产物，但本次没有证据证明它们由当前源码和指定工具链生成。此前性能报告给出明确毫秒数和 GC 收益，缺少可复核的测试条件与原始采样，且部分根因描述已不符合当前源码。
+当前需要优先关注的并非只有工程杂项：**推进剂读数计算范围与显示含义不匹配，ΔV 数据可能跨载具陈旧**。在此之上还有交付链路的失败判定、用户配置恢复能力、导入数据资源限制、跨机器构建复现和证据可信度问题。部署脚本可在编译失败后继续并打印成功；布局读取失败后会将默认数据写回原配置；分享码解压没有大小上限。仓库内跟踪有构建产物，但本次没有证据证明它们由当前源码和指定工具链生成。此前性能报告给出明确毫秒数和 GC 收益，缺少可复核的测试条件与原始采样，且部分根因描述已不符合当前源码。
 
-**综合评级：中等成熟度，功能架构基础较好，工程交付与数据可靠性仍需加固。** 当前可用于持续迭代；在修复发布失败误报、保护配置和建立可复现构建记录之前，不宜仅凭当前工作树将其认定为已验证的发布候选。
+**综合评级：中等偏低成熟度，架构和性能设计有投入，但关键遥测的语义/新鲜度缺少可靠保证，工程交付也未闭环。** 当前可用于持续迭代；应先修复核心读数问题并增加数据有效性/新鲜度表示，再评估是否可作为稳定发布候选。
 
 ## 2. 维度评估
 
@@ -19,12 +19,32 @@
 |---|---|---|
 | 架构与可维护性 | 中上 | 遥测接口、控件框架、渲染调度、探针和主题模块化；部分文档仍按旧目录/名称描述，需保持同步。 |
 | 工程化与交付 | 中下 | 有解决方案、部署脚本和镜像验证机制；部署会吞掉构建失败信号，构建依赖本机 KSP 路径，没有发现 CI 工作流。 |
-| 正确性与数据严谨性 | 中 | 有配置迁移、异常日志和静态验证工具；写配置非原子，坏配置会触发默认布局回写，自动验证尚未在本次确认通过。 |
+| 正确性与数据严谨性 | 中下 | 推进剂比例采样只读发动机所在部件；ΔV 来源失效时未清理旧值；写配置非原子且坏配置触发默认回写。 |
 | 性能设计 | 中上（设计）/ 未验证（结果） | 有调度、缓存和脏检查设计；实际帧耗时、GC 与 GPU 成本无本次实测，历史精确指标不可复核。 |
 | 安全与鲁棒性 | 中 | 未发现直接网络摄入或远程执行链路；压缩分享码无解压上限，第三方反射读取边界宽，配置输入校验仍需加强。 |
 | 文档与发布可信度 | 中下 | README 仍含本机文件链接和过期路径；既有审计报告存在夸张/过时的性能断言。 |
 
 ## 3. 主要发现
+
+### P1 — 推进剂比例读取的是发动机部件资源，读数不代表级/载具剩余量
+
+`UpdateThrottleAndPropellant()` 在扫描 `ModuleEngines` 时，只遍历每个运行中发动机所在 `Part` 的 `Resources`，并将多个资源的 `amount`、`maxAmount` 混合求比率；扫描结果赋给 `StagePropellantFraction`。当燃料储箱与发动机分离、资源由 KSP 资源流系统供给时，储箱资源不在此循环中；若发动机部件没有该资源，代码会以 `1.0`（100%）作为默认比例。[TelemetryHub.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs#L966) [TelemetryHub.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs#L1020)
+
+该值随后被多个面板直接当成推进剂余量百分比显示，包括级控制、级序列、SpaceX 概览和 EICAS 样例。[StageControlWidget.cs](../src/ModularFlightPanel/UI/Widgets/Controls/StageControlWidget.cs#L361) [StagingSequenceWidget.cs](../src/ModularFlightPanel/UI/Widgets/Controls/StagingSequenceWidget.cs#L498) [SpaceXOverviewWidget.cs](../src/ModularFlightPanel/UI/Widgets/SpaceX/SpaceXOverviewWidget.cs#L291) [B747EicasWidget.cs](../src/ModularFlightPanel/UI/Widgets/Systems/B747EicasWidget.cs#L647)
+
+**影响：** 对常见的独立燃料箱/发动机结构，推进剂表可能固定显示满量或只反映发动机内部小储量。对于混合推进剂，按质量单位直接合计不同资源的存量也没有统一物理意义。玩家可能依据错误的燃料读数判断剩余燃烧时间或何时分级。
+
+**建议：** 明确此字段是“整船资源比例”还是“当前级可用推进剂比例”；按 KSP 的资源流/当前级语义计算，且分别处理不同推进剂资源，不要跨单位相加。无可用来源时提供 Unknown/无效状态，不要默认显示 100%。增加由真实 KSP 船体结构覆盖的回归场景。
+
+### P1 — 分级 ΔV 来源失效后可能继续显示上一载具的缓存值
+
+`OnVesselChanged()` 标记发动机拓扑缓存失效，但没有重置 `StageDeltaVList`、`StageDeltaV`、`TotalDeltaV` 或 `DeltaVSource`。[TelemetryHub.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs#L580)
+
+之后 `UpdateThrottleAndPropellant()` 仅在 MechJeb、原版 VesselDeltaV 或 KER/MJ 单值有数据时覆盖相应字段；当新载具/场景没有可用 ΔV 来源时，`dvFound` 保持 false，但旧属性没有清空或标记过期。[TelemetryHub.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs#L1026) [TelemetryHub.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs#L1116)
+
+**影响：** 面板可能在更换载具后继续显示上一个载具的阶段表和总 ΔV，且没有明显陈旧标记。飞行员会误以为数值来自当前火箭。
+
+**建议：** 在载具切换时立即使载具相关缓存失效；每次采样先将来源状态置为 Unknown，再由成功的数据源覆盖；为遥测源记录载具 ID、时间戳和有效性，UI 对过期/缺失读数显示明确状态。
 
 ### P1 — 部署脚本在构建失败后仍可能报告部署成功
 
@@ -66,7 +86,7 @@
 
 旧性能报告宣称固定帧耗时、GC 分配量和提升比例，但未提供硬件、场景、载具规模、采样周期、统计口径或 Profiler 原始输出。[PERFORMANCE_AUDIT_REPORT.md](PERFORMANCE_AUDIT_REPORT.md#L357)
 
-报告中的部分问题在当前源码中已变化：例如电量采样已优先调用 `GetConnectedResourceTotals`，仅在失败时回退到部件扫描；token 模板也已有编译缓存；只读控件射线检测已有按需处理。[TelemetryHub.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs#L1271) [TelemetryTokenEngine.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryTokenEngine.cs#L143) [BaseFlightWidget.cs](../src/ModularFlightPanel/UI/Framework/BaseFlightWidget.cs#L93)
+报告中的部分问题在当前源码中已变化：例如电量采样已优先调用 `GetConnectedResourceTotals`，仅在失败时回退到部件扫描；token 模板也已有编译缓存；只读控件射线检测已有按需处理。[TelemetryHub.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs#L1345) [TelemetryTokenEngine.cs](../src/ModularFlightPanel/Core/Telemetry/TelemetryTokenEngine.cs#L143) [BaseFlightWidget.cs](../src/ModularFlightPanel/UI/Framework/BaseFlightWidget.cs#L93)
 
 README 仍保留本机 `file:///` 链接、将主题路径写作 `GameData/ModularFlightPanel/Themes/`，目录树也引用与当前源码布局不一致的旧类位置。[README.md](../README.md#L26) [README.md](../README.md#L72)
 

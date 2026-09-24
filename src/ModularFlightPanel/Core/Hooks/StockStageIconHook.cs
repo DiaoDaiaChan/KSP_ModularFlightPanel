@@ -29,6 +29,51 @@ namespace ModularFlightPanel.Core
 
         public bool HasStockAtlas => StockAtlas != null;
 
+        private static System.Reflection.FieldInfo _defaultIconMapField;
+        private static System.Reflection.FieldInfo _iconImageField;
+        private static bool _fieldsResolved = false;
+
+        private static void EnsureFields()
+        {
+            if (_fieldsResolved) return;
+            _fieldsResolved = true;
+            try
+            {
+                var type = typeof(KSP.UI.Screens.StageIcon);
+                _defaultIconMapField = type.GetField("defaultIconMap", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                _iconImageField = type.GetField("iconImage", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            }
+            catch { }
+        }
+
+        private static Texture2D ExtractTextureFromIcon(KSP.UI.Screens.StageIcon icon)
+        {
+            if (icon == null) return null;
+            EnsureFields();
+            if (_defaultIconMapField != null)
+            {
+                try
+                {
+                    if (_defaultIconMapField.GetValue(icon) is Texture2D tDef) return tDef;
+                }
+                catch { }
+            }
+            if (_iconImageField != null)
+            {
+                try
+                {
+                    var img = _iconImageField.GetValue(icon) as RawImage;
+                    if (img != null && img.texture is Texture2D tImg) return tImg;
+                }
+                catch { }
+            }
+            var raw = icon.GetComponentInChildren<RawImage>(true);
+            if (raw != null && raw.texture is Texture2D t1) return t1;
+            var uiImg = icon.GetComponentInChildren<Image>(true);
+            if (uiImg != null && uiImg.sprite != null && uiImg.sprite.texture != null) return uiImg.sprite.texture;
+            return null;
+        }
+
         private Texture2D FindStockAtlas()
         {
             try
@@ -38,11 +83,8 @@ namespace ModularFlightPanel.Core
                     var mgr = KSP.UI.Screens.StageManager.Instance;
                     if (mgr.stageIconPrefab != null)
                     {
-                        var raw = mgr.stageIconPrefab.GetComponentInChildren<RawImage>(true);
-                        if (raw != null && raw.texture is Texture2D t1)
-                        {
-                            return t1;
-                        }
+                        var tex = ExtractTextureFromIcon(mgr.stageIconPrefab);
+                        if (tex != null) return tex;
                     }
 
                     // 从当前激活级或任一已实例化图标获取
@@ -56,15 +98,8 @@ namespace ModularFlightPanel.Core
                             {
                                 for (int j = 0; j < stg.Icons.Count; j++)
                                 {
-                                    var icon = stg.Icons[j];
-                                    if (icon != null)
-                                    {
-                                        var raw = icon.GetComponentInChildren<RawImage>(true);
-                                        if (raw != null && raw.texture is Texture2D t2)
-                                        {
-                                            return t2;
-                                        }
-                                    }
+                                    var tex = ExtractTextureFromIcon(stg.Icons[j]);
+                                    if (tex != null) return tex;
                                 }
                             }
                         }

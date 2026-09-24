@@ -134,6 +134,7 @@ namespace ModularFlightPanel.Core
         public double DataRateBps { get; private set; } = 0.0;
         public string DirectLinkTarget { get; private set; } = "NONE";
         public IReadOnlyList<CommLinkInfo> ActiveCommLinks { get; private set; } = Array.Empty<CommLinkInfo>();
+        public IReadOnlyList<AntennaTelemetryInfo> Antennas { get; private set; } = Array.Empty<AntennaTelemetryInfo>();
 
         // 时间加速与时钟遥测
         public double MissionTime => IsSimulationMode ? SimulationEngine.MissionTime : (ActiveVessel != null ? ActiveVessel.missionTime : 0.0);
@@ -338,10 +339,81 @@ namespace ModularFlightPanel.Core
         private float _lastCommScanTime = -1f;
         private readonly List<StageDeltaVInfo> _cachedStockStages = new List<StageDeltaVInfo>(16);
         private readonly List<CommLinkInfo> _cachedStockCommLinks = new List<CommLinkInfo>(8);
+        private readonly List<AntennaTelemetryInfo> _cachedAntennasList = new List<AntennaTelemetryInfo>(8);
         private static readonly Comparison<StageDeltaVInfo> CompareStageDescending = (a, b) => b.Stage.CompareTo(a.Stage);
         private readonly Dictionary<int, List<StagePartIconData>> _cachedStagePartIcons = new Dictionary<int, List<StagePartIconData>>();
         private float _lastStageIconScanTime = -10f;
         private static System.Reflection.FieldInfo _stageIconImageField;
+
+        private void RefreshAntennasList(Vessel v)
+        {
+            _cachedAntennasList.Clear();
+            if (v == null) return;
+            try
+            {
+                var transmitters = v.FindPartModulesImplementing<ModuleDataTransmitter>();
+                if (transmitters != null && transmitters.Count > 0)
+                {
+                    for (int i = 0; i < transmitters.Count; i++)
+                    {
+                        var t = transmitters[i];
+                        if (t == null) continue;
+
+                        string antName = (t.part != null && t.part.partInfo != null) ? t.part.partInfo.title : (t.part != null ? t.part.name : "Antenna");
+                        string typeStr = t.antennaType.ToString().ToUpperInvariant();
+                        double pwr = t.antennaPower;
+                        string pwrStr;
+                        if (pwr >= 1000000000.0) pwrStr = $"{(pwr / 1000000000.0):F1}G";
+                        else if (pwr >= 1000000.0) pwrStr = $"{(pwr / 1000000.0):F1}M";
+                        else if (pwr >= 1000.0) pwrStr = $"{(pwr / 1000.0):F1}k";
+                        else pwrStr = $"{pwr:F0}";
+
+                        bool isOperational = true;
+                        string status = IsConnected ? "LINKED" : "SEARCHING";
+                        float sig = (float)CommSignal;
+
+                        if (t.part != null)
+                        {
+                            var dep = t.part.FindModuleImplementing<ModuleDeployableAntenna>();
+                            if (dep != null)
+                            {
+                                if (dep.deployState == ModuleDeployablePart.DeployState.RETRACTED)
+                                {
+                                    status = "RETRACTED";
+                                    sig = 0f;
+                                    isOperational = false;
+                                }
+                                else if (dep.deployState == ModuleDeployablePart.DeployState.EXTENDING ||
+                                         dep.deployState == ModuleDeployablePart.DeployState.RETRACTING)
+                                {
+                                    status = "DEPLOYING";
+                                    sig = 0f;
+                                }
+                                else if (dep.deployState == ModuleDeployablePart.DeployState.BROKEN)
+                                {
+                                    status = "BROKEN";
+                                    sig = 0f;
+                                    isOperational = false;
+                                }
+                            }
+                        }
+
+                        _cachedAntennasList.Add(new AntennaTelemetryInfo(antName, typeStr, pwr, pwrStr, sig, status, isOperational));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ModularFlightPanel] RefreshAntennasList warning: {ex.Message}");
+            }
+
+            if (_cachedAntennasList.Count == 0)
+            {
+                string status = IsConnected ? "LINKED" : "NO LINK";
+                _cachedAntennasList.Add(new AntennaTelemetryInfo("INTERNAL ANTENNA", "INTERNAL", 5000.0, "5.0k", (float)CommSignal, status, true));
+            }
+            Antennas = _cachedAntennasList;
+        }
 
         private IReadOnlyList<StagePartIconData> GetStagePartIcons(int stageNum)
         {
@@ -677,6 +749,8 @@ namespace ModularFlightPanel.Core
             IsConnected = sim.IsConnected;
             ControlLevelStr = sim.ControlLevelStr;
             AntennaCount = sim.AntennaCount;
+            ActiveCommLinks = sim.ActiveCommLinks;
+            Antennas = sim.Antennas;
 
             CrewCount = sim.CrewCount;
             CrewCapacity = sim.CrewCapacity;
@@ -1353,6 +1427,7 @@ namespace ModularFlightPanel.Core
                                     _lastAntennaScanTime = now;
                                     var transmitters = v.FindPartModulesImplementing<ModuleDataTransmitter>();
                                     _cachedAntennaCount = transmitters != null ? transmitters.Count : 0;
+                                    RefreshAntennasList(v);
                                 }
                                 AntennaCount = _cachedAntennaCount;
                             }
@@ -1397,6 +1472,7 @@ namespace ModularFlightPanel.Core
                                 _lastAntennaScanTime = now;
                                 var transmitters = v.FindPartModulesImplementing<ModuleDataTransmitter>();
                                 _cachedAntennaCount = transmitters != null ? transmitters.Count : 0;
+                                RefreshAntennasList(v);
                             }
                             AntennaCount = _cachedAntennaCount;
                         }

@@ -33,19 +33,17 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
-        /// 获取当前屏幕相对于 1080p 基准的动态分辨率缩放比率 (响应式适配 2K / 4K / 宽屏)
+        /// 获取动态分辨率缩放比率 (固定返回 1.0f，彻底关闭全屏自适应拉伸与形变)
         /// </summary>
         public static float GetScreenDpiScale()
         {
-            float baseHeight = 1080f;
-            float currentHeight = Mathf.Max(Screen.height, 720f);
-            return currentHeight / baseHeight;
+            return 1.0f;
         }
 
         public static Func<float> CustomNavballUiScaleProvider = null;
 
         /// <summary>
-        /// 读取 KSP 原生 UI_SCALE_NAVBALL 与 UI_SCALE 设定，并结合屏幕 DPI 自动计算权威姿态球界面尺寸比例
+        /// 读取 KSP 姿态球比例 (固定返回 1.0f，彻底关闭随游戏原生设置自适应形变)
         /// </summary>
         public static float GetKspNavballUiScale()
         {
@@ -53,25 +51,6 @@ namespace ModularFlightPanel.UI
             {
                 try { return Mathf.Clamp(CustomNavballUiScaleProvider(), 0.5f, 2.5f); } catch { }
             }
-
-            try
-            {
-                Type gameSettingsType = Type.GetType("GameSettings, Assembly-CSharp");
-                if (gameSettingsType != null)
-                {
-                    var navField = gameSettingsType.GetField("UI_SCALE_NAVBALL", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    var uiField = gameSettingsType.GetField("UI_SCALE", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                    if (navField != null && uiField != null)
-                    {
-                        float nav = Convert.ToSingle(navField.GetValue(null));
-                        float ui = Convert.ToSingle(uiField.GetValue(null));
-                        float scale = nav * ui;
-                        if (scale > 0.05f) return Mathf.Clamp(scale, 0.5f, 2.5f);
-                    }
-                }
-            }
-            catch { }
-
             return 1.0f;
         }
 

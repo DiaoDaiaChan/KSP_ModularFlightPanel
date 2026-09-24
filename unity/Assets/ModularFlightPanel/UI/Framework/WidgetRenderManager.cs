@@ -80,8 +80,8 @@ namespace ModularFlightPanel.UI
         public GlobalRefreshProfile CurrentProfile { get; set; } = GlobalRefreshProfile.Balanced;
         public int CurrentNavballResolution { get; private set; } = 512;
 
-        // 自适应渲染分辨率与超采样倍率设置 (Smart Resolution & Supersampling)
-        public bool AutoAdaptResolution { get; set; } = true;
+        // 渲染分辨率与超采样倍率设置 (关闭自适应动态缩放，采用稳定高保真固定分辨率)
+        public bool AutoAdaptResolution { get; set; } = false;
         public float GlobalRenderScaleMultiplier { get; set; } = 1.0f;
 
         // 垂直同步与自定义刷新率阶梯配置 (用户可自由填写任意浮点数 Hz，例如 11.2Hz，或选择跟随游戏垂直同步)

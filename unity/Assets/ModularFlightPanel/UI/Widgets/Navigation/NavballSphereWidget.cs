@@ -64,12 +64,11 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
-            // 1. 自适应读取 KSP 原生 UI_SCALE_NAVBALL 与尺寸比例 (基准直径优化为 ~150px，完全贴合原生)
-            float uiScale = UIFactory.GetKspNavballUiScale();
-            float ballDiameter = 150f * uiScale * CurrentDpiScale;
+            // 1. 固定标准姿态球基准直径为 150px (关闭自适应形变，严格按设计尺寸呈现)
+            float ballDiameter = 150f;
             _ballDiameter = ballDiameter;
-            float shellWidth = ballDiameter + 92f * CurrentDpiScale;
-            float shellHeight = ballDiameter + 116f * CurrentDpiScale;
+            float shellWidth = ballDiameter + 92f;
+            float shellHeight = ballDiameter + 116f;
 
             bool showShell = config != null && !string.IsNullOrEmpty(config.CustomTemplate) && config.CustomTemplate.IndexOf("shell", StringComparison.OrdinalIgnoreCase) >= 0;
             bool showHeadingBox = config != null && !string.IsNullOrEmpty(config.CustomTemplate) && config.CustomTemplate.IndexOf("heading_box", StringComparison.OrdinalIgnoreCase) >= 0;
