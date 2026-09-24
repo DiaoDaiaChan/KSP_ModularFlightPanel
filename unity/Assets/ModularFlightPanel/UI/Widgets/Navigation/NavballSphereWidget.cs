@@ -34,10 +34,32 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _shellStatus;
 
         private readonly Dictionary<string, Image> _markerImages = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+        private float _ballDiameter;
         private float _visualRadius;
         private Quaternion _lastRenderedAttitude = Quaternion.identity;
         private float _lastCameraRenderTime = -1f;
         private float _lastProfileCheckTime = -1f;
+
+        private static Mesh _primitiveSphereMesh;
+        private Image _crossWingL;
+        private Image _crossWingR;
+        private Image _crossTabL;
+        private Image _crossTabR;
+        private Image _crossChevronL;
+        private Image _crossChevronR;
+        private Image _crossDot;
+        private readonly List<Outline> _crosshairOutlines = new List<Outline>();
+
+        private static void EnsureDefaultSphereMesh()
+        {
+            if (_primitiveSphereMesh == null)
+            {
+                GameObject tempSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                _primitiveSphereMesh = tempSphere.GetComponent<MeshFilter>().sharedMesh;
+                if (Application.isPlaying) Destroy(tempSphere);
+                else DestroyImmediate(tempSphere);
+            }
+        }
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -45,6 +67,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 自适应读取 KSP 原生 UI_SCALE_NAVBALL 与尺寸比例 (基准直径优化为 ~150px，完全贴合原生)
             float uiScale = UIFactory.GetKspNavballUiScale();
             float ballDiameter = 150f * uiScale * CurrentDpiScale;
+            _ballDiameter = ballDiameter;
             float shellWidth = ballDiameter + 92f * CurrentDpiScale;
             float shellHeight = ballDiameter + 116f * CurrentDpiScale;
 
@@ -289,15 +312,84 @@ namespace ModularFlightPanel.UI.Widgets
         {
             _crosshair = new GameObject("Crosshair_Center", typeof(RectTransform));
             _crosshair.transform.SetParent(parent, false);
+            _crosshairOutlines.Clear();
 
-            float wingW = 28f * dpiScale;
-            float wingH = 3.2f * dpiScale;
-            float offset = 22f * dpiScale;
+            float s = dpiScale;
+            Color wingColor = theme.AccentPrimary;
+            Color chevronColor = theme.WarningColor;
+            Color darkBorder = WidgetStyleManager.Weighted(theme.FrameBgColor, LineWeight.Strong);
+            Vector2 outlineDist = new Vector2(1.2f * s, 1.2f * s);
 
-            UIFactory.CreatePanel(_crosshair.transform, "H_Wing_L", new Vector2(wingW, wingH), new Vector2(-offset, 0f), theme.AccentPrimary);
-            UIFactory.CreatePanel(_crosshair.transform, "H_Wing_R", new Vector2(wingW, wingH), new Vector2(offset, 0f), theme.AccentPrimary);
-            UIFactory.CreatePanel(_crosshair.transform, "V_Center", new Vector2(wingH, 16f * dpiScale), Vector2.zero, theme.WarningColor);
-            UIFactory.CreatePanel(_crosshair.transform, "Center_Dot", new Vector2(5.5f * dpiScale, 5.5f * dpiScale), Vector2.zero, theme.WarningColor);
+            // 1. 左侧水平水线机翼 (Waterline Left Wing Bar) + 内侧向下机腹折角 (Down-Tab，权威指示“下方/机腹”天地关系)
+            float wingW = 18f * s;
+            float wingH = 2.4f * s;
+            float wingOffX = 20f * s;
+            GameObject wingLObj = UIFactory.CreatePanel(_crosshair.transform, "H_Wing_L", new Vector2(wingW, wingH), new Vector2(-wingOffX, 0f), wingColor);
+            _crossWingL = wingLObj.GetComponent<Image>();
+            _crossWingL.raycastTarget = false;
+            Outline olWL = wingLObj.AddComponent<Outline>();
+            olWL.effectColor = darkBorder;
+            olWL.effectDistance = outlineDist;
+            _crosshairOutlines.Add(olWL);
+
+            float tabW = 2.4f * s;
+            float tabH = 5.5f * s;
+            float tabOffX = 11f * s;
+            float tabOffY = -2.5f * s;
+            GameObject tabLObj = UIFactory.CreatePanel(_crosshair.transform, "Tab_Down_L", new Vector2(tabW, tabH), new Vector2(-tabOffX, tabOffY), wingColor);
+            _crossTabL = tabLObj.GetComponent<Image>();
+            _crossTabL.raycastTarget = false;
+            Outline olTL = tabLObj.AddComponent<Outline>();
+            olTL.effectColor = darkBorder;
+            olTL.effectDistance = outlineDist;
+            _crosshairOutlines.Add(olTL);
+
+            // 2. 右侧水平水线机翼 (Waterline Right Wing Bar) + 内侧向下机腹折角 (Down-Tab)
+            GameObject wingRObj = UIFactory.CreatePanel(_crosshair.transform, "H_Wing_R", new Vector2(wingW, wingH), new Vector2(wingOffX, 0f), wingColor);
+            _crossWingR = wingRObj.GetComponent<Image>();
+            _crossWingR.raycastTarget = false;
+            Outline olWR = wingRObj.AddComponent<Outline>();
+            olWR.effectColor = darkBorder;
+            olWR.effectDistance = outlineDist;
+            _crosshairOutlines.Add(olWR);
+
+            GameObject tabRObj = UIFactory.CreatePanel(_crosshair.transform, "Tab_Down_R", new Vector2(tabW, tabH), new Vector2(tabOffX, tabOffY), wingColor);
+            _crossTabR = tabRObj.GetComponent<Image>();
+            _crossTabR.raycastTarget = false;
+            Outline olTR = tabRObj.AddComponent<Outline>();
+            olTR.effectColor = darkBorder;
+            olTR.effectDistance = outlineDist;
+            _crosshairOutlines.Add(olTR);
+
+            // 3. 中央向上机头天顶指示尖 (Aircraft Boresight Chevron - 顶点严格朝上，权威指示“上方/天空”方向)
+            float chevLen = 8.5f * s;
+            float chevThick = 2.4f * s;
+            GameObject chevLObj = UIFactory.CreatePanel(_crosshair.transform, "Chevron_L", new Vector2(chevLen, chevThick), new Vector2(-2.8f * s, 2.8f * s), chevronColor);
+            chevLObj.transform.localRotation = Quaternion.Euler(0f, 0f, 36f);
+            _crossChevronL = chevLObj.GetComponent<Image>();
+            _crossChevronL.raycastTarget = false;
+            Outline olCL = chevLObj.AddComponent<Outline>();
+            olCL.effectColor = darkBorder;
+            olCL.effectDistance = outlineDist;
+            _crosshairOutlines.Add(olCL);
+
+            GameObject chevRObj = UIFactory.CreatePanel(_crosshair.transform, "Chevron_R", new Vector2(chevLen, chevThick), new Vector2(2.8f * s, 2.8f * s), chevronColor);
+            chevRObj.transform.localRotation = Quaternion.Euler(0f, 0f, -36f);
+            _crossChevronR = chevRObj.GetComponent<Image>();
+            _crossChevronR.raycastTarget = false;
+            Outline olCR = chevRObj.AddComponent<Outline>();
+            olCR.effectColor = darkBorder;
+            olCR.effectDistance = outlineDist;
+            _crosshairOutlines.Add(olCR);
+
+            // 4. 正中央高精度瞄准靶心 (Precision Boresight Pip)
+            GameObject dotObj = UIFactory.CreatePanel(_crosshair.transform, "Boresight_Pip", new Vector2(3f * s, 3f * s), Vector2.zero, chevronColor);
+            _crossDot = dotObj.GetComponent<Image>();
+            _crossDot.raycastTarget = false;
+            Outline olDot = dotObj.AddComponent<Outline>();
+            olDot.effectColor = darkBorder;
+            olDot.effectDistance = outlineDist;
+            _crosshairOutlines.Add(olDot);
         }
 
         private void CreateHeadingBox(Transform parent, float dpiScale, ThemeConfig theme)
@@ -339,27 +431,40 @@ namespace ModularFlightPanel.UI.Widgets
             var hook = NavBallHookService.Provider;
             bool hasHook = (hook != null && hook.HasStockNavBall);
 
-            // 0. 官方专属网格与材质属性动态挂钩检查 (仅贴图模式下使用)
+            // 0. 官方专属网格与材质属性动态挂钩检查 (贴图与程序化自适应模式)
             bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
-            if (!isProcedural && hasHook && _sphereObject != null)
+            _visualRadius = _ballDiameter * 0.5f * (isProcedural ? 0.94f : 1.0f);
+            if (_sphereObject != null)
             {
                 MeshFilter ourMf = _sphereObject.GetComponent<MeshFilter>();
-                if (hook.StockMesh != null && ourMf.sharedMesh != hook.StockMesh)
+                if (isProcedural)
                 {
-                    ourMf.sharedMesh = hook.StockMesh;
-                    UpdateSphereMeshScale();
+                    EnsureDefaultSphereMesh();
+                    if (ourMf != null && _primitiveSphereMesh != null && ourMf.sharedMesh != _primitiveSphereMesh)
+                    {
+                        ourMf.sharedMesh = _primitiveSphereMesh;
+                        UpdateSphereMeshScale();
+                    }
                 }
-                else if (_sphereObject.transform.localScale == Vector3.one * 2.0f && ourMf != null && ourMf.sharedMesh != null)
+                else if (hasHook && ourMf != null)
                 {
-                    UpdateSphereMeshScale();
-                }
+                    if (hook.StockMesh != null && ourMf.sharedMesh != hook.StockMesh)
+                    {
+                        ourMf.sharedMesh = hook.StockMesh;
+                        UpdateSphereMeshScale();
+                    }
+                    else if (_sphereObject.transform.localScale == Vector3.one * 2.0f && ourMf.sharedMesh != null)
+                    {
+                        UpdateSphereMeshScale();
+                    }
 
-                if (_sphereMaterial != null && _sphereMaterial.HasProperty("_MainTex"))
-                {
-                    if (_sphereMaterial.mainTextureScale != hook.TextureScale)
-                        _sphereMaterial.mainTextureScale = hook.TextureScale;
-                    if (_sphereMaterial.mainTextureOffset != hook.TextureOffset)
-                        _sphereMaterial.mainTextureOffset = hook.TextureOffset;
+                    if (_sphereMaterial != null && _sphereMaterial.HasProperty("_MainTex"))
+                    {
+                        if (_sphereMaterial.mainTextureScale != hook.TextureScale)
+                            _sphereMaterial.mainTextureScale = hook.TextureScale;
+                        if (_sphereMaterial.mainTextureOffset != hook.TextureOffset)
+                            _sphereMaterial.mainTextureOffset = hook.TextureOffset;
+                    }
                 }
             }
 
@@ -433,7 +538,7 @@ namespace ModularFlightPanel.UI.Widgets
                     Quaternion camRot = hook.CameraRotation;
                     Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
                     _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
+                        ? new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w)
                         : rawRot;
                 }
                 else
@@ -441,7 +546,7 @@ namespace ModularFlightPanel.UI.Widgets
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
                     Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
                     _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w)
+                        ? new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w)
                         : rawRot;
                 }
             }
@@ -540,17 +645,12 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 float unscaledTime = Time.unscaledTime;
 
-                // 1. 全局阶梯节流对齐：严格跟随全局 RefreshProfile (Eco 模式 30Hz / 降频模式 / 自定义 Hz)
-                if (!WidgetRenderManager.Instance.ShouldUpdateTier(WidgetRefreshTier.Critical, unscaledTime, ref _lastProfileCheckTime))
-                {
-                    return;
-                }
-
-                // 2. 姿态静止缓存与 10Hz 保底：当飞船处于滑行、停靠或暂停时，避免每帧重复渲染
+                // 1. 姿态机动满帧直驱与静止节流：当飞船发生姿态旋转机动时，必须满帧同步渲染离屏相机，彻底根除标线相对漂移；
+                // 仅在姿态完全静止滑行时跟随全局 RefreshProfile 节流调度
                 Quaternion currentAtt = _sphereObject != null ? _sphereObject.transform.localRotation : Quaternion.identity;
-                bool attitudeChanged = Quaternion.Angle(currentAtt, _lastRenderedAttitude) > 0.05f;
+                bool attitudeChanged = Quaternion.Angle(currentAtt, _lastRenderedAttitude) > 0.02f;
 
-                if (attitudeChanged || (unscaledTime - _lastCameraRenderTime) >= 0.1f)
+                if (attitudeChanged || WidgetRenderManager.Instance.ShouldUpdateTier(WidgetRefreshTier.Critical, unscaledTime, ref _lastProfileCheckTime) || (unscaledTime - _lastCameraRenderTime) >= 0.1f)
                 {
                     _lastRenderedAttitude = currentAtt;
                     _lastCameraRenderTime = unscaledTime;
@@ -639,7 +739,11 @@ namespace ModularFlightPanel.UI.Widgets
                 bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
                 Shader targetShader = null;
 
-                if (!string.IsNullOrEmpty(theme.ShaderName))
+                if (isProcedural)
+                {
+                    targetShader = AssetLoader.ProceduralShader;
+                }
+                else if (!string.IsNullOrEmpty(theme.ShaderName))
                 {
                     if (theme.ShaderName.EndsWith("NavballHalftone"))
                         targetShader = AssetLoader.HalftoneShader;
@@ -728,6 +832,19 @@ namespace ModularFlightPanel.UI.Widgets
             if (_shellStatus != null)
             {
                 ApplyText(_shellStatus, TextStyleRole.SecondaryValue, theme);
+            }
+
+            if (_crossWingL != null) _crossWingL.color = theme.AccentPrimary;
+            if (_crossWingR != null) _crossWingR.color = theme.AccentPrimary;
+            if (_crossTabL != null) _crossTabL.color = theme.AccentPrimary;
+            if (_crossTabR != null) _crossTabR.color = theme.AccentPrimary;
+            if (_crossChevronL != null) _crossChevronL.color = theme.WarningColor;
+            if (_crossChevronR != null) _crossChevronR.color = theme.WarningColor;
+            if (_crossDot != null) _crossDot.color = theme.WarningColor;
+            Color darkBorder = WidgetStyleManager.Weighted(theme.FrameBgColor, LineWeight.Strong);
+            for (int i = 0; i < _crosshairOutlines.Count; i++)
+            {
+                if (_crosshairOutlines[i] != null) _crosshairOutlines[i].effectColor = darkBorder;
             }
         }
 

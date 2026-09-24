@@ -72,13 +72,24 @@ namespace ModularFlightPanel.UI
             _rootRt = parentRt;
             _canvas = canvas;
 
+            RectTransform myRt = GetComponent<RectTransform>();
+            if (myRt != null)
+            {
+                myRt.anchorMin = new Vector2(0.5f, 0.5f);
+                myRt.anchorMax = new Vector2(0.5f, 0.5f);
+                myRt.pivot = new Vector2(0.5f, 0.5f);
+                myRt.anchoredPosition = Vector2.zero;
+                myRt.sizeDelta = Vector2.zero;
+            }
+
             GameObject guidesContainer = new GameObject("SmartGuidesContainer", typeof(RectTransform));
-            guidesContainer.transform.SetParent(_rootRt, false);
+            guidesContainer.transform.SetParent(transform, false);
             guidesContainer.transform.SetAsLastSibling();
 
             RectTransform cRt = guidesContainer.GetComponent<RectTransform>();
-            cRt.anchorMin = Vector2.zero;
-            cRt.anchorMax = Vector2.one;
+            cRt.anchorMin = new Vector2(0.5f, 0.5f);
+            cRt.anchorMax = new Vector2(0.5f, 0.5f);
+            cRt.pivot = new Vector2(0.5f, 0.5f);
             cRt.sizeDelta = Vector2.zero;
             cRt.anchoredPosition = Vector2.zero;
 
@@ -105,19 +116,17 @@ namespace ModularFlightPanel.UI
             Image img = lineObj.GetComponent<Image>();
             img.raycastTarget = false;
 
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+
             if (isVertical)
             {
-                rt.anchorMin = new Vector2(0.5f, 0f);
-                rt.anchorMax = new Vector2(0.5f, 1f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(1.5f, 0f);
+                rt.sizeDelta = new Vector2(1.5f, 4000f);
             }
             else
             {
-                rt.anchorMin = new Vector2(0f, 0.5f);
-                rt.anchorMax = new Vector2(1f, 0.5f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(0f, 1.5f);
+                rt.sizeDelta = new Vector2(4000f, 1.5f);
             }
 
             lineObj.SetActive(false);
@@ -389,6 +398,11 @@ namespace ModularFlightPanel.UI
             for (int i = 0; i < _hLines.Count; i++) _hLines[i].gameObject.SetActive(false);
             if (_guideLabelX != null) _guideLabelX.transform.parent.gameObject.SetActive(false);
             if (_guideLabelY != null) _guideLabelY.transform.parent.gameObject.SetActive(false);
+        }
+
+        private void OnDestroy()
+        {
+            if (_instance == this) _instance = null;
         }
     }
 }

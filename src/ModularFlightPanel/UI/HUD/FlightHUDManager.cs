@@ -286,19 +286,19 @@ namespace ModularFlightPanel.UI
 
             Debug.Log($"[ModularFlightPanel] Assembled {_modularWidgets.Count} modular flight widgets into WidgetRenderManager.");
 
-            // 实例化 Figma 级智能对齐参考线中枢 (位于顶层)
+            // 实例化 Figma 级智能对齐参考线中枢 (位于顶层，挂载进 _hudRoot 保证坐标系统一)
             GameObject guidesObj = new GameObject("SmartGuides", typeof(RectTransform));
-            guidesObj.transform.SetParent(_canvasObj.transform, false);
+            guidesObj.transform.SetParent(_hudRoot.transform, false);
             guidesObj.transform.SetAsLastSibling();
             var smartGuides = guidesObj.AddComponent<WidgetSmartGuides>();
-            smartGuides.Initialize(_canvasObj.GetComponent<RectTransform>(), _canvas);
+            smartGuides.Initialize(rootRt, _canvas);
 
-            // 实例化 8 点包围盒变换手柄与旋转操纵器 (位于最顶层)
+            // 实例化 8 点包围盒变换手柄与旋转操纵器 (位于最顶层，挂载进 _hudRoot 保证坐标系统一)
             GameObject gizmoObj = new GameObject("TransformGizmo", typeof(RectTransform));
-            gizmoObj.transform.SetParent(_canvasObj.transform, false);
+            gizmoObj.transform.SetParent(_hudRoot.transform, false);
             gizmoObj.transform.SetAsLastSibling();
             var gizmo = gizmoObj.AddComponent<WidgetTransformGizmo>();
-            gizmo.Initialize(_canvasObj.GetComponent<RectTransform>(), _canvas);
+            gizmo.Initialize(rootRt, _canvas);
         }
 
         public T SpawnWidget<T>(WidgetConfig cfg, ThemeConfig theme) where T : BaseFlightWidget

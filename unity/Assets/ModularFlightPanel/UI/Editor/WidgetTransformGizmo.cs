@@ -71,6 +71,16 @@ namespace ModularFlightPanel.UI
             _rootRt = parentRt;
             _canvas = canvas;
 
+            RectTransform myRt = GetComponent<RectTransform>();
+            if (myRt != null)
+            {
+                myRt.anchorMin = new Vector2(0.5f, 0.5f);
+                myRt.anchorMax = new Vector2(0.5f, 0.5f);
+                myRt.pivot = new Vector2(0.5f, 0.5f);
+                myRt.anchoredPosition = Vector2.zero;
+                myRt.sizeDelta = Vector2.zero;
+            }
+
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
             _cyanCol = theme.AccentSecondary;
             _goldCol = theme.WarningColor;
@@ -93,14 +103,22 @@ namespace ModularFlightPanel.UI
         {
             WidgetSelectionManager.OnSelectionChanged -= UpdateGizmoPosition;
             WidgetDragHandler.OnEditModeChanged -= HandleEditModeChanged;
+            if (_gizmoBox != null)
+            {
+                if (Application.isPlaying) Destroy(_gizmoBox);
+                else DestroyImmediate(_gizmoBox);
+            }
+            if (_instance == this) _instance = null;
         }
 
         private void CreateGizmoVisuals()
         {
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
             _gizmoBox = new GameObject("TransformGizmoBox", typeof(RectTransform), typeof(Image), typeof(Outline));
-            _gizmoBox.transform.SetParent(_rootRt, false);
+            _gizmoBox.transform.SetParent(transform, false);
             _gizmoBoxRt = _gizmoBox.GetComponent<RectTransform>();
+            _gizmoBoxRt.anchorMin = new Vector2(0.5f, 0.5f);
+            _gizmoBoxRt.anchorMax = new Vector2(0.5f, 0.5f);
             _gizmoBoxRt.pivot = new Vector2(0.5f, 0.5f);
 
             _boxImage = _gizmoBox.GetComponent<Image>();
@@ -237,6 +255,7 @@ namespace ModularFlightPanel.UI
             float h_total = maxY - minY;
             Vector2 center = new Vector2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
 
+            transform.SetAsLastSibling();
             _gizmoBox.SetActive(true);
             _gizmoBox.transform.SetAsLastSibling();
 

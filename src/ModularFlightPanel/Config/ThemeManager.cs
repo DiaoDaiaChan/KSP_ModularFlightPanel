@@ -23,7 +23,7 @@ namespace ModularFlightPanel.Config
     public class ThemeSettingsData
     {
         public string SelectedThemeId = "modern_aero";
-        public int RenderMode = 0; // 0 = Texture, 1 = Procedural
+        public int RenderMode = 1; // 0 = Texture, 1 = Procedural
         public bool HideStockNavball = true;
         public bool HideStockAltimeter = false;
         public bool HideStockBottomLeft = false;
@@ -96,7 +96,7 @@ namespace ModularFlightPanel.Config
         public List<ThemeConfig> AvailableThemes { get; private set; } = new List<ThemeConfig>();
         public ThemeConfig CurrentTheme { get; private set; }
 
-        private NavballRenderMode _globalRenderMode = NavballRenderMode.Texture;
+        private NavballRenderMode _globalRenderMode = NavballRenderMode.Procedural;
         public NavballRenderMode GlobalRenderMode
         {
             get => _globalRenderMode;

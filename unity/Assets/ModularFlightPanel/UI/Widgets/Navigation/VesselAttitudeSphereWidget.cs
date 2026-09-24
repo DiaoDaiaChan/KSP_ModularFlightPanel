@@ -556,15 +556,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
                 float unscaledTime = Time.unscaledTime;
-                if (!WidgetRenderManager.Instance.ShouldUpdateTier(WidgetRefreshTier.Critical, unscaledTime, ref _lastProfileCheckTime))
-                {
-                    return;
-                }
 
+                // 姿态机动满帧直驱与静止节流：当飞船发生姿态旋转机动时，必须满帧同步渲染离屏相机，彻底根除标线相对漂移；
+                // 仅在姿态完全静止滑行时跟随全局 RefreshProfile 节流调度
                 Quaternion currentAtt = _sphereObject != null ? _sphereObject.transform.localRotation : Quaternion.identity;
-                bool attitudeChanged = Quaternion.Angle(currentAtt, _lastRenderedAttitude) > 0.05f;
+                bool attitudeChanged = Quaternion.Angle(currentAtt, _lastRenderedAttitude) > 0.02f;
 
-                if (attitudeChanged || (unscaledTime - _lastCameraRenderTime) >= 0.1f)
+                if (attitudeChanged || WidgetRenderManager.Instance.ShouldUpdateTier(WidgetRefreshTier.Critical, unscaledTime, ref _lastProfileCheckTime) || (unscaledTime - _lastCameraRenderTime) >= 0.1f)
                 {
                     _lastRenderedAttitude = currentAtt;
                     _lastCameraRenderTime = unscaledTime;
@@ -584,13 +582,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     Quaternion camRot = hook.CameraRotation;
                     Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
-                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
+                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w);
                 }
                 else
                 {
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
                     Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
-                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, -rawRot.y, -rawRot.z, rawRot.w);
+                    _sphereObject.transform.localRotation = new Quaternion(rawRot.x, rawRot.y, -rawRot.z, rawRot.w);
                 }
             }
 
