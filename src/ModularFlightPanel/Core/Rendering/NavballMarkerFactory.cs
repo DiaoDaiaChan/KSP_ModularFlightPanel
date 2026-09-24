@@ -43,9 +43,9 @@ namespace ModularFlightPanel.Core
 
             ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
             Color baseCol = theme != null ? (Color)theme.WarningColor : new Color(1.0f, 0.65f, 0.05f, 1.0f);
-            Color amberBright = Color.Lerp(baseCol, Color.white, 0.15f);
-            Color amberDark = Color.Lerp(baseCol, Color.black, 0.12f);
-            Color shadowCol = new Color(0.06f, 0.05f, 0.04f, 1.0f);
+            Color amberBright = Color.Lerp(baseCol, Color.white, 0.22f);
+            Color amberDark = Color.Lerp(baseCol, Color.black, 0.06f);
+            Color shadowCol = new Color(0.04f, 0.03f, 0.02f, 1.0f);
 
             for (int y = 0; y < h; y++)
             {
@@ -55,19 +55,24 @@ namespace ModularFlightPanel.Core
                     float py = y - cy;
 
                     float dfg = ReticleSdf(px, py);
-                    // 深度阴影 (向下偏右采样，SDF 柔和羽化)
-                    float dsh = ReticleSdf(px - 1.2f, py + 2.2f);
+                    // 360 度暗色环境光遮蔽轮廓 (Dark Ambient Occlusion Halo)
+                    float dHalo = dfg - 1.2f;
+                    // 触觉深度投影 (Directional Drop Shadow: dx = +1.5f, dy = -2.5f)
+                    float dSh = ReticleSdf(px - 1.5f, py + 2.5f);
 
                     float afg = Mathf.Clamp01(0.5f - dfg);
-                    float ash = Mathf.Clamp01(0.5f - dsh * 0.75f) * 0.72f;
+                    float aHalo = Mathf.Clamp01(0.5f - dHalo * 0.8f) * 0.70f;
+                    float aSh = Mathf.Clamp01(0.5f - dSh * 0.65f) * 0.85f;
+                    float aShadowTotal = Mathf.Max(aHalo, aSh) * (1.0f - afg);
 
                     float t = Mathf.Clamp01((py + 20f) / 40f);
-                    Color fgCol = Color.Lerp(amberDark, amberBright, t);
+                    float ridge = Mathf.Clamp01(1.0f - Mathf.Abs(py - 1.2f) * 0.9f);
+                    Color fgCol = Color.Lerp(amberDark, amberBright, t) + Color.white * (ridge * 0.15f);
 
-                    float outA = afg + ash * (1.0f - afg);
+                    float outA = afg + aShadowTotal;
                     if (outA > 0.005f)
                     {
-                        Color outRgb = (fgCol * afg + shadowCol * (ash * (1.0f - afg))) / outA;
+                        Color outRgb = (fgCol * afg + shadowCol * aShadowTotal) / outA;
                         outRgb.a = outA;
                         pixels[y * w + x] = outRgb;
                     }
@@ -356,24 +361,31 @@ namespace ModularFlightPanel.Core
 
         private static float ReticleSdf(float px, float py)
         {
-            // 1. 水线左右水平翼 (Waterline Wings)
-            float d1 = SegmentSdf(px, py, -56f, 0f, -18f, 0f);
-            // 2. 左向下 45 度托槽斜边 (Downward V-Notch Cradle)
-            float d2 = SegmentSdf(px, py, -18f, 0f, 0f, -18f);
-            // 3. 右向上 45 度托槽斜边
-            float d3 = SegmentSdf(px, py, 0f, -18f, 18f, 0f);
-            // 4. 右侧水平翼
-            float d4 = SegmentSdf(px, py, 18f, 0f, 56f, 0f);
+            float sx = Mathf.Abs(px);
 
-            float dPath = Mathf.Min(Mathf.Min(d1, d2), Mathf.Min(d3, d4)) - 2.5f;
-            // 翼梢平头垂直切割
-            float dClip = Mathf.Max(0f, Mathf.Abs(px) - 56f);
-            dPath = Mathf.Max(dPath, dClip);
+            // 1. 向下 45 度精密托槽 (Downward V-Cradle: 自 (18, 0) 向下汇聚至 (0, -18))
+            float dV = SegmentSdf(sx, py, 0f, -18f, 18f, 0f) - 3.2f;
 
-            // 5. 正中心钻石瞄准点 (Boresight Diamond Pip, 精确位于 (0, 0))
-            float dPip = (Mathf.Abs(px) + Mathf.Abs(py) - 5.5f) / 1.41421356f;
+            // 2. 现代水线双翼基底 (Main Wings: x 从 18 到 58)
+            float dW = SegmentSdf(sx, py, 18f, 0f, 58f, 0f) - 3.2f;
+            float dCap = sx - 58f;
+            // 外翼尖 45 度倒角斜切 (45-degree Aerodynamic Wingtip Chamfer)
+            float dBevel = (sx + py - 58f) / 1.41421356f;
+            dW = Mathf.Max(dW, Mathf.Max(dCap, dBevel));
 
-            return Mathf.Min(dPath, dPip);
+            float dFrame = Mathf.Min(dV, dW);
+
+            // 3. 正中心准直光学瞄准标具 (Precision Optics Boresight Pip with Optical Aperture `◈`)
+            // 外菱形边界 (Outer Diamond, r = 6.6)
+            float dOuterDia = (Mathf.Abs(px) + Mathf.Abs(py) - 6.6f) / 1.41421356f;
+            // 内部光学视窗孔径 (Inner Aperture Hole, r = 2.6)
+            float dInnerHole = (2.6f - (Mathf.Abs(px) + Mathf.Abs(py))) / 1.41421356f;
+            float dRingDia = Mathf.Max(dOuterDia, dInnerHole);
+            // 绝对原点 (0, 0) 处亚像素准直中心针尖点 (Center Pinpoint Boresight Dot)
+            float dPin = Mathf.Sqrt(px * px + py * py) - 1.2f;
+            float dPip = Mathf.Min(dRingDia, dPin);
+
+            return Mathf.Min(dFrame, dPip);
         }
 
         private static float SegmentSdf(float px, float py, float x1, float y1, float x2, float y2)
