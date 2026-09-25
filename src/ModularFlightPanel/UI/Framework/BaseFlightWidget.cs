@@ -93,6 +93,28 @@ namespace ModularFlightPanel.UI
             RectTransform.localScale = new Vector3(initRatioX, initRatioY, 1.0f);
             RectTransform.localEulerAngles = new Vector3(0f, 0f, config.Rotation);
 
+            // 上级自动尺寸派发：当派生类声明了 BaseSize 时，自动计算物理像素尺寸
+            if (BaseSize.x > 0f && BaseSize.y > 0f)
+            {
+                RectTransform.sizeDelta = BaseSize * CurrentDpiScale;
+            }
+
+            // 上级自动卡片底板派发：当启用 AutoCreateCardFrame 时，基类自动在根节点创建背景板与 Outline，
+            // 并自动接入微控件主题与样式生命周期，派生类无需手写一行底板代码
+            if (AutoCreateCardFrame)
+            {
+                CardBackground = gameObject.GetComponent<Image>() ?? gameObject.AddComponent<Image>();
+                CardBackground.material = WidgetStyleManager.Instance.GetUiMaterial(isText: false);
+                CardOutline = gameObject.GetComponent<Outline>() ?? gameObject.AddComponent<Outline>();
+                CardOutline.effectDistance = new Vector2(1f * CurrentDpiScale, 1f * CurrentDpiScale);
+                WidgetStyleManager.Instance.ApplyCardFrame(CardBackground, CardOutline, CardRole, theme);
+
+                this.Controls.Wrap("card_frame", "卡片底板", gameObject, t =>
+                {
+                    WidgetStyleManager.Instance.ApplyCardFrame(CardBackground, CardOutline, CardRole, t);
+                });
+            }
+
             // 独立画布绘制优化 (Sub-Canvas Isolation)：
             // 挂载嵌套 Sub-Canvas，隔离 UGUI 网格脏标记与 Draw Call 重建
             ApplyCanvasIsolation(true);
@@ -123,6 +145,37 @@ namespace ModularFlightPanel.UI
             // 全自动化通用交互侦测与射线优化 (普适全量 33 个组件，彻底告别单组件硬编码与手动重写)
             AutoDetectInteractivityAndPruneRaycasts();
         }
+
+        /// <summary>
+        /// 组件设计参考原生尺寸 (Design Reference Size，在 1.0x DPI 下的基础像素尺寸)。
+        /// 派生组件若 override 此属性并返回大于 Vector2.zero 的值，
+        /// 基类 BaseInitialize 会在 OnInitialize 之前自动将其乘以 CurrentDpiScale 并赋予 RectTransform.sizeDelta。
+        /// 彻底省去派生类重复书写 `RectTransform.sizeDelta = new Vector2(...) * CurrentDpiScale` 的样板代码。
+        /// </summary>
+        public virtual Vector2 BaseSize => Vector2.zero;
+
+        /// <summary>
+        /// 是否由基类自动构建标准卡片底板与边框 (Auto Create Standard Card Frame)。
+        /// 若派生类返回 true，BaseInitialize 会在调用 OnInitialize 之前，
+        /// 自动在当前 GameObject 上挂载 Image 与 Outline，赋予 SurfaceStyleRole.CardBg 与 Ghost 细边框，
+        /// 并将其作为 "card_frame" 自动纳入 Controls 管理体系。派生类无需手动创建底板与管理边框。
+        /// </summary>
+        protected virtual bool AutoCreateCardFrame => false;
+
+        /// <summary>
+        /// 当 AutoCreateCardFrame 为 true 时采用的卡片语义角色 (Normal / Warning / Danger / Accent)。默认为 Normal。
+        /// </summary>
+        protected virtual CardStyleRole CardRole => CardStyleRole.Normal;
+
+        /// <summary>
+        /// 当 AutoCreateCardFrame 为 true 时由基类自动生成的卡片背景 Image 组件
+        /// </summary>
+        public Image CardBackground { get; private set; }
+
+        /// <summary>
+        /// 当 AutoCreateCardFrame 为 true 时由基类自动生成的卡片边缘 Outline 组件
+        /// </summary>
+        public Outline CardOutline { get; private set; }
 
         private bool? _explicitInteractive = null;
         private bool _autoDetectedInteractive = false;
@@ -326,6 +379,24 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        /// <summary>
+        /// 全局主遥测更新派发调度入口 (Master Telemetry Update Dispatcher)。
+        /// 由 WidgetRenderManager 单点阶梯分发，自动执行：
+        /// 1. 遥测上下文空值与空船安全拦截 (HasVessel Guard)
+        /// 2. 所有已注册微控件的自动化遥测更新 (Controls.UpdateControls)
+        /// 3. 派生类特异化遥测逻辑执行 (OnUpdateTelemetry)
+        /// </summary>
+        public void MasterUpdateTelemetry(IFlightTelemetry telemetry)
+        {
+            if (telemetry == null || !telemetry.HasVessel) return;
+
+            // 1. 微控件全自动化遥测更新 (包含通配符 Token 计算与脏检查)
+            this.Controls.UpdateControls(telemetry);
+
+            // 2. 派生组件特异化遥测更新
+            OnUpdateTelemetry(telemetry);
+        }
+
         public abstract void OnUpdateTelemetry(IFlightTelemetry telemetry);
 
         #region WidgetStyleManager Convenience Helpers
@@ -456,7 +527,7 @@ namespace ModularFlightPanel.UI
                     MFPProfiler.BeginSample(ProfilerSection.Widgets);
                     try
                     {
-                        OnUpdateTelemetry(telem);
+                        MasterUpdateTelemetry(telem);
                     }
                     finally
                     {

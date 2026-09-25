@@ -344,11 +344,11 @@ namespace ModularFlightPanel.UI
                     try
                     {
                         MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId);
-                        reg.Widget.OnUpdateTelemetry(telem);
+                        reg.Widget.MasterUpdateTelemetry(telem);
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.OnUpdateTelemetry: {ex.Message}");
+                        Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
                     }
                     finally
                     {

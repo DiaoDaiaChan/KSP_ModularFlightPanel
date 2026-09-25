@@ -7,39 +7,45 @@ using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI
 {
+    // ====================================================================================================
+    // Modular Flight Panel (MFP) - 官方标准蓝本 [2/3]：标准航电组件范式标杆 (Standard Flight Widget Reference)
+    // ====================================================================================================
+    //
+    // 【规范概述 (Standard Overview)】:
+    // 本文件是 Modular Flight Panel 整个航电系统的【活的代码规范与标准示范标杆】。
+    // 所有官方原生组件与第三方扩展组件【必须 100% 遵照本模板结构与规范书写】，禁止任何天马行空的各行其是！
+    // 本文件自身在无头审计门禁（MFP-SPEC-001 ~ MFP-SPEC-008）中保持 0 错误、0 警告、0 颜色字面量。
+    //
+    // 【八大核心铁律 (Eight Non-Negotiable Rules)】:
+    // 1. 【MFP-SPEC-001: 继承契约 (Unified Inheritance)】:
+    //    - 必须继承 BaseFlightWidget 统一基类，接入 Sub-Canvas 独立隔离、自由拖拽、缩放、层级治理。
+    // 2. 【MFP-SPEC-002: 阶梯刷新契约 (Refresh Tier Contract)】:
+    //    - 必须显式声明 RefreshTier（姿态/导引 Critical 60Hz；表盘/滚带 Standard 30Hz；电力/维生/控制 Relaxed 10Hz）。
+    //    - 全局由 WidgetRenderManager.MasterUpdate 统一单点分频调度，杜绝多个独立 Update 帧散乱开销。
+    // 3. 【MFP-SPEC-003: 语义主题管道 (Semantic Theming Pipeline)】:
+    //    - 统一样式管道：禁止私自 new Material 或引用底层着色器，必须通过 WidgetStyleManager 语义接口。
+    //    - 基类默认实现已全自动将新主题下发给所有注册的微控件 (Controls.ApplyThemeToControls)。
+    // 4. 【MFP-SPEC-004: 遥测契约与空船守卫 (Telemetry Contract & Safe Guard)】:
+    //    - 必须重写 OnUpdateTelemetry(IFlightTelemetry)。基类主入口 MasterUpdateTelemetry 已预先执行
+    //      空值与空船安全拦截 (HasVessel Guard)，派生组件专注业务求值。
+    // 5. 【MFP-SPEC-005: 安全生命周期 (Safe Lifecycle)】:
+    //    - 基类已自动处理 I18n 解绑、RenderManager 注销与微控件回收。若显式 override OnDestroy，必须调用 base.OnDestroy()。
+    // 6. 【MFP-SPEC-006: 零颜色字面量 (Zero Hardcoded Colors)】:
+    //    - 严禁出现 new Color(...) / Color.red 等字面量（占位透明 Color.clear 除外）。
+    //    - 颜色必须 100% 来自 WidgetStyleManager 语义接口（ApplyCard / ApplyText / ApplyButton / ApplyMeter / GetTextColor）。
+    // 7. 【MFP-SPEC-007: 禁止直接场景查询 (No Scene Queries)】:
+    //    - 严禁调用 FindObjectOfType、GameObject.Find、Camera.main，统一经由 FlightTelemetryContext 或 ProbeManager。
+    // 8. 【MFP-SPEC-008: 声明式元数据注册 (Declarative Registration & Metadata)】:
+    //    - 必须通过 [FlightWidget("type_id", ...)] 标注，自动打通 WidgetRegistry 反射装配与仪表库目录。
+    //
+    // 【现代化上级派发特性 (Modern Upstream Dispatch Features)】:
+    // - BaseSize: 声明基准尺寸，基类自动在 BaseInitialize 完成物理 DPI 乘算赋值。
+    // - AutoCreateCardFrame: 开启后基类自动生成高对比度航电卡片背景板与边框，0 样板代码。
+    // - [WidgetControl]: 字段特性自省注册，自动纳管至 Controls 并自动响应主题切换与配置覆盖。
+    // ====================================================================================================
+
     /// <summary>
-    /// ====================================================================================
-    /// Modular Flight Panel (MFP) 标准航电组件范式模板 (Standard Flight Widget Template)
-    /// ====================================================================================
-    /// 
-    /// 所有官方原生组件与自定义派生组件【必须 100% 遵照本模板结构与规范书写】，禁止任何天马行空的各行其是！
-    /// 本文件是规范审计（MFP-SPEC-001..008）的标杆：它自身必须是 0 违规（含 0 颜色字面量）。
-    /// 
-    /// 【七大核心铁律 (Non-Negotiable Rules)】:
-    /// 1. 【严禁任何硬编码 (No Hardcoding)】:
-    ///    - 严禁出现 new Color(...) / Color.xxx 字面量（占位色同样禁止，唯一例外是容器透明用的 Color.clear）。
-    ///      所有颜色必须来自 WidgetStyleManager 的语义接口（ApplyCard / ApplyText / ApplyButton / ApplyMeter）
-    ///      或 WidgetStyleManager.GetXxxColor(role, theme)。
-    ///    - 严禁写死固定尺寸，所有位置、外边距、字号均需乘以 CurrentDpiScale。
-    ///    - 严禁写死视图策略：脏标记阈值、徽标文案、量程与限幅模式一律读 WidgetConfig。
-    /// 2. 【着色器统一样式管道 (Unified Style & Shader Pipeline)】:
-    ///    - 禁止组件私自创建 Material 或引用底层 Shader！必须经由语义接口，
-    ///      确保当前主题选择的点阵、CRT、全息或玻璃着色器 100% 作用于本组件。
-    /// 3. 【生命周期与分频刷新管控 (Render & Lifecycle Management)】:
-    ///    - 必须显式声明 RefreshTier（姿态/航向标 Critical 60Hz；表盘/滚带/导航 Standard 30Hz；电力/维生/ΔV Relaxed 10Hz）。
-    ///    - 当已被 WidgetRenderManager 接管时，由 MasterUpdate 按步长统一驱动，杜绝每帧混乱计算。
-    /// 4. 【按需重绘与脏标记保护 (Dirty Protection & Change Detection)】:
-    ///    - 在 OnUpdateTelemetry 中按 Config.ValueDeltaThreshold 做数值变动对比，未变化时严禁重复向 Text.text 赋值
-    ///      或调用 SetActive，彻底根除 UGUI 顶点缓冲区全量重构。
-    /// 5. 【量程与限幅契约 (Range & Limit Contract)】:
-    ///    - 量程来自 Config.MinValue/MaxValue，告警线来自 Config.CautionThreshold/WarningThreshold，
-    ///      限幅语义来自 Config.LimitMode（hard=越界硬告警 / soft=爆表软提示 / none=纯读数），兼容旧字段 IsSoftLimit。
-    /// 6. 【统一缓存中枢与零 GC 契约 (Unified Caching & Zero-GC Contract)】:
-    ///    - 高频遥测数字与标签优先使用 FastFormat / FastIntString / FastPercentString / FastDegreeString，
-    ///      配合 SetTextIfChanged 阻断 70%~85% 的无意义 UGUI 顶点重绘与垃圾回收微卡顿。
-    /// 7. 【声明式全自动装配契约 (Declarative Auto-Registration & Metadata Contract, MFP-SPEC-008)】:
-    ///    - 必须通过 [FlightWidget("type_name", Category = WidgetCategory.Xxx, ...)] 进行声明式元数据标注，
-    ///      自动打通 WidgetRegistry 反射装配中枢与 TabLibrary 仪表库动态目录，彻底杜绝手工修改工厂分支。
+    /// 标准航电组件范式模板 (Standard Flight Widget Reference Template)
     /// </summary>
     [FlightWidget("standard_template",
         Category = WidgetCategory.Gauges,
@@ -48,7 +54,7 @@ namespace ModularFlightPanel.UI
     public class StandardFlightWidgetTemplate : BaseFlightWidget
     {
         // ------------------------------------------------------------------------------------
-        // [Part 1: 刷新层级契约与字段声明]
+        // [Part 1: 刷新层级契约与尺寸配置]
         // ------------------------------------------------------------------------------------
 
         /// <summary>
@@ -57,17 +63,40 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
-        // UI 视图节点引用 (统一按层次分组：背景框体、顶部标题、核心数值、次级辅助与状态标签)
-        private Image _bgImage;
-        private Outline _bgOutline;
+        /// <summary>
+        /// 声明 1.0x DPI 下的基础设计物理参考尺寸 (宽 160px, 高 100px)。
+        /// 基类在 BaseInitialize 阶段会自动将其乘以 CurrentDpiScale 并赋予 RectTransform.sizeDelta。
+        /// </summary>
+        public override Vector2 BaseSize => new Vector2(160f, 100f);
 
+        /// <summary>
+        /// 开启上级自动卡片底板构建：基类将自动创建 CardBackground 与 CardOutline，
+        /// 并在主题变更时自动调用 ApplyCard 保持风格一致。
+        /// </summary>
+        protected override bool AutoCreateCardFrame => true;
+
+        // ------------------------------------------------------------------------------------
+        // [Part 2: UI 视图节点引用与微控件注解声明]
+        // ------------------------------------------------------------------------------------
+
+        // 顶部标题栏与状态徽标 (标记 [WidgetControl] 后自动注册入 Controls，主题变更时自动下发样式)
+        [WidgetControl("header_title", TextStyleRole.Label, "标题文本")]
         private Text _headerTitleText;
+
+        [WidgetControl("status_badge", TextStyleRole.SecondaryValue, "状态徽标")]
         private Text _statusBadgeText;
 
+        // 核心数值与工程单位
+        [WidgetControl("primary_val", TextStyleRole.PrimaryValue, "核心主读数")]
         private Text _primaryValueText;
+
+        [WidgetControl("unit_label", TextStyleRole.Unit, "工程单位")]
         private Text _unitText;
 
+        // 底部计量槽轨与填充条
         private Image _meterTrack;
+
+        [WidgetControl("meter_fill", MeterStyleRole.Primary, "水平计量填充")]
         private Image _meterFill;
 
         // 运行时遥测变动缓存 (防止高频 GC 分配与无意义的 Canvas 脏标记)
@@ -76,25 +105,16 @@ namespace ModularFlightPanel.UI
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
 
         // ------------------------------------------------------------------------------------
-        // [Part 2: 组件视图构建与装配 (OnInitialize)]
+        // [Part 3: 组件视图排版装配 (OnInitialize)]
         // ------------------------------------------------------------------------------------
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+            Vector2 cardSize = RectTransform.sizeDelta;
 
-            // 1. 计算组件几何包围盒 (基准逻辑像素 x DPI 缩放)
-            Vector2 cardSize = new Vector2(160f * s, 100f * s);
-            RectTransform.sizeDelta = cardSize;
-
-            // 2. 装配标准卡片底板与边框 (统一挂载 Sub-Canvas 隔离顶点)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;   // 占位透明，真实底色由 ApplyCard 按语义角色注入
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
-
-            // 3. 构建标准顶部标题栏 (Header)
+            // 1. 构建标准顶部标题栏 (Header)
             string titleStr = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName.ToUpperInvariant() : "TELEMETRY";
             _headerTitleText = UIFactory.CreateText(transform, "Header_Title", titleStr, Mathf.RoundToInt(10f * s), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.Label, theme));
@@ -115,7 +135,7 @@ namespace ModularFlightPanel.UI
             badgeRt.sizeDelta = new Vector2(60f * s, 18f * s);
             badgeRt.anchoredPosition = new Vector2(-8f * s, -6f * s);
 
-            // 4. 构建核心主读数与单位
+            // 2. 构建核心主读数与单位
             _primaryValueText = UIFactory.CreateText(transform, "Primary_Value", "---", Mathf.RoundToInt(22f * s), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             RectTransform valRt = _primaryValueText.rectTransform;
@@ -130,7 +150,7 @@ namespace ModularFlightPanel.UI
             unitRt.anchorMax = new Vector2(1f, 0.75f);
             unitRt.anchoredPosition = Vector2.zero;
 
-            // 5. 构建底部水平计量槽 (Meter)
+            // 3. 构建底部水平计量槽 (Meter)
             GameObject trackGo = UIFactory.CreatePanel(transform, "Meter_Track",
                 new Vector2(cardSize.x - 16f * s, 4f * s), new Vector2(0f, -cardSize.y * 0.5f + 12f * s),
                 style.GetMeterColor(MeterStyleRole.Track, theme));
@@ -145,35 +165,42 @@ namespace ModularFlightPanel.UI
             fillRt.pivot = new Vector2(0f, 0.5f);
             fillRt.anchoredPosition = Vector2.zero;
 
-            // 6. 注册微控件至标准化管理器 (Controls)
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Card Background", _bgImage.gameObject, "标准卡片底板与边框", t => ApplyCard(_bgImage, _bgOutline, _currentCardRole, t)));
-            this.Controls.Register(new WidgetHeaderControl(_headerTitleText, _statusBadgeText, "Header", "标准顶部标题栏与状态徽标"));
-            this.Controls.Register(new WidgetReadoutControl(_primaryValueText, _unitText, TextStyleRole.PrimaryValue, "Primary Readout", "核心主读数与工程单位"));
-            this.Controls.Register(new WidgetLinearBarControl(_meterFill, _meterTrack, MeterStyleRole.Primary, false, "Horizontal Meter", "底部水平计量槽"));
+            // 【注】微控件全自动装配说明：
+            // 标记了 [WidgetControl] 的字段无需手动注册；未标记特性的辅助元件可通过 Controls.WrapElement 补充登记：
+            this.Controls.Wrap("meter_track", "计量底槽", trackGo, t => {
+                if (_meterTrack != null) _meterTrack.color = WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Track, t);
+            });
         }
 
         // ------------------------------------------------------------------------------------
-        // [Part 3: 视觉主题与着色器动态应用 (ApplyTheme)]
+        // [Part 4: 视觉主题与着色器动态应用 (ApplyTheme)]
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// 当玩家切换视觉预设（如现代玻璃、阿波罗点阵、F-16全息冰蓝、琥珀CRT）时统一触发
+        /// 当玩家切换视觉预设（如现代玻璃、阿波罗点阵、F-16全息冰蓝、琥珀CRT）时统一触发。
         /// 【严禁在本方法内出现任何颜色字面量！必须 100% 走 WidgetStyleManager】
         /// </summary>
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
 
-            // 统一样式管道：所有注册微控件（卡片底板、标题栏、主数显读数、计量条）自动完成多态着色与 Shader 挂载
-            this.Controls.ApplyThemeToControls(theme);
+            // 1. 基类默认分发：将主题下发给所有注册的微控件
+            base.ApplyTheme(theme);
+
+            // 2. 根据当前卡片语义角色重新刷新底板背景与边框
+            if (CardBackground != null && CardOutline != null)
+            {
+                ApplyCard(CardBackground, CardOutline, _currentCardRole, theme);
+            }
         }
 
         // ------------------------------------------------------------------------------------
-        // [Part 4: 遥测数据求值与动态呈现 (OnUpdateTelemetry)]
+        // [Part 5: 遥测数据求值与动态呈现 (OnUpdateTelemetry)]
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// 由 WidgetRenderManager 在对应 RefreshTier 刷新时刻调用
+        /// 由 WidgetRenderManager 在对应 RefreshTier 刷新时刻调用。
+        /// 上级已在 MasterUpdateTelemetry 执行过 HasVessel 空船守卫。
         /// </summary>
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
@@ -215,7 +242,10 @@ namespace ModularFlightPanel.UI
             if (_currentCardRole != targetRole)
             {
                 _currentCardRole = targetRole;
-                ApplyCard(_bgImage, _bgOutline, targetRole, theme);
+                if (CardBackground != null && CardOutline != null)
+                {
+                    ApplyCard(CardBackground, CardOutline, targetRole, theme);
+                }
                 ApplyText(_primaryValueText, GetValueTextRole(targetRole), theme);
                 ApplyText(_statusBadgeText, GetValueTextRole(targetRole), theme);
                 SetTextIfChanged(_statusBadgeText, GetBadgeText(targetRole));
@@ -223,7 +253,7 @@ namespace ModularFlightPanel.UI
         }
 
         // ------------------------------------------------------------------------------------
-        // [Part 4b: 量程 / 限幅 / 徽标 语义解析 (全部读 WidgetConfig，禁止写死)]
+        // [Part 5b: 量程 / 限幅 / 徽标 语义解析 (全部读 WidgetConfig，禁止写死)]
         // ------------------------------------------------------------------------------------
 
         /// <summary>
@@ -304,7 +334,10 @@ namespace ModularFlightPanel.UI
             {
                 ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
                 _currentCardRole = CardStyleRole.Normal;
-                ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
+                if (CardBackground != null && CardOutline != null)
+                {
+                    ApplyCard(CardBackground, CardOutline, CardStyleRole.Normal, theme);
+                }
                 ApplyText(_primaryValueText, TextStyleRole.PrimaryValue, theme);
                 ApplyText(_statusBadgeText, TextStyleRole.SecondaryValue, theme);
                 _statusBadgeText.text = GetBadgeText(CardStyleRole.Normal);
@@ -312,13 +345,14 @@ namespace ModularFlightPanel.UI
         }
 
         // ------------------------------------------------------------------------------------
-        // [Part 5: 销毁与注销 (OnDestroy)]
+        // [Part 6: 安全注销与生命周期清理 (OnDestroy)]
         // ------------------------------------------------------------------------------------
 
+        /// <summary>
+        /// 销毁清理：必须调用 base.OnDestroy() 以确保 Controls 微控件池、I18n 监听器与 RenderManager 正确解绑
+        /// </summary>
         protected override void OnDestroy()
         {
-            // 必须调用基类注销方法，通知 WidgetRenderManager 安全移除注册项
-            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }
