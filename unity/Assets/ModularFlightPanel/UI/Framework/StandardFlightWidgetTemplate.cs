@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI
 {
@@ -143,6 +144,16 @@ namespace ModularFlightPanel.UI
             fillRt.anchorMax = new Vector2(0f, 1f);
             fillRt.pivot = new Vector2(0f, 0.5f);
             fillRt.anchoredPosition = Vector2.zero;
+
+            // 6. 注册微控件至标准化管理器 (Controls)
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Card Background", _bgImage.gameObject, "标准卡片底板与边框", t => ApplyCard(_bgImage, _bgOutline, _currentCardRole, t)));
+            this.Controls.Register(new WidgetHeaderControl(_headerTitleText, _statusBadgeText, "Header", "标准顶部标题栏与状态徽标"));
+            this.Controls.Register(new WidgetReadoutControl(_primaryValueText, _unitText, TextStyleRole.PrimaryValue, "Primary Readout", "核心主读数与工程单位"));
+            this.Controls.Register(new WidgetLinearBarControl(_meterFill, _meterTrack, MeterStyleRole.Primary, false, "Horizontal Meter", "底部水平计量槽"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         // ------------------------------------------------------------------------------------
@@ -156,6 +167,8 @@ namespace ModularFlightPanel.UI
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+
+            this.Controls.ApplyThemeToControls(theme);
 
             // 1. 卡片外框应用主题与专属 Shader (点阵/全息/CRT/玻璃)
             ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
@@ -320,6 +333,7 @@ namespace ModularFlightPanel.UI
         protected override void OnDestroy()
         {
             // 必须调用基类注销方法，通知 WidgetRenderManager 安全移除注册项
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

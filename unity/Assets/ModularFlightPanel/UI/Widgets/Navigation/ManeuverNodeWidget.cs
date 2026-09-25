@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -206,6 +207,20 @@ namespace ModularFlightPanel.UI.Widgets
             _btnDismissText.rectTransform.sizeDelta = delBtnSize;
             _btnDismissText.rectTransform.anchoredPosition = Vector2.zero;
 
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, _currentCardRole, t)));
+            this.Controls.Register(new WidgetHeaderControl("header", "标题栏", _headerTitleText != null ? _headerTitleText.gameObject : null, _headerTitleText, _statusBadgeText));
+            this.Controls.Register(new WidgetReadoutControl("deltav_readout", "DeltaV读数", _deltaVValueText != null ? _deltaVValueText.gameObject : null, _deltaVValueText, _unitText, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetLinearBarControl("progress_meter", "变轨进度条", _meterTrack != null ? _meterTrack.gameObject : null, _meterFill, _meterTrack, MeterStyleRole.Primary, false));
+            this.Controls.Register(new WidgetReadoutControl("tnode_readout", "节点倒计时", _tNodeValueText != null ? _tNodeValueText.gameObject : null, _tNodeValueText, _tNodeLabel, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("burntime_readout", "燃烧时长", _burnTimeValueText != null ? _burnTimeValueText.gameObject : null, _burnTimeValueText, _burnTimeLabel, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("burn_in_text", "点火倒计时", _burnInText != null ? _burnInText.gameObject : null, _burnInText, null, TextStyleRole.SecondaryValue));
+            this.Controls.Register(new WidgetActionButtonControl("warp_btn", "推演按键", _btnWarp != null ? _btnWarp.gameObject : null, _btnWarp, _btnWarpText, _btnWarpImg, ButtonVisualRole.Normal));
+            this.Controls.Register(new WidgetActionButtonControl("dismiss_btn", "取消按键", _btnDismiss != null ? _btnDismiss.gameObject : null, _btnDismiss, _btnDismissText, _btnDismissImg, ButtonVisualRole.Normal));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -265,6 +280,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_btnWarp != null) ApplyButton(_btnWarp, _btnWarpImg, _btnWarpText, ButtonVisualRole.Normal, false, theme);
             if (_btnDismiss != null) ApplyButton(_btnDismiss, _btnDismissImg, _btnDismissText, ButtonVisualRole.Normal, false, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -443,6 +460,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             if (_btnWarp != null)
             {
                 _btnWarp.onClick.RemoveListener(OnWarpClicked);

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -278,6 +279,33 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 8. 依据当前模式应用几何布局与定位
             ApplyLayoutMode();
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Outer Bezel", _outerBezel.gameObject, "底盘外框与机械外边框", t =>
+            {
+                if (_outerBezel != null) _outerBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, t);
+                if (_outerOutline != null) _outerOutline.effectColor = WidgetStyleManager.Weighted(t.AccentSecondary, LineWeight.Ghost);
+            }));
+            this.Controls.Register(new WidgetAnnunciatorControl(_cautTitle, _cautSub, _cautBg, _cautOutline, "CAUTION Annunciator", "注意告警指示光字牌"));
+            this.Controls.Register(new WidgetAnnunciatorControl(_warnTitle, _warnSub, _warnBg, _warnOutline, "WARNING Annunciator", "危急告警指示光字牌"));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "banner_cell", "Banner Cell", _bannerCell, "瞬态事件一体横幅光字牌"));
+            if (_centerDivider != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "center_divider", "Center Divider", _centerDivider.gameObject, "垂直硬派隔离筋条", t =>
+                {
+                    if (_centerDivider != null) _centerDivider.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, t);
+                }));
+            }
+            if (_horizDivider != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "horiz_divider", "Horizontal Divider", _horizDivider.gameObject, "水平机械隔离横梁", t =>
+                {
+                    if (_horizDivider != null) _horizDivider.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, t);
+                }));
+            }
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -1720,6 +1748,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (_centerDivider != null) _centerDivider.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (_horizDivider != null) _horizDivider.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
 
+            this.Controls.ApplyThemeToControls(theme);
+
             if (_modulesCount == 3)
             {
                 RenderVisualCells();
@@ -1749,6 +1779,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_warnBtn != null) _warnBtn.onClick.RemoveAllListeners();
             if (_centerDividerBtn != null) _centerDividerBtn.onClick.RemoveAllListeners();
             if (_horizDividerBtn != null) _horizDividerBtn.onClick.RemoveAllListeners();
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

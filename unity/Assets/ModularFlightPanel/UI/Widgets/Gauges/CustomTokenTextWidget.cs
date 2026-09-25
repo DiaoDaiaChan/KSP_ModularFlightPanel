@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -58,6 +59,14 @@ namespace ModularFlightPanel.UI.Widgets
             crt.sizeDelta = new Vector2(cardSize.x - 12f * s, 30f * s);
             crt.anchoredPosition = new Vector2(6f * s, -(cardSize.y * 0.5f) + 16f * s);
 
+            // 注册子控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_cardBgImage, _cardOutline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetReadoutControl("card_title", "卡片标题", _titleText != null ? _titleText.gameObject : null, null, _titleText, TextStyleRole.Label));
+            this.Controls.Register(new WidgetReadoutControl("card_content", "动态内容", _contentValueText != null ? _contentValueText.gameObject : null, _contentValueText, null, TextStyleRole.PrimaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -101,10 +110,13 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyCard(_cardBgImage, _cardOutline, CardStyleRole.Normal, theme);
             if (_titleText != null) ApplyText(_titleText, TextStyleRole.Label, theme);
             if (_contentValueText != null) ApplyText(_contentValueText, TextStyleRole.PrimaryValue, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -160,6 +161,15 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             unitRt.sizeDelta = new Vector2(80f * s, 14f * s);
             unitRt.anchoredPosition = new Vector2(0f, -24f * s);
 
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Card Background", _bgImage.gameObject, "圆弧表盘底衬", t => ApplyCard(_bgImage, _bgOutline, _currentCardRole, t)));
+            this.Controls.Register(new WidgetArcMeterControl(_arcFillImage, _arcTrackImage, MeterStyleRole.Primary, "Arc Meter", "马蹄弧形量规轨道与指示弧"));
+            this.Controls.Register(new WidgetReadoutControl(_topLabelText, null, TextStyleRole.Label, "Top Label", "顶部测量参数名"));
+            this.Controls.Register(new WidgetReadoutControl(_primaryValueText, null, TextStyleRole.PrimaryValue, "Primary Value", "中央超大号读数"));
+            this.Controls.Register(new WidgetReadoutControl(_unitLabelText, null, TextStyleRole.Unit, "Unit Label", "底部工程单位标签"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -167,6 +177,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            this.Controls.ApplyThemeToControls(theme);
 
             // 卡片三态样式
             ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
@@ -331,6 +343,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

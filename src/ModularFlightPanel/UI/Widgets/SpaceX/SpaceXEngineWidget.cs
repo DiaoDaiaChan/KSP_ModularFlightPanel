@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -133,6 +134,21 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 初始构建默认星舰 6 发猛禽布局
             RebuildEngineLayout(6, s, theme);
 
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Engine Dial Background", _bgImage.gameObject, "SpaceX发动机集群表盘底板", t => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
+            if (_dialBackdropRawImage != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBackdropRawImage.gameObject, "发动机圆形深色底盘", t => { if (_dialBackdropRawImage != null) _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
+            }
+            this.Controls.Register(new WidgetReadoutControl(_titleText, null, TextStyleRole.Label, "Title", "顶部标题"));
+            if (_clusterContainer != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "engines_cluster", "Engine Cluster", _clusterContainer.gameObject, "发动机喷管集群挂载容器"));
+            }
+            this.Controls.Register(new WidgetReadoutControl(_statusText, null, TextStyleRole.SecondaryValue, "Status Readout", "底部点火/关机状态读数"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -251,6 +267,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
 
@@ -404,6 +422,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 }
             }
             _engineNodes.Clear();
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

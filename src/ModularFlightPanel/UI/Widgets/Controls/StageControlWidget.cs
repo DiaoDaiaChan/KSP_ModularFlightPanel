@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -281,6 +282,30 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 初始化时默认执行静默隐藏原版左下角
             NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden);
+
+            // 标准化组件内部控件注册至管理器
+            if (_titleText != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "title", "控制台标题", _titleText.gameObject);
+            }
+            if (_fireBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "stage_fire_btn", "分级点火触发键", _fireBtn.gameObject, _fireBtn, _fireBtnBg, null, _fireBtnText, null, "STAGE", OnFireStage, false));
+            }
+            if (_lockBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "stage_lock_btn", "分级安全锁按键", _lockBtn.gameObject, _lockBtn, _lockBtnBg, null, _lockBtnText, null, "ARMED", OnToggleLock, true));
+            }
+            if (_stageBayPanel != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "stage_telemetry_bay", "分级数据凹槽窗", _stageBayPanel);
+            }
+            if (_propTrackBg != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "propellant_meter", "推进剂余量槽", _propTrackBg.gameObject);
+            }
 
             ApplyTheme(theme);
         }

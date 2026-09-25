@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -253,6 +254,19 @@ namespace ModularFlightPanel.UI.Widgets
                 trackCol, warnCol, valCol, labelCol, s,
                 out _vibPrefixTexts, out _vibReadoutTexts, out _vibPointerTransforms, out _vibPointerTexts,
                 out _vibLeftRails, out _vibRightRails, out _vibBottomRails, out _vibCautionTicks, out _vibLabel);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
+            if (_n2Label != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "n2_readouts", "N2转速组", _n2Label.gameObject));
+            if (_n3Label != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "n3_gauges", "N3表柱组", _n3Label.gameObject));
+            if (_ffLabel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "ff_readouts", "燃油流量FF", _ffLabel.gameObject));
+            if (_oilPLabel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "oil_p_meters", "滑油压力OIL P", _oilPLabel.gameObject));
+            if (_oilTLabel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "oil_t_meters", "滑油温度OIL T", _oilTLabel.gameObject));
+            if (_oilQLabel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "oil_q_readouts", "滑油余量OIL Q", _oilQLabel.gameObject));
+            if (_vibLabel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "vib_meters", "震动监控VIB", _vibLabel.gameObject));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -566,6 +580,8 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyText(_oilTLabel, TextStyleRole.Cardinal, theme);
             ApplyText(_oilQLabel, TextStyleRole.Cardinal, theme);
             ApplyText(_vibLabel, TextStyleRole.Cardinal, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -700,6 +716,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

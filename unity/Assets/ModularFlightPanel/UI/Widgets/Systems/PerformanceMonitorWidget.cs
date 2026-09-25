@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -195,6 +196,20 @@ namespace ModularFlightPanel.UI.Widgets
             bLblRt.anchorMax = Vector2.one;
             bLblRt.offsetMin = Vector2.zero;
             bLblRt.offsetMax = Vector2.zero;
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Panel Background", _bgImage.gameObject, "监控器主卡片底板", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetHeaderControl(_titleText, _statusText, "Header", "性能监视器顶栏与状态"));
+            this.Controls.Register(new WidgetReadoutControl(_fpsValText, _fpsLabel, TextStyleRole.Cardinal, "FPS Readout", "帧率主读数"));
+            this.Controls.Register(new WidgetReadoutControl(_mfpMsText, _budgetPctText, TextStyleRole.PrimaryValue, "MFP Overhead", "MFP整帧耗时与预算占比"));
+            this.Controls.Register(new WidgetLinearBarControl(_widgetsFill, _widgetsTrack, MeterStyleRole.Primary, false, "Widgets Meter", "组件渲染耗时条"));
+            this.Controls.Register(new WidgetLinearBarControl(_probesFill, _probesTrack, MeterStyleRole.Primary, false, "Probes Meter", "探针采样耗时条"));
+            this.Controls.Register(new WidgetLinearBarControl(_telemFill, _telemTrack, MeterStyleRole.Primary, false, "Telem Meter", "遥测缓存更新耗时条"));
+            this.Controls.Register(new WidgetLinearBarControl(_coreFill, _coreTrack, MeterStyleRole.Primary, false, "Core Meter", "核心管线耗时条"));
+            this.Controls.Register(new WidgetReadoutControl(_memValText, _healthValText, TextStyleRole.Label, "Memory Stats", "托管堆分配与GC监控"));
+            this.Controls.Register(new WidgetActionButtonControl(_bypassBtn, _bypassBtnLabel, null, ButtonVisualRole.Normal, "Bypass Button", "MFP全管线旁路挂起按钮"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         private void CreateSubsystemRow(Transform parent, string name, string label, float yPos, float scale,
@@ -266,6 +281,8 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
             ApplyText(_titleText, TextStyleRole.Cardinal, theme);
@@ -449,6 +466,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _bypassBtn.onClick.RemoveListener(OnBypassClicked);
             }
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -95,6 +96,18 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform tipRt = tipText.GetComponent<RectTransform>();
             tipRt.sizeDelta = new Vector2(panelSize.x - 20f * s, 12f * s);
             tipRt.anchoredPosition = new Vector2(0f, -64f * s);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetHeaderControl("header", "标题栏", _titleText != null ? _titleText.gameObject : null, _titleText, _statusText));
+            this.Controls.Register(new WidgetReadoutControl("battery_nodes", "蓄电池组", _bat1ValText != null ? _bat1ValText.gameObject : null, _bat1ValText, _bat2ValText, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("dc_bus", "直流总线母线", _dcBusValText != null ? _dcBusValText.gameObject : null, _dcBusValText, _dcBusSubText, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("generation_load", "发电与负载监控", _genValText != null ? _genValText.gameObject : null, _genValText, _loadValText, TextStyleRole.PrimaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         private void CreateNodeBox(Transform parent, string name, Vector2 size, Vector2 pos, string nodeTitle,
@@ -277,10 +290,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (_genSubText != null) ApplyText(_genSubText, TextStyleRole.Label, theme);
             if (_loadValText != null) ApplyText(_loadValText, TextStyleRole.PrimaryValue, theme);
             if (_loadSubText != null) ApplyText(_loadSubText, TextStyleRole.Label, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

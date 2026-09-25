@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.Navigation
 {
@@ -119,6 +120,17 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             // 5. 顶部与底部航电信息微标栏 (Header & Footer Badges)
             CreateAvionicsBadges(ballDiameter, totalHeight, s, theme);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(new WidgetGraphicViewportControl("attitude_viewport", "3D姿态球视口", _sphereDisplayImage != null ? _sphereDisplayImage.gameObject : gameObject, _sphereDisplayImage));
+            if (_centerShipRoot != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "center_ship", "中央3D飞船", _centerShipRoot.gameObject));
+            if (_flightDirectorRoot != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "flight_director", "飞行指引仪", _flightDirectorRoot.gameObject));
+            if (_bezelRingObj != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel_ring", "航电圆环外圈", _bezelRingObj, (t) => { if (_bezelRingRawImage != null) _bezelRingRawImage.color = WidgetStyleManager.WithAlpha(t.AccentSecondary, 0.85f); }));
+            if (_topBadgeRoot != null) this.Controls.Register(new WidgetReadoutControl("top_badge", "顶部航向参考系标牌", _topBadgeRoot, _topBadgeText, null, TextStyleRole.Cardinal));
+            if (_bottomBadgeRoot != null) this.Controls.Register(new WidgetReadoutControl("bottom_badge", "底部俯仰滚转标牌", _bottomBadgeRoot, _bottomBadgeText, null, TextStyleRole.PrimaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -409,6 +421,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
                 ApplyPaletteToSphereMaterial(_currentPalette);
             }
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -1032,6 +1046,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             if (_sphereObject != null)
             {
                 Destroy(_sphereObject);

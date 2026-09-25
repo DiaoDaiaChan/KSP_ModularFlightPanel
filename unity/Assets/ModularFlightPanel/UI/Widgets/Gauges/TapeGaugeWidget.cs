@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -245,6 +246,36 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 5. 趋势指示器 (速度带内置 6 秒预测条 + 动力学微舱 / 高度带水平对齐 VSI)
             BuildTrendIndicator(theme);
+
+            // 标准化组件内部控件注册至管理器 (0 影响原画质与排版)
+            if (_bgImage != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "标尺带底衬", _bgImage.gameObject);
+            }
+            if (_viewportRt != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "tape_viewport", "动态标尺刻度视口", _viewportRt.gameObject);
+            }
+            if (_centerBoxRt != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "center_readout", "中央实体读数窗", _centerBoxRt.gameObject);
+            }
+            if (_topModeBox != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "top_mode_capsule", "顶部模式胶囊", _topModeBox);
+            }
+            if (_bottomSecBox != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "bottom_sec_box", "底部次级航电窗", _bottomSecBox);
+            }
+            if (_trendRoot != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "trend_indicator", "动力学趋势指示柱", _trendRoot.gameObject);
+            }
+            if (_groundRibbonObj != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "ground_ribbon", "贴地雷达警戒带", _groundRibbonObj);
+            }
         }
 
         private void ParseCustomTemplate(WidgetConfig config)

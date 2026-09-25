@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -116,6 +117,22 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 6. 底栏：活跃级摘要
             BuildFooter(panel.transform, panelSize, s, theme);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Panel Background", _panelBg.gameObject, "主背板", t => ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, t)));
+            if (_topStripe != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "top_stripe", "Top Stripe", _topStripe.gameObject, "顶部微光警示饰条", t => { if (_topStripe != null) _topStripe.color = t.AccentPrimary; }));
+            }
+            this.Controls.Register(new WidgetHeaderControl(_titleText, _sourceBadgeText, "Header", "顶部标题与数据源标牌"));
+            this.Controls.Register(new WidgetReadoutControl(_totalDvValue, null, TextStyleRole.ValueLarge, "Total DeltaV", "总可用速度增量标牌"));
+            this.Controls.Register(new WidgetReadoutControl(_totalTimeValue, null, TextStyleRole.ValueSmall, "Total Burn Time", "总工作烧燃时序"));
+            if (_silhouetteBayObj != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "silhouette_bay", "Silhouette Bay", _silhouetteBayObj, "飞船剪影轮廓视窗"));
+            }
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -623,6 +640,8 @@ namespace ModularFlightPanel.UI.Widgets
             _currentTheme = theme;
             if (theme == null) return;
 
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
 
             Color primaryAccent = (Color)theme.AccentPrimary;
@@ -819,6 +838,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _fallbackSilhouetteTexture = null;
             }
 
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

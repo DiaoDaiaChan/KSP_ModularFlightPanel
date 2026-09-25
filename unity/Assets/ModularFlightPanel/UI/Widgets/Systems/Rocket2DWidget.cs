@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -172,6 +173,16 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 4. 右侧多级垂直推进栈 (Propulsion Stacks)
             BuildPropulsionStack(transform, panelSize, s, theme);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetHeaderControl("header_summary", "顶部简报栏", _titleText != null ? _titleText.gameObject : null, _titleText, _subTitleText));
+            this.Controls.Register(new WidgetReadoutControl("twr_dv_readout", "TWR与总速度增量", _summaryDvText != null ? _summaryDvText.gameObject : null, _summaryDvText, _summaryTwrText, TextStyleRole.PrimaryValue));
+            if (_silhouetteBayObj != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "silhouette_bay", "飞船剪影视窗", _silhouetteBayObj));
+            if (_stageRows.Count > 0) this.Controls.Register(WidgetControlManager.WrapElement(this, "propulsion_stack", "多级推进栈", _stageRows[0].Root));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -525,6 +536,8 @@ namespace ModularFlightPanel.UI.Widgets
                     row.LeaderLine.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Normal);
                 }
             }
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -909,6 +922,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             if (VesselSilhouetteService.Provider != null)
             {
                 VesselSilhouetteService.Provider.OnSilhouetteUpdated -= OnSilhouetteUpdated;

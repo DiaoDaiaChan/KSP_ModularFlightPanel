@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI.Widgets.Navigation;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -177,6 +178,15 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 CreateHeadingBox(transform, CurrentDpiScale, theme);
             }
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(new WidgetGraphicViewportControl("navball_viewport", "3D球体视口", _displayImage != null ? _displayImage.gameObject : gameObject, _displayImage));
+            if (_crosshair != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "crosshair", "准星标线", _crosshair));
+            if (_headingBox != null) this.Controls.Register(new WidgetReadoutControl("heading_box", "航向盒读数", _headingBox, _headingText, _frameText, TextStyleRole.PrimaryValue));
+            if (_shellRoot != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "ecam_shell", "ECAM机匣外壳", _shellRoot, (t) => ApplyCard(_shellImage, _shellOutline, CardStyleRole.Normal, t)));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -922,6 +932,8 @@ namespace ModularFlightPanel.UI.Widgets
                 _reticleImage.sprite = NavballMarkerFactory.GetReticleSprite();
                 _reticleImage.color = WidgetStyleManager.NeutralOpaque;
             }
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void HandleResolutionChanged(int newRes)
@@ -959,6 +971,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             _markerImages.Clear();
             if (_sphereObject != null)
             {

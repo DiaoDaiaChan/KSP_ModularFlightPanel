@@ -6,6 +6,7 @@ using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Core.Rendering;
 using ModularFlightPanel.UI;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.Navigation
 {
@@ -126,6 +127,16 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 I18n.Tr("TOOLTIP_REF_FRAME_DESC", "显示当前绘图与速度解算参考系。左键循环切换参考系，右键打开/关闭 Principia 参考系选择器窗口。"),
                 "[L-Click] 切换 [R-Click] 窗口"
             );
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "icon_box", "参考系图标徽章", _iconBox, (t) => ApplyCard(_iconBoxBg, _iconBoxOutline, CardStyleRole.SubtleSlot, t)));
+            this.Controls.Register(new WidgetReadoutControl("frame_title", "权威参考系全称", _frameTitleText != null ? _frameTitleText.gameObject : null, _frameTitleText, null, TextStyleRole.PrimaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         public void OnPointerClick(PointerEventData eventData)
@@ -185,6 +196,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             UpdateCategoryVisuals(_lastCategory, theme);
             AdjustCardWidth(_lastTitle);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         private void AdjustCardWidth(string title)
@@ -325,6 +338,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

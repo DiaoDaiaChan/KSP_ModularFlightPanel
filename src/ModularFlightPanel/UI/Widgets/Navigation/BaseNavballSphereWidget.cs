@@ -172,6 +172,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             if (WidgetRenderManager.Instance != null)
             {
                 WidgetRenderManager.Instance.OnRenderResolutionChanged -= HandleResolutionChanged;

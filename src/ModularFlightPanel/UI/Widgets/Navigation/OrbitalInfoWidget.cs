@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -69,6 +70,15 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform peRt = _peText.GetComponent<RectTransform>();
             peRt.sizeDelta = new Vector2(240f * s, 16f * s);
             peRt.anchoredPosition = new Vector2(0f, -16f * s);
+
+            // 注册子控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetReadoutControl("title", "标题", _titleText != null ? _titleText.gameObject : null, null, _titleText, TextStyleRole.Label));
+            this.Controls.Register(new WidgetReadoutControl("ap_readout", "远地点读数", _apText != null ? _apText.gameObject : null, _apText, null, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("pe_readout", "近地点读数", _peText != null ? _peText.gameObject : null, _peText, null, TextStyleRole.PrimaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -138,10 +148,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (_titleText != null) ApplyText(_titleText, TextStyleRole.Label, theme);
             if (_apText != null) ApplyText(_apText, TextStyleRole.PrimaryValue, theme);
             if (_peText != null) ApplyText(_peText, TextStyleRole.PrimaryValue, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

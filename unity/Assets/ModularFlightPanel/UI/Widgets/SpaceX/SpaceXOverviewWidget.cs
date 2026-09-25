@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -166,6 +167,22 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _subsysProp = CreateStatusRow("Prop", -panelSize.x * 0.5f + 14f * s, btmY - rowH, panelSize.x - 28f * s, s, theme, _propLabelStr, "100%");
             _subsysThermal = CreateStatusRow("Thermal", -panelSize.x * 0.5f + 14f * s, btmY - rowH * 2, panelSize.x - 28f * s, s, theme, _thermalLabelStr, "AUTO");
             _subsysDock = CreateStatusRow("Dock", -panelSize.x * 0.5f + 14f * s, btmY - rowH * 3, panelSize.x - 28f * s, s, theme, _dockLabelStr, "READY");
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Overview Panel", _bgImage.gameObject, "SpaceX综合环控面板底盘", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetHeaderControl(_titleText, _statusBadge, "Header", "综合环控标题与状态微标"));
+            this.Controls.Register(new WidgetLinearBarControl(_pressFill, _pressTrack, MeterStyleRole.Primary, false, "Cabin Pressure", "座舱气压仪表"));
+            this.Controls.Register(new WidgetLinearBarControl(_o2Fill, _o2Track, MeterStyleRole.Primary, false, "Oxygen Level", "氧气浓度仪表"));
+            this.Controls.Register(new WidgetLinearBarControl(_tempFill, _tempTrack, MeterStyleRole.Primary, false, "Cabin Temperature", "座舱温度仪表"));
+            this.Controls.Register(new WidgetLinearBarControl(_pwrFill, _pwrTrack, MeterStyleRole.Primary, false, "Net Power", "母线净功率仪表"));
+            this.Controls.Register(new WidgetReadoutControl(_subsysAirlock, null, TextStyleRole.Accent, "Airlock Status", "气闸舱状态"));
+            this.Controls.Register(new WidgetReadoutControl(_subsysProp, null, TextStyleRole.SecondaryValue, "RCS Propellant", "姿控推进剂余量"));
+            this.Controls.Register(new WidgetReadoutControl(_subsysThermal, null, TextStyleRole.Accent, "Thermal Status", "热控循环状态"));
+            this.Controls.Register(new WidgetReadoutControl(_subsysDock, null, TextStyleRole.Accent, "Docking Mechanism", "对接机构状态"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         private void BuildMeterSlot(string id, float x, float y, float width, float s, ThemeConfig theme, string labelStr, string defaultVal,
@@ -316,6 +333,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             if (theme == null) return;
 
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
 
             if (_titleText != null) ApplyText(_titleText, TextStyleRole.Label, theme);
@@ -345,6 +364,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

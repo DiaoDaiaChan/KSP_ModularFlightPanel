@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -52,6 +53,7 @@ namespace ModularFlightPanel.UI.Widgets
             _panelImage = panel.GetComponent<Image>();
             _panelOutline = panel.GetComponent<Outline>();
             if (_panelOutline != null) _panelOutline.enabled = false;
+            ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "底板边框", panel);
 
             // 构建控制按键: RCS (-68), SAS (-26), REF FRAME (+43)
             BuildControlBar(panel.transform, s, theme);
@@ -104,6 +106,13 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform frt = _frameText.GetComponent<RectTransform>();
             frt.sizeDelta = frameBtnSize;
             frt.anchoredPosition = Vector2.zero;
+
+            // 标准化组件控件注册至管理器
+            ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "rcs_btn", "RCS 控制开关", _rcsBtn.gameObject, _rcsBtn, _rcsImg, _rcsOutline, _rcsText, null, "RCS", OnRCSToggle, true));
+            ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "sas_btn", "SAS 主控开关", _sasBtn.gameObject, _sasBtn, _sasImg, _sasOutline, _sasText, null, "SAS", OnSASToggle, true));
+            ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "ref_frame", "参考系切换胶囊", _frameBtn.gameObject);
         }
 
         public static Action OnTogglePrincipiaWindowAction;

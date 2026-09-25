@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.Navigation
 {
@@ -191,6 +192,37 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             subRt.sizeDelta = new Vector2(480f * s, 16f * s);
             subRt.anchoredPosition = new Vector2(0f, -26f * s);
 
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => {
+                if (_frameMode == "NONE")
+                {
+                    if (_bgImage != null) _bgImage.color = Color.clear;
+                    if (_bgOutline != null) _bgOutline.enabled = false;
+                }
+                else if (_frameMode == "FAINT")
+                {
+                    if (_bgImage != null) _bgImage.color = Color.clear;
+                    if (_bgOutline != null)
+                    {
+                        _bgOutline.enabled = true;
+                        _bgOutline.effectColor = WidgetStyleManager.Weighted(t.FrameBorderColor, LineWeight.Hairline);
+                    }
+                }
+                else
+                {
+                    ApplyCard(_bgImage, _bgOutline, _currentCardRole, t);
+                }
+            }));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "timeline_track", "时序轨道", trackGo, (t) => {
+                if (_trackLineImage != null) _trackLineImage.color = WidgetStyleManager.Weighted(t.AccentSecondary, LineWeight.Medium);
+                if (_burnZoneImage != null) _burnZoneImage.color = WidgetStyleManager.Weighted(t.AccentPrimary, LineWeight.Light);
+            }));
+            this.Controls.Register(new WidgetReadoutControl("center_hero", "中央核心读数", _centerHeroText != null ? _centerHeroText.gameObject : null, _centerHeroText, null, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("vector_subtitle", "三轴矢量副标牌", _vectorSubtitleText != null ? _vectorSubtitleText.gameObject : null, _vectorSubtitleText, null, TextStyleRole.SecondaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -302,6 +334,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 核心读数与副标牌
             ApplyText(_centerHeroText, TextStyleRole.PrimaryValue, theme);
             ApplyText(_vectorSubtitleText, TextStyleRole.SecondaryValue, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -509,6 +543,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             _milestones = null;
             base.OnDestroy();
         }

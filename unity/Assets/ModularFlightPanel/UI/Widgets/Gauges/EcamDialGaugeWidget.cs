@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -154,6 +155,40 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform limitRt = _limitModeText.GetComponent<RectTransform>();
             limitRt.sizeDelta = new Vector2(36f * s, 12f * s);
             limitRt.anchoredPosition = new Vector2(0f, 34f * s);
+
+            // 标准化组件内部控件注册至管理器 (0 影响原画质与排版)
+            if (_bgPanel != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "表盘底板", _bgPanel.gameObject);
+            }
+            if (_meterObj != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "arc_meter", "270度圆弧度量环", _meterObj);
+            }
+            if (_needlePivot != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "needle_pointer", "动态指针", _needlePivot.gameObject);
+            }
+            if (_titleText != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "title", "表盘标题", _titleText.gameObject);
+            }
+            if (_valueText != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "value_readout", "主数显读数", _valueText.gameObject);
+            }
+            if (_unitText != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "unit_label", "单位标签", _unitText.gameObject);
+            }
+            if (_minScaleText != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "scale_labels", "标尺量程限值", _minScaleText.gameObject);
+            }
+            if (_limitModeText != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "limit_badge", "爆表模式标识", _limitModeText.gameObject);
+            }
         }
 
         private void ParseCustomTemplate(WidgetConfig config)

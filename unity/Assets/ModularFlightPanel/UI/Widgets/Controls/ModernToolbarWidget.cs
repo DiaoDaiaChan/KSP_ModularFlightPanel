@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -129,6 +130,21 @@ namespace ModularFlightPanel.UI.Widgets
             if (ThemeManager.Instance.ToolbarStyleMode == 2)
             {
                 StockToolbarHook.HideStockToolbar(true);
+            }
+
+            // 标准化组件内部控件注册至管理器
+            if (_panelBg != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "收纳坞主面板", _panelBg.gameObject);
+            }
+            if (_collapseBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "collapse_btn", "折叠展开按键", _collapseBtn.gameObject, _collapseBtn, _collapseBtn.GetComponent<Image>(), null, _collapseBtnText, null, "« DOCK", ToggleCollapse, true));
+            }
+            if (_dockContent != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "dock_content", "图标滚动列表", _dockContent);
             }
 
             AutoDetectInteractivityAndPruneRaycasts();

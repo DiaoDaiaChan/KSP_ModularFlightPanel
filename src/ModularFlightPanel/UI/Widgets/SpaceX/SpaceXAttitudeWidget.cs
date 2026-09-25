@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -149,6 +150,25 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             attRt.sizeDelta = new Vector2(diameter, 12f * s);
             attRt.anchoredPosition = new Vector2(0f, (-diameter * 0.5f) + 6f * s);
 
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Attitude Dial Background", _bgImage.gameObject, "SpaceX姿态球表盘底板", t => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
+            if (_dialBackdropRawImage != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBackdropRawImage.gameObject, "姿态圆形深色底盘", t => { if (_dialBackdropRawImage != null) _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
+            }
+            this.Controls.Register(new WidgetReadoutControl(_northIndicatorText, null, TextStyleRole.Cardinal, "North Mark", "真北罗盘方位微标"));
+            if (_gimbalRingRawImage != null)
+            {
+                this.Controls.Register(new WidgetGraphicViewportControl(_gimbalRingRawImage, "Gimbal Ring", "3D空间姿态地平参考环"));
+            }
+            if (_shipSilhouetteRawImage != null)
+            {
+                this.Controls.Register(new WidgetGraphicViewportControl(_shipSilhouetteRawImage, "Ship Silhouette", "中央飞船剪影视窗"));
+            }
+            this.Controls.Register(new WidgetReadoutControl(_attitudeLabelText, null, TextStyleRole.SecondaryValue, "Attitude Readout", "底部俯仰滚转角读数"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -164,6 +184,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
 
@@ -427,6 +449,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 VesselSilhouetteService.Provider.OnSilhouetteUpdated -= OnSilhouetteUpdated;
             }
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -118,6 +119,20 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 4. 底部微型模式状态标牌
             CreateStatusBadge(dialRadius, s, theme);
+
+            // 标准化组件内部控件注册至管理器
+            if (_dialBgRawImage != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "dial_backplate", "圆环底盘背板", _dialBgRawImage.gameObject);
+            }
+            if (_attitudeAssemblyRoot != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "ship_silhouette", "飞船姿态剪影视窗", _attitudeAssemblyRoot);
+            }
+            if (_statusLabel != null && _statusLabel.transform.parent != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "status_badge", "SAS 模式状态胶囊", _statusLabel.transform.parent.gameObject);
+            }
 
             ApplyDisplayMode();
             ApplyTheme(theme);

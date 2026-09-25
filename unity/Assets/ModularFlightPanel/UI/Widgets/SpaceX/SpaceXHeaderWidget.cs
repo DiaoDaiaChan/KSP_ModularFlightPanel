@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -201,6 +202,24 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 倾角 (Inclination)
             curX += 12f * s;
             CreateMetricColumn("Inc", curX, 90f * s, s, theme, _incLabelStr, "0.00°", out _incLabel, out _incValue);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Header Bar Background", _bgImage.gameObject, "SpaceX顶栏全景面板底板", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            if (_bottomAccentLine != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "accent_line", "Bottom Accent Line", _bottomAccentLine.gameObject, "底部电光青色细强调线", t => { if (_bottomAccentLine != null) _bottomAccentLine.color = t.AccentPrimary; }));
+            }
+            this.Controls.Register(new WidgetReadoutControl(_phaseValue, _phaseLabel, TextStyleRole.Accent, "Active Phase", "当前任务飞行阶段徽章"));
+            this.Controls.Register(new WidgetReadoutControl(_timerValue, _timerLabel, TextStyleRole.PrimaryValue, "Mission Timer", "任务时钟与溅落倒计时"));
+            this.Controls.Register(new WidgetReadoutControl(_velValue, _velLabel, TextStyleRole.PrimaryValue, "Inertial Velocity", "惯性速度列"));
+            this.Controls.Register(new WidgetReadoutControl(_altValue, _altLabel, TextStyleRole.PrimaryValue, "Altitude", "海拔高度列"));
+            this.Controls.Register(new WidgetReadoutControl(_apValue, _apLabel, TextStyleRole.PrimaryValue, "Apogee", "远地点高度列"));
+            this.Controls.Register(new WidgetReadoutControl(_peValue, _peLabel, TextStyleRole.PrimaryValue, "Perigee", "近地点高度列"));
+            this.Controls.Register(new WidgetReadoutControl(_incValue, _incLabel, TextStyleRole.PrimaryValue, "Inclination", "轨道倾角列"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         private Image CreateSeparator(float posX, float height, float s, ThemeConfig theme)
@@ -351,6 +370,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
             if (_bottomAccentLine != null) _bottomAccentLine.color = theme.AccentPrimary;
 
@@ -384,6 +405,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

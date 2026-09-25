@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -185,6 +186,40 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 BuildCautionCue(trackWidth, trackHeight, s, theme);
             }
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "track", "刻度轨道", _trackRt != null ? _trackRt.gameObject : gameObject, (t) => {
+                if (_trackBg != null && _kind != BarGaugeKind.AtmosphericPressure) ApplyCard(_trackBg, _trackOutline, CardStyleRole.SubtleSlot, t);
+            }));
+            if (_fillBarRt != null)
+            {
+                this.Controls.Register(new WidgetLinearBarControl("fill_bar", "充填光柱", _fillBarRt.gameObject, _fillBarImage, null, MeterStyleRole.Primary, false));
+            }
+            if (_actPointerObj != null)
+            {
+                this.Controls.Register(new WidgetNeedleControl("act_pointer", "实际值指针", _actPointerObj, null, null, null));
+            }
+            if (_cmdPointerObj != null)
+            {
+                this.Controls.Register(new WidgetNeedleControl("cmd_pointer", "指令游标", _cmdPointerObj, null, null, null));
+            }
+            if (_topTagBox != null)
+            {
+                this.Controls.Register(new WidgetReadoutControl("top_tag", "顶部胶囊读数", _topTagBox, _topTagValue, _topTagTitle, TextStyleRole.PrimaryValue));
+            }
+            if (_bottomTagBox != null)
+            {
+                this.Controls.Register(new WidgetReadoutControl("bottom_tag", "底部档位标牌", _bottomTagBox, _bottomTagText, null, TextStyleRole.Accent));
+            }
+            if (_cautionLineObj != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "caution_line", "警戒标线", _cautionLineObj, (t) => {
+                    if (_cautionLineImg != null) _cautionLineImg.color = WidgetStyleManager.Meter(MeterStyleRole.Warning, t);
+                }));
+            }
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -848,10 +883,13 @@ namespace ModularFlightPanel.UI.Widgets
                 _cmdBugLineImg.color = WidgetStyleManager.WithAlpha(resolved.AccentSecondary.ToColor(), 0.70f);
 
             if (_cautionLineImg != null) _cautionLineImg.color = WidgetStyleManager.Meter(MeterStyleRole.Warning, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             if (_atmosphereTex != null)
             {
                 DestroyImmediate(_atmosphereTex);

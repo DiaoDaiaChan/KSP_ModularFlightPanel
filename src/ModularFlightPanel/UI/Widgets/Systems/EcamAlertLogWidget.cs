@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -204,6 +205,16 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 6. 预置初始飞行清单备忘 (消除冷启动黑屏)
             SeedInitialChecklistMemos();
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Emphasized, t)));
+            this.Controls.Register(new WidgetHeaderControl("header", "ECAM顶栏", _headerTitle != null ? _headerTitle.gameObject : null, _headerTitle, _modeBadgeText));
+            if (_warnBoxBg != null) this.Controls.Register(new WidgetAnnunciatorControl("annunciators", "三色告警光字牌", _warnBoxBg.gameObject, _badgeWarnText, _badgeCautText, _warnBoxBg, _warnBoxOutline));
+            if (_rowSlots[0].Root != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "rows_viewport", "日志行视口", _rowSlots[0].Root));
+            if (_footerBg != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "footer", "ECP底栏", _footerBg.gameObject));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -604,6 +615,8 @@ namespace ModularFlightPanel.UI.Widgets
                 ApplyText(slot.DetailText, TextStyleRole.SecondaryValue, theme);
                 ApplyText(slot.TimeText, TextStyleRole.Unit, theme);
             }
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -1214,6 +1227,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

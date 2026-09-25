@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI
 {
@@ -23,8 +24,18 @@ namespace ModularFlightPanel.UI
         public WidgetDragHandler DragHandler { get; private set; }
         public Canvas SubCanvas { get; private set; }
 
+        /// <summary>
+        /// 组件标准化微控件管理器容器 (Standardized Control Container)
+        /// </summary>
+        public WidgetControlContainer Controls { get; }
+
+        protected BaseFlightWidget()
+        {
+            Controls = new WidgetControlContainer(this);
+        }
+
         protected Canvas RootCanvas { get; private set; }
-        protected float CurrentDpiScale { get; private set; } = 1.0f;
+        public float CurrentDpiScale { get; protected set; } = 1.0f;
         protected float LastUpdateTime { get; private set; } = -1f;
 
         /// <summary>
@@ -133,6 +144,7 @@ namespace ModularFlightPanel.UI
 
         protected virtual void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             WidgetDragHandler.OnEditModeChanged -= HandleEditModeChanged;
             WidgetRenderManager.Instance?.UnregisterWidget(this);
             I18nManager.OnLanguageChanged -= HandleLanguageChanged;

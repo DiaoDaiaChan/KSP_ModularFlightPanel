@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -248,6 +249,17 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _antennaCards[i] = CreateAntennaCard(transform, $"AntCard_{i}", cardSize, i, s, theme);
             }
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetHeaderControl("header", "顶栏标题", _titleText != null ? _titleText.gameObject : null, _titleText, _subTitleText));
+            this.Controls.Register(new WidgetAnnunciatorControl("ctrl_badge", "控制权徽章", _ctrlBadgeText != null ? _ctrlBadgeText.gameObject : null, _ctrlBadgeText, _linkBadgeText, _ctrlBadgeBg, null));
+            if (_rfMatrixPanel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "rf_matrix", "射频矩阵面板", _rfMatrixPanel, (t) => { if (_rfMatrixBg != null) _rfMatrixBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, t); }));
+            this.Controls.Register(new WidgetReadoutControl("target_readout", "目标对端与速率", _targetNameText != null ? _targetNameText.gameObject : null, _targetNameText, _rateText, TextStyleRole.PrimaryValue));
+            if (_arrayHeaderRoot != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "antennas_array", "天线阵列列表", _arrayHeaderRoot));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -588,10 +600,13 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             _lastActiveRfBars = -1;
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

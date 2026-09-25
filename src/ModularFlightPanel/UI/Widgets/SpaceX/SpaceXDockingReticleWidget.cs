@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -132,6 +133,23 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             // 5. 构建 4 轴姿控喷管脉冲指示器 (Thruster Arrows)
             BuildThrusterChevrons(panelSize, s, theme);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Docking HUD Background", _bgImage.gameObject, "SpaceX对接平视显示底板", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            if (_centerReticleRing != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "crosshair", "Center Crosshair", _centerReticleRing.gameObject, "对接中心环与十字准星"));
+            }
+            this.Controls.Register(new WidgetReadoutControl(_rollValue, _rollLabel, TextStyleRole.Accent, "Roll Deviation", "滚转对接偏差"));
+            this.Controls.Register(new WidgetReadoutControl(_pitchValue, _pitchLabel, TextStyleRole.Accent, "Pitch Deviation", "俯仰对接偏差"));
+            this.Controls.Register(new WidgetReadoutControl(_yawValue, _yawLabel, TextStyleRole.Accent, "Yaw Deviation", "偏航对接偏差"));
+            this.Controls.Register(new WidgetReadoutControl(_rangeValue, _rangeLabel, TextStyleRole.PrimaryValue, "Range Readout", "对接距离读数"));
+            this.Controls.Register(new WidgetReadoutControl(_rateValue, _rateLabel, TextStyleRole.PrimaryValue, "Closing Rate", "临近闭合速率读数"));
+            this.Controls.Register(new WidgetReadoutControl(_xyzOffsets, null, TextStyleRole.Muted, "XYZ Offsets", "空间相对偏移量"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         private void BuildReticleRings(float outerR, float innerR, float s, ThemeConfig theme)
@@ -366,6 +384,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
 
             Color outerCol = style.GetLineColor(LineWeight.Subtle, theme);
@@ -406,6 +426,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             _outerRingSegments.Clear();
             _innerRingSegments.Clear();
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

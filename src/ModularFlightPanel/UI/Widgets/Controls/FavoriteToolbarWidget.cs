@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -156,6 +157,22 @@ namespace ModularFlightPanel.UI.Widgets
 
             SetupStructure();
             PopulateButtons(_contentRt, s);
+
+            // 标准化组件内部控件注册至管理器
+            if (_panelBg != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "快捷坞面板底衬", _panelBg.gameObject);
+            }
+            if (_collapseBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "collapse_btn", "折叠按键", _collapseBtn.gameObject, _collapseBtn, _collapseBtn.GetComponent<Image>(), null, _collapseBtnText, null, "«", ToggleCollapse, true));
+            }
+            if (_contentRt != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "favorites_content", "快捷图标容器", _contentRt.gameObject);
+            }
+
             AutoDetectInteractivityAndPruneRaycasts();
         }
 

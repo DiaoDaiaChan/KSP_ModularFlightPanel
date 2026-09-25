@@ -44,6 +44,36 @@ namespace ModularFlightPanel.Config
         public int DrawOrder = 0;             // 渲染图层层级 (0为最底层，数值越大越靠前/顶层)
         public bool IsLocked = false;         // 是否锁定图层 (锁定后禁止在画布中点击拖拽/变换，防止误触大背景面板)
 
+        // 子部件屏蔽与定制 (Sub-Element Masking)
+        public string DisabledSubElements = ""; // 逗号或分号分隔的已屏蔽子部件 ID (例如 "top_mode,bottom_sec,trend_bar")
+
+        public bool IsSubElementDisabled(string controlId)
+        {
+            if (string.IsNullOrEmpty(DisabledSubElements) || string.IsNullOrEmpty(controlId)) return false;
+            string[] parts = DisabledSubElements.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (string.Equals(parts[i].Trim(), controlId, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        public void SetSubElementDisabled(string controlId, bool disabled)
+        {
+            if (string.IsNullOrEmpty(controlId)) return;
+            var set = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(DisabledSubElements))
+            {
+                string[] parts = DisabledSubElements.Split(new[] { ',', ';', '|' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < parts.Length; i++) set.Add(parts[i].Trim());
+            }
+
+            if (disabled) set.Add(controlId.Trim());
+            else set.Remove(controlId.Trim());
+
+            DisabledSubElements = string.Join(",", set);
+        }
+
         // ===== 视图策略 (原硬编码常量的配置化出口，可在 layout.json / 预设 JSON 中逐组件覆盖) =====
         /// <summary>脏标记阈值：读数变化量小于该值时不触发任何 UI 重绘 (避免每帧 UGUI 顶点全量重建)</summary>
         public float ValueDeltaThreshold = 0.05f;

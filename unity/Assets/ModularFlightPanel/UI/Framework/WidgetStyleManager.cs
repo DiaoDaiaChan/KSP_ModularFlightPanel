@@ -30,7 +30,9 @@ namespace ModularFlightPanel.UI
         Accent,         // 强调文字（主或副强调色）
         Muted,            // 弱化文字（不可用或占位符）
         Cardinal,         // 航向罗盘方位文字
-        InverseOnAccent   // 反色墨字：绘制在强调色实底（激活按钮）之上
+        InverseOnAccent,  // 反色墨字：绘制在强调色实底（激活按钮）之上
+        ValueLarge = PrimaryValue,   // 兼容大字主读数别名
+        ValueSmall = SecondaryValue  // 兼容小字次读数别名
     }
 
     public enum ButtonVisualRole
@@ -39,7 +41,8 @@ namespace ModularFlightPanel.UI
         Primary,      // 核心主动作（如分级确认、模式切换）
         Warning,      // 警告动作（如紧急切断）
         Danger,       // 危险动作（如强制终止、解体逃逸）
-        ActiveToggle  // 激活锁/已开状态
+        ActiveToggle, // 激活锁/已开状态
+        Ghost = Normal // 兼容幽灵无底色按钮别名
     }
 
     public enum MeterStyleRole
@@ -90,6 +93,7 @@ namespace ModularFlightPanel.UI
     {
         Ghost,   // 幽灵级：水印底纹、极弱指示
         Faint,   // 极弱：栅格线、弱分隔
+        Hairline = Faint, // 兼容发丝细线别名
         Subtle,  // 次级：次级描边、内圈
         Light,   // 轻：装饰环、外圈过渡
         Normal,  // 标准：常规边框

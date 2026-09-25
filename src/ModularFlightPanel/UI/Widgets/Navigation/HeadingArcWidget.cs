@@ -6,6 +6,7 @@ using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -99,6 +100,30 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 4. 构建翡翠绿反T型基准游标
             BuildLubberMark(arcRadius, s, theme);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_band", "罗盘弧底带", _arcBandRoot, (t) => {
+                WidgetStyleManager st = WidgetStyleManager.Instance;
+                Material pm = st.GetUiMaterial(isText: false);
+                Color bandCol = st.GetCardBackgroundColor(CardStyleRole.Normal, t);
+                for (int i = 0; i < _bandBgImages.Count; i++)
+                {
+                    if (_bandBgImages[i] != null)
+                    {
+                        _bandBgImages[i].material = pm;
+                        _bandBgImages[i].color = bandCol;
+                    }
+                }
+            }));
+            this.Controls.Register(new WidgetReadoutControl("speech_bubble", "气泡航向标牌", _speechBubbleRoot, _headingText, null, TextStyleRole.PrimaryValue));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "lubber_mark", "翡翠绿基准游标", _lubberLineRoot, (t) => {
+                Color lc = WidgetStyleManager.Meter(MeterStyleRole.Primary, t);
+                if (_lubberBar != null) _lubberBar.color = lc;
+                if (_lubberStem != null) _lubberStem.color = lc;
+            }));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -563,10 +588,13 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 UpdateRotatingCompassRose((float)FlightTelemetryContext.Current.Heading, force: true);
             }
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             if (_bubbleBtn != null)
             {
                 _bubbleBtn.onClick.RemoveListener(OnBubbleClicked);

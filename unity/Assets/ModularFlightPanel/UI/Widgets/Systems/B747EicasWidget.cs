@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -327,6 +328,19 @@ namespace ModularFlightPanel.UI.Widgets
             fsRt.sizeDelta = new Vector2(-20f * s, 16f * s);
             fsRt.anchoredPosition = new Vector2(0f, 14f * s);
 
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetReadoutControl("header_status", "顶端状态栏", _tatText != null ? _tatText.gameObject : null, _tatText, _thrustModeText, TextStyleRole.Accent));
+            if (_eprLabel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "epr_gauges", "EPR仪表组", _eprLabel.gameObject));
+            if (_n1Label != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "n1_gauges", "N1仪表组", _n1Label.gameObject));
+            if (_egtLabel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "egt_gauges", "EGT仪表组", _egtLabel.gameObject));
+            this.Controls.Register(new WidgetReadoutControl("cas_memo", "机组备忘区", _casMemo1Text != null ? _casMemo1Text.gameObject : null, _casMemo1Text, _casMemo2Text, TextStyleRole.PrimaryValue));
+            if (_gearStatusText != null) this.Controls.Register(new WidgetAnnunciatorControl("gear_indicator", "起落架指示", _gearStatusText.gameObject, _gearStatusText, _gearLabelText, _gearBoxBg, _gearBoxOutline));
+            this.Controls.Register(new WidgetReadoutControl("systems_summary", "辅助系统读数", _fuelSummaryText != null ? _fuelSummaryText.gameObject : null, _fuelSummaryText, _cabPressText, TextStyleRole.PrimaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -477,6 +491,8 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyText(_ductPressText, TextStyleRole.PrimaryValue, theme);
             ApplyText(_cabPressText, TextStyleRole.SecondaryValue, theme);
             ApplyText(_fuelSummaryText, TextStyleRole.PrimaryValue, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -657,6 +673,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

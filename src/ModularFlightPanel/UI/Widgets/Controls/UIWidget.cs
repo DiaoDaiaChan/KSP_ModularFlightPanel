@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.Controls
 {
@@ -263,6 +264,35 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             RefreshWidgetRows();
             UpdateCategoryButtonVisuals();
             UpdateDragButtonVisual();
+
+            // 标准化组件内部控件注册至管理器
+            if (_headerRoot != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "header", "控制中枢顶栏", _headerRoot);
+            }
+            if (_bodyRoot != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "body_panel", "控制中枢内容列表", _bodyRoot);
+            }
+            if (_dragModeBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "drag_mode_btn", "编辑模式切换键", _dragModeBtn.gameObject, _dragModeBtn, _dragModeBtnImg, null, _dragModeBtnText, null, "EDIT", () =>
+                    {
+                        WidgetDragHandler.IsEditModeActive = !WidgetDragHandler.IsEditModeActive;
+                        UpdateDragButtonVisual();
+                    }, true));
+            }
+            if (_workbenchBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "workbench_btn", "工作台呼出键", _workbenchBtn.gameObject, _workbenchBtn, _workbenchBtn.GetComponent<Image>(), null, _workbenchBtnText, null, "SET", () => OnRequestOpenWorkbench?.Invoke(), false));
+            }
+            if (_collapseBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "collapse_btn", "折叠按键", _collapseBtn.gameObject, _collapseBtn, _collapseBtn.GetComponent<Image>(), null, _collapseBtnText, null, "—", ToggleCollapse, true));
+            }
         }
 
         private Button CreateButton(Transform parent, string name, string text, Vector2 size, Vector2 anchorMin, Vector2 anchorMax, Vector2 pos, Action onClick)

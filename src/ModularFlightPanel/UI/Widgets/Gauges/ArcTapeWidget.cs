@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.Gauges
 {
@@ -180,6 +181,28 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
             // 6. 构建次世代同心伴随弧轨动力学系统 (替代长方形)
             BuildConcentricEscortSystem(r, s, theme);
+
+            // 标准化组件内部控件注册至管理器 (0 影响原画质与排版)
+            if (_arcBandRoot != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "arc_band", "弧形标尺基板", _arcBandRoot);
+            }
+            if (_centerBoxObj != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "center_readout", "中央实体读数窗", _centerBoxObj);
+            }
+            if (_modeTagObj != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "top_mode_capsule", "顶部模式微胶囊", _modeTagObj);
+            }
+            if (_bottomSecObj != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "bottom_sec_box", "底部次级航电窗", _bottomSecObj);
+            }
+            if (_escortRailRoot != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "escort_rail_system", "同心伴随弧轨系统", _escortRailRoot);
+            }
 
             ApplyTheme(theme);
         }

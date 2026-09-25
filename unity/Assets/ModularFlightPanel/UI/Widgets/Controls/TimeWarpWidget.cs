@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -189,6 +190,19 @@ namespace ModularFlightPanel.UI.Widgets
             // 初始化根据主题配置执行原版时间栏静默隐藏
             _stockHidden = ThemeManager.IsStockTimeWarpHidden;
             NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden);
+
+            // 标准化组件内部控件注册至管理器 (0 影响原画质与排版)
+            ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "时间加速底板", panel);
+            ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "clock_mode_btn", "任务时钟模式按键", _modeBtn.gameObject, _modeBtn, _modeBtn.GetComponent<Image>(), null, _modeBtnText, null, "MET", OnToggleMode, true));
+            ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "clock_readout", "数字时钟读数", _clockText.gameObject);
+            ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "pause_btn", "暂停控制按键", _pauseBtn.gameObject, _pauseBtn, _pauseBtn.GetComponent<Image>(), null, _pauseBtnText, null, "PAUSE", OnTogglePause, true));
+            ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "stock_btn", "原版UI切换按键", _stockBtn.gameObject, _stockBtn, _stockBtn.GetComponent<Image>(), null, _stockBtnText, null, "KSP", OnToggleStock, true));
+            ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "warp_rate", "加速倍率读数", _warpRateText.gameObject);
+            ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "cancel_btn", "1X瞬时归一按键", _cancelBtn.gameObject, _cancelBtn, _cancelBtn.GetComponent<Image>(), null, _cancelBtnText, null, "1X", OnCancelWarp, false));
 
             ApplyTheme(theme);
         }

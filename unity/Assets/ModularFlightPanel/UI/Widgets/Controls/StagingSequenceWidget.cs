@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.Controls
 {
@@ -323,6 +324,25 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             // 7. 创建拖拽虚拟影子 (Drag Ghost)
             CreateDragGhost(s, theme);
+
+            // 标准化组件内部控件注册至管理器
+            if (_bgImage != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "分级序列底板", _bgImage.gameObject);
+            }
+            if (_titleText != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "header", "分级序列顶栏", _titleText.gameObject);
+            }
+            if (_scrollViewportRt != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "stages_viewport", "分级序列视口列表", _scrollViewportRt.gameObject);
+            }
+            if (_stageTriggerBtn != null)
+            {
+                ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
+                    new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "stage_trigger_btn", "分级触发指示键", _stageTriggerBtn.gameObject, _stageTriggerBtn, _stageTriggerBg, null, _stageTriggerText, null, "SPACE TO STAGE", OnStageTriggerClicked, false));
+            }
 
             ApplyTheme(theme);
         }

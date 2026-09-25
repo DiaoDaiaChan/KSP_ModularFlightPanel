@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -55,6 +56,16 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform metricsRt = _metrics.rectTransform;
             metricsRt.sizeDelta = new Vector2(size.x - 20f * s, 14f * s);
             metricsRt.anchoredPosition = new Vector2(12f * s, -size.y * 0.5f + 9f * s);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_background, _outline, CardStyleRole.Normal, t)));
+            if (_stateBar != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "state_bar", "状态竖条", _stateBar.gameObject, (t) => { if (_stateBar != null) _stateBar.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, t); }));
+            this.Controls.Register(new WidgetReadoutControl("title", "标题", _title != null ? _title.gameObject : null, null, _title, TextStyleRole.Label));
+            this.Controls.Register(new WidgetReadoutControl("state_readout", "飞行状态备忘", _state != null ? _state.gameObject : null, _state, null, TextStyleRole.Accent));
+            this.Controls.Register(new WidgetReadoutControl("metrics_readout", "基础飞行读数", _metrics != null ? _metrics.gameObject : null, _metrics, null, TextStyleRole.SecondaryValue));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -114,10 +125,13 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyText(_metrics, TextStyleRole.SecondaryValue, theme);
 
             if (_stateBar != null) _stateBar.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

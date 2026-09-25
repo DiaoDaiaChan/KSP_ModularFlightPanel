@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -87,6 +88,34 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 CreateThrottleTopTag(transform, s, theme);
             }
+
+            // 注册子控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_meter", "弧度计量表盘", _meterImage != null ? _meterImage.gameObject : gameObject, (t) => ConfigureMeterParameters(_type, t)));
+            if (_tagBox != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "tag_box", "顶标容器", _tagBox, (t) => {
+                    if (_tagBox != null)
+                    {
+                        Image tagImg = _tagBox.GetComponent<Image>();
+                        ApplyCard(tagImg, _tagOutline, CardStyleRole.Normal, t);
+                    }
+                }));
+            }
+            if (_topLabelText != null)
+            {
+                this.Controls.Register(new WidgetReadoutControl("top_label", "顶部标签", _topLabelText.gameObject, _topLabelText, null, TextStyleRole.Label));
+            }
+            if (_throttleValueText != null)
+            {
+                this.Controls.Register(new WidgetReadoutControl("value_readout", "数值读数", _throttleValueText.gameObject, _throttleValueText, null, TextStyleRole.PrimaryValue));
+            }
+            if (_bottomLabelText != null)
+            {
+                this.Controls.Register(new WidgetReadoutControl("bottom_label", "底部标度", _bottomLabelText.gameObject, _bottomLabelText, null, TextStyleRole.Muted));
+            }
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
@@ -258,10 +287,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (_topLabelText != null) ApplyText(_topLabelText, TextStyleRole.Label, theme);
             if (_bottomLabelText != null) ApplyText(_bottomLabelText, TextStyleRole.Muted, theme);
             if (_throttleValueText != null) ApplyText(_throttleValueText, TextStyleRole.PrimaryValue, theme);
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             if (_meterMaterial != null)
             {
                 Destroy(_meterMaterial);

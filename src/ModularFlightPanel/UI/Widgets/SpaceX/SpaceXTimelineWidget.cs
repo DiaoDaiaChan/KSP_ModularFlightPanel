@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -140,6 +141,21 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             phaseRt.sizeDelta = new Vector2(360f * s, 16f * s);
             phaseRt.anchoredPosition = new Vector2(0f, -26f * s);
 
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Timeline Panel Background", _bgImage.gameObject, "SpaceX任务时序抛物线面板底板", t => ApplyCard(_bgImage, _bgOutline, _currentCardRole, t)));
+            if (_arcRawImage != null)
+            {
+                this.Controls.Register(new WidgetGraphicViewportControl(_arcRawImage, "Trajectory Arc", "抛物线任务上升轨迹弧"));
+            }
+            if (_progressPipImage != null)
+            {
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "progress_pip", "Progress Pip", _progressPipImage.gameObject, "当前飞行进度光标"));
+            }
+            this.Controls.Register(new WidgetReadoutControl(_missionClockText, null, TextStyleRole.PrimaryValue, "Mission Clock", "任务时钟读数"));
+            this.Controls.Register(new WidgetReadoutControl(_missionPhaseText, null, TextStyleRole.SecondaryValue, "Mission Phase", "任务阶段副标题"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -207,6 +223,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            this.Controls.ApplyThemeToControls(theme);
 
             ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
 
@@ -397,6 +415,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override void OnDestroy()
         {
             _milestones = null;
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -116,6 +117,20 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _gauges[i] = CreateResourceGauge(transform, $"Gauge_{i}", boxSize, boxPositions[i], symbols[i], names[i], colors[i]);
             }
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetHeaderControl("header", "标题栏", _titleText != null ? _titleText.gameObject : null, _titleText, _statusBadge));
+            this.Controls.Register(new WidgetReadoutControl("environment_summary", "乘员环境摘要", _crewText != null ? _crewText.gameObject : null, _crewText, _pressureText, TextStyleRole.SecondaryValue));
+            if (_gauges[0].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("o2_gauge", "氧气余量", _gauges[0].BoxObj, _gauges[0].BarFill != null ? _gauges[0].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
+            if (_gauges[1].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("power_gauge", "电力储备", _gauges[1].BoxObj, _gauges[1].BarFill != null ? _gauges[1].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
+            if (_gauges[2].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("rcs_gauge", "RCS姿控", _gauges[2].BoxObj, _gauges[2].BarFill != null ? _gauges[2].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
+            if (_gauges[3].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("water_gauge", "水/燃料储备", _gauges[3].BoxObj, _gauges[3].BarFill != null ? _gauges[3].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
+
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         private ResourceGaugeUI CreateResourceGauge(Transform parent, string name, Vector2 size, Vector2 pos,
@@ -294,10 +309,13 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_gauges[i].PercentText != null) ApplyText(_gauges[i].PercentText, TextStyleRole.PrimaryValue, theme);
                 if (_gauges[i].StatusText != null) ApplyText(_gauges[i].StatusText, TextStyleRole.Label, theme);
             }
+
+            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()
         {
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }

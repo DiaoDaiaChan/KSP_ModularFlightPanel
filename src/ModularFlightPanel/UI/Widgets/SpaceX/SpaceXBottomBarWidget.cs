@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
@@ -155,6 +156,21 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _commTdrs = CreateCommTag("Comm_TDRS", commX, 0f, s, theme, _comm2);
             commX -= 38f * s;
             _commSpx = CreateCommTag("Comm_SPX", commX, 0f, s, theme, _comm1);
+
+            // 注册微控件至标准化管理器
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Bottom Bar Background", _bgImage.gameObject, "SpaceX底栏主卡片底板", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(new WidgetActionButtonControl(_rcsBtn, _rcsText, null, ButtonVisualRole.ActiveToggle, "RCS Toggle", "RCS姿控动力开关药丸按钮"));
+            this.Controls.Register(new WidgetActionButtonControl(_sasBtn, _sasText, null, ButtonVisualRole.ActiveToggle, "SAS Toggle", "SAS增稳系统开关药丸按钮"));
+            this.Controls.Register(new WidgetActionButtonControl(_modeBtn, _modeText, null, ButtonVisualRole.Normal, "Speed Mode", "速度基准循环切换药丸按钮"));
+            this.Controls.Register(new WidgetActionButtonControl(_precBtn, _precText, null, ButtonVisualRole.ActiveToggle, "Fine Controls", "精细控制微调模式药丸按钮"));
+            this.Controls.Register(new WidgetReadoutControl(_pointingValue, _pointingLabel, TextStyleRole.Accent, "Pointing Mode", "姿态指向保持模式读数"));
+            this.Controls.Register(new WidgetReadoutControl(_commSpx, null, TextStyleRole.Accent, "Comm SpaceX", "SpaceX测控链路微标"));
+            this.Controls.Register(new WidgetReadoutControl(_commTdrs, null, TextStyleRole.Accent, "Comm TDRS", "TDRS中继链路微标"));
+            this.Controls.Register(new WidgetReadoutControl(_commIss, null, TextStyleRole.Accent, "Comm ISS", "空间站临近链路微标"));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
+            ApplyTheme(theme);
         }
 
         private Button CreatePillButton(string name, float x, float y, float width, float height, float s, ThemeConfig theme, string label,
@@ -297,6 +313,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
 
             UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, _lastRcs, theme);
@@ -322,6 +340,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _sasBtn?.onClick.RemoveAllListeners();
             _modeBtn?.onClick.RemoveAllListeners();
             _precBtn?.onClick.RemoveAllListeners();
+            this.Controls.UnregisterAll();
             base.OnDestroy();
         }
     }
