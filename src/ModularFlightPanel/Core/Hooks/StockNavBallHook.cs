@@ -357,7 +357,7 @@ namespace ModularFlightPanel.Core
         }
 
         /// <summary>
-        /// 获取当前权威参考系所属宏观类别 (SURFACE, INERTIAL, BARYCENTRIC, TARGET, BODY_DIRECTION)
+        /// 获取当前权威参考系所属宏观类别 (SURFACE, BODY_FIXED, INERTIAL, ORBIT, LAGRANGE, TARGET)
         /// </summary>
         public static string GetReferenceFrameCategory()
         {
@@ -372,16 +372,17 @@ namespace ModularFlightPanel.Core
                 if (!string.IsNullOrEmpty(pType))
                 {
                     if (pType.IndexOf("SURFACE", StringComparison.OrdinalIgnoreCase) >= 0)
-                        return "BODY_SURFACE";
+                        return "BODY_FIXED";
                     if (pType.IndexOf("NON_ROTATING", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         pType.IndexOf("INERTIAL", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "INERTIAL";
                     if (pType.IndexOf("BARYCENTRIC", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         pType.IndexOf("PULSATING", StringComparison.OrdinalIgnoreCase) >= 0)
-                        return "BARYCENTRIC";
+                        return "LAGRANGE";
                     if (pType.IndexOf("PARENT_DIRECTION", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        pType.IndexOf("BODY_CENTRED", StringComparison.OrdinalIgnoreCase) >= 0)
-                        return "BODY_DIRECTION";
+                        pType.IndexOf("BODY_CENTRED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        pType.IndexOf("ORBIT", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "ORBIT";
                 }
             }
 
@@ -397,10 +398,10 @@ namespace ModularFlightPanel.Core
                 if (!string.IsNullOrEmpty(tName))
                 {
                     if (tName.IndexOf("inertial", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "INERTIAL");
-                    if (tName.IndexOf("barycentric", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BARYCENTRIC");
+                    if (tName.IndexOf("barycentric", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "LAGRANGE");
                     if (tName.IndexOf("target", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "TARGET");
-                    if (tName.IndexOf("body_direction", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BODY_DIRECTION");
-                    if (tName.IndexOf("navball_surface", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BODY_SURFACE");
+                    if (tName.IndexOf("body_direction", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "ORBIT");
+                    if (tName.IndexOf("navball_surface", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BODY_FIXED");
                     if (tName.IndexOf("surface", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("navball", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "SURFACE");
                 }
 
@@ -411,7 +412,7 @@ namespace ModularFlightPanel.Core
                         Color north = t2d.GetPixelBilinear(0.5f, 0.75f);
                         Color south = t2d.GetPixelBilinear(0.5f, 0.25f);
 
-                        if (north.r > 0.40f && north.b > 0.40f && north.g < 0.35f) return CacheAndReturn(tex, "BARYCENTRIC");
+                        if (north.r > 0.40f && north.b > 0.40f && north.g < 0.35f) return CacheAndReturn(tex, "LAGRANGE");
 
                         if (Mathf.Abs(north.r - north.g) < 0.08f && Mathf.Abs(north.g - north.b) < 0.08f && south.r < 0.15f && south.g < 0.15f && south.b < 0.15f)
                             return CacheAndReturn(tex, "INERTIAL");
@@ -420,10 +421,10 @@ namespace ModularFlightPanel.Core
                             return CacheAndReturn(tex, "TARGET");
 
                         if (north.r > 0.55f && north.g > 0.38f && north.b < 0.35f)
-                            return CacheAndReturn(tex, "BODY_DIRECTION");
+                            return CacheAndReturn(tex, "ORBIT");
 
                         if (north.r > north.b + 0.15f && south.b > south.r + 0.15f)
-                            return CacheAndReturn(tex, "BODY_SURFACE");
+                            return CacheAndReturn(tex, "BODY_FIXED");
 
                         if (north.b > north.r + 0.15f)
                             return CacheAndReturn(tex, "SURFACE");
@@ -437,7 +438,7 @@ namespace ModularFlightPanel.Core
                 case FlightGlobals.SpeedDisplayModes.Target: return "TARGET";
                 case FlightGlobals.SpeedDisplayModes.Orbit: return "ORBIT";
                 case FlightGlobals.SpeedDisplayModes.Surface: return "SURFACE";
-                default: return "SURFACE";
+                default: return "ORBIT";
             }
         }
 

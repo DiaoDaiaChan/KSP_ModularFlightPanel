@@ -37,28 +37,45 @@ namespace ModularFlightPanel.Core.Rendering
         {
             { "INERTIAL", INDEX_INERTIAL },
             { "NON_ROTATING", INDEX_INERTIAL },
+            { "BODY_CENTRED_NON_ROTATING", INDEX_INERTIAL },
             { "HELIOCENTRIC", INDEX_INERTIAL },
             { "HELIOCENTRIC_INERTIAL", INDEX_INERTIAL },
             { "J2000", INDEX_INERTIAL },
             { "ECI", INDEX_INERTIAL },
             { "ICRS", INDEX_INERTIAL },
+            { "惯性", INDEX_INERTIAL },
+            { "惯性系", INDEX_INERTIAL },
+            { "质心惯性", INDEX_INERTIAL },
+            { "不旋转", INDEX_INERTIAL },
 
             { "BODY_FIXED", INDEX_BODY_FIXED },
             { "BODY_SURFACE", INDEX_BODY_FIXED },
             { "ROTATING", INDEX_BODY_FIXED },
             { "ECEF", INDEX_BODY_FIXED },
+            { "体固", INDEX_BODY_FIXED },
+            { "体固系", INDEX_BODY_FIXED },
+            { "地固", INDEX_BODY_FIXED },
+            { "地心地固", INDEX_BODY_FIXED },
+            { "地心体固", INDEX_BODY_FIXED },
 
             { "SURFACE", INDEX_SURFACE },
             { "GROUND", INDEX_SURFACE },
             { "TOPOCENTRIC", INDEX_SURFACE },
             { "HORIZON", INDEX_SURFACE },
+            { "地表", INDEX_SURFACE },
+            { "地表系", INDEX_SURFACE },
 
             { "ORBIT", INDEX_ORBITAL },
             { "ORBITAL", INDEX_ORBITAL },
+            { "BODY_DIRECTION", INDEX_ORBITAL },
+            { "PARENT_DIRECTION", INDEX_ORBITAL },
+            { "BODY_CENTRED_PARENT_DIRECTION", INDEX_ORBITAL },
             { "LVLH", INDEX_ORBITAL },
             { "FRENET", INDEX_ORBITAL },
             { "PERIFOCAL", INDEX_ORBITAL },
             { "VVLH", INDEX_ORBITAL },
+            { "轨道", INDEX_ORBITAL },
+            { "轨道系", INDEX_ORBITAL },
 
             { "LAGRANGE", INDEX_LAGRANGE },
             { "BARYCENTRIC", INDEX_LAGRANGE },
@@ -66,45 +83,48 @@ namespace ModularFlightPanel.Core.Rendering
             { "PULSATING_BARYCENTRIC", INDEX_LAGRANGE },
             { "ROTATING_BARYCENTRIC", INDEX_LAGRANGE },
             { "ROTATING_PULSATING", INDEX_LAGRANGE },
+            { "BARYCENTRIC_ROTATING", INDEX_LAGRANGE },
             { "THREE_BODY", INDEX_LAGRANGE },
             { "L1", INDEX_LAGRANGE },
             { "L2", INDEX_LAGRANGE },
             { "L3", INDEX_LAGRANGE },
             { "L4", INDEX_LAGRANGE },
             { "L5", INDEX_LAGRANGE },
+            { "拉格朗日", INDEX_LAGRANGE },
+            { "拉格朗日点", INDEX_LAGRANGE },
+            { "L点", INDEX_LAGRANGE },
+            { "L点系", INDEX_LAGRANGE },
 
             { "TARGET", INDEX_TARGET },
             { "TARGET_ORBITAL", INDEX_TARGET },
             { "DOCKING", INDEX_TARGET },
             { "RELATIVE", INDEX_TARGET },
-
-            { "BODY_DIRECTION", INDEX_BODY_DIRECTION },
-            { "PARENT_DIRECTION", INDEX_BODY_DIRECTION }
+            { "目标", INDEX_TARGET },
+            { "目标系", INDEX_TARGET },
+            { "目标轨道", INDEX_TARGET }
         };
 
         public static int GetIconIndex(string name)
         {
-            if (string.IsNullOrEmpty(name)) return INDEX_INERTIAL;
+            if (string.IsNullOrEmpty(name)) return INDEX_ORBITAL;
             name = name.Trim().ToUpperInvariant();
 
             if (FrameNameToIndex.TryGetValue(name, out int idx)) return idx;
 
-            if (name.Contains("BARYCENTRIC") || name.Contains("LAGRANGE") || name.Contains("PULSATING") || name.Contains("L1") || name.Contains("L2") || name.Contains("L3") || name.Contains("L4") || name.Contains("L5") || name.Contains("L点"))
+            if (name.Contains("TARGET") || name.Contains("DOCK") || name.Contains("目标"))
+                return INDEX_TARGET;
+            if (name.Contains("BARYCENTRIC") || name.Contains("LAGRANGE") || name.Contains("PULSATING") || name.Contains("L1") || name.Contains("L2") || name.Contains("L3") || name.Contains("L4") || name.Contains("L5") || name.Contains("L点") || name.Contains("拉格朗日"))
                 return INDEX_LAGRANGE;
-            if (name.Contains("FIXED") || name.Contains("ROTATING") || name.Contains("ECEF") || name.Contains("体固"))
+            if (name.Contains("BODY_FIXED") || name.Contains("BODY_SURFACE") || name.Contains("ROTATING") || name.Contains("ECEF") || name.Contains("体固") || name.Contains("地固"))
                 return INDEX_BODY_FIXED;
             if (name.Contains("SURFACE") || name.Contains("GROUND") || name.Contains("地表"))
                 return INDEX_SURFACE;
-            if (name.Contains("ORBIT") || name.Contains("LVLH") || name.Contains("FRENET") || name.Contains("轨道"))
+            if (name.Contains("ORBIT") || name.Contains("LVLH") || name.Contains("FRENET") || name.Contains("轨道") || name.Contains("BODY_DIRECTION") || name.Contains("PARENT_DIRECTION"))
                 return INDEX_ORBITAL;
-            if (name.Contains("TARGET") || name.Contains("DOCK") || name.Contains("目标"))
-                return INDEX_TARGET;
-            if (name.Contains("INERTIAL") || name.Contains("NON_ROTATING") || name.Contains("惯性"))
+            if (name.Contains("INERTIAL") || name.Contains("NON_ROTATING") || name.Contains("惯性") || name.Contains("不旋转"))
                 return INDEX_INERTIAL;
-            if (name.Contains("BODY_DIRECTION") || name.Contains("PARENT_DIRECTION"))
-                return INDEX_BODY_DIRECTION;
 
-            return INDEX_INERTIAL;
+            return INDEX_ORBITAL;
         }
 
         public static Rect GetIconUv(string name)
@@ -128,10 +148,11 @@ namespace ModularFlightPanel.Core.Rendering
         {
             if (_cachedAtlas != null) return _cachedAtlas;
 
-            Texture2D tex = new Texture2D(AtlasWidth, AtlasHeight, TextureFormat.RGBA32, false);
+            Texture2D tex = new Texture2D(AtlasWidth, AtlasHeight, TextureFormat.RGBA32, true);
             tex.name = "MFP_AvionicsReferenceFrameIconAtlas";
             tex.filterMode = FilterMode.Bilinear;
             tex.wrapMode = TextureWrapMode.Clamp;
+            tex.anisoLevel = 2;
 
             Color[] pixels = new Color[AtlasWidth * AtlasHeight];
             for (int i = 0; i < pixels.Length; i++)
@@ -149,7 +170,7 @@ namespace ModularFlightPanel.Core.Rendering
             DrawTile(pixels, INDEX_BODY_DIRECTION, DrawBodyDirectionFrame);
 
             tex.SetPixels(pixels);
-            tex.Apply(false, true);
+            tex.Apply(true, false);
             _cachedAtlas = tex;
             return _cachedAtlas;
         }
@@ -173,23 +194,23 @@ namespace ModularFlightPanel.Core.Rendering
         private static void DrawInertialFrame(Rasterizer r)
         {
             // 三维空间右手正交惯性笛卡尔坐标三脚架 (3D Orthogonal Inertial Triad Frame)
-            int ox = 64, oy = 52;
+            int ox = 64, oy = 50;
 
             // 1. 垂直天顶主极轴 (+Z 轴，北天极恒星基准)
-            r.DrawArrow(ox, oy, ox, 114, 18f, 26f, 1.0f, 7.0f);
+            r.DrawArrow(ox, oy, ox, 116, 18f, 26f, 1.0f, 7.5f);
 
             // 2. 斜右下主坐标轴 (+X 轴，春分点基准)
-            r.DrawArrow(ox, oy, 110, 22, 17f, 26f, 1.0f, 6.5f);
+            r.DrawArrow(ox, oy, 112, 20, 18f, 26f, 1.0f, 7.0f);
 
             // 3. 斜左下正交坐标轴 (+Y 轴，空间正交补全)
-            r.DrawArrow(ox, oy, 18, 22, 17f, 26f, 1.0f, 6.5f);
+            r.DrawArrow(ox, oy, 16, 20, 18f, 26f, 1.0f, 7.0f);
 
             // 4. 坐标原点质心高亮实心球核
-            r.FillCircle(ox, oy, 7.5f, 1.0f);
+            r.FillCircle(ox, oy, 8.5f, 1.0f);
 
             // 5. 左上与右上象限空间不动恒星 (Fixed Sidereal Stars)
-            r.DrawStar(26, 96, 9, 0.95f);
-            r.DrawStar(102, 96, 9, 0.95f);
+            r.DrawStar(24, 96, 10, 1.0f);
+            r.DrawStar(104, 96, 10, 1.0f);
         }
 
         // =========================================================================
@@ -199,24 +220,23 @@ namespace ModularFlightPanel.Core.Rendering
         {
             int cx = 64, cy = 64;
 
-            // 1. 中心行星自转球体轮廓与赤道
-            r.FillCircle(cx, cy, 34, 0.15f);
-            r.DrawCircle(cx, cy, 34, 0.95f, 6.0f);
+            // 1. 中心行星自转球体轮廓与赤道经纬线 (纯实心高反差线框，剔除低透明底色以防发虚)
+            r.DrawCircle(cx, cy, 34, 1.0f, 6.5f);
 
             // 南北贯通自转极轴
-            r.DrawLine(cx, 16, cx, 112, 0.75f, 4.0f);
+            r.DrawLine(cx, 16, cx, 112, 1.0f, 5.0f);
 
             // 赤道与主经线
-            r.DrawLine(cx - 31, cy, cx + 31, cy, 0.90f, 5.0f);
-            r.DrawEllipse(cx, cy, 14, 34, 0.55f, 4.0f);
+            r.DrawLine(cx - 31, cy, cx + 31, cy, 1.0f, 6.0f);
+            r.DrawEllipse(cx, cy, 14, 34, 0.90f, 5.0f);
 
             // 2. 环绕行星的粗自转动量弧与大箭头 (Spin Rotation Ring & Arrow ω)
-            r.DrawArc(cx, cy, 48, -25f, 185f, 1.0f, 7.0f);
+            r.DrawArc(cx, cy, 48, -25f, 185f, 1.0f, 7.5f);
             // 自转箭头
             float headRad = -25f * Mathf.Deg2Rad;
             float ax = cx + Mathf.Cos(headRad) * 48f;
             float ay = cy + Mathf.Sin(headRad) * 48f;
-            r.DrawArrow(ax - 12, ay - 6, ax + 8, ay + 6, 16f, 28f, 1.0f, 6.0f);
+            r.DrawArrow(ax - 12, ay - 6, ax + 8, ay + 6, 17f, 28f, 1.0f, 6.5f);
         }
 
         // =========================================================================
@@ -225,20 +245,20 @@ namespace ModularFlightPanel.Core.Rendering
         private static void DrawOrbitalFrame(Rasterizer r)
         {
             // 1. 引力焦点中心主天体 (Focus Body at left focal point)
-            int focusX = 44, focusY = 64;
-            r.FillCircle(focusX, focusY, 16, 1.0f);
-            r.DrawCircle(focusX, focusY, 22, 0.35f, 3.0f);
+            int focusX = 42, focusY = 64;
+            r.FillCircle(focusX, focusY, 17, 1.0f);
+            r.DrawCircle(focusX, focusY, 23, 0.65f, 3.5f);
 
             // 2. 粗开普勒闭合椭圆轨道 (Keplerian Orbit Ring)
             int orbCenterX = 62, orbCenterY = 64;
-            r.DrawEllipse(orbCenterX, orbCenterY, 50, 28, 0.95f, 6.0f);
+            r.DrawEllipse(orbCenterX, orbCenterY, 50, 28, 1.0f, 6.5f);
 
             // 3. 轨道航天器节点与切向顺向速度箭头 (Spacecraft Node & Prograde Vector)
             int scX = 68, scY = 92;
-            r.FillDiamond(scX, scY, 7.5f, 1.0f);
+            r.FillDiamond(scX, scY, 8.5f, 1.0f);
 
             // 切向速度前向箭头
-            r.DrawArrow(scX + 6, scY, 112, scY, 15f, 26f, 1.0f, 5.5f);
+            r.DrawArrow(scX + 6, scY, 114, scY, 16f, 26f, 1.0f, 6.0f);
         }
 
         // =========================================================================
@@ -250,25 +270,25 @@ namespace ModularFlightPanel.Core.Rendering
             int m2X = 94, m2Y = 64; // Secondary Body (M2)
 
             // 1. 基线坐标轴与双天体 (Connecting Axis & Masses M1, M2)
-            r.DrawLine(12, 64, 116, 64, 0.40f, 3.0f);
+            r.DrawLine(12, 64, 116, 64, 0.60f, 3.5f);
 
             // 2. 洛希瓣等势面哑铃双叶轮廓 (Roche Lobe Equipotential Curves)
-            r.DrawDumbbellContour(m1X, m1Y, m2X, m2Y, 0.85f, 5.0f);
+            r.DrawDumbbellContour(m1X, m1Y, m2X, m2Y, 1.0f, 5.5f);
 
             // 3. 主次双天体高光实心球核
-            r.FillCircle(m1X, m1Y, 16, 1.0f);
-            r.FillCircle(m2X, m2Y, 10, 1.0f);
+            r.FillCircle(m1X, m1Y, 17, 1.0f);
+            r.FillCircle(m2X, m2Y, 11, 1.0f);
 
             // 4. 平动点：L1 (两体质心平衡点), L4 (+60°), L5 (-60°)
-            r.FillDiamond(65, 64, 6f, 1.0f);
-            r.FillDiamond(65, 106, 6f, 1.0f);
-            r.FillDiamond(65, 22, 6f, 1.0f);
+            r.FillDiamond(65, 64, 6.5f, 1.0f);
+            r.FillDiamond(65, 106, 6.5f, 1.0f);
+            r.FillDiamond(65, 22, 6.5f, 1.0f);
 
-            // 5. 等边三角形稳定性导引虚线
-            r.DrawDashedLine(m1X, m1Y, 65, 106, 5, 4, 0.40f, 2.0f);
-            r.DrawDashedLine(m2X, m2Y, 65, 106, 5, 4, 0.40f, 2.0f);
-            r.DrawDashedLine(m1X, m1Y, 65, 22, 5, 4, 0.40f, 2.0f);
-            r.DrawDashedLine(m2X, m2Y, 65, 22, 5, 4, 0.40f, 2.0f);
+            // 5. 等边三角形稳定性导引粗虚线
+            r.DrawDashedLine(m1X, m1Y, 65, 106, 5, 4, 0.60f, 3.0f);
+            r.DrawDashedLine(m2X, m2Y, 65, 106, 5, 4, 0.60f, 3.0f);
+            r.DrawDashedLine(m1X, m1Y, 65, 22, 5, 4, 0.60f, 3.0f);
+            r.DrawDashedLine(m2X, m2Y, 65, 22, 5, 4, 0.60f, 3.0f);
         }
 
         // =========================================================================
@@ -279,19 +299,19 @@ namespace ModularFlightPanel.Core.Rendering
             int cx = 64, cy = 64;
 
             // 1. 粗瞄准标度主环 (Tactical Targeting Reticle)
-            r.DrawCircle(cx, cy, 38, 0.90f, 6.0f);
+            r.DrawCircle(cx, cy, 38, 1.0f, 6.5f);
 
             // 2. 上下左右四向穿透雷达测距刻度线 (Four Quadrant Ticks)
-            r.DrawLine(cx, 96, cx, 116, 1.0f, 6.0f);
-            r.DrawLine(cx, 12, cx, 32, 1.0f, 6.0f);
-            r.DrawLine(12, cy, 32, cy, 1.0f, 6.0f);
-            r.DrawLine(96, cy, 116, cy, 1.0f, 6.0f);
+            r.DrawLine(cx, 96, cx, 118, 1.0f, 6.5f);
+            r.DrawLine(cx, 10, cx, 32, 1.0f, 6.5f);
+            r.DrawLine(10, cy, 32, cy, 1.0f, 6.5f);
+            r.DrawLine(96, cy, 118, cy, 1.0f, 6.5f);
 
             // 3. 核心对接对中实心菱形 (Docking Target Center)
-            r.FillDiamond(cx, cy, 9f, 1.0f);
+            r.FillDiamond(cx, cy, 8.5f, 1.0f);
 
             // 4. 相对交会视线导引箭头 (Relative Approach Vector)
-            r.DrawArrow(28, 28, 52, 52, 14f, 28f, 1.0f, 5.5f);
+            r.DrawArrow(26, 26, 52, 52, 15f, 28f, 1.0f, 6.0f);
         }
 
         // =========================================================================
@@ -303,22 +323,22 @@ namespace ModularFlightPanel.Core.Rendering
             int groundY = 38;
 
             // 1. 坚实的大地水平基线 (Earth Surface Baseline)
-            r.DrawLine(14, groundY, 114, groundY, 1.0f, 7.0f);
+            r.DrawLine(12, groundY, 116, groundY, 1.0f, 7.5f);
 
             // 2. 地下地质斜向阴影标线 (Subsurface Ground Hatch)
-            for (int hx = 28; hx <= 100; hx += 18)
+            for (int hx = 26; hx <= 102; hx += 18)
             {
-                r.DrawLine(hx, groundY - 4, hx - 10, groundY - 18, 0.60f, 4.0f);
+                r.DrawLine(hx, groundY - 4, hx - 10, groundY - 18, 0.80f, 4.5f);
             }
 
             // 3. 地表发射台/测站实心底座 (Launch Pad Station Base)
-            r.FillTriangle(50, groundY, 78, groundY, 64, groundY + 12, 1.0f);
+            r.FillTriangle(48, groundY, 80, groundY, 64, groundY + 14, 1.0f);
 
             // 4. 局部铅垂天顶粗箭头 (+Up / Zenith Vector)
-            r.DrawArrow(cx, groundY + 10, cx, 114, 18f, 26f, 1.0f, 7.0f);
+            r.DrawArrow(cx, groundY + 10, cx, 116, 18f, 26f, 1.0f, 7.5f);
 
             // 5. 局部地平切向水平速度粗箭头 (+Horizon Vector)
-            r.DrawArrow(cx + 6, groundY + 18, 108, groundY + 18, 16f, 26f, 0.95f, 6.0f);
+            r.DrawArrow(cx + 6, groundY + 18, 110, groundY + 18, 17f, 26f, 1.0f, 6.5f);
         }
 
         // =========================================================================
@@ -372,7 +392,8 @@ namespace ModularFlightPanel.Core.Rendering
                 int idx = gy * _atlasW + gx;
                 float currentA = _pixels[idx].a;
                 float newA = Mathf.Clamp01(currentA + alpha);
-                _pixels[idx] = WidgetStyleManager.NeutralOpaque * newA;
+                Color c = WidgetStyleManager.NeutralOpaque;
+                _pixels[idx] = new Color(c.r, c.g, c.b, newA);
             }
 
             public void DrawLine(float x0, float y0, float x1, float y1, float alpha, float width = 1.0f)
@@ -410,9 +431,9 @@ namespace ModularFlightPanel.Core.Rendering
                             for (int x = minX; x <= maxX; x++)
                             {
                                 float dist = DistanceToSegment(x, y, x0, y0, x1, y1);
-                                if (dist <= halfW)
+                                if (dist <= halfW + 0.5f)
                                 {
-                                    float a = Mathf.Clamp01((halfW - dist + 0.5f)) * alpha;
+                                    float a = Mathf.Clamp01((halfW + 0.5f - dist) * 1.5f) * alpha;
                                     SetPixel(x, y, a);
                                 }
                             }
@@ -462,7 +483,7 @@ namespace ModularFlightPanel.Core.Rendering
                         float delta = Mathf.Abs(d - radius);
                         if (delta <= halfW + 0.5f)
                         {
-                            float a = Mathf.Clamp01(halfW + 0.5f - delta) * alpha;
+                            float a = Mathf.Clamp01((halfW + 0.5f - delta) * 1.5f) * alpha;
                             SetPixel(x, y, a);
                         }
                     }
@@ -483,7 +504,7 @@ namespace ModularFlightPanel.Core.Rendering
                         float d = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
                         if (d <= radius + 0.5f)
                         {
-                            float a = Mathf.Clamp01(radius + 0.5f - d) * alpha;
+                            float a = Mathf.Clamp01((radius + 0.5f - d) * 1.5f) * alpha;
                             SetPixel(x, y, a);
                         }
                     }
@@ -512,7 +533,7 @@ namespace ModularFlightPanel.Core.Rendering
                             float d = Mathf.Sqrt((x - px) * (x - px) + (y - py) * (y - py));
                             if (d <= halfW + 0.5f)
                             {
-                                SetPixel(x, y, Mathf.Clamp01(halfW + 0.5f - d) * alpha);
+                                SetPixel(x, y, Mathf.Clamp01((halfW + 0.5f - d) * 1.5f) * alpha);
                             }
                         }
                     }
@@ -597,7 +618,7 @@ namespace ModularFlightPanel.Core.Rendering
                         float manhattan = Mathf.Abs(x - cx) + Mathf.Abs(y - cy);
                         if (manhattan <= size + 0.5f)
                         {
-                            float a = Mathf.Clamp01(size + 0.5f - manhattan) * alpha;
+                            float a = Mathf.Clamp01((size + 0.5f - manhattan) * 1.5f) * alpha;
                             SetPixel(x, y, a);
                         }
                     }

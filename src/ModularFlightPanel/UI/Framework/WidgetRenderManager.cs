@@ -249,7 +249,7 @@ namespace ModularFlightPanel.UI
         /// 根据当前屏幕物理分辨率、组件物理像素占用、单组件 RenderScale 与全局超采样倍率，
         /// 智能计算并量化为最匹配的 2^n 纹理尺寸 (128 / 256 / 512 / 1024 / 2048)。
         /// </summary>
-        public int CalculateOptimalResolution(Vector2 uiSize, float widgetScale = 1.0f, float widgetRenderScale = 1.0f, int minRes = 512, int maxRes = 2048)
+        public int CalculateOptimalResolution(Vector2 uiSize, float widgetScale = 1.0f, float widgetRenderScale = 1.0f, int minRes = 256, int maxRes = 2048)
         {
             float effectiveMultiplier = Mathf.Clamp(widgetRenderScale, 0.2f, 3.0f) * Mathf.Clamp(GlobalRenderScaleMultiplier, 0.2f, 3.0f);
 
@@ -273,7 +273,7 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 将目标像素量化为经济高效的 2^n 纹理贴图，带 10% 容差缓冲以防止临界像素波动引发贴图抖动
         /// </summary>
-        public static int QuantizeToOptimalPowerOfTwo(int targetPixels, int minRes = 512, int maxRes = 2048)
+        public static int QuantizeToOptimalPowerOfTwo(int targetPixels, int minRes = 256, int maxRes = 2048)
         {
             int res;
             if (targetPixels <= 128) res = 128;

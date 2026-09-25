@@ -38,7 +38,7 @@ namespace ModularFlightPanel.Editor
             public Quaternion BallRotation => Quaternion.Euler(12f, 0f, 0f);
             public Texture BallTexture => _texture;
             public string HeadingText => $"HDG {Mathf.RoundToInt(_sim.Heading) % 360:D3}°";
-            public string FrameName => (_texture != null && !string.IsNullOrEmpty(_texture.name)) ? _texture.name.Replace("navball_", "").ToUpperInvariant() : "SURFACE";
+            public string FrameName => (_texture != null && !string.IsNullOrEmpty(_texture.name)) ? _texture.name.Replace("navball_", "").ToUpperInvariant() : "ORBIT";
             public string ReferenceFrameCategory
             {
                 get
@@ -46,15 +46,14 @@ namespace ModularFlightPanel.Editor
                     if (_texture != null && !string.IsNullOrEmpty(_texture.name))
                     {
                         string n = _texture.name.ToLowerInvariant();
-                        if (n.Contains("barycentric") || n.Contains("lagrange") || n.Contains("pulsating") || n.Contains("l1") || n.Contains("l2")) return "LAGRANGE";
-                        if (n.Contains("inertial") || n.Contains("non_rotating")) return "INERTIAL";
-                        if (n.Contains("orbit")) return "ORBIT";
-                        if (n.Contains("target") || n.Contains("dock")) return "TARGET";
-                        if (n.Contains("body_direction")) return "BODY_DIRECTION";
-                        if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("rotating") || n.Contains("fixed")) return "BODY_FIXED";
-                        if (n.Contains("surface") || n.Contains("ground")) return "SURFACE";
+                        if (n.Contains("barycentric") || n.Contains("lagrange") || n.Contains("pulsating") || n.Contains("l1") || n.Contains("l2") || n.Contains("l点") || n.Contains("拉格朗日")) return "LAGRANGE";
+                        if (n.Contains("inertial") || n.Contains("non_rotating") || n.Contains("惯性") || n.Contains("不旋转")) return "INERTIAL";
+                        if (n.Contains("orbit") || n.Contains("body_direction") || n.Contains("parent_direction") || n.Contains("轨道")) return "ORBIT";
+                        if (n.Contains("target") || n.Contains("dock") || n.Contains("目标")) return "TARGET";
+                        if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("rotating") || n.Contains("fixed") || n.Contains("体固") || n.Contains("地固")) return "BODY_FIXED";
+                        if (n.Contains("surface") || n.Contains("ground") || n.Contains("地表")) return "SURFACE";
                     }
-                    return "SURFACE";
+                    return "ORBIT";
                 }
             }
             public float HeadingAngle => _sim != null ? _sim.Heading : 0f;
@@ -315,16 +314,30 @@ namespace ModularFlightPanel.Editor
 
             // 4. 挂载真实姿态球纹理
             Texture2D navballTex = null;
-            string navballPath = Path.Combine(projectRoot, "navball_barycentric.png");
-            if (File.Exists(navballPath))
+            string[] searchPaths = new string[]
             {
-                byte[] imgBytes = File.ReadAllBytes(navballPath);
-                navballTex = new Texture2D(512, 256, TextureFormat.RGBA32, false);
+                Path.Combine(projectRoot, $"navball_{targetFrameType}.png"),
+                Path.Combine(projectRoot, "navball_barycentric.png"),
+                Path.Combine(@"C:\Users\43701\Documents\github\Principia\ksp_plugin_adapter\assets", $"navball_{targetFrameType}.png"),
+                Path.Combine(@"C:\Users\43701\Documents\github\Principia\ksp_plugin_adapter\assets", "navball_barycentric.png")
+            };
+            foreach (string path in searchPaths)
+            {
+                if (File.Exists(path))
+                {
+                    byte[] imgBytes = File.ReadAllBytes(path);
+                    navballTex = new Texture2D(512, 256, TextureFormat.RGBA32, false);
+                    navballTex.LoadImage(imgBytes);
+                    navballTex.name = "navball_" + targetFrameType;
+                    navballTex.filterMode = FilterMode.Trilinear;
+                    Debug.Log($"[HeadlessUIRenderer] Loaded Navball Texture from {path} for frame {targetFrameType}");
+                    break;
+                }
+            }
+            if (navballTex == null)
+            {
+                navballTex = new Texture2D(64, 64, TextureFormat.RGBA32, false);
                 navballTex.name = "navball_" + targetFrameType;
-                navballTex.LoadImage(imgBytes);
-                navballTex.name = "navball_" + targetFrameType;
-                navballTex.filterMode = FilterMode.Trilinear;
-                Debug.Log($"[HeadlessUIRenderer] Loaded Navball Texture for frame {targetFrameType}");
             }
             NavBallHookService.Provider = new HeadlessNavBallHook(navballTex, simEngine);
             StockStageIconService.Provider = new HeadlessStageIconHook();

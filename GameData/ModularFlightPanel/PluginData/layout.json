@@ -72,7 +72,7 @@
         {
             "WidgetId": "nav.reference_frame",
             "DisplayName": "REF FRAME 导航参考系指示卡",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 0.0,
             "PositionY": 0.0,
             "Scale": 1.0,
@@ -378,8 +378,8 @@
         {
             "WidgetId": "tape.speed",
             "DisplayName": "PFD 速度标尺带",
-            "IsEnabled": true,
-            "PositionX": 0.0,
+            "IsEnabled": false,
+            "PositionX": -120.0,
             "PositionY": 0.0,
             "Scale": 1.0,
             "ScaleX": 1.0,

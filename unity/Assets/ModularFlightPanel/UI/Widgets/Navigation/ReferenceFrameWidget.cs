@@ -226,60 +226,31 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (theme == null) theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            TextStyleRole textRole = TextStyleRole.Cardinal;
-            int iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL;
+            int iconIndex = ReferenceFrameIconAtlasGenerator.GetIconIndex(category);
 
-            switch (category.ToUpperInvariant())
+            TextStyleRole textRole;
+            switch (iconIndex)
             {
-                case "SURFACE":
-                case "GROUND":
-                case "TOPOCENTRIC":
-                case "HORIZON":
+                case ReferenceFrameIconAtlasGenerator.INDEX_SURFACE:
+                case ReferenceFrameIconAtlasGenerator.INDEX_BODY_FIXED:
                     textRole = TextStyleRole.Accent;
-                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_SURFACE;
                     break;
 
-                case "BODY_FIXED":
-                case "BODY_SURFACE":
-                case "ROTATING":
-                case "ECEF":
-                    textRole = TextStyleRole.Accent;
-                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_BODY_FIXED;
-                    break;
-
-                case "ORBIT":
-                case "ORBITAL":
-                case "LVLH":
-                case "FRENET":
+                case ReferenceFrameIconAtlasGenerator.INDEX_ORBITAL:
                     textRole = TextStyleRole.Cardinal;
-                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_ORBITAL;
                     break;
 
-                case "BARYCENTRIC":
-                case "LAGRANGE":
-                case "PULSATING":
-                case "ROTATING_PULSATING":
-                case "THREE_BODY":
+                case ReferenceFrameIconAtlasGenerator.INDEX_LAGRANGE:
                     textRole = TextStyleRole.Accent;
-                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_LAGRANGE;
                     break;
 
-                case "TARGET":
-                case "TARGET_ORBITAL":
-                case "DOCKING":
-                case "RELATIVE":
+                case ReferenceFrameIconAtlasGenerator.INDEX_TARGET:
                     textRole = TextStyleRole.Warning;
-                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_TARGET;
                     break;
 
-                case "INERTIAL":
-                case "NON_ROTATING":
-                case "HELIOCENTRIC":
-                case "J2000":
-                case "ECI":
+                case ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL:
                 default:
                     textRole = TextStyleRole.Cardinal;
-                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL;
                     break;
             }
 

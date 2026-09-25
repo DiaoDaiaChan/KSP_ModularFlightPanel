@@ -41,6 +41,10 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Vector3[] _displayCorners = new Vector3[4];
         private float _lastDetailScale = -1f;
 
+        private RenderTexture _bakedSurfaceTexture;
+        private bool _isBakeDirty = true;
+        public void MarkBakeDirty() => _isBakeDirty = true;
+
         private static Mesh _primitiveSphereMesh;
         private Image _reticleImage;
         private float _reticlePhase = 0.0f;
@@ -89,14 +93,16 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 动态自适应刚刚好高效 RenderTexture (依据 WidgetRenderManager 结合物理占用与倍率自适应)
-            int rtResolution = 512;
+            int rtResolution = 256;
             if (WidgetRenderManager.Instance != null)
             {
                 rtResolution = WidgetRenderManager.Instance.CalculateOptimalResolution(
-                    new Vector2(150f, 150f),
+                    new Vector2(_ballDiameter, _ballDiameter),
                     config != null ? config.Scale : 1.0f,
-                    config != null ? config.RenderScale : 1.0f);
+                    config != null ? config.RenderScale : 1.0f,
+                    minRes: 256);
             }
+            _isBakeDirty = true;
             _renderTexture = new RenderTexture(rtResolution, rtResolution, 16, RenderTextureFormat.ARGB32)
             {
                 antiAliasing = 1,
@@ -427,7 +433,53 @@ namespace ModularFlightPanel.UI.Widgets
         private static readonly int _PropNumeralUprightMode = Shader.PropertyToID("_NumeralUprightMode");
         private static readonly int _PropNumeralRollAngle = Shader.PropertyToID("_NumeralRollAngle");
         private static readonly int _PropNumeralTangentComp = Shader.PropertyToID("_NumeralTangentComp");
+        private static readonly int _PropBakedSurfaceTex = Shader.PropertyToID("_BakedSurfaceTex");
+        private static readonly int _PropUseBakedTexture = Shader.PropertyToID("_UseBakedTexture");
         #endregion
+
+        private void BakeSurfaceTexture()
+        {
+            if (_sphereMaterial == null) return;
+            if (!_sphereMaterial.HasProperty(_PropBakedSurfaceTex) || _sphereMaterial.passCount < 2)
+            {
+                if (_sphereMaterial.HasProperty(_PropUseBakedTexture))
+                {
+                    _sphereMaterial.SetFloat(_PropUseBakedTexture, 0.0f);
+                }
+                return;
+            }
+
+            int bakeW = 1024;
+            int bakeH = 512;
+
+            if (_bakedSurfaceTexture == null || !_bakedSurfaceTexture.IsCreated() ||
+                _bakedSurfaceTexture.width != bakeW || _bakedSurfaceTexture.height != bakeH)
+            {
+                if (_bakedSurfaceTexture != null)
+                {
+                    if (_bakedSurfaceTexture.IsCreated()) _bakedSurfaceTexture.Release();
+                    Destroy(_bakedSurfaceTexture);
+                }
+
+                _bakedSurfaceTexture = new RenderTexture(bakeW, bakeH, 0, RenderTextureFormat.ARGB32)
+                {
+                    antiAliasing = 1,
+                    anisoLevel = 8,
+                    useMipMap = true,
+                    autoGenerateMips = true,
+                    filterMode = FilterMode.Trilinear,
+                    wrapModeU = TextureWrapMode.Repeat,
+                    wrapModeV = TextureWrapMode.Clamp
+                };
+                _bakedSurfaceTexture.Create();
+            }
+
+            // Blit using Pass 1 (NavballEquirectangularBake)
+            Graphics.Blit(Texture2D.whiteTexture, _bakedSurfaceTexture, _sphereMaterial, 1);
+
+            _sphereMaterial.SetTexture(_PropBakedSurfaceTex, _bakedSurfaceTexture);
+            _sphereMaterial.SetFloat(_PropUseBakedTexture, 1.0f);
+        }
 
         #region Sub-Pixel Dynamic Rendering & Dirty Guards (Zero Visual Quality Loss)
         // 0.025° 阈值：球体半径约 75px，1px ≈ 0.76°，0.025° 对应 < 1/30 屏幕物理像素，完全零肉眼/数学画质损失
@@ -701,9 +753,11 @@ namespace ModularFlightPanel.UI.Widgets
                     _paletteInitialized = true;
                     UploadPaletteToMaterial(_currentPalette);
                     _isMaterialDirty = true;
+                    _isBakeDirty = true;
                 }
                 _lastFrameCategory = category;
                 _isPaletteLerping = true;
+                _isBakeDirty = true;
             }
 
             if (_sphereMaterial != null)
@@ -714,6 +768,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereMaterial.SetFloat(_PropFramePattern, framePattern);
                     _lastFramePattern = framePattern;
                     _isMaterialDirty = true;
+                    _isBakeDirty = true;
                 }
 
                 if (_isPaletteLerping)
@@ -723,6 +778,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
                     UploadPaletteToMaterial(_currentPalette);
                     _isMaterialDirty = true;
+                    _isBakeDirty = true;
 
                     if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
                     {
@@ -779,6 +835,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereMaterial.SetFloat(_PropGroundHazardAlert, _currentHazardAlert);
                     _lastUploadedHazard = _currentHazardAlert;
                     _isMaterialDirty = true;
+                    _isBakeDirty = true;
                 }
 
                 // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
@@ -790,6 +847,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereMaterial.SetFloat(_PropVernierScaleDetail, _currentVernierDetail);
                     _lastUploadedVernier = _currentVernierDetail;
                     _isMaterialDirty = true;
+                    _isBakeDirty = true;
                 }
             }
 
@@ -853,8 +911,14 @@ namespace ModularFlightPanel.UI.Widgets
                 bool vernierDirty = Mathf.Abs(_currentVernierDetail - _lastRenderedVernier) > VernierDirtyThreshold;
                 bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime) >= HeartbeatInterval;
 
-                if (rotDirty || trendDirty || hazardDirty || vernierDirty || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
+                if (rotDirty || trendDirty || hazardDirty || vernierDirty || _isMaterialDirty || heartbeatDirty || _isRenderDirty || _isBakeDirty)
                 {
+                    if (_isBakeDirty)
+                    {
+                        BakeSurfaceTexture();
+                        _isBakeDirty = false;
+                    }
+
                     _ballCamera.Render();
                     _hasEverRendered = true;
                     if (_sphereObject != null)
@@ -1087,6 +1151,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastDetailScale = detailScale;
                 _sphereMaterial.SetFloat(_PropDetailScale, detailScale);
                 _isMaterialDirty = true;
+                _isBakeDirty = true;
             }
         }
 
@@ -1097,6 +1162,7 @@ namespace ModularFlightPanel.UI.Widgets
             _lastFrameCategory = null;
             _lastFramePattern = -1f;
             _isMaterialDirty = true;
+            _isBakeDirty = true;
 
             if (_sphereMaterial != null)
             {
@@ -1189,15 +1255,17 @@ namespace ModularFlightPanel.UI.Widgets
             if (_displayImage != null) _displayImage.texture = _renderTexture;
             _isMaterialDirty = true;
             _isRenderDirty = true;
+            _isBakeDirty = true;
         }
 
         protected override void HandleRenderSettingChanged()
         {
             if (WidgetRenderManager.Instance == null) return;
             int optimalRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
-                new Vector2(150f, 150f),
+                new Vector2(_ballDiameter, _ballDiameter),
                 Config != null ? Config.Scale : 1.0f,
-                Config != null ? Config.RenderScale : 1.0f);
+                Config != null ? Config.RenderScale : 1.0f,
+                minRes: 256);
             if (_renderTexture == null || _renderTexture.width != optimalRes)
             {
                 HandleResolutionChanged(optimalRes);
@@ -1211,6 +1279,12 @@ namespace ModularFlightPanel.UI.Widgets
             if (_sphereObject != null)
             {
                 Destroy(_sphereObject);
+            }
+            if (_bakedSurfaceTexture != null)
+            {
+                if (_bakedSurfaceTexture.IsCreated()) _bakedSurfaceTexture.Release();
+                Destroy(_bakedSurfaceTexture);
+                _bakedSurfaceTexture = null;
             }
             base.OnDestroy();
         }
