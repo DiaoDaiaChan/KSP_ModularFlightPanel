@@ -245,7 +245,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             string[] markerKeys = new string[]
             {
-                "prograde", "retrograde", "normal", "antinormal",
+                "prograde", "retrograde", "velocity_vector", "anti_velocity_vector",
+                "normal", "antinormal",
                 "radialin", "radialout", "target", "antitarget", "maneuver"
             };
 
@@ -480,10 +481,11 @@ namespace ModularFlightPanel.UI.Widgets
                     float angleDegrees = 2f * Mathf.Atan2(sinHalfAngle, Mathf.Clamp(delta.w, 0f, 1f)) * Mathf.Rad2Deg;
                     float angularRate = angleDegrees / dt;
                     Vector3 axis = halfAxis / sinHalfAngle;
-                    float predictionAngle = Mathf.Min(angularRate * 0.35f, 18f);
+                    // Longer prediction window keeps low-rate attitude changes visible.
+                    float predictionAngle = Mathf.Min(angularRate * 0.75f, 24f);
                     Quaternion parentPrediction = Quaternion.AngleAxis(predictionAngle, axis);
                     targetTrendRotation = Quaternion.Inverse(currentRotation) * parentPrediction * currentRotation;
-                    targetStrength = Mathf.InverseLerp(0.6f, 14f, angularRate);
+                    targetStrength = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.25f, 5.0f, angularRate));
                 }
             }
 
@@ -781,11 +783,11 @@ namespace ModularFlightPanel.UI.Widgets
             float phase;
             switch (key)
             {
-                case "maneuver": amplitude = 0.10f; frequency = 1.8f; phase = 0f; break;
-                case "target": amplitude = 0.065f; frequency = 1.1f; phase = 0.8f; break;
-                case "antitarget": amplitude = 0.065f; frequency = 1.1f; phase = 2.1f; break;
-                case "prograde": amplitude = 0.035f; frequency = 0.8f; phase = 1.4f; break;
-                case "retrograde": amplitude = 0.035f; frequency = 0.8f; phase = 2.7f; break;
+                case "maneuver": amplitude = 0.22f; frequency = 1.55f; phase = 0f; break;
+                case "target": amplitude = 0.17f; frequency = 1.05f; phase = 0.8f; break;
+                case "antitarget": amplitude = 0.17f; frequency = 1.05f; phase = 2.1f; break;
+                case "prograde": amplitude = 0.12f; frequency = 0.75f; phase = 1.4f; break;
+                case "retrograde": amplitude = 0.12f; frequency = 0.75f; phase = 2.7f; break;
                 default: return 1f;
             }
             return 1f + amplitude * Mathf.Sin((Time.unscaledTime * frequency + phase) * Mathf.PI * 2f);

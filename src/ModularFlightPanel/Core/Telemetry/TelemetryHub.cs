@@ -1072,6 +1072,10 @@ namespace ModularFlightPanel.Core
                                         var pDef = eng.propellants[pr];
                                         if (pDef != null && pDef.totalResourceCapacity > 0.001)
                                         {
+                                            string pName = pDef.name;
+                                            // 排除非储箱物理推进剂 (IntakeAir 属于大气进气，ElectricCharge 属于电池电能，不可计入推进剂油量比例)
+                                            if (pName == "IntakeAir" || pName == "ElectricCharge") continue;
+
                                             currentResource += pDef.totalResourceAvailable;
                                             maxResource += pDef.totalResourceCapacity;
                                             if (string.IsNullOrEmpty(detectedProp) || detectedProp == "PROP")
@@ -1110,30 +1114,46 @@ namespace ModularFlightPanel.Core
                         }
                     }
 
-                    // 2. 若全船引擎均处于滑行未点火状态或未取到推进剂，回退读取全船主要推进剂储箱
-                    if (maxResource <= 0.001 && ActiveVessel != null)
+                    // 2. 储箱联通余量核验 (防刚点火瞬态与无引擎滑行读数抖动)
+                    // 若从引擎未取到有效容量，或引擎虽然已激活但当前取到的可用余量为 0 (如点火第一帧管网解算尚未就绪)
+                    if ((maxResource <= 0.001 || (currentResource <= 0.001 && maxResource > 0.001)) && ActiveVessel != null)
                     {
                         double curLf = 0.0, maxLf = 0.0;
                         double curOx = 0.0, maxOx = 0.0;
                         double curSf = 0.0, maxSf = 0.0;
+                        double curMp = 0.0, maxMp = 0.0;
                         var lfDef = PartResourceLibrary.Instance != null ? PartResourceLibrary.Instance.GetDefinition("LiquidFuel") : null;
                         var oxDef = PartResourceLibrary.Instance != null ? PartResourceLibrary.Instance.GetDefinition("Oxidizer") : null;
                         var sfDef = PartResourceLibrary.Instance != null ? PartResourceLibrary.Instance.GetDefinition("SolidFuel") : null;
+                        var mpDef = PartResourceLibrary.Instance != null ? PartResourceLibrary.Instance.GetDefinition("MonoPropellant") : null;
                         if (lfDef != null) ActiveVessel.GetConnectedResourceTotals(lfDef.id, out curLf, out maxLf);
                         if (oxDef != null) ActiveVessel.GetConnectedResourceTotals(oxDef.id, out curOx, out maxOx);
                         if (sfDef != null) ActiveVessel.GetConnectedResourceTotals(sfDef.id, out curSf, out maxSf);
+                        if (mpDef != null) ActiveVessel.GetConnectedResourceTotals(mpDef.id, out curMp, out maxMp);
 
-                        if (maxLf + maxOx > 0.001)
+                        if (maxLf + maxOx > 0.001 && curLf + curOx > 0.001)
                         {
                             currentResource = curLf + curOx;
                             maxResource = maxLf + maxOx;
                             detectedProp = "LF / OX";
                         }
-                        else if (maxSf > 0.001)
+                        else if (maxSf > 0.001 && curSf > 0.001)
                         {
                             currentResource = curSf;
                             maxResource = maxSf;
                             detectedProp = "SOLID";
+                        }
+                        else if (maxMp > 0.001 && curMp > 0.001)
+                        {
+                            currentResource = curMp;
+                            maxResource = maxMp;
+                            detectedProp = "MONO";
+                        }
+                        else if (maxResource <= 0.001 && maxLf + maxOx > 0.001)
+                        {
+                            currentResource = curLf + curOx;
+                            maxResource = maxLf + maxOx;
+                            detectedProp = "LF / OX";
                         }
                     }
 

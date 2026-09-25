@@ -68,10 +68,17 @@ namespace ModularFlightPanel.Editor
                     switch (markerType.ToLowerInvariant())
                     {
                         case "prograde":
-                            dir = new Vector3(0f, 0.20f, 0.98f).normalized;
+                            // 顺向标记 (Orbital Prograde): 放置在左上方清爽空域，荧光黄绿 (#8FE800)
+                            dir = new Vector3(-0.28f, 0.22f, 0.93f).normalized;
+                            isVisible = true;
+                            return true;
+                        case "velocity_vector":
+                            // 速度矢量标记 (Flight Path Marker): 放置在右上方清爽空域，翡翠薄荷绿 (#2EE59D)
+                            dir = new Vector3(0.28f, 0.22f, 0.93f).normalized;
                             isVisible = true;
                             return true;
                         case "retrograde":
+                        case "anti_velocity_vector":
                             dir = new Vector3(0f, -0.20f, -0.98f).normalized;
                             isVisible = false;
                             return true;
@@ -101,7 +108,11 @@ namespace ModularFlightPanel.Editor
                 switch (markerType.ToLowerInvariant())
                 {
                     case "prograde":
-                        dir = new Vector3(0.04f, 0.15f, 0.98f).normalized;
+                        dir = new Vector3(-0.10f, 0.18f, 0.98f).normalized;
+                        isVisible = true;
+                        return true;
+                    case "velocity_vector":
+                        dir = new Vector3(0.12f, 0.14f, 0.98f).normalized;
                         isVisible = true;
                         return true;
                     case "retrograde":

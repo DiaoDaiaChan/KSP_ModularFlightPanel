@@ -196,6 +196,8 @@ namespace ModularFlightPanel.Core
             ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
             // 原版顺向/逆向色标: 官方经典高亮黄绿/荧光绿 (Stock Lime/Chartreuse #8FE800)
             Color colPrograde = new Color(0.68f, 0.98f, 0.12f, 1.0f);
+            // 现代航空航天地表速度矢量/航迹标 (Surface Velocity Vector / Flight Path Marker / FPM): 航空高亮薄荷绿/翠绿 (#2EE59D)
+            Color colVelocityVector = new Color(0.18f, 0.90f, 0.62f, 1.0f);
             // 原版法线/反法线色标: 官方经典品红/洋红 (Stock Magenta #EA1EE5)
             Color colNormal = new Color(0.92f, 0.14f, 0.88f, 1.0f);
             // 原版径向向外/向内色标: 官方经典天青/蓝绿 (Stock Cyan #18E8D4)
@@ -248,6 +250,47 @@ namespace ModularFlightPanel.Core
                             float aCross = (dist < rCircle - 1.5f) ? Mathf.Max(Mathf.Clamp01(0.5f - dDiag1), Mathf.Clamp01(0.5f - dDiag2)) : 0f;
 
                             alpha = Mathf.Clamp01(Mathf.Max(aRingRet, Mathf.Max(aCross, aWingsRet)));
+                            break;
+
+                        case "velocity_vector":
+                        case "velocity":
+                        case "fpm":
+                        case "surface_prograde":
+                            markerColor = colVelocityVector;
+                            // 航空航电标准飞行航迹标 (Flight Path Marker: 两平翼一立尾微型航空矢量标构型)
+                            // 1. 中心精巧空心圆环 (r = 8.5px，精巧通透，不遮挡跑道与地标)
+                            float rFpm = 8.5f;
+                            float strokeFpm = 2.4f;
+                            float dRingFpm = Mathf.Abs(dist - rFpm) - (strokeFpm * 0.5f);
+                            float aRingFpm = Mathf.Clamp01(0.5f - dRingFpm);
+
+                            // 2. 左右平直机翼 (自 rFpm + 0.5f 延伸至 20f, y = 0)
+                            float dWingH = SegmentSdf(Mathf.Abs(px), py, rFpm + 0.5f, 0f, 20f, 0f) - (strokeFpm * 0.5f);
+                            // 3. 顶部垂直稳定尾翼 (自 rFpm + 0.5f 向上延伸至 17.5f, x = 0)
+                            float dFinV = SegmentSdf(Mathf.Abs(px), py, 0f, rFpm + 0.5f, 0f, 17.5f) - (strokeFpm * 0.5f);
+                            float aWingsFpm = Mathf.Clamp01(0.5f - Mathf.Min(dWingH, dFinV));
+
+                            alpha = Mathf.Clamp01(Mathf.Max(aRingFpm, aWingsFpm));
+                            break;
+
+                        case "anti_velocity_vector":
+                        case "surface_retrograde":
+                            markerColor = colVelocityVector;
+                            // 航空标准反向航迹标 (Anti-Flight Path Marker)
+                            float rAntiFpm = 8.5f;
+                            float strokeAntiFpm = 2.4f;
+                            float dRingAFpm = Mathf.Abs(dist - rAntiFpm) - (strokeAntiFpm * 0.5f);
+                            float aRingAFpm = Mathf.Clamp01(0.5f - dRingAFpm);
+
+                            float dWingHAFpm = SegmentSdf(Mathf.Abs(px), py, rAntiFpm + 0.5f, 0f, 20f, 0f) - (strokeAntiFpm * 0.5f);
+                            float dFinVAFpm = SegmentSdf(Mathf.Abs(px), py, 0f, rAntiFpm + 0.5f, 0f, 17.5f) - (strokeAntiFpm * 0.5f);
+                            float aWingsAFpm = Mathf.Clamp01(0.5f - Mathf.Min(dWingHAFpm, dFinVAFpm));
+
+                            // 内部反向水平短横标
+                            float dMidDash = SegmentSdf(Mathf.Abs(px), py, 0f, 0f, 5.5f, 0f) - (strokeAntiFpm * 0.45f);
+                            float aMidDash = (dist < rAntiFpm - 1.2f) ? Mathf.Clamp01(0.5f - dMidDash) : 0f;
+
+                            alpha = Mathf.Clamp01(Mathf.Max(aRingAFpm, Mathf.Max(aWingsAFpm, aMidDash)));
                             break;
 
                         case "normal":

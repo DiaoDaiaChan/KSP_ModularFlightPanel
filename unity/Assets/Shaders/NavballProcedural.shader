@@ -234,29 +234,29 @@ Shader "ModularFlightPanel/NavballProcedural"
                 {
                     float starLat = abs(frac((pitchDeg + 82.5) / 15.0 + 0.5) - 0.5);
                     float starLon = abs(frac((headDeg + 15.0) / 30.0 + 0.5) - 0.5);
-                    frameDetail = (starLat < 0.035 && starLon < 0.035) ? 0.34 : 0.0;
+                    frameDetail = (starLat < 0.035 && starLon < 0.035) ? 0.48 : 0.0;
                 }
                 else if (_FramePattern > 1.5 && _FramePattern < 2.5)
                 {
                     float diagonalA = abs(frac((headDeg + pitchDeg * 0.72) / 24.0 + 0.5) - 0.5);
                     float diagonalB = abs(frac((headDeg - pitchDeg * 0.72) / 24.0 + 0.5) - 0.5);
-                    frameDetail = max(1.0 - smoothstep(0.015, 0.055, diagonalA), 1.0 - smoothstep(0.015, 0.055, diagonalB)) * 0.12;
+                    frameDetail = max(1.0 - smoothstep(0.015, 0.055, diagonalA), 1.0 - smoothstep(0.015, 0.055, diagonalB)) * 0.22;
                 }
                 else if (_FramePattern > 2.5 && _FramePattern < 3.5)
                 {
                     float targetRange = acos(clamp(-p.z, -1.0, 1.0)) * 57.2957795;
                     float ringOffset = abs(fmod(targetRange + 7.5, 15.0) - 7.5);
-                    frameDetail = (1.0 - smoothstep(0.20, 0.85, ringOffset)) * 0.15;
+                    frameDetail = (1.0 - smoothstep(0.20, 0.85, ringOffset)) * 0.24;
                 }
                 else if (_FramePattern > 3.5 && _FramePattern < 4.5)
                 {
                     float directionMeridian = abs(frac(headDeg / 45.0 + 0.5) - 0.5);
-                    frameDetail = (1.0 - smoothstep(0.01, 0.04, directionMeridian)) * 0.10;
+                    frameDetail = (1.0 - smoothstep(0.01, 0.04, directionMeridian)) * 0.18;
                 }
                 else if (_FramePattern > 4.5)
                 {
                     float bodyContour = abs(frac((absPitch + 7.5) / 15.0 + 0.5) - 0.5);
-                    frameDetail = (1.0 - smoothstep(0.01, 0.045, bodyContour)) * 0.10;
+                    frameDetail = (1.0 - smoothstep(0.01, 0.045, bodyContour)) * 0.18;
                 }
                 frameDetail *= smoothstep(0.05, 0.52, _DetailScale);
                 col.rgb = lerp(col.rgb, _HeadingLineColor.rgb, frameDetail * _HeadingLineColor.a);
@@ -274,10 +274,11 @@ Shader "ModularFlightPanel/NavballProcedural"
                 if (_TrendStrength > 0.01)
                 {
                     float3 futureP = normalize(RotateByQuaternion(p, float4(-_TrendRotation.xyz, _TrendRotation.w)));
-                    float trendAA = max(fwidth(futureP.y) * 1.5, 0.0035);
-                    float futureHorizon = 1.0 - smoothstep(0.002, 0.002 + trendAA, abs(futureP.y));
-                    float trendDash = step(0.32, frac(headDeg / 18.0));
-                    float trendOpacity = futureHorizon * trendDash * _TrendStrength * _HeadingLineColor.a * 0.42;
+                    // Keep the predicted horizon wider than one pixel at typical navball render sizes.
+                    float trendAA = max(fwidth(futureP.y) * 2.2, 0.008);
+                    float futureHorizon = 1.0 - smoothstep(0.003, 0.003 + trendAA, abs(futureP.y));
+                    float trendDash = step(0.24, frac(headDeg / 24.0));
+                    float trendOpacity = futureHorizon * trendDash * _TrendStrength * _HeadingLineColor.a * 0.78;
                     col.rgb = lerp(col.rgb, _HeadingLineColor.rgb, trendOpacity);
                 }
 

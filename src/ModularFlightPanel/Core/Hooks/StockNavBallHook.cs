@@ -266,6 +266,10 @@ namespace ModularFlightPanel.Core
                 case "retrograde":
                     return v.srf_velocity.sqrMagnitude >= 0.01 || v.obt_velocity.sqrMagnitude >= 0.01;
 
+                case "velocity_vector":
+                case "anti_velocity_vector":
+                    return v.srf_velocity.sqrMagnitude >= 0.01;
+
                 case "normal":
                 case "antinormal":
                 case "radialin":
@@ -293,6 +297,8 @@ namespace ModularFlightPanel.Core
             {
                 case "prograde": return StockInstance.retrogradeVector;
                 case "retrograde": return StockInstance.progradeVector;
+                case "velocity_vector": return StockInstance.retrogradeVector;
+                case "anti_velocity_vector": return StockInstance.progradeVector;
                 case "normal": return StockInstance.antiNormalVector;
                 case "antinormal": return StockInstance.normalVector;
                 case "radialin": return StockInstance.radialOutVector;
@@ -310,6 +316,8 @@ namespace ModularFlightPanel.Core
             {
                 case "prograde": return StockInstance.progradeVector;
                 case "retrograde": return StockInstance.retrogradeVector;
+                case "velocity_vector": return StockInstance.progradeVector;
+                case "anti_velocity_vector": return StockInstance.retrogradeVector;
                 case "normal": return StockInstance.normalVector;
                 case "antinormal": return StockInstance.antiNormalVector;
                 case "radialin": return StockInstance.radialInVector;
@@ -369,6 +377,18 @@ namespace ModularFlightPanel.Core
                     if (vel.sqrMagnitude > 0.01) // 速度大于 0.1 m/s 时激活
                     {
                         worldVec = (key == "prograde") ? (Vector3)vel.normalized : -(Vector3)vel.normalized;
+                        hasValidVector = true;
+                    }
+                    break;
+                }
+
+                case "velocity_vector":
+                case "anti_velocity_vector":
+                {
+                    Vector3d vel = vessel.srf_velocity;
+                    if (vel.sqrMagnitude > 0.01)
+                    {
+                        worldVec = (key == "velocity_vector") ? (Vector3)vel.normalized : -(Vector3)vel.normalized;
                         hasValidVector = true;
                     }
                     break;

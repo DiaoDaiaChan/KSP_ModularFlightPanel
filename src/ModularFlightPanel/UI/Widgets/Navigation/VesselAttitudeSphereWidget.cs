@@ -249,7 +249,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             string[] markerKeys = new string[]
             {
-                "prograde", "retrograde", "normal", "antinormal",
+                "prograde", "retrograde", "velocity_vector", "anti_velocity_vector",
+                "normal", "antinormal",
                 "radialin", "radialout", "target", "antitarget", "maneuver"
             };
 

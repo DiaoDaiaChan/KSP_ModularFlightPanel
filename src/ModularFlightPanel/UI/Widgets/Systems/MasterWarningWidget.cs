@@ -100,6 +100,12 @@ namespace ModularFlightPanel.UI.Widgets
         private float _lastEngTriggerTime = -999f;
         private const float EVENT_COOLDOWN = 1.4f;
 
+        // 低油量安全门限与时域防抖滤波 (防止点火瞬态与误读触发假警报)
+        private float _customWarnThresh = -1f;
+        private float _customCautThresh = -1f;
+        private float _lowFuelPersistentTimer = 0f;
+        private const float LOW_FUEL_PERSISTENCE = 0.35f;
+
         // 瞬态一体横幅 UI 节点
         private GameObject _bannerCell;
         private Image _bannerBg;
@@ -350,6 +356,20 @@ namespace ModularFlightPanel.UI.Widgets
                         _bannerDuration = dt;
                     }
                 }
+                else if (k == "FUEL_WARN" || k == "MIN_FUEL")
+                {
+                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fw) && fw > 0.01f && fw <= 35f)
+                    {
+                        _customWarnThresh = fw / 100f;
+                    }
+                }
+                else if (k == "FUEL_CAUT" || k == "LOW_FUEL")
+                {
+                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fc) && fc > 0.01f && fc <= 50f)
+                    {
+                        _customCautThresh = fc / 100f;
+                    }
+                }
             }
         }
 
@@ -494,7 +514,7 @@ namespace ModularFlightPanel.UI.Widgets
             DetectTransientEvents(telemetry);
 
             // 2. 持续评估当前所有活跃警报 (以便在非横幅状态渲染光字牌，以及监控重大警情)
-            EvaluateTelemetryAlerts(telemetry);
+            EvaluateTelemetryAlerts(telemetry, dt);
 
             // 3. 若当前处于横幅合并、展示、切换或闪回动画阶段，转由横幅状态机独占驱动
             if (_bannerState != BannerDisplayState.Normal)
@@ -700,20 +720,46 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void EvaluateTelemetryAlerts(IFlightTelemetry telem)
+        private void EvaluateTelemetryAlerts(IFlightTelemetry telem, float dt)
         {
             _cautAlerts.Clear();
             _warnAlerts.Clear();
 
             // ── 1. 推进剂与沉底 (FUEL / ULLAGE) ──
             float prop = telem.StagePropellantFraction;
-            if (prop >= 0f && (telem.ActiveEngines > 0 || telem.TotalStageEngines > 0))
+            bool engineArmed = telem.ActiveEngines > 0 || (telem.TotalStageEngines > 0 && telem.Throttle > 0.001f);
+
+            // 航电标准低油量安全门限 (严格防反向门限误伤：Caution 默认 <= 15%，Warning 默认 <= 5%)
+            // 严禁采纳仪表通用缺省值 (80%/95%/100%)，避免在满油 100% 阶段触发荒谬的 MIN FUEL 告警
+            float warnThresh = 0.05f;
+            float cautThresh = 0.15f;
+            if (_customWarnThresh > 0.001f) warnThresh = _customWarnThresh;
+            else if (Config != null && Config.WarningThreshold > 0.01 && Config.WarningThreshold <= 25.0)
+                warnThresh = (float)Config.WarningThreshold / 100f;
+
+            if (_customCautThresh > 0.001f) cautThresh = _customCautThresh;
+            else if (Config != null && Config.CautionThreshold > 0.01 && Config.CautionThreshold <= 40.0)
+                cautThresh = (float)Config.CautionThreshold / 100f;
+
+            // 绝对安全熔断器：若油量在 40% 以上，物理上绝对属于正常或充足，立即清空低油量防抖计数器，杜绝误报
+            if (prop >= 0.40f || !engineArmed)
             {
-                int propPct = Mathf.RoundToInt(prop * 100f);
-                float warnThresh = (Config != null && Config.WarningThreshold > 0.01) ? (float)Config.WarningThreshold / 100f : 0.05f;
-                float cautThresh = (Config != null && Config.CautionThreshold > 0.01) ? (float)Config.CautionThreshold / 100f : 0.15f;
-                if (prop <= warnThresh) _warnAlerts.Add(new AlertItem("MIN FUEL!", $"{propPct}%", true));
-                else if (prop <= cautThresh) _cautAlerts.Add(new AlertItem("LOW FUEL", $"{propPct}%", false));
+                _lowFuelPersistentTimer = 0f;
+            }
+            else if (prop >= 0f && prop <= cautThresh)
+            {
+                // 时域防抖滤波：持续处于低油量门限以下至少 0.35s 确认非传感器瞬态抖动或点火管网建立延迟
+                _lowFuelPersistentTimer += dt;
+                if (_lowFuelPersistentTimer >= LOW_FUEL_PERSISTENCE)
+                {
+                    int propPct = Mathf.RoundToInt(prop * 100f);
+                    if (prop <= warnThresh) _warnAlerts.Add(new AlertItem("MIN FUEL!", $"{propPct}%", true));
+                    else _cautAlerts.Add(new AlertItem("LOW FUEL", $"{propPct}%", false));
+                }
+            }
+            else
+            {
+                _lowFuelPersistentTimer = 0f;
             }
 
             // RealFuels 探针沉底状态
@@ -812,7 +858,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // ── 9. 通信网络断开 (NO COMM) ──
-            if (!telem.IsConnected)
+            // 仅对无人探测器 (Uncrewed Probe) 或空舱生效；有人驾驶飞船不因地面通讯死区频繁拉响主注意
+            if (!telem.IsConnected && (telem.CrewCount == 0 || telem.CrewCapacity == 0))
             {
                 _cautAlerts.Add(new AlertItem("NO COMM", "OFF", false));
             }
