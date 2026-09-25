@@ -75,11 +75,27 @@ namespace ModularFlightPanel.Core
                     GameObject go = KSP.UI.Screens.ApplicationLauncher.Instance.gameObject;
                     if (go != null)
                     {
+                        Canvas subCanvas = go.GetComponent<Canvas>();
+                        if (subCanvas == null)
+                        {
+                            subCanvas = go.AddComponent<Canvas>();
+                            Canvas parentCanvas = go.transform.parent != null ? go.transform.parent.GetComponentInParent<Canvas>() : null;
+                            if (parentCanvas != null && subCanvas.worldCamera == null)
+                            {
+                                subCanvas.worldCamera = parentCanvas.worldCamera;
+                                subCanvas.planeDistance = parentCanvas.planeDistance;
+                            }
+                        }
+                        if (subCanvas != null && subCanvas.enabled != !hide)
+                        {
+                            subCanvas.enabled = !hide;
+                        }
+
                         var cg = go.GetComponent<CanvasGroup>();
                         if (cg == null) cg = go.AddComponent<CanvasGroup>();
                         cg.alpha = hide ? 0f : 1f;
                         cg.blocksRaycasts = !hide;
-                        cg.interactable = true;
+                        cg.interactable = !hide;
                     }
                 }
 #endif

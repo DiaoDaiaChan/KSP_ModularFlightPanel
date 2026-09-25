@@ -153,8 +153,14 @@ namespace ModularFlightPanel.UI
 
         public void InvalidatePalette()
         {
+            _materialCache.Clear();
             _lastBakedTheme = null;
             _textTable[(int)TextStyleRole.PrimaryValue] = Color.clear;
+        }
+
+        public void ClearMaterialCache()
+        {
+            InvalidatePalette();
         }
 
         public ThemeConfig CurrentTheme => ResolveTheme(null);
@@ -211,7 +217,7 @@ namespace ModularFlightPanel.UI
             if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", theme.UiScanlineStrength);
             if (mat.HasProperty("_ScanlineDepth")) mat.SetFloat("_ScanlineDepth", theme.UiScanlineStrength);
             if (mat.HasProperty("_UnlitDotColor")) mat.SetColor("_UnlitDotColor", theme.UiGhostColor);
-            if (mat.HasProperty("_LitDotColor")) mat.SetColor("_LitDotColor", theme.AccentPrimary);
+            if (mat.HasProperty("_LitDotColor")) mat.SetColor("_LitDotColor", Color.white);
             if (mat.HasProperty("_PhosphorColor")) mat.SetColor("_PhosphorColor", theme.AccentPrimary);
             if (mat.HasProperty("_CoreHotColor")) mat.SetColor("_CoreHotColor", Lighten((Color)theme.AccentPrimary, 0.40f));
             if (mat.HasProperty("_SegmentLitColor")) mat.SetColor("_SegmentLitColor", theme.AccentPrimary);
@@ -261,7 +267,14 @@ namespace ModularFlightPanel.UI
             if (text == null) return;
             theme = ResolveTheme(theme);
 
-            // 统一为文字挂载高清晰度/抗蚀刻专用材质 (点阵/全息/数码管/抗蚀刻高清航电文字)
+            // 1. 动态挂载对应主题的字体资产 (矢量平滑 vs 复古点阵)
+            Font targetFont = UIFactory.GetActiveFont(theme);
+            if (targetFont != null && text.font != targetFont)
+            {
+                text.font = targetFont;
+            }
+
+            // 2. 统一为文字挂载高清晰度/抗蚀刻专用材质 (点阵/全息/数码管/抗蚀刻高清航电文字)
             text.material = GetUiMaterial(isText: true);
             text.color = GetTextColor(role, theme);
         }

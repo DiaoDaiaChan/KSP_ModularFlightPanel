@@ -9,6 +9,7 @@ namespace ModularFlightPanel.UI
     public static class UIFactory
     {
         public static Font DefaultFont { get; private set; }
+        public static Font PixelFont { get; private set; }
 
         static UIFactory()
         {
@@ -32,6 +33,31 @@ namespace ModularFlightPanel.UI
                     DefaultFont = fonts[0];
                 }
             }
+
+            try
+            {
+                // 优先加载等宽硬朗、具备浓厚物理数码管与点阵终端质感的硬件等宽字体 (Consolas / Lucida Console / MS Gothic / Courier New)
+                PixelFont = Font.CreateDynamicFontFromOSFont(new string[] { "Consolas", "Lucida Console", "MS Gothic", "Courier New", "SimSun" }, 15);
+            }
+            catch { }
+
+            if (PixelFont == null)
+            {
+                PixelFont = DefaultFont;
+            }
+        }
+
+        /// <summary>
+        /// 根据当前或指定主题获取应当生效的字体资产 (平滑矢量 vs 复古点阵像素)
+        /// </summary>
+        public static Font GetActiveFont(ThemeConfig theme = null)
+        {
+            theme = theme ?? ThemeManager.Instance?.CurrentTheme;
+            if (theme != null && theme.FontStyle == AvionicsFontStyle.RetroPixel && PixelFont != null)
+            {
+                return PixelFont;
+            }
+            return DefaultFont ?? PixelFont;
         }
 
         /// <summary>
@@ -98,7 +124,7 @@ namespace ModularFlightPanel.UI
             go.transform.SetParent(parent, false);
 
             Text txt = go.GetComponent<Text>();
-            txt.font = DefaultFont;
+            txt.font = GetActiveFont();
             txt.text = content;
             txt.fontSize = fontSize;
             txt.alignment = alignment;

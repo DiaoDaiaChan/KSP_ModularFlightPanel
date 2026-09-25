@@ -45,6 +45,13 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(6f);
 
             // =========================================================================
+            // 模块 1.5: 航电显示着色器与物理字体控制 (Font & UI Shader Controls)
+            // =========================================================================
+            DrawDisplayShaderAndFontCard();
+
+            GUILayout.Space(6f);
+
+            // =========================================================================
             // 模块 2: KSP 原生 UI 深度融合控制 (Stock UI Deep Integration)
             // =========================================================================
             DrawStockIntegrationCard();
@@ -140,8 +147,148 @@ namespace ModularFlightPanel.UI.Settings
             if (current != null)
             {
                 GUILayout.Space(4f);
-                string activeFmt = I18n.Tr("THM_ACTIVE_THEME", "当前生效主题: <color=#00E5FF><b>{0}</b></color> | 着色器模式: <color=#00FF88>{1}</color>");
-                GUILayout.Label($"<color=#7088A8><size=11>{string.Format(activeFmt, current.DisplayName, current.UiStyle)}</size></color>");
+                string fontDesc = current.FontStyle == AvionicsFontStyle.RetroPixel
+                    ? I18n.Tr("THM_FONT_PIXEL_TAG", "硬件等宽点阵像素")
+                    : I18n.Tr("THM_FONT_SMOOTH_TAG", "现代平滑矢量");
+                string activeFmt = I18n.Tr("THM_ACTIVE_THEME", "当前生效主题: <color=#00E5FF><b>{0}</b></color> | 着色器模式: <color=#00FF88>{1}</color> | 航电字模: <color=#FFA502>{2}</color>");
+                GUILayout.Label($"<color=#7088A8><size=11>{string.Format(activeFmt, current.DisplayName, current.UiStyle, fontDesc)}</size></color>");
+            }
+
+            MFPGuiSkin.EndCard();
+        }
+
+        #endregion
+
+        #region Module 1.5: Font & Display Shader Controls
+
+        private static void DrawDisplayShaderAndFontCard()
+        {
+            var current = ThemeManager.Instance.CurrentTheme;
+            if (current == null) return;
+
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_FONT_SHADER", "🔤 航电字体与显示管线风格"),
+                I18n.Tr("THM_SUBHEADER_FONT_SHADER", "自由切换物理微点阵、数码液晶、矢量平滑与硬件等宽像素字体"));
+
+            // 1. 字体风格选择
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b>{I18n.Tr("THM_FONT_STYLE_LABEL", "航电字模风格:")}</b>", GUILayout.Width(130f));
+
+            bool isSmooth = current.FontStyle == AvionicsFontStyle.ModernSmooth;
+            GUIStyle smoothStyle = isSmooth ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
+            string smoothLabel = isSmooth ? I18n.Tr("THM_FONT_SMOOTH_ON", "● 现代平滑矢量 (Smooth Vector)") : I18n.Tr("THM_FONT_SMOOTH_OFF", "○ 现代平滑矢量 (Smooth Vector)");
+            if (GUILayout.Button(smoothLabel, smoothStyle, GUILayout.Height(24f)))
+            {
+                current.FontStyle = AvionicsFontStyle.ModernSmooth;
+                WidgetStyleManager.Instance.ClearMaterialCache();
+                ThemeManager.Instance.SaveSettings();
+                FlightHUDManager.Instance?.RebuildHUD();
+            }
+
+            bool isPixel = current.FontStyle == AvionicsFontStyle.RetroPixel;
+            GUIStyle pixelStyle = isPixel ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
+            string pixelLabel = isPixel ? I18n.Tr("THM_FONT_PIXEL_ON", "● 硬件等宽点阵像素 (Retro Pixel)") : I18n.Tr("THM_FONT_PIXEL_OFF", "○ 硬件等宽点阵像素 (Retro Pixel)");
+            if (GUILayout.Button(pixelLabel, pixelStyle, GUILayout.Height(24f)))
+            {
+                current.FontStyle = AvionicsFontStyle.RetroPixel;
+                WidgetStyleManager.Instance.ClearMaterialCache();
+                ThemeManager.Instance.SaveSettings();
+                FlightHUDManager.Instance?.RebuildHUD();
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(3f);
+
+            // 2. 着色器渲染管线风格 (UiShaderStyle)
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b>{I18n.Tr("THM_SHADER_STYLE_LABEL", "面板着色器管线:")}</b>", GUILayout.Width(130f));
+
+            var styles = new (UiShaderStyle style, string name)[]
+            {
+                (UiShaderStyle.Modern_Glass, I18n.Tr("THM_SHADER_GLASS", "现代玻璃")),
+                (UiShaderStyle.Dot_Matrix, I18n.Tr("THM_SHADER_DOT", "物理微点阵")),
+                (UiShaderStyle.Phosphor_HUD, I18n.Tr("THM_SHADER_HOLO", "全息磷光")),
+                (UiShaderStyle.Digital_Segment, I18n.Tr("THM_SHADER_SEG", "7段数码管")),
+                (UiShaderStyle.Cyber_Neon, I18n.Tr("THM_SHADER_NEON", "赛博霓虹"))
+            };
+
+            for (int i = 0; i < styles.Length; i++)
+            {
+                var s = styles[i];
+                bool isSel = (current.UiStyle == s.style);
+                GUIStyle bStyle = isSel ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
+                if (GUILayout.Button(s.name, bStyle, GUILayout.Height(24f)))
+                {
+                    current.UiStyle = s.style;
+                    // 若切换为点阵或数码管，自动联动切换为等宽点阵像素字体，带来极致沉浸感
+                    if (s.style == UiShaderStyle.Dot_Matrix || s.style == UiShaderStyle.Digital_Segment)
+                    {
+                        current.FontStyle = AvionicsFontStyle.RetroPixel;
+                    }
+                    WidgetStyleManager.Instance.ClearMaterialCache();
+                    ThemeManager.Instance.SaveSettings();
+                    FlightHUDManager.Instance?.RebuildHUD();
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            // 3. 点阵屏专用参数微调 (当处于 Dot_Matrix 时显式展开)
+            if (current.UiStyle == UiShaderStyle.Dot_Matrix)
+            {
+                GUILayout.Space(4f);
+                MFPGuiSkin.BeginInset();
+
+                // 点阵间距
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"<b>{I18n.Tr("THM_DOT_SPACING", "点阵网格间距:")}</b> <color=#00E5FF>{current.UiDotSpacing:F1} px</color>", GUILayout.Width(200f));
+                float[] spacingPresets = { 2.4f, 3.2f, 4.0f, 5.0f };
+                string[] spacingLabels = {
+                    I18n.Tr("THM_DOT_TIGHT", "2.4px 极密"),
+                    I18n.Tr("THM_DOT_REC", "3.2px 推荐"),
+                    I18n.Tr("THM_DOT_MED", "4.0px 均衡"),
+                    I18n.Tr("THM_DOT_COARSE", "5.0px 粗粒")
+                };
+                for (int spIdx = 0; spIdx < spacingPresets.Length; spIdx++)
+                {
+                    float p = spacingPresets[spIdx];
+                    bool isCur = Mathf.Abs(current.UiDotSpacing - p) < 0.2f;
+                    GUIStyle pStyle = isCur ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.StepperButtonStyle;
+                    if (GUILayout.Button(spacingLabels[spIdx], pStyle, GUILayout.Height(20f)))
+                    {
+                        current.UiDotSpacing = p;
+                        WidgetStyleManager.Instance.ClearMaterialCache();
+                        ThemeManager.Instance.SaveSettings();
+                        FlightHUDManager.Instance?.RebuildHUD();
+                    }
+                }
+                GUILayout.EndHorizontal();
+
+                // 荧光辉光强度
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"<b>{I18n.Tr("THM_GLOW_LABEL", "荧光光晕微扩散:")}</b> <color=#00E5FF>{current.UiGlowStrength:F2}</color>", GUILayout.Width(200f));
+                float[] glowPresets = { 0.15f, 0.35f, 0.50f, 0.75f };
+                string[] glowLabels = {
+                    I18n.Tr("THM_GLOW_OFF", "微弱"),
+                    I18n.Tr("THM_GLOW_STD", "标准"),
+                    I18n.Tr("THM_GLOW_WARM", "饱和"),
+                    I18n.Tr("THM_GLOW_HI", "强过载")
+                };
+                for (int gIdx = 0; gIdx < glowPresets.Length; gIdx++)
+                {
+                    float gVal = glowPresets[gIdx];
+                    bool isCur = Mathf.Abs(current.UiGlowStrength - gVal) < 0.08f;
+                    GUIStyle gStyle = isCur ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.StepperButtonStyle;
+                    if (GUILayout.Button(glowLabels[gIdx], gStyle, GUILayout.Height(20f)))
+                    {
+                        current.UiGlowStrength = gVal;
+                        WidgetStyleManager.Instance.ClearMaterialCache();
+                        ThemeManager.Instance.SaveSettings();
+                        FlightHUDManager.Instance?.RebuildHUD();
+                    }
+                }
+                GUILayout.EndHorizontal();
+
+                MFPGuiSkin.EndInset();
             }
 
             MFPGuiSkin.EndCard();

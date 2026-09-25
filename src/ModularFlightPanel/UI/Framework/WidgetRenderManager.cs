@@ -327,6 +327,8 @@ namespace ModularFlightPanel.UI
             IFlightTelemetry telem = FlightTelemetryContext.Current;
             if (telem == null || !telem.HasVessel) return;
 
+            bool profileWidgets = MFPProfiler.ShowOverlay;
+
             MFPProfiler.BeginSample(ProfilerSection.Widgets);
             try
             {
@@ -337,7 +339,7 @@ namespace ModularFlightPanel.UI
                     var reg = _registrations[i];
                     if (reg == null || reg.Widget == null) continue;
                     if (reg.State != WidgetLifecycleState.Active) continue;
-                    if (!reg.Widget.gameObject.activeInHierarchy) continue;
+                    if (!reg.Widget.gameObject.activeSelf) continue;
 
                     activeCount++;
 
@@ -349,18 +351,32 @@ namespace ModularFlightPanel.UI
 
                     reg.LastUpdateTime = unscaledTime;
 
-                    try
+                    if (profileWidgets)
                     {
-                        MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId);
-                        reg.Widget.MasterUpdateTelemetry(telem);
+                        try
+                        {
+                            MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId);
+                            reg.Widget.MasterUpdateTelemetry(telem);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
+                        }
+                        finally
+                        {
+                            MFPProfiler.EndWidgetSample(reg.Widget.WidgetId);
+                        }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
-                    }
-                    finally
-                    {
-                        MFPProfiler.EndWidgetSample(reg.Widget.WidgetId);
+                        try
+                        {
+                            reg.Widget.MasterUpdateTelemetry(telem);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
+                        }
                     }
                 }
                 MFPProfiler.ActiveWidgetCount = activeCount;

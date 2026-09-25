@@ -70,6 +70,13 @@ namespace ModularFlightPanel.Core
         private static readonly double[] _historyHooksMs = new double[HistorySize];
         private static int _historyIndex = 0;
         private static int _historyCount = 0;
+        private static double _runningSumTotal = 0.0;
+        private static double _runningSumTelemetry = 0.0;
+        private static double _runningSumProbes = 0.0;
+        private static double _runningSumWidgets = 0.0;
+        private static double _runningSumSilhouette = 0.0;
+        private static double _runningSumHooks = 0.0;
+        private static float _memSampleTimer = 0f;
 
         // 实时汇总统计属性 (供 UI/通配符/遥测面板读取)
         public static double LastTotalMs { get; private set; }
@@ -111,13 +118,13 @@ namespace ModularFlightPanel.Core
 
         public static void BeginWidgetSample(string widgetId)
         {
-            if (_isMasterBypassed || string.IsNullOrEmpty(widgetId)) return;
+            if (!ShowOverlay || _isMasterBypassed || string.IsNullOrEmpty(widgetId)) return;
             _widgetStartTicks[widgetId] = Stopwatch.GetTimestamp();
         }
 
         public static void EndWidgetSample(string widgetId)
         {
-            if (_isMasterBypassed || string.IsNullOrEmpty(widgetId)) return;
+            if (!ShowOverlay || _isMasterBypassed || string.IsNullOrEmpty(widgetId)) return;
             if (_widgetStartTicks.TryGetValue(widgetId, out long startTick))
             {
                 long elapsedTicks = Stopwatch.GetTimestamp() - startTick;
@@ -194,15 +201,20 @@ namespace ModularFlightPanel.Core
         {
             EndSample(ProfilerSection.TotalMFP);
 
-            // 采样宿主内存与 GC 频率
-            try
+            // 节流采样宿主内存与 GC 频率 (每 1.0 秒执行一次，杜绝每帧遍历 CLR 堆造成的显著 CPU 开销)
+            _memSampleTimer += Time.unscaledDeltaTime;
+            if (_memSampleTimer >= 1.0f)
             {
-                TotalMemoryMB = GC.GetTotalMemory(false) / (1024.0 * 1024.0);
-                Gc0Collections = GC.CollectionCount(0);
-                Gc1Collections = GC.CollectionCount(1);
-                Gc2Collections = GC.CollectionCount(2);
+                _memSampleTimer = 0f;
+                try
+                {
+                    TotalMemoryMB = GC.GetTotalMemory(false) / (1024.0 * 1024.0);
+                    Gc0Collections = GC.CollectionCount(0);
+                    Gc1Collections = GC.CollectionCount(1);
+                    Gc2Collections = GC.CollectionCount(2);
+                }
+                catch { }
             }
-            catch { }
 
             TopOffenderWidgetId = _currentFrameTopWidgetId;
             TopOffenderWidgetMs = _currentFrameTopWidgetMs;
@@ -224,58 +236,77 @@ namespace ModularFlightPanel.Core
                 AvgHooksMs = 0.0;
                 FrameBudgetPercent = 0.0;
                 SpikeCount = 0;
+                _runningSumTotal = 0.0;
+                _runningSumTelemetry = 0.0;
+                _runningSumProbes = 0.0;
+                _runningSumWidgets = 0.0;
+                _runningSumSilhouette = 0.0;
+                _runningSumHooks = 0.0;
                 return;
             }
 
             LastTotalMs = _timings[(int)ProfilerSection.TotalMFP].CurrentFrameMs;
 
+            double curTotal = LastTotalMs;
+            double curTelem = _timings[(int)ProfilerSection.Telemetry].AccumulatedMs;
+            double curProbes = _timings[(int)ProfilerSection.Probes].AccumulatedMs;
+            double curWidgets = _timings[(int)ProfilerSection.Widgets].AccumulatedMs;
+            double curSil = _timings[(int)ProfilerSection.Silhouette].AccumulatedMs;
+            double curHooks = _timings[(int)ProfilerSection.Hooks].AccumulatedMs;
+
+            double oldTotal = _historyTotalMs[_historyIndex];
+            double oldTelem = _historyTelemetryMs[_historyIndex];
+            double oldProbes = _historyProbesMs[_historyIndex];
+            double oldWidgets = _historyWidgetsMs[_historyIndex];
+            double oldSil = _historySilhouetteMs[_historyIndex];
+            double oldHooks = _historyHooksMs[_historyIndex];
+
             // 写入环形缓冲区
-            _historyTotalMs[_historyIndex] = LastTotalMs;
-            _historyTelemetryMs[_historyIndex] = _timings[(int)ProfilerSection.Telemetry].AccumulatedMs;
-            _historyProbesMs[_historyIndex] = _timings[(int)ProfilerSection.Probes].AccumulatedMs;
-            _historyWidgetsMs[_historyIndex] = _timings[(int)ProfilerSection.Widgets].AccumulatedMs;
-            _historySilhouetteMs[_historyIndex] = _timings[(int)ProfilerSection.Silhouette].AccumulatedMs;
-            _historyHooksMs[_historyIndex] = _timings[(int)ProfilerSection.Hooks].AccumulatedMs;
+            _historyTotalMs[_historyIndex] = curTotal;
+            _historyTelemetryMs[_historyIndex] = curTelem;
+            _historyProbesMs[_historyIndex] = curProbes;
+            _historyWidgetsMs[_historyIndex] = curWidgets;
+            _historySilhouetteMs[_historyIndex] = curSil;
+            _historyHooksMs[_historyIndex] = curHooks;
+
+            _runningSumTotal += curTotal - oldTotal;
+            _runningSumTelemetry += curTelem - oldTelem;
+            _runningSumProbes += curProbes - oldProbes;
+            _runningSumWidgets += curWidgets - oldWidgets;
+            _runningSumSilhouette += curSil - oldSil;
+            _runningSumHooks += curHooks - oldHooks;
 
             _historyIndex = (_historyIndex + 1) % HistorySize;
             if (_historyCount < HistorySize) _historyCount++;
 
-            // 计算均值与极值
-            double sumTotal = 0, sumTelem = 0, sumProbes = 0, sumWidgets = 0, sumSil = 0, sumHooks = 0;
-            double min = double.MaxValue;
-            double max = double.MinValue;
-            int spikes = 0;
-
-            for (int i = 0; i < _historyCount; i++)
-            {
-                double v = _historyTotalMs[i];
-                sumTotal += v;
-                if (v < min) min = v;
-                if (v > max) max = v;
-
-                sumTelem += _historyTelemetryMs[i];
-                sumProbes += _historyProbesMs[i];
-                sumWidgets += _historyWidgetsMs[i];
-                sumSil += _historySilhouetteMs[i];
-                sumHooks += _historyHooksMs[i];
-
-                if (v > 16.6667) spikes++;
-            }
-
-            AvgTotalMs = sumTotal / _historyCount;
-            MinTotalMs = min;
-            MaxTotalMs = max;
-            SpikeCount = spikes;
-
-            AvgTelemetryMs = sumTelem / _historyCount;
-            AvgProbesMs = sumProbes / _historyCount;
-            AvgWidgetsMs = sumWidgets / _historyCount;
-            AvgSilhouetteMs = sumSil / _historyCount;
-            AvgHooksMs = sumHooks / _historyCount;
+            AvgTotalMs = _runningSumTotal / _historyCount;
+            AvgTelemetryMs = _runningSumTelemetry / _historyCount;
+            AvgProbesMs = _runningSumProbes / _historyCount;
+            AvgWidgetsMs = _runningSumWidgets / _historyCount;
+            AvgSilhouetteMs = _runningSumSilhouette / _historyCount;
+            AvgHooksMs = _runningSumHooks / _historyCount;
 
             FrameBudgetPercent = UnityFrameTimeMs > 0.001 ? (AvgTotalMs / UnityFrameTimeMs) * 100.0 : 0.0;
 
-            // 采样统计结束后，重置累加器以供下一帧采样（确保 TelemetryHub 等先于 HUD 执行的脚本时间被完整计入，杜绝清零丢失）
+            // 仅在开启详细覆盖层时遍历极值与尖峰，彻底消除主循环常驻开销
+            if (ShowOverlay)
+            {
+                double min = double.MaxValue;
+                double max = double.MinValue;
+                int spikes = 0;
+                for (int i = 0; i < _historyCount; i++)
+                {
+                    double v = _historyTotalMs[i];
+                    if (v < min) min = v;
+                    if (v > max) max = v;
+                    if (v > 16.6667) spikes++;
+                }
+                MinTotalMs = min;
+                MaxTotalMs = max;
+                SpikeCount = spikes;
+            }
+
+            // 采样统计结束后，重置累加器以供下一帧采样
             for (int i = 0; i < _timings.Length; i++)
             {
                 _timings[i].AccumulatedMs = 0.0;

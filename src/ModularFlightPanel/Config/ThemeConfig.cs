@@ -27,6 +27,12 @@ namespace ModularFlightPanel.Config
         Cyber_Neon        // 赛博霓虹 (NeonGlowUI)
     }
 
+    public enum AvionicsFontStyle
+    {
+        ModernSmooth = 0,    // 现代平滑高保真矢量字体 (Segoe UI / 微软雅黑 / Arial)
+        RetroPixel = 1       // 硬件等宽微点阵像素字体 (Consolas / Lucida Console / 等宽点阵)
+    }
+
     [Serializable]
     public class ColorHex
     {
@@ -162,10 +168,11 @@ namespace ModularFlightPanel.Config
         public NavballStyleType Style = NavballStyleType.Modern_Aero;
         public NavballRenderMode RenderMode = NavballRenderMode.Procedural;
         public UiShaderStyle UiStyle = UiShaderStyle.Modern_Glass;
+        public AvionicsFontStyle FontStyle = AvionicsFontStyle.ModernSmooth;
 
         // UI 专属着色器参数 (点阵、全息、数码管、玻璃)
-        public float UiDotSpacing = 5.0f;
-        public float UiScanlineStrength = 0.12f;
+        public float UiDotSpacing = 3.2f;
+        public float UiScanlineStrength = 0.10f;
         public float UiGlowStrength = 0.40f;
         public ColorHex UiGhostColor = ColorHex.FromColor(new Color(0.04f, 0.08f, 0.05f, 0.22f));
         public float UiGlassChamfer = 0.0f;
@@ -223,6 +230,7 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_CYBER_NEON", "赛博霓虹点阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Cyber_Neon,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
@@ -333,6 +341,7 @@ namespace ModularFlightPanel.Config
                 ThemeId = "apollo_1969",
                 DisplayName = I18n.Tr("THEME_APOLLO_1969", "阿波罗 1969 AGC 复古"),
                 Style = NavballStyleType.Apollo_1969,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
@@ -362,12 +371,13 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_APOLLO_DSKY", "阿波罗 DSKY 荧光绿点阵"),
                 Style = NavballStyleType.Apollo_1969,
                 UiStyle = UiShaderStyle.Dot_Matrix,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
-                UiDotSpacing = 5.0f,
+                UiDotSpacing = 3.2f,
                 UiGlowStrength = 0.45f,
-                UiScanlineStrength = 0.15f,
+                UiScanlineStrength = 0.12f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.02f, 0.08f, 0.03f, 0.25f)),
                 SkyColor = ColorHex.FromColor(new Color(0.0f, 0.28f, 0.12f, 1.0f)),
                 GroundColor = ColorHex.FromColor(new Color(0.0f, 0.10f, 0.04f, 1.0f)),
@@ -426,6 +436,7 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_VINTAGE_AMBER_CRT", "复古等离子琥珀金 CRT"),
                 Style = NavballStyleType.Classic_Aero,
                 UiStyle = UiShaderStyle.Phosphor_HUD,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = false,
                 EnableScanlines = true,
@@ -457,10 +468,11 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_CYBER_MATRIX", "赛博黑客矩阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Dot_Matrix,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
-                UiDotSpacing = 5.5f,
+                UiDotSpacing = 3.2f,
                 UiGlowStrength = 0.50f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.12f, 0.02f, 0.10f, 0.25f)),
@@ -521,13 +533,14 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_DEEP_SPACE_VOYAGER", "深空旅行者金黄"),
                 Style = NavballStyleType.Classic_Aero,
                 UiStyle = UiShaderStyle.Dot_Matrix,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 DotDensity = 36f,
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.45f,
                 EnableScanlines = true,
-                UiDotSpacing = 5.2f,
+                UiDotSpacing = 3.2f,
                 UiGlowStrength = 0.52f,
                 UiScanlineStrength = 0.15f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.12f, 0.09f, 0.02f, 0.25f)),
@@ -590,13 +603,14 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_VOSTOK_1961", "东方一号苏联机械青"),
                 Style = NavballStyleType.Classic_Aero,
                 UiStyle = UiShaderStyle.Dot_Matrix,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 DotDensity = 40f,
                 DotMinRadius = 0.03f,
                 DotMaxRadius = 0.48f,
                 EnableScanlines = true,
-                UiDotSpacing = 4.8f,
+                UiDotSpacing = 3.2f,
                 UiGlowStrength = 0.42f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.01f, 0.06f, 0.06f, 0.25f)),
@@ -627,13 +641,14 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_MATRIX_TERMINAL", "矩阵终端绿点阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Dot_Matrix,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 DotDensity = 38f,
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.46f,
                 EnableScanlines = true,
-                UiDotSpacing = 4.8f,
+                UiDotSpacing = 3.2f,
                 UiGlowStrength = 0.48f,
                 UiScanlineStrength = 0.15f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.01f, 0.08f, 0.03f, 0.25f)),
@@ -664,13 +679,14 @@ namespace ModularFlightPanel.Config
                 DisplayName = I18n.Tr("THEME_EVA_UNIT01", "EVA 初号机暴走电光点阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Dot_Matrix,
+                FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 DotDensity = 36f,
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.45f,
                 EnableScanlines = true,
-                UiDotSpacing = 5.0f,
+                UiDotSpacing = 3.2f,
                 UiGlowStrength = 0.50f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.08f, 0.02f, 0.10f, 0.25f)),

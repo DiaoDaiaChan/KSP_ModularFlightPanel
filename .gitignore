@@ -42,4 +42,5 @@ scratch/
 tools/tmp_decompile.cs
 GameData/**/PluginData/*.png
 tools/**/*.png
+crop_*.png
 .workbuddy/

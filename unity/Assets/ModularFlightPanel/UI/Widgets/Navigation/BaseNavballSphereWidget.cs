@@ -30,6 +30,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         protected Camera _ballCamera;
         protected GameObject _sphereObject;
         protected Material _sphereMaterial;
+        protected bool _isRenderDirty = true;
+        public void MarkRenderDirty() => _isRenderDirty = true;
 
         protected const int NavballOffscreenLayer = 31;
 
@@ -46,7 +48,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _renderTexture = new RenderTexture(rtResolution, rtResolution, 16, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 2,
+                antiAliasing = 1,
                 anisoLevel = 4,
                 useMipMap = false,
                 autoGenerateMips = false,
@@ -69,6 +71,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _ballCamera.farClipPlane = 10f;
             _ballCamera.cullingMask = 1 << NavballOffscreenLayer;
             _ballCamera.enabled = false;
+            _ballCamera.useOcclusionCulling = false;
+            _ballCamera.allowHDR = false;
+            _ballCamera.allowMSAA = false;
+            _ballCamera.depthTextureMode = DepthTextureMode.None;
 
             // 3D 单位球体
             _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -119,6 +125,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
 
             _sphereObject.transform.localScale = new Vector3(baseScale / sx, baseScale / sy, baseScale / sz);
+            _isRenderDirty = true;
         }
 
         protected override void OnScaleChanged(float targetScale, float relativeRatio)
@@ -147,7 +154,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _renderTexture = new RenderTexture(newRes, newRes, 16, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 2,
+                antiAliasing = 1,
                 anisoLevel = 4,
                 useMipMap = false,
                 autoGenerateMips = false,
@@ -159,6 +166,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             {
                 _ballCamera.targetTexture = _renderTexture;
             }
+            _isRenderDirty = true;
             OnRenderTextureRecreated(_renderTexture);
         }
 

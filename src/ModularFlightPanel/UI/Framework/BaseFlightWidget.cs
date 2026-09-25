@@ -364,6 +364,27 @@ namespace ModularFlightPanel.UI
         {
             if (theme == null) return;
             this.Controls.ApplyThemeToControls(theme);
+
+            // 递归保障：自动扫描组件根节点下所有原生 Text，确保字体与材质 100% 同步
+            Text[] texts = GetComponentsInChildren<Text>(true);
+            if (texts != null)
+            {
+                Font activeFont = UIFactory.GetActiveFont(theme);
+                Material activeTextMat = WidgetStyleManager.Instance?.GetUiMaterial(isText: true);
+                for (int i = 0; i < texts.Length; i++)
+                {
+                    Text t = texts[i];
+                    if (t == null) continue;
+                    if (activeFont != null && t.font != activeFont)
+                    {
+                        t.font = activeFont;
+                    }
+                    if (activeTextMat != null && t.material != activeTextMat)
+                    {
+                        t.material = activeTextMat;
+                    }
+                }
+            }
         }
 
         private void AutoBuildDslControls(ThemeConfig theme)

@@ -99,7 +99,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             _renderTexture = new RenderTexture(rtResolution, rtResolution, 16, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 2,
+                antiAliasing = 1,
                 anisoLevel = 4,
                 useMipMap = false,
                 autoGenerateMips = false,
@@ -128,6 +128,10 @@ namespace ModularFlightPanel.UI.Widgets
             _ballCamera.farClipPlane = 10f;
             _ballCamera.cullingMask = 1 << 31;
             _ballCamera.enabled = false; // 严禁每帧盲目自动渲染，改由 LateUpdate 在 Principia 姿态结算完毕后权威触发
+            _ballCamera.useOcclusionCulling = false;
+            _ballCamera.allowHDR = false;
+            _ballCamera.allowMSAA = false;
+            _ballCamera.depthTextureMode = DepthTextureMode.None;
 
             // 4. 3D 球体 (直接共享官方 StockNavBall 网格模型与 UV 拓扑，杜绝贴图畸变)
             _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -349,6 +353,7 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         ourMf.sharedMesh = _primitiveSphereMesh;
                         UpdateSphereMeshScale();
+                        _isMaterialDirty = true;
                     }
                 }
                 else if (hasHook && ourMf != null)
@@ -357,18 +362,26 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         ourMf.sharedMesh = hook.StockMesh;
                         UpdateSphereMeshScale();
+                        _isMaterialDirty = true;
                     }
                     else if (_sphereObject.transform.localScale == Vector3.one * 2.0f && ourMf.sharedMesh != null)
                     {
                         UpdateSphereMeshScale();
+                        _isMaterialDirty = true;
                     }
 
-                    if (_sphereMaterial != null && _sphereMaterial.HasProperty("_MainTex"))
+                    if (_sphereMaterial != null && _sphereMaterial.HasProperty(_PropMainTex))
                     {
                         if (_sphereMaterial.mainTextureScale != hook.TextureScale)
+                        {
                             _sphereMaterial.mainTextureScale = hook.TextureScale;
+                            _isMaterialDirty = true;
+                        }
                         if (_sphereMaterial.mainTextureOffset != hook.TextureOffset)
+                        {
                             _sphereMaterial.mainTextureOffset = hook.TextureOffset;
+                            _isMaterialDirty = true;
+                        }
                     }
                 }
             }
@@ -382,6 +395,63 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 姿态与矢量标线由 LateUpdate 在 Principia 姿态结算后权威驱动，避免每帧重复计算 10+ 标线方位
         }
+
+        #region Pre-baked Shader Property IDs (Zero-String CPU Cache)
+        private static readonly int _PropSkyZenithColor = Shader.PropertyToID("_SkyZenithColor");
+        private static readonly int _PropSkyHorizonColor = Shader.PropertyToID("_SkyHorizonColor");
+        private static readonly int _PropGroundHorizonColor = Shader.PropertyToID("_GroundHorizonColor");
+        private static readonly int _PropGroundNadirColor = Shader.PropertyToID("_GroundNadirColor");
+        private static readonly int _PropEquatorColor = Shader.PropertyToID("_EquatorColor");
+        private static readonly int _PropPitchLadderColor = Shader.PropertyToID("_PitchLadderColor");
+        private static readonly int _PropHeadingLineColor = Shader.PropertyToID("_HeadingLineColor");
+        private static readonly int _PropRimColor = Shader.PropertyToID("_RimColor");
+        private static readonly int _PropLabelColor = Shader.PropertyToID("_LabelColor");
+        private static readonly int _PropLabelOutlineColor = Shader.PropertyToID("_LabelOutlineColor");
+        private static readonly int _PropGroundHazardAlert = Shader.PropertyToID("_GroundHazardAlert");
+        private static readonly int _PropVernierScaleDetail = Shader.PropertyToID("_VernierScaleDetail");
+        private static readonly int _PropFramePattern = Shader.PropertyToID("_FramePattern");
+        private static readonly int _PropTrendRotation = Shader.PropertyToID("_TrendRotation");
+        private static readonly int _PropTrendStrength = Shader.PropertyToID("_TrendStrength");
+        private static readonly int _PropDetailScale = Shader.PropertyToID("_DetailScale");
+        private static readonly int _PropMainTex = Shader.PropertyToID("_MainTex");
+        private static readonly int _PropSkyColor = Shader.PropertyToID("_SkyColor");
+        private static readonly int _PropGroundColor = Shader.PropertyToID("_GroundColor");
+        private static readonly int _PropGridColor = Shader.PropertyToID("_GridColor");
+        private static readonly int _PropHorizonLineColor = Shader.PropertyToID("_HorizonLineColor");
+        private static readonly int _PropDotColor = Shader.PropertyToID("_DotColor");
+        private static readonly int _PropDotDensity = Shader.PropertyToID("_DotDensity");
+        private static readonly int _PropDotMinRadius = Shader.PropertyToID("_DotMinRadius");
+        private static readonly int _PropDotMaxRadius = Shader.PropertyToID("_DotMaxRadius");
+        private static readonly int _PropAtmosphereGlowColor = Shader.PropertyToID("_AtmosphereGlowColor");
+        private static readonly int _PropEmissionIntensity = Shader.PropertyToID("_EmissionIntensity");
+        private static readonly int _PropNumeralUprightMode = Shader.PropertyToID("_NumeralUprightMode");
+        private static readonly int _PropNumeralRollAngle = Shader.PropertyToID("_NumeralRollAngle");
+        private static readonly int _PropNumeralTangentComp = Shader.PropertyToID("_NumeralTangentComp");
+        #endregion
+
+        #region Sub-Pixel Dynamic Rendering & Dirty Guards (Zero Visual Quality Loss)
+        // 0.025° 阈值：球体半径约 75px，1px ≈ 0.76°，0.025° 对应 < 1/30 屏幕物理像素，完全零肉眼/数学画质损失
+        private const float RotationDirtyThreshold = 0.025f;
+        private const float TrendStrengthThreshold = 0.006f;
+        private const float HazardDirtyThreshold = 0.005f;
+        private const float VernierDirtyThreshold = 0.005f;
+        private const float HeartbeatInterval = 0.25f; // 4Hz 稳态保活心跳，杜绝光照/状态永冻
+
+        private Quaternion _lastRenderedRotation = Quaternion.identity;
+        private Quaternion _lastRenderedTrendRotation = Quaternion.identity;
+        private float _lastRenderedTrendStrength = -1f;
+        private float _lastRenderedHazard = -1f;
+        private float _lastRenderedVernier = -1f;
+        private float _lastRenderedTime = -10f;
+        private bool _isMaterialDirty = true;
+        private bool _hasEverRendered = false;
+
+        private float _lastUploadedHazard = -1f;
+        private float _lastUploadedVernier = -1f;
+        private bool _isPaletteLerping = false;
+        private int _lastScreenWidth = -1;
+        private int _lastScreenHeight = -1;
+        #endregion
 
         private string _lastFrameCategory = "";
         private NavballFramePalette _currentPalette;
@@ -454,6 +524,48 @@ namespace ModularFlightPanel.UI.Widgets
                         HeadingLine = hdg,
                         Rim = rim
                     };
+            }
+        }
+
+        private static bool FastColorEquals(Color a, Color b)
+        {
+            return Mathf.Abs(a.r - b.r) < 0.002f &&
+                   Mathf.Abs(a.g - b.g) < 0.002f &&
+                   Mathf.Abs(a.b - b.b) < 0.002f &&
+                   Mathf.Abs(a.a - b.a) < 0.002f;
+        }
+
+        private static bool IsPaletteEqual(ref NavballFramePalette a, ref NavballFramePalette b)
+        {
+            return FastColorEquals(a.SkyZenith, b.SkyZenith) &&
+                   FastColorEquals(a.SkyHorizon, b.SkyHorizon) &&
+                   FastColorEquals(a.GroundHorizon, b.GroundHorizon) &&
+                   FastColorEquals(a.GroundNadir, b.GroundNadir) &&
+                   FastColorEquals(a.Equator, b.Equator) &&
+                   FastColorEquals(a.PitchLadder, b.PitchLadder) &&
+                   FastColorEquals(a.HeadingLine, b.HeadingLine) &&
+                   FastColorEquals(a.Rim, b.Rim);
+        }
+
+        private void UploadPaletteToMaterial(NavballFramePalette palette)
+        {
+            if (_sphereMaterial == null) return;
+            if (_sphereMaterial.HasProperty(_PropSkyZenithColor))
+            {
+                _sphereMaterial.SetColor(_PropSkyZenithColor, palette.SkyZenith);
+                _sphereMaterial.SetColor(_PropSkyHorizonColor, palette.SkyHorizon);
+                _sphereMaterial.SetColor(_PropGroundHorizonColor, palette.GroundHorizon);
+                _sphereMaterial.SetColor(_PropGroundNadirColor, palette.GroundNadir);
+                _sphereMaterial.SetColor(_PropEquatorColor, palette.Equator);
+                _sphereMaterial.SetColor(_PropPitchLadderColor, palette.PitchLadder);
+                _sphereMaterial.SetColor(_PropHeadingLineColor, palette.HeadingLine);
+                _sphereMaterial.SetColor(_PropRimColor, palette.Rim);
+                var curTheme = ThemeManager.Instance.CurrentTheme;
+                if (curTheme != null)
+                {
+                    _sphereMaterial.SetColor(_PropLabelColor, curTheme.TextPrimaryColor);
+                    _sphereMaterial.SetColor(_PropLabelOutlineColor, curTheme.TextInverseColor);
+                }
             }
         }
 
@@ -534,11 +646,17 @@ namespace ModularFlightPanel.UI.Widgets
             _filteredTrendRotation = Quaternion.Slerp(_filteredTrendRotation, targetTrendRotation, blend);
             _attitudeTrendStrength = Mathf.MoveTowards(_attitudeTrendStrength, targetStrength, (!Application.isPlaying ? 1f : dt * 3.5f));
 
-            if (_sphereMaterial != null && _sphereMaterial.HasProperty("_TrendRotation"))
+            if (_sphereMaterial != null && _sphereMaterial.HasProperty(_PropTrendRotation))
             {
-                _sphereMaterial.SetVector("_TrendRotation", new Vector4(
-                    _filteredTrendRotation.x, _filteredTrendRotation.y, _filteredTrendRotation.z, _filteredTrendRotation.w));
-                _sphereMaterial.SetFloat("_TrendStrength", _attitudeTrendStrength);
+                bool trendDiffers = Mathf.Abs(_attitudeTrendStrength - _lastRenderedTrendStrength) > TrendStrengthThreshold ||
+                                   (_attitudeTrendStrength > 0.01f && Quaternion.Angle(_filteredTrendRotation, _lastRenderedTrendRotation) > 0.08f);
+                if (trendDiffers)
+                {
+                    _sphereMaterial.SetVector(_PropTrendRotation, new Vector4(
+                        _filteredTrendRotation.x, _filteredTrendRotation.y, _filteredTrendRotation.z, _filteredTrendRotation.w));
+                    _sphereMaterial.SetFloat(_PropTrendStrength, _attitudeTrendStrength);
+                    _isMaterialDirty = true;
+                }
             }
         }
 
@@ -569,7 +687,6 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 UpdateAttitudeTrend(_sphereObject.transform.localRotation);
-
             }
 
             // 2. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
@@ -582,38 +699,35 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _currentPalette = _targetPalette;
                     _paletteInitialized = true;
+                    UploadPaletteToMaterial(_currentPalette);
+                    _isMaterialDirty = true;
                 }
                 _lastFrameCategory = category;
+                _isPaletteLerping = true;
             }
 
             if (_sphereMaterial != null)
             {
                 float framePattern = GetFramePatternCode(category);
-                if (Mathf.Abs(framePattern - _lastFramePattern) > 0.01f && _sphereMaterial.HasProperty("_FramePattern"))
+                if (Mathf.Abs(framePattern - _lastFramePattern) > 0.01f && _sphereMaterial.HasProperty(_PropFramePattern))
                 {
-                    _sphereMaterial.SetFloat("_FramePattern", framePattern);
+                    _sphereMaterial.SetFloat(_PropFramePattern, framePattern);
                     _lastFramePattern = framePattern;
+                    _isMaterialDirty = true;
                 }
 
-                float dt = Time.deltaTime;
-                float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
-                _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
-
-                if (_sphereMaterial.HasProperty("_SkyZenithColor"))
+                if (_isPaletteLerping)
                 {
-                    _sphereMaterial.SetColor("_SkyZenithColor", _currentPalette.SkyZenith);
-                    _sphereMaterial.SetColor("_SkyHorizonColor", _currentPalette.SkyHorizon);
-                    _sphereMaterial.SetColor("_GroundHorizonColor", _currentPalette.GroundHorizon);
-                    _sphereMaterial.SetColor("_GroundNadirColor", _currentPalette.GroundNadir);
-                    _sphereMaterial.SetColor("_EquatorColor", _currentPalette.Equator);
-                    _sphereMaterial.SetColor("_PitchLadderColor", _currentPalette.PitchLadder);
-                    _sphereMaterial.SetColor("_HeadingLineColor", _currentPalette.HeadingLine);
-                    _sphereMaterial.SetColor("_RimColor", _currentPalette.Rim);
-                    var curTheme = ThemeManager.Instance.CurrentTheme;
-                    if (curTheme != null)
+                    float dt = Time.deltaTime;
+                    float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
+                    _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
+                    UploadPaletteToMaterial(_currentPalette);
+                    _isMaterialDirty = true;
+
+                    if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
                     {
-                        _sphereMaterial.SetColor("_LabelColor", curTheme.TextPrimaryColor);
-                        _sphereMaterial.SetColor("_LabelOutlineColor", curTheme.TextInverseColor);
+                        _currentPalette = _targetPalette;
+                        _isPaletteLerping = false;
                     }
                 }
 
@@ -642,6 +756,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // 滞后滤波与持续维持计时器，彻底根治临界速度附近的单帧乱闪
+                float dtHazard = Time.deltaTime;
                 if (isHazardTriggered)
                 {
                     _isHazardActive = true;
@@ -649,7 +764,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else if (_hazardHoldTimer > 0f)
                 {
-                    _hazardHoldTimer -= dt;
+                    _hazardHoldTimer -= dtHazard;
                     if (_hazardHoldTimer <= 0f) _isHazardActive = false;
                 }
                 else
@@ -658,19 +773,23 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 float targetHazard = _isHazardActive ? 1.0f : 0.0f;
-                _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dt * 3.5f));
-                if (_sphereMaterial.HasProperty("_GroundHazardAlert"))
+                _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dtHazard * 3.5f));
+                if (Mathf.Abs(_currentHazardAlert - _lastUploadedHazard) > 0.003f && _sphereMaterial.HasProperty(_PropGroundHazardAlert))
                 {
-                    _sphereMaterial.SetFloat("_GroundHazardAlert", _currentHazardAlert);
+                    _sphereMaterial.SetFloat(_PropGroundHazardAlert, _currentHazardAlert);
+                    _lastUploadedHazard = _currentHazardAlert;
+                    _isMaterialDirty = true;
                 }
 
                 // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
                 float pitchVal = (curTelem != null) ? Mathf.Abs(curTelem.Pitch) : 0f;
                 float targetVernier = (pitchVal < 6.0f) ? Mathf.Clamp01((6.0f - pitchVal) / 3.0f) : 0f;
-                _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dt * 3.5f));
-                if (_sphereMaterial.HasProperty("_VernierScaleDetail"))
+                _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dtHazard * 3.5f));
+                if (Mathf.Abs(_currentVernierDetail - _lastUploadedVernier) > 0.003f && _sphereMaterial.HasProperty(_PropVernierScaleDetail))
                 {
-                    _sphereMaterial.SetFloat("_VernierScaleDetail", _currentVernierDetail);
+                    _sphereMaterial.SetFloat(_PropVernierScaleDetail, _currentVernierDetail);
+                    _lastUploadedVernier = _currentVernierDetail;
+                    _isMaterialDirty = true;
                 }
             }
 
@@ -715,6 +834,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.LateUpdate();
             if (!gameObject.activeInHierarchy) return;
+            if (_displayImage == null || !_displayImage.enabled || !_displayImage.gameObject.activeInHierarchy) return;
 
             // 在 Principia/官方 LateUpdate 彻底执行完毕后，执行最终高保真姿态与标线同步
             SyncAttitudeAndVisuals();
@@ -722,10 +842,33 @@ namespace ModularFlightPanel.UI.Widgets
             UpdateReticleDynamics();
             UpdateProceduralDetailScale();
 
-            // 强制锁定离屏相机 FPS 跟随游戏每一帧满频同步渲染，彻底杜绝帧率不一致导致的标线与球体相对漂移
+            // 动态绘制与亚像素脏标记判定：
+            // 姿态角发生大于 0.025° 变化（<1/30 屏幕物理像素）、着色器动态属性演变、避让标位移、或 4Hz 保活心跳触发时才调用离屏渲染
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                _ballCamera.Render();
+                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation) > RotationDirtyThreshold);
+                bool trendDirty = Mathf.Abs(_attitudeTrendStrength - _lastRenderedTrendStrength) > TrendStrengthThreshold ||
+                                  (_attitudeTrendStrength > 0.01f && Quaternion.Angle(_filteredTrendRotation, _lastRenderedTrendRotation) > 0.08f);
+                bool hazardDirty = Mathf.Abs(_currentHazardAlert - _lastRenderedHazard) > HazardDirtyThreshold;
+                bool vernierDirty = Mathf.Abs(_currentVernierDetail - _lastRenderedVernier) > VernierDirtyThreshold;
+                bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime) >= HeartbeatInterval;
+
+                if (rotDirty || trendDirty || hazardDirty || vernierDirty || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
+                {
+                    _ballCamera.Render();
+                    _hasEverRendered = true;
+                    if (_sphereObject != null)
+                    {
+                        _lastRenderedRotation = _sphereObject.transform.localRotation;
+                    }
+                    _lastRenderedTrendRotation = _filteredTrendRotation;
+                    _lastRenderedTrendStrength = _attitudeTrendStrength;
+                    _lastRenderedHazard = _currentHazardAlert;
+                    _lastRenderedVernier = _currentVernierDetail;
+                    _lastRenderedTime = Time.unscaledTime;
+                    _isMaterialDirty = false;
+                    _isRenderDirty = false;
+                }
             }
         }
 
@@ -905,14 +1048,30 @@ namespace ModularFlightPanel.UI.Widgets
                     float radius = 0.20f;
                     avoidance = new Vector4(point.x, point.y, radius, Mathf.Clamp01(marker.color.a));
                 }
-                _markerAvoidanceValues[i] = avoidance;
-                _sphereMaterial.SetVector(MarkerAvoidancePropertyIds[i], avoidance);
+                Vector4 prev = _markerAvoidanceValues[i];
+                if (Mathf.Abs(avoidance.x - prev.x) > 0.005f ||
+                    Mathf.Abs(avoidance.y - prev.y) > 0.005f ||
+                    Mathf.Abs(avoidance.w - prev.w) > 0.02f)
+                {
+                    _markerAvoidanceValues[i] = avoidance;
+                    _sphereMaterial.SetVector(MarkerAvoidancePropertyIds[i], avoidance);
+                    _isMaterialDirty = true;
+                }
             }
         }
 
         private void UpdateProceduralDetailScale()
         {
-            if (_sphereMaterial == null || !_sphereMaterial.HasProperty("_DetailScale") || _displayImage == null) return;
+            if (_sphereMaterial == null || !_sphereMaterial.HasProperty(_PropDetailScale) || _displayImage == null) return;
+
+            int sw = Screen.width;
+            int sh = Screen.height;
+            if (_lastDetailScale >= 0f && sw == _lastScreenWidth && sh == _lastScreenHeight && !transform.hasChanged)
+            {
+                return;
+            }
+            _lastScreenWidth = sw;
+            _lastScreenHeight = sh;
 
             Canvas canvas = _displayImage.canvas;
             Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
@@ -926,7 +1085,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (Mathf.Abs(detailScale - _lastDetailScale) > 0.015f)
             {
                 _lastDetailScale = detailScale;
-                _sphereMaterial.SetFloat("_DetailScale", detailScale);
+                _sphereMaterial.SetFloat(_PropDetailScale, detailScale);
+                _isMaterialDirty = true;
             }
         }
 
@@ -936,6 +1096,7 @@ namespace ModularFlightPanel.UI.Widgets
             _paletteInitialized = false;
             _lastFrameCategory = null;
             _lastFramePattern = -1f;
+            _isMaterialDirty = true;
 
             if (_sphereMaterial != null)
             {
@@ -945,40 +1106,40 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereMaterial.shader = targetShader;
                 }
 
-                if (_sphereMaterial.HasProperty("_NumeralUprightMode")) _sphereMaterial.SetFloat("_NumeralUprightMode", 0.0f);
-                if (_sphereMaterial.HasProperty("_NumeralRollAngle")) _sphereMaterial.SetFloat("_NumeralRollAngle", 0.0f);
-                if (_sphereMaterial.HasProperty("_NumeralTangentComp")) _sphereMaterial.SetFloat("_NumeralTangentComp", 1.0f);
+                if (_sphereMaterial.HasProperty(_PropNumeralUprightMode)) _sphereMaterial.SetFloat(_PropNumeralUprightMode, 0.0f);
+                if (_sphereMaterial.HasProperty(_PropNumeralRollAngle)) _sphereMaterial.SetFloat(_PropNumeralRollAngle, 0.0f);
+                if (_sphereMaterial.HasProperty(_PropNumeralTangentComp)) _sphereMaterial.SetFloat(_PropNumeralTangentComp, 1.0f);
 
                 // 2. 天地与网格色彩统一注入：无论何种 Shader，属性存在即注入，杜绝硬编码与色彩脱节
                 bool isModern = (targetShader == AssetLoader.ModernShader);
                 Color skyZenith = theme.SkyColor;
                 Color skyHrz = isModern ? WidgetStyleManager.Lighten(skyZenith, 0.16f) : (Color)theme.AccentSecondary;
 
-                if (_sphereMaterial.HasProperty("_SkyColor")) _sphereMaterial.SetColor("_SkyColor", skyZenith);
-                if (_sphereMaterial.HasProperty("_GroundColor")) _sphereMaterial.SetColor("_GroundColor", theme.GroundColor);
-                if (_sphereMaterial.HasProperty("_SkyZenithColor")) _sphereMaterial.SetColor("_SkyZenithColor", skyZenith);
-                if (_sphereMaterial.HasProperty("_SkyHorizonColor")) _sphereMaterial.SetColor("_SkyHorizonColor", skyHrz);
-                if (_sphereMaterial.HasProperty("_GroundHorizonColor")) _sphereMaterial.SetColor("_GroundHorizonColor", theme.GroundColor);
-                if (_sphereMaterial.HasProperty("_GroundNadirColor")) _sphereMaterial.SetColor("_GroundNadirColor", WidgetStyleManager.Darken(theme.GroundColor, 0.4f));
+                if (_sphereMaterial.HasProperty(_PropSkyColor)) _sphereMaterial.SetColor(_PropSkyColor, skyZenith);
+                if (_sphereMaterial.HasProperty(_PropGroundColor)) _sphereMaterial.SetColor(_PropGroundColor, theme.GroundColor);
+                if (_sphereMaterial.HasProperty(_PropSkyZenithColor)) _sphereMaterial.SetColor(_PropSkyZenithColor, skyZenith);
+                if (_sphereMaterial.HasProperty(_PropSkyHorizonColor)) _sphereMaterial.SetColor(_PropSkyHorizonColor, skyHrz);
+                if (_sphereMaterial.HasProperty(_PropGroundHorizonColor)) _sphereMaterial.SetColor(_PropGroundHorizonColor, theme.GroundColor);
+                if (_sphereMaterial.HasProperty(_PropGroundNadirColor)) _sphereMaterial.SetColor(_PropGroundNadirColor, WidgetStyleManager.Darken(theme.GroundColor, 0.4f));
 
-                if (_sphereMaterial.HasProperty("_EquatorColor")) _sphereMaterial.SetColor("_EquatorColor", theme.HorizonLineColor);
-                if (_sphereMaterial.HasProperty("_HorizonLineColor")) _sphereMaterial.SetColor("_HorizonLineColor", theme.HorizonLineColor);
+                if (_sphereMaterial.HasProperty(_PropEquatorColor)) _sphereMaterial.SetColor(_PropEquatorColor, theme.HorizonLineColor);
+                if (_sphereMaterial.HasProperty(_PropHorizonLineColor)) _sphereMaterial.SetColor(_PropHorizonLineColor, theme.HorizonLineColor);
 
-                if (_sphereMaterial.HasProperty("_GridColor")) _sphereMaterial.SetColor("_GridColor", theme.GridColor);
-                if (_sphereMaterial.HasProperty("_PitchLadderColor")) _sphereMaterial.SetColor("_PitchLadderColor", theme.GridColor);
-                if (_sphereMaterial.HasProperty("_HeadingLineColor")) _sphereMaterial.SetColor("_HeadingLineColor", theme.AccentSecondary);
+                if (_sphereMaterial.HasProperty(_PropGridColor)) _sphereMaterial.SetColor(_PropGridColor, theme.GridColor);
+                if (_sphereMaterial.HasProperty(_PropPitchLadderColor)) _sphereMaterial.SetColor(_PropPitchLadderColor, theme.GridColor);
+                if (_sphereMaterial.HasProperty(_PropHeadingLineColor)) _sphereMaterial.SetColor(_PropHeadingLineColor, theme.AccentSecondary);
 
-                if (_sphereMaterial.HasProperty("_DotColor")) _sphereMaterial.SetColor("_DotColor", theme.DitherDotColor);
-                if (_sphereMaterial.HasProperty("_DotDensity")) _sphereMaterial.SetFloat("_DotDensity", theme.DotDensity > 0 ? theme.DotDensity : 38f);
-                if (_sphereMaterial.HasProperty("_DotMinRadius")) _sphereMaterial.SetFloat("_DotMinRadius", theme.DotMinRadius > 0 ? theme.DotMinRadius : 0.04f);
-                if (_sphereMaterial.HasProperty("_DotMaxRadius")) _sphereMaterial.SetFloat("_DotMaxRadius", theme.DotMaxRadius > 0 ? theme.DotMaxRadius : 0.46f);
+                if (_sphereMaterial.HasProperty(_PropDotColor)) _sphereMaterial.SetColor(_PropDotColor, theme.DitherDotColor);
+                if (_sphereMaterial.HasProperty(_PropDotDensity)) _sphereMaterial.SetFloat(_PropDotDensity, theme.DotDensity > 0 ? theme.DotDensity : 38f);
+                if (_sphereMaterial.HasProperty(_PropDotMinRadius)) _sphereMaterial.SetFloat(_PropDotMinRadius, theme.DotMinRadius > 0 ? theme.DotMinRadius : 0.04f);
+                if (_sphereMaterial.HasProperty(_PropDotMaxRadius)) _sphereMaterial.SetFloat(_PropDotMaxRadius, theme.DotMaxRadius > 0 ? theme.DotMaxRadius : 0.46f);
 
-                if (_sphereMaterial.HasProperty("_RimColor")) _sphereMaterial.SetColor("_RimColor", theme.RimGlowColor);
-                if (_sphereMaterial.HasProperty("_AtmosphereGlowColor")) _sphereMaterial.SetColor("_AtmosphereGlowColor", theme.RimGlowColor);
-                if (_sphereMaterial.HasProperty("_EmissionIntensity")) _sphereMaterial.SetFloat("_EmissionIntensity", 1.25f);
+                if (_sphereMaterial.HasProperty(_PropRimColor)) _sphereMaterial.SetColor(_PropRimColor, theme.RimGlowColor);
+                if (_sphereMaterial.HasProperty(_PropAtmosphereGlowColor)) _sphereMaterial.SetColor(_PropAtmosphereGlowColor, theme.RimGlowColor);
+                if (_sphereMaterial.HasProperty(_PropEmissionIntensity)) _sphereMaterial.SetFloat(_PropEmissionIntensity, 1.25f);
 
-                if (_sphereMaterial.HasProperty("_LabelColor")) _sphereMaterial.SetColor("_LabelColor", theme.TextPrimaryColor);
-                if (_sphereMaterial.HasProperty("_LabelOutlineColor")) _sphereMaterial.SetColor("_LabelOutlineColor", theme.TextInverseColor);
+                if (_sphereMaterial.HasProperty(_PropLabelColor)) _sphereMaterial.SetColor(_PropLabelColor, theme.TextPrimaryColor);
+                if (_sphereMaterial.HasProperty(_PropLabelOutlineColor)) _sphereMaterial.SetColor(_PropLabelOutlineColor, theme.TextInverseColor);
             }
 
             if (_shellImage != null)
@@ -1024,22 +1185,10 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void HandleResolutionChanged(int newRes)
         {
-            if (_renderTexture != null)
-            {
-                _renderTexture.Release();
-                Destroy(_renderTexture);
-            }
-            _renderTexture = new RenderTexture(newRes, newRes, 16, RenderTextureFormat.ARGB32)
-            {
-                antiAliasing = 1,
-                anisoLevel = 4,
-                useMipMap = false,
-                autoGenerateMips = false,
-                filterMode = FilterMode.Bilinear
-            };
-            _renderTexture.Create();
-            if (_ballCamera != null) _ballCamera.targetTexture = _renderTexture;
+            base.HandleResolutionChanged(newRes);
             if (_displayImage != null) _displayImage.texture = _renderTexture;
+            _isMaterialDirty = true;
+            _isRenderDirty = true;
         }
 
         protected override void HandleRenderSettingChanged()

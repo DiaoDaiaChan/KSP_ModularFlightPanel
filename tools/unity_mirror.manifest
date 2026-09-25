@@ -20,6 +20,8 @@
 !Core/Hooks/NavballPlugin.cs
 !Core/Hooks/HarmonyPatches.cs
 !Core/Hooks/StockNavBallHook.cs
+!Core/Hooks/NavballMarkerVectorExtractor.cs
+!Core/Hooks/StockUIHider.cs
 !Core/Hooks/StockStageIconHook.cs
 !Core/Hooks/MFPToolbarButton.cs
 !Core/Hooks/DockAnchorTracker.cs
@@ -30,7 +32,8 @@
 !Core/Probes/*
 
 # ── 遥测汇聚（依赖 Core/Probes 的探针结果）──
-!Core/Telemetry/TelemetryHub.cs
+!Core/Telemetry/TelemetryHub*.cs
+!Core/Telemetry/Providers/*
 
 # ── IMGUI 设置面板：KSP 游戏内配置界面，不参与 UI 预览渲染 ──
 !UI/Settings/*

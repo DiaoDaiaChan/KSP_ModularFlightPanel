@@ -81,6 +81,47 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
         private bool _paletteInitialized = false;
+        private bool _isPaletteLerping = false;
+
+        // 动态绘制与亚像素脏标记判定 (Zero Visual Quality Loss)
+        private const float RotationDirtyThreshold = 0.025f;
+        private const float HeartbeatInterval = 0.25f;
+        private Quaternion _lastRenderedRotation = Quaternion.identity;
+        private float _lastRenderedTime = -10f;
+        private bool _isMaterialDirty = true;
+        private bool _hasEverRendered = false;
+
+        private static readonly int _PropSkyColor = Shader.PropertyToID("_SkyColor");
+        private static readonly int _PropGroundColor = Shader.PropertyToID("_GroundColor");
+        private static readonly int _PropEquatorColor = Shader.PropertyToID("_EquatorColor");
+        private static readonly int _PropPitchLadderColor = Shader.PropertyToID("_PitchLadderColor");
+        private static readonly int _PropMeridianColor = Shader.PropertyToID("_MeridianColor");
+        private static readonly int _PropRimColor = Shader.PropertyToID("_RimColor");
+        private static readonly int _PropSkyZenithColor = Shader.PropertyToID("_SkyZenithColor");
+        private static readonly int _PropSkyHorizonColor = Shader.PropertyToID("_SkyHorizonColor");
+        private static readonly int _PropGroundHorizonColor = Shader.PropertyToID("_GroundHorizonColor");
+        private static readonly int _PropGroundNadirColor = Shader.PropertyToID("_GroundNadirColor");
+        private static readonly int _PropHeadingLineColor = Shader.PropertyToID("_HeadingLineColor");
+
+        private static bool FastColorEquals(Color a, Color b)
+        {
+            return Mathf.Abs(a.r - b.r) < 0.002f &&
+                   Mathf.Abs(a.g - b.g) < 0.002f &&
+                   Mathf.Abs(a.b - b.b) < 0.002f &&
+                   Mathf.Abs(a.a - b.a) < 0.002f;
+        }
+
+        private static bool IsPaletteEqual(ref NavballFramePalette a, ref NavballFramePalette b)
+        {
+            return FastColorEquals(a.SkyZenith, b.SkyZenith) &&
+                   FastColorEquals(a.SkyHorizon, b.SkyHorizon) &&
+                   FastColorEquals(a.GroundHorizon, b.GroundHorizon) &&
+                   FastColorEquals(a.GroundNadir, b.GroundNadir) &&
+                   FastColorEquals(a.Equator, b.Equator) &&
+                   FastColorEquals(a.PitchLadder, b.PitchLadder) &&
+                   FastColorEquals(a.HeadingLine, b.HeadingLine) &&
+                   FastColorEquals(a.Rim, b.Rim);
+        }
 
         // CustomTemplate 通道
         private string _headingToken = "{HDG}";
@@ -172,7 +213,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _renderTexture = new RenderTexture(rtRes, rtRes, 16, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 2,
+                antiAliasing = 1,
                 anisoLevel = 4,
                 useMipMap = false,
                 autoGenerateMips = false,
@@ -195,6 +236,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _ballCamera.farClipPlane = 10f;
             _ballCamera.cullingMask = 1 << 31;
             _ballCamera.enabled = false;
+            _ballCamera.useOcclusionCulling = false;
+            _ballCamera.allowHDR = false;
+            _ballCamera.allowMSAA = false;
+            _ballCamera.depthTextureMode = DepthTextureMode.None;
 
             // 3D 单位球体 (半径 0.94f，预留边缘抗锯齿与发光空间)
             _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -565,14 +610,29 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         {
             base.LateUpdate();
             if (!gameObject.activeInHierarchy) return;
+            if (_sphereDisplayImage == null || !_sphereDisplayImage.enabled || !_sphereDisplayImage.gameObject.activeInHierarchy) return;
 
             SyncAttitudeAndVisuals();
             SyncMarkers();
 
-            // 强制锁定离屏相机 FPS 跟随游戏每一帧满频同步渲染
+            // 动态绘制与亚像素脏标记判定 (4Hz 保活心跳 + 0.025° 亚像素死区)
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                _ballCamera.Render();
+                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation) > RotationDirtyThreshold);
+                bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime) >= HeartbeatInterval;
+
+                if (rotDirty || _isPaletteLerping || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
+                {
+                    _ballCamera.Render();
+                    _hasEverRendered = true;
+                    if (_sphereObject != null)
+                    {
+                        _lastRenderedRotation = _sphereObject.transform.localRotation;
+                    }
+                    _lastRenderedTime = Time.unscaledTime;
+                    _isMaterialDirty = false;
+                    _isRenderDirty = false;
+                }
             }
         }
 
@@ -611,41 +671,51 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     _currentPalette = _targetPalette;
                     _paletteInitialized = true;
+                    ApplyPaletteToSphereMaterial(_currentPalette);
+                    _isMaterialDirty = true;
                 }
                 _lastFrameCategory = category;
+                _isPaletteLerping = true;
             }
 
-            if (_sphereMaterial != null)
+            if (_sphereMaterial != null && _isPaletteLerping)
             {
                 float dt = Time.deltaTime;
                 float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
                 _currentPalette = WidgetStyleManager.LerpFramePalette(_currentPalette, _targetPalette, lerpFactor);
                 ApplyPaletteToSphereMaterial(_currentPalette);
+                _isMaterialDirty = true;
+
+                if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
+                {
+                    _currentPalette = _targetPalette;
+                    _isPaletteLerping = false;
+                }
             }
         }
 
         private void ApplyPaletteToSphereMaterial(NavballFramePalette p)
         {
             if (_sphereMaterial == null) return;
-            if (_sphereMaterial.HasProperty("_SkyColor"))
+            if (_sphereMaterial.HasProperty(_PropSkyColor))
             {
-                _sphereMaterial.SetColor("_SkyColor", p.SkyHorizon);
-                _sphereMaterial.SetColor("_GroundColor", p.GroundHorizon);
-                _sphereMaterial.SetColor("_EquatorColor", p.Equator);
-                _sphereMaterial.SetColor("_PitchLadderColor", p.PitchLadder);
-                _sphereMaterial.SetColor("_MeridianColor", p.HeadingLine);
-                _sphereMaterial.SetColor("_RimColor", p.Rim);
+                _sphereMaterial.SetColor(_PropSkyColor, p.SkyHorizon);
+                _sphereMaterial.SetColor(_PropGroundColor, p.GroundHorizon);
+                _sphereMaterial.SetColor(_PropEquatorColor, p.Equator);
+                _sphereMaterial.SetColor(_PropPitchLadderColor, p.PitchLadder);
+                _sphereMaterial.SetColor(_PropMeridianColor, p.HeadingLine);
+                _sphereMaterial.SetColor(_PropRimColor, p.Rim);
             }
-            if (_sphereMaterial.HasProperty("_SkyZenithColor"))
+            if (_sphereMaterial.HasProperty(_PropSkyZenithColor))
             {
-                _sphereMaterial.SetColor("_SkyZenithColor", p.SkyZenith);
-                _sphereMaterial.SetColor("_SkyHorizonColor", p.SkyHorizon);
-                _sphereMaterial.SetColor("_GroundHorizonColor", p.GroundHorizon);
-                _sphereMaterial.SetColor("_GroundNadirColor", p.GroundNadir);
-                _sphereMaterial.SetColor("_EquatorColor", p.Equator);
-                _sphereMaterial.SetColor("_PitchLadderColor", p.PitchLadder);
-                _sphereMaterial.SetColor("_HeadingLineColor", p.HeadingLine);
-                _sphereMaterial.SetColor("_RimColor", p.Rim);
+                _sphereMaterial.SetColor(_PropSkyZenithColor, p.SkyZenith);
+                _sphereMaterial.SetColor(_PropSkyHorizonColor, p.SkyHorizon);
+                _sphereMaterial.SetColor(_PropGroundHorizonColor, p.GroundHorizon);
+                _sphereMaterial.SetColor(_PropGroundNadirColor, p.GroundNadir);
+                _sphereMaterial.SetColor(_PropEquatorColor, p.Equator);
+                _sphereMaterial.SetColor(_PropPitchLadderColor, p.PitchLadder);
+                _sphereMaterial.SetColor(_PropHeadingLineColor, p.HeadingLine);
+                _sphereMaterial.SetColor(_PropRimColor, p.Rim);
             }
         }
 

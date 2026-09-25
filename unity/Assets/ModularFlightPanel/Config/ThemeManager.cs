@@ -447,7 +447,7 @@ namespace ModularFlightPanel.Config
             if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", theme.UiScanlineStrength);
             if (mat.HasProperty("_UnlitDotColor")) mat.SetColor("_UnlitDotColor", theme.UiGhostColor);
             if (mat.HasProperty("_PhosphorColor")) mat.SetColor("_PhosphorColor", theme.AccentPrimary);
-            if (mat.HasProperty("_LitDotColor")) mat.SetColor("_LitDotColor", theme.AccentPrimary);
+            if (mat.HasProperty("_LitDotColor")) mat.SetColor("_LitDotColor", Color.white);
             if (mat.HasProperty("_SegmentLitColor")) mat.SetColor("_SegmentLitColor", theme.AccentPrimary);
 
             _cachedUiMaterials[key] = mat;

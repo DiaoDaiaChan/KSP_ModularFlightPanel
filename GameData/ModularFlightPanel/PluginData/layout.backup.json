@@ -38,7 +38,7 @@
         {
             "WidgetId": "nav.vessel_navball",
             "DisplayName": "3D 飞船球形姿态仪",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 0.0,
             "PositionY": 0.0,
             "Scale": 1.0,
@@ -276,7 +276,7 @@
         {
             "WidgetId": "core.heading_arc",
             "DisplayName": "PFD 航向指示弧 (Set 2)",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 0.0,
             "PositionY": 0.0,
             "Scale": 1.0,
@@ -310,7 +310,7 @@
         {
             "WidgetId": "gauge.throttle",
             "DisplayName": "AVIONICS 油门推力带",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": -158.0,
             "PositionY": 0.0,
             "Scale": 1.0,
@@ -344,7 +344,7 @@
         {
             "WidgetId": "gauge.barometer",
             "DisplayName": "AVIONICS 大气压强带",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 158.0,
             "PositionY": 0.0,
             "Scale": 1.0,
@@ -378,7 +378,7 @@
         {
             "WidgetId": "tape.speed",
             "DisplayName": "PFD 速度标尺带",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": -120.0,
             "PositionY": 0.0,
             "Scale": 1.0,
@@ -412,7 +412,7 @@
         {
             "WidgetId": "tape.altitude",
             "DisplayName": "PFD 高度标尺带",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 120.0,
             "PositionY": 0.0,
             "Scale": 1.0,
@@ -480,7 +480,7 @@
         {
             "WidgetId": "core.bottom_controls",
             "DisplayName": "RCS与SAS底控台",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 0.0,
             "PositionY": -88.0,
             "Scale": 1.0,
@@ -514,7 +514,7 @@
         {
             "WidgetId": "core.sas_dial",
             "DisplayName": "环形 SAS 罗盘",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 0.0,
             "PositionY": -150.0,
             "Scale": 1.0,
@@ -548,7 +548,7 @@
         {
             "WidgetId": "core.stage_control",
             "DisplayName": "分级与飞行操纵台",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": -360.0,
             "PositionY": -120.0,
             "Scale": 1.0,
@@ -582,7 +582,7 @@
         {
             "WidgetId": "custom.staging_sequence",
             "DisplayName": "垂直分级时序序列仪",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": -360.0,
             "PositionY": 110.0,
             "Scale": 1.0,
@@ -616,7 +616,7 @@
         {
             "WidgetId": "core.time_warp",
             "DisplayName": "AVIONICS 时间加速与任务时钟",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": -560.0,
             "PositionY": 460.0,
             "Scale": 1.0,
@@ -650,7 +650,7 @@
         {
             "WidgetId": "custom.signal",
             "DisplayName": "AVIONICS 通信网络与天线探针",
-            "IsEnabled": false,
+            "IsEnabled": true,
             "PositionX": 560.0,
             "PositionY": 460.0,
             "Scale": 1.0,
