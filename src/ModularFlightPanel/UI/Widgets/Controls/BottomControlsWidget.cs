@@ -61,10 +61,6 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.Register(new WidgetActionButtonControl("rcs_btn", "RCS 开关按键", _rcsBtn.gameObject, _rcsBtn, _rcsText, _rcsImg, ButtonVisualRole.ActiveToggle, OnRCSToggle));
             this.Controls.Register(new WidgetActionButtonControl("sas_btn", "SAS 开关按键", _sasBtn.gameObject, _sasBtn, _sasText, _sasImg, ButtonVisualRole.ActiveToggle, OnSASToggle));
             this.Controls.Register(new WidgetActionButtonControl("frame_btn", "参考系切换按键", _frameBtn.gameObject, _frameBtn, _frameText, _frameImg, ButtonVisualRole.Normal, OnCycleSpeedMode));
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
         }
 
         private void BuildControlBar(Transform parent, float s, ThemeConfig theme)

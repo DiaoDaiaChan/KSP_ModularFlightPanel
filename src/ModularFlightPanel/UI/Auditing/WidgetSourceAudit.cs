@@ -654,6 +654,9 @@ namespace ModularFlightPanel.UI
         private static readonly Regex ApplyThemeRegex = new Regex(
             @"\bpublic\s+override\s+void\s+ApplyTheme\s*\(\s*(?:[A-Za-z_]\w*\s*\.\s*)*ThemeConfig\b",
             RegexOptions.Compiled);
+        private static readonly Regex AnyApplyThemeDeclRegex = new Regex(
+            @"\bvoid\s+ApplyTheme\s*\(",
+            RegexOptions.Compiled);
         private static readonly Regex UpdateTelemetryRegex = new Regex(
             @"\bpublic\s+override\s+void\s+OnUpdateTelemetry\s*\(\s*(?:[A-Za-z_]\w*\s*\.\s*)*IFlightTelemetry\b",
             RegexOptions.Compiled);
@@ -1202,10 +1205,12 @@ namespace ModularFlightPanel.UI
             }
 
             // ── SPEC-003 主题管道 ──
-            if (!ApplyThemeRegex.IsMatch(code))
+            // BaseFlightWidget 已提供 virtual 默认实现（自动将主题分发至 Controls 注册的所有微控件）。
+            // 若组件声明了自定义 ApplyTheme，则必须符合 public override void ApplyTheme(ThemeConfig) 签名以保证管道接入。
+            if (AnyApplyThemeDeclRegex.IsMatch(code) && !ApplyThemeRegex.IsMatch(code))
             {
                 Add(report, file, WidgetSpecRules.SemanticTheming, "ERROR", 0,
-                    "未实现 ApplyTheme(ThemeConfig) 接入 WidgetStyleManager 主题管道");
+                    "声明了 ApplyTheme 但签名不符合规范（应为 public override void ApplyTheme(ThemeConfig theme)）");
             }
 
             // ── SPEC-004 遥测契约 ──
@@ -1216,14 +1221,10 @@ namespace ModularFlightPanel.UI
             }
 
             // ── SPEC-005 安全生命周期 ──
-            // 旧实现只取**第一个** OnDestroy 声明判定：文件里先出现一个正确的 override，
-            // 后面另一个类里的 `private void OnDestroy()` 就永远查不到。现在全量遍历。
-            // 并且补上"必须调用 base.OnDestroy()"—— 原文案早就这么要求，但从来没有实现过检查。
-            bool anyDestroyDecl = false;
-            bool anyDestroyOverride = false;
+            // BaseFlightWidget 已提供 virtual 默认实现（自动解绑 I18n、RenderManager、DragHandler 并清理 Controls）。
+            // 当派生组件未显式声明 OnDestroy 时直接安全继承基类托管；若显式声明则必须 override 且调用 base.OnDestroy()。
             foreach (Match m in OnDestroyDeclRegex.Matches(code))
             {
-                anyDestroyDecl = true;
                 if (!HasOverrideModifier(code, m.Index))
                 {
                     Add(report, file, WidgetSpecRules.SafeLifecycle, "ERROR", LineOf(code, m.Index),
@@ -1232,19 +1233,12 @@ namespace ModularFlightPanel.UI
                     continue;
                 }
 
-                anyDestroyOverride = true;
                 string body = ExtractMemberBody(code, m.Index);
                 if (!BaseOnDestroyCallRegex.IsMatch(body))
                 {
                     Add(report, file, WidgetSpecRules.SafeLifecycle, "ERROR", LineOf(code, m.Index),
                         "override 了 OnDestroy 但方法体内未调用 base.OnDestroy()，基类解注册/回收链会被整段截断");
                 }
-            }
-
-            if (!anyDestroyOverride && !anyDestroyDecl)
-            {
-                Add(report, file, WidgetSpecRules.SafeLifecycle, "ERROR", 0,
-                    "未声明 protected override void OnDestroy()（组件必须显式重写并调用 base.OnDestroy()）");
             }
 
             // ── SPEC-006 零颜色字面量（基线表为空，任何新增即拦下）──

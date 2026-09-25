@@ -150,10 +150,6 @@ namespace ModularFlightPanel.UI
             this.Controls.Register(new WidgetHeaderControl(_headerTitleText, _statusBadgeText, "Header", "标准顶部标题栏与状态徽标"));
             this.Controls.Register(new WidgetReadoutControl(_primaryValueText, _unitText, TextStyleRole.PrimaryValue, "Primary Readout", "核心主读数与工程单位"));
             this.Controls.Register(new WidgetLinearBarControl(_meterFill, _meterTrack, MeterStyleRole.Primary, false, "Horizontal Meter", "底部水平计量槽"));
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
         }
 
         // ------------------------------------------------------------------------------------

@@ -17,8 +17,12 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        private WidgetReadoutControl _titleControl;
-        private WidgetReadoutControl _contentControl;
+        [WidgetControl("card_title", TextStyleRole.Label, "卡片标题")]
+        private Text _titleText;
+
+        [WidgetControl("card_content", TextStyleRole.PrimaryValue, "动态内容")]
+        private Text _contentValueText;
+
         private Image _cardBgImage;
         private Outline _cardOutline;
         private string _titleTemplate = "TELEMETRY";
@@ -34,39 +38,25 @@ namespace ModularFlightPanel.UI.Widgets
 
             _cardBgImage = gameObject.AddComponent<Image>();
             _cardBgImage.color = Color.clear;
-
             _cardOutline = gameObject.AddComponent<Outline>();
             _cardOutline.effectDistance = new Vector2(1.5f * s, 1.5f * s);
+            this.Controls.Wrap("card_bg", "卡片底板", gameObject, (t) => ApplyCard(_cardBgImage, _cardOutline, CardStyleRole.Normal, t));
 
             _titleTemplate = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName : "TELEMETRY";
 
-            // 标题文本
             int titleSize = Mathf.RoundToInt(10f * s);
-            Text titleText = UIFactory.CreateText(transform, "Card_Title", _titleTemplate, titleSize, TextAnchor.UpperLeft,
+            _titleText = UIFactory.CreateText(transform, "Card_Title", _titleTemplate, titleSize, TextAnchor.UpperLeft,
                 style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform trt = titleText.GetComponent<RectTransform>();
+            RectTransform trt = _titleText.GetComponent<RectTransform>();
             trt.sizeDelta = new Vector2(cardSize.x - 12f * s, 16f * s);
             trt.anchoredPosition = new Vector2(6f * s, (cardSize.y * 0.5f) - 10f * s);
 
-            // 内容文本
             int contentSize = Mathf.RoundToInt(13f * s);
-            Text contentValueText = UIFactory.CreateText(transform, "Card_Content", "---", contentSize, TextAnchor.LowerLeft,
+            _contentValueText = UIFactory.CreateText(transform, "Card_Content", "---", contentSize, TextAnchor.LowerLeft,
                 style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            RectTransform crt = contentValueText.GetComponent<RectTransform>();
+            RectTransform crt = _contentValueText.GetComponent<RectTransform>();
             crt.sizeDelta = new Vector2(cardSize.x - 12f * s, 30f * s);
             crt.anchoredPosition = new Vector2(6f * s, -(cardSize.y * 0.5f) + 16f * s);
-
-            // 注册子控件至标准化管理器并初始化
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_cardBgImage, _cardOutline, CardStyleRole.Normal, t)));
-            _titleControl = new WidgetReadoutControl("card_title", "卡片标题", titleText.gameObject, titleText, null, TextStyleRole.Label);
-            _contentControl = new WidgetReadoutControl("card_content", "动态内容", contentValueText.gameObject, contentValueText, null, TextStyleRole.PrimaryValue);
-            this.Controls.Register(_titleControl);
-            this.Controls.Register(_contentControl);
-
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -74,22 +64,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (telemetry == null || !telemetry.HasVessel) return;
 
             string evalTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-            _titleControl.SetValue(evalTitle);
+            SetTextIfChanged(_titleText, evalTitle);
 
             string tpl = Config?.CustomTemplate;
             string eval = !string.IsNullOrEmpty(tpl) ? TelemetryTokenEngine.Evaluate(tpl, telemetry) : "---";
-            _contentControl.SetValue(eval);
-        }
-
-        public override void ApplyTheme(ThemeConfig theme)
-        {
-            if (theme == null) return;
-            this.Controls.ApplyThemeToControls(theme);
-        }
-
-        protected override void OnDestroy()
-        {
-            base.OnDestroy();
+            SetTextIfChanged(_contentValueText, eval);
         }
     }
 }

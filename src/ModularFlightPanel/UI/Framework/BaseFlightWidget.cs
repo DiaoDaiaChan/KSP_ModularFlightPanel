@@ -110,6 +110,14 @@ namespace ModularFlightPanel.UI
 
             // 调用派生类专用初始化与样式应用
             OnInitialize(config, theme);
+
+            // 自动扫描与注入特性微控件
+            AutoRegisterAnnotatedControls();
+
+            // 全自动微控件治理：自动绑定配置与下发主题，派生组件彻底无需手写绑定与生效调用
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
 
             // 全自动化通用交互侦测与射线优化 (普适全量 33 个组件，彻底告别单组件硬编码与手动重写)
@@ -276,7 +284,47 @@ namespace ModularFlightPanel.UI
 
         protected abstract void OnInitialize(WidgetConfig config, ThemeConfig theme);
 
-        public abstract void ApplyTheme(ThemeConfig theme);
+        /// <summary>
+        /// 当玩家切换视觉主题时统一触发。
+        /// 默认实现已全自动将新主题下发给所有注册的微控件 (Controls.ApplyThemeToControls)。
+        /// 若组件仅由标准化微控件组成，派生类可完全无需 override 此方法！
+        /// </summary>
+        public virtual void ApplyTheme(ThemeConfig theme)
+        {
+            if (theme == null) return;
+            this.Controls.ApplyThemeToControls(theme);
+        }
+
+        private void AutoRegisterAnnotatedControls()
+        {
+            var fields = GetType().GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            for (int i = 0; i < fields.Length; i++)
+            {
+                var f = fields[i];
+                var attrs = f.GetCustomAttributes(typeof(WidgetControlAttribute), true);
+                if (attrs != null && attrs.Length > 0)
+                {
+                    var attr = (WidgetControlAttribute)attrs[0];
+                    object val = f.GetValue(this);
+                    if (val is Text text && text != null)
+                    {
+                        this.Controls.Register(new WidgetReadoutControl(attr.Id, attr.DisplayName, text.gameObject, text, null, attr.TextRole, attr.Token));
+                    }
+                    else if (val is Image img && img != null)
+                    {
+                        this.Controls.Register(new WidgetLinearBarControl(attr.Id, attr.DisplayName, img.gameObject, img, null, attr.MeterRole));
+                    }
+                    else if (val is Button btn && btn != null)
+                    {
+                        this.Controls.Register(new WidgetActionButtonControl(attr.Id, attr.DisplayName, btn.gameObject, btn, null, null, attr.ButtonRole));
+                    }
+                    else if (val is GameObject go && go != null)
+                    {
+                        this.Controls.Register(WidgetControlManager.WrapElement(this, attr.Id, attr.DisplayName, go));
+                    }
+                }
+            }
+        }
 
         public abstract void OnUpdateTelemetry(IFlightTelemetry telemetry);
 
@@ -538,5 +586,49 @@ namespace ModularFlightPanel.UI
         }
 
         #endregion
+    }
+
+    /// <summary>
+    /// 标准微控件声明特性 (Widget Control Declarative Annotation)
+    /// 在组件的 UGUI 字段/属性（Text, Image, Button, GameObject）上标记此特性后，
+    /// 基类 BaseInitialize 会在 OnInitialize 执行完毕后自动通过反射完成微控件注册，
+    /// 派生组件彻底无需手写一行 Register、BindConfig 或 ApplyTheme！
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false)]
+    public class WidgetControlAttribute : Attribute
+    {
+        public string Id { get; }
+        public string DisplayName { get; }
+        public TextStyleRole TextRole { get; set; } = TextStyleRole.PrimaryValue;
+        public MeterStyleRole MeterRole { get; set; } = MeterStyleRole.Primary;
+        public ButtonVisualRole ButtonRole { get; set; } = ButtonVisualRole.Normal;
+        public string Token { get; set; }
+
+        public WidgetControlAttribute(string id, string displayName = null)
+        {
+            Id = id;
+            DisplayName = displayName ?? id;
+        }
+
+        public WidgetControlAttribute(string id, TextStyleRole textRole, string displayName = null)
+        {
+            Id = id;
+            TextRole = textRole;
+            DisplayName = displayName ?? id;
+        }
+
+        public WidgetControlAttribute(string id, MeterStyleRole meterRole, string displayName = null)
+        {
+            Id = id;
+            MeterRole = meterRole;
+            DisplayName = displayName ?? id;
+        }
+
+        public WidgetControlAttribute(string id, ButtonVisualRole buttonRole, string displayName = null)
+        {
+            Id = id;
+            ButtonRole = buttonRole;
+            DisplayName = displayName ?? id;
+        }
     }
 }
