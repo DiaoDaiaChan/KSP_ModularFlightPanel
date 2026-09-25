@@ -55,23 +55,84 @@ namespace ModularFlightPanel.Config
         }
 
         /// <summary>
-        /// 从单行社区分享码解码并还原布局数据
+        /// <summary>
+        /// 从多种来源导入并还原布局数据：支持单行社区分享码 (MFP:v1:)、原始 JSON 文本、或本地预设文件路径/文件名
         /// </summary>
-        public static bool TryImportShareCode(string shareCode, out WidgetLayoutData layout, out string error)
+        public static bool TryImportShareCode(string input, out WidgetLayoutData layout, out string error)
         {
             layout = null;
             error = string.Empty;
 
-            if (string.IsNullOrEmpty(shareCode))
+            if (string.IsNullOrEmpty(input))
             {
-                error = "分享码为空";
+                error = "输入内容为空";
                 return false;
             }
 
-            string clean = shareCode.Trim();
+            string clean = input.Trim();
+
+            // 1. 本地 JSON 配置文件路径或文件名检测 (例如 "diao.json"、"layout.json" 或绝对路径)
+            if (clean.EndsWith(".json", StringComparison.OrdinalIgnoreCase) || clean.IndexOfAny(new char[] { '/', '\\' }) >= 0)
+            {
+                string targetPath = clean;
+                if (!File.Exists(targetPath))
+                {
+                    // 尝试在 Presets 目录下查找
+                    string presetCandidate = Path.Combine(PresetsDir, clean);
+                    if (File.Exists(presetCandidate)) targetPath = presetCandidate;
+                    else
+                    {
+                        // 尝试在 PluginData 根目录下查找
+                        string pluginDataCandidate = Path.Combine(ModularFlightPanel.Core.AppPathHelper.RootPath, "GameData/ModularFlightPanel/PluginData", clean);
+                        if (File.Exists(pluginDataCandidate)) targetPath = pluginDataCandidate;
+                    }
+                }
+
+                if (File.Exists(targetPath))
+                {
+                    try
+                    {
+                        string json = File.ReadAllText(targetPath);
+                        layout = JsonUtility.FromJson<WidgetLayoutData>(json);
+                        if (layout != null && layout.Widgets != null && layout.Widgets.Count > 0)
+                        {
+                            return true;
+                        }
+                        error = $"文件「{Path.GetFileName(targetPath)}」存在但未包含有效组件配置";
+                        return false;
+                    }
+                    catch (Exception ex)
+                    {
+                        error = $"读取配置文件失败: {ex.Message}";
+                        return false;
+                    }
+                }
+            }
+
+            // 2. 原始 JSON 字符串格式检测 (例如从文本直接粘贴 { "GlobalScale": ..., "Widgets": [...] })
+            if (clean.StartsWith("{") && clean.EndsWith("}"))
+            {
+                try
+                {
+                    layout = JsonUtility.FromJson<WidgetLayoutData>(clean);
+                    if (layout != null && layout.Widgets != null && layout.Widgets.Count > 0)
+                    {
+                        return true;
+                    }
+                    error = "JSON 解析成功，但未发现有效小组件配置 (Widgets 列表为空)";
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    error = $"JSON 解析失败: {ex.Message}";
+                    return false;
+                }
+            }
+
+            // 3. 原生 MFP 单行社区分享码 (Base64 + GZip)
             if (!clean.StartsWith(CodePrefix))
             {
-                error = "无效的分享码格式 (必须以 MFP:v1: 开头)";
+                error = "无效的配置格式 (支持 MFP:v1: 分享码、原始 JSON 文本或本地 .json 文件名)";
                 return false;
             }
 
@@ -177,7 +238,7 @@ namespace ModularFlightPanel.Config
         }
 
         /// <summary>
-        /// 加载指定预设并返回完整布局
+        /// 加载指定预设并返回完整布局 (严格验证小组件数量，杜绝加载空白损坏文件)
         /// </summary>
         public static WidgetLayoutData LoadPreset(PresetInfo preset)
         {
@@ -193,7 +254,12 @@ namespace ModularFlightPanel.Config
                 try
                 {
                     string json = File.ReadAllText(preset.FilePath);
-                    return JsonUtility.FromJson<WidgetLayoutData>(json);
+                    var data = JsonUtility.FromJson<WidgetLayoutData>(json);
+                    if (data != null && data.Widgets != null && data.Widgets.Count > 0)
+                    {
+                        return data;
+                    }
+                    MFPLogger.Warn(MFPLogger.CatPresets, $"Preset '{preset.Name}' exists but contains 0 widgets. Load rejected.");
                 }
                 catch (Exception ex)
                 {
@@ -205,7 +271,7 @@ namespace ModularFlightPanel.Config
         }
 
         /// <summary>
-        /// 将当前布局另存为独立预设文件
+        /// 将当前布局另存为独立预设文件 (严格拦截空组件配置保存)
         /// </summary>
         public static bool SavePresetToFile(string presetName, WidgetLayoutData layout, out string error)
         {
@@ -216,10 +282,16 @@ namespace ModularFlightPanel.Config
                 return false;
             }
 
+            if (layout == null || layout.Widgets == null || layout.Widgets.Count == 0)
+            {
+                error = "当前小组件布局为空，已自动拦截保存以保护现有模板";
+                return false;
+            }
+
             try
             {
                 if (!Directory.Exists(PresetsDir)) Directory.CreateDirectory(PresetsDir);
-                string cleanName = string.Join("_", presetName.Split(Path.GetInvalidFileNameChars()));
+                string cleanName = string.Join("_", presetName.Split(Path.GetInvalidFileNameChars())).Trim();
                 string filePath = Path.Combine(PresetsDir, $"{cleanName}.json");
 
                 string json = JsonUtility.ToJson(layout, true);

@@ -373,6 +373,18 @@ namespace ModularFlightPanel.UI.Widgets
         private NavballFramePalette _targetPalette;
         private bool _paletteInitialized = false;
         private float _lastNumeralRollAngle;
+        private Quaternion _previousAttitudeRotation = Quaternion.identity;
+        private Quaternion _filteredTrendRotation = Quaternion.identity;
+        private bool _hasPreviousAttitudeRotation;
+        private float _attitudeTrendStrength;
+        private float _lastFramePattern = -1f;
+        private readonly Vector4[] _markerAvoidanceValues = new Vector4[4];
+        private static readonly string[] MarkerAvoidanceKeys = { "maneuver", "prograde", "target", "normal" };
+        private static readonly int[] MarkerAvoidancePropertyIds =
+        {
+            Shader.PropertyToID("_MarkerAvoid0"), Shader.PropertyToID("_MarkerAvoid1"),
+            Shader.PropertyToID("_MarkerAvoid2"), Shader.PropertyToID("_MarkerAvoid3")
+        };
 
         private NavballFramePalette GetPaletteForCategory(string category, ThemeConfig theme)
         {
@@ -435,6 +447,60 @@ namespace ModularFlightPanel.UI.Widgets
             return WidgetStyleManager.LerpFramePalette(from, to, t);
         }
 
+        private static float GetFramePatternCode(string category)
+        {
+            switch (category?.ToUpperInvariant())
+            {
+                case "INERTIAL": return 1f;
+                case "ORBIT": return 1f;
+                case "BARYCENTRIC": return 2f;
+                case "TARGET": return 3f;
+                case "BODY_DIRECTION": return 4f;
+                case "BODY_SURFACE": return 5f;
+                default: return 0f;
+            }
+        }
+
+        private void UpdateAttitudeTrend(Quaternion currentRotation)
+        {
+            float dt = Time.unscaledDeltaTime;
+            float targetStrength = 0f;
+            Quaternion targetTrendRotation = Quaternion.identity;
+
+            if (_hasPreviousAttitudeRotation && dt > 0.001f && dt < 0.25f)
+            {
+                Quaternion delta = currentRotation * Quaternion.Inverse(_previousAttitudeRotation);
+                if (delta.w < 0f)
+                    delta = new Quaternion(-delta.x, -delta.y, -delta.z, -delta.w);
+
+                Vector3 halfAxis = new Vector3(delta.x, delta.y, delta.z);
+                float sinHalfAngle = halfAxis.magnitude;
+                if (sinHalfAngle > 0.00001f)
+                {
+                    float angleDegrees = 2f * Mathf.Atan2(sinHalfAngle, Mathf.Clamp(delta.w, 0f, 1f)) * Mathf.Rad2Deg;
+                    float angularRate = angleDegrees / dt;
+                    Vector3 axis = halfAxis / sinHalfAngle;
+                    float predictionAngle = Mathf.Min(angularRate * 0.35f, 18f);
+                    Quaternion parentPrediction = Quaternion.AngleAxis(predictionAngle, axis);
+                    targetTrendRotation = Quaternion.Inverse(currentRotation) * parentPrediction * currentRotation;
+                    targetStrength = Mathf.InverseLerp(0.6f, 14f, angularRate);
+                }
+            }
+
+            _previousAttitudeRotation = currentRotation;
+            _hasPreviousAttitudeRotation = true;
+            float blend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 9f);
+            _filteredTrendRotation = Quaternion.Slerp(_filteredTrendRotation, targetTrendRotation, blend);
+            _attitudeTrendStrength = Mathf.MoveTowards(_attitudeTrendStrength, targetStrength, (!Application.isPlaying ? 1f : dt * 5f));
+
+            if (_sphereMaterial != null && _sphereMaterial.HasProperty("_TrendRotation"))
+            {
+                _sphereMaterial.SetVector("_TrendRotation", new Vector4(
+                    _filteredTrendRotation.x, _filteredTrendRotation.y, _filteredTrendRotation.z, _filteredTrendRotation.w));
+                _sphereMaterial.SetFloat("_TrendStrength", _attitudeTrendStrength);
+            }
+        }
+
         private void SyncAttitudeAndVisuals()
         {
             var hook = NavBallHookService.Provider;
@@ -460,6 +526,8 @@ namespace ModularFlightPanel.UI.Widgets
                         ? new Quaternion(-rawRot.x, -rawRot.y, rawRot.z, rawRot.w)
                         : rawRot;
                 }
+
+                UpdateAttitudeTrend(_sphereObject.transform.localRotation);
 
                 // 从实际球面朝向计算屏幕滚转，避免遥测 Roll 与 Principia/Hook 的最终姿态不同步。
                 if (_sphereMaterial != null && _sphereMaterial.HasProperty("_NumeralRollAngle"))
@@ -494,6 +562,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_sphereMaterial != null)
             {
+                float framePattern = GetFramePatternCode(category);
+                if (Mathf.Abs(framePattern - _lastFramePattern) > 0.01f && _sphereMaterial.HasProperty("_FramePattern"))
+                {
+                    _sphereMaterial.SetFloat("_FramePattern", framePattern);
+                    _lastFramePattern = framePattern;
+                }
+
                 float dt = Time.deltaTime;
                 float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
                 _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
@@ -601,6 +676,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 在 Principia/官方 LateUpdate 彻底执行完毕后，执行最终高保真姿态与标线同步
             SyncAttitudeAndVisuals();
             SyncMarkers();
+            UpdateReticleDynamics();
             UpdateProceduralDetailScale();
 
             // 强制锁定离屏相机 FPS 跟随游戏每一帧满频同步渲染，彻底杜绝帧率不一致导致的标线与球体相对漂移
@@ -637,7 +713,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (hasDir && isVisible && dir.z > -0.15f)
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
-                    img.rectTransform.localScale = Vector3.one;
+                    img.rectTransform.localScale = Vector3.one * GetMarkerPulseScale(key);
 
                     // 正交平面投影: (x, y) * 半径，每一帧直接贴合目标坐标，0 滞后、0 阈值量化步进
                     img.rectTransform.anchoredPosition = new Vector2(dir.x, dir.y) * _visualRadius;
@@ -660,7 +736,7 @@ namespace ModularFlightPanel.UI.Widgets
                         if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
                         bearing.Normalize();
                         img.rectTransform.anchoredPosition = bearing * (_visualRadius * 0.82f);
-                        img.rectTransform.localScale = Vector3.one * 0.62f;
+                        img.rectTransform.localScale = Vector3.one * (0.62f * GetMarkerPulseScale(key));
                         Color ghost = WidgetStyleManager.NeutralOpaque;
                         ghost.a = Mathf.Lerp(0.40f, 0.18f, Mathf.Clamp01(-dir.z));
                         if (img.color != ghost) img.color = ghost;
@@ -675,6 +751,8 @@ namespace ModularFlightPanel.UI.Widgets
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
                 }
             }
+
+            UpdateMarkerAvoidanceMasks();
 
             if (Application.isPlaying && Time.unscaledTime - _lastMarkerDiagLogTime > 5.0f)
             {
@@ -692,6 +770,60 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 if (count == 0) sb.Append("(none)");
                 Debug.Log(sb.ToString());
+            }
+        }
+
+        private float GetMarkerPulseScale(string key)
+        {
+            if (!Application.isPlaying) return 1f;
+            float amplitude;
+            float frequency;
+            float phase;
+            switch (key)
+            {
+                case "maneuver": amplitude = 0.10f; frequency = 1.8f; phase = 0f; break;
+                case "target": amplitude = 0.065f; frequency = 1.1f; phase = 0.8f; break;
+                case "antitarget": amplitude = 0.065f; frequency = 1.1f; phase = 2.1f; break;
+                case "prograde": amplitude = 0.035f; frequency = 0.8f; phase = 1.4f; break;
+                case "retrograde": amplitude = 0.035f; frequency = 0.8f; phase = 2.7f; break;
+                default: return 1f;
+            }
+            return 1f + amplitude * Mathf.Sin((Time.unscaledTime * frequency + phase) * Mathf.PI * 2f);
+        }
+
+        private void UpdateReticleDynamics()
+        {
+            if (_reticleImage == null) return;
+            float movement = _attitudeTrendStrength;
+            float phase = Application.isPlaying
+                ? Time.unscaledTime * (1.6f + movement * 3.8f) * Mathf.PI * 2f
+                : 0f;
+            float wave = Application.isPlaying ? Mathf.Sin(phase) : 0f;
+            float scale = 1f + wave * Mathf.Lerp(0.01f, 0.04f, movement);
+            if (Mathf.Abs(_reticleImage.rectTransform.localScale.x - scale) > 0.002f)
+                _reticleImage.rectTransform.localScale = Vector3.one * scale;
+
+            Color reticleColor = _reticleImage.color;
+            reticleColor.a = Mathf.Lerp(0.52f, 0.42f, movement) + wave * Mathf.Lerp(0.02f, 0.055f, movement);
+            if (_reticleImage.color != reticleColor) _reticleImage.color = reticleColor;
+        }
+
+        private void UpdateMarkerAvoidanceMasks()
+        {
+            if (_sphereMaterial == null || !_sphereMaterial.HasProperty(MarkerAvoidancePropertyIds[0])) return;
+            float halfDiameter = Mathf.Max(1f, _ballDiameter * 0.5f);
+            for (int i = 0; i < MarkerAvoidanceKeys.Length; i++)
+            {
+                Vector4 avoidance = Vector4.zero;
+                if (_markerImages.TryGetValue(MarkerAvoidanceKeys[i], out Image marker) && marker != null && marker.gameObject.activeSelf)
+                {
+                    Vector2 point = marker.rectTransform.anchoredPosition / halfDiameter;
+                    float markerScale = Mathf.Abs(marker.rectTransform.localScale.x);
+                    float radius = Mathf.Clamp(0.23f * markerScale, 0.08f, 0.28f);
+                    avoidance = new Vector4(point.x, point.y, radius, Mathf.Clamp01(marker.color.a));
+                }
+                _markerAvoidanceValues[i] = avoidance;
+                _sphereMaterial.SetVector(MarkerAvoidancePropertyIds[i], avoidance);
             }
         }
 
@@ -720,6 +852,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             _paletteInitialized = false;
             _lastFrameCategory = null;
+            _lastFramePattern = -1f;
 
             if (_sphereMaterial != null)
             {

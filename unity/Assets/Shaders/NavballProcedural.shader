@@ -42,6 +42,13 @@ Shader "ModularFlightPanel/NavballProcedural"
         _NumeralUprightMode ("Numeral Upright Mode", Range(0.0, 1.0)) = 1.0
         _NumeralTangentComp ("Tangent Foreshortening Comp", Range(0.0, 1.0)) = 1.0
         _DetailScale ("Screen-Size Detail", Range(0.0, 1.0)) = 1.0
+        _FramePattern ("Reference Frame Pattern", Range(0.0, 5.0)) = 0.0
+        _TrendRotation ("Predicted Attitude Delta", Vector) = (0, 0, 0, 1)
+        _TrendStrength ("Attitude Trend Strength", Range(0.0, 1.0)) = 0.0
+        _MarkerAvoid0 ("Marker Avoidance 0", Vector) = (0, 0, 0, 0)
+        _MarkerAvoid1 ("Marker Avoidance 1", Vector) = (0, 0, 0, 0)
+        _MarkerAvoid2 ("Marker Avoidance 2", Vector) = (0, 0, 0, 0)
+        _MarkerAvoid3 ("Marker Avoidance 3", Vector) = (0, 0, 0, 0)
 
         // 合成视景近地防撞警示 (GPWS Ground Hazard Warning)
         _GroundHazardAlert ("Ground Hazard Alert", Range(0.0, 1.0)) = 0.0
@@ -147,8 +154,28 @@ Shader "ModularFlightPanel/NavballProcedural"
             float _NumeralUprightMode;
             float _NumeralTangentComp;
             float _DetailScale;
+            float _FramePattern;
+            float4 _TrendRotation;
+            float _TrendStrength;
+            float4 _MarkerAvoid0;
+            float4 _MarkerAvoid1;
+            float4 _MarkerAvoid2;
+            float4 _MarkerAvoid3;
             float _GroundHazardAlert;
             float _VernierScaleDetail;
+
+            float3 RotateByQuaternion(float3 v, float4 q)
+            {
+                return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+            }
+
+            float MarkerClearance(float2 screenPoint, float4 marker)
+            {
+                if (marker.w < 0.01) return 1.0;
+                float markerDistance = length(screenPoint - marker.xy);
+                float clearAtRadius = smoothstep(marker.z * 0.62, marker.z * 1.08, markerDistance);
+                return lerp(1.0, clearAtRadius, saturate(marker.w));
+            }
 
             v2f vert(appdata v)
             {
@@ -201,6 +228,39 @@ Shader "ModularFlightPanel/NavballProcedural"
                     }
                 }
 
+                // 参考系纹理签名：让模式切换有可见的几何差异，而不只依赖颜色。
+                float frameDetail = 0.0;
+                if (_FramePattern > 0.5 && _FramePattern < 1.5 && p.y > 0.0)
+                {
+                    float starLat = abs(frac((pitchDeg + 82.5) / 15.0 + 0.5) - 0.5);
+                    float starLon = abs(frac((headDeg + 15.0) / 30.0 + 0.5) - 0.5);
+                    frameDetail = (starLat < 0.035 && starLon < 0.035) ? 0.34 : 0.0;
+                }
+                else if (_FramePattern > 1.5 && _FramePattern < 2.5)
+                {
+                    float diagonalA = abs(frac((headDeg + pitchDeg * 0.72) / 24.0 + 0.5) - 0.5);
+                    float diagonalB = abs(frac((headDeg - pitchDeg * 0.72) / 24.0 + 0.5) - 0.5);
+                    frameDetail = max(1.0 - smoothstep(0.015, 0.055, diagonalA), 1.0 - smoothstep(0.015, 0.055, diagonalB)) * 0.12;
+                }
+                else if (_FramePattern > 2.5 && _FramePattern < 3.5)
+                {
+                    float targetRange = acos(clamp(-p.z, -1.0, 1.0)) * 57.2957795;
+                    float ringOffset = abs(fmod(targetRange + 7.5, 15.0) - 7.5);
+                    frameDetail = (1.0 - smoothstep(0.20, 0.85, ringOffset)) * 0.15;
+                }
+                else if (_FramePattern > 3.5 && _FramePattern < 4.5)
+                {
+                    float directionMeridian = abs(frac(headDeg / 45.0 + 0.5) - 0.5);
+                    frameDetail = (1.0 - smoothstep(0.01, 0.04, directionMeridian)) * 0.10;
+                }
+                else if (_FramePattern > 4.5)
+                {
+                    float bodyContour = abs(frac((absPitch + 7.5) / 15.0 + 0.5) - 0.5);
+                    frameDetail = (1.0 - smoothstep(0.01, 0.045, bodyContour)) * 0.10;
+                }
+                frameDetail *= smoothstep(0.05, 0.52, _DetailScale);
+                col.rgb = lerp(col.rgb, _HeadingLineColor.rgb, frameDetail * _HeadingLineColor.a);
+
                 // 收敛高饱和度，让多参考系颜色更接近 Principia 的哑光质感。
                 float baseLuma = dot(col.rgb, float3(0.299, 0.587, 0.114));
                 col.rgb = lerp(float3(baseLuma, baseLuma, baseLuma), col.rgb, 0.84);
@@ -209,6 +269,17 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float eqAA = fwidth(p.y) * 1.5;
                 float isEquator = 1.0 - smoothstep(_EquatorWidth, _EquatorWidth + eqAA, absY);
                 col = lerp(col, _EquatorColor, isEquator);
+
+                // 低亮预测地平线：按当前姿态角速度外推 0.35 秒，虚线表示趋势而非当前姿态。
+                if (_TrendStrength > 0.01)
+                {
+                    float3 futureP = normalize(RotateByQuaternion(p, float4(-_TrendRotation.xyz, _TrendRotation.w)));
+                    float trendAA = max(fwidth(futureP.y) * 1.5, 0.0035);
+                    float futureHorizon = 1.0 - smoothstep(0.002, 0.002 + trendAA, abs(futureP.y));
+                    float trendDash = step(0.32, frac(headDeg / 18.0));
+                    float trendOpacity = futureHorizon * trendDash * _TrendStrength * _HeadingLineColor.a * 0.42;
+                    col.rgb = lerp(col.rgb, _HeadingLineColor.rgb, trendOpacity);
+                }
 
                 // 极点渐隐防聚集保护 (Polar Ring-Bunching Protection):
                 // 俯仰角超过 70° 时平滑淡出纬度线，彻底杜绝极点同心靶蜘蛛网
@@ -231,6 +302,10 @@ Shader "ModularFlightPanel/NavballProcedural"
 
                 // 动态字形滚转正向对齐与切向反畸变展开 (Dynamic Upright Roll Rotation & Tangent Expansion)
                 float NdotV = saturate(dot(normal, viewDir));
+                float3 markerViewPosition = mul(UNITY_MATRIX_V, float4(i.worldPos, 1.0)).xyz;
+                float2 screenPoint = markerViewPosition.xy;
+                float markerClearance = min(MarkerClearance(screenPoint, _MarkerAvoid0), MarkerClearance(screenPoint, _MarkerAvoid1));
+                markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
                 // 限制球缘切向补偿，避免字形被过度拉宽后碰撞、截断。
                 float tangentAspect = lerp(1.0, clamp(1.0 / max(NdotV, 0.58), 1.0, 1.28), _NumeralTangentComp);
                 float numRoll = -_NumeralRollAngle * _NumeralUprightMode;
@@ -248,7 +323,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pitchGlyphDistance = min(
                     DigitDistance(rotPitchOffset + float2(2.0, 0.0), pitchTens),
                     DigitDistance(rotPitchOffset - float2(2.0, 0.0), pitchOnes));
-                float pitchGlyphEnabled = step(14.0, pitchLabelLevel) * (1.0 - step(76.0, pitchLabelLevel)) * polarLadderFade * smoothstep(0.12, 0.42, NdotV) * smoothstep(0.08, 0.34, _DetailScale);
+                float pitchGlyphEnabled = step(14.0, pitchLabelLevel) * (1.0 - step(76.0, pitchLabelLevel)) * polarLadderFade * smoothstep(0.12, 0.42, NdotV) * smoothstep(0.08, 0.34, _DetailScale) * markerClearance;
                 // 负俯仰数字前加短横，和地面侧虚线梯级形成明确的方向提示。
                 float pitchSignDistance = SegmentDistance(rotPitchOffset, float2(-4.45, 0.0), float2(0.58, 0.10));
                 float pitchSignEnabled = pitchGlyphEnabled * step(0.1, pitchLabelLevel) * (pitchDeg < 0.0 ? 1.0 : 0.0);
@@ -351,7 +426,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float headingGlyphAA = clamp(max(fwidth(headingOffset), fwidth(pitchDeg)), 0.08, 0.32);
                 float headingTextOutline = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance - 0.45);
                 float headingTextFill = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance);
-                float headingTextEnabled = (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) * smoothstep(0.12, 0.42, NdotV);
+                float headingTextEnabled = (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) * smoothstep(0.12, 0.42, NdotV) * markerClearance;
 
                 float textOutline = max(pitchTextOutline, headingTextOutline * headingTextEnabled);
                 float textFill = max(pitchTextFill, headingTextFill * headingTextEnabled);

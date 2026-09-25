@@ -18,10 +18,10 @@ namespace ModularFlightPanel.Config
         // 航电套件元数据 (Kit Metadata)
         public string WidgetType = "custom"; // "core", "custom", "tape", "ecam_dial"
         public string NumericToken = "{SPD}";
-        public double MinValue = 0.0;
-        public double MaxValue = 100.0;
-        public double CautionThreshold = 80.0;
-        public double WarningThreshold = 95.0;
+        public float MinValue = 0.0f;
+        public float MaxValue = 100.0f;
+        public float CautionThreshold = 80.0f;
+        public float WarningThreshold = 95.0f;
         public bool IsSoftLimit = false; // 旧配置兼容字段：true 等同于 LimitMode="soft"
         public string LimitMode = "hard"; // "hard"=硬上限, "soft"=软上限爆表, "none"=无上限读数
         public string UnitLabel = "";
@@ -36,7 +36,7 @@ namespace ModularFlightPanel.Config
 
         // ===== 视图策略 (原硬编码常量的配置化出口，可在 layout.json / 预设 JSON 中逐组件覆盖) =====
         /// <summary>脏标记阈值：读数变化量小于该值时不触发任何 UI 重绘 (避免每帧 UGUI 顶点全量重建)</summary>
-        public double ValueDeltaThreshold = 0.05;
+        public float ValueDeltaThreshold = 0.05f;
         /// <summary>状态徽标文案 (正常 / 注意 / 告警)，可按语言或机型定制</summary>
         public string BadgeNormal = "NORM";
         public string BadgeCaution = "CAUT";

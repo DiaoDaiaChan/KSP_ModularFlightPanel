@@ -628,6 +628,12 @@ namespace ModularFlightPanel.Core
                     return principiaFrame;
                 return "SURFACE";
             });
+
+            RegisterNumericToken("SEPARATING", (t, sub) => t.IsStageSeparating ? 1.0 : 0.0, "STAGESEP");
+            RegisterStringToken("SEPARATING", (t, sub, fmt) => t.IsStageSeparating ? "SEPARATING" : "NOMINAL", "STAGESEP");
+
+            RegisterNumericToken("IGNITING", (t, sub) => t.IsEngineIgniting ? 1.0 : 0.0, "ENGIGNITING");
+            RegisterStringToken("IGNITING", (t, sub, fmt) => t.IsEngineIgniting ? "IGNITING" : "NOMINAL", "ENGIGNITING");
         }
 
         #endregion

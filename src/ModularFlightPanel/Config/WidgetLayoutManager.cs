@@ -52,11 +52,31 @@ namespace ModularFlightPanel.Config
                         MFPLogger.Info(MFPLogger.CatUI, $"Successfully loaded layout with {CurrentLayout.Widgets.Count} widgets.");
                         return;
                     }
+                    MFPLogger.Warn(MFPLogger.CatUI, "layout.json existed but contained 0 widgets. Attempting recovery from backup...");
                 }
                 catch (Exception ex)
                 {
                     MFPLogger.Exception(MFPLogger.CatUI, ex, "Error reading layout config");
                 }
+            }
+
+            // 自动从备份副本中抢救布局
+            if (File.Exists(BackupPath))
+            {
+                try
+                {
+                    string backupJson = File.ReadAllText(BackupPath);
+                    var backup = JsonUtility.FromJson<WidgetLayoutData>(backupJson);
+                    if (backup != null && backup.Widgets != null && backup.Widgets.Count > 0)
+                    {
+                        CurrentLayout = backup;
+                        MigrateToUnifiedPfdLayout();
+                        SaveLayout();
+                        MFPLogger.Warn(MFPLogger.CatUI, $"Successfully recovered layout ({CurrentLayout.Widgets.Count} widgets) from backup!");
+                        return;
+                    }
+                }
+                catch { }
             }
 
             // 初始化默认布局 (含预置核心组件及通配符示例组件)
@@ -122,15 +142,26 @@ namespace ModularFlightPanel.Config
         {
             try
             {
+                // [防数据丢失终极红线] 严禁在组件列表为空时覆盖任何磁盘布局文件！
+                if (CurrentLayout == null || CurrentLayout.Widgets == null || CurrentLayout.Widgets.Count == 0)
+                {
+                    MFPLogger.Warn(MFPLogger.CatUI, "CRITICAL: Attempted to save layout with 0 widgets! Aborting save to protect user configuration from data loss.");
+                    return;
+                }
+
                 string dir = Path.GetDirectoryName(ConfigPath);
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-                // 1. 若现有 layout.json 有效，自动克隆一份为 layout.backup.json 作为防丢失保护副本
+                // 1. 若现有 layout.json 有效且非空，自动克隆一份为 layout.backup.json 作为防丢失保护副本
                 if (File.Exists(ConfigPath))
                 {
                     try
                     {
-                        File.Copy(ConfigPath, BackupPath, true);
+                        FileInfo fi = new FileInfo(ConfigPath);
+                        if (fi.Length > 200) // 确保源文件是实质性配置文件 (避免将空文件备份)
+                        {
+                            File.Copy(ConfigPath, BackupPath, true);
+                        }
                     }
                     catch { }
                 }
@@ -149,7 +180,7 @@ namespace ModularFlightPanel.Config
                     SaveVesselLayout(CurrentVesselName);
                 }
 
-                MFPLogger.Info(MFPLogger.CatUI, "Saved widget layout to layout.json (Atomic + Backup)");
+                MFPLogger.Info(MFPLogger.CatUI, $"Saved widget layout ({CurrentLayout.Widgets.Count} widgets) to layout.json (Atomic + Backup)");
             }
             catch (Exception ex)
             {
@@ -159,6 +190,12 @@ namespace ModularFlightPanel.Config
 
         public bool CreateManualBackup()
         {
+            if (CurrentLayout == null || CurrentLayout.Widgets == null || CurrentLayout.Widgets.Count == 0)
+            {
+                MFPLogger.Warn(MFPLogger.CatUI, "Cannot create backup: Current layout has 0 widgets.");
+                return false;
+            }
+
             try
             {
                 string dir = Path.GetDirectoryName(ConfigPath);
@@ -237,6 +274,12 @@ namespace ModularFlightPanel.Config
         public bool SaveVesselLayout(string vesselName)
         {
             if (string.IsNullOrEmpty(vesselName)) return false;
+            if (CurrentLayout == null || CurrentLayout.Widgets == null || CurrentLayout.Widgets.Count == 0)
+            {
+                MFPLogger.Warn(MFPLogger.CatUI, $"CRITICAL: Attempted to save vessel layout for '{vesselName}' with 0 widgets! Aborting save.");
+                return false;
+            }
+
             try
             {
                 string path = GetVesselConfigPath(vesselName);
@@ -507,10 +550,10 @@ namespace ModularFlightPanel.Config
             {
                 WidgetType = "ecam_dial",
                 NumericToken = token,
-                MinValue = min,
-                MaxValue = max,
-                CautionThreshold = caution,
-                WarningThreshold = warning,
+                MinValue = (float)min,
+                MaxValue = (float)max,
+                CautionThreshold = (float)caution,
+                WarningThreshold = (float)warning,
                 IsSoftLimit = isSoftLimit,
                 LimitMode = isSoftLimit ? "soft" : "hard",
                 UnitLabel = unit,

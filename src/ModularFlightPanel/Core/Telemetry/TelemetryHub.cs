@@ -1632,7 +1632,8 @@ namespace ModularFlightPanel.Core
                 CrewCount = v.GetCrewCount();
                 CrewCapacity = v.GetCrewCapacity();
                 CabinPressure = v.staticPressurekPa > 0.01 ? v.staticPressurekPa : 101.3;
-                CabinTemp = v.externalTemperature;
+                double rawTempK = (v.rootPart != null && v.rootPart.temperature > 0.1) ? v.rootPart.temperature : v.externalTemperature;
+                CabinTemp = rawTempK > 100.0 ? (rawTempK - 273.15) : rawTempK;
             }
             catch (Exception) { }
         }

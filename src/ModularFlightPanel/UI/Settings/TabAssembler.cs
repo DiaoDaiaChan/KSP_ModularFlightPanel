@@ -394,26 +394,26 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.BeginHorizontal();
             GUILayout.Label("量程下限 (Min):", GUILayout.Width(105f));
             double newMin = MFPGuiSkin.DrawBufferedDoubleField($"min_{w.WidgetId}", w.MinValue, 75f);
-            if (Math.Abs(newMin - w.MinValue) > 0.0001) { w.MinValue = newMin; MarkDirty(); }
+            if (Math.Abs(newMin - w.MinValue) > 0.0001) { w.MinValue = (float)newMin; MarkDirty(); }
 
             GUILayout.Space(16f);
 
             GUILayout.Label("量程上限 (Max):", GUILayout.Width(105f));
             double newMax = MFPGuiSkin.DrawBufferedDoubleField($"max_{w.WidgetId}", w.MaxValue, 75f);
-            if (Math.Abs(newMax - w.MaxValue) > 0.0001) { w.MaxValue = newMax; MarkDirty(); }
+            if (Math.Abs(newMax - w.MaxValue) > 0.0001) { w.MaxValue = (float)newMax; MarkDirty(); }
             GUILayout.EndHorizontal();
 
             // Caution & Warning
             GUILayout.BeginHorizontal();
             GUILayout.Label("<color=#FFB800>黄色警示 (Caution):</color>", GUILayout.Width(125f));
             double newCaution = MFPGuiSkin.DrawBufferedDoubleField($"caut_{w.WidgetId}", w.CautionThreshold, 75f);
-            if (Math.Abs(newCaution - w.CautionThreshold) > 0.0001) { w.CautionThreshold = newCaution; MarkDirty(); }
+            if (Math.Abs(newCaution - w.CautionThreshold) > 0.0001) { w.CautionThreshold = (float)newCaution; MarkDirty(); }
 
             GUILayout.Space(16f);
 
             GUILayout.Label("<color=#FF4D4D>红色告警 (Warn):</color>", GUILayout.Width(125f));
             double newWarn = MFPGuiSkin.DrawBufferedDoubleField($"warn_{w.WidgetId}", w.WarningThreshold, 75f);
-            if (Math.Abs(newWarn - w.WarningThreshold) > 0.0001) { w.WarningThreshold = newWarn; MarkDirty(); }
+            if (Math.Abs(newWarn - w.WarningThreshold) > 0.0001) { w.WarningThreshold = (float)newWarn; MarkDirty(); }
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4f);
@@ -630,10 +630,10 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button(btnTxt, bStyle, GUILayout.Width(125f), GUILayout.Height(22f)))
                 {
                     curWidget.NumericToken = p.Token;
-                    curWidget.MinValue = p.DefaultMin;
-                    curWidget.MaxValue = p.DefaultMax;
-                    curWidget.CautionThreshold = p.DefaultCaution;
-                    curWidget.WarningThreshold = p.DefaultWarning;
+                    curWidget.MinValue = (float)p.DefaultMin;
+                    curWidget.MaxValue = (float)p.DefaultMax;
+                    curWidget.CautionThreshold = (float)p.DefaultCaution;
+                    curWidget.WarningThreshold = (float)p.DefaultWarning;
                     curWidget.IsSoftLimit = p.DefaultIsSoftLimit;
                     curWidget.LimitMode = p.DefaultIsSoftLimit ? "soft" : "hard";
                     curWidget.UnitLabel = p.DefaultUnit;

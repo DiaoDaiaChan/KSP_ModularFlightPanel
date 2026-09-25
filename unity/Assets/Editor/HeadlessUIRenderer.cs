@@ -67,6 +67,14 @@ namespace ModularFlightPanel.Editor
                 {
                     switch (markerType.ToLowerInvariant())
                     {
+                        case "prograde":
+                            dir = new Vector3(0f, 0.20f, 0.98f).normalized;
+                            isVisible = true;
+                            return true;
+                        case "retrograde":
+                            dir = new Vector3(0f, -0.20f, -0.98f).normalized;
+                            isVisible = false;
+                            return true;
                         case "normal":
                             dir = new Vector3(0f, 0.58f, 0.81f).normalized;
                             isVisible = true;
@@ -384,16 +392,30 @@ namespace ModularFlightPanel.Editor
             }
             else if (!string.IsNullOrEmpty(targetWidgetId))
             {
-                Debug.Log($"[HeadlessUIRenderer] >>> Isolating single widget for drawing optimization: {targetWidgetId}");
-                if (targetWidgetId.Equals("core.toolbar", StringComparison.OrdinalIgnoreCase) || targetWidgetId.Equals("toolbar", StringComparison.OrdinalIgnoreCase))
+                string cleanTargetId = targetWidgetId;
+                bool triggerSep = false;
+                bool triggerEng = false;
+                if (cleanTargetId.EndsWith(".sep", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_sep", StringComparison.OrdinalIgnoreCase))
+                {
+                    cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
+                    triggerSep = true;
+                }
+                else if (cleanTargetId.EndsWith(".eng", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_eng", StringComparison.OrdinalIgnoreCase))
+                {
+                    cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
+                    triggerEng = true;
+                }
+
+                Debug.Log($"[HeadlessUIRenderer] >>> Isolating single widget for drawing optimization: {cleanTargetId} (sep={triggerSep}, eng={triggerEng})");
+                if (cleanTargetId.Equals("core.toolbar", StringComparison.OrdinalIgnoreCase) || cleanTargetId.Equals("toolbar", StringComparison.OrdinalIgnoreCase))
                 {
                     ThemeManager.Instance.ToolbarStyleMode = 2;
                 }
                 EnablePreviewWidgets();
-                SetWidgetState(targetWidgetId, true, 0f, 0f);
+                SetWidgetState(cleanTargetId, true, 0f, 0f);
                 foreach (var w in WidgetLayoutManager.Instance.CurrentLayout.Widgets)
                 {
-                    bool isTarget = w.WidgetId.Equals(targetWidgetId, StringComparison.OrdinalIgnoreCase);
+                    bool isTarget = w.WidgetId.Equals(cleanTargetId, StringComparison.OrdinalIgnoreCase);
                     w.IsEnabled = isTarget;
                     if (isTarget)
                     {
@@ -403,6 +425,19 @@ namespace ModularFlightPanel.Editor
                     }
                 }
                 hud.RebuildHUD();
+
+                if (triggerSep || triggerEng)
+                {
+                    BaseFlightWidget[] earlyWidgets = UnityEngine.Object.FindObjectsOfType<BaseFlightWidget>();
+                    foreach (var ew in earlyWidgets)
+                    {
+                        if (ew is MasterWarningWidget mww)
+                        {
+                            if (triggerSep) mww.TriggerBanner(MasterWarningWidget.BannerEventType.Separation, true);
+                            else if (triggerEng) mww.TriggerBanner(MasterWarningWidget.BannerEventType.EngineStart, true);
+                        }
+                    }
+                }
             }
             else
             {
@@ -421,6 +456,17 @@ namespace ModularFlightPanel.Editor
             int subCanvasCount = 0;
             foreach (var w in widgets)
             {
+                if (w is MasterWarningWidget mww2)
+                {
+                    if (targetWidgetId.EndsWith("_sep", StringComparison.OrdinalIgnoreCase) || targetWidgetId.EndsWith(".sep", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mww2.TriggerBanner(MasterWarningWidget.BannerEventType.Separation, true);
+                    }
+                    else if (targetWidgetId.EndsWith("_eng", StringComparison.OrdinalIgnoreCase) || targetWidgetId.EndsWith(".eng", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mww2.TriggerBanner(MasterWarningWidget.BannerEventType.EngineStart, true);
+                    }
+                }
                 w.OnUpdateTelemetry(simEngine);
                 var lateUpdate = w.GetType().GetMethod("LateUpdate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                 if (lateUpdate != null)
@@ -716,10 +762,10 @@ namespace ModularFlightPanel.Editor
                     {
                         WidgetType = "ecam_dial",
                         NumericToken = "{THROTTLE}",
-                        MinValue = 0.0,
-                        MaxValue = 100.0,
-                        CautionThreshold = 85.0,
-                        WarningThreshold = 100.0,
+                        MinValue = 0.0f,
+                        MaxValue = 100.0f,
+                        CautionThreshold = 85.0f,
+                        WarningThreshold = 100.0f,
                         IsSoftLimit = false,
                         LimitMode = "hard",
                         UnitLabel = "%",
@@ -858,7 +904,7 @@ namespace ModularFlightPanel.Editor
                         WarningThreshold = 27000,
                         LimitMode = "soft",
                         UnitLabel = "KM/H",
-                        ValueDeltaThreshold = 0.05,
+                        ValueDeltaThreshold = 0.05f,
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
@@ -875,7 +921,7 @@ namespace ModularFlightPanel.Editor
                         WarningThreshold = 240,
                         LimitMode = "soft",
                         UnitLabel = "KM",
-                        ValueDeltaThreshold = 0.05,
+                        ValueDeltaThreshold = 0.05f,
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);

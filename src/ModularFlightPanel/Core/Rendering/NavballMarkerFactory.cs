@@ -194,7 +194,8 @@ namespace ModularFlightPanel.Core
 
             // 航电标准色彩 (严格遵循 KSP 官方原版航电矢量标配色方案与主题自适应)
             ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
-            Color colPrograde = theme != null ? (Color)theme.AccentPrimary : WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Primary, null);
+            // 原版顺向/逆向色标: 官方经典高亮黄绿/荧光绿 (Stock Lime/Chartreuse #8FE800)
+            Color colPrograde = new Color(0.68f, 0.98f, 0.12f, 1.0f);
             // 原版法线/反法线色标: 官方经典品红/洋红 (Stock Magenta #EA1EE5)
             Color colNormal = new Color(0.92f, 0.14f, 0.88f, 1.0f);
             // 原版径向向外/向内色标: 官方经典天青/蓝绿 (Stock Cyan #18E8D4)
@@ -220,12 +221,14 @@ namespace ModularFlightPanel.Core
                             float dRing = Mathf.Abs(dist - rCircle) - (strokeW * 0.5f);
                             float aRing = Mathf.Clamp01(0.5f - dRing);
 
-                            // 2. 上、左、右三向延伸翼 (0°, 90°, 180°)
-                            float aWingTop = BoxSdf(px, py - 18f, strokeW * 0.5f, 5f);
-                            float aWingLeft = BoxSdf(px + 18f, py, 5f, strokeW * 0.5f);
-                            float aWingRight = BoxSdf(px - 18f, py, 5f, strokeW * 0.5f);
+                            // 2. 上、左、右三向延伸翼 (0°, 90°, 180° 方向，采用 SegmentSdf 亚像素圆角端点平滑解算)
+                            float rWing1 = rCircle + 0.5f;
+                            float rWing2 = rCircle + 5.5f;
+                            float dWingTop = SegmentSdf(Mathf.Abs(px), py, 0f, rWing1, 0f, rWing2) - (strokeW * 0.5f);
+                            float dWingSides = SegmentSdf(Mathf.Abs(px), py, rWing1, 0f, rWing2, 0f) - (strokeW * 0.5f);
+                            float aWings = Mathf.Clamp01(0.5f - Mathf.Min(dWingTop, dWingSides));
 
-                            alpha = Mathf.Clamp01(Mathf.Max(aRing, Mathf.Max(aWingTop, Mathf.Max(aWingLeft, aWingRight))));
+                            alpha = Mathf.Clamp01(Mathf.Max(aRing, aWings));
                             break;
 
                         case "retrograde":
@@ -233,16 +236,18 @@ namespace ModularFlightPanel.Core
                             // 1. 中间空心圆环与三向翼
                             float dRingRet = Mathf.Abs(dist - rCircle) - (strokeW * 0.5f);
                             float aRingRet = Mathf.Clamp01(0.5f - dRingRet);
-                            float aWTopRet = BoxSdf(px, py - 18f, strokeW * 0.5f, 5f);
-                            float aWLeftRet = BoxSdf(px + 18f, py, 5f, strokeW * 0.5f);
-                            float aWRightRet = BoxSdf(px - 18f, py, 5f, strokeW * 0.5f);
+                            float rWingRet1 = rCircle + 0.5f;
+                            float rWingRet2 = rCircle + 5.5f;
+                            float dWTopRet = SegmentSdf(Mathf.Abs(px), py, 0f, rWingRet1, 0f, rWingRet2) - (strokeW * 0.5f);
+                            float dWSidesRet = SegmentSdf(Mathf.Abs(px), py, rWingRet1, 0f, rWingRet2, 0f) - (strokeW * 0.5f);
+                            float aWingsRet = Mathf.Clamp01(0.5f - Mathf.Min(dWTopRet, dWSidesRet));
 
                             // 2. 内部 X 交叉线
                             float dDiag1 = (Mathf.Abs(px - py) / 1.4142f) - (strokeW * 0.45f);
                             float dDiag2 = (Mathf.Abs(px + py) / 1.4142f) - (strokeW * 0.45f);
                             float aCross = (dist < rCircle - 1.5f) ? Mathf.Max(Mathf.Clamp01(0.5f - dDiag1), Mathf.Clamp01(0.5f - dDiag2)) : 0f;
 
-                            alpha = Mathf.Clamp01(Mathf.Max(aRingRet, Mathf.Max(aCross, Mathf.Max(aWTopRet, Mathf.Max(aWLeftRet, aWRightRet)))));
+                            alpha = Mathf.Clamp01(Mathf.Max(aRingRet, Mathf.Max(aCross, aWingsRet)));
                             break;
 
                         case "normal":

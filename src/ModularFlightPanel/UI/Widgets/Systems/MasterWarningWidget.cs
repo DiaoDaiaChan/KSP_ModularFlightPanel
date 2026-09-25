@@ -18,7 +18,10 @@ namespace ModularFlightPanel.UI.Widgets
     ///    - 激活报警时：顶部状态光条 (Status Pip Bar) 高亮脉冲，大字号发光主警报 + 右下角微型量化遥测读数与轮播指示器；
     /// 3. 分级独立分道：左舱专注黄色注意 (Caution)，右舱专注红色危急 (Warning)；
     /// 4. 同等级多告警智能平滑轮播 (Alternating Rotation) 并带点阵跑马灯与序号；
-    /// 5. 100% 遵照 MFP 六大铁律 (0 颜色字面量、纯 C# 解耦、30Hz 分频、零 GC)。
+    /// 5. 瞬态机动横幅合并动画 (Transient Event Banner Merge & Flashback)：
+    ///    - 飞船分离时：两方框平滑向中心聚拢合并，显示高反差航电大字“分离”，维持后迅速闪回双室；
+    ///    - 引擎点火时：两方框平滑向中心聚拢合并，显示高反差航电大字“引擎启动”，维持后迅速闪回双室；
+    /// 6. 100% 遵照 MFP 六大铁律 (0 颜色字面量、纯 C# 解耦、30Hz 分频、零 GC)。
     /// </summary>
     public class MasterWarningWidget : BaseFlightWidget
     {
@@ -44,8 +47,79 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        // 瞬态机动横幅状态机阶段
+        private enum BannerDisplayState
+        {
+            Normal,         // 标准双室工作/待命 (Caution & Warning)
+            MergingIn,      // 双室向中央滑动合并 (约 0.10s)
+            MergedHolding,  // 一体横幅高亮呈现当前事件 (单事件 1.25s / 链式连击事件 0.95s)
+            SwitchingEvent, // 队列中存在后续事件，就地微闪平滑切换至下一事件 (约 0.08s)
+            FlashingBack    // 队列全部消费完毕，高频频闪复位回到双室 (约 0.14s)
+        }
+
+        public enum BannerEventType
+        {
+            Separation,
+            EngineStart
+        }
+
+        // 横幅事件定义模型 (轻量结构体，0 GC)
+        private struct BannerEventItem
+        {
+            public BannerEventType EventType;
+            public string Title;
+            public string Sub;
+            public string LeftIcon;
+            public string RightIcon;
+            public float Duration;
+            public int Priority; // 调度优先级 (数值越大越优先展示，Separation=20, EngineStart=10)
+
+            public BannerEventItem(BannerEventType type, string title, string sub, string leftIcon, string rightIcon, float duration, int priority)
+            {
+                EventType = type;
+                Title = title;
+                Sub = sub;
+                LeftIcon = leftIcon;
+                RightIcon = rightIcon;
+                Duration = duration;
+                Priority = priority;
+            }
+        }
+
+        // 瞬态事件横幅状态机与优先级队列
+        private BannerDisplayState _bannerState = BannerDisplayState.Normal;
+        private BannerEventItem _currentEvent;
+        private readonly List<BannerEventItem> _bannerQueue = new List<BannerEventItem>(4);
+        private float _bannerTimer = 0f;
+        private float _bannerDuration = 1.25f;
+        private string _sepTitleTemplate = "分  离";
+        private string _engTitleTemplate = "引擎启动";
+
+        // 事件防抖与冷却时间戳 (Debounce & Cooldown: 防止同事件多帧连续触发导致互相打架)
+        private float _lastSepTriggerTime = -999f;
+        private float _lastEngTriggerTime = -999f;
+        private const float EVENT_COOLDOWN = 1.4f;
+
+        // 瞬态一体横幅 UI 节点
+        private GameObject _bannerCell;
+        private Image _bannerBg;
+        private Outline _bannerOutline;
+        private Image _bannerPipBar;
+        private Text _bannerLeftIcon;
+        private Text _bannerTitle;
+        private Text _bannerRightIcon;
+        private Text _bannerSub;
+
+        // 上一帧遥测缓存 (用于瞬态边缘脉冲触发)
+        private int _lastStage = -1;
+        private int _lastActiveEngines = -1;
+        private float _lastThrottle = -1f;
+        private bool _lastIsStageSeparating = false;
+        private bool _lastIsEngineIgniting = false;
+
         // 左舱：Caution (黄色注意) 视图组件
         private GameObject _cautCell;
+        private RectTransform _cautRect;
         private Image _cautBg;
         private Outline _cautOutline;
         private Image _cautPipBar;
@@ -56,6 +130,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 右舱：Warning (红色危急) 视图组件
         private GameObject _warnCell;
+        private RectTransform _warnRect;
         private Image _warnBg;
         private Outline _warnOutline;
         private Image _warnPipBar;
@@ -99,6 +174,7 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform.sizeDelta = widgetSize;
 
             ParseCustomTemplate(config?.CustomTemplate);
+            _currentEvent = BuildEventItem(BannerEventType.Separation);
 
             // 1. 航空外框底盘 (Outer Bezel)
             _outerBezel = gameObject.AddComponent<Image>();
@@ -119,12 +195,16 @@ namespace ModularFlightPanel.UI.Widgets
             // 4. 构建右舱：WARNING 光字牌 (宽 89px, 高 18px, 偏置 +46px)
             BuildWarningCell(s, cellSize, theme);
 
+            // 5. 构建全幅瞬态合并横幅 (宽 180px, 高 18px, 居中)
+            BuildBannerCell(s, new Vector2(180f * s, 18f * s), theme);
+
             ApplyTheme(theme);
         }
 
         private void BuildCautionCell(float s, Vector2 size, ThemeConfig theme)
         {
             _cautCell = UIFactory.CreatePanel(transform, "CautionCell", size, new Vector2(-46f * s, 0f), Color.clear);
+            _cautRect = _cautCell.GetComponent<RectTransform>();
             _cautBg = _cautCell.GetComponent<Image>();
             _cautOutline = _cautCell.AddComponent<Outline>();
             _cautOutline.effectDistance = new Vector2(1f * s, 1f * s);
@@ -162,6 +242,7 @@ namespace ModularFlightPanel.UI.Widgets
         private void BuildWarningCell(float s, Vector2 size, ThemeConfig theme)
         {
             _warnCell = UIFactory.CreatePanel(transform, "WarningCell", size, new Vector2(46f * s, 0f), Color.clear);
+            _warnRect = _warnCell.GetComponent<RectTransform>();
             _warnBg = _warnCell.GetComponent<Image>();
             _warnOutline = _warnCell.AddComponent<Outline>();
             _warnOutline.effectDistance = new Vector2(1f * s, 1f * s);
@@ -196,6 +277,47 @@ namespace ModularFlightPanel.UI.Widgets
             _warnSub.rectTransform.anchoredPosition = new Vector2(size.x * 0.5f - 12f * s, 0f);
         }
 
+        private void BuildBannerCell(float s, Vector2 size, ThemeConfig theme)
+        {
+            _bannerCell = UIFactory.CreatePanel(transform, "BannerCell", size, Vector2.zero, Color.clear);
+            _bannerBg = _bannerCell.GetComponent<Image>();
+            _bannerOutline = _bannerCell.AddComponent<Outline>();
+            _bannerOutline.effectDistance = new Vector2(1f * s, 1f * s);
+
+            // 顶部高光 Pip 指示条
+            GameObject pipObj = UIFactory.CreatePanel(_bannerCell.transform, "PipBar", new Vector2(size.x - 2f * s, 2f * s),
+                new Vector2(0f, size.y * 0.5f - 1f * s), Color.clear);
+            _bannerPipBar = pipObj.GetComponent<Image>();
+
+            // 左侧状态微标
+            _bannerLeftIcon = UIFactory.CreateText(_bannerCell.transform, "LeftIcon", "◀", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)),
+                TextAnchor.MiddleLeft, theme.AccentPrimary);
+            _bannerLeftIcon.rectTransform.sizeDelta = new Vector2(14f * s, size.y);
+            _bannerLeftIcon.rectTransform.anchoredPosition = new Vector2(-size.x * 0.5f + 10f * s, 0f);
+
+            // 主标题
+            _bannerTitle = UIFactory.CreateText(_bannerCell.transform, "Title", "分  离", Mathf.Max(8, Mathf.RoundToInt(8.5f * s)),
+                TextAnchor.MiddleCenter, theme.AccentPrimary);
+            _bannerTitle.fontStyle = FontStyle.Bold;
+            _bannerTitle.rectTransform.sizeDelta = new Vector2(110f * s, size.y);
+            _bannerTitle.rectTransform.anchoredPosition = Vector2.zero;
+
+            // 右侧状态微标
+            _bannerRightIcon = UIFactory.CreateText(_bannerCell.transform, "RightIcon", "▶", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)),
+                TextAnchor.MiddleRight, theme.AccentPrimary);
+            _bannerRightIcon.rectTransform.sizeDelta = new Vector2(14f * s, size.y);
+            _bannerRightIcon.rectTransform.anchoredPosition = new Vector2(size.x * 0.5f - 10f * s, 0f);
+
+            // 右侧微型附注
+            _bannerSub = UIFactory.CreateText(_bannerCell.transform, "Sub", "STG", Mathf.Max(6, Mathf.RoundToInt(6f * s)),
+                TextAnchor.MiddleRight, theme.AccentPrimary);
+            _bannerSub.fontStyle = FontStyle.Normal;
+            _bannerSub.rectTransform.sizeDelta = new Vector2(26f * s, size.y);
+            _bannerSub.rectTransform.anchoredPosition = new Vector2(size.x * 0.5f - 26f * s, 0f);
+
+            _bannerCell.SetActive(false);
+        }
+
         private void ParseCustomTemplate(string template)
         {
             if (string.IsNullOrEmpty(template)) return;
@@ -212,6 +334,141 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _switchInterval = iv;
                     }
+                }
+                else if (k == "SEP" || k == "SEP_TEXT" || k == "SEPARATION")
+                {
+                    if (!string.IsNullOrEmpty(v)) _sepTitleTemplate = v;
+                }
+                else if (k == "ENG" || k == "ENG_TEXT" || k == "IGNITION")
+                {
+                    if (!string.IsNullOrEmpty(v)) _engTitleTemplate = v;
+                }
+                else if (k == "TIME" || k == "BANNER_TIME" || k == "DURATION")
+                {
+                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dt) && dt > 0.4f)
+                    {
+                        _bannerDuration = dt;
+                    }
+                }
+            }
+        }
+
+        private BannerEventItem BuildEventItem(BannerEventType type)
+        {
+            if (type == BannerEventType.Separation)
+            {
+                return new BannerEventItem(
+                    BannerEventType.Separation,
+                    _sepTitleTemplate,
+                    "STG",
+                    "◀",
+                    "▶",
+                    _bannerDuration,
+                    20
+                );
+            }
+            else
+            {
+                return new BannerEventItem(
+                    BannerEventType.EngineStart,
+                    _engTitleTemplate,
+                    "IGN",
+                    "▲",
+                    "▲",
+                    _bannerDuration,
+                    10
+                );
+            }
+        }
+
+        private void EnqueueByPriority(BannerEventItem item)
+        {
+            if (_bannerQueue.Count >= 4) return;
+
+            int insertIdx = _bannerQueue.Count;
+            for (int i = 0; i < _bannerQueue.Count; i++)
+            {
+                if (item.Priority > _bannerQueue[i].Priority)
+                {
+                    insertIdx = i;
+                    break;
+                }
+            }
+            _bannerQueue.Insert(insertIdx, item);
+        }
+
+        public void TriggerBanner(BannerEventType eventType, bool immediateHolding = false)
+        {
+            float now = Time.unscaledTime;
+
+            // 1. 防抖与去重审查：若处于冷却期且非强制立即渲染，则忽略重复脉冲
+            if (!immediateHolding)
+            {
+                if (eventType == BannerEventType.Separation && (now - _lastSepTriggerTime) < EVENT_COOLDOWN) return;
+                if (eventType == BannerEventType.EngineStart && (now - _lastEngTriggerTime) < EVENT_COOLDOWN) return;
+
+                // 若当前正在展示同类事件，或队列中已有同类事件，避免重复堆叠
+                if (_bannerState != BannerDisplayState.Normal && _bannerState != BannerDisplayState.FlashingBack)
+                {
+                    if (_currentEvent.EventType == eventType) return;
+                    for (int i = 0; i < _bannerQueue.Count; i++)
+                    {
+                        if (_bannerQueue[i].EventType == eventType) return;
+                    }
+                }
+            }
+
+            // 更新触发时间戳
+            if (eventType == BannerEventType.Separation) _lastSepTriggerTime = now;
+            else if (eventType == BannerEventType.EngineStart) _lastEngTriggerTime = now;
+
+            BannerEventItem newItem = BuildEventItem(eventType);
+
+            // 2. 强制即时渲染模式 (供无头渲染器 HeadlessUIRenderer 捕获静态切片)
+            if (immediateHolding)
+            {
+                _bannerQueue.Clear();
+                _currentEvent = newItem;
+                _bannerState = BannerDisplayState.MergedHolding;
+                _bannerTimer = 0.12f;
+                if (_centerDivider != null) _centerDivider.gameObject.SetActive(false);
+                if (_cautCell != null) _cautCell.SetActive(false);
+                if (_warnCell != null) _warnCell.SetActive(false);
+                if (_bannerCell != null) _bannerCell.SetActive(true);
+                return;
+            }
+
+            // 3. 状态机分流与仲裁
+            if (_bannerState == BannerDisplayState.Normal)
+            {
+                // 空闲常态：接管主横幅，启动双框聚拢滑入动画
+                _currentEvent = newItem;
+                _bannerState = BannerDisplayState.MergingIn;
+                _bannerTimer = 0f;
+            }
+            else if (_bannerState == BannerDisplayState.FlashingBack)
+            {
+                // 正处于闪回尾声：平滑截断闪回，直接接入下一事件高亮保持
+                _currentEvent = newItem;
+                _bannerState = BannerDisplayState.MergedHolding;
+                _bannerTimer = 0.12f;
+                if (_bannerCell != null) _bannerCell.SetActive(true);
+                if (_cautCell != null) _cautCell.SetActive(false);
+                if (_warnCell != null) _warnCell.SetActive(false);
+            }
+            else
+            {
+                // 当前正有其他事件展示中 (如聚拢中、展示中或切换中)：
+                // 若仍在向中心聚拢阶段 (MergingIn) 且新到事件优先级更高 (如分离 20 > 启动 10)，则置换首位
+                if (_bannerState == BannerDisplayState.MergingIn && newItem.Priority > _currentEvent.Priority)
+                {
+                    BannerEventItem lower = _currentEvent;
+                    _currentEvent = newItem;
+                    _bannerQueue.Insert(0, lower);
+                }
+                else
+                {
+                    EnqueueByPriority(newItem);
                 }
             }
         }
@@ -230,30 +487,31 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel) return;
 
-            // 1. 更新座舱全局同步时钟
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             float dt = Time.unscaledDeltaTime;
+
+            // 1. 侦测分级分离与引擎点火瞬态事件 (驱动事件状态机与优先级队列)
+            DetectTransientEvents(telemetry);
+
+            // 2. 持续评估当前所有活跃警报 (以便在非横幅状态渲染光字牌，以及监控重大警情)
+            EvaluateTelemetryAlerts(telemetry);
+
+            // 3. 若当前处于横幅合并、展示、切换或闪回动画阶段，转由横幅状态机独占驱动
+            if (_bannerState != BannerDisplayState.Normal)
+            {
+                UpdateBannerAnimation(dt, theme);
+                return;
+            }
+
+            // 4. 更新座舱全局同步时钟
             _clock += dt;
             _blink1Hz = ((int)(_clock * 2f) % 2) == 0;
             _blink2Hz = ((int)(_clock * 4f) % 2) == 0;
 
-            // 2. 采集当前所有活跃警报
-            EvaluateTelemetryAlerts(telemetry);
+            // 5. 告警数量变动与防抖消警保护
+            UpdateAlertIndicesAndAcknowledge();
 
-            // 3. 告警数量变动时复位消警
-            if (_cautAlerts.Count != _lastCautCount)
-            {
-                _lastCautCount = _cautAlerts.Count;
-                _cautAcknowledged = false;
-                if (_cautIndex >= _cautAlerts.Count) _cautIndex = 0;
-            }
-            if (_warnAlerts.Count != _lastWarnCount)
-            {
-                _lastWarnCount = _warnAlerts.Count;
-                _warnAcknowledged = false;
-                if (_warnIndex >= _warnAlerts.Count) _warnIndex = 0;
-            }
-
-            // 4. 定时交替轮播推进
+            // 6. 定时交替轮播推进
             _rotateTimer += dt;
             if (_rotateTimer >= _switchInterval)
             {
@@ -262,8 +520,184 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_warnAlerts.Count > 1) _warnIndex = (_warnIndex + 1) % _warnAlerts.Count;
             }
 
-            // 5. 渲染双光字牌
+            // 7. 渲染双光字牌
             RenderVisualCells();
+        }
+
+        private void UpdateAlertIndicesAndAcknowledge()
+        {
+            if (_cautAlerts.Count != _lastCautCount)
+            {
+                if (_cautAlerts.Count > _lastCautCount) _cautAcknowledged = false;
+                _lastCautCount = _cautAlerts.Count;
+                if (_cautIndex >= _cautAlerts.Count) _cautIndex = 0;
+            }
+            if (_warnAlerts.Count != _lastWarnCount)
+            {
+                if (_warnAlerts.Count > _lastWarnCount) _warnAcknowledged = false;
+                _lastWarnCount = _warnAlerts.Count;
+                if (_warnIndex >= _warnAlerts.Count) _warnIndex = 0;
+            }
+        }
+
+        private void DetectTransientEvents(IFlightTelemetry telem)
+        {
+            bool triggerSep = false;
+            bool triggerEng = false;
+
+            if (_lastStage != -1)
+            {
+                // 分级/解耦/脱开分离判定
+                bool sepSignal = telem.IsStageSeparating && !_lastIsStageSeparating;
+                bool stageDropped = telem.CurrentStage < _lastStage;
+                if (sepSignal || stageDropped)
+                {
+                    triggerSep = true;
+                }
+            }
+
+            if (_lastActiveEngines != -1)
+            {
+                // 引擎启动判定 (点火脉冲、引擎数从 0 激增、或油门开启点火)
+                bool ignSignal = telem.IsEngineIgniting && !_lastIsEngineIgniting;
+                bool engStarted = (_lastActiveEngines == 0 && telem.ActiveEngines > 0 && telem.Throttle > 0.02f) ||
+                                  (_lastThrottle <= 0.001f && telem.Throttle > 0.05f && telem.ActiveEngines > 0);
+                if (ignSignal || engStarted)
+                {
+                    triggerEng = true;
+                }
+            }
+
+            // 统一调度：若两事件同时触发，Separation 必定优先排在前面，EngineStart 排在后面
+            if (triggerSep)
+            {
+                TriggerBanner(BannerEventType.Separation);
+            }
+            if (triggerEng)
+            {
+                TriggerBanner(BannerEventType.EngineStart);
+            }
+
+            _lastStage = telem.CurrentStage;
+            _lastActiveEngines = telem.ActiveEngines;
+            _lastThrottle = telem.Throttle;
+            _lastIsStageSeparating = telem.IsStageSeparating;
+            _lastIsEngineIgniting = telem.IsEngineIgniting;
+        }
+
+        private void UpdateBannerAnimation(float dt, ThemeConfig theme)
+        {
+            if (theme == null) theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
+            float s = CurrentDpiScale;
+
+            Color eventColor = (_currentEvent.EventType == BannerEventType.Separation) ? theme.AccentPrimary : theme.WarningColor;
+
+            if (_bannerState == BannerDisplayState.MergingIn)
+            {
+                _bannerTimer += dt;
+                float progress = Mathf.Clamp01(_bannerTimer / 0.10f);
+
+                // 两方框向中央平滑聚拢
+                if (_centerDivider != null) _centerDivider.gameObject.SetActive(false);
+                if (_cautRect != null) _cautRect.anchoredPosition = new Vector2(Mathf.Lerp(-46f * s, 0f, progress), 0f);
+                if (_warnRect != null) _warnRect.anchoredPosition = new Vector2(Mathf.Lerp(46f * s, 0f, progress), 0f);
+
+                if (progress >= 1.0f)
+                {
+                    if (_cautCell != null) _cautCell.SetActive(false);
+                    if (_warnCell != null) _warnCell.SetActive(false);
+                    if (_bannerCell != null) _bannerCell.SetActive(true);
+                    _bannerState = BannerDisplayState.MergedHolding;
+                    _bannerTimer = 0f;
+                }
+            }
+            else if (_bannerState == BannerDisplayState.MergedHolding)
+            {
+                _bannerTimer += dt;
+
+                SetTextIfChanged(_bannerTitle, _currentEvent.Title);
+                SetTextIfChanged(_bannerSub, _currentEvent.Sub);
+                SetTextIfChanged(_bannerLeftIcon, _currentEvent.LeftIcon);
+                SetTextIfChanged(_bannerRightIcon, _currentEvent.RightIcon);
+
+                // 航电高光微脉冲 (呼吸感)
+                float pulse = 0.82f + 0.18f * Mathf.Sin(_bannerTimer * 12f);
+                Color activeCol = WidgetStyleManager.WithAlpha(eventColor, pulse);
+
+                if (_bannerBg != null) _bannerBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
+                if (_bannerOutline != null) _bannerOutline.effectColor = activeCol;
+                if (_bannerPipBar != null) _bannerPipBar.color = activeCol;
+                if (_bannerTitle != null) _bannerTitle.color = eventColor;
+                if (_bannerSub != null) _bannerSub.color = WidgetStyleManager.WithAlpha(eventColor, 0.70f);
+                if (_bannerLeftIcon != null) _bannerLeftIcon.color = activeCol;
+                if (_bannerRightIcon != null) _bannerRightIcon.color = activeCol;
+
+                // 若有排队连击事件，单事件展示时长适度收紧 (0.95s)，保持紧凑利落的航电节奏感
+                float targetDuration = (_bannerQueue.Count > 0) ? Mathf.Min(_currentEvent.Duration, 0.95f) : _currentEvent.Duration;
+
+                if (_bannerTimer >= targetDuration)
+                {
+                    if (_bannerQueue.Count > 0)
+                    {
+                        // 队列中有后续事件待展示：不闪退，进入 0.08s 敏捷就地翻转过渡态
+                        _currentEvent = _bannerQueue[0];
+                        _bannerQueue.RemoveAt(0);
+                        _bannerState = BannerDisplayState.SwitchingEvent;
+                        _bannerTimer = 0f;
+                    }
+                    else
+                    {
+                        // 队列已清空：进入闪回双室流程
+                        _bannerState = BannerDisplayState.FlashingBack;
+                        _bannerTimer = 0f;
+                    }
+                }
+            }
+            else if (_bannerState == BannerDisplayState.SwitchingEvent)
+            {
+                _bannerTimer += dt;
+
+                // 0.08s 敏捷过渡：高光闪烁与文本瞬变
+                SetTextIfChanged(_bannerTitle, _currentEvent.Title);
+                SetTextIfChanged(_bannerSub, _currentEvent.Sub);
+                SetTextIfChanged(_bannerLeftIcon, _currentEvent.LeftIcon);
+                SetTextIfChanged(_bannerRightIcon, _currentEvent.RightIcon);
+
+                Color switchColor = (_currentEvent.EventType == BannerEventType.Separation) ? theme.AccentPrimary : theme.WarningColor;
+                if (_bannerOutline != null) _bannerOutline.effectColor = switchColor;
+                if (_bannerPipBar != null) _bannerPipBar.color = switchColor;
+                if (_bannerTitle != null) _bannerTitle.color = switchColor;
+                if (_bannerSub != null) _bannerSub.color = switchColor;
+
+                if (_bannerTimer >= 0.08f)
+                {
+                    _bannerState = BannerDisplayState.MergedHolding;
+                    _bannerTimer = 0f;
+                }
+            }
+            else if (_bannerState == BannerDisplayState.FlashingBack)
+            {
+                _bannerTimer += dt;
+
+                // 24Hz 迅速高频频闪
+                bool strobeOn = ((int)(_bannerTimer * 24f) % 2) == 0;
+                if (_bannerCell != null) _bannerCell.SetActive(strobeOn);
+
+                if (_bannerTimer >= 0.14f)
+                {
+                    // 闪回完毕，复位回到双室待命
+                    if (_bannerCell != null) _bannerCell.SetActive(false);
+                    if (_cautCell != null) _cautCell.SetActive(true);
+                    if (_warnCell != null) _warnCell.SetActive(true);
+                    if (_cautRect != null) _cautRect.anchoredPosition = new Vector2(-46f * s, 0f);
+                    if (_warnRect != null) _warnRect.anchoredPosition = new Vector2(46f * s, 0f);
+                    if (_centerDivider != null) _centerDivider.gameObject.SetActive(true);
+
+                    _bannerState = BannerDisplayState.Normal;
+                    _bannerTimer = 0f;
+                    RenderVisualCells();
+                }
+            }
         }
 
         private void EvaluateTelemetryAlerts(IFlightTelemetry telem)
@@ -273,11 +707,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             // ── 1. 推进剂与沉底 (FUEL / ULLAGE) ──
             float prop = telem.StagePropellantFraction;
-            if (prop >= 0f && telem.ActiveEngines > 0)
+            if (prop >= 0f && (telem.ActiveEngines > 0 || telem.TotalStageEngines > 0))
             {
                 int propPct = Mathf.RoundToInt(prop * 100f);
-                if (prop <= 0.05f) _warnAlerts.Add(new AlertItem("MIN FUEL!", $"{propPct}%", true));
-                else if (prop <= 0.15f) _cautAlerts.Add(new AlertItem("LOW FUEL", $"{propPct}%", false));
+                float warnThresh = (Config != null && Config.WarningThreshold > 0.01) ? (float)Config.WarningThreshold / 100f : 0.05f;
+                float cautThresh = (Config != null && Config.CautionThreshold > 0.01) ? (float)Config.CautionThreshold / 100f : 0.15f;
+                if (prop <= warnThresh) _warnAlerts.Add(new AlertItem("MIN FUEL!", $"{propPct}%", true));
+                else if (prop <= cautThresh) _cautAlerts.Add(new AlertItem("LOW FUEL", $"{propPct}%", false));
             }
 
             // RealFuels 探针沉底状态
@@ -301,8 +737,11 @@ namespace ModularFlightPanel.UI.Widgets
                 else if (ecPct <= 20.0) _cautAlerts.Add(new AlertItem("LOW EC", $"{ecInt}%", false));
             }
 
-            // ── 3. 近地与急剧下沉 (PULL UP! / SINK RATE) ──
-            if (telem.IsTouchdownAlert || (telem.VerticalSpeed < -25.0 && telem.AltitudeAGL < 500.0 && telem.AltitudeAGL > 5.0))
+            // ── 3. 近地危险下沉与地形拉起 (PULL UP! / SINK RATE) ──
+            // GPWS Mode 1 规范：仅在剧烈下沉威胁接地安全时拉响 PULL UP!，避免平缓接地造成假警报
+            bool severePullUp = (telem.VerticalSpeed < -25.0 && telem.AltitudeAGL < 600.0 && telem.AltitudeAGL > 3.0) ||
+                                (telem.VerticalSpeed < -12.0 && telem.AltitudeAGL < 150.0 && telem.AltitudeAGL > 3.0);
+            if (severePullUp)
             {
                 int aglInt = Mathf.RoundToInt((float)telem.AltitudeAGL);
                 _warnAlerts.Add(new AlertItem("PULL UP!", $"{aglInt}m", true));
@@ -381,7 +820,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void RenderVisualCells()
         {
-            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme;
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             if (theme == null) return;
 
             // ── A. 渲染左舱：CAUTION ──
@@ -488,11 +927,19 @@ namespace ModularFlightPanel.UI.Widgets
             if (_outerOutline != null) _outerOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             if (_centerDivider != null) _centerDivider.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
 
-            RenderVisualCells();
+            if (_bannerState != BannerDisplayState.Normal)
+            {
+                UpdateBannerAnimation(0f, theme);
+            }
+            else
+            {
+                RenderVisualCells();
+            }
         }
 
         protected override void OnDestroy()
         {
+            _bannerQueue.Clear();
             if (_cautBtn != null) _cautBtn.onClick.RemoveAllListeners();
             if (_warnBtn != null) _warnBtn.onClick.RemoveAllListeners();
             base.OnDestroy();

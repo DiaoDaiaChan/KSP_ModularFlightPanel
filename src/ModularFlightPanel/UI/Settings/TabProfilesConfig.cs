@@ -204,7 +204,10 @@ namespace ModularFlightPanel.UI.Settings
             if (layoutMgr.CurrentLayout != null)
             {
                 layoutMgr.CurrentLayout.GlobalScale = scale;
-                layoutMgr.SaveLayout();
+                if (layoutMgr.CurrentLayout.Widgets != null && layoutMgr.CurrentLayout.Widgets.Count > 0)
+                {
+                    layoutMgr.SaveLayout();
+                }
             }
             if (WidgetRenderManager.Instance != null)
             {
@@ -346,13 +349,17 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button("⚡ 一键套用此预设", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
                 {
                     WidgetLayoutData presetData = LayoutShareHub.LoadPreset(p);
-                    if (presetData != null && presetData.Widgets != null)
+                    if (presetData != null && presetData.Widgets != null && presetData.Widgets.Count > 0)
                     {
                         WidgetLayoutManager.Instance.CurrentLayout.Widgets = presetData.Widgets;
                         WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = presetData.GlobalScale > 0.1f ? presetData.GlobalScale : 1.25f;
                         WidgetLayoutManager.Instance.SaveLayout();
                         FlightHUDManager.Instance?.RebuildHUD();
-                        SetToast($"已成功套用预设「{p.Name}」！");
+                        SetToast($"✔ 已成功套用预设「{p.Name}」！(共 {presetData.Widgets.Count} 个组件)");
+                    }
+                    else
+                    {
+                        SetToast($"<color=#FF4444>套用失败: 预设「{p.Name}」为空或格式损坏，已自动拦截保护！</color>");
                     }
                 }
                 GUILayout.EndHorizontal();
@@ -395,7 +402,7 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawShareCodeCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🔗 社区分享码中心 (Layout Share Code Hub)", "一键复制/粘贴单行 GZip 压缩 Base64 编码");
+            MFPGuiSkin.DrawHeader("🔗 航电配置导入与社区分享 (Layout Import & Share Code)", "支持 MFP:v1: 分享码、原始 JSON 文本或本地预设文件名");
 
             // 导出分享码
             GUILayout.BeginHorizontal();
@@ -412,9 +419,9 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.Space(5f);
 
-            // 导入分享码
+            // 导入分享码或 JSON
             GUILayout.BeginHorizontal();
-            GUILayout.Label("分享码:", GUILayout.Width(55f));
+            GUILayout.Label("配置代码 / 路径:", GUILayout.Width(115f));
             _inputShareCode = GUILayout.TextField(_inputShareCode ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true));
 
             if (GUILayout.Button("粘贴剪贴板", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(85f), GUILayout.Height(24f)))
@@ -431,6 +438,7 @@ namespace ModularFlightPanel.UI.Settings
                     WidgetLayoutManager.Instance.SaveLayout();
                     FlightHUDManager.Instance?.RebuildHUD();
                     SetToast($"✔ 成功导入并套用布局！(共加载 {importedLayout.Widgets.Count} 个组件)");
+                    _inputShareCode = "";
                 }
                 else
                 {
@@ -438,6 +446,9 @@ namespace ModularFlightPanel.UI.Settings
                 }
             }
             GUILayout.EndHorizontal();
+
+            GUILayout.Space(2f);
+            GUILayout.Label("<color=#7088A8><size=10>• 多合一智能导入：支持粘贴「MFP:v1:」分享码、原始 JSON 文本结构、或本地 Presets 文件名 (如 01_Default_Avionics.json)。</size></color>");
 
             MFPGuiSkin.EndCard();
         }
