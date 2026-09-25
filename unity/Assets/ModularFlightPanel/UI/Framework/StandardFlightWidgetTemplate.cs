@@ -168,19 +168,8 @@ namespace ModularFlightPanel.UI
         {
             if (theme == null) return;
 
+            // 统一样式管道：所有注册微控件（卡片底板、标题栏、主数显读数、计量条）自动完成多态着色与 Shader 挂载
             this.Controls.ApplyThemeToControls(theme);
-
-            // 1. 卡片外框应用主题与专属 Shader (点阵/全息/CRT/玻璃)
-            ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
-
-            // 2. 文字排版应用专属 Shader 与语义色彩
-            ApplyText(_headerTitleText, TextStyleRole.Label, theme);
-            ApplyText(_statusBadgeText, TextStyleRole.SecondaryValue, theme);
-            ApplyText(_primaryValueText, TextStyleRole.PrimaryValue, theme);
-            ApplyText(_unitText, TextStyleRole.Unit, theme);
-
-            // 3. 计量槽应用样式
-            ApplyMeter(_meterTrack, _meterFill, null, MeterStyleRole.Primary, theme);
         }
 
         // ------------------------------------------------------------------------------------

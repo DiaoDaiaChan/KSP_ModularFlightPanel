@@ -147,9 +147,9 @@ namespace ModularFlightPanel.UI.Framework
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             var style = WidgetStyleManager.Instance;
-            if (TitleText != null) TitleText.color = style.GetTextColor(TextStyleRole.Cardinal, theme);
-            if (SubtitleText != null) SubtitleText.color = style.GetTextColor(TextStyleRole.Label, theme);
-            if (StatusBadgeText != null) StatusBadgeText.color = style.GetTextColor(TextStyleRole.Accent, theme);
+            if (TitleText != null) style.ApplyTextStyle(TitleText, TextStyleRole.Label, theme);
+            if (SubtitleText != null) style.ApplyTextStyle(SubtitleText, TextStyleRole.SecondaryValue, theme);
+            if (StatusBadgeText != null) style.ApplyTextStyle(StatusBadgeText, TextStyleRole.Accent, theme);
             if (DividerLine != null) DividerLine.color = style.GetLineColor(LineWeight.Faint, theme);
         }
 
@@ -254,15 +254,42 @@ namespace ModularFlightPanel.UI.Framework
             Token = token;
         }
 
+        public TextStyleRole LabelRole { get; set; } = TextStyleRole.SecondaryValue;
+        public TextStyleRole UnitRole { get; set; } = TextStyleRole.Unit;
+
         public override void ApplyTheme(ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             var style = WidgetStyleManager.Instance;
-            if (BackgroundImage != null) BackgroundImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (BackgroundImage != null)
+            {
+                BackgroundImage.material = style.GetUiMaterial(isText: false);
+                BackgroundImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            }
             if (BorderOutline != null) BorderOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (TitleLabel != null) TitleLabel.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
-            if (ValueText != null) ValueText.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
-            if (UnitLabel != null) UnitLabel.color = style.GetTextColor(TextStyleRole.Unit, theme);
+            if (TitleLabel != null) style.ApplyTextStyle(TitleLabel, LabelRole, theme);
+            if (ValueText != null) style.ApplyTextStyle(ValueText, StyleRole, theme);
+            if (UnitLabel != null) style.ApplyTextStyle(UnitLabel, UnitRole, theme);
+        }
+
+        public void SetValue(string val, string unit = null)
+        {
+            if (ValueText != null && val != _lastRawValue)
+            {
+                _lastRawValue = val;
+                ValueText.text = UIFactory.FormatTabular(val ?? Fallback);
+            }
+            if (unit != null && UnitLabel != null && unit != _lastUnit)
+            {
+                _lastUnit = unit;
+                UnitLabel.text = unit;
+            }
+        }
+
+        public void SetFormattedValue(double val, string format = "F1", string unit = null)
+        {
+            string str = double.IsNaN(val) ? Fallback : val.ToString(format);
+            SetValue(str, unit);
         }
 
         public override void UpdateTelemetry(IFlightTelemetry telemetry)
@@ -369,8 +396,41 @@ namespace ModularFlightPanel.UI.Framework
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             var style = WidgetStyleManager.Instance;
-            if (TrackImage != null) TrackImage.color = style.GetMeterColor(MeterStyleRole.Track, theme);
+            if (TrackImage != null)
+            {
+                TrackImage.material = style.GetUiMaterial(isText: false);
+                TrackImage.color = style.GetMeterColor(MeterStyleRole.Track, theme);
+            }
+            if (FillImage != null)
+            {
+                FillImage.material = style.GetUiMaterial(isText: false);
+            }
             UpdateBarColor(theme);
+        }
+
+        public void SetFillAmount(float ratio, MeterStyleRole role = MeterStyleRole.Primary)
+        {
+            if (FillImage == null) return;
+            ratio = Mathf.Clamp01(ratio);
+            if (FillImage.type == Image.Type.Filled)
+            {
+                FillImage.fillAmount = ratio;
+            }
+            else if (FillRectTransform != null)
+            {
+                float s = ParentWidget != null ? ParentWidget.CurrentDpiScale : 1.0f;
+                float curLen = MaxSpanLength * s * ratio;
+                if (IsVertical)
+                    FillRectTransform.sizeDelta = new Vector2(FillRectTransform.sizeDelta.x, curLen);
+                else
+                    FillRectTransform.sizeDelta = new Vector2(curLen, FillRectTransform.sizeDelta.y);
+            }
+            MeterRole = role;
+            ThemeConfig currentTheme = WidgetStyleManager.Instance.CurrentTheme;
+            if (currentTheme != null)
+            {
+                WidgetStyleManager.Instance.ApplyMeterStyle(null, FillImage, null, role, currentTheme);
+            }
         }
 
         private void UpdateBarColor(ThemeConfig theme)
@@ -539,9 +599,17 @@ namespace ModularFlightPanel.UI.Framework
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             var style = WidgetStyleManager.Instance;
-            if (BackgroundImage != null) BackgroundImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            if (BorderOutline != null) BorderOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (LabelText != null) LabelText.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
+            if (Button != null)
+            {
+                style.ApplyButtonStyle(Button, BackgroundImage, LabelText, VisualRole, false, theme);
+            }
+            else
+            {
+                if (BackgroundImage != null) BackgroundImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+                if (BorderOutline != null) BorderOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                if (LabelText != null) style.ApplyTextStyle(LabelText, TextStyleRole.SecondaryValue, theme);
+            }
+            if (ActiveLed != null) ActiveLed.color = style.GetTextColor(TextStyleRole.Accent, theme);
             if (Feedback != null) Feedback.ApplyTheme(theme);
         }
 
@@ -577,6 +645,8 @@ namespace ModularFlightPanel.UI.Framework
         public AnnunciatorState State { get; set; } = AnnunciatorState.Off;
         public bool Blinking { get; set; } = false;
 
+        public Text SubLabel { get; private set; }
+
         public WidgetAnnunciatorControl(BaseFlightWidget parent, string id, string displayName, GameObject rootGo,
             Image bg, Outline outline, Text label, string labelStr)
             : base(parent, id, displayName, WidgetControlCategory.Annunciator, rootGo)
@@ -591,6 +661,7 @@ namespace ModularFlightPanel.UI.Framework
             : base(null, id, displayName, WidgetControlCategory.Annunciator, rootGo)
         {
             LampLabel = title;
+            SubLabel = sub;
             LampBg = bg;
             LampOutline = outline;
         }
@@ -599,6 +670,7 @@ namespace ModularFlightPanel.UI.Framework
             : base(null, (title != null ? title.name : "annunciator"), displayName, WidgetControlCategory.Annunciator, title != null ? title.gameObject : null)
         {
             LampLabel = title;
+            SubLabel = sub;
             LampBg = bg;
             LampOutline = outline;
         }
@@ -609,7 +681,8 @@ namespace ModularFlightPanel.UI.Framework
             var style = WidgetStyleManager.Instance;
             if (LampBg != null) LampBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (LampOutline != null) LampOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (LampLabel != null) LampLabel.color = style.GetTextColor(TextStyleRole.Label, theme);
+            if (LampLabel != null) style.ApplyTextStyle(LampLabel, TextStyleRole.Label, theme);
+            if (SubLabel != null) style.ApplyTextStyle(SubLabel, TextStyleRole.Accent, theme);
         }
 
         public override void UpdateTelemetry(IFlightTelemetry telemetry)
@@ -1164,5 +1237,20 @@ namespace ModularFlightPanel.UI.Framework
         public void UnregisterAll() => WidgetControlManager.UnregisterAll(_owner);
         public IReadOnlyList<IWidgetControl> All => WidgetControlManager.GetControls(_owner);
         public T Get<T>(string id) where T : class, IWidgetControl => WidgetControlManager.GetControl<T>(_owner, id);
+
+        public WidgetGenericSubElementControl Wrap(string id, string displayName, GameObject rootGo, Action<ThemeConfig> onApplyTheme = null, Action<IFlightTelemetry> onUpdateTelemetry = null)
+            => WidgetControlManager.WrapElement(_owner, id, displayName, rootGo, onApplyTheme, onUpdateTelemetry);
+
+        public WidgetHeaderControl AddHeader(string id, string title, string subtitle = "", Vector2? pos = null, Vector2? size = null, string badge = "")
+            => WidgetControlManager.CreateHeader(_owner, id, title, subtitle, pos, size, badge);
+
+        public WidgetReadoutControl AddReadout(string id, string displayName, Vector2 size, Vector2 pos, string token, string title = "", string unit = "")
+            => WidgetControlManager.CreateReadout(_owner, id, displayName, size, pos, token, title, unit);
+
+        public WidgetLinearBarControl AddLinearBar(string id, string displayName, Vector2 size, Vector2 pos, string token, double min = 0.0, double max = 100.0, bool isVertical = false)
+            => WidgetControlManager.CreateLinearBar(_owner, id, displayName, size, pos, token, min, max, isVertical);
+
+        public WidgetActionButtonControl AddButton(string id, string displayName, Vector2 size, Vector2 pos, string label, Action onClick, bool isToggle = false)
+            => WidgetControlManager.CreateButton(_owner, id, displayName, size, pos, label, onClick, isToggle);
     }
 }

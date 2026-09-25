@@ -58,6 +58,12 @@ namespace ModularFlightPanel.UI.Widgets
             // 构建控制按键: RCS (-68), SAS (-26), REF FRAME (+43)
             BuildControlBar(panel.transform, s, theme);
 
+            this.Controls.Register(new WidgetActionButtonControl("rcs_btn", "RCS 开关按键", _rcsBtn.gameObject, _rcsBtn, _rcsText, _rcsImg, ButtonVisualRole.ActiveToggle, OnRCSToggle));
+            this.Controls.Register(new WidgetActionButtonControl("sas_btn", "SAS 开关按键", _sasBtn.gameObject, _sasBtn, _sasText, _sasImg, ButtonVisualRole.ActiveToggle, OnSASToggle));
+            this.Controls.Register(new WidgetActionButtonControl("frame_btn", "参考系切换按键", _frameBtn.gameObject, _frameBtn, _frameText, _frameImg, ButtonVisualRole.Normal, OnCycleSpeedMode));
+            this.Controls.BindConfigToControls(config);
+            this.Controls.ApplyThemeToControls(theme);
+
             ApplyTheme(theme);
         }
 
@@ -213,27 +219,16 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             theme = WidgetStyleManager.ResolveTheme(theme);
 
+            this.Controls.ApplyThemeToControls(theme);
+
             if (_panelImage != null) _panelImage.color = Color.clear;
             if (_panelOutline != null) _panelOutline.enabled = false;
 
             if (_rcsText != null) _rcsText.text = GetTemplateChannel("RCS_LABEL", "RCS");
             if (_sasText != null) _sasText.text = GetTemplateChannel("SAS_LABEL", "SAS");
 
-            if (_rcsBtn != null)
-            {
-                _rcsBtn.GetFeedback()?.ApplyTheme(theme);
-                _rcsBtn.SetToggleActive(_lastRcs);
-            }
-            if (_sasBtn != null)
-            {
-                _sasBtn.GetFeedback()?.ApplyTheme(theme);
-                _sasBtn.SetToggleActive(_lastSas);
-            }
-            if (_frameBtn != null)
-            {
-                _frameBtn.GetFeedback()?.ApplyTheme(theme);
-                if (_frameText != null) ApplyText(_frameText, TextStyleRole.SecondaryValue, theme);
-            }
+            if (_rcsBtn != null) _rcsBtn.SetToggleActive(_lastRcs);
+            if (_sasBtn != null) _sasBtn.SetToggleActive(_lastSas);
         }
 
         private void ApplyTooltips()
