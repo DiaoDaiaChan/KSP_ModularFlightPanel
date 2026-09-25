@@ -47,9 +47,16 @@ namespace ModularFlightPanel.UI
         public virtual WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         /// <summary>
-        /// 默认刷新间隔 (秒)。仅在独立无管理器模式或特定配置下作为回退
+        /// 组件源码级自定义目标刷新率 (Hz)。
+        /// 当派生类 override 此属性并返回大于 0 的数值时 (例如 20f, 45f)，
+        /// 将直接以该精确频率执行节流更新，拥有高于 RefreshTier 阶梯的生效优先级。
         /// </summary>
-        public virtual float DefaultUpdateInterval => 0f;
+        public virtual float CustomHz => 0f;
+
+        /// <summary>
+        /// 默认刷新间隔 (秒)。优先由 CustomHz 换算推导，亦可直接重写。
+        /// </summary>
+        public virtual float DefaultUpdateInterval => CustomHz > 0.001f ? (1.0f / CustomHz) : 0f;
 
         /// <summary>
         /// 是否已受全局 WidgetRenderManager 接管（接管后禁用 MonoBehaviour 独立 Update，改由主分发调度）

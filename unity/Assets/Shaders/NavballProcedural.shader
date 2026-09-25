@@ -212,12 +212,14 @@ Shader "ModularFlightPanel/NavballProcedural"
                 {
                     col = lerp(_GroundHorizonColor, _GroundNadirColor, pow(-p.y, 0.88));
 
-                    // 地面半球加稀疏斜向地形纹理，配合负俯仰虚线刻度，让上下半球一眼可辨。
-                    float terrainPhase = headDeg * 0.42 + absPitch * 1.15;
-                    float terrainLine = abs(frac(terrainPhase / 11.0 + 0.5) - 0.5);
-                    float hatchAA = max(fwidth(terrainLine) * 1.8, 0.018);
-                    float terrainHatch = 1.0 - smoothstep(0.035, 0.035 + hatchAA, terrainLine);
-                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb, terrainHatch * 0.28);
+                    // 移除斜向假伪影排线，采用高阶航电地平切光与深邃重力沉降渐变：
+                    // 1. 赤道地面侧高反差切光暗带 (-0.055 < p.y < 0)，极大提升白色地平线边缘对比度，天地一刀分明
+                    float horizonTrench = smoothstep(-0.055, -0.001, p.y) * 0.24;
+                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb * 0.50, horizonTrench);
+
+                    // 2. 地面深邃重力沉降：越接近天底 (-Y)，大地沉稳感越强，与轻盈明亮的天穹形成强烈的自然直觉对比
+                    float nadirDepth = pow(-p.y, 1.45) * 0.22;
+                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb * 0.60, nadirDepth);
 
                     // GPWS / 近地大下沉率防撞动态斑马纹 (Ground Terrain Hazard Pull-Up Stripes)
                     if (_GroundHazardAlert > 0.01)
@@ -377,6 +379,13 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float tick10AA = max(fwidth(pMod10) * 1.3, 0.04);
                 float tick10HAA = max(fwidth(absHOffset) * 1.3, 0.08);
                 float isTick10 = isPure10 ? ((1.0 - smoothstep(0.26 - tick10AA, 0.26 + tick10AA, pMod10)) * (1.0 - smoothstep(5.5 - tick10HAA, 5.5 + tick10HAA, absHOffset)) * 0.72 * smoothstep(0.0, 0.32, _DetailScale)) : 0.0;
+                if (pitchDeg < 0.0 && isTick10 > 0.0)
+                {
+                    // 地面侧 10° 梯级均匀切分为点划虚线 (MIL-STD 军规航电规范，实线代表天，虚线代表地)
+                    float dash10 = fmod(absHOffset, 2.0);
+                    float dash10AA = max(fwidth(dash10) * 1.4, 0.08);
+                    isTick10 *= (1.0 - smoothstep(1.10 - dash10AA, 1.10 + dash10AA, dash10));
+                }
 
                 // 中间 5° 梯级短杠 (横跨 ±3.2°)
                 float pMod5 = abs(pitchDeg - round(pitchDeg / 5.0) * 5.0);
@@ -385,6 +394,13 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float tick5AA = max(fwidth(pMod5) * 1.3, 0.04);
                 float tick5HAA = max(fwidth(absHOffset) * 1.3, 0.08);
                 float isTick5 = isPure5 ? ((1.0 - smoothstep(0.20 - tick5AA, 0.20 + tick5AA, pMod5)) * (1.0 - smoothstep(3.2 - tick5HAA, 3.2 + tick5HAA, absHOffset)) * 0.50 * smoothstep(0.22, 0.62, _DetailScale)) : 0.0;
+                if (pitchDeg < 0.0 && isTick5 > 0.0)
+                {
+                    // 地面侧 5° 短杠切分为点线 (Dotted Ticks)
+                    float dash5 = fmod(absHOffset, 1.6);
+                    float dash5AA = max(fwidth(dash5) * 1.4, 0.08);
+                    isTick5 *= (1.0 - smoothstep(0.85 - dash5AA, 0.85 + dash5AA, dash5));
+                }
 
                 float combinedLadder = max(majorLadder15, max(isTick10, isTick5)) * polarLadderFade;
 
@@ -471,14 +487,31 @@ Shader "ModularFlightPanel/NavballProcedural"
                 col.rgb = lerp(col.rgb, outlineCol.rgb, saturate(textOutline * outlineCol.a));
                 col.rgb = lerp(col.rgb, labelCol.rgb, saturate(textFill * labelCol.a));
 
-                // 6. 天顶 (+90°) 与天底 (-90°) 极点专属航电十字标 (Celestial Pole Cross)
-                // 替代传统密集同心圆，以极简十字标定天顶/天底
-                if (absY > 0.970)
+                // 6. 天顶 (+90° Zenith) 与天底 (-90° Nadir) 差异化专属极点标
+                // 天顶为苍穹光环十字 (Zenith Sun Halo)，天底为大地引力靶心标 (Nadir Ground Target)，极端姿态一眼即辨
+                if (absY > 0.965)
                 {
-                    float armX = (abs(p.x) < 0.0035 && abs(p.z) < 0.08) ? 1.0 : 0.0;
-                    float armZ = (abs(p.z) < 0.0035 && abs(p.x) < 0.08) ? 1.0 : 0.0;
-                    float isPoleCross = max(armX, armZ) * 0.55;
-                    col = lerp(col, (p.y > 0.0 ? _PitchLadderColor : _EquatorColor), isPoleCross);
+                    float poleR = sqrt(p.x * p.x + p.z * p.z);
+                    float poleAA = max(fwidth(poleR) * 1.4, 0.003);
+                    float armX = (abs(p.x) < 0.0032 && abs(p.z) < 0.075) ? 1.0 : 0.0;
+                    float armZ = (abs(p.z) < 0.0032 && abs(p.x) < 0.075) ? 1.0 : 0.0;
+                    float crossArm = max(armX, armZ);
+
+                    if (p.y > 0.0)
+                    {
+                        // 天顶：纤细苍穹天顶光环 (r = 0.042)
+                        float haloDist = abs(poleR - 0.042);
+                        float zenithHalo = 1.0 - smoothstep(0.0028 - poleAA, 0.0028 + poleAA, haloDist);
+                        float isZenith = max(crossArm * 0.50, zenithHalo * 0.70);
+                        col.rgb = lerp(col.rgb, _PitchLadderColor.rgb, isZenith * _PitchLadderColor.a);
+                    }
+                    else
+                    {
+                        // 天底：大地地心靶心实心锚点 (r = 0.018) + 四向短翼
+                        float nadirDot = 1.0 - smoothstep(0.016 - poleAA, 0.016 + poleAA, poleR);
+                        float isNadir = max(crossArm * 0.65, nadirDot * 0.85);
+                        col.rgb = lerp(col.rgb, _EquatorColor.rgb, isNadir * _EquatorColor.a);
+                    }
                 }
 
                 // 7. 3D 球面深度边缘衰减 (Limb Darkening - 营造真实球体体积感)

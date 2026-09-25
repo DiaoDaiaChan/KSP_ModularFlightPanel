@@ -50,7 +50,15 @@ namespace ModularFlightPanel.UI
         public WidgetLifecycleState State;
         public float LastUpdateTime;
 
-        public float CustomInterval => Widget?.Config?.EffectiveUpdateInterval ?? 0f;
+        public float CustomInterval
+        {
+            get
+            {
+                float configInterval = Widget?.Config?.EffectiveUpdateInterval ?? 0f;
+                if (configInterval > 0f) return configInterval;
+                return Widget?.DefaultUpdateInterval ?? 0f;
+            }
+        }
 
         public WidgetRegistration(BaseFlightWidget widget, WidgetRefreshTier tier)
         {

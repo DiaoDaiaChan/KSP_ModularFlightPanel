@@ -77,6 +77,9 @@ Shader "ModularFlightPanel/MinimalistAttitudeSphere"
                 else
                 {
                     col = lerp(_GroundColor * 0.75, _GroundColor, pow(-p.y, 0.8));
+                    // 地平线切光对比暗槽
+                    float trench = smoothstep(-0.055, -0.001, p.y) * 0.22;
+                    col.rgb = lerp(col.rgb, _GroundColor.rgb * 0.40, trench);
                 }
 
                 // 2. 纤细激光地平线 (Equator Dividing Line)

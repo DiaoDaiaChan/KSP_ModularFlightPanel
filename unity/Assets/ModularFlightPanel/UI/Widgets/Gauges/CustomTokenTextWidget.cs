@@ -9,6 +9,7 @@ namespace ModularFlightPanel.UI.Widgets
     // ====================================================================================================
     // Modular Flight Panel (MFP) - 官方标准蓝本 [1/3]：纯读数卡片型航电组件 (Standard Readout Card Blueprint)
     // 【现代声明式 UI 对象范式 (Object-DSL)】在类头部集中声明高阶控件对象，基类全自动构建 UGUI 并纳管生命周期
+    // 直接继承 BaseAvionicsWidget，享受通用航电物理尺寸、卡片底板、刷新阶梯与默认遥测驱动
     // ====================================================================================================
 
     /// <summary>
@@ -23,24 +24,23 @@ namespace ModularFlightPanel.UI.Widgets
         DefaultWidgetId = "custom.telemetry_card",
         DefaultX = 0f,
         DefaultY = 0f)]
-    public class CustomTokenTextWidget : BaseFlightWidget
+    public class CustomTokenTextWidget : BaseAvionicsWidget
     {
-        // ── 头部集中声明区：尺寸、底板样式、刷新率与全部声明式控件 (一屏之内尽收眼底) ──
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+        // ── 头部集中声明区：尺寸、刷新率与全部语义泊靠 DSL 控件 (一屏之内尽收眼底) ──
         public override Vector2 BaseSize => new Vector2(210f, 56f);
-        protected override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        public TextWidget Title = new(TextStyleRole.Label, x: 6f, y: 18f, w: 198f, h: 16f, font: 10f, align: TextAnchor.UpperLeft);
-        public TextWidget Content = new(TextStyleRole.PrimaryValue, x: 6f, y: -12f, w: 198f, h: 30f, font: 13f, align: TextAnchor.LowerLeft);
+        public TextWidget Title = TextWidget.Title("TELEMETRY");
+        public TextWidget Content = TextWidget.Value("---");
 
         // ── 遥测数据动态刷新：纯业务求值，赋值自动触发内部脏检查与防重绘 ──
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
             string titleTpl = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : "TELEMETRY";
-            Title.Text = TelemetryTokenEngine.Evaluate(titleTpl, telemetry);
+            Title.Text = EvalToken(titleTpl, telemetry, "TELEMETRY");
 
             string contentTpl = Config?.CustomTemplate;
-            Content.Text = !string.IsNullOrEmpty(contentTpl) ? TelemetryTokenEngine.Evaluate(contentTpl, telemetry) : "---";
+            Content.Text = !string.IsNullOrEmpty(contentTpl) ? EvalToken(contentTpl, telemetry, "---") : "---";
         }
     }
 }

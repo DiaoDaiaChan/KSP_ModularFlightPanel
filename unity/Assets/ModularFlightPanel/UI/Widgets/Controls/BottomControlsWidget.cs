@@ -29,23 +29,24 @@ namespace ModularFlightPanel.UI.Widgets
         DefaultY = -210f,
         IsSingleton = true,
         ExactIds = new[] { "core.bottom_controls" })]
-    public class BottomControlsWidget : BaseFlightWidget
+    public class BottomControlsWidget : BaseAvionicsWidget
     {
         // ── 头部集中声明区：尺寸、刷新率与全部交互微控件 (一屏之内尽收眼底) ──
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
         public override Vector2 BaseSize => new Vector2(184f, 22f);
+        protected override bool AutoCreateCardFrame => false; // 紧凑型浮动药丸按键栏，无独立底板
 
-        public ToggleButtonWidget Rcs = new("RCS", x: -68f, y: 0f, w: 38f, h: 18f, font: 8f)
+        public ToggleButtonWidget Rcs = new ToggleButtonWidget("RCS", x: -68f, y: 0f, w: 38f, h: 18f, font: 8f)
         {
             OnClick = () => FlightTelemetryContext.Current?.ToggleRCS()
         };
 
-        public ToggleButtonWidget Sas = new("SAS", x: -26f, y: 0f, w: 38f, h: 18f, font: 8f)
+        public ToggleButtonWidget Sas = new ToggleButtonWidget("SAS", x: -26f, y: 0f, w: 38f, h: 18f, font: 8f)
         {
             OnClick = () => FlightTelemetryContext.Current?.ToggleSAS()
         };
 
-        public ActionButtonWidget Frame = new("REF: SURFACE ▾", x: 43f, y: 0f, w: 90f, h: 18f, font: 7.5f)
+        public ActionButtonWidget Frame = new ActionButtonWidget("REF: SURFACE ▾", x: 43f, y: 0f, w: 90f, h: 18f, font: 7.5f)
         {
             OnClick = () => FlightTelemetryContext.Current?.CycleSpeedMode(),
             OnRightClick = () =>

@@ -595,7 +595,7 @@ namespace ModularFlightPanel.UI
         /// 历史上这两处曾各写一份（一处含 BaseNavballSphereWidget、一处不含），直接导致
         /// "UI 根目录下继承抽象姿态球基类的组件彻底不被审计"这种静默漏检。
         /// </summary>
-        internal static readonly string[] WidgetBaseTypeNames = { "BaseFlightWidget", "BaseNavballSphereWidget" };
+        internal static readonly string[] WidgetBaseTypeNames = { "BaseFlightWidget", "BaseNavballSphereWidget", "BaseAvionicsWidget" };
 
         // ── 规则 005：OnDestroy 声明 ──
         private static readonly Regex OnDestroyDeclRegex = new Regex(@"\bvoid\s+OnDestroy\s*\(", RegexOptions.Compiled);
@@ -893,14 +893,12 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
-        /// 由一批组件源文件推导"组件继承闭包"：种子 = WidgetBaseTypeNames，反复迭代直到无新增。
-        /// SPEC-001 用它与 CollectClassDecls 做**类级**判定，因此
-        /// "间接派生的独立文件"不再误报、"泛型约束蹭正则"不再漏报。
+        /// 由一批组件源文件推导指定种子集合的继承闭包：反复迭代直到无新增。
         /// </summary>
-        private static HashSet<string> BuildWidgetClosure(IEnumerable<WidgetSourceFile> files)
+        private static HashSet<string> BuildClosureFromSeeds(IEnumerable<WidgetSourceFile> files, IEnumerable<string> seeds)
         {
             var closure = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < WidgetBaseTypeNames.Length; i++) closure.Add(WidgetBaseTypeNames[i]);
+            foreach (var s in seeds) closure.Add(s);
 
             var allDecls = new List<KeyValuePair<string, string[]>>();
             foreach (var f in files)
@@ -929,6 +927,25 @@ namespace ModularFlightPanel.UI
             return closure;
         }
 
+        /// <summary>
+        /// 由一批组件源文件推导"组件继承闭包"：种子 = WidgetBaseTypeNames，反复迭代直到无新增。
+        /// SPEC-001 用它与 CollectClassDecls 做**类级**判定，因此
+        /// "间接派生的独立文件"不再误报、"泛型约束蹭正则"不再漏报。
+        /// </summary>
+        private static HashSet<string> BuildWidgetClosure(IEnumerable<WidgetSourceFile> files)
+        {
+            return BuildClosureFromSeeds(files, WidgetBaseTypeNames);
+        }
+
+        /// <summary>
+        /// 推导继承自通用航电大基类 (BaseAvionicsWidget) 的类闭包。
+        /// 闭包内的类默认自动获得父类预设的标准刷新阶梯与默认遥测更新，无需重复声明样板。
+        /// </summary>
+        private static HashSet<string> BuildAvionicsClosure(IEnumerable<WidgetSourceFile> files)
+        {
+            return BuildClosureFromSeeds(files, new[] { "BaseAvionicsWidget" });
+        }
+
         /// <summary>扫描一批组件源文件，产出统一报告（含 SPEC-006 基线债务汇总）</summary>
         public static WidgetSourceAuditReport Scan(IEnumerable<WidgetSourceFile> files)
         {
@@ -941,11 +958,12 @@ namespace ModularFlightPanel.UI
             var list = new List<WidgetSourceFile>();
             foreach (var f in files) list.Add(f);
             var closure = BuildWidgetClosure(list);
+            var avionicsClosure = BuildAvionicsClosure(list);
 
             foreach (var file in list)
             {
                 report.WidgetsScanned++;
-                ScanOne(file, report, closure, ref pendingDebtFiles, ref pendingDebtOccurrences);
+                ScanOne(file, report, closure, avionicsClosure, ref pendingDebtFiles, ref pendingDebtOccurrences);
             }
 
             if (pendingDebtFiles > 0)
@@ -1115,6 +1133,14 @@ namespace ModularFlightPanel.UI
             var attrReport = Scan(new[] { MakeFile("FakeAttr.cs", compliant.Replace("[FlightWidget(\"fake_widget\")]", string.Empty)) });
             check(attrReport.CountByRule(WidgetSpecRules.AutoRegistration) == 1, "SPEC-008 端到端失效: 缺失 [FlightWidget] 未被拦下");
 
+            string avionicsSynthetic = "namespace N { [FlightWidget(\"fake_avionics\")] public class FakeAvionics : BaseAvionicsWidget { } }";
+            var avReport = Scan(new[] { MakeFile("FakeAvionics.cs", avionicsSynthetic) });
+            check(avReport.ErrorCount == 0, "BaseAvionicsWidget 派生类未重写 RefreshTier/OnUpdateTelemetry 时应安全继承父类缺省值并被放行: " + Describe(avReport));
+
+            string customHzSynthetic = "namespace N { [FlightWidget(\"fake_custom_hz\")] public class FakeCustomHz : BaseAvionicsWidget { public override float CustomHz => 20f; } }";
+            var hzReport = Scan(new[] { MakeFile("FakeCustomHz.cs", customHzSynthetic) });
+            check(hzReport.ErrorCount == 0, "BaseAvionicsWidget 重写 CustomHz 应合法放行: " + Describe(hzReport));
+
             // ── (4) SPEC-006 棘轮必须由代码强制，而不是注释里的口头约定 ──
             var ratchetFailures = WidgetColorLiteralAudit.ValidateRatchet();
             for (int i = 0; i < ratchetFailures.Count; i++)
@@ -1164,12 +1190,13 @@ namespace ModularFlightPanel.UI
                  + "}\n";
         }
 
-        private static void ScanOne(WidgetSourceFile file, WidgetSourceAuditReport report, HashSet<string> widgetClosure,
+        private static void ScanOne(WidgetSourceFile file, WidgetSourceAuditReport report, HashSet<string> widgetClosure, HashSet<string> avionicsClosure,
             ref int debtFiles, ref int debtOccurrences)
         {
             // 关键：所有规则都在"词法清洗 + 别名归一化"后的骨架上判定 —— 注释与字符串不参与，
             // 且 `using TC = ...ThemeConfig;` 这类别名会被还原成简名，不再成为绕过通道。
             string code = CSharpSourceLinter.SanitizeAndNormalize(file.Text);
+            bool isAvionics = DeclaresWidgetClass(code, avionicsClosure);
 
             // ── SPEC-001 继承契约（类级 + 继承闭包）──
             // 旧实现是文件级 `:\s*BaseFlightWidget`，一句 `where T : BaseFlightWidget` 泛型约束
@@ -1183,11 +1210,15 @@ namespace ModularFlightPanel.UI
             }
 
             // ── SPEC-002 刷新阶梯：形状 + 取值双重校验（表达式体与块状实现均合法）──
+            // 派生自 BaseAvionicsWidget 的组件默认继承父类标准阶梯 (Standard)，无需强制重写；直接派生 BaseFlightWidget 者仍必须显式声明。
             var tierDecl = RefreshTierDeclRegex.Match(code);
             if (!tierDecl.Success)
             {
-                Add(report, file, WidgetSpecRules.RefreshTier, "ERROR", 0,
-                    "未显式重写 RefreshTier (必须声明 Critical / Standard / Relaxed / UltraLow)");
+                if (!isAvionics)
+                {
+                    Add(report, file, WidgetSpecRules.RefreshTier, "ERROR", 0,
+                        "未显式重写 RefreshTier (必须声明 Critical / Standard / Relaxed / UltraLow)");
+                }
             }
             else
             {
@@ -1214,10 +1245,14 @@ namespace ModularFlightPanel.UI
             }
 
             // ── SPEC-004 遥测契约 ──
+            // 派生自 BaseAvionicsWidget 的组件若全量使用微控件，基类自动纳管调度与 Token 计算，可省略重写；直接派生 BaseFlightWidget 者仍必须实现。
             if (!UpdateTelemetryRegex.IsMatch(code))
             {
-                Add(report, file, WidgetSpecRules.TelemetryContract, "ERROR", 0,
-                    "未重写 OnUpdateTelemetry(IFlightTelemetry) 遥测驱动接口");
+                if (!isAvionics)
+                {
+                    Add(report, file, WidgetSpecRules.TelemetryContract, "ERROR", 0,
+                        "未重写 OnUpdateTelemetry(IFlightTelemetry) 遥测驱动接口");
+                }
             }
 
             // ── SPEC-005 安全生命周期 ──
@@ -1280,6 +1315,7 @@ namespace ModularFlightPanel.UI
             // ── SPEC-008 自动发现与注册元数据契约（抽象基类与标杆模板豁免）──
             if (!AbstractClassRegex.IsMatch(code)
                 && !string.Equals(file.Name, "BaseNavballSphereWidget.cs", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(file.Name, "BaseAvionicsWidget.cs", StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(file.Name, "StandardFlightWidgetTemplate.cs", StringComparison.OrdinalIgnoreCase))
             {
                 if (!FlightWidgetAttrRegex.IsMatch(code))

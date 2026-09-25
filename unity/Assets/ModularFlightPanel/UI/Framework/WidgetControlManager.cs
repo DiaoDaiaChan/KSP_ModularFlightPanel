@@ -1228,11 +1228,27 @@ namespace ModularFlightPanel.UI.Framework
     #region Declarative DSL Widgets (TextWidget, ToggleButtonWidget, ActionButtonWidget, LinearBarWidget)
 
     /// <summary>
+    /// 声明式微控件在航电卡片内的语义泊靠槽位 (Semantic Docking Slots)
+    /// </summary>
+    public enum WidgetDock
+    {
+        Custom,      // 显式指定坐标与长宽 (X, Y, Width, Height)
+        TopLeft,     // 顶部左侧 (标准卡片标题 / 标签)
+        TopRight,    // 顶部右侧 (状态徽标 / 辅助角标)
+        Center,      // 居中大显示区 (核心数值读数)
+        Bottom,      // 底部水平通栏 (柱状计量槽 / 进度条)
+        BottomLeft,  // 底部左侧 (次要数值 / 状态文本)
+        BottomRight, // 底部右侧 (工程单位 / 辅助标签)
+        Fill         // 全面积视口填充
+    }
+
+    /// <summary>
     /// 声明式文本与读数微控件 (Declarative Text & Readout Widget)
     /// 封装 UGUI Text，内置脏检查 (SetTextIfChanged)、多主题响应与布局自适应
     /// </summary>
     public class TextWidget : BaseWidgetControl, IWidgetDslControl
     {
+        public WidgetDock Dock { get; set; } = WidgetDock.Custom;
         public float X { get; set; }
         public float Y { get; set; }
         public float Width { get; set; }
@@ -1298,6 +1314,32 @@ namespace ModularFlightPanel.UI.Framework
         {
         }
 
+        public TextWidget(string defaultText, WidgetDock dock, float font = 0f, TextStyleRole role = TextStyleRole.PrimaryValue)
+            : base("text_ctrl", "Text Control", WidgetControlCategory.Readout, null)
+        {
+            Dock = dock;
+            StyleRole = role;
+            DefaultText = defaultText;
+            _text = defaultText;
+            if (font > 0f) FontSize = font;
+        }
+
+        #region Semantic Factory Helpers
+
+        public static TextWidget Title(string defaultText = "", string token = null, float font = 10f)
+            => new TextWidget(defaultText, WidgetDock.TopLeft, font, TextStyleRole.Label) { Token = token };
+
+        public static TextWidget Badge(string defaultText = "", string token = null, float font = 8f)
+            => new TextWidget(defaultText, WidgetDock.TopRight, font, TextStyleRole.SecondaryValue) { Token = token };
+
+        public static TextWidget Value(string defaultTextOrToken = "", string unit = null, float font = 20f)
+            => new TextWidget(defaultTextOrToken, WidgetDock.Center, font, TextStyleRole.PrimaryValue) { Token = defaultTextOrToken };
+
+        public static TextWidget Unit(string unitText = "", float font = 10f)
+            => new TextWidget(unitText, WidgetDock.BottomRight, font, TextStyleRole.Unit);
+
+        #endregion
+
         public void Build(BaseFlightWidget parent, string fieldName, float dpiScale, ThemeConfig theme)
         {
             ParentWidget = parent;
@@ -1308,18 +1350,81 @@ namespace ModularFlightPanel.UI.Framework
             theme = WidgetStyleManager.ResolveTheme(theme);
             var style = WidgetStyleManager.Instance;
 
-            int sz = Mathf.Max(6, Mathf.RoundToInt(FontSize * dpiScale));
+            Vector2 cardSz = parent.RectTransform != null ? parent.RectTransform.sizeDelta : Vector2.zero;
+            if (cardSz.x <= 0f && parent.BaseSize.x > 0f)
+            {
+                cardSz = parent.BaseSize * dpiScale;
+            }
+
+            int sz = Mathf.Max(6, Mathf.RoundToInt((FontSize > 0f ? FontSize : 12f) * dpiScale));
             string initialText = !string.IsNullOrEmpty(_text) ? _text : (DefaultText ?? Token ?? "---");
             TextComponent = UIFactory.CreateText(parent.transform, Id, initialText, sz, Alignment, style.GetTextColor(StyleRole, theme));
             TextComponent.fontStyle = FontStyle;
             RootGameObject = TextComponent.gameObject;
 
             RectTransform rt = TextComponent.rectTransform;
-            Vector2 cardSz = parent.RectTransform != null ? parent.RectTransform.sizeDelta : Vector2.zero;
-            float w = Width > 0f ? Width * dpiScale : (cardSz.x > 0f ? cardSz.x - 12f * dpiScale : 100f * dpiScale);
-            float h = Height > 0f ? Height * dpiScale : (sz + 6f * dpiScale);
-            rt.sizeDelta = new Vector2(w, h);
-            rt.anchoredPosition = new Vector2(X * dpiScale, Y * dpiScale);
+
+            if (Dock == WidgetDock.TopLeft)
+            {
+                TextComponent.alignment = TextAnchor.MiddleLeft;
+                rt.anchorMin = new Vector2(0f, 1f);
+                rt.anchorMax = new Vector2(0.7f, 1f);
+                rt.pivot = new Vector2(0f, 1f);
+                rt.anchoredPosition = new Vector2(8f * dpiScale, -6f * dpiScale);
+                rt.sizeDelta = new Vector2(0f, 18f * dpiScale);
+            }
+            else if (Dock == WidgetDock.TopRight)
+            {
+                TextComponent.alignment = TextAnchor.MiddleRight;
+                rt.anchorMin = new Vector2(0.6f, 1f);
+                rt.anchorMax = new Vector2(1f, 1f);
+                rt.pivot = new Vector2(1f, 1f);
+                rt.anchoredPosition = new Vector2(-8f * dpiScale, -6f * dpiScale);
+                rt.sizeDelta = new Vector2(0f, 18f * dpiScale);
+            }
+            else if (Dock == WidgetDock.Center)
+            {
+                TextComponent.alignment = TextAnchor.MiddleLeft;
+                rt.anchorMin = new Vector2(0f, 0.25f);
+                rt.anchorMax = new Vector2(0.72f, 0.82f);
+                rt.pivot = new Vector2(0f, 0.5f);
+                rt.anchoredPosition = new Vector2(8f * dpiScale, 0f);
+                rt.sizeDelta = Vector2.zero;
+            }
+            else if (Dock == WidgetDock.BottomRight)
+            {
+                TextComponent.alignment = TextAnchor.LowerLeft;
+                rt.anchorMin = new Vector2(0.72f, 0.3f);
+                rt.anchorMax = new Vector2(1f, 0.65f);
+                rt.pivot = new Vector2(0f, 0f);
+                rt.anchoredPosition = Vector2.zero;
+                rt.sizeDelta = Vector2.zero;
+            }
+            else if (Dock == WidgetDock.BottomLeft)
+            {
+                TextComponent.alignment = TextAnchor.LowerLeft;
+                rt.anchorMin = new Vector2(0f, 0f);
+                rt.anchorMax = new Vector2(0.5f, 0.35f);
+                rt.pivot = new Vector2(0f, 0f);
+                rt.anchoredPosition = new Vector2(8f * dpiScale, 6f * dpiScale);
+                rt.sizeDelta = Vector2.zero;
+            }
+            else if (Dock == WidgetDock.Fill)
+            {
+                TextComponent.alignment = TextAnchor.MiddleCenter;
+                rt.anchorMin = Vector2.zero;
+                rt.anchorMax = Vector2.one;
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = Vector2.zero;
+                rt.sizeDelta = new Vector2(-12f * dpiScale, -12f * dpiScale);
+            }
+            else
+            {
+                float w = Width > 0f ? Width * dpiScale : (cardSz.x > 0f ? cardSz.x - 12f * dpiScale : 100f * dpiScale);
+                float h = Height > 0f ? Height * dpiScale : (sz + 6f * dpiScale);
+                rt.sizeDelta = new Vector2(w, h);
+                rt.anchoredPosition = new Vector2(X * dpiScale, Y * dpiScale);
+            }
         }
 
         public override void ApplyTheme(ThemeConfig theme)
@@ -1650,6 +1755,7 @@ namespace ModularFlightPanel.UI.Framework
     /// </summary>
     public class LinearBarWidget : BaseWidgetControl, IWidgetDslControl
     {
+        public WidgetDock Dock { get; set; } = WidgetDock.Custom;
         public float X { get; set; }
         public float Y { get; set; }
         public float Width { get; set; }
@@ -1657,6 +1763,8 @@ namespace ModularFlightPanel.UI.Framework
         public bool IsVertical { get; set; }
         public MeterStyleRole MeterRole { get; set; } = MeterStyleRole.Primary;
         public string NumericToken { get; set; }
+        public double MinValue { get; set; } = 0.0;
+        public double MaxValue { get; set; } = 100.0;
 
         public Image TrackImage { get; private set; }
         public Image FillImage { get; private set; }
@@ -1667,6 +1775,16 @@ namespace ModularFlightPanel.UI.Framework
         {
             get => _currentRatio;
             set => SetFillAmount(value, MeterRole);
+        }
+
+        public static LinearBarWidget BottomBar(MeterStyleRole role = MeterStyleRole.Primary, float height = 4f, string token = null, double min = 0.0, double max = 100.0)
+        {
+            return new LinearBarWidget(role, h: height, token: token)
+            {
+                Dock = WidgetDock.Bottom,
+                MinValue = min,
+                MaxValue = max
+            };
         }
 
         public LinearBarWidget(MeterStyleRole role = MeterStyleRole.Primary,
@@ -1689,8 +1807,30 @@ namespace ModularFlightPanel.UI.Framework
             theme = WidgetStyleManager.ResolveTheme(theme);
             var style = WidgetStyleManager.Instance;
 
-            Vector2 sz = new Vector2(Width * dpiScale, Height * dpiScale);
-            Vector2 pos = new Vector2(X * dpiScale, Y * dpiScale);
+            Vector2 cardSz = parent.RectTransform != null ? parent.RectTransform.sizeDelta : Vector2.zero;
+            if (cardSz.x <= 0f && parent.BaseSize.x > 0f)
+            {
+                cardSz = parent.BaseSize * dpiScale;
+            }
+
+            Vector2 sz;
+            Vector2 pos;
+
+            if (Dock == WidgetDock.Bottom)
+            {
+                float barW = cardSz.x > 0f ? (cardSz.x - 16f * dpiScale) : 144f * dpiScale;
+                float barH = (Height > 0f ? Height : 4f) * dpiScale;
+                sz = new Vector2(barW, barH);
+                pos = new Vector2(0f, -cardSz.y * 0.5f + 10f * dpiScale);
+                IsVertical = false;
+                Width = barW / (dpiScale > 0.001f ? dpiScale : 1f);
+                Height = barH / (dpiScale > 0.001f ? dpiScale : 1f);
+            }
+            else
+            {
+                sz = new Vector2(Width * dpiScale, Height * dpiScale);
+                pos = new Vector2(X * dpiScale, Y * dpiScale);
+            }
 
             GameObject trackGo = UIFactory.CreatePanel(parent.transform, Id + "_Track", sz, pos,
                 style.GetMeterColor(MeterStyleRole.Track, theme));
@@ -1770,6 +1910,14 @@ namespace ModularFlightPanel.UI.Framework
 
         public override void UpdateTelemetry(IFlightTelemetry telemetry)
         {
+            if (telemetry == null || !IsVisible || string.IsNullOrEmpty(NumericToken)) return;
+            double val = TelemetryTokenEngine.EvaluateNumeric(NumericToken, telemetry);
+            if (!double.IsNaN(val))
+            {
+                double denom = MaxValue - MinValue;
+                float frac = denom > 0.0001 ? (float)((val - MinValue) / denom) : 0f;
+                FillAmount = frac;
+            }
         }
     }
 
