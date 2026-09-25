@@ -445,9 +445,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            // 2. 中央 3D 飞船姿态与俯仰收缩 (3D Gimbal Dynamics)
-            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.05 || Math.Abs(telemetry.Pitch - _lastPitch) > 0.05;
-            if (_centerShipRoot != null && attDirty)
+            // 2. 中央 3D 飞船姿态与俯仰收缩 (3D Gimbal Dynamics: 全帧平滑响应，杜绝步进卡顿)
+            if (_centerShipRoot != null)
             {
                 if (_isChasePerspective)
                 {
@@ -541,20 +540,24 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             float s = CurrentDpiScale;
             float maxDeflection = 22f * s;
-            if (angError <= 1.5f)
+            bool targetLocked = _isDirectorLocked ? (angError <= 1.8f) : (angError <= 1.3f);
+            _isDirectorLocked = targetLocked;
+
+            Vector2 targetPos = targetLocked
+                ? new Vector2(0f, 14f * s)
+                : new Vector2(deflX * maxDeflection, 14f * s + deflY * maxDeflection);
+
+            float dt = Time.deltaTime;
+            float lerpT = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 14.0f);
+            _flightDirectorRoot.anchoredPosition = Vector2.Lerp(_flightDirectorRoot.anchoredPosition, targetPos, lerpT);
+
+            if (_flightDirectorRawImage != null)
             {
-                _flightDirectorRoot.anchoredPosition = new Vector2(0f, 14f * s);
-                _isDirectorLocked = true;
-                if (_flightDirectorRawImage != null)
-                    _flightDirectorRawImage.color = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f);
-            }
-            else
-            {
-                _isDirectorLocked = false;
-                Vector2 cuePos = new Vector2(deflX * maxDeflection, 14f * s + deflY * maxDeflection);
-                _flightDirectorRoot.anchoredPosition = cuePos;
-                if (_flightDirectorRawImage != null)
-                    _flightDirectorRawImage.color = WidgetStyleManager.WithAlpha(theme.AccentWarning, 0.90f);
+                Color targetCol = targetLocked
+                    ? WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f)
+                    : WidgetStyleManager.WithAlpha(theme.AccentWarning, 0.90f);
+                if (_flightDirectorRawImage.color != targetCol)
+                    _flightDirectorRawImage.color = targetCol;
             }
         }
 
@@ -726,15 +729,16 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     hasDir = NavBallHookService.MarkerDirectionFallback(key, out dir, out isVisible);
                 }
 
-                if (hasDir && isVisible && dir.z > -0.15f)
+                // 视界边缘平滑渐隐 [-0.05, -0.22]，杜绝硬边界闪烁
+                if (hasDir && isVisible && dir.z > -0.22f)
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
                     Vector2 targetPos = new Vector2(dir.x, dir.y) * _visualRadius;
                     img.rectTransform.anchoredPosition = targetPos;
 
-                    float alpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);
-                    if (Mathf.Abs(img.color.a - alpha) > 0.02f)
+                    float alpha = Mathf.Clamp01((dir.z + 0.22f) / 0.32f);
+                    if (Mathf.Abs(img.color.a - alpha) > 0.015f)
                     {
                         Color c = WidgetStyleManager.NeutralOpaque;
                         c.a = alpha;
@@ -744,6 +748,35 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 else
                 {
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                }
+            }
+
+            // 顺向/逆向与地表航迹标防御性防粘去重 (Anti-overlap De-cluttering)
+            Image progImg;
+            Image velImg;
+            if (_markerImages.TryGetValue("prograde", out progImg) &&
+                _markerImages.TryGetValue("velocity_vector", out velImg) &&
+                progImg != null && velImg != null &&
+                progImg.gameObject.activeSelf && velImg.gameObject.activeSelf)
+            {
+                float dist = Vector2.Distance(progImg.rectTransform.anchoredPosition, velImg.rectTransform.anchoredPosition);
+                if (dist < 18f * CurrentDpiScale)
+                {
+                    velImg.gameObject.SetActive(false);
+                }
+            }
+
+            Image retroImg;
+            Image antiVelImg;
+            if (_markerImages.TryGetValue("retrograde", out retroImg) &&
+                _markerImages.TryGetValue("anti_velocity_vector", out antiVelImg) &&
+                retroImg != null && antiVelImg != null &&
+                retroImg.gameObject.activeSelf && antiVelImg.gameObject.activeSelf)
+            {
+                float dist = Vector2.Distance(retroImg.rectTransform.anchoredPosition, antiVelImg.rectTransform.anchoredPosition);
+                if (dist < 18f * CurrentDpiScale)
+                {
+                    antiVelImg.gameObject.SetActive(false);
                 }
             }
         }

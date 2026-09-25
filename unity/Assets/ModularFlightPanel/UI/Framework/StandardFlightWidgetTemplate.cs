@@ -76,100 +76,40 @@ namespace ModularFlightPanel.UI
         protected override bool AutoCreateCardFrame => true;
 
         // ------------------------------------------------------------------------------------
-        // [Part 2: UI 视图节点引用与微控件注解声明]
+        // [Part 2: 声明式微控件对象声明 (Object-DSL Paradigm)]
         // ------------------------------------------------------------------------------------
+        // 头部集中通过 new 声明高阶微控件对象，基类 BaseInitialize 在 OnInitialize 执行前
+        // 全自动完成物理 DPI 乘算、UGUI 创建与 Controls 纳管，派生类 0 行创建样板代码！
 
-        // 顶部标题栏与状态徽标 (标记 [WidgetControl] 后自动注册入 Controls，主题变更时自动下发样式)
-        [WidgetControl("header_title", TextStyleRole.Label, "标题文本")]
-        private Text _headerTitleText;
+        /// <summary>顶部左侧卡片标题</summary>
+        public TextWidget HeaderTitle = new(TextStyleRole.Label, x: -36f, y: 38f, w: 72f, h: 18f, font: 10f, align: TextAnchor.MiddleLeft);
 
-        [WidgetControl("status_badge", TextStyleRole.SecondaryValue, "状态徽标")]
-        private Text _statusBadgeText;
+        /// <summary>顶部右侧状态徽标</summary>
+        public TextWidget StatusBadge = new(TextStyleRole.SecondaryValue, x: 42f, y: 38f, w: 60f, h: 18f, font: 8f, align: TextAnchor.MiddleRight);
 
-        // 核心数值与工程单位
-        [WidgetControl("primary_val", TextStyleRole.PrimaryValue, "核心主读数")]
-        private Text _primaryValueText;
+        /// <summary>核心主读数显示</summary>
+        public TextWidget PrimaryValue = new(TextStyleRole.PrimaryValue, x: -24f, y: 8f, w: 96f, h: 32f, font: 22f, align: TextAnchor.MiddleLeft);
 
-        [WidgetControl("unit_label", TextStyleRole.Unit, "工程单位")]
-        private Text _unitText;
+        /// <summary>工程单位角标</summary>
+        public TextWidget UnitLabel = new(TextStyleRole.Unit, x: 42f, y: 0f, w: 40f, h: 18f, font: 10f, align: TextAnchor.LowerLeft);
 
-        // 底部计量槽轨与填充条
-        private Image _meterTrack;
-
-        [WidgetControl("meter_fill", MeterStyleRole.Primary, "水平计量填充")]
-        private Image _meterFill;
+        /// <summary>底部水平计量条 (含 Track 底槽与 Fill 填充条)</summary>
+        public LinearBarWidget MeterBar = new(MeterStyleRole.Primary, x: 0f, y: -38f, w: 144f, h: 4f, isVertical: false);
 
         // 运行时遥测变动缓存 (防止高频 GC 分配与无意义的 Canvas 脏标记)
         private double _lastCachedValue = double.NaN;
-        private string _lastFormattedText = string.Empty;
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
 
         // ------------------------------------------------------------------------------------
         // [Part 3: 组件视图排版装配 (OnInitialize)]
         // ------------------------------------------------------------------------------------
-
+        // 注意：微控件已由基类全自动构建，OnInitialize 仅在需要设置动态文本或特异化布局时选填重写
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            float s = CurrentDpiScale;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            Vector2 cardSize = RectTransform.sizeDelta;
-
-            // 1. 构建标准顶部标题栏 (Header)
             string titleStr = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName.ToUpperInvariant() : "TELEMETRY";
-            _headerTitleText = UIFactory.CreateText(transform, "Header_Title", titleStr, Mathf.RoundToInt(10f * s), TextAnchor.MiddleLeft,
-                style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform titleRt = _headerTitleText.rectTransform;
-            titleRt.anchorMin = new Vector2(0f, 1f);
-            titleRt.anchorMax = new Vector2(1f, 1f);
-            titleRt.pivot = new Vector2(0f, 1f);
-            titleRt.sizeDelta = new Vector2(-16f * s, 18f * s);
-            titleRt.anchoredPosition = new Vector2(8f * s, -6f * s);
-
-            // 状态徽标 (右上角，文案来自 Config.BadgeXxx，例如 NOMINAL / ALERT)
-            _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", GetBadgeText(CardStyleRole.Normal), Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight,
-                style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            RectTransform badgeRt = _statusBadgeText.rectTransform;
-            badgeRt.anchorMin = new Vector2(1f, 1f);
-            badgeRt.anchorMax = new Vector2(1f, 1f);
-            badgeRt.pivot = new Vector2(1f, 1f);
-            badgeRt.sizeDelta = new Vector2(60f * s, 18f * s);
-            badgeRt.anchoredPosition = new Vector2(-8f * s, -6f * s);
-
-            // 2. 构建核心主读数与单位
-            _primaryValueText = UIFactory.CreateText(transform, "Primary_Value", "---", Mathf.RoundToInt(22f * s), TextAnchor.MiddleLeft,
-                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            RectTransform valRt = _primaryValueText.rectTransform;
-            valRt.anchorMin = new Vector2(0f, 0.4f);
-            valRt.anchorMax = new Vector2(0.7f, 0.85f);
-            valRt.anchoredPosition = new Vector2(8f * s, 0f);
-
-            _unitText = UIFactory.CreateText(transform, "Unit_Label", config?.UnitLabel ?? "", Mathf.RoundToInt(10f * s), TextAnchor.LowerLeft,
-                style.GetTextColor(TextStyleRole.Unit, theme));
-            RectTransform unitRt = _unitText.rectTransform;
-            unitRt.anchorMin = new Vector2(0.72f, 0.45f);
-            unitRt.anchorMax = new Vector2(1f, 0.75f);
-            unitRt.anchoredPosition = Vector2.zero;
-
-            // 3. 构建底部水平计量槽 (Meter)
-            GameObject trackGo = UIFactory.CreatePanel(transform, "Meter_Track",
-                new Vector2(cardSize.x - 16f * s, 4f * s), new Vector2(0f, -cardSize.y * 0.5f + 12f * s),
-                style.GetMeterColor(MeterStyleRole.Track, theme));
-            _meterTrack = trackGo.GetComponent<Image>();
-
-            GameObject fillGo = UIFactory.CreatePanel(trackGo.transform, "Meter_Fill", new Vector2(0f, 4f * s), Vector2.zero,
-                style.GetMeterColor(MeterStyleRole.Primary, theme));
-            _meterFill = fillGo.GetComponent<Image>();
-            RectTransform fillRt = fillGo.GetComponent<RectTransform>();
-            fillRt.anchorMin = new Vector2(0f, 0f);
-            fillRt.anchorMax = new Vector2(0f, 1f);
-            fillRt.pivot = new Vector2(0f, 0.5f);
-            fillRt.anchoredPosition = Vector2.zero;
-
-            // 【注】微控件全自动装配说明：
-            // 标记了 [WidgetControl] 的字段无需手动注册；未标记特性的辅助元件可通过 Controls.WrapElement 补充登记：
-            this.Controls.Wrap("meter_track", "计量底槽", trackGo, t => {
-                if (_meterTrack != null) _meterTrack.color = WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Track, t);
-            });
+            HeaderTitle.Text = titleStr;
+            StatusBadge.Text = GetBadgeText(CardStyleRole.Normal);
+            UnitLabel.Text = config?.UnitLabel ?? "";
         }
 
         // ------------------------------------------------------------------------------------
@@ -226,15 +166,12 @@ namespace ModularFlightPanel.UI
             }
             _lastCachedValue = val;
 
-            // P1: 使用 SetTextIfChanged 阻断相同字符串引发的 UGUI 顶点重建
-            // 若自定义数值格式化，推荐使用 FastFormat("pri_val", val, "F1", 0.05) 进行死区量化
-            string newStr = TelemetryTokenEngine.Evaluate(token, telemetry);
-            SetTextIfChanged(_primaryValueText, newStr);
+            // P1: 使用 DSL 属性自动进行脏检查与防重绘
+            PrimaryValue.Text = TelemetryTokenEngine.Evaluate(token, telemetry);
 
             // 3. 驱动计量条归一化填充 (量程来自 Config，几何永远钳制在 0~1 以免溢出卡片)
             float fraction = NormalizeToRange(val);
-            float maxWidth = _meterTrack.rectTransform.sizeDelta.x;
-            _meterFill.rectTransform.sizeDelta = new Vector2(maxWidth * fraction, _meterFill.rectTransform.sizeDelta.y);
+            MeterBar.SetFillAmount(fraction, MeterBar.MeterRole);
 
             // 4. 限幅模式 + 阈值告警状态机 (Normal -> Caution/Warning -> Danger)
             CardStyleRole targetRole = ResolveCardRole(val);
@@ -246,9 +183,9 @@ namespace ModularFlightPanel.UI
                 {
                     ApplyCard(CardBackground, CardOutline, targetRole, theme);
                 }
-                ApplyText(_primaryValueText, GetValueTextRole(targetRole), theme);
-                ApplyText(_statusBadgeText, GetValueTextRole(targetRole), theme);
-                SetTextIfChanged(_statusBadgeText, GetBadgeText(targetRole));
+                PrimaryValue.SetRole(GetValueTextRole(targetRole));
+                StatusBadge.SetRole(GetValueTextRole(targetRole));
+                StatusBadge.Text = GetBadgeText(targetRole);
             }
         }
 
@@ -323,12 +260,11 @@ namespace ModularFlightPanel.UI
         /// <summary>无有效遥测时的统一降级显示 (无数据、不参与量程与告警着色)</summary>
         private void ShowUnavailable()
         {
-            if (_lastFormattedText == "---") return;
+            if (PrimaryValue.Text == "---") return;
 
             _lastCachedValue = double.NaN;
-            _lastFormattedText = "---";
-            _primaryValueText.text = "---";
-            _meterFill.rectTransform.sizeDelta = new Vector2(0f, _meterFill.rectTransform.sizeDelta.y);
+            PrimaryValue.Text = "---";
+            MeterBar.SetFillAmount(0f, MeterBar.MeterRole);
 
             if (_currentCardRole != CardStyleRole.Normal)
             {
@@ -338,9 +274,9 @@ namespace ModularFlightPanel.UI
                 {
                     ApplyCard(CardBackground, CardOutline, CardStyleRole.Normal, theme);
                 }
-                ApplyText(_primaryValueText, TextStyleRole.PrimaryValue, theme);
-                ApplyText(_statusBadgeText, TextStyleRole.SecondaryValue, theme);
-                _statusBadgeText.text = GetBadgeText(CardStyleRole.Normal);
+                PrimaryValue.SetRole(TextStyleRole.PrimaryValue);
+                StatusBadge.SetRole(TextStyleRole.SecondaryValue);
+                StatusBadge.Text = GetBadgeText(CardStyleRole.Normal);
             }
         }
 

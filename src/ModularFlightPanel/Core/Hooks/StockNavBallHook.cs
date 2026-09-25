@@ -210,6 +210,18 @@ namespace ModularFlightPanel.Core
         {
             dir = Vector3.forward;
             isVisible = false;
+            if (string.IsNullOrEmpty(markerKey)) return false;
+
+            string lowerKey = markerKey.ToLowerInvariant();
+            // 地表模式下 prograde 标线物理上即为地表速度矢量 (vessel.srf_velocity)，
+            // 严禁再绘制单独的 velocity_vector / anti_velocity_vector 造成两标完全重叠吸附
+            if (lowerKey == "velocity_vector" || lowerKey == "anti_velocity_vector")
+            {
+                if (FlightGlobals.speedDisplayMode == FlightGlobals.SpeedDisplayModes.Surface)
+                {
+                    return false;
+                }
+            }
 
             // 1. 优先读取游戏内原生/Principia 正在驱动的 Marker Transform 数据 (严格遵循游戏内权威数据源)
             if (HasStockNavBall && StockInstance != null)
@@ -268,7 +280,9 @@ namespace ModularFlightPanel.Core
 
                 case "velocity_vector":
                 case "anti_velocity_vector":
-                    return v.srf_velocity.sqrMagnitude >= 0.01;
+                    // 地表模式下 prograde 标线即为地表速度矢量；仅在非地表模式且地表速度 >= 2.0 m/s 时激活
+                    if (FlightGlobals.speedDisplayMode == FlightGlobals.SpeedDisplayModes.Surface) return false;
+                    return v.srf_velocity.sqrMagnitude >= 4.0;
 
                 case "normal":
                 case "antinormal":
@@ -297,8 +311,6 @@ namespace ModularFlightPanel.Core
             {
                 case "prograde": return StockInstance.retrogradeVector;
                 case "retrograde": return StockInstance.progradeVector;
-                case "velocity_vector": return StockInstance.retrogradeVector;
-                case "anti_velocity_vector": return StockInstance.progradeVector;
                 case "normal": return StockInstance.antiNormalVector;
                 case "antinormal": return StockInstance.normalVector;
                 case "radialin": return StockInstance.radialOutVector;
@@ -316,10 +328,7 @@ namespace ModularFlightPanel.Core
             {
                 case "prograde": return StockInstance.progradeVector;
                 case "retrograde": return StockInstance.retrogradeVector;
-                // Stock NavBall has no separate velocityVector field: its native prograde marker
-                // is driven by the selected Surface/Orbit/Target speed display mode.
-                case "velocity_vector": return StockInstance.progradeVector;
-                case "anti_velocity_vector": return StockInstance.retrogradeVector;
+                // 原版 StockNavBall 无独立 velocityVector Transform，不作重定向，穿透至数学解算避免与 prograde 粘连
                 case "normal": return StockInstance.normalVector;
                 case "antinormal": return StockInstance.antiNormalVector;
                 case "radialin": return StockInstance.radialInVector;
@@ -387,12 +396,46 @@ namespace ModularFlightPanel.Core
                 case "velocity_vector":
                 case "anti_velocity_vector":
                 {
-                    Vector3d vel = vessel.srf_velocity;
-                    if (vel.sqrMagnitude > 0.01)
+                    // 1. 地表模式下主 prograde 标线物理上即为地表速度矢量，无需冗余绘制
+                    if (FlightGlobals.speedDisplayMode == FlightGlobals.SpeedDisplayModes.Surface)
                     {
-                        worldVec = (key == "velocity_vector") ? (Vector3)vel.normalized : -(Vector3)vel.normalized;
-                        hasValidVector = true;
+                        return false;
                     }
+
+                    Vector3d srfVel = vessel.srf_velocity;
+                    // 2. 地表速度极低 (< 2.0 m/s) 时矢量指向未定且无航电实用价值，自动隐藏
+                    if (srfVel.sqrMagnitude < 4.0)
+                    {
+                        return false;
+                    }
+
+                    // 3. 检查地表航迹标与当前参考系主矢量 (轨道顺向/目标顺向) 的夹角
+                    Vector3d refVel = Vector3d.zero;
+                    switch (FlightGlobals.speedDisplayMode)
+                    {
+                        case FlightGlobals.SpeedDisplayModes.Orbit:
+                            refVel = vessel.obt_velocity;
+                            break;
+                        case FlightGlobals.SpeedDisplayModes.Target:
+                            if (FlightGlobals.fetch != null && FlightGlobals.fetch.VesselTarget != null)
+                                refVel = vessel.obt_velocity - FlightGlobals.fetch.VesselTarget.GetObtVelocity();
+                            else
+                                refVel = vessel.srf_velocity;
+                            break;
+                    }
+
+                    if (refVel.sqrMagnitude > 0.01)
+                    {
+                        double dot = Vector3d.Dot(srfVel.normalized, refVel.normalized);
+                        // 夹角小于 2.5° (cos(2.5°) ≈ 0.9990)，视为与主顺向标高度重合，执行去重杜绝粘连
+                        if (dot >= 0.9990)
+                        {
+                            return false;
+                        }
+                    }
+
+                    worldVec = (key == "velocity_vector") ? (Vector3)srfVel.normalized : -(Vector3)srfVel.normalized;
+                    hasValidVector = true;
                     break;
                 }
 

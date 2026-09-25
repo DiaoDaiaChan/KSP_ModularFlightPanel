@@ -130,6 +130,9 @@ namespace ModularFlightPanel.UI
             // 监听全局语言切换通知
             I18nManager.OnLanguageChanged += HandleLanguageChanged;
 
+            // 自动扫描与构建声明式 DSL 控件 (Object-DSL 范式，头部集中声明即可全自动构建)
+            AutoBuildDslControls(theme);
+
             // 自动扫描与提前注入特性微控件 (若派生类在头部特性中声明了布局，在此全自动构建 UGUI 并注入字段)
             AutoRegisterAnnotatedControls();
 
@@ -338,7 +341,12 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        protected abstract void OnInitialize(WidgetConfig config, ThemeConfig theme);
+        /// <summary>
+        /// 派生组件初始化钩子。
+        /// 当组件完全由头部声明式 DSL 控件 (TextWidget, ToggleButtonWidget, ActionButtonWidget, LinearBarWidget)
+        /// 构成时，基类已自动完成构建与注册，派生类可完全省略重写此方法！
+        /// </summary>
+        protected virtual void OnInitialize(WidgetConfig config, ThemeConfig theme) { }
 
         /// <summary>
         /// 当玩家切换视觉主题时统一触发。
@@ -349,6 +357,32 @@ namespace ModularFlightPanel.UI
         {
             if (theme == null) return;
             this.Controls.ApplyThemeToControls(theme);
+        }
+
+        private void AutoBuildDslControls(ThemeConfig theme)
+        {
+            var fields = GetType().GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            float s = CurrentDpiScale;
+
+            for (int i = 0; i < fields.Length; i++)
+            {
+                var f = fields[i];
+                if (typeof(IWidgetDslControl).IsAssignableFrom(f.FieldType))
+                {
+                    var dslCtrl = f.GetValue(this) as IWidgetDslControl;
+                    if (dslCtrl != null)
+                    {
+                        if (dslCtrl.RootGameObject == null)
+                        {
+                            dslCtrl.Build(this, f.Name, s, theme);
+                        }
+                        if (this.Controls.Get<IWidgetControl>(dslCtrl.Id) == null)
+                        {
+                            this.Controls.Register(dslCtrl);
+                        }
+                    }
+                }
+            }
         }
 
         private void AutoRegisterAnnotatedControls()

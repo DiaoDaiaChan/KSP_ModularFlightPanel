@@ -1,7 +1,5 @@
 using System;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI.Framework;
@@ -10,34 +8,16 @@ namespace ModularFlightPanel.UI.Widgets
 {
     // ====================================================================================================
     // Modular Flight Panel (MFP) - 官方标准蓝本 [3/3]：交互控制型航电组件 (Interactive Flight Controls Blueprint)
-    // ====================================================================================================
-    //
-    // 【架构蓝本说明 (Architecture Blueprint Purpose)】:
-    // 本组件是全模组“交互型快捷操作栏 / 开关阵列 / 模式胶囊按键”的官方标准蓝本，展示了交互型组件的规范设计：
-    // 1. 【上级自动派发尺寸 (BaseSize Auto-Scaling)】:
-    //    - 声明 `BaseSize => new Vector2(184f, 22f)`，基类在 BaseInitialize 自动完成物理 1:1 分辨率栅格化计算。
-    // 2. 【航电按钮标准化管控 (WidgetActionButtonControl & Avionics Feedback)】:
-    //    - 包含普通操作键 (Normal) 与状态自保持开关键 (ActiveToggle)，统一接入航电按键视觉反馈机制。
-    //    - 标记 `[WidgetControl]` 特性，基类自动在主题切换时分发多态按键颜色与着色器。
-    // 3. 【状态同步与防抖保护 (Dirty Protection & State Synchronization)】:
-    //    - 遥测更新循环中实施严格脏检查 (`_lastRcs` / `_lastSas` / `_lastFrameText`)，
-    //      仅在飞行器真实物理状态变化时才触发视觉刷新，阻断 95%+ 无效 UI 开销。
-    // 4. 【国际化与悬浮提示系统 (I18n Tooltip Lifecycle)】:
-    //    - 按钮绑定 `SetTooltip`，支持按键名称、描述以及绑定快捷键 ("R", "T")。
-    //    - 重写 `OnLanguageChanged`，当玩家在设置中热切换语言时，自动即时刷新所有 Tooltip 文本。
-    // 5. 【防御式事件安全生命周期 (Defensive Event Clean-Up)】:
-    //    - `OnDestroy` 显式解绑所有 UGUI Button onClick 监听器，并调用 `base.OnDestroy()` 保证容器完全注销。
-    //
-    // 【适用类型】: 快捷控制条、分级触发键、姿态模式切换胶囊、灯光/起落架开关、时间加速控制台等。
+    // 【现代声明式 UI 对象范式 (Object-DSL)】在类头部集中声明高阶交互控件，基类自动构建 UGUI、事件与主题管道
     // ====================================================================================================
 
     /// <summary>
     /// 一体化机载快速控制栏 (Avionics Flight Control Bar)
     /// 严丝合缝嵌合于姿态球正下方 (宽度 184px, 高度 22px, 完美容纳于双带之间)。
     /// 整合：
-    /// 1. RCS 动力开关 (状态色高亮)
-    /// 2. SAS 主动力开关 (状态色高亮)
-    /// 3. REF FRAME 权威参考系一键切换胶囊 (SURFACE / ORBIT / TARGET)
+    /// 1. RCS 动力开关 (状态自保持与高亮)
+    /// 2. SAS 主动力开关 (状态自保持与高亮)
+    /// 3. REF FRAME 权威参考系一键切换胶囊 (左键循环 / 右键 Principia 权威参考系设置)
     /// 严格继承 BaseFlightWidget，零硬编码。
     /// </summary>
     [FlightWidget("bottom_controls", "bottom_bar_controls",
@@ -51,257 +31,102 @@ namespace ModularFlightPanel.UI.Widgets
         ExactIds = new[] { "core.bottom_controls" })]
     public class BottomControlsWidget : BaseFlightWidget
     {
-        // ====================================================================================
-        // 【头部全集中声明区】组件规格、几何常量与全部交互控件 (一屏之内尽收眼底)
-        // ====================================================================================
+        // ── 头部集中声明区：尺寸、刷新率与全部交互微控件 (一屏之内尽收眼底) ──
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
         public override Vector2 BaseSize => new Vector2(184f, 22f);
 
-        // 按钮规格常量：集中声明在头部，禁止在深层逻辑中四处散落
-        private static readonly Vector2 ToggleBtnSize = new Vector2(38f, 18f);
-        private static readonly Vector2 FrameBtnSize  = new Vector2(90f, 18f);
-        private const float RcsPosX   = -68f;
-        private const float SasPosX   = -26f;
-        private const float FramePosX = 43f;
+        public ToggleButtonWidget Rcs = new("RCS", x: -68f, y: 0f, w: 38f, h: 18f, font: 8f)
+        {
+            OnClick = () => FlightTelemetryContext.Current?.ToggleRCS()
+        };
 
-        // 核心交互微控件
-        [WidgetControl("rcs_btn", ButtonVisualRole.ActiveToggle, "RCS 开关按键")]
-        private Button _rcsBtn;
-        private Text _rcsText;
+        public ToggleButtonWidget Sas = new("SAS", x: -26f, y: 0f, w: 38f, h: 18f, font: 8f)
+        {
+            OnClick = () => FlightTelemetryContext.Current?.ToggleSAS()
+        };
 
-        [WidgetControl("sas_btn", ButtonVisualRole.ActiveToggle, "SAS 开关按键")]
-        private Button _sasBtn;
-        private Text _sasText;
-
-        [WidgetControl("frame_btn", ButtonVisualRole.Normal, "参考系切换按键")]
-        private Button _frameBtn;
-        private Text _frameText;
-        private Outline _frameOutline;
-
-        // 运行时状态脏检查缓存
-        private bool _lastRcs = false;
-        private bool _lastSas = false;
-        private string _lastFrameText;
-        private bool _hasInitializedState = false;
+        public ActionButtonWidget Frame = new("REF: SURFACE ▾", x: 43f, y: 0f, w: 90f, h: 18f, font: 7.5f)
+        {
+            OnClick = () => FlightTelemetryContext.Current?.CycleSpeedMode(),
+            OnRightClick = () =>
+            {
+                if (OnTogglePrincipiaWindowAction != null)
+                {
+                    OnTogglePrincipiaWindowAction.Invoke();
+                }
+                else
+                {
+                    FlightTelemetryContext.Current?.CycleSpeedMode();
+                }
+            }
+        };
 
         public static Action OnTogglePrincipiaWindowAction;
 
-        // ====================================================================================
-        // 【视图初始化与事件装配】集中连贯装配，杜绝碎片化多层嵌套
-        // ====================================================================================
+        // ── 视图初始化钩子：仅需绑定多语言悬浮提示 ──
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            theme = WidgetStyleManager.ResolveTheme(theme);
-            float s = CurrentDpiScale;
-            var style = WidgetStyleManager.Instance;
-
-            // 1. 底板容器
-            GameObject panel = UIFactory.CreatePanel(transform, "FlightControlBar", RectTransform.sizeDelta,
-                Vector2.zero, Color.clear, Color.clear, 0f);
-            this.Controls.Wrap("background", "底板边框", panel);
-
-            // 2. RCS 开关按钮
-            _rcsBtn = UIFactory.CreateButton(panel.transform, "Btn_RCS", ToggleBtnSize * s, new Vector2(RcsPosX * s, 0f), OnRCSToggle);
-            _rcsText = UIFactory.CreateText(_rcsBtn.transform, "Text", "RCS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            _rcsText.fontStyle = FontStyle.Bold;
-            _rcsText.rectTransform.sizeDelta = ToggleBtnSize * s;
-
-            // 3. SAS 开关按钮
-            _sasBtn = UIFactory.CreateButton(panel.transform, "Btn_SAS", ToggleBtnSize * s, new Vector2(SasPosX * s, 0f), OnSASToggle);
-            _sasText = UIFactory.CreateText(_sasBtn.transform, "Text", "SAS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            _sasText.fontStyle = FontStyle.Bold;
-            _sasText.rectTransform.sizeDelta = ToggleBtnSize * s;
-
-            // 4. 参考系模式切换胶囊 (左键循环，右键展开 Principia 窗口)
-            _frameBtn = UIFactory.CreateButton(panel.transform, "Btn_RefFrame", FrameBtnSize * s, new Vector2(FramePosX * s, 0f), null);
-            _frameOutline = _frameBtn.GetComponent<Outline>();
-            var clickHandler = _frameBtn.gameObject.AddComponent<RefFrameButtonHandler>();
-            clickHandler.OnLeftClick = OnCycleSpeedMode;
-            clickHandler.OnRightClick = OnTogglePrincipiaWindow;
-            _frameText = UIFactory.CreateText(_frameBtn.transform, "Text", "REF: SURFACE ▾", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            _frameText.fontStyle = FontStyle.Bold;
-            _frameText.rectTransform.sizeDelta = FrameBtnSize * s;
-
-            // 5. 注入多语言 Tooltip
             ApplyTooltips();
         }
 
-        // ------------------------------------------------------------------------------------
-        // [Part 4: 交互按键点击响应方法 (User Action Handlers)]
-        // ------------------------------------------------------------------------------------
-
-        private void OnRCSToggle()
-        {
-            FlightTelemetryContext.Current?.ToggleRCS();
-        }
-
-        private void OnSASToggle()
-        {
-            FlightTelemetryContext.Current?.ToggleSAS();
-        }
-
-        private void OnCycleSpeedMode()
-        {
-            FlightTelemetryContext.Current?.CycleSpeedMode();
-        }
-
-        private void OnTogglePrincipiaWindow()
-        {
-            if (OnTogglePrincipiaWindowAction != null)
-            {
-                OnTogglePrincipiaWindowAction.Invoke();
-            }
-            else
-            {
-                OnCycleSpeedMode();
-            }
-        }
-
-        // ------------------------------------------------------------------------------------
-        // [Part 5: 遥测数据更新与状态机同步 (OnUpdateTelemetry)]
-        // ------------------------------------------------------------------------------------
-
-        /// <summary>
-        /// 遥测驱动状态机：上级 MasterUpdateTelemetry 已执行过 HasVessel 空船守卫
-        /// </summary>
+        // ── 遥测数据动态刷新：自包装属性写入自动触发内置脏检查 ──
         public override void OnUpdateTelemetry(IFlightTelemetry telem)
         {
             if (telem == null) return;
 
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+            // 1. RCS / SAS 状态同步 (内置脏检查，仅物理状态改变时触发视觉重绘)
+            Rcs.IsActive = telem.IsRCSEnabled;
+            Sas.IsActive = telem.IsSASEnabled;
 
-            // 1. RCS 状态同步 (通过航电反馈扩展驱动 SetToggleActive)
-            bool rcs = telem.IsRCSEnabled;
-            if (!_hasInitializedState || rcs != _lastRcs)
+            // 2. 参考系模式状态同步 (支持 Principia 权威参考系与原生 KSP 模式)
+            string frameName = telem.SpeedModeName ?? "SURFACE";
+            if (string.IsNullOrEmpty(frameName)) frameName = "SURFACE";
+            string prefix = GetTemplateChannel("FRAME_PREFIX", "REF: ");
+            string newFrameText = $"{prefix}{frameName} ▾";
+
+            if (Frame.Text != newFrameText)
             {
-                _lastRcs = rcs;
-                if (_rcsBtn != null)
-                {
-                    _rcsBtn.SetToggleActive(rcs);
-                }
+                Frame.Text = newFrameText;
+
+                bool isSpecial = frameName.StartsWith("ORB", StringComparison.OrdinalIgnoreCase) ||
+                                 frameName.StartsWith("BARY", StringComparison.OrdinalIgnoreCase) ||
+                                 frameName.StartsWith("INER", StringComparison.OrdinalIgnoreCase);
+                bool isTarget = frameName.StartsWith("TGT", StringComparison.OrdinalIgnoreCase) ||
+                                frameName.StartsWith("TAR", StringComparison.OrdinalIgnoreCase);
+
+                TextStyleRole frameRole = isTarget ? TextStyleRole.Warning : (isSpecial ? TextStyleRole.Accent : TextStyleRole.SecondaryValue);
+                Frame.TextRole = frameRole;
             }
-
-            // 2. SAS 状态同步 (通过航电反馈扩展驱动 SetToggleActive)
-            bool sas = telem.IsSASEnabled;
-            if (!_hasInitializedState || sas != _lastSas)
-            {
-                _lastSas = sas;
-                if (_sasBtn != null)
-                {
-                    _sasBtn.SetToggleActive(sas);
-                }
-            }
-
-            // 3. 参考系模式状态同步 (支持 Principia 权威参考系与原生 KSP 模式)
-            if (_frameText != null)
-            {
-                string frameName = telem.SpeedModeName ?? "SURFACE";
-                if (string.IsNullOrEmpty(frameName)) frameName = "SURFACE";
-                string prefix = GetTemplateChannel("FRAME_PREFIX", "REF: ");
-                string newFrameText = $"{prefix}{frameName} ▾";
-
-                if (!_hasInitializedState || newFrameText != _lastFrameText)
-                {
-                    _lastFrameText = newFrameText;
-                    _frameText.text = newFrameText;
-
-                    bool isSpecial = frameName.StartsWith("ORB", StringComparison.OrdinalIgnoreCase) ||
-                                     frameName.StartsWith("BARY", StringComparison.OrdinalIgnoreCase) ||
-                                     frameName.StartsWith("INER", StringComparison.OrdinalIgnoreCase);
-                    bool isTarget = frameName.StartsWith("TGT", StringComparison.OrdinalIgnoreCase) ||
-                                    frameName.StartsWith("TAR", StringComparison.OrdinalIgnoreCase);
-
-                    TextStyleRole frameRole = isTarget ? TextStyleRole.Warning : (isSpecial ? TextStyleRole.Accent : TextStyleRole.SecondaryValue);
-                    ApplyText(_frameText, frameRole, theme);
-                    if (_frameOutline != null)
-                    {
-                        _frameOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-                    }
-                }
-            }
-
-            _hasInitializedState = true;
         }
 
-        // ------------------------------------------------------------------------------------
-        // [Part 6: 视觉主题与多语言热切换 (ApplyTheme & OnLanguageChanged)]
-        // ------------------------------------------------------------------------------------
-
-        /// <summary>
-        /// 主题切换：分发微控件主题，并保持按键当前激活态颜色正确
-        /// </summary>
+        // ── 视觉主题与通道文本应用 ──
         public override void ApplyTheme(ThemeConfig theme)
         {
-            if (theme == null) return;
-            theme = WidgetStyleManager.ResolveTheme(theme);
-
-            // 1. 基类自动将主题分发至已注册的各微控件
             base.ApplyTheme(theme);
-
-            // 2. 刷新通道自定义文案
-            if (_rcsText != null) _rcsText.text = GetTemplateChannel("RCS_LABEL", "RCS");
-            if (_sasText != null) _sasText.text = GetTemplateChannel("SAS_LABEL", "SAS");
-
-            // 3. 恢复按键高亮状态
-            if (_rcsBtn != null) _rcsBtn.SetToggleActive(_lastRcs);
-            if (_sasBtn != null) _sasBtn.SetToggleActive(_lastSas);
+            Rcs.Text = GetTemplateChannel("RCS_LABEL", "RCS");
+            Sas.Text = GetTemplateChannel("SAS_LABEL", "SAS");
         }
 
-        /// <summary>
-        /// 绑定多语言悬浮提示 (Tooltip)
-        /// </summary>
+        // ── 国际化与悬浮提示系统 ──
         private void ApplyTooltips()
         {
-            if (_rcsBtn != null)
-                _rcsBtn.SetTooltip(I18n.Tr("WIDGET_BOTTOM_RCS_TITLE", "RCS 姿态推力系统"), I18n.Tr("WIDGET_BOTTOM_RCS_DESC", "开启/关闭反作用姿控喷气动力 (RCS)"), "R");
-            if (_sasBtn != null)
-                _sasBtn.SetTooltip(I18n.Tr("WIDGET_BOTTOM_SAS_TITLE", "SAS 稳定性增益系统"), I18n.Tr("WIDGET_BOTTOM_SAS_DESC", "开启/关闭姿态稳定增益系统 (SAS)"), "T");
-            if (_frameBtn != null)
-                _frameBtn.SetTooltip(I18n.Tr("WIDGET_BOTTOM_FRAME_TITLE", "速度参考系模式"), I18n.Tr("WIDGET_BOTTOM_FRAME_DESC", "左键点击轮换 SURFACE / ORBIT / TARGET 参考系；右键呼出 Principia 权威参考系设置窗口。"));
+            Rcs.SetTooltip(I18n.Tr("WIDGET_BOTTOM_RCS_TITLE", "RCS 姿态推力系统"), I18n.Tr("WIDGET_BOTTOM_RCS_DESC", "开启/关闭反作用姿控喷气动力 (RCS)"), "R");
+            Sas.SetTooltip(I18n.Tr("WIDGET_BOTTOM_SAS_TITLE", "SAS 稳定性增益系统"), I18n.Tr("WIDGET_BOTTOM_SAS_DESC", "开启/关闭姿态稳定增益系统 (SAS)"), "T");
+            Frame.SetTooltip(I18n.Tr("WIDGET_BOTTOM_FRAME_TITLE", "速度参考系模式"), I18n.Tr("WIDGET_BOTTOM_FRAME_DESC", "左键点击轮换 SURFACE / ORBIT / TARGET 参考系；右键呼出 Principia 权威参考系设置窗口。"));
         }
 
-        /// <summary>
-        /// 监听全局语言切换通知，即刻刷新 Tooltip 提示
-        /// </summary>
         protected override void OnLanguageChanged()
         {
             ApplyTooltips();
         }
 
-        // ------------------------------------------------------------------------------------
-        // [Part 7: 销毁与安全清理 (OnDestroy)]
-        // ------------------------------------------------------------------------------------
-
-        /// <summary>
-        /// 销毁清理：解绑所有交互按钮监听并执行基类清理
-        /// </summary>
+        // ── 安全生命周期销毁清理 ──
         protected override void OnDestroy()
         {
-            if (_rcsBtn != null) _rcsBtn.onClick.RemoveAllListeners();
-            if (_sasBtn != null) _sasBtn.onClick.RemoveAllListeners();
-            if (_frameBtn != null) _frameBtn.onClick.RemoveAllListeners();
+            if (Rcs?.ButtonComponent != null) Rcs.ButtonComponent.onClick.RemoveAllListeners();
+            if (Sas?.ButtonComponent != null) Sas.ButtonComponent.onClick.RemoveAllListeners();
+            if (Frame?.ButtonComponent != null) Frame.ButtonComponent.onClick.RemoveAllListeners();
             base.OnDestroy();
-        }
-    }
-
-    /// <summary>
-    /// 双向鼠标事件处理器：左键循环参考系，右键呼出 Principia 窗口
-    /// </summary>
-    public class RefFrameButtonHandler : MonoBehaviour, IPointerClickHandler
-    {
-        public Action OnLeftClick;
-        public Action OnRightClick;
-
-        public void OnPointerClick(PointerEventData eventData)
-        {
-            if (eventData.button == PointerEventData.InputButton.Right)
-            {
-                OnRightClick?.Invoke();
-            }
-            else
-            {
-                OnLeftClick?.Invoke();
-            }
         }
     }
 }

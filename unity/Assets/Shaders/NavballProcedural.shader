@@ -215,16 +215,18 @@ Shader "ModularFlightPanel/NavballProcedural"
                     // 地面半球加稀疏斜向地形纹理，配合负俯仰虚线刻度，让上下半球一眼可辨。
                     float terrainPhase = headDeg * 0.42 + absPitch * 1.15;
                     float terrainLine = abs(frac(terrainPhase / 11.0 + 0.5) - 0.5);
-                    float terrainHatch = 1.0 - smoothstep(0.012, 0.038, terrainLine);
-                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb, terrainHatch * 0.30);
+                    float hatchAA = max(fwidth(terrainLine) * 1.8, 0.018);
+                    float terrainHatch = 1.0 - smoothstep(0.035, 0.035 + hatchAA, terrainLine);
+                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb, terrainHatch * 0.28);
 
                     // GPWS / 近地大下沉率防撞动态斑马纹 (Ground Terrain Hazard Pull-Up Stripes)
                     if (_GroundHazardAlert > 0.01)
                     {
-                        float stripe = sin((p.x * 20.0 + p.y * 32.0 + p.z * 20.0) + _Time.y * 14.0);
-                        float isStripe = step(0.12, stripe) * _GroundHazardAlert;
+                        float stripe = sin((p.x * 18.0 + p.y * 28.0 + p.z * 18.0) + _Time.y * 5.5);
+                        float stripeAA = max(fwidth(stripe) * 1.5, 0.06);
+                        float isStripe = smoothstep(-stripeAA, stripeAA, stripe - 0.10) * _GroundHazardAlert;
                         fixed3 hazardCol = fixed3(1.0, 0.82, 0.05); // 琥珀黄警戒色
-                        col.rgb = lerp(col.rgb, hazardCol, isStripe * 0.72);
+                        col.rgb = lerp(col.rgb, hazardCol, isStripe * 0.55);
                     }
                 }
 
@@ -277,7 +279,9 @@ Shader "ModularFlightPanel/NavballProcedural"
                     // Keep the predicted horizon wider than one pixel at typical navball render sizes.
                     float trendAA = max(fwidth(futureP.y) * 2.2, 0.008);
                     float futureHorizon = 1.0 - smoothstep(0.003, 0.003 + trendAA, abs(futureP.y));
-                    float trendDash = step(0.24, frac(headDeg / 24.0));
+                    float dashVal = frac(headDeg / 24.0);
+                    float dashAA = max(fwidth(dashVal) * 1.5, 0.04);
+                    float trendDash = smoothstep(0.24 - dashAA, 0.24 + dashAA, dashVal);
                     float trendOpacity = futureHorizon * trendDash * _TrendStrength * _HeadingLineColor.a * 0.78;
                     col.rgb = lerp(col.rgb, _HeadingLineColor.rgb, trendOpacity);
                 }
@@ -333,33 +337,54 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pitchLabelGap = (pitchRadialSq < 26.0) ? pitchGlyphEnabled : 0.0;
 
                 // 15° 主横杠 (横跨 ±10.0°，两端带有指向地平线的垂直末梢指示折角)
-                float isMajorBar15 = (absLabelOffset < 0.32 && absHOffset >= 4.8 && absHOffset < 10.0) ? 1.0 : 0.0;
+                float barPitchAA = max(fwidth(absLabelOffset) * 1.4, 0.04);
+                float barHAA = max(fwidth(absHOffset) * 1.4, 0.08);
+                float isMajorBar15 = (1.0 - smoothstep(0.30 - barPitchAA, 0.30 + barPitchAA, absLabelOffset)) *
+                                     smoothstep(4.8 - barHAA, 4.8 + barHAA, absHOffset) *
+                                     (1.0 - smoothstep(10.0 - barHAA, 10.0 + barHAA, absHOffset));
+
                 // 垂直末梢：天空侧向下折，地面侧向上折
                 float isTip15 = 0.0;
-                if (absHOffset >= 9.2 && absHOffset < 10.0)
+                if (absHOffset >= 9.0 && absHOffset < 10.2)
                 {
-                    if (pitchDeg > 0.0 && pitchLabelOffset <= 0.0 && pitchLabelOffset > -1.6) isTip15 = 1.0;
-                    else if (pitchDeg < 0.0 && pitchLabelOffset >= 0.0 && pitchLabelOffset < 1.6) isTip15 = 1.0;
+                    float tipHMask = smoothstep(9.2 - barHAA, 9.2 + barHAA, absHOffset) * (1.0 - smoothstep(10.0 - barHAA, 10.0 + barHAA, absHOffset));
+                    if (pitchDeg > 0.0)
+                    {
+                        float tipVMask = (1.0 - smoothstep(0.0 - barPitchAA, 0.0 + barPitchAA, pitchLabelOffset)) * smoothstep(-1.6 - barPitchAA, -1.6 + barPitchAA, pitchLabelOffset);
+                        isTip15 = tipHMask * tipVMask;
+                    }
+                    else
+                    {
+                        float tipVMask = smoothstep(0.0 - barPitchAA, 0.0 + barPitchAA, pitchLabelOffset) * (1.0 - smoothstep(1.6 - barPitchAA, 1.6 + barPitchAA, pitchLabelOffset));
+                        isTip15 = tipHMask * tipVMask;
+                    }
                 }
                 float majorLadder15 = max(isMajorBar15, isTip15) * pitchGlyphEnabled;
 
                 // 负俯仰侧虚线风格 (Negative Pitch Ladder Dashing)
-                if (pitchDeg < 0.0 && isMajorBar15 > 0.5)
+                if (pitchDeg < 0.0)
                 {
-                    if (fmod(absHOffset - 4.8, 2.2) > 1.2) majorLadder15 = 0.0;
+                    float dashVal = fmod(absHOffset - 4.8, 2.2);
+                    float dashAA = max(fwidth(dashVal) * 1.5, 0.08);
+                    float dashMask = 1.0 - smoothstep(1.15 - dashAA, 1.15 + dashAA, dashVal);
+                    majorLadder15 *= dashMask;
                 }
 
                 // 中间 10° 梯级中杠 (横跨 ±5.5°)
                 float pMod10 = abs(pitchDeg - round(pitchDeg / 10.0) * 10.0);
                 float pLevel10 = round(absPitch / 10.0) * 10.0;
                 bool isPure10 = (fmod(pLevel10, 30.0) > 4.0) && (fmod(pLevel10, 15.0) > 4.0) && (pLevel10 > 4.0 && pLevel10 < 80.0);
-                float isTick10 = (isPure10 && pMod10 < 0.28 && absHOffset < 5.5) ? 0.72 * smoothstep(0.0, 0.32, _DetailScale) : 0.0;
+                float tick10AA = max(fwidth(pMod10) * 1.3, 0.04);
+                float tick10HAA = max(fwidth(absHOffset) * 1.3, 0.08);
+                float isTick10 = isPure10 ? ((1.0 - smoothstep(0.26 - tick10AA, 0.26 + tick10AA, pMod10)) * (1.0 - smoothstep(5.5 - tick10HAA, 5.5 + tick10HAA, absHOffset)) * 0.72 * smoothstep(0.0, 0.32, _DetailScale)) : 0.0;
 
                 // 中间 5° 梯级短杠 (横跨 ±3.2°)
                 float pMod5 = abs(pitchDeg - round(pitchDeg / 5.0) * 5.0);
                 float pLevel5 = round(absPitch / 5.0) * 5.0;
                 bool isPure5 = (fmod(pLevel5, 10.0) > 2.0) && (pLevel5 > 2.0 && pLevel5 < 80.0);
-                float isTick5 = (isPure5 && pMod5 < 0.22 && absHOffset < 3.2) ? 0.50 * smoothstep(0.22, 0.62, _DetailScale) : 0.0;
+                float tick5AA = max(fwidth(pMod5) * 1.3, 0.04);
+                float tick5HAA = max(fwidth(absHOffset) * 1.3, 0.08);
+                float isTick5 = isPure5 ? ((1.0 - smoothstep(0.20 - tick5AA, 0.20 + tick5AA, pMod5)) * (1.0 - smoothstep(3.2 - tick5HAA, 3.2 + tick5HAA, absHOffset)) * 0.50 * smoothstep(0.22, 0.62, _DetailScale)) : 0.0;
 
                 float combinedLadder = max(majorLadder15, max(isTick10, isTick5)) * polarLadderFade;
 
@@ -369,16 +394,20 @@ Shader "ModularFlightPanel/NavballProcedural"
                     float pMod25 = abs(pitchDeg - round(pitchDeg / 2.5) * 2.5);
                     float pLevel25 = round(absPitch / 2.5) * 2.5;
                     bool isPure25 = (fmod(pLevel25, 5.0) > 1.0);
-                    float isTick25 = (isPure25 && pMod25 < 0.18 && absHOffset < 2.0) ? 0.65 : 0.0;
+                    float tick25AA = max(fwidth(pMod25) * 1.2, 0.035);
+                    float tick25HAA = max(fwidth(absHOffset) * 1.2, 0.06);
+                    float isTick25 = isPure25 ? ((1.0 - smoothstep(0.18 - tick25AA, 0.18 + tick25AA, pMod25)) * (1.0 - smoothstep(2.0 - tick25HAA, 2.0 + tick25HAA, absHOffset)) * 0.65) : 0.0;
                     combinedLadder = max(combinedLadder, isTick25 * _VernierScaleDetail * smoothstep(0.35, 0.75, _DetailScale));
                 }
 
                 col = lerp(col, _PitchLadderColor, saturate(combinedLadder * _PitchLadderColor.a * 0.92));
 
                 // 5. 经度子午线：每 30° 一道经线，90° 主方向加亮
-                float isMeridian30 = (absHOffset < 0.25) ? 0.38 : 0.0;
+                float m30AA = max(fwidth(absHOffset) * 1.3, 0.05);
+                float isMeridian30 = (1.0 - smoothstep(0.24 - m30AA, 0.24 + m30AA, absHOffset)) * 0.38;
                 float headMod90 = abs(fmod(headDeg + 405.0, 90.0) - 45.0);
-                float isMeridian90 = (headMod90 < 0.35) ? 0.65 : 0.0;
+                float m90AA = max(fwidth(headMod90) * 1.3, 0.05);
+                float isMeridian90 = (1.0 - smoothstep(0.34 - m90AA, 0.34 + m90AA, headMod90)) * 0.65;
                 float isMeridian = max(isMeridian30, isMeridian90) * polarLadderFade;
 
                 // 在俯仰数字与赤道航向数字区域对子午线开辟净空区，严禁子午线贯穿数码管笔画
@@ -392,8 +421,13 @@ Shader "ModularFlightPanel/NavballProcedural"
                 // 6. 赤道航向刻度线 (Equator Cardinal & Minor Ticks)
                 if (absPitch < 1.8)
                 {
-                    float eqTick30 = (absHOffset < 0.35) ? 0.90 : 0.0;
-                    float eqTick10 = (abs(pitchHeadingOffset - round(pitchHeadingOffset / 10.0) * 10.0) < 0.25 && absPitch < 1.0) ? 0.60 : 0.0;
+                    float eqPitchAA = max(fwidth(absPitch) * 1.3, 0.05);
+                    float eqPitchMask30 = 1.0 - smoothstep(1.7 - eqPitchAA, 1.7 + eqPitchAA, absPitch);
+                    float eqPitchMask10 = 1.0 - smoothstep(1.0 - eqPitchAA, 1.0 + eqPitchAA, absPitch);
+                    float eqTick30 = (1.0 - smoothstep(0.32 - m30AA, 0.32 + m30AA, absHOffset)) * 0.90 * eqPitchMask30;
+                    float eq10Mod = abs(pitchHeadingOffset - round(pitchHeadingOffset / 10.0) * 10.0);
+                    float eq10AA = max(fwidth(eq10Mod) * 1.3, 0.05);
+                    float eqTick10 = (1.0 - smoothstep(0.24 - eq10AA, 0.24 + eq10AA, eq10Mod)) * 0.60 * eqPitchMask10;
                     col = lerp(col, _EquatorColor, saturate(max(eqTick30, eqTick10)));
                 }
 
@@ -403,9 +437,8 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pitchTextFill = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance)) * pitchGlyphEnabled;
 
                 // 赤道航向 3 位读数 (000, 030, 060, 090, 120, 150, 180, 210, 240, 270, 300, 330)
-                // 只在 30°/60° 的标准航向间隔间切换，避免缩放过渡时出现非标准角度标签。
-                float headingStep = (_DetailScale < 0.48) ? 60.0 : 30.0;
-                float headingCenter = floor(headDeg / headingStep + 0.5) * headingStep;
+                // 使用平滑过渡淡入中间 30° 刻度，彻底消灭 _DetailScale 切换时的突兀跳变
+                float headingCenter = floor(headDeg / 30.0 + 0.5) * 30.0;
                 float headingOffset = headDeg - headingCenter;
                 if (headingOffset > 180.0) headingOffset -= 360.0;
                 if (headingOffset < -180.0) headingOffset += 360.0;
@@ -427,7 +460,9 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float headingGlyphAA = clamp(max(fwidth(headingOffset), fwidth(pitchDeg)), 0.08, 0.32);
                 float headingTextOutline = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance - 0.45);
                 float headingTextFill = 1.0 - smoothstep(-headingGlyphAA, headingGlyphAA, headingGlyphDistance);
-                float headingTextEnabled = (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) * smoothstep(0.12, 0.42, NdotV) * markerClearance;
+                bool isOddHeading = (fmod(headingNumber, 60.0) > 10.0);
+                float oddHeadingFade = isOddHeading ? smoothstep(0.36, 0.58, _DetailScale) : 1.0;
+                float headingTextEnabled = (1.0 - smoothstep(5.5, 7.5, abs(pitchDeg))) * smoothstep(0.12, 0.42, NdotV) * markerClearance * oddHeadingFade;
 
                 float textOutline = max(pitchTextOutline, headingTextOutline * headingTextEnabled);
                 float textFill = max(pitchTextFill, headingTextFill * headingTextEnabled);

@@ -112,9 +112,10 @@ namespace ModularFlightPanel.Editor
                         isVisible = true;
                         return true;
                     case "velocity_vector":
-                        dir = new Vector3(0.12f, 0.14f, 0.98f).normalized;
-                        isVisible = true;
-                        return true;
+                    case "anti_velocity_vector":
+                        dir = Vector3.forward;
+                        isVisible = false;
+                        return false;
                     case "retrograde":
                         dir = new Vector3(-0.04f, -0.15f, -0.98f).normalized;
                         isVisible = false;

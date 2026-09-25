@@ -619,7 +619,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 // GPWS / 近地大下沉率防撞动态斑马纹警示驱动 (Ground Terrain Hazard Pull-Up Alert)
                 IFlightTelemetry curTelem = FlightTelemetryContext.Current;
-                bool isHazard = false;
+                bool isHazardTriggered = false;
                 if (curTelem != null && curTelem.HasVessel)
                 {
                     UpdateNavballProbeSnapshot(curTelem);
@@ -636,12 +636,29 @@ namespace ModularFlightPanel.UI.Widgets
 
                     // Trajectories 的预测撞击倒计时可提前提示高速再入/落地风险，不依赖是否已进入低空。
                     double impactTime = _cachedTrajImpactTime;
-                    bool predictedImpact = !double.IsNaN(impactTime) && !double.IsInfinity(impactTime) && impactTime > 0.0 && impactTime < 15.0;
-                    bool lowAltitudeDescent = radarAltitude > 0.0 && radarAltitude < 300.0 && curTelem.VerticalSpeed < 0.0 && descentRate > 8.0;
-                    isHazard = lowAltitudeDescent || predictedImpact || curTelem.IsTouchdownAlert;
+                    bool predictedImpact = !double.IsNaN(impactTime) && !double.IsInfinity(impactTime) && impactTime > 0.0 && impactTime < 12.0;
+                    bool lowAltitudeDescent = radarAltitude > 0.0 && radarAltitude < 280.0 && curTelem.VerticalSpeed < 0.0 && descentRate > 8.5;
+                    isHazardTriggered = lowAltitudeDescent || predictedImpact || curTelem.IsTouchdownAlert;
                 }
-                float targetHazard = isHazard ? 1.0f : 0.0f;
-                _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dt * 6.0f));
+
+                // 滞后滤波与持续维持计时器，彻底根治临界速度附近的单帧乱闪
+                if (isHazardTriggered)
+                {
+                    _isHazardActive = true;
+                    _hazardHoldTimer = 0.6f;
+                }
+                else if (_hazardHoldTimer > 0f)
+                {
+                    _hazardHoldTimer -= dt;
+                    if (_hazardHoldTimer <= 0f) _isHazardActive = false;
+                }
+                else
+                {
+                    _isHazardActive = false;
+                }
+
+                float targetHazard = _isHazardActive ? 1.0f : 0.0f;
+                _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dt * 3.5f));
                 if (_sphereMaterial.HasProperty("_GroundHazardAlert"))
                 {
                     _sphereMaterial.SetFloat("_GroundHazardAlert", _currentHazardAlert);
@@ -650,7 +667,7 @@ namespace ModularFlightPanel.UI.Widgets
                 // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
                 float pitchVal = (curTelem != null) ? Mathf.Abs(curTelem.Pitch) : 0f;
                 float targetVernier = (pitchVal < 6.0f) ? Mathf.Clamp01((6.0f - pitchVal) / 3.0f) : 0f;
-                _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dt * 4.0f));
+                _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dt * 3.5f));
                 if (_sphereMaterial.HasProperty("_VernierScaleDetail"))
                 {
                     _sphereMaterial.SetFloat("_VernierScaleDetail", _currentVernierDetail);
@@ -736,45 +753,69 @@ namespace ModularFlightPanel.UI.Widgets
                     hasDir = NavBallHookService.MarkerDirectionFallback(key, out dir, out isVisible);
                 }
 
-                if (hasDir && isVisible && dir.z > -0.15f)
+                // 视界边缘平滑过渡 [-0.08, -0.24]，彻底消灭 17% 坐标跳变与 38% 缩放突变抽动
+                if (hasDir && isVisible && dir.z > -0.24f)
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
-                    img.rectTransform.localScale = Vector3.one * GetMarkerPulseScale(key);
 
-                    // 正交平面投影: (x, y) * 半径，每一帧直接贴合目标坐标，0 滞后、0 阈值量化步进
-                    img.rectTransform.anchoredPosition = new Vector2(dir.x, dir.y) * _visualRadius;
+                    float pulse = GetMarkerPulseScale(key);
+                    Vector2 bearing = new Vector2(dir.x, dir.y);
+                    float bearingMag = bearing.magnitude;
+                    Vector2 normBearing = bearingMag > 0.001f ? (bearing / bearingMag) : Vector2.up;
 
-                    // 接近地平线边缘时平滑渐隐淡出，前向半球始终满不透明度保持高可见度
-                    float alpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);
-                    if (Mathf.Abs(img.color.a - alpha) > 0.02f)
+                    // 过渡权重：前向半球 (> -0.08) 为 0，地平圈内缘 (< -0.20) 为 1
+                    float tRear = Mathf.Clamp01((-0.08f - dir.z) / 0.12f);
+
+                    Vector2 frontPos = new Vector2(dir.x, dir.y) * _visualRadius;
+                    Vector2 rearPos = normBearing * (_visualRadius * 0.84f);
+                    img.rectTransform.anchoredPosition = Vector2.Lerp(frontPos, rearPos, tRear);
+
+                    float targetScale = Mathf.Lerp(1.0f, 0.65f, tRear) * pulse;
+                    img.rectTransform.localScale = Vector3.one * targetScale;
+
+                    float frontAlpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);
+                    float rearAlpha = Mathf.Lerp(0.38f, 0.16f, Mathf.Clamp01(-dir.z));
+                    float finalAlpha = Mathf.Lerp(frontAlpha, rearAlpha, tRear);
+
+                    if (Mathf.Abs(img.color.a - finalAlpha) > 0.015f)
                     {
                         Color c = WidgetStyleManager.NeutralOpaque;
-                        c.a = alpha;
+                        c.a = finalAlpha;
                         img.color = c;
-                    }
-                }
-                else if (hasDir && dir.z <= -0.15f)
-                {
-                    // 背面标记投影到球缘，保留方位感；正后方没有可靠的左右方向，因此不强行猜测。
-                    Vector2 bearing = new Vector2(dir.x, dir.y);
-                    if (bearing.sqrMagnitude > 0.025f)
-                    {
-                        if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
-                        bearing.Normalize();
-                        img.rectTransform.anchoredPosition = bearing * (_visualRadius * 0.82f);
-                        img.rectTransform.localScale = Vector3.one * (0.62f * GetMarkerPulseScale(key));
-                        Color ghost = WidgetStyleManager.NeutralOpaque;
-                        ghost.a = Mathf.Lerp(0.40f, 0.18f, Mathf.Clamp01(-dir.z));
-                        if (img.color != ghost) img.color = ghost;
-                    }
-                    else if (img.gameObject.activeSelf)
-                    {
-                        img.gameObject.SetActive(false);
                     }
                 }
                 else
                 {
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                }
+            }
+
+            // 顺向/逆向与地表航迹标防御性防粘去重 (Anti-overlap De-cluttering)
+            Image progImg;
+            Image velImg;
+            if (_markerImages.TryGetValue("prograde", out progImg) &&
+                _markerImages.TryGetValue("velocity_vector", out velImg) &&
+                progImg != null && velImg != null &&
+                progImg.gameObject.activeSelf && velImg.gameObject.activeSelf)
+            {
+                float dist = Vector2.Distance(progImg.rectTransform.anchoredPosition, velImg.rectTransform.anchoredPosition);
+                if (dist < 18f * CurrentDpiScale)
+                {
+                    velImg.gameObject.SetActive(false);
+                }
+            }
+
+            Image retroImg;
+            Image antiVelImg;
+            if (_markerImages.TryGetValue("retrograde", out retroImg) &&
+                _markerImages.TryGetValue("anti_velocity_vector", out antiVelImg) &&
+                retroImg != null && antiVelImg != null &&
+                retroImg.gameObject.activeSelf && antiVelImg.gameObject.activeSelf)
+            {
+                float dist = Vector2.Distance(retroImg.rectTransform.anchoredPosition, antiVelImg.rectTransform.anchoredPosition);
+                if (dist < 18f * CurrentDpiScale)
+                {
+                    antiVelImg.gameObject.SetActive(false);
                 }
             }
 
@@ -807,11 +848,11 @@ namespace ModularFlightPanel.UI.Widgets
             float phase;
             switch (key)
             {
-                case "maneuver": amplitude = 0.22f; frequency = 1.55f; phase = 0f; break;
-                case "target": amplitude = 0.17f; frequency = 1.05f; phase = 0.8f; break;
-                case "antitarget": amplitude = 0.17f; frequency = 1.05f; phase = 2.1f; break;
-                case "prograde": amplitude = 0.12f; frequency = 0.75f; phase = 1.4f; break;
-                case "retrograde": amplitude = 0.12f; frequency = 0.75f; phase = 2.7f; break;
+                case "maneuver": amplitude = 0.06f; frequency = 1.35f; phase = 0f; break;
+                case "target": amplitude = 0.045f; frequency = 1.0f; phase = 0.8f; break;
+                case "antitarget": amplitude = 0.045f; frequency = 1.0f; phase = 2.1f; break;
+                case "prograde": amplitude = 0.025f; frequency = 0.75f; phase = 1.4f; break;
+                case "retrograde": amplitude = 0.025f; frequency = 0.75f; phase = 2.7f; break;
                 default: return 1f;
             }
             return 1f + amplitude * Mathf.Sin((Time.unscaledTime * frequency + phase) * Mathf.PI * 2f);
@@ -821,17 +862,33 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_reticleImage == null) return;
             float movement = _attitudeTrendStrength;
-            float phase = Application.isPlaying
-                ? Time.unscaledTime * (1.6f + movement * 3.8f) * Mathf.PI * 2f
-                : 0f;
-            float wave = Application.isPlaying ? Mathf.Sin(phase) : 0f;
-            float scale = 1f + wave * Mathf.Lerp(0.01f, 0.04f, movement);
-            if (Mathf.Abs(_reticleImage.rectTransform.localScale.x - scale) > 0.002f)
+            float dt = Time.unscaledDeltaTime;
+            if (!Application.isPlaying || dt <= 0.0001f)
+            {
+                _reticleImage.rectTransform.localScale = Vector3.one;
+                Color baseCol = _reticleImage.color;
+                baseCol.a = 0.52f;
+                _reticleImage.color = baseCol;
+                return;
+            }
+
+            // 增量积分相位累加，杜绝乘法时间导致的剧烈相位抽搐与频闪
+            float targetFreq = 1.2f + movement * 1.5f;
+            _reticlePhase = (_reticlePhase + dt * targetFreq * Mathf.PI * 2f) % (Mathf.PI * 2f);
+            float wave = Mathf.Sin(_reticlePhase);
+
+            // 柔和微幅呼吸，杜绝大幅度抽动
+            float scale = 1f + wave * Mathf.Lerp(0.008f, 0.025f, movement);
+            if (Mathf.Abs(_reticleImage.rectTransform.localScale.x - scale) > 0.001f)
                 _reticleImage.rectTransform.localScale = Vector3.one * scale;
 
             Color reticleColor = _reticleImage.color;
-            reticleColor.a = Mathf.Lerp(0.52f, 0.42f, movement) + wave * Mathf.Lerp(0.02f, 0.055f, movement);
-            if (_reticleImage.color != reticleColor) _reticleImage.color = reticleColor;
+            float targetAlpha = Mathf.Lerp(0.55f, 0.45f, movement) + wave * Mathf.Lerp(0.015f, 0.035f, movement);
+            if (Mathf.Abs(reticleColor.a - targetAlpha) > 0.005f)
+            {
+                reticleColor.a = targetAlpha;
+                _reticleImage.color = reticleColor;
+            }
         }
 
         private void UpdateMarkerAvoidanceMasks()
@@ -844,8 +901,8 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_markerImages.TryGetValue(MarkerAvoidanceKeys[i], out Image marker) && marker != null && marker.gameObject.activeSelf)
                 {
                     Vector2 point = marker.rectTransform.anchoredPosition / halfDiameter;
-                    float markerScale = Mathf.Abs(marker.rectTransform.localScale.x);
-                    float radius = Mathf.Clamp(0.23f * markerScale, 0.08f, 0.28f);
+                    // 固化规避半径，杜绝避让空洞跟随标记脉冲膨胀收缩引发的周边数字抽动
+                    float radius = 0.20f;
                     avoidance = new Vector4(point.x, point.y, radius, Mathf.Clamp01(marker.color.a));
                 }
                 _markerAvoidanceValues[i] = avoidance;
