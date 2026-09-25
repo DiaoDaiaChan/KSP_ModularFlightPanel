@@ -28,6 +28,12 @@ namespace ModularFlightPanel.Core
             if (string.IsNullOrEmpty(markerKey)) return false;
 
             string lowerKey = markerKey.ToLowerInvariant();
+            StockNavBallHook.PulseAttitudeConsumerHeartbeat();
+            if (lowerKey.IndexOf("maneuver", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                StockNavBallHook.PulseManeuverConsumerHeartbeat();
+            }
+
             if (lowerKey == "velocity_vector" || lowerKey == "anti_velocity_vector")
             {
                 if (FlightGlobals.speedDisplayMode == FlightGlobals.SpeedDisplayModes.Surface)

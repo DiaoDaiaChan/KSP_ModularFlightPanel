@@ -5,6 +5,8 @@ using UnityEngine.UI;
 using KSP.UI;
 using KSP.UI.Screens;
 using KSP.UI.Screens.Flight;
+using ModularFlightPanel.Config;
+using ModularFlightPanel.Core.Probes;
 
 namespace ModularFlightPanel.Core
 {
@@ -37,6 +39,7 @@ namespace ModularFlightPanel.Core
         private static SASDisplay _cachedSASDisplay;
         private static RCSDisplay _cachedRCSDisplay;
         private static LightDisplay _cachedLightDisplay;
+        private static NavBallBurnVector _cachedBurnVector;
 
         // ── 高度计 (Altimeter) 缓存 ──
         private static bool _isAltimeterCached = false;
@@ -67,6 +70,7 @@ namespace ModularFlightPanel.Core
             _cachedSASDisplay = null;
             _cachedRCSDisplay = null;
             _cachedLightDisplay = null;
+            _cachedBurnVector = null;
             _isNavballCached = false;
 
             _cachedAltimeterRenderers = null;
@@ -458,25 +462,88 @@ namespace ModularFlightPanel.Core
                 if (_cachedRCSDisplay != null && _cachedRCSDisplay.enabled == hide) _cachedRCSDisplay.enabled = !hide;
                 if (_cachedLightDisplay != null && _cachedLightDisplay.enabled == hide) _cachedLightDisplay.enabled = !hide;
 
-                // 7. 核心保活铁律：绝对禁止禁用 NavBall、SpeedDisplay、NavBallBurnVector！
-                // 它们是 Principia、官方姿态旋转、参考系文本及节点机动的权威来源，MonoBehaviour 必须持续运转
-                if (StockNavBallHook.StockInstance != null && !StockNavBallHook.StockInstance.enabled)
+                // 7. 动态感知保活调度 (状态驱动与按需唤醒)
+                if (_cachedBurnVector == null)
                 {
-                    StockNavBallHook.StockInstance.enabled = true;
+                    _cachedBurnVector = StockNavBallHook.StockInstance.GetComponentInChildren<NavBallBurnVector>(true);
                 }
-                if (SpeedDisplay.Instance != null && !SpeedDisplay.Instance.enabled)
-                {
-                    SpeedDisplay.Instance.enabled = true;
-                }
-                var burnVector = StockNavBallHook.StockInstance.GetComponentInChildren<NavBallBurnVector>(true);
-                if (burnVector != null && !burnVector.enabled)
-                {
-                    burnVector.enabled = true;
-                }
+                TickDynamicHooks();
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[ModularFlightPanel] HideStockNavballCompletely warning: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 动态按需保活定时节流循环 (Dynamic On-Demand Hook Tick)
+        /// 由 FlightHUDManager 每帧驱动，执行状态感知休眠与按需唤醒
+        /// </summary>
+        public static void TickDynamicHooks()
+        {
+            try
+            {
+                bool isNavballHidden = ThemeManager.IsStockNavballHidden;
+                if (!isNavballHidden)
+                {
+                    // 若原版 UI 处于显示状态，全部组件强制保持激活
+                    if (StockNavBallHook.StockInstance != null && !StockNavBallHook.StockInstance.enabled)
+                        StockNavBallHook.StockInstance.enabled = true;
+                    if (SpeedDisplay.Instance != null && !SpeedDisplay.Instance.enabled)
+                        SpeedDisplay.Instance.enabled = true;
+                    if (_cachedBurnVector != null && !_cachedBurnVector.enabled)
+                        _cachedBurnVector.enabled = true;
+                    return;
+                }
+
+                // ── 1. NavBallBurnVector 机动节点感知动态化 ──
+                if (_cachedBurnVector == null && StockNavBallHook.StockInstance != null)
+                {
+                    _cachedBurnVector = StockNavBallHook.StockInstance.GetComponentInChildren<NavBallBurnVector>(true);
+                }
+
+                if (_cachedBurnVector != null)
+                {
+                    bool hasManeuver = FlightGlobals.ActiveVessel != null &&
+                                       FlightGlobals.ActiveVessel.patchedConicSolver != null &&
+                                       FlightGlobals.ActiveVessel.patchedConicSolver.maneuverNodes != null &&
+                                       FlightGlobals.ActiveVessel.patchedConicSolver.maneuverNodes.Count > 0;
+
+                    // 仅在存在机动节点且有激活姿态消费时唤醒，否则彻底休眠
+                    bool needBurnVector = hasManeuver && StockNavBallHook.HasActiveAttitudeConsumer;
+                    if (_cachedBurnVector.enabled != needBurnVector)
+                    {
+                        _cachedBurnVector.enabled = needBurnVector;
+                    }
+                }
+
+                // ── 2. SpeedDisplay 动态退化与按需唤醒 ──
+                if (SpeedDisplay.Instance != null)
+                {
+                    // 原版无 Principia 时直接使用底层遥测，SpeedDisplay 完全休眠；
+                    // 仅在 Principia 存在且有组件正在读取速度/参考系时唤醒
+                    bool needSpeedDisplay = ModularFlightPanel.Core.Probes.PrincipiaProbe.IsAvailable && StockNavBallHook.HasActiveSpeedConsumer;
+                    if (SpeedDisplay.Instance.enabled != needSpeedDisplay)
+                    {
+                        SpeedDisplay.Instance.enabled = needSpeedDisplay;
+                    }
+                }
+
+                // ── 3. NavBall 姿态球核心消费者感知动态化 ──
+                if (StockNavBallHook.StockInstance != null)
+                {
+                    // Principia 存在时维持常驻兼容；
+                    // 原生环境下，仅在有组件订阅姿态旋转时保活，无组件时休眠 0.092ms 的姿态矩阵解算
+                    bool needNavball = ModularFlightPanel.Core.Probes.PrincipiaProbe.IsAvailable || StockNavBallHook.HasActiveAttitudeConsumer;
+                    if (StockNavBallHook.StockInstance.enabled != needNavball)
+                    {
+                        StockNavBallHook.StockInstance.enabled = needNavball;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ModularFlightPanel] TickDynamicHooks warning: {ex.Message}");
             }
         }
     }

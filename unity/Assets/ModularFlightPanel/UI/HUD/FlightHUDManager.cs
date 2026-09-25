@@ -157,6 +157,9 @@ namespace ModularFlightPanel.UI
 
             if (!bypassed)
             {
+#if KSP_RUNTIME
+                ModularFlightPanel.Core.StockNavBallHook.TickDynamicHooks();
+#endif
                 WidgetRenderManager.Instance.MasterUpdate(Time.unscaledTime);
                 WidgetSelectionManager.HandleGlobalShortcuts();
             }

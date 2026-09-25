@@ -100,13 +100,36 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        // ── 动态按需保活心跳租约 (Dynamic On-Demand Lease Tracking) ──
+        private static float _lastAttitudeRequestTime = -10f;
+        private static float _lastSpeedRequestTime = -10f;
+        private static float _lastManeuverRequestTime = -10f;
+
+        public static void PulseAttitudeConsumerHeartbeat() => _lastAttitudeRequestTime = Time.unscaledTime;
+        public static void PulseSpeedConsumerHeartbeat() => _lastSpeedRequestTime = Time.unscaledTime;
+        public static void PulseManeuverConsumerHeartbeat() => _lastManeuverRequestTime = Time.unscaledTime;
+
+        public static bool HasActiveAttitudeConsumer => (Time.unscaledTime - _lastAttitudeRequestTime) < 0.6f;
+        public static bool HasActiveSpeedConsumer => (Time.unscaledTime - _lastSpeedRequestTime) < 0.6f;
+        public static bool HasActiveManeuverConsumer => (Time.unscaledTime - _lastManeuverRequestTime) < 0.6f;
+
+        public static void TickDynamicHooks()
+        {
+            StockUIHider.TickDynamicHooks();
+        }
+
         /// <summary>
         /// 获取经由官方/Principia 权威解算的姿态四元数（0计算量，采用世界坐标旋转）
         /// </summary>
         public static Quaternion GetRotation()
         {
+            PulseAttitudeConsumerHeartbeat();
             if (HasStockNavBall && StockInstance.navBall != null)
             {
+                if (!StockInstance.enabled)
+                {
+                    StockInstance.enabled = true;
+                }
                 return StockInstance.navBall.rotation;
             }
             return TelemetryHub.Instance != null ? TelemetryHub.Instance.AttitudeRotation : Quaternion.identity;
@@ -198,8 +221,13 @@ namespace ModularFlightPanel.Core
         /// </summary>
         public static string GetReferenceFrameName()
         {
-            if (SpeedDisplay.Instance != null && SpeedDisplay.Instance.textTitle != null)
+            PulseSpeedConsumerHeartbeat();
+            if (PrincipiaProbe.IsAvailable && SpeedDisplay.Instance != null && SpeedDisplay.Instance.textTitle != null)
             {
+                if (!SpeedDisplay.Instance.enabled)
+                {
+                    SpeedDisplay.Instance.enabled = true;
+                }
                 string title = SpeedDisplay.Instance.textTitle.text;
                 if (!string.IsNullOrEmpty(title))
                 {
@@ -218,11 +246,39 @@ namespace ModularFlightPanel.Core
 
         /// <summary>
         /// 从原版姿态球/Principia 权威速度指示牌 (SpeedDisplay) 读取并解析当前显示的实际速度 (m/s)
+        /// 动态优化：在原生 KSP 环境下直接读取引擎双精度遥测（0 GC、0.0001ms、无需字符串反解）
         /// </summary>
         public static bool TryGetNavballSpeed(out double speed)
         {
+            PulseSpeedConsumerHeartbeat();
             speed = 0.0;
+
+            // 1. 无 Principia 时直接走原生物理速度（0 GC、0.0001ms、无字符串正则解析开销）
+            if (!PrincipiaProbe.IsAvailable)
+            {
+                if (FlightGlobals.ActiveVessel != null)
+                {
+                    switch (FlightGlobals.speedDisplayMode)
+                    {
+                        case FlightGlobals.SpeedDisplayModes.Surface:
+                            speed = FlightGlobals.ship_srfSpeed;
+                            return true;
+                        case FlightGlobals.SpeedDisplayModes.Orbit:
+                            speed = FlightGlobals.ship_obtSpeed;
+                            return true;
+                        case FlightGlobals.SpeedDisplayModes.Target:
+                            speed = FlightGlobals.ship_tgtSpeed;
+                            return true;
+                    }
+                }
+            }
+
+            // 2. Principia 场景：从 SpeedDisplay 权威文本解析
             if (SpeedDisplay.Instance == null || SpeedDisplay.Instance.textSpeed == null) return false;
+            if (!SpeedDisplay.Instance.enabled)
+            {
+                SpeedDisplay.Instance.enabled = true;
+            }
             string raw = SpeedDisplay.Instance.textSpeed.text;
             if (string.IsNullOrEmpty(raw)) return false;
 
