@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "generatedAt": "2026-09-24T10:40:30Z",
+  "generatedAt": "2026-09-25T03:05:45Z",
   "description": "Modular Flight Panel (MFP) 15 大航电外部探针遥测 API 全量查表字典",
   "totalProbes": 15,
   "totalParameters": 736,

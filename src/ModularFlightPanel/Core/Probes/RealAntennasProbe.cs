@@ -408,7 +408,8 @@ namespace ModularFlightPanel.Core.Probes
                 object link = GetActiveLink();
                 if (link is CommNet.CommLink commLink && commLink.end != null)
                 {
-                    return commLink.end.displayName ?? commLink.end.name;
+                    string nm = commLink.end.displayName ?? commLink.end.name;
+                    if (!string.IsNullOrEmpty(nm)) return nm;
                 }
 
                 object ant = GetActiveAntenna();
@@ -420,11 +421,22 @@ namespace ModularFlightPanel.Core.Probes
                         if (prop != null)
                         {
                             object tgt = prop.GetValue(ant, null);
-                            if (tgt != null) return tgt.ToString();
+                            if (tgt != null)
+                            {
+                                string ts = tgt.ToString();
+                                if (!string.IsNullOrEmpty(ts) && ts != "NONE") return ts;
+                            }
                         }
                     }
                     catch { }
                 }
+
+                var links = GetActiveCommLinks();
+                if (links != null && links.Count > 0 && !string.IsNullOrEmpty(links[0].PeerName))
+                {
+                    return links[0].PeerName;
+                }
+
                 return "NONE";
             }, "RealAntennas 活跃通信链路", "当前通信链路终点站或天线瞄准目标名称", new[] { "TARGET", "TARGETNAME", "STATION" });
 
@@ -531,6 +543,132 @@ namespace ModularFlightPanel.Core.Probes
             catch (Exception ex)
             {
                 SafeLogWarning($"[RealAntennasProbe] GetActiveCommLinks error: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        public static List<AntennaTelemetryInfo> GetAntennasList()
+        {
+            var result = new List<AntennaTelemetryInfo>();
+            if (!_isAvailable) return result;
+
+            try
+            {
+                object cnv = GetActiveVesselRA();
+                if (cnv != null && _antennaListField != null)
+                {
+                    var list = _antennaListField.GetValue(cnv) as IList;
+                    if (list != null && list.Count > 0)
+                    {
+                        double globalSignal = ResolveNumeric("SignalStrength");
+                        if (double.IsNaN(globalSignal)) globalSignal = 1.0;
+                        bool isConnected = ResolveNumeric("IsConnectedHome") > 0.5;
+
+                        for (int i = 0; i < list.Count; i++)
+                        {
+                            object ant = list[i];
+                            if (ant == null) continue;
+
+                            string antName = null;
+                            try
+                            {
+                                var prop = GetCachedProperty(ant, "Name");
+                                if (prop != null) antName = prop.GetValue(ant, null) as string;
+                            }
+                            catch { }
+
+                            // 优先从关联 Part 获取部件 title
+                            try
+                            {
+                                var partProp = ant.GetType().GetProperty("part", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                                    ?? ant.GetType().GetProperty("Parent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                                if (partProp != null)
+                                {
+                                    Part p = partProp.GetValue(ant, null) as Part;
+                                    if (p != null && p.partInfo != null && !string.IsNullOrEmpty(p.partInfo.title))
+                                    {
+                                        antName = p.partInfo.title;
+                                    }
+                                }
+                            }
+                            catch { }
+
+                            if (string.IsNullOrEmpty(antName)) antName = $"RealAntenna #{i + 1}";
+
+                            // 频段与形状
+                            string bandStr = null;
+                            try
+                            {
+                                var prop = GetCachedProperty(ant, "RFBand");
+                                if (prop != null) bandStr = prop.GetValue(ant, null)?.ToString();
+                            }
+                            catch { }
+
+                            string shapeStr = null;
+                            try
+                            {
+                                var prop = GetCachedProperty(ant, "Shape");
+                                if (prop != null) shapeStr = prop.GetValue(ant, null)?.ToString();
+                            }
+                            catch { }
+
+                            string typeStr = !string.IsNullOrEmpty(bandStr) ? $"{bandStr}-BAND" : (!string.IsNullOrEmpty(shapeStr) ? shapeStr.ToUpperInvariant() : "DIRECT");
+
+                            // 功率与增益
+                            float txPwr = 0f;
+                            try
+                            {
+                                var prop = GetCachedProperty(ant, "TxPower");
+                                if (prop != null) txPwr = Convert.ToSingle(prop.GetValue(ant, null));
+                            }
+                            catch { }
+
+                            float gain = 0f;
+                            try
+                            {
+                                var prop = GetCachedProperty(ant, "Gain");
+                                if (prop != null) gain = Convert.ToSingle(prop.GetValue(ant, null));
+                            }
+                            catch { }
+
+                            string pwrFormatted;
+                            if (gain > 0.01f && txPwr > 0.01f)
+                                pwrFormatted = $"{gain:F0}dBi · {txPwr:F0}dBm";
+                            else if (txPwr > 0.01f)
+                                pwrFormatted = $"{txPwr:F1} dBm";
+                            else if (gain > 0.01f)
+                                pwrFormatted = $"{gain:F1} dBi";
+                            else
+                                pwrFormatted = "5.0k";
+
+                            // 可通讯状态与链路
+                            bool canComm = true;
+                            try
+                            {
+                                var prop = GetCachedProperty(ant, "CanComm");
+                                if (prop != null) canComm = Convert.ToBoolean(prop.GetValue(ant, null));
+                            }
+                            catch { }
+
+                            bool isOperational = canComm;
+                            string status = isConnected ? (i == 0 ? "LINKED" : "STANDBY") : "SEARCHING";
+                            float sig = isConnected ? (float)globalSignal : 0f;
+
+                            if (!canComm)
+                            {
+                                status = "STANDBY";
+                                sig = 0f;
+                            }
+
+                            result.Add(new AntennaTelemetryInfo(antName, typeStr, txPwr, pwrFormatted, sig, status, isOperational));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SafeLogWarning($"[RealAntennasProbe] GetAntennasList error: {ex.Message}");
             }
 
             return result;

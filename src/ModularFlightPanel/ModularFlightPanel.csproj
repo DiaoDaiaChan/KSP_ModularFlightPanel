@@ -90,7 +90,7 @@
   </ItemGroup>
 
   <!-- Post-Build copy to local GameData and KSP installation -->
-  <Target Name="PostBuild" AfterTargets="Build">
+  <Target Name="PostBuild" AfterTargets="Build" Condition="'$(SkipPostBuildCopy)' != 'true'">
     <ItemGroup>
       <OutputFiles Include="$(TargetPath)" />
       <OutputPdb Condition="Exists('$(TargetDir)$(TargetName).pdb')" Include="$(TargetDir)$(TargetName).pdb" />
@@ -104,6 +104,12 @@
     
     <!-- Copy layout.json and themes to target KSP instance PluginData & Themes -->
     <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\PluginData\layout.json" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\PluginData\" Condition="Exists('$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\PluginData\layout.json') and Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="false" ContinueOnError="true" />
+
+    <!-- Copy Localization files to target KSP instance -->
+    <ItemGroup>
+      <LocalizationFiles Include="$(MSBuildProjectDirectory)\..\..\GameData\ModularFlightPanel\Localization\*.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(LocalizationFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Localization\" Condition="Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
 </Project>

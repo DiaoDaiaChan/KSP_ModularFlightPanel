@@ -338,6 +338,7 @@ namespace ModularFlightPanel.Core
 
             RegisterStringToken("ALT", (t, sub, fmt) =>
             {
+                if (sub == "MODE") return t.CurrentAltMode == AltitudeDisplayMode.Ground ? "AGL" : "ASL";
                 double alt = t.DisplayAltitude;
                 string pfx = "";
                 if (sub == "ASL" || sub == "ASL:KM" || sub == "ASL_KM") { alt = t.AltitudeASL; pfx = "ASL "; }
@@ -618,15 +619,46 @@ namespace ModularFlightPanel.Core
                 return t.ActiveEngines.ToString();
             }, "ENGINES");
 
-            RegisterNumericToken("FRAME", (t, sub) => 0.0);
+            RegisterNumericToken("FRAME", (t, sub) =>
+            {
+                if (sub == "SPD" || sub == "SPEED") return t.CurrentSpeed;
+                return 0.0;
+            });
             RegisterStringToken("FRAME", (t, sub, fmt) =>
             {
+                if (sub == "CATEGORY" || sub == "TYPE")
+                {
+                    if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.ReferenceFrameCategory))
+                        return NavBallHookService.Provider.ReferenceFrameCategory;
+#if KSP_RUNTIME
+                    return StockNavBallHook.GetReferenceFrameCategory();
+#else
+                    return !string.IsNullOrEmpty(t.SpeedModeName) ? t.SpeedModeName : "ORBIT";
+#endif
+                }
+                if (sub == "CENTER" || sub == "CENTRE" || sub == "ORIGIN")
+                {
+                    string pCentre = ExternalProbeRegistry.ResolveString("PRINCIPIA", "CENTRE", "");
+                    if (!string.IsNullOrEmpty(pCentre) && pCentre != "---") return pCentre;
+                    return t.CelestialBodyName;
+                }
+                if (sub == "PLANE")
+                {
+                    string pPlane = ExternalProbeRegistry.ResolveString("PRINCIPIA", "REFPLANEDESC", "");
+                    if (!string.IsNullOrEmpty(pPlane) && pPlane != "---") return pPlane;
+                    return "EQUATORIAL";
+                }
+                if (sub == "SPD" || sub == "SPEED")
+                {
+                    return FormatNumber(t.CurrentSpeed, fmt, "F1", "tok_frame_spd") + " m/s";
+                }
+
                 if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.FrameName))
                     return NavBallHookService.Provider.FrameName;
                 string principiaFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
-                if (!string.IsNullOrEmpty(principiaFrame))
+                if (!string.IsNullOrEmpty(principiaFrame) && principiaFrame != "---")
                     return principiaFrame;
-                return "SURFACE";
+                return t.SpeedModeName ?? "SURFACE";
             });
 
             RegisterNumericToken("SEPARATING", (t, sub) => t.IsStageSeparating ? 1.0 : 0.0, "STAGESEP");

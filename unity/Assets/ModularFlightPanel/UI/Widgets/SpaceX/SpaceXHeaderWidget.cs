@@ -11,6 +11,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     /// 包含：飞行阶段徽章 (Active Phase)、倒计时/任务时钟、惯性速度、高度、远地点、近地点与倾角/航向读数。
     /// 纯 UGUI 高对比度排版，遵循 MFP 规范，0 颜色字面量，分阶梯低开销刷新。
     /// </summary>
+    [FlightWidget("spacex_header", "dragon_header", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 任务遥测顶栏", Description = "SpaceX 顶部贯通式航电状态栏：主动飞行阶段胶囊徽章、倒计时与 5 组高对比度轨道数显列。", DefaultWidgetId = "spacex.header", DefaultX = 0f, DefaultY = 420f, IsSingleton = true, ExactIds = new[] { "spacex.header" })]
     public class SpaceXHeaderWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

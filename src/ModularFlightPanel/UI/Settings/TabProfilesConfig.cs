@@ -38,6 +38,13 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
 
             // =========================================================================
+            // 卡片 0: 语言与国际化偏好 (Language & Localization)
+            // =========================================================================
+            DrawLanguageCard();
+
+            GUILayout.Space(6f);
+
+            // =========================================================================
             // 卡片 1: 活动主布局文件与全局缩放倍率 (Active Layout & Global Scale)
             // =========================================================================
             DrawActiveLayoutCard();
@@ -74,12 +81,61 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndVertical();
         }
 
+        #region Card 0: Language & Localization Preference
+
+        private static void DrawLanguageCard()
+        {
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader(I18n.Tr("PRF_HEADER_LANG", "🌐 语言与国际化偏好"),
+                I18n.Tr("PRF_SUBHEADER_LANG", "实时切换航电工作台与全量飞行仪表的显示语言"));
+
+            GUILayout.BeginHorizontal();
+
+            var languages = I18nManager.Instance.AvailableLanguages;
+            string currentLang = I18nManager.Instance.CurrentLanguage;
+
+            for (int i = 0; i < languages.Count; i++)
+            {
+                var lang = languages[i];
+                bool isCur = currentLang.Equals(lang.Code, StringComparison.OrdinalIgnoreCase);
+                GUIStyle bStyle = isCur ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
+
+                string label = lang.Code.Equals("zh-CN", StringComparison.OrdinalIgnoreCase)
+                    ? I18n.Tr("THM_LANG_ZH_CN", "🇨🇳 简体中文")
+                    : lang.Code.Equals("en-US", StringComparison.OrdinalIgnoreCase)
+                        ? I18n.Tr("THM_LANG_EN_US", "🇺🇸 English")
+                        : $"{lang.DisplayName} ({lang.Code})";
+
+                if (GUILayout.Button(label, bStyle, GUILayout.Height(28f), GUILayout.MinWidth(140f)))
+                {
+                    I18nManager.Instance.SetLanguage(lang.Code);
+                    ThemeManager.Instance.SaveSettings();
+                    _toastMsg = I18n.Tr("PRF_TOAST_LANG_CHANGED", "✔ 语言已成功切换！");
+                    _toastTimer = 2.5f;
+                }
+            }
+
+            if (GUILayout.Button(I18n.Tr("PRF_LANG_AUTO_DETECT", "🔄 自动检测语言"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(28f), GUILayout.MinWidth(140f)))
+            {
+                string detected = I18nManager.Instance.DetectSystemLanguage();
+                I18nManager.Instance.SetLanguage(detected);
+                ThemeManager.Instance.SaveSettings();
+                _toastMsg = I18n.TrFormat("PRF_TOAST_LANG_DETECTED", "✔ 已自动设定为检测到的语言: {0}", detected);
+                _toastTimer = 2.5f;
+            }
+
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndCard();
+        }
+
+        #endregion
+
         #region Card 1: Active Layout & Global Scale
 
         private static void DrawActiveLayoutCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("📋 当前活动座舱排版 (Active Layout: layout.json)", "主持久化配置文件与全局缩放倍率");
+            MFPGuiSkin.DrawHeader(I18n.Tr("PRF_HEADER_ACTIVE", "📋 当前活动座舱排版 (Active Layout: layout.json)"), I18n.Tr("PRF_SUBHEADER_ACTIVE", "主持久化配置文件与全局缩放倍率"));
 
             var layoutMgr = WidgetLayoutManager.Instance;
             var layoutData = layoutMgr.CurrentLayout;
@@ -98,12 +154,12 @@ namespace ModularFlightPanel.UI.Settings
             }
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>主配置文件:</b> <color=#00E5FF>layout.json</color> ({fileInfo})", GUILayout.ExpandWidth(true));
-            MFPGuiSkin.DrawBadge($"已挂载 {enabledWidgets}/{totalWidgets} 组件", Color.white, MFPGuiSkin.AccentCyan);
+            GUILayout.Label($"<b>{I18n.Tr("PRF_MAIN_CONFIG", "主配置文件:")}</b> <color=#00E5FF>layout.json</color> ({fileInfo})", GUILayout.ExpandWidth(true));
+            MFPGuiSkin.DrawBadge(I18n.TrFormat("PRF_MOUNTED_BADGE", "已挂载 {0}/{1} 组件", enabledWidgets, totalWidgets), Color.white, MFPGuiSkin.AccentCyan);
             GUILayout.EndHorizontal();
 
             string backupInfo = layoutMgr.GetBackupFileInfo();
-            GUILayout.Label($"<color=#7088A8><size=10>• 自动备份状态: {backupInfo}</size></color>");
+            GUILayout.Label($"<color=#7088A8><size=10>{I18n.Tr("PRF_BACKUP_STATUS", "• 自动备份状态:")} {backupInfo}</size></color>");
             MFPGuiSkin.EndInset();
 
             GUILayout.Space(5f);
@@ -113,7 +169,7 @@ namespace ModularFlightPanel.UI.Settings
             if (currentScale < 0.5f) currentScale = 1.25f;
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>全局尺寸倍率 (Global Scale):</b> <color=#00E5FF><b>{currentScale:F2}x</b></color>", GUILayout.Width(250f));
+            GUILayout.Label($"<b>{I18n.Tr("PRF_GLOBAL_SCALE", "全局尺寸倍率 (Global Scale):")}</b> <color=#00E5FF><b>{currentScale:F2}x</b></color>", GUILayout.Width(250f));
             float newScale = GUILayout.HorizontalSlider(currentScale, 0.8f, 2.0f, GUILayout.ExpandWidth(true));
             newScale = Mathf.Round(newScale * 20f) / 20f; // 0.05 步进
             if (Mathf.Abs(newScale - currentScale) > 0.01f)
@@ -124,9 +180,15 @@ namespace ModularFlightPanel.UI.Settings
 
             // 预设快捷缩放按钮
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<color=#7088A8>推荐快捷尺寸:</color>", GUILayout.Width(100f));
+            GUILayout.Label($"<color=#7088A8>{I18n.Tr("PRF_PRESET_SCALES", "推荐快捷尺寸:")}</color>", GUILayout.Width(100f));
             float[] scalePresets = new float[] { 1.0f, 1.25f, 1.5f, 1.75f, 2.0f };
-            string[] scaleLabels = new string[] { "1.0x (原生紧凑)", "1.25x (推荐清晰★)", "1.5x (视网膜大字)", "1.75x (大屏)", "2.0x (巨幕)" };
+            string[] scaleLabels = new string[] {
+                I18n.Tr("PRF_SCALE_100", "1.0x (原生紧凑)"),
+                I18n.Tr("PRF_SCALE_125", "1.25x (推荐清晰★)"),
+                I18n.Tr("PRF_SCALE_150", "1.5x (视网膜大字)"),
+                I18n.Tr("PRF_SCALE_175", "1.75x (大屏)"),
+                I18n.Tr("PRF_SCALE_200", "2.0x (巨幕)")
+            };
 
             for (int i = 0; i < scalePresets.Length; i++)
             {
@@ -145,52 +207,52 @@ namespace ModularFlightPanel.UI.Settings
             // 核心持久化操作按钮组
             GUILayout.BeginHorizontal();
 
-            if (GUILayout.Button("💾 保存当前布局到磁盘", MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(26f), GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_SAVE_NOW", "💾 保存当前布局到磁盘"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(26f), GUILayout.ExpandWidth(true)))
             {
                 layoutMgr.SaveLayout();
-                SetToast("✔ 布局已成功保存至磁盘 (含自动备份副本 layout.backup.json)！");
+                SetToast(I18n.Tr("PRF_TOAST_SAVED", "✔ 布局已成功保存至磁盘 (含自动备份副本 layout.backup.json)！"));
             }
 
-            if (GUILayout.Button("🔄 从磁盘热重载", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(130f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_RELOAD", "🔄 从磁盘热重载"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(130f)))
             {
                 bool ok = layoutMgr.ReloadFromDisk();
                 if (ok)
                 {
                     FlightHUDManager.Instance?.RebuildHUD();
-                    SetToast("✔ 已成功从磁盘热重载 layout.json！");
+                    SetToast(I18n.Tr("PRF_TOAST_RELOADED", "✔ 已成功从磁盘热重载 layout.json！"));
                 }
                 else
                 {
-                    SetToast("<color=#FF4444>重载失败: 磁盘文件不存在或损坏</color>");
+                    SetToast(I18n.Tr("PRF_TOAST_RELOAD_FAIL", "<color=#FF4444>重载失败: 磁盘文件不存在或损坏</color>"));
                 }
             }
 
-            if (GUILayout.Button("📑 创建独立备份", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(120f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_BACKUP", "📑 创建独立备份"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(120f)))
             {
                 bool ok = layoutMgr.CreateManualBackup();
-                if (ok) SetToast("✔ 已成功生成独立备份副本 layout.backup.json！");
-                else SetToast("<color=#FF4444>创建备份失败</color>");
+                if (ok) SetToast(I18n.Tr("PRF_TOAST_BACKUP_OK", "✔ 已成功生成独立备份副本 layout.backup.json！"));
+                else SetToast(I18n.Tr("PRF_TOAST_BACKUP_FAIL", "<color=#FF4444>创建备份失败</color>"));
             }
 
-            if (GUILayout.Button("⏪ 恢复备份", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(90f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_RESTORE", "⏪ 恢复备份"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(90f)))
             {
                 bool ok = layoutMgr.RestoreFromBackup();
                 if (ok)
                 {
                     FlightHUDManager.Instance?.RebuildHUD();
-                    SetToast("✔ 已成功从备份文件恢复并刷新界面！");
+                    SetToast(I18n.Tr("PRF_TOAST_RESTORE_OK", "✔ 已成功从备份文件恢复并刷新界面！"));
                 }
                 else
                 {
-                    SetToast("<color=#FF4444>未找到有效的备份文件 layout.backup.json</color>");
+                    SetToast(I18n.Tr("PRF_TOAST_RESTORE_FAIL", "<color=#FF4444>未找到有效的备份文件 layout.backup.json</color>"));
                 }
             }
 
-            if (GUILayout.Button("⚠ 恢复默认", MFPGuiSkin.DangerButtonStyle, GUILayout.Height(26f), GUILayout.Width(90f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_RESET_DEFAULT", "⚠ 恢复默认"), MFPGuiSkin.DangerButtonStyle, GUILayout.Height(26f), GUILayout.Width(90f)))
             {
                 layoutMgr.ResetToDefault();
                 FlightHUDManager.Instance?.RebuildHUD();
-                SetToast("已恢复出厂默认布局配置！");
+                SetToast(I18n.Tr("PRF_TOAST_RESET_OK", "已恢复出厂默认布局配置！"));
             }
 
             GUILayout.EndHorizontal();
@@ -223,35 +285,35 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawPerVesselEngineCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🚀 载具专属配置引擎 (Per-Vessel Layout Engine)", "支持为不同飞船保存专属座舱，切船自动响应");
+            MFPGuiSkin.DrawHeader(I18n.Tr("PRF_HEADER_PER_VESSEL", "🚀 载具专属配置引擎"), I18n.Tr("PRF_SUBHEADER_PER_VESSEL", "支持为不同飞船保存专属座舱，切船自动响应"));
 
             var layoutMgr = WidgetLayoutManager.Instance;
             string currentVesselName = GetCurrentVesselName();
-            bool hasVessel = !string.IsNullOrEmpty(currentVesselName) && currentVesselName != "未处于飞行状态";
+            bool hasVessel = !string.IsNullOrEmpty(currentVesselName) && currentVesselName != I18n.Tr("PRF_NOT_IN_FLIGHT", "未处于飞行状态");
             bool hasProfile = hasVessel && layoutMgr.HasVesselProfile(currentVesselName);
 
             MFPGuiSkin.BeginInset();
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>当前载具名称:</b> <color=#00E5FF><b>{(string.IsNullOrEmpty(currentVesselName) ? "无" : currentVesselName)}</b></color>", GUILayout.ExpandWidth(true));
+            GUILayout.Label($"<b>{I18n.Tr("PRF_CURRENT_VESSEL", "当前载具名称:")}</b> <color=#00E5FF><b>{(string.IsNullOrEmpty(currentVesselName) ? I18n.Tr("COMMON_NONE", "无") : currentVesselName)}</b></color>", GUILayout.ExpandWidth(true));
 
             if (!hasVessel)
             {
-                MFPGuiSkin.DrawBadge("地面整备 / 航天中心", Color.gray, MFPGuiSkin.TextMuted);
+                MFPGuiSkin.DrawBadge(I18n.Tr("PRF_VESSEL_GROUND", "地面整备 / 航天中心"), Color.gray, MFPGuiSkin.TextMuted);
             }
             else if (hasProfile)
             {
-                MFPGuiSkin.DrawBadge("已绑定载具专属配置", Color.white, MFPGuiSkin.AccentGreen);
+                MFPGuiSkin.DrawBadge(I18n.Tr("PRF_VESSEL_BOUND", "已绑定载具专属配置"), Color.white, MFPGuiSkin.AccentGreen);
             }
             else
             {
-                MFPGuiSkin.DrawBadge("使用通用主配置 (Default)", Color.white, MFPGuiSkin.AccentCyan);
+                MFPGuiSkin.DrawBadge(I18n.Tr("PRF_VESSEL_DEFAULT", "使用通用主配置"), Color.white, MFPGuiSkin.AccentCyan);
             }
             GUILayout.EndHorizontal();
 
             if (hasVessel)
             {
                 string vesselPath = Path.Combine(layoutMgr.VesselsDir, $"{currentVesselName}.json");
-                string detail = hasProfile ? $"独立配置文件: PluginData/Vessels/{currentVesselName}.json" : "当前使用主配置 layout.json，点击下方按钮可为此飞船脱钩保存独立配置。";
+                string detail = hasProfile ? I18n.TrFormat("PRF_VESSEL_ISOLATED_PATH", "独立配置文件: PluginData/Vessels/{0}.json", currentVesselName) : I18n.Tr("PRF_VESSEL_USE_MAIN_DESC", "当前使用主配置 layout.json，点击下方按钮可为此飞船脱钩保存独立配置。");
                 GUILayout.Label($"<color=#7088A8><size=10>• {detail}</size></color>");
             }
             MFPGuiSkin.EndInset();
@@ -262,42 +324,42 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.BeginHorizontal();
 
             GUI.enabled = hasVessel;
-            if (GUILayout.Button("📌 为当前载具保存独立布局", MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(26f), GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_SAVE_VESSEL", "📌 为当前载具保存独立布局"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(26f), GUILayout.ExpandWidth(true)))
             {
                 bool ok = layoutMgr.SaveVesselLayout(currentVesselName);
                 if (ok)
                 {
-                    SetToast($"✔ 已为「{currentVesselName}」生成专属独立配置！切船将自动载入。");
+                    SetToast(I18n.TrFormat("PRF_TOAST_VESSEL_SAVED", "✔ 已为「{0}」生成专属独立配置！切船将自动载入。", currentVesselName));
                 }
                 else
                 {
-                    SetToast("<color=#FF4444>保存载具专属配置失败</color>");
+                    SetToast(I18n.Tr("PRF_TOAST_SAVE_VESSEL_FAIL", "<color=#FF4444>保存载具专属配置失败</color>"));
                 }
             }
 
-            if (GUILayout.Button("🔄 重新载入载具专属配置", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(170f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_RELOAD_VESSEL", "🔄 重新载入载具专属配置"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(170f)))
             {
                 bool ok = layoutMgr.LoadVesselLayout(currentVesselName);
                 if (ok)
                 {
                     FlightHUDManager.Instance?.RebuildHUD();
-                    SetToast($"✔ 已成功加载「{currentVesselName}」专属配置！");
+                    SetToast(I18n.TrFormat("PRF_TOAST_VESSEL_LOADED", "✔ 已成功加载「{0}」专属配置！", currentVesselName));
                 }
                 else
                 {
-                    SetToast($"<color=#FF4444>该载具尚无独立配置，已维持通用布局</color>");
+                    SetToast(I18n.Tr("PRF_TOAST_NO_VESSEL_PROFILE", "<color=#FF4444>该载具尚无独立配置，已维持通用布局</color>"));
                 }
             }
 
             GUI.enabled = hasVessel && hasProfile;
-            if (GUILayout.Button("🗑 解绑并恢复通用配置", MFPGuiSkin.DangerButtonStyle, GUILayout.Height(26f), GUILayout.Width(160f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_DELETE_VESSEL", "🗑 解绑并恢复通用配置"), MFPGuiSkin.DangerButtonStyle, GUILayout.Height(26f), GUILayout.Width(160f)))
             {
                 bool ok = layoutMgr.DeleteVesselProfile(currentVesselName);
                 if (ok)
                 {
                     layoutMgr.ReloadFromDisk();
                     FlightHUDManager.Instance?.RebuildHUD();
-                    SetToast($"已解除「{currentVesselName}」独立配置，恢复使用通用主布局！");
+                    SetToast(I18n.TrFormat("PRF_TOAST_VESSEL_RESET", "已解除「{0}」独立配置，恢复使用通用主布局！", currentVesselName));
                 }
             }
             GUI.enabled = true;
@@ -305,7 +367,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
 
             GUILayout.Space(2f);
-            GUILayout.Label("<color=#7088A8><size=10>说明：开启载具专属配置后，每次切入该飞船会自动优先加载 Vessels/{飞船名}.json；普通保存也会同步更新该载具配置，彻底根除切船丢失布局问题。</size></color>");
+            GUILayout.Label($"<color=#7088A8><size=10>{I18n.Tr("PRF_PER_VESSEL_DESC", "说明：开启载具专属配置后，每次切入该飞船会自动优先加载 Vessels/{飞船名}.json；普通保存也会同步更新该载具配置，彻底根除切船丢失布局问题。")}</size></color>");
 
             MFPGuiSkin.EndCard();
         }
@@ -322,7 +384,7 @@ namespace ModularFlightPanel.UI.Settings
             }
             catch { }
 #endif
-            return "未处于飞行状态";
+            return I18n.Tr("PRF_NOT_IN_FLIGHT", "未处于飞行状态");
         }
 
         #endregion
@@ -332,7 +394,7 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawPresetTemplatesCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🌟 精选出厂与本地预设模板库 (Preset Library)", "一键套用调校好的工效学座舱与本地模板");
+            MFPGuiSkin.DrawHeader(I18n.Tr("PRF_HEADER_PRESETS", "📚 精选出厂与本地预设模板库"), I18n.Tr("PRF_SUBHEADER_PRESETS", "一键套用调校好的工效学座舱与本地模板"));
 
             List<PresetInfo> presets = LayoutShareHub.GetAvailablePresets();
             for (int i = 0; i < presets.Count; i++)
@@ -341,25 +403,28 @@ namespace ModularFlightPanel.UI.Settings
                 MFPGuiSkin.BeginInset();
                 GUILayout.BeginHorizontal();
 
-                string tag = p.IsBuiltIn ? "[出厂预置]" : "[本地模板]";
+                string tag = p.IsBuiltIn ? I18n.Tr("PRF_TAG_BUILTIN", "[出厂预置]") : I18n.Tr("PRF_TAG_LOCAL", "[本地模板]");
                 Color tagCol = p.IsBuiltIn ? MFPGuiSkin.AccentCyan : MFPGuiSkin.AccentGreen;
                 GUILayout.Label($"<b>{p.Name}</b>", GUILayout.ExpandWidth(true));
                 MFPGuiSkin.DrawBadge(tag, Color.white, tagCol);
 
-                if (GUILayout.Button("⚡ 一键套用此预设", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
+                if (GUILayout.Button(I18n.Tr("PRF_BTN_APPLY_PRESET", "⚡ 一键套用此预设"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
                 {
                     WidgetLayoutData presetData = LayoutShareHub.LoadPreset(p);
                     if (presetData != null && presetData.Widgets != null && presetData.Widgets.Count > 0)
                     {
-                        WidgetLayoutManager.Instance.CurrentLayout.Widgets = presetData.Widgets;
-                        WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = presetData.GlobalScale > 0.1f ? presetData.GlobalScale : 1.25f;
-                        WidgetLayoutManager.Instance.SaveLayout();
+                        WidgetSelectionManager.ClearSelection();
+                        WidgetLayoutManager.Instance.ApplyLayout(presetData);
+                        if (WidgetRenderManager.Instance != null)
+                        {
+                            WidgetRenderManager.Instance.SetGlobalRenderScale(presetData.GlobalScale > 0.1f ? presetData.GlobalScale : 1.25f);
+                        }
                         FlightHUDManager.Instance?.RebuildHUD();
-                        SetToast($"✔ 已成功套用预设「{p.Name}」！(共 {presetData.Widgets.Count} 个组件)");
+                        SetToast(I18n.TrFormat("PRF_TOAST_PRESET_APPLIED", "✔ 已成功套用预设「{0}」！(共 {1} 个组件)", p.Name, presetData.Widgets.Count));
                     }
                     else
                     {
-                        SetToast($"<color=#FF4444>套用失败: 预设「{p.Name}」为空或格式损坏，已自动拦截保护！</color>");
+                        SetToast(I18n.TrFormat("PRF_TOAST_APPLY_PRESET_FAIL", "<color=#FF4444>套用失败: 预设「{0}」为空或格式损坏，已自动拦截保护！</color>", p.Name));
                     }
                 }
                 GUILayout.EndHorizontal();
@@ -374,19 +439,19 @@ namespace ModularFlightPanel.UI.Settings
             // 另存为新预设文件
             MFPGuiSkin.BeginInset();
             GUILayout.BeginHorizontal();
-            GUILayout.Label("另存新预设:", GUILayout.Width(75f));
+            GUILayout.Label(I18n.Tr("PRF_LABEL_SAVE_PRESET", "另存新预设:"), GUILayout.Width(75f));
             _savePresetName = GUILayout.TextField(_savePresetName ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Height(24f), GUILayout.Width(220f));
 
-            if (GUILayout.Button("💾 保存到本地 Presets 文件夹", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_SAVE_PRESET", "💾 保存到本地 Presets 文件夹"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
             {
                 if (LayoutShareHub.SavePresetToFile(_savePresetName, WidgetLayoutManager.Instance.CurrentLayout, out string error))
                 {
-                    SetToast($"✔ 已保存预设「{_savePresetName}」至 Presets 目录！");
+                    SetToast(I18n.TrFormat("PRF_TOAST_PRESET_SAVED", "✔ 已保存预设「{0}」至 Presets 目录！", _savePresetName));
                     _savePresetName = "";
                 }
                 else
                 {
-                    SetToast($"<color=#FF4444>保存失败: {error}</color>");
+                    SetToast(I18n.TrFormat("PRF_TOAST_SAVE_PRESET_FAIL", "<color=#FF4444>保存失败: {0}</color>", error));
                 }
             }
             GUILayout.EndHorizontal();
@@ -402,17 +467,17 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawShareCodeCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🔗 航电配置导入与社区分享 (Layout Import & Share Code)", "支持 MFP:v1: 分享码、原始 JSON 文本或本地预设文件名");
+            MFPGuiSkin.DrawHeader(I18n.Tr("PRF_HEADER_SHARE", "🔗 社区分享码中心"), I18n.Tr("PRF_SUBHEADER_SHARE", "支持 MFP:v1: 分享码、原始 JSON 文本或本地预设文件名"));
 
             // 导出分享码
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("📋 复制当前布局分享码到剪贴板", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_COPY_SHARE", "📋 复制当前布局分享码到剪贴板"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.ExpandWidth(true)))
             {
                 string code = LayoutShareHub.ExportShareCode(WidgetLayoutManager.Instance.CurrentLayout);
                 if (!string.IsNullOrEmpty(code))
                 {
                     GUIUtility.systemCopyBuffer = code;
-                    SetToast("✔ 已成功复制分享码至剪贴板！可直接粘贴发送给社区好友 (Ctrl+V)");
+                    SetToast(I18n.Tr("PRF_TOAST_SHARE_COPIED", "✔ 已成功复制分享码至剪贴板！可直接粘贴发送给社区好友 (Ctrl+V)"));
                 }
             }
             GUILayout.EndHorizontal();
@@ -421,34 +486,37 @@ namespace ModularFlightPanel.UI.Settings
 
             // 导入分享码或 JSON
             GUILayout.BeginHorizontal();
-            GUILayout.Label("配置代码 / 路径:", GUILayout.Width(115f));
+            GUILayout.Label(I18n.Tr("PRF_LABEL_SHARE_INPUT", "配置代码 / 路径:"), GUILayout.Width(115f));
             _inputShareCode = GUILayout.TextField(_inputShareCode ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true));
 
-            if (GUILayout.Button("粘贴剪贴板", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(85f), GUILayout.Height(24f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_PASTE_CLIPBOARD", "粘贴剪贴板"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(85f), GUILayout.Height(24f)))
             {
                 _inputShareCode = GUIUtility.systemCopyBuffer;
             }
 
-            if (GUILayout.Button("📥 导入并套用", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(105f), GUILayout.Height(24f)))
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_IMPORT_APPLY", "📥 导入并套用"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(105f), GUILayout.Height(24f)))
             {
                 if (LayoutShareHub.TryImportShareCode(_inputShareCode, out WidgetLayoutData importedLayout, out string error))
                 {
-                    WidgetLayoutManager.Instance.CurrentLayout.Widgets = importedLayout.Widgets;
-                    WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = importedLayout.GlobalScale > 0.1f ? importedLayout.GlobalScale : 1.25f;
-                    WidgetLayoutManager.Instance.SaveLayout();
+                    WidgetSelectionManager.ClearSelection();
+                    WidgetLayoutManager.Instance.ApplyLayout(importedLayout);
+                    if (WidgetRenderManager.Instance != null)
+                    {
+                        WidgetRenderManager.Instance.SetGlobalRenderScale(importedLayout.GlobalScale > 0.1f ? importedLayout.GlobalScale : 1.25f);
+                    }
                     FlightHUDManager.Instance?.RebuildHUD();
-                    SetToast($"✔ 成功导入并套用布局！(共加载 {importedLayout.Widgets.Count} 个组件)");
+                    SetToast(I18n.TrFormat("PRF_TOAST_IMPORT_OK", "✔ 成功导入并套用布局！(共加载 {0} 个组件)", importedLayout.Widgets.Count));
                     _inputShareCode = "";
                 }
                 else
                 {
-                    SetToast($"<color=#FF4444>导入失败: {error}</color>");
+                    SetToast(I18n.TrFormat("PRF_TOAST_IMPORT_FAIL", "<color=#FF4444>导入失败: {0}</color>", error));
                 }
             }
             GUILayout.EndHorizontal();
 
             GUILayout.Space(2f);
-            GUILayout.Label("<color=#7088A8><size=10>• 多合一智能导入：支持粘贴「MFP:v1:」分享码、原始 JSON 文本结构、或本地 Presets 文件名 (如 01_Default_Avionics.json)。</size></color>");
+            GUILayout.Label($"<color=#7088A8><size=10>{I18n.Tr("PRF_SHARE_HINT", "• 多合一智能导入：支持粘贴「MFP:v1:」分享码、原始 JSON 文本结构、或本地 Presets 文件名 (如 01_Default_Avionics.json)。")}</size></color>");
 
             MFPGuiSkin.EndCard();
         }
@@ -460,23 +528,23 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawThemeConfigCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🎨 主题配置与调色板 (Theme Settings & Palette)", "管理 theme_settings.json 存储与色彩微调");
+            MFPGuiSkin.DrawHeader(I18n.Tr("PRF_HEADER_THEME_CFG", "🎨 主题配置与调色板"), I18n.Tr("PRF_SUBHEADER_THEME_CFG", "管理 theme_settings.json 存储与色彩微调"));
 
             string themeFile = Path.Combine(ModularFlightPanel.Core.AppPathHelper.RootPath, "GameData/ModularFlightPanel/PluginData/theme_settings.json");
-            string themeInfo = "文件未创建 (使用内置默认)";
+            string themeInfo = I18n.Tr("PRF_THEME_FILE_NOT_CREATED", "文件未创建 (使用内置默认)");
             if (File.Exists(themeFile))
             {
                 FileInfo fi = new FileInfo(themeFile);
-                themeInfo = $"大小: {fi.Length / 1024f:F1} KB | 修改: {fi.LastWriteTime:yyyy-MM-dd HH:mm:ss}";
+                themeInfo = I18n.TrFormat("CFG_FILE_SIZE_MODIFIED_FMT", "大小: {0:F1} KB | 修改: {1}", fi.Length / 1024f, fi.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
             }
 
             MFPGuiSkin.BeginInset();
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>主题配置文件:</b> <color=#00E5FF>theme_settings.json</color> ({themeInfo})", GUILayout.ExpandWidth(true));
-            if (GUILayout.Button("💾 保存主题设置到磁盘", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(160f), GUILayout.Height(22f)))
+            GUILayout.Label($"<b>{I18n.Tr("PRF_LABEL_THEME_FILE", "主题配置文件:")}</b> <color=#00E5FF>theme_settings.json</color> ({themeInfo})", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button(I18n.Tr("PRF_BTN_SAVE_THEME", "💾 保存主题设置到磁盘"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(160f), GUILayout.Height(22f)))
             {
                 ThemeManager.Instance.SaveSettings();
-                SetToast("✔ 主题偏好设置已成功保存至 theme_settings.json！");
+                SetToast(I18n.Tr("PRF_TOAST_THEME_SAVED", "✔ 主题偏好设置已成功保存至 theme_settings.json！"));
             }
             GUILayout.EndHorizontal();
             MFPGuiSkin.EndInset();
@@ -485,7 +553,7 @@ namespace ModularFlightPanel.UI.Settings
 
             // 可折叠主题调色板微调
             string fold = _showThemeWorkshop ? "▼" : "▶";
-            if (GUILayout.Button($"<b>{fold} 自定义调色板微调工坊 (Theme Palette Workshop)</b>", "label", GUILayout.ExpandWidth(true)))
+            if (GUILayout.Button($"<b>{fold} {I18n.Tr("PRF_THEME_WORKSHOP", "自定义调色板微调工坊")}</b>", "label", GUILayout.ExpandWidth(true)))
             {
                 _showThemeWorkshop = !_showThemeWorkshop;
             }
@@ -496,18 +564,18 @@ namespace ModularFlightPanel.UI.Settings
                 if (cur != null)
                 {
                     MFPGuiSkin.BeginInset();
-                    DrawColorEditorRow("主强调色 (Accent Primary)", ref cur.AccentPrimary);
-                    DrawColorEditorRow("副强调色 (Accent Secondary)", ref cur.AccentSecondary);
-                    DrawColorEditorRow("面板底板色 (Frame Background)", ref cur.FrameBgColor);
-                    DrawColorEditorRow("面板边框色 (Frame Border)", ref cur.FrameBorderColor);
-                    DrawColorEditorRow("主读数文字色 (Text Primary)", ref cur.TextPrimaryColor);
+                    DrawColorEditorRow(I18n.Tr("THM_COLOR_ACCENT_PRI", "主强调色"), ref cur.AccentPrimary);
+                    DrawColorEditorRow(I18n.Tr("THM_COLOR_ACCENT_SEC", "副强调色"), ref cur.AccentSecondary);
+                    DrawColorEditorRow(I18n.Tr("THM_COLOR_FRAME_BG", "面板底板色"), ref cur.FrameBgColor);
+                    DrawColorEditorRow(I18n.Tr("THM_COLOR_FRAME_BORDER", "面板边框色"), ref cur.FrameBorderColor);
+                    DrawColorEditorRow(I18n.Tr("THM_COLOR_TEXT_PRI", "主读数文字色"), ref cur.TextPrimaryColor);
 
                     GUILayout.Space(4f);
-                    if (GUILayout.Button("应用调色板并保存", MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(22f)))
+                    if (GUILayout.Button(I18n.Tr("PRF_BTN_APPLY_PALETTE", "应用调色板并保存"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(22f)))
                     {
                         ThemeManager.Instance.SaveSettings();
                         ThemeManager.Instance.NotifyThemeChanged();
-                        SetToast("✔ 主题颜色微调已保存并应用！");
+                        SetToast(I18n.Tr("PRF_TOAST_PALETTE_SAVED", "✔ 主题颜色微调已保存并应用！"));
                     }
                     MFPGuiSkin.EndInset();
                 }

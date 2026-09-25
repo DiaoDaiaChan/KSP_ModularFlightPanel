@@ -21,6 +21,7 @@ namespace ModularFlightPanel.UI.Widgets
     ///    集成 2D 飞船剪影、动态矢量喷流羽流 (Exhaust Plume) 与跨分级水平激光引线。
     /// 4. 严格继承 BaseFlightWidget，所有样式、数据全生命周期数据驱动，零硬编码。
     /// </summary>
+    [FlightWidget("stage_dv", "deltav", "stage_delta_v", Category = WidgetCategory.Systems, DisplayName = "STAGE ΔV 本级推演仪表", Description = "当前级与总计 Delta-V 动态量程柱状图、燃烧耗尽倒计时与比冲 (Isp)。", DefaultWidgetId = "custom.stage_dv", DefaultX = -440f, DefaultY = 60f, IsSingleton = true, ExactIds = new[] { "gauge.stage_dv", "custom.stage_dv", "core.stage_dv" })]
     public class StageDeltaVWidget : BaseFlightWidget
     {
         private class StageRowUI

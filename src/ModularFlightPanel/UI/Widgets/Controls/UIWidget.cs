@@ -18,6 +18,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
     /// 4. 自由拖拽编辑模式联动、磁吸网格对齐与快速打开 Alt+N 航电工程工作台
     /// 5. 100% 遵从 0 颜色字面量与阶梯分频刷新规范 (Relaxed 10Hz)
     /// </summary>
+    [FlightWidget("ui_widget", "ui_manager", "dock_manager", Category = WidgetCategory.Controls, DisplayName = "UI 航电控制中枢", Description = "原生挂载在飞行屏幕上的 UGUI 高度集成管理仪表：实时组件列表、快速分类、一键显隐与自由拖拽联动。", DefaultWidgetId = "core.ui_widget", DefaultX = 380f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "core.ui_widget", "custom.ui_widget" })]
     public class UIWidget : BaseFlightWidget
     {
         public static UIWidget Instance { get; private set; }
@@ -55,7 +56,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private readonly List<Button> _categoryBtns = new List<Button>();
         private readonly List<Text> _categoryBtnTexts = new List<Text>();
         private int _selectedCategory = 0; // 0=All, 1=Gauges, 2=Systems, 3=SpaceX, 4=Controls
-        private readonly string[] CategoryNames = new string[] { "全部", "仪表", "系统", "SPX", "控制" };
+        private readonly string[] CategoryNames = new string[] { I18n.Tr("UIW_CAT_ALL", "全部"), I18n.Tr("UIW_CAT_GAUGES", "仪表"), I18n.Tr("UIW_CAT_SYSTEMS", "系统"), "SPX", I18n.Tr("UIW_CAT_CONTROLS", "控制") };
 
         // 挂载行视图项池
         private class WidgetRowView
@@ -233,25 +234,25 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             footRt.anchoredPosition = new Vector2(0f, 4f * s);
 
             float fBtnW = (baseW - 16f * s) / 4f;
-            CreateButton(footerObj.transform, "ShowAll", "👁 全显", new Vector2(fBtnW - 2f * s, 22f * s),
+            CreateButton(footerObj.transform, "ShowAll", I18n.Tr("UIW_BTN_SHOW_ALL", "👁 全显"), new Vector2(fBtnW - 2f * s, 22f * s),
                 new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(8f * s, 0f), () =>
                 {
                     SetAllWidgetsActive(true);
                 });
 
-            CreateButton(footerObj.transform, "HideAll", "🚫 全隐", new Vector2(fBtnW - 2f * s, 22f * s),
+            CreateButton(footerObj.transform, "HideAll", I18n.Tr("UIW_BTN_HIDE_ALL", "🚫 全隐"), new Vector2(fBtnW - 2f * s, 22f * s),
                 new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(8f * s + fBtnW, 0f), () =>
                 {
                     SetAllWidgetsActive(false);
                 });
 
-            CreateButton(footerObj.transform, "SnapAll", "🧲 网格", new Vector2(fBtnW - 2f * s, 22f * s),
+            CreateButton(footerObj.transform, "SnapAll", I18n.Tr("UIW_BTN_SNAP_GRID", "🧲 网格"), new Vector2(fBtnW - 2f * s, 22f * s),
                 new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(8f * s + fBtnW * 2f, 0f), () =>
                 {
                     SnapAllToGrid(10f);
                 });
 
-            CreateButton(footerObj.transform, "ResetAll", "↺ 默认", new Vector2(fBtnW - 2f * s, 22f * s),
+            CreateButton(footerObj.transform, "ResetAll", I18n.Tr("UIW_BTN_RESET_DEFAULT", "↺ 默认"), new Vector2(fBtnW - 2f * s, 22f * s),
                 new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(8f * s + fBtnW * 3f, 0f), () =>
                 {
                     WidgetLayoutManager.Instance.ResetToDefaultLayout();

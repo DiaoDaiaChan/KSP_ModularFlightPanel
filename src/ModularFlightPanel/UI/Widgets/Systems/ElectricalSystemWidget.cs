@@ -10,6 +10,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 原生 UGUI 航电电气系统监控面板 (ELEC Power Distribution)
     /// 监控飞船蓄电池组、直流总线母线、太阳能/发电机电源供给与即时净充放电率
     /// </summary>
+    [FlightWidget("electrical", "elec", "power_grid", Category = WidgetCategory.Systems, DisplayName = "ELEC 电力分配与电网系统", Description = "蓄电池电压、DC ESS 总线负荷、太阳能帆板与即时净充放电率 (EC/s)。", DefaultWidgetId = "custom.electrical", DefaultX = -440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "custom.electrical", "custom.elec", "core.electrical" })]
     public class ElectricalSystemWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

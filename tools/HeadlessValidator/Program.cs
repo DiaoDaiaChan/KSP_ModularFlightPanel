@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using ModularFlightPanel.Core;
 using ModularFlightPanel.UI;   // MFP-SPEC-006 颜色字面量审计器（直接编译插件源码本体）
 
 namespace ModularFlightPanel.HeadlessValidator
@@ -33,6 +34,12 @@ namespace ModularFlightPanel.HeadlessValidator
 
         [JsonPropertyName("Scale")]
         public float Scale { get; set; } = 1.0f;
+
+        [JsonPropertyName("ScaleX")]
+        public float ScaleX { get; set; } = 1.0f;
+
+        [JsonPropertyName("ScaleY")]
+        public float ScaleY { get; set; } = 1.0f;
 
         [JsonPropertyName("Rotation")]
         public float Rotation { get; set; } = 0f;
@@ -198,6 +205,14 @@ namespace ModularFlightPanel.HeadlessValidator
                 {
                     return ProbeCatalogExporter.ExportCatalog(repoRoot);
                 }
+                else if (args[i] == "--merge-missing-keys")
+                {
+                    return I18nMissingKeysMerger.Merge(repoRoot);
+                }
+                else if (args[i] == "--i18n-ast")
+                {
+                    return RunI18nAstAudit(repoRoot);
+                }
             }
 
             int overallErrors = 0;
@@ -206,7 +221,7 @@ namespace ModularFlightPanel.HeadlessValidator
             WidgetLayoutModel layout = null;
             if (!string.IsNullOrEmpty(shareCodeToTest))
             {
-                Console.WriteLine($"\n[1/8] 测试 CLI 传入分享码解码...");
+                Console.WriteLine($"\n[1/9] 测试 CLI 传入分享码解码...");
                 if (TryDecodeShareCode(shareCodeToTest, out layout, out string decodeErr))
                 {
                     PrintSuccess($"成功从分享码还原布局! 包含 {layout.Widgets.Count} 个组件。");
@@ -219,7 +234,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
             else
             {
-                Console.WriteLine($"\n[1/8] 加载航电布局文件: {Path.GetFileName(layoutPath)}");
+                Console.WriteLine($"\n[1/9] 加载航电布局文件: {Path.GetFileName(layoutPath)}");
                 if (!File.Exists(layoutPath))
                 {
                     PrintError($"找不到布局文件: {layoutPath}");
@@ -239,7 +254,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 }
 
                 // 测试分享码往返序列化
-                Console.WriteLine($"\n[2/8] 验证分享中枢 (LayoutShareHub) GZip+Base64 编解码与无损往返...");
+                Console.WriteLine($"\n[2/9] 验证分享中枢 (LayoutShareHub) GZip+Base64 编解码与无损往返...");
                 string exportedCode = EncodeShareCode(layout);
                 int jsonBytes = Encoding.UTF8.GetByteCount(File.ReadAllText(layoutPath));
                 int codeBytes = Encoding.UTF8.GetByteCount(exportedCode);
@@ -269,7 +284,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 2. 空间布局与 AABB 碰撞检测
-            Console.WriteLine($"\n[3/8] 执行空间几何与视口碰撞检测 (AABB Spatial Collision Engine)...");
+            Console.WriteLine($"\n[3/9] 执行空间几何与视口碰撞检测 (AABB Spatial Collision Engine)...");
             var boundingBoxes = ComputeBoundingBoxes(layout);
             var activeWidgets = boundingBoxes.Values.ToList();
             Console.WriteLine($"  ├─ 激活组件数: {activeWidgets.Count} / {layout.Widgets.Count}");
@@ -309,7 +324,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 3. 通配符 Token 引擎完整性审计
-            Console.WriteLine($"\n[4/8] 遥测通配符语法与 Token 引擎静态审计...");
+            Console.WriteLine($"\n[4/9] 遥测通配符语法与 Token 引擎静态审计...");
             int tokenErrors = AuditTokens(layout);
             if (tokenErrors == 0)
             {
@@ -322,7 +337,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 4. 700 帧物理遥测场景仿真高压测试
-            Console.WriteLine($"\n[5/8] 运行物理遥测解耦仿真引擎高压测试 (7 个飞行阶段, 700 Ticks)...");
+            Console.WriteLine($"\n[5/9] 运行物理遥测解耦仿真引擎高压测试 (7 个飞行阶段, 700 Ticks)...");
             int simErrors = RunSimulationStressTest();
             if (simErrors == 0)
             {
@@ -343,32 +358,41 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 6. 全量飞行仪表组件规范合法性校验 (Widget Specification Audit, MFP-SPEC-001..007)
-            Console.WriteLine($"\n[6/8] 全量飞行仪表组件架构与代码规范合法性校验 (Architecture Compliance Audit)...");
+            Console.WriteLine($"\n[6/9] 全量飞行仪表组件架构与代码规范合法性校验 (Architecture Compliance Audit)...");
             int specErrors = ValidateWidgetSpecifications(repoRoot);
             overallErrors += specErrors;
 
-            // 7. 审计内核自检：词法器（注释/字符串剥离）+ 规则正则（必须命中 / 必须放过 / 端到端）
-            //    没有这一步，"规则写错了却永远全绿"就无法被发现。
-            Console.WriteLine($"\n[7/8] 审计内核自检 (Linter + Spec Rules Self-Test)...");
+            // 7. 审计内核自检：词法器（注释/字符串剥离）+ 规则正则 + I18n AST 语法树自检
+            Console.WriteLine($"\n[7/9] 审计内核自检 (Linter + Spec Rules + I18n AST Self-Test)...");
             var linterFailures = CSharpSourceLinter.SelfTest();
             var ruleFailures = WidgetSourceAudit.SelfTest();
-            if (linterFailures.Count == 0 && ruleFailures.Count == 0)
+            var i18nSelfTestFailures = I18nSyntaxAuditor.SelfTest();
+            if (linterFailures.Count == 0 && ruleFailures.Count == 0 && i18nSelfTestFailures.Count == 0)
             {
-                PrintSuccess($"审计内核自检通过: 词法器 14 条边界用例 + 规则自检 (SPEC-001/002/005/006/007 命中与放过对照) 全部符合预期。");
+                // 用例条数由内核回传真实计数：写死数字（曾经是"14 条 / 5 条"）必然随代码漂移成假信息。
+                PrintSuccess($"审计内核自检通过: 词法器 {CSharpSourceLinter.LastSelfTestCaseCount} 条边界用例"
+                           + $" + 规则自检 {WidgetSourceAudit.LastSelfTestCaseCount} 条对照用例"
+                           + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条用例 全部符合预期。");
             }
             else
             {
                 foreach (var failure in linterFailures) PrintError($"词法器自检失败: {failure}");
                 foreach (var failure in ruleFailures) PrintError($"规则自检失败: {failure}");
-                overallErrors += linterFailures.Count + ruleFailures.Count;
+                foreach (var failure in i18nSelfTestFailures) PrintError($"I18n 语法树自检失败: {failure}");
+                overallErrors += linterFailures.Count + ruleFailures.Count + i18nSelfTestFailures.Count;
             }
 
             // 8. Unity 无头预览工程镜像一致性（清单 tools/unity_mirror.manifest 即合约）
-            Console.WriteLine($"\n[8/8] Unity 无头预览工程镜像一致性审计 (Mirror Sync Audit)...");
+            Console.WriteLine($"\n[8/9] Unity 无头预览工程镜像一致性审计 (Mirror Sync Audit)...");
             int mirrorErrors = CheckUnityMirror(repoRoot, false);
             overallErrors += mirrorErrors;
 
-            // 附加：出厂预设库批量扫描与健壮性验证（不计入 8 项主检查，失败会自行报错）
+            // 9. 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)
+            Console.WriteLine($"\n[9/9] 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)...");
+            int i18nErrors = ValidateI18nLocalization(repoRoot);
+            overallErrors += i18nErrors;
+
+            // 附加：出厂预设库批量扫描与健壮性验证（不计入 9 项主检查，失败会自行报错）
             ValidateAllPresets(repoRoot);
 
             // 最终汇报
@@ -390,26 +414,50 @@ namespace ModularFlightPanel.HeadlessValidator
         }
 
         /// <summary>
-        /// MFP-SPEC-001..007 组件规范审计。
+        /// MFP-SPEC-001..008 组件规范审计。
         /// 规则实现、正则、颜色基线、"哪些文件算组件"的发现逻辑全部来自插件本体
         /// (src/ModularFlightPanel/UI/WidgetSourceAudit.cs + WidgetColorLiteralAudit.cs)，
         /// 本方法只负责取值、打印与计数 —— 不复制任何规则，因此不存在副本漂移。
+        ///
+        /// 【护栏】这里绝不允许"扫不到就跳过"：
+        /// 空集与真绿在报告上完全同形（0 个组件 / 0 处违规 / 完全合规），
+        /// 历史上 repoRoot 定位失败或组件被挪出扫描范围时，门禁会打印 ALL CHECKS PASSED 并返回 0。
+        /// 现在仓库根不可用、读取失败、扫描量低于冻结下限一律按 ERROR 计入总数。
         /// </summary>
         private static int ValidateWidgetSpecifications(string repoRoot)
         {
-            var componentFiles = WidgetSourceAudit.DiscoverComponentFiles(repoRoot);
+            var diagnostics = new List<string>();
+            var componentFiles = WidgetSourceAudit.DiscoverComponentFiles(repoRoot, diagnostics);
+
+            int errors = 0;
+
+            string floorFailure = WidgetSourceAudit.CheckDiscoveryFloor(repoRoot, componentFiles.Count);
+            if (floorFailure != null)
+            {
+                PrintError($"组件规范审计【发现层未通过】: {floorFailure}");
+                errors++;
+            }
+
+            for (int i = 0; i < diagnostics.Count; i++)
+            {
+                PrintError($"组件规范审计【读取诊断】: {diagnostics[i]}");
+                errors++;
+            }
+
             if (componentFiles.Count == 0)
             {
-                PrintWarning($"未找到组件源码（repoRoot={repoRoot}），跳过源码合规性检查。");
-                return 0;
+                Console.WriteLine($"  └─ 审计统计: ERROR {errors} / WARNING 0 (未扫描到任何组件，源码级规则完全未执行)");
+                return errors;
             }
 
             string widgetsDir = Path.Combine(repoRoot, "src", "ModularFlightPanel", "UI", "Widgets");
             int inWidgets = Directory.Exists(widgetsDir) ? Directory.GetFiles(widgetsDir, "*.cs", SearchOption.AllDirectories).Length : 0;
 
-            Console.WriteLine($"  ├─ 扫描范围: UI/Widgets ({inWidgets} 个) + UI 根目录组件类 ({componentFiles.Count - inWidgets} 个) = {componentFiles.Count} 个组件");
+            Console.WriteLine($"  ├─ 扫描范围: UI/Widgets ({inWidgets} 个) + UI 其余目录组件类 ({componentFiles.Count - inWidgets} 个) = {componentFiles.Count} 个组件");
+            Console.WriteLine($"  ├─ 冻结下限: {WidgetSourceAudit.ExpectedComponentFloor} 个组件 (低于即判门禁失效，防止空集假绿)");
 
             var report = WidgetSourceAudit.Scan(componentFiles);
+            errors += report.ErrorCount;
 
             for (int i = 0; i < report.Violations.Count; i++)
             {
@@ -419,22 +467,23 @@ namespace ModularFlightPanel.HeadlessValidator
                 else PrintWarning(message);
             }
 
-            if (report.ErrorCount == 0)
+            if (errors == 0)
             {
                 PrintSuccess($"规范合规审计 100% 通过 ({componentFiles.Count}/{componentFiles.Count} 组件完全合规):");
-                Console.WriteLine($"  ├─ 继承契约: 全部组件统一继承 BaseFlightWidget");
-                Console.WriteLine($"  ├─ 刷新率阶梯: 全部组件显式重写 RefreshTier (表达式体/块状均认可)");
+                Console.WriteLine($"  ├─ 继承契约: 全部组件统一继承 BaseFlightWidget (类级 + 继承闭包判定)");
+                Console.WriteLine($"  ├─ 刷新率阶梯: 全部组件显式重写 RefreshTier 且取值合法 (形状 + 取值双校验)");
                 Console.WriteLine($"  ├─ 主题与着色管道: 全部组件接入 WidgetStyleManager (0 颜色字面量, 零容忍)");
-                Console.WriteLine($"  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry & 安全 override OnDestroy");
-                Console.WriteLine($"  └─ 探针与场景调度: 0 组件内场景查询 (FindObjectOfType / FindObjectsByType / GameObject.Find 家族)");
+                Console.WriteLine($"  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry & OnDestroy 全量 override 并调用 base");
+                Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件声明 [FlightWidget] 特性 (MFP-SPEC-008 自动挂载)");
+                Console.WriteLine($"  └─ 探针与场景调度: 0 组件内场景查询 (Find*ObjectByType / GameObject.Find* / Camera.main / GetRootGameObjects)");
             }
             else
             {
-                PrintError($"组件规范审计发现 {report.ErrorCount} 处严重违规，禁止提交!");
+                PrintError($"组件规范审计发现 {errors} 处严重违规，禁止提交!");
             }
 
-            Console.WriteLine($"  └─ 审计统计: ERROR {report.ErrorCount} / WARNING {report.WarningCount}");
-            return report.ErrorCount;
+            Console.WriteLine($"  └─ 审计统计: ERROR {errors} / WARNING {report.WarningCount}");
+            return errors;
         }
 
         // ==========================================================================================
@@ -594,6 +643,333 @@ namespace ModularFlightPanel.HeadlessValidator
         }
 
         /// <summary>
+        /// 全局多语言本地化词典一致性审计 (I18n Localization Parity Audit)
+        /// 1. 验证 GameData/ModularFlightPanel/Localization/ 目录下 zh-CN.json 与 en-US.json 存在且格式合法。
+        /// 2. 验证纯 C# 零依赖 I18nJsonParser 解析结果与 System.Text.Json 100% 对齐。
+        /// 3. 验证 zh-CN 与 en-US 词条键名 100% 双向对齐（零缺失）。
+        /// 4. 验证带格式化占位符的词条 ({0}, {1} 等) 在中英文之间占位符完全匹配，杜绝运行时 FormatException。
+        /// </summary>
+        private static int ValidateI18nLocalization(string repoRoot)
+        {
+            string locDir = Path.Combine(repoRoot, "GameData", "ModularFlightPanel", "Localization");
+            if (!Directory.Exists(locDir))
+            {
+                PrintError($"[I18n] 未找到多语言本地化目录: {locDir}");
+                return 1;
+            }
+
+            string[] langFiles = Directory.GetFiles(locDir, "*.json");
+            if (langFiles.Length == 0)
+            {
+                PrintError($"[I18n] 语言目录下未发现任何 JSON 字典文件: {locDir}");
+                return 1;
+            }
+
+            string zhPath = Path.Combine(locDir, "zh-CN.json");
+            string enPath = Path.Combine(locDir, "en-US.json");
+
+            if (!File.Exists(zhPath))
+            {
+                PrintError($"[I18n] 缺少中文主语言字典: {zhPath}");
+                return 1;
+            }
+            if (!File.Exists(enPath))
+            {
+                PrintError($"[I18n] 缺少英文主语言字典: {enPath}");
+                return 1;
+            }
+
+            int errors = 0;
+            var parsedDicts = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+            var metadata = new Dictionary<string, (string code, string display, string native)>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var file in langFiles)
+            {
+                string fileName = Path.GetFileName(file);
+                string expectedCode = Path.GetFileNameWithoutExtension(file);
+                string content = File.ReadAllText(file, Encoding.UTF8);
+
+                // 1. 验证 System.Text.Json 标准解析与 Schema 结构
+                JsonDocument doc;
+                try
+                {
+                    doc = JsonDocument.Parse(content);
+                }
+                catch (Exception ex)
+                {
+                    PrintError($"[I18n] {fileName} 标准 JSON 解析异常: {ex.Message}");
+                    errors++;
+                    continue;
+                }
+
+                var root = doc.RootElement;
+                // 注意：JsonElement.GetString() 在值不是字符串时会抛 InvalidOperationException。
+                // 旧实现直接把这一抛点放在审计主流程里 —— 一个写错的词条（数字/布尔/嵌套对象）
+                // 会让整个 [9/9] 审计崩掉（异常上抛、没有可读报告），而不是安静地报一条错。
+                string codeVal = SafeGetString(root, "code");
+                if (string.IsNullOrWhiteSpace(codeVal))
+                {
+                    PrintError($"[I18n] {fileName} 缺少有效 'code' 属性（或该属性类型不是字符串）");
+                    errors++;
+                }
+                string dispVal = SafeGetString(root, "displayName");
+                if (string.IsNullOrWhiteSpace(dispVal))
+                {
+                    PrintError($"[I18n] {fileName} 缺少有效 'displayName' 属性（或该属性类型不是字符串）");
+                    errors++;
+                }
+                string natVal = SafeGetString(root, "nativeName");
+                if (string.IsNullOrWhiteSpace(natVal))
+                {
+                    PrintError($"[I18n] {fileName} 缺少有效 'nativeName' 属性（或该属性类型不是字符串）");
+                    errors++;
+                }
+                if (!root.TryGetProperty("translations", out var pTrans) || pTrans.ValueKind != JsonValueKind.Object)
+                {
+                    PrintError($"[I18n] {fileName} 缺少有效 'translations' 对象");
+                    errors++;
+                    continue;
+                }
+
+                foreach (var prop in pTrans.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind != JsonValueKind.String)
+                    {
+                        PrintError($"[I18n] {fileName} 词条 '{prop.Name}' 的值类型是 {prop.Value.ValueKind}，不是字符串；"
+                                 + "多语言词条必须全部是字符串（否则运行时查表会取不到文本）");
+                        errors++;
+                        continue;
+                    }
+                    if (string.IsNullOrWhiteSpace(prop.Value.GetString()))
+                    {
+                        PrintError($"[I18n] {fileName} 词条 '{prop.Name}' 翻译值为空或纯空白");
+                        errors++;
+                    }
+                }
+
+                // 2. 验证纯 C# 零依赖 I18nJsonParser 解析与一致性
+                // 报警必须全部收集：旧实现用 `parserErr = msg` 只保留最后一条，
+                // 解析器连续报警时前面的都被吞掉了。
+                var parserWarnings = new List<string>();
+                I18nJsonParser.OnLogWarning = msg => parserWarnings.Add(msg);
+                var customDict = I18nJsonParser.Parse(content, out string langCode, out string dispName, out string natName);
+                I18nJsonParser.OnLogWarning = null;
+
+                if (parserWarnings.Count > 0)
+                {
+                    for (int w = 0; w < parserWarnings.Count; w++)
+                        PrintError($"[I18n] {fileName} 零依赖 I18nJsonParser 解析报警: {parserWarnings[w]}");
+                    errors += parserWarnings.Count;
+                }
+
+                if (!string.Equals(langCode, expectedCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    PrintError($"[I18n] {fileName} 解析所得语言码 '{langCode}' 与文件名期望 '{expectedCode}' 不符");
+                    errors++;
+                }
+
+                var shortKeys = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var prop in pTrans.EnumerateObject())
+                {
+                    if (customDict.TryGetValue(prop.Name, out string val))
+                    {
+                        shortKeys[prop.Name] = val;
+                    }
+                    else
+                    {
+                        PrintError($"[I18n] {fileName} 零依赖解析器漏掉了词条: '{prop.Name}'");
+                        errors++;
+                    }
+                }
+
+                parsedDicts[expectedCode] = shortKeys;
+                metadata[expectedCode] = (langCode, dispName, natName);
+            }
+
+            if (errors > 0 || !parsedDicts.ContainsKey("zh-CN") || !parsedDicts.ContainsKey("en-US"))
+            {
+                return errors > 0 ? errors : 1;
+            }
+
+            // 3. 与中文主语言逐语言 100% 键对齐 (Parity Check)
+            //    旧实现只比对 en-US：第三个语言包（ja-JP / ru-RU / …）虽然被解析进 parsedDicts，
+            //    却从不参与对齐 —— 它缺几百个键也照样"100% 通过"。现在逐个语言包都做双向对齐。
+            var zhKeys = parsedDicts["zh-CN"];
+            var placeholderRegex = new Regex(@"\{(\d+)\}", RegexOptions.Compiled);
+            int alignedLanguages = 0;
+
+            foreach (var langPair in parsedDicts)
+            {
+                if (string.Equals(langPair.Key, "zh-CN", StringComparison.OrdinalIgnoreCase)) continue;
+
+                string lang = langPair.Key;
+                var otherKeys = langPair.Value;
+                alignedLanguages++;
+
+                foreach (var k in zhKeys.Keys)
+                {
+                    if (!otherKeys.ContainsKey(k))
+                    {
+                        PrintError($"[I18n 对齐缺失] 词典 {lang} 缺少键: '{k}' (zh-CN 已有)");
+                        errors++;
+                    }
+                }
+
+                foreach (var k in otherKeys.Keys)
+                {
+                    if (!zhKeys.ContainsKey(k))
+                    {
+                        PrintError($"[I18n 对齐缺失] 词典 zh-CN 缺少键: '{k}' ({lang} 已有)");
+                        errors++;
+                    }
+                }
+
+                // 4. 格式化占位符对齐检测 (Format Placeholder Audit, 例如 {0}, {1})
+                foreach (var kvp in zhKeys)
+                {
+                    string key = kvp.Key;
+                    if (!otherKeys.TryGetValue(key, out string otherVal)) continue;
+
+                    var zhMatches = placeholderRegex.Matches(kvp.Value).Cast<Match>().Select(m => m.Value).Distinct().OrderBy(x => x).ToList();
+                    var otherMatches = placeholderRegex.Matches(otherVal).Cast<Match>().Select(m => m.Value).Distinct().OrderBy(x => x).ToList();
+
+                    string zhJoined = string.Join(",", zhMatches);
+                    string otherJoined = string.Join(",", otherMatches);
+
+                    if (!string.Equals(zhJoined, otherJoined, StringComparison.Ordinal))
+                    {
+                        PrintError($"[I18n 格式占位符不匹配] 键 '{key}' 占位符差异: zh-CN [{zhJoined}] vs {lang} [{otherJoined}] (可能导致运行时 FormatException)");
+                        errors++;
+                    }
+                }
+            }
+
+
+            if (errors == 0)
+            {
+                PrintSuccess($"I18n 词典审计 100% 通过: 扫描到 {langFiles.Length} 个语言包, 共 {zhKeys.Count} 个词条,"
+                           + $" zh-CN 与其余 {alignedLanguages} 个语言包键名与占位符 100% 对齐, I18nJsonParser 零依赖解析器零报警且结果一致!");
+                foreach (var kvp in metadata)
+                {
+                    Console.WriteLine($"  ├─ [{kvp.Key}] {kvp.Value.display} ({kvp.Value.native}) - {parsedDicts[kvp.Key].Count} 词条");
+                }
+            }
+            else
+            {
+                PrintError($"I18n 多语言词典审计发现 {errors} 处异常!");
+            }
+
+            return errors;
+        }
+
+        /// <summary>
+        /// 安全读取 JSON 对象的字符串属性。
+        /// System.Text.Json 的 JsonElement.GetString() 在值不是字符串时抛 InvalidOperationException，
+        /// 旧实现把这类调用直接放在审计主流程里 —— 一个类型写错的词条就能让整个 [9/9] 审计崩掉。
+        /// 这里统一返回 null 由调用方报可读错误。
+        /// </summary>
+        private static string SafeGetString(JsonElement parent, string propName)
+        {
+            if (parent.ValueKind != JsonValueKind.Object) return null;
+            if (!parent.TryGetProperty(propName, out var prop)) return null;
+            if (prop.ValueKind != JsonValueKind.String) return null;
+            return prop.GetString();
+        }
+
+        private static int RunI18nAstAudit(string repoRoot)
+        {
+            Console.WriteLine("==================== [ I18n Roslyn 语法树遗漏排查与全面审计 ] ====================");
+            string locDir = Path.Combine(repoRoot, "GameData", "ModularFlightPanel", "Localization");
+            string zhPath = Path.Combine(locDir, "zh-CN.json");
+            HashSet<string> validKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (File.Exists(zhPath))
+            {
+                try
+                {
+                    var dict = I18nJsonParser.Parse(File.ReadAllText(zhPath, Encoding.UTF8), out _, out _, out _);
+                    foreach (var k in dict.Keys) validKeys.Add(k);
+                }
+                catch { }
+            }
+
+            string srcDir = Path.Combine(repoRoot, "src", "ModularFlightPanel");
+            var report = I18nSyntaxAuditor.AuditDirectory(srcDir, validKeys);
+
+            Console.WriteLine($"扫描源码目录: {srcDir}");
+            Console.WriteLine($"已扫描源码文件: {report.ScannedFilesCount} 个 | 语法树节点: {report.ScannedAstNodesCount} 个\n");
+
+            var byFile = report.Issues.GroupBy(i => i.FilePath).OrderByDescending(g => g.Count()).ToList();
+            Console.WriteLine("========== [ 文件硬编码统计分布 (Top 20) ] ==========");
+            foreach (var g in byFile.Take(20))
+            {
+                int cnCount = g.Count(x => x.IssueType == I18nIssueType.HardcodedChinese);
+                int uiCount = g.Count(x => x.IssueType == I18nIssueType.HardcodedUiCall);
+                int missCount = g.Count(x => x.IssueType == I18nIssueType.MissingDictionaryKey);
+                Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, g.Key).PadRight(50)}: 合计 {g.Count(),3} (中文:{cnCount,3} | UI:{uiCount,2} | 缺Key:{missCount,2})");
+            }
+            Console.WriteLine("====================================================\n");
+
+            var chineseIssues = report.Issues.Where(i => i.IssueType == I18nIssueType.HardcodedChinese).ToList();
+            var missingKeyIssues = report.Issues.Where(i => i.IssueType == I18nIssueType.MissingDictionaryKey).ToList();
+            var uiCallIssues = report.Issues.Where(i => i.IssueType == I18nIssueType.HardcodedUiCall).ToList();
+
+            if (chineseIssues.Count > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"[!] 发现 {chineseIssues.Count} 处硬编码中文字符串 (未国际化):");
+                Console.ResetColor();
+                foreach (var issue in chineseIssues)
+                {
+                    Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, issue.FilePath)}:L{issue.Line}:C{issue.Column}");
+                    Console.WriteLine($"    文本: \"{issue.OffendingText}\"");
+                    Console.WriteLine($"    代码: {issue.CodeSnippet.Trim()}");
+                }
+                Console.WriteLine();
+            }
+
+            if (missingKeyIssues.Count > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                var distinctMissing = missingKeyIssues.GroupBy(m => m.OffendingText).Select(g => g.First()).ToList();
+                Console.WriteLine($"[!] 发现 {distinctMissing.Count} 个代码调用但词典未定义的键名 (Missing Key, 出现 {missingKeyIssues.Count} 次):");
+                Console.ResetColor();
+                Console.WriteLine("  // 可直接复制到 zh-CN.json 词典:");
+                foreach (var issue in distinctMissing)
+                {
+                    string fb = string.IsNullOrEmpty(issue.FallbackText) ? issue.OffendingText : issue.FallbackText;
+                    Console.WriteLine($"  \"{issue.OffendingText}\": \"{fb}\",");
+                }
+                Console.WriteLine();
+            }
+
+            if (uiCallIssues.Count > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"[?] 发现 {uiCallIssues.Count} 处原生 UI 方法传参未本地化字面量 (建议优化):");
+                Console.ResetColor();
+                foreach (var issue in uiCallIssues)
+                {
+                    Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, issue.FilePath)}:L{issue.Line} -> {issue.OffendingText} ({issue.Description})");
+                }
+                Console.WriteLine();
+            }
+
+            Console.WriteLine("-----------------------------------------------------------------------------------");
+            Console.WriteLine($"审计结果统计: 严重遗漏错误: {report.TotalErrors} | UI待优化项: {uiCallIssues.Count}");
+            if (report.TotalErrors == 0)
+            {
+                PrintSuccess("全代码语法树审计通过! 0 处未国际化硬编码中文，所有 I18n 查表键 100% 在词典中登记!");
+                return 0;
+            }
+            else
+            {
+                PrintError($"检测到 {report.TotalErrors} 处严重遗漏，请根据上述提示添加 I18n.Tr 包装并在词典中补充键值！");
+                return 1;
+            }
+        }
+
+        /// <summary>
         /// 导出当前颜色字面量实测值，用于校准 WidgetColorLiteralAudit 基线表。
         /// 用法: dotnet run --project tools/HeadlessValidator -- --color-baseline-dump
         /// </summary>
@@ -607,22 +983,26 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             Console.WriteLine("\n==================== [ MFP-SPEC-006 颜色字面量基线导出 ] ====================");
-            Console.WriteLine("把下列数字填入 src/ModularFlightPanel/UI/WidgetColorLiteralAudit.cs 的 BaselineTable：\n");
+            Console.WriteLine("注意：SPEC-006 的判定口径是【处数】(CountOccurrences)，不是行数。");
+            Console.WriteLine("登记基线的同时必须写入 WidgetColorLiteralAudit.RatchetCeilingTable，否则棘轮校验会直接失败：\n");
 
             int total = 0;
             foreach (var file in Directory.GetFiles(widgetDir, "*.cs", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 string fileName = Path.GetFileName(file);
-                int count = WidgetColorLiteralAudit.CountLines(File.ReadAllText(file));
+                int count = WidgetColorLiteralAudit.CountOccurrences(File.ReadAllText(file));
                 int allowed = WidgetColorLiteralAudit.GetAllowedLines(fileName);
                 total += count;
                 string flag = count > allowed ? "  <== 超出基线!" : (count < allowed ? "  <== 已低于基线，可下调" : string.Empty);
                 Console.WriteLine($"            {{ \"{fileName}\", {count} }},{flag}");
             }
 
-            Console.WriteLine($"\n实测合计: {total} 行 / 当前登记基线合计: {WidgetColorLiteralAudit.TotalRegisteredDebt} 行");
+            var ratchetFailures = WidgetColorLiteralAudit.ValidateRatchet();
+            for (int i = 0; i < ratchetFailures.Count; i++) PrintError("棘轮校验: " + ratchetFailures[i]);
+
+            Console.WriteLine($"\n实测合计: {total} 处 / 当前登记基线合计: {WidgetColorLiteralAudit.TotalRegisteredDebt} 处");
             Console.WriteLine("===========================================================================");
-            return 0;
+            return ratchetFailures.Count == 0 ? 0 : 1;
         }
 
         // ==========================================
@@ -638,9 +1018,11 @@ namespace ModularFlightPanel.HeadlessValidator
                 if (!w.IsEnabled) continue;
 
                 var (defW, defH) = GetDefaultWidgetDimensions(w.WidgetId, w.WidgetType);
-                float s = (w.Scale <= 0.05f ? 1.0f : w.Scale) * gScale;
-                float finalW = defW * s;
-                float finalH = defH * s;
+                float sBase = (w.Scale <= 0.05f ? 1.0f : w.Scale);
+                float sX = (w.ScaleX > 0.05f ? w.ScaleX : sBase) * gScale;
+                float sY = (w.ScaleY > 0.05f ? w.ScaleY : sBase) * gScale;
+                float finalW = defW * sX;
+                float finalH = defH * sY;
 
                 var box = new BoundingBox
                 {
@@ -662,16 +1044,18 @@ namespace ModularFlightPanel.HeadlessValidator
         {
             if (widgetId == "core.navball") return (154f, 154f);
             if (widgetId == "nav.vessel_navball" || widgetId == "nav.vessel_attitude_sphere" || widgetType == "vessel_navball" || widgetType == "vessel_attitude_sphere") return (150f, 178f);
-            if (widgetId == "core.heading_arc" || widgetType == "heading_arc") return (180f, 60f);
+            if (widgetId == "core.heading_arc" || widgetId == "nav.heading_arc" || widgetType == "heading_arc") return (180f, 60f);
             if (widgetId == "core.master_warning" || widgetType == "master_warning" || widgetType == "warning_annunciator" || widgetType == "annunciator" || widgetType == "cws") return (184f, 20f);
             if (widgetId == "core.bottom_controls") return (184f, 22f);
             if (widgetId == "core.orbital_info") return (320f, 36f);
             if (widgetId == "core.ecam_status") return (380f, 32f);
+            if (widgetId == "core.ecam_alert_log" || widgetId == "ecam.alert_log" || widgetId == "custom.ecam_alert_log" || widgetType == "ecam_alert_log" || widgetType == "alert_log" || widgetType == "eicas_messages" || widgetType == "warning_log" || widgetId.Contains("alert_log")) return (280f, 172f);
             if (widgetId == "core.sas_dial") return (96f, 116f);
             if (widgetId == "core.stage_control" || widgetType == "stage_control") return (204f, 186f);
             if (widgetId == "core.time_warp" || widgetType == "time_warp" || widgetType == "timewarp") return (236f, 46f);
             if (widgetId == "core.comm_signal" || widgetType == "comm_signal" || widgetType == "commsignal") return (236f, 32f);
             if (widgetId == "core.toolbar" || widgetType == "toolbar") return (88f, 240f);
+            if (widgetId == "core.dock_favorites" || widgetType == "dock_favorites" || widgetId.Contains("dock_favorites") || widgetId == "toolbar.favorites") return (180f, 46f);
             if (widgetId == "core.ui_widget" || widgetType == "ui_widget" || widgetType == "ui_manager") return (290f, 340f);
             if (widgetId == "gauge.stage_dv" || widgetType == "stage_dv" || widgetId.Contains("stage_dv")) return (220f, 180f);
             if (widgetId == "core.throttle" || widgetId == "core.vsi" || widgetId == "core.propellant") return (195f, 195f);
@@ -682,10 +1066,12 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "core.b747_lower_eicas" || widgetType == "b747_lower_eicas" || widgetType == "eicas_lower" || widgetId.Contains("b747_lower_eicas")) return (260f, 275f);
             if (widgetId == "custom.maneuver_timeline" || widgetType == "maneuver_timeline") return (520f, 115f);
             if (widgetId == "core.maneuver" || widgetType == "maneuver" || widgetId.Contains("maneuver")) return (200f, 105f);
+            if (widgetId == "nav.reference_frame" || widgetId == "nav.ref_frame" || widgetId == "core.reference_frame" || widgetType == "reference_frame" || widgetType == "ref_frame") return (100f, 32f);
+            if (widgetType == "arc_tape" || widgetId.StartsWith("arc_tape.") || widgetId.StartsWith("curved_tape.") || widgetType == "arc_speed_tape" || widgetType == "arc_altitude_tape" || widgetType == "arc_alt_tape" || widgetId.StartsWith("arc_alt.") || widgetId.StartsWith("arc_speed.") || widgetId == "custom.arc_speed_tape" || widgetId == "custom.arc_altitude_tape") return (120f, 240f);
             if (widgetType == "tape" || widgetId.StartsWith("tape.")) return (50f, 240f);
             if (widgetType == "ecam_dial" || widgetId.StartsWith("ecam.")) return (110f, 110f);
             if (widgetType == "electrical" || widgetId.Contains("elec")) return (180f, 160f);
-            if (widgetType == "rocket2d" || widgetId.Contains("rocket")) return (160f, 200f);
+            if (widgetType == "rocket2d" || widgetId.Contains("rocket")) return (260f, 176f);
             if (widgetType == "life_support" || widgetId.Contains("life")) return (180f, 150f);
             if (widgetType == "signal" || widgetId.Contains("signal")) return (180f, 130f);
 
@@ -1232,6 +1618,8 @@ namespace ModularFlightPanel.HeadlessValidator
                 "core.maneuver" => "MANEUVER",
                 "custom.maneuver" => "MANEUVER",
                 "core.toolbar" => "TOOLBAR",
+                "core.dock_favorites" => "QUICK_DOCK",
+                "toolbar.favorites" => "QUICK_DOCK",
                 "gauge.stage_dv" => "STAGE_DV",
                 "core.stage_dv" => "STAGE_DV",
                 "tape.speed" => "SPD",

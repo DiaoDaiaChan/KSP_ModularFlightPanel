@@ -17,6 +17,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 自适应 KSP 原生 UI_SCALE_NAVBALL 与屏幕物理 DPI 缩放
     /// </summary>
     [DefaultExecutionOrder(10000)]
+    [FlightWidget("navball", "navball_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 姿态球", Description = "现代超清矢量/贴图 3D 姿态球核心，支持无极缩放、姿态导引十字与全量机动矢量。", DefaultWidgetId = "core.navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "core.navball" })]
     public class NavballSphereWidget : BaseNavballSphereWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
@@ -373,7 +374,6 @@ namespace ModularFlightPanel.UI.Widgets
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
         private bool _paletteInitialized = false;
-        private float _lastNumeralRollAngle;
         private Quaternion _previousAttitudeRotation = Quaternion.identity;
         private Quaternion _filteredTrendRotation = Quaternion.identity;
         private bool _hasPreviousAttitudeRotation;
@@ -531,21 +531,6 @@ namespace ModularFlightPanel.UI.Widgets
 
                 UpdateAttitudeTrend(_sphereObject.transform.localRotation);
 
-                // 从实际球面朝向计算屏幕滚转，避免遥测 Roll 与 Principia/Hook 的最终姿态不同步。
-                if (_sphereMaterial != null && _sphereMaterial.HasProperty("_NumeralRollAngle"))
-                {
-                    if (_ballCamera != null)
-                    {
-                        Vector3 projectedUp = _ballCamera.transform.InverseTransformDirection(_sphereObject.transform.up);
-                        float projectedMagnitudeSq = projectedUp.x * projectedUp.x + projectedUp.y * projectedUp.y;
-                        // 当本地天顶几乎正对/背对镜头时，屏幕投影没有稳定方向；保持上一个有效角度，避免 90°/180° 跳变。
-                        if (projectedMagnitudeSq > 0.0225f)
-                        {
-                            _lastNumeralRollAngle = -Mathf.Atan2(projectedUp.x, projectedUp.y);
-                        }
-                    }
-                    _sphereMaterial.SetFloat("_NumeralRollAngle", _lastNumeralRollAngle);
-                }
             }
 
             // 2. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
@@ -864,7 +849,8 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereMaterial.shader = targetShader;
                 }
 
-                if (_sphereMaterial.HasProperty("_NumeralUprightMode")) _sphereMaterial.SetFloat("_NumeralUprightMode", 1.0f);
+                if (_sphereMaterial.HasProperty("_NumeralUprightMode")) _sphereMaterial.SetFloat("_NumeralUprightMode", 0.0f);
+                if (_sphereMaterial.HasProperty("_NumeralRollAngle")) _sphereMaterial.SetFloat("_NumeralRollAngle", 0.0f);
                 if (_sphereMaterial.HasProperty("_NumeralTangentComp")) _sphereMaterial.SetFloat("_NumeralTangentComp", 1.0f);
 
                 // 2. 天地与网格色彩统一注入：无论何种 Shader，属性存在即注入，杜绝硬编码与色彩脱节

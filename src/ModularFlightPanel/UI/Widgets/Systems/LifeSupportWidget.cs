@@ -10,6 +10,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 原生 UGUI 生命维持与居住舱环境监控卡片 (Life Support / Habitat Monitor)
     /// 监控乘员数、舱压环境、氧气/水/电力/姿控维生储备进度条
     /// </summary>
+    [FlightWidget("life_support", "life", "ecls", Category = WidgetCategory.Systems, DisplayName = "LIFE SUPPORT 维生消耗品监控", Description = "乘员居住舱压环境、氧气/电力/RCS/维生消耗品 2x2 进度仪表。", DefaultWidgetId = "custom.life", DefaultX = -440f, DefaultY = -40f, IsSingleton = true, ExactIds = new[] { "custom.life", "custom.life_support", "core.life_support" })]
     public class LifeSupportWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

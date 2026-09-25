@@ -11,6 +11,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 玩家可以在配置中写入任意参数模板 (例如 "{SPD:SURF:F1} m/s | Q: {Q:F2} | TWR: {TWR:F2}")，
     /// 标题与内容全量由 TelemetryTokenEngine 实时求值并具备脏检查保护。
     /// </summary>
+    [FlightWidget("custom_token", "custom_text", "custom", Category = WidgetCategory.Gauges, DisplayName = "多通道遥测动态卡片", Description = "支持任意遥测通配符模板的高对比度动态数据卡片。", DefaultWidgetId = "custom.telemetry_card", DefaultX = 0f, DefaultY = 0f)]
     public class CustomTokenTextWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

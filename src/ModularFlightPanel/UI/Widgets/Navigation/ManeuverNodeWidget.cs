@@ -20,6 +20,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 3. 面向 IFlightTelemetry 与 TelemetryTokenEngine 纯 C# 契约，支持原版/Principia/MechJeb
     /// 4. 脏标记保护，DPI 动态缩放
     /// </summary>
+    [FlightWidget("maneuver", "maneuver_node", Category = WidgetCategory.Navigation, DisplayName = "MANEUVER 轨道机动节点指示器", Description = "实时机动节点指示器：剩余 Delta-V 进度条、节点倒计时、燃烧时长与一键推演。", DefaultWidgetId = "core.maneuver", DefaultX = 440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "core.maneuver" })]
     public class ManeuverNodeWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

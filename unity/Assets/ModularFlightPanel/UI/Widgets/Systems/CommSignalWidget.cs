@@ -16,6 +16,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 3. 抽屉式折叠扩展信道矩阵 (对端站点名称、链路带宽、相对信号强度、中继/直连标识)
     /// 4. 原版 CommNet 信号栏非破坏性安全隐显切换 (STOCK TOGGLE)
     /// </summary>
+    [FlightWidget("comm_signal", "commsignal", Category = WidgetCategory.Systems, DisplayName = "COMM 天线通信信号条", Description = "紧凑型通信天线连接质量与中继跳数状态条。", DefaultWidgetId = "core.comm_signal", DefaultX = 300f, DefaultY = 200f, IsSingleton = true, ExactIds = new[] { "core.comm_signal", "core.commsignal" })]
     public class CommSignalWidget : BaseFlightWidget
     {
         private Image _panelBg;
@@ -282,19 +283,19 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastCtrlState = ctrlState;
                 if (ctrlState == 0)
                 {
-                    _ctrlBadgeText.text = "NONE";
+                    _ctrlBadgeText.text = I18n.Tr("WIDGET_SIGNAL_NONE", "NONE");
                     ApplyText(_ctrlBadgeText, TextStyleRole.Danger, theme);
                     _ctrlBadgeBg.color = style.GetStatusSurfaceColor(StatusSurfaceRole.Danger, theme);
                 }
                 else if (ctrlState == 1)
                 {
-                    _ctrlBadgeText.text = "PART";
+                    _ctrlBadgeText.text = I18n.Tr("WIDGET_SIGNAL_PART", "PART");
                     ApplyText(_ctrlBadgeText, TextStyleRole.Warning, theme);
                     _ctrlBadgeBg.color = style.GetStatusSurfaceColor(StatusSurfaceRole.Caution, theme);
                 }
                 else
                 {
-                    _ctrlBadgeText.text = "FULL";
+                    _ctrlBadgeText.text = I18n.Tr("WIDGET_SIGNAL_FULL", "FULL");
                     ApplyText(_ctrlBadgeText, TextStyleRole.Accent, theme);
                     _ctrlBadgeBg.color = style.GetStatusSurfaceColor(StatusSurfaceRole.Success, theme);
                 }
@@ -339,7 +340,7 @@ namespace ModularFlightPanel.UI.Widgets
                         var info = links[r];
                         _peerRows[r].RowObj.SetActive(true);
                         _peerRows[r].NameText.text = info.PeerName;
-                        _peerRows[r].TagText.text = info.IsDirectHome ? "DSN" : "RELAY";
+                        _peerRows[r].TagText.text = info.IsDirectHome ? I18n.Tr("WIDGET_SIGNAL_DSN", "DSN") : I18n.Tr("WIDGET_SIGNAL_RELAY", "RELAY");
                         _peerRows[r].RateText.text = info.FormattedDataRate;
 
                         int peerBars = Mathf.RoundToInt((float)info.SignalStrength * 5f);
@@ -359,7 +360,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                string newFooter = $"● {linkCount} ACTIVE LINKS  |  REALANTENNAS PROBE";
+                string newFooter = I18n.TrFormat("WIDGET_SIGNAL_FOOTER", "● {0} ACTIVE LINKS  |  REALANTENNAS PROBE", linkCount);
                 if (_matrixFooterText != null && newFooter != _lastMatrixFooter)
                 {
                     _lastMatrixFooter = newFooter;
@@ -396,7 +397,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_rateSummaryText != null) ApplyText(_rateSummaryText, TextStyleRole.SecondaryValue, theme);
             if (_matrixTitleText != null)
             {
-                string title = GetTemplateChannel("TITLE", "REALANTENNAS / COMMNET");
+                string title = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SIGNAL_TITLE", "REALANTENNAS / COMMNET"));
                 _matrixTitleText.text = title;
                 ApplyText(_matrixTitleText, TextStyleRole.Label, theme);
             }
@@ -404,6 +405,17 @@ namespace ModularFlightPanel.UI.Widgets
             if (_stockBtn != null) _stockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (_expandBtnText != null) ApplyText(_expandBtnText, TextStyleRole.SecondaryValue, theme);
             if (_stockBtnText != null) ApplyText(_stockBtnText, TextStyleRole.SecondaryValue, theme);
+        }
+
+        protected override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            _lastCtrlState = -1;
+            _lastMatrixFooter = null;
+            if (_matrixTitleText != null)
+            {
+                _matrixTitleText.text = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SIGNAL_TITLE", "REALANTENNAS / COMMNET"));
+            }
         }
 
         private void OnToggleExpand()

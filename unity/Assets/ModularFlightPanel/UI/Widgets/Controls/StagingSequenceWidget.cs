@@ -30,6 +30,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
     /// 5. 严格遵守 MFP 规范：
     ///    0 颜色字面量 (MFP-SPEC-006)、0 场景查询 (MFP-SPEC-007)、纯 C# 服务解耦。
     /// </summary>
+    [FlightWidget("staging_sequence", "stage_sequence", Category = WidgetCategory.Controls, DisplayName = "STAGE 垂直分级时序序列仪", Description = "垂直火箭分级序列仪：逐级剩余 ΔV、燃烧时间、推重比与单级推进剂微量程，重构原版左侧分级。", DefaultWidgetId = "custom.staging_sequence", DefaultX = -440f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "custom.staging_sequence", "custom.stage_sequence", "core.staging_sequence" })]
     public class StagingSequenceWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
@@ -61,6 +62,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             public int StageNumber;
             public int PartIndex;
             public StagePartIconData PartData;
+            public bool IsHovered;
+            public float CurrentScale = 1f;
         }
 
         // 单级行 UI 结构
@@ -89,12 +92,25 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             public Image PropFill;
             public Text PropNameText;
             public Image Separator;
+            public Text EmptySlotText;
             public int StageNumber;
+            public bool IsActiveStage;
+            public bool IsBurning;
+            public float TargetPropFrac;
+            public float CurrentPropFrac;
+            public float TransitionFlashTimer;
         }
 
-        private const int MaxDisplayedStages = 6;
-        private const int MaxChipsPerStage = 4;
+        private const int InitialPooledStages = 10;
+        private const int MaxDisplayedStages = 32;
+        private const int MaxChipsPerStage = 6;
         private readonly List<StageItemUI> _stageItems = new List<StageItemUI>();
+
+        // 可滚动分级视口组件
+        private ScrollRect _scrollRect;
+        private RectTransform _scrollViewportRt;
+        private RectTransform _scrollContentRt;
+        private string _stageOrder = "STOCK";
 
         // 底栏安全与触发指示
         private Image _bottomDivider;
@@ -125,6 +141,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private bool _lastStageLocked = false;
         private string _lastTotalDvStr = string.Empty;
         private int _highestStageNumber = 0;
+        private int _lastActiveStage = -1;
+        private float _stageTriggerRecoilTimer = 0f;
+        private float _stageTriggerFlashTimer = 0f;
+        public static float CustomAnimationTime = -1f;
+        public static float CustomAnimationDeltaTime = -1f;
 
         // 几何参数 (基准像素)
         private const float DefaultWidth = 160f;
@@ -142,6 +163,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _titleTemplate = "STAGE SEQUENCE";
             _totalDvToken = "{DV:TOTAL}";
             _stageDvToken = "{DV:STAGE}";
+            _stageOrder = "STOCK";
 
             if (string.IsNullOrEmpty(tpl)) return;
             string[] pairs = tpl.Split(';');
@@ -158,6 +180,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     case "TITLE": _titleTemplate = v; break;
                     case "TOTAL_DV_TOKEN": _totalDvToken = v; break;
                     case "STAGE_DV_TOKEN": _stageDvToken = v; break;
+                    case "ORDER": _stageOrder = v.ToUpperInvariant(); break;
                 }
             }
         }
@@ -222,8 +245,34 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _topDivider = topDivGo.GetComponent<Image>();
             _topDivider.raycastTarget = false;
 
-            // 4. 构建分级行对象池 (最多展示 6 级)
-            for (int i = 0; i < MaxDisplayedStages; i++)
+            // 4. 创建可滚动分级视口 (Scroll View + RectMask2D)
+            GameObject scrollRootGo = new GameObject("Stages_Scroll_View", typeof(RectTransform), typeof(ScrollRect), typeof(Image), typeof(RectMask2D));
+            scrollRootGo.transform.SetParent(transform, false);
+            _scrollViewportRt = scrollRootGo.GetComponent<RectTransform>();
+            _scrollViewportRt.pivot = new Vector2(0.5f, 0.5f);
+
+            Image viewBg = scrollRootGo.GetComponent<Image>();
+            viewBg.color = Color.clear;
+            viewBg.raycastTarget = true; // 捕获鼠标滚轮事件
+
+            _scrollRect = scrollRootGo.GetComponent<ScrollRect>();
+            _scrollRect.horizontal = false;
+            _scrollRect.vertical = true;
+            _scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            _scrollRect.scrollSensitivity = 25f;
+
+            GameObject contentGo = new GameObject("Scroll_Content", typeof(RectTransform));
+            contentGo.transform.SetParent(scrollRootGo.transform, false);
+            _scrollContentRt = contentGo.GetComponent<RectTransform>();
+            _scrollContentRt.anchorMin = new Vector2(0f, 1f);
+            _scrollContentRt.anchorMax = new Vector2(1f, 1f);
+            _scrollContentRt.pivot = new Vector2(0.5f, 1f);
+
+            _scrollRect.content = _scrollContentRt;
+            _scrollRect.viewport = _scrollViewportRt;
+
+            // 5. 构建分级行对象池 (初始预分配 10 级)
+            for (int i = 0; i < InitialPooledStages; i++)
             {
                 StageItemUI item = CreateStageItem(i, s, theme);
                 _stageItems.Add(item);
@@ -281,10 +330,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private StageItemUI CreateStageItem(int index, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
+            Transform parent = _scrollContentRt != null ? (Transform)_scrollContentRt : transform;
             GameObject root = new GameObject($"Stage_Item_{index}", typeof(RectTransform));
-            root.transform.SetParent(transform, false);
+            root.transform.SetParent(parent, false);
             RectTransform rootRt = root.GetComponent<RectTransform>();
-            rootRt.sizeDelta = new Vector2((DefaultWidth - 16f) * s, 40f * s);
+            rootRt.anchorMin = new Vector2(0.5f, 1f);
+            rootRt.anchorMax = new Vector2(0.5f, 1f);
+            rootRt.pivot = new Vector2(0.5f, 0.5f);
+            rootRt.sizeDelta = new Vector2((DefaultWidth - 14f) * s, 40f * s);
 
             // 拖放悬停发光底板 (Drop Target Glow)
             GameObject rowHlGo = new GameObject("Row_Highlight_Bg", typeof(RectTransform), typeof(Image));
@@ -358,6 +411,15 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             RectTransform metaRt = metaText.rectTransform;
             metaRt.sizeDelta = new Vector2(136f * s, 12f * s);
 
+            // 空分级占位提示文本 [EMPTY STAGE]
+            Text emptyTxt = UIFactory.CreateText(root.transform, "Empty_Slot_Text", "[EMPTY STAGE]", Mathf.RoundToInt(7f * s),
+                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
+            RectTransform emptyRt = emptyTxt.rectTransform;
+            emptyRt.pivot = new Vector2(0f, 0.5f);
+            emptyRt.sizeDelta = new Vector2(80f * s, 14f * s);
+            emptyRt.anchoredPosition = new Vector2(-10f * s, 0f);
+            emptyTxt.gameObject.SetActive(false);
+
             // 部件图标托盘容器 (Icons Container)
             GameObject iconsContainer = new GameObject("Icons_Container", typeof(RectTransform));
             iconsContainer.transform.SetParent(root.transform, false);
@@ -425,6 +487,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 DeleteStageText = delTxt,
                 StageDvText = dvText,
                 StageMetaText = metaText,
+                EmptySlotText = emptyTxt,
                 IconsContainer = iconsContainer,
                 IconsContainerRt = iconsContainerRt,
                 PropBarRoot = propRoot,
@@ -450,8 +513,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             GameObject chipGo = new GameObject($"Chip_{chipIndex}", typeof(RectTransform), typeof(Image), typeof(Outline));
             chipGo.transform.SetParent(parent, false);
             RectTransform chipRt = chipGo.GetComponent<RectTransform>();
-            chipRt.sizeDelta = new Vector2(22f * s, 22f * s);
-            chipRt.anchoredPosition = new Vector2((-57f + chipIndex * 26f) * s, 0f);
+            chipRt.sizeDelta = new Vector2(20f * s, 20f * s);
+            chipRt.anchoredPosition = new Vector2((-58f + chipIndex * 23f) * s, 0f);
 
             Image chipBg = chipGo.GetComponent<Image>();
             chipBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
@@ -527,7 +590,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _tooltipTitle.rectTransform.sizeDelta = new Vector2(128f * s, 12f * s);
             _tooltipTitle.rectTransform.anchoredPosition = new Vector2(0f, 6f * s);
 
-            _tooltipSub = UIFactory.CreateText(_tooltipRoot.transform, "Sub", "[拖拽跨级 · 悬停高亮]", Mathf.RoundToInt(6.5f * s),
+            _tooltipSub = UIFactory.CreateText(_tooltipRoot.transform, "Sub", I18n.Tr("STG_TOOLTIP_HINT", "[拖拽跨级 · 悬停高亮]"), Mathf.RoundToInt(6.5f * s),
                 TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _tooltipSub.rectTransform.sizeDelta = new Vector2(128f * s, 10f * s);
             _tooltipSub.rectTransform.anchoredPosition = new Vector2(0f, -6f * s);
@@ -624,6 +687,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 if (item.InsertAboveText != null) ApplyText(item.InsertAboveText, TextStyleRole.SecondaryValue, theme);
                 if (item.DeleteStageBg != null) item.DeleteStageBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
                 if (item.DeleteStageText != null) ApplyText(item.DeleteStageText, TextStyleRole.Label, theme);
+                if (item.EmptySlotText != null) ApplyText(item.EmptySlotText, TextStyleRole.Label, theme);
 
                 for (int c = 0; c < item.IconChips.Count; c++)
                 {
@@ -693,42 +757,88 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             bool isUsingStockAtlas = stockAtlas != null;
             Texture currentAtlas = isUsingStockAtlas ? stockAtlas : StageIconAtlasGenerator.GetAtlas();
 
-            int displayCount = Mathf.Min(stageCount > 0 ? stageCount : 1, MaxDisplayedStages);
+            // 构建排序后的分级显示列表
+            List<StageDeltaVInfo> sortedStages = new List<StageDeltaVInfo>();
+            if (stageCount > 0)
+            {
+                sortedStages.AddRange(stages);
+                if (_stageOrder == "REVERSE")
+                {
+                    sortedStages.Sort((a, b) => b.Stage.CompareTo(a.Stage));
+                }
+                else
+                {
+                    sortedStages.Sort((a, b) => a.Stage.CompareTo(b.Stage));
+                }
+            }
+            else
+            {
+                sortedStages.Add(new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
+            }
+
+            if (_lastActiveStage >= 0 && _lastActiveStage != curStage)
+            {
+                // 分级切除与点火：为新激活级触发入场高光闪烁冲击
+                for (int m = 0; m < _stageItems.Count; m++)
+                {
+                    if (_stageItems[m].StageNumber == curStage)
+                    {
+                        _stageItems[m].TransitionFlashTimer = 0.5f;
+                    }
+                }
+            }
+            _lastActiveStage = curStage;
+
+            int displayCount = Mathf.Min(sortedStages.Count, MaxDisplayedStages);
+
+            // 动态扩充对象池
+            while (_stageItems.Count < displayCount)
+            {
+                _stageItems.Add(CreateStageItem(_stageItems.Count, s, theme));
+            }
 
             // 预估单级高度以实现自适应紧凑包围盒 (Auto-Compact)
             float totalItemsHeight = 0f;
             float[] itemHeights = new float[displayCount];
             for (int k = 0; k < displayCount; k++)
             {
-                StageDeltaVInfo stgSample;
-                if (stageCount > 0)
-                {
-                    stgSample = stages[k];
-                }
-                else
-                {
-                    stgSample = new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true);
-                }
-                bool sampleHasIcons = stgSample.PartIcons != null && stgSample.PartIcons.Count > 0;
-                bool sampleHasProp = stgSample.IsActive || (stgSample.Stage == curStage);
-                if (!sampleHasProp && stgSample.PartIcons != null)
+                StageDeltaVInfo stgSample = sortedStages[k];
+                int partCount = stgSample.PartIcons != null ? stgSample.PartIcons.Count : 0;
+                bool hasDv = stgSample.DeltaV > 0.01 || stgSample.BurnTime > 0.01;
+                bool isStgActive = stgSample.IsActive || (stgSample.Stage == curStage);
+                bool hasProp = isStgActive;
+                if (!hasProp && stgSample.PartIcons != null)
                 {
                     for (int p = 0; p < stgSample.PartIcons.Count; p++)
                     {
-                        if (stgSample.PartIcons[p].PropellantFraction >= 0f) { sampleHasProp = true; break; }
+                        if (stgSample.PartIcons[p].PropellantFraction >= 0f) { hasProp = true; break; }
                     }
                 }
-                float h = 28f;
-                if (sampleHasIcons) h += 28f;
-                if (sampleHasProp) h += 14f;
+
+                float h;
+                if (partCount == 0 && !hasDv)
+                {
+                    h = 22f; // 空分级
+                }
+                else if (!hasDv)
+                {
+                    h = 38f; // 纯动作级（降落伞、分离器）
+                }
+                else
+                {
+                    h = 42f; // 基础动力级
+                    if (partCount > 0) h += 24f; // 图标槽
+                    if (hasProp) h += 12f;      // 推进剂微条
+                }
                 itemHeights[k] = h;
-                totalItemsHeight += h + 3f;
+                totalItemsHeight += (h + 3f);
             }
 
-            // 自适应高度限制 (单级约 116px，最多 6 级约 260px)
-            float headerH = 28f;
+            // 自适应高度限制 (单级约 96px，多级可扩展至 340px，超出部分由 ScrollView 滚动)
+            float headerH = 26f;
             float footerH = 24f;
-            float dynamicHeight = Mathf.Clamp(headerH + totalItemsHeight + footerH, 96f, 280f);
+            float maxDynamicH = 430f;
+            float dynamicHeight = Mathf.Clamp(headerH + totalItemsHeight + footerH, 96f, maxDynamicH);
 
             if (Mathf.Abs(RectTransform.sizeDelta.y - dynamicHeight * s) > 1f)
             {
@@ -736,18 +846,41 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 动态对齐顶栏与底栏
-            _titleText.rectTransform.anchoredPosition = new Vector2(-36f * s, (dynamicHeight * 0.5f - 14f) * s);
-            _addStageTopBtn.GetComponent<RectTransform>().anchoredPosition = new Vector2(14f * s, (dynamicHeight * 0.5f - 14f) * s);
-            _totalDvText.rectTransform.anchoredPosition = new Vector2(49f * s, (dynamicHeight * 0.5f - 14f) * s);
+            _titleText.rectTransform.anchoredPosition = new Vector2(-36f * s, (dynamicHeight * 0.5f - 13f) * s);
+            _addStageTopBtn.GetComponent<RectTransform>().anchoredPosition = new Vector2(14f * s, (dynamicHeight * 0.5f - 13f) * s);
+            _totalDvText.rectTransform.anchoredPosition = new Vector2(49f * s, (dynamicHeight * 0.5f - 13f) * s);
             _topDivider.rectTransform.anchoredPosition = new Vector2(0f, (dynamicHeight * 0.5f - 24f) * s);
 
             _bottomDivider.rectTransform.anchoredPosition = new Vector2(0f, (-dynamicHeight * 0.5f + 20f) * s);
             _statusBadgeBtn.GetComponent<RectTransform>().anchoredPosition = new Vector2(-46f * s, (-dynamicHeight * 0.5f + 10f) * s);
             _stageTriggerBtn.GetComponent<RectTransform>().anchoredPosition = new Vector2(28f * s, (-dynamicHeight * 0.5f + 10f) * s);
 
-            // 布局 Y 锚点起点 (自顶向下排列)
-            float currentY = (dynamicHeight * 0.5f - 28f) * s;
-            float bottomLimitY = (-dynamicHeight * 0.5f + 24f) * s;
+            // 更新触发按键文案与可用状态
+            string trigText = isLocked ? "LOCKED" : (curStage >= 0 ? $"STAGE S{curStage:00}" : "NO STAGE");
+            SetTextIfChanged(_stageTriggerText, trigText);
+            _stageTriggerBtn.interactable = !isLocked && curStage >= 0;
+
+            // 视口与滚动内容区域适配
+            float viewportH = dynamicHeight - headerH - footerH;
+            if (_scrollViewportRt != null)
+            {
+                _scrollViewportRt.sizeDelta = new Vector2((DefaultWidth - 8f) * s, viewportH * s);
+                float viewportCenterY = (dynamicHeight * 0.5f - headerH) - (viewportH * 0.5f);
+                _scrollViewportRt.anchoredPosition = new Vector2(0f, viewportCenterY * s);
+            }
+
+            if (_scrollContentRt != null)
+            {
+                float contentH = Mathf.Max(viewportH, totalItemsHeight);
+                _scrollContentRt.sizeDelta = new Vector2((DefaultWidth - 14f) * s, contentH * s);
+                if (totalItemsHeight <= viewportH + 1f)
+                {
+                    _scrollContentRt.anchoredPosition = Vector2.zero;
+                }
+            }
+
+            // 布局 Y 锚点起点 (自内容顶端向下排列)
+            float currentY = 0f;
 
             for (int i = 0; i < _stageItems.Count; i++)
             {
@@ -759,24 +892,16 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
 
                 // 提取单级动力学数据
-                StageDeltaVInfo stg;
-                if (stageCount > 0)
-                {
-                    stg = stages[i];
-                }
-                else
-                {
-                    stg = new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true);
-                }
-
+                StageDeltaVInfo stg = sortedStages[i];
                 item.StageNumber = stg.Stage;
                 bool isActive = stg.IsActive || (stg.Stage == curStage);
+                item.IsActiveStage = isActive;
+                item.IsBurning = isActive && (telemetry.Throttle > 0.01f || telemetry.VerticalSpeed > 1f || stg.BurnTime > 0.01);
 
-                // 判断是否展示部件图标
                 int partIconCount = stg.PartIcons != null ? stg.PartIcons.Count : 0;
                 bool hasIcons = partIconCount > 0;
+                bool hasDv = stg.DeltaV > 0.01 || stg.BurnTime > 0.01;
 
-                // 判断是否展示推进剂进度条
                 bool hasProp = false;
                 float propFrac = 0f;
                 string propName = "PROPELLANT";
@@ -801,29 +926,27 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     }
                 }
 
-                // 计算当前分级行高
-                float itemH = itemHeights[i];
-
-                // 视口底部溢出保护
-                if (currentY - itemH * s < bottomLimitY)
+                item.TargetPropFrac = propFrac;
+                if (item.CurrentPropFrac < 0.001f && propFrac > 0.001f)
                 {
-                    item.Root.SetActive(false);
-                    continue;
+                    item.CurrentPropFrac = propFrac;
                 }
 
+                float itemH = itemHeights[i];
                 item.Root.SetActive(true);
-                item.RootRt.sizeDelta = new Vector2((DefaultWidth - 16f) * s, itemH * s);
-                item.RootRt.anchoredPosition = new Vector2(0f, currentY - itemH * 0.5f * s);
-                currentY -= (itemH + 3f) * s;
+                item.RootRt.anchorMin = new Vector2(0.5f, 1f);
+                item.RootRt.anchorMax = new Vector2(0.5f, 1f);
+                item.RootRt.pivot = new Vector2(0.5f, 0.5f);
+                item.RootRt.sizeDelta = new Vector2((DefaultWidth - 14f) * s, itemH * s);
+                item.RootRt.anchoredPosition = new Vector2(0f, -currentY - (itemH * 0.5f * s));
+                currentY += (itemH + 3f) * s;
 
-                // 1. 分级微章 (S05 / S04) 与操作按键排布
+                // 1. 分级微章 (S05 / S04) 与全行高亮
                 SetTextIfChanged(item.BadgeText, $"S{stg.Stage:00}");
-                item.BadgeBg.rectTransform.anchoredPosition = new Vector2(-58f * s, (itemH * 0.5f - 9f) * s);
-
-                // 操作按钮位置 [+] 与 [-]
-                item.InsertAboveBtn.transform.parent.GetComponent<RectTransform>().anchoredPosition = new Vector2(-28f * s, (itemH * 0.5f - 9f) * s);
-                // 仅非活跃级或空级允许删除
-                item.DeleteStageBtn.gameObject.SetActive(!isActive || partIconCount == 0);
+                item.RowHighlightBg.rectTransform.sizeDelta = new Vector2((DefaultWidth - 14f) * s, (itemH - 2f) * s);
+                item.RowHighlightBg.color = isActive 
+                    ? WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.12f) 
+                    : Color.clear;
 
                 if (isActive)
                 {
@@ -838,26 +961,113 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     ApplyText(item.StageDvText, TextStyleRole.SecondaryValue, theme);
                 }
 
-                // 2. 单级 ΔV 数值
-                SetTextIfChanged(item.StageDvText, $"{stg.DeltaV:N0} m/s");
-                item.StageDvText.rectTransform.anchoredPosition = new Vector2(30f * s, (itemH * 0.5f - 9f) * s);
+                // 仅非活跃级允许删除
+                item.DeleteStageBtn.gameObject.SetActive(!isActive);
 
-                // 3. 单级元数据副行 (00:52 · 1.65 TWR)
-                int burnSec = Mathf.Max(0, (int)stg.BurnTime);
-                int m = burnSec / 60;
-                int sec = burnSec % 60;
-                string metaStr = stg.TWR > 0.01 
-                    ? $"{m:00}:{sec:00} · {stg.TWR:F2} TWR" 
-                    : $"{m:00}:{sec:00} · {stg.Isp:F0}s Isp";
-                SetTextIfChanged(item.StageMetaText, metaStr);
-                item.StageMetaText.rectTransform.anchoredPosition = new Vector2(-5f * s, (itemH * 0.5f - 23f) * s);
-
-                // 4. 部件图标微芯片排布 (Icons Tray)
-                if (hasIcons)
+                // 2. 根据分级形态布局各元素
+                if (!hasIcons && !hasDv)
                 {
-                    item.IconsContainer.SetActive(true);
-                    item.IconsContainerRt.anchoredPosition = new Vector2(0f, (itemH * 0.5f - 43f) * s);
+                    // === Case A: 空分级 (Empty stage) ===
+                    item.BadgeBg.rectTransform.anchoredPosition = new Vector2(-58f * s, 0f);
+                    item.InsertAboveBtn.transform.parent.GetComponent<RectTransform>().anchoredPosition = new Vector2(-28f * s, 0f);
 
+                    if (item.EmptySlotText != null)
+                    {
+                        item.EmptySlotText.gameObject.SetActive(true);
+                        item.EmptySlotText.rectTransform.anchoredPosition = new Vector2(-10f * s, 0f);
+                        SetTextIfChanged(item.EmptySlotText, "[EMPTY STAGE]");
+                    }
+                    item.StageDvText.gameObject.SetActive(false);
+                    item.StageMetaText.gameObject.SetActive(false);
+                    item.IconsContainer.SetActive(false);
+                    item.PropBarRoot.SetActive(false);
+                }
+                else if (!hasDv)
+                {
+                    // === Case B: 纯动作功能级 (降落伞、分离器等) ===
+                    item.BadgeBg.rectTransform.anchoredPosition = new Vector2(-58f * s, 8f * s);
+                    item.InsertAboveBtn.transform.parent.GetComponent<RectTransform>().anchoredPosition = new Vector2(-28f * s, 8f * s);
+
+                    if (item.EmptySlotText != null) item.EmptySlotText.gameObject.SetActive(false);
+
+                    item.StageDvText.gameObject.SetActive(true);
+                    item.StageDvText.rectTransform.anchoredPosition = new Vector2(30f * s, 8f * s);
+                    SetTextIfChanged(item.StageDvText, "---");
+
+                    item.StageMetaText.gameObject.SetActive(false);
+
+                    // 部件图标槽
+                    item.IconsContainer.SetActive(true);
+                    item.IconsContainerRt.anchoredPosition = new Vector2(0f, -8f * s);
+                    item.PropBarRoot.SetActive(false);
+                }
+                else
+                {
+                    // === Case C: 动力推进级 (引擎) ===
+                    float line1Y = (itemH * 0.5f - 10f) * s;
+                    item.BadgeBg.rectTransform.anchoredPosition = new Vector2(-58f * s, line1Y);
+                    item.InsertAboveBtn.transform.parent.GetComponent<RectTransform>().anchoredPosition = new Vector2(-28f * s, line1Y);
+
+                    if (item.EmptySlotText != null) item.EmptySlotText.gameObject.SetActive(false);
+
+                    item.StageDvText.gameObject.SetActive(true);
+                    item.StageDvText.rectTransform.anchoredPosition = new Vector2(30f * s, line1Y);
+                    SetTextIfChanged(item.StageDvText, $"{stg.DeltaV:N0} m/s");
+
+                    float line2Y = (itemH * 0.5f - 24f) * s;
+                    item.StageMetaText.gameObject.SetActive(true);
+                    item.StageMetaText.rectTransform.anchoredPosition = new Vector2(-5f * s, line2Y);
+
+                    int burnSec = Mathf.Max(0, (int)stg.BurnTime);
+                    int m = burnSec / 60;
+                    int sec = burnSec % 60;
+                    string metaStr = stg.TWR > 0.01 
+                        ? $"{m:00}:{sec:00} · {stg.TWR:F2} TWR" 
+                        : $"{m:00}:{sec:00} · {stg.Isp:F0}s Isp";
+                    SetTextIfChanged(item.StageMetaText, metaStr);
+
+                    if (hasIcons)
+                    {
+                        item.IconsContainer.SetActive(true);
+                        item.IconsContainerRt.anchoredPosition = new Vector2(0f, (itemH * 0.5f - 43f) * s);
+                    }
+                    else
+                    {
+                        item.IconsContainer.SetActive(false);
+                    }
+
+                    if (hasProp)
+                    {
+                        item.PropBarRoot.SetActive(true);
+                        item.PropBarRootRt.anchoredPosition = new Vector2(0f, (-itemH * 0.5f + 8f) * s);
+
+                        float fullW = 140f * s;
+                        item.PropFill.rectTransform.sizeDelta = new Vector2(fullW * propFrac, 2.5f * s);
+
+                        if (propFrac <= 0.05f)
+                        {
+                            item.PropFill.color = style.GetMeterColor(MeterStyleRole.Danger, theme);
+                        }
+                        else if (propFrac <= 0.20f)
+                        {
+                            item.PropFill.color = style.GetMeterColor(MeterStyleRole.Warning, theme);
+                        }
+                        else
+                        {
+                            item.PropFill.color = theme.AccentPrimary;
+                        }
+
+                        SetTextIfChanged(item.PropNameText, $"{propName.ToUpperInvariant()} {(propFrac * 100f):F0}%");
+                    }
+                    else
+                    {
+                        item.PropBarRoot.SetActive(false);
+                    }
+                }
+
+                // 3. 部件图标微芯片排布 (Icons Tray)
+                if (hasIcons && item.IconsContainer.activeSelf)
+                {
                     int displayedChips = Mathf.Min(partIconCount, MaxChipsPerStage);
                     for (int c = 0; c < item.IconChips.Count; c++)
                     {
@@ -924,43 +1134,152 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         }
                     }
                 }
-                else
+
+                // 4. 分割微线
+                item.Separator.rectTransform.anchoredPosition = new Vector2(0f, -itemH * 0.5f * s);
+            }
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+            if (!gameObject.activeInHierarchy) return;
+
+            float dt = CustomAnimationDeltaTime >= 0f ? CustomAnimationDeltaTime : Time.unscaledDeltaTime;
+            float time = CustomAnimationTime >= 0f ? CustomAnimationTime : Time.unscaledTime;
+            float s = CurrentDpiScale;
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+            Color primaryText = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+            Color inverseText = style.GetTextColor(TextStyleRole.InverseOnAccent, theme);
+
+            // 1. 底栏分级点火触发按键 (Stage Trigger Button) 战备心跳与击发回弹
+            if (_stageTriggerBtn != null && _stageTriggerBg != null)
+            {
+                if (_stageTriggerRecoilTimer > 0f)
                 {
-                    item.IconsContainer.SetActive(false);
+                    _stageTriggerRecoilTimer -= dt;
+                    float recoilProgress = Mathf.Clamp01(_stageTriggerRecoilTimer / 0.22f);
+                    float recoilScale = Mathf.Lerp(1.0f, 0.92f, recoilProgress);
+                    _stageTriggerBtn.transform.localScale = new Vector3(recoilScale, recoilScale, 1f);
+                }
+                else if (_stageTriggerBtn.transform.localScale.x != 1f)
+                {
+                    _stageTriggerBtn.transform.localScale = Vector3.one;
                 }
 
-                // 5. 推进剂监控微条
-                if (hasProp)
+                if (_stageTriggerFlashTimer > 0f)
                 {
-                    item.PropBarRoot.SetActive(true);
-                    item.PropBarRootRt.anchoredPosition = new Vector2(0f, (-itemH * 0.5f + 9f) * s);
+                    _stageTriggerFlashTimer -= dt;
+                    float flashP = Mathf.Clamp01(_stageTriggerFlashTimer / 0.28f);
+                    _stageTriggerBg.color = Color.Lerp(theme.AccentPrimary, inverseText, flashP * 0.85f);
+                }
+                else if (_stageTriggerBtn.interactable)
+                {
+                    // ARMED 战备状态：微妙的正弦心跳呼吸律动 (Armed Heartbeat 1.2 Hz)
+                    float trigWave = Mathf.Sin(time * 3.2f) * 0.5f + 0.5f;
+                    _stageTriggerBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.72f + trigWave * 0.28f);
+                }
+                else
+                {
+                    // LOCKED 锁定状态：静默暗板
+                    _stageTriggerBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+                }
+            }
 
-                    float fullW = 140f * s;
-                    item.PropFill.rectTransform.sizeDelta = new Vector2(fullW * propFrac, 2.5f * s);
+            // 2. 遍历各分级行实现高级呼吸与流动微光
+            for (int i = 0; i < _stageItems.Count; i++)
+            {
+                StageItemUI item = _stageItems[i];
+                if (!item.Root.activeSelf) continue;
 
-                    // 推进剂三段式预警变色
-                    if (propFrac <= 0.05f)
+                // A. 激活级背景呼吸与切级闪烁 (Active Stage Row Breathing & Separation Flare)
+                if (item.IsActiveStage)
+                {
+                    float freq = item.IsBurning ? 5.2f : 2.4f;
+                    float wave = Mathf.Sin(time * freq) * 0.5f + 0.5f;
+
+                    if (item.TransitionFlashTimer > 0f)
                     {
-                        item.PropFill.color = style.GetMeterColor(MeterStyleRole.Danger, theme);
-                    }
-                    else if (propFrac <= 0.20f)
-                    {
-                        item.PropFill.color = style.GetMeterColor(MeterStyleRole.Warning, theme);
+                        item.TransitionFlashTimer -= dt;
+                        float flashP = Mathf.Clamp01(item.TransitionFlashTimer / 0.5f);
+                        float flashAlpha = Mathf.Lerp(0.12f + wave * 0.10f, 0.48f, flashP);
+                        item.RowHighlightBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, flashAlpha);
+                        item.BadgeBg.color = Color.Lerp(theme.AccentPrimary, inverseText, flashP * 0.6f);
                     }
                     else
                     {
-                        item.PropFill.color = theme.AccentPrimary;
+                        float baseAlpha = item.IsBurning ? (0.12f + wave * 0.12f) : (0.08f + wave * 0.08f);
+                        item.RowHighlightBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, baseAlpha);
+                        item.BadgeBg.color = Color.Lerp(theme.AccentPrimary, WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Heavy), wave * 0.25f);
+                    }
+                }
+
+                // B. 推进剂液位平滑流动与低油量频闪 (Propellant Liquid Damping & Emergency Strobe)
+                if (item.PropBarRoot != null && item.PropBarRoot.activeSelf)
+                {
+                    if (Mathf.Abs(item.CurrentPropFrac - item.TargetPropFrac) > 0.001f)
+                    {
+                        item.CurrentPropFrac = Mathf.MoveTowards(item.CurrentPropFrac, item.TargetPropFrac, dt * 1.8f);
+                        float fullW = 140f * s;
+                        item.PropFill.rectTransform.sizeDelta = new Vector2(fullW * item.CurrentPropFrac, 2.5f * s);
                     }
 
-                    SetTextIfChanged(item.PropNameText, $"{propName.ToUpperInvariant()} {(propFrac * 100f):F0}%");
-                }
-                else
-                {
-                    item.PropBarRoot.SetActive(false);
+                    if (item.CurrentPropFrac <= 0.05f)
+                    {
+                        // 极度危急：5Hz 烈度频闪 (Emergency Strobe Alert)
+                        bool blinkOn = (Mathf.Sin(time * 30f) > 0f);
+                        Color dangerCol = style.GetMeterColor(MeterStyleRole.Danger, theme);
+                        item.PropFill.color = blinkOn 
+                            ? dangerCol 
+                            : WidgetStyleManager.WithAlpha(dangerCol, 0.2f);
+                    }
+                    else if (item.CurrentPropFrac <= 0.20f)
+                    {
+                        // 低燃料：琥珀色呼吸预警 (Amber Warning Pulse)
+                        float warnPulse = Mathf.Sin(time * 8f) * 0.35f + 0.65f;
+                        Color warnCol = style.GetMeterColor(MeterStyleRole.Warning, theme);
+                        item.PropFill.color = WidgetStyleManager.WithAlpha(warnCol, warnPulse);
+                    }
+                    else
+                    {
+                        // 正常余量：伴随燃烧细微光泽扫描 (Combustion Specular Shimmer)
+                        if (item.IsBurning)
+                        {
+                            float shimmer = Mathf.Sin(time * 4.5f + i) * 0.15f + 0.85f;
+                            item.PropFill.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, shimmer);
+                        }
+                        else
+                        {
+                            item.PropFill.color = theme.AccentPrimary;
+                        }
+                    }
                 }
 
-                // 6. 分割微线
-                item.Separator.rectTransform.anchoredPosition = new Vector2(0f, -itemH * 0.5f * s);
+                // C. 部件芯片悬停浮起微动效 (Part Icon Chip Hover Float)
+                for (int c = 0; c < item.IconChips.Count; c++)
+                {
+                    StageIconChipUI chip = item.IconChips[c];
+                    if (!chip.Root.activeSelf) continue;
+
+                    float targetScale = chip.IsHovered ? 1.14f : 1.0f;
+                    if (Mathf.Abs(chip.CurrentScale - targetScale) > 0.002f)
+                    {
+                        chip.CurrentScale = Mathf.MoveTowards(chip.CurrentScale, targetScale, dt * 7.5f);
+                        chip.RootRt.localScale = new Vector3(chip.CurrentScale, chip.CurrentScale, 1f);
+                    }
+
+                    if (chip.IsHovered)
+                    {
+                        chip.ChipOutline.effectColor = theme.AccentPrimary;
+                        chip.ChipBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.30f);
+                    }
+                    else
+                    {
+                        chip.ChipOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
+                        chip.ChipBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+                    }
+                }
             }
         }
 
@@ -983,17 +1302,21 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         private void OnStatusLockClicked()
         {
+            _stageTriggerFlashTimer = 0.16f;
             StockStageActionService.ToggleStagingLock();
         }
 
         private void OnStageTriggerClicked()
         {
+            _stageTriggerRecoilTimer = 0.22f;
+            _stageTriggerFlashTimer = 0.28f;
             StockStageActionService.ActivateNextStage();
         }
 
         internal void OnChipPointerEnter(StageIconChipUI chip)
         {
             if (chip == null) return;
+            chip.IsHovered = true;
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
 
@@ -1011,9 +1334,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 if (chip.PartData.Count > 1) title += $" (×{chip.PartData.Count})";
                 SetTextIfChanged(_tooltipTitle, title);
 
+                string dragHint = I18n.Tr("STG_DRAG_MOVE_HINT", "[拖拽跨级移动]");
                 string sub = chip.PartData.PropellantFraction >= 0f 
-                    ? $"{chip.PartData.PropellantName?.ToUpperInvariant()} {(chip.PartData.PropellantFraction * 100f):F0}% · [拖拽跨级移动]" 
-                    : $"STAGE S{chip.StageNumber:00} · [拖拽跨级移动]";
+                    ? $"{chip.PartData.PropellantName?.ToUpperInvariant()} {(chip.PartData.PropellantFraction * 100f):F0}% · {dragHint}" 
+                    : $"STAGE S{chip.StageNumber:00} · {dragHint}";
                 SetTextIfChanged(_tooltipSub, sub);
 
                 // 悬停在芯片正上方
@@ -1025,6 +1349,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         internal void OnChipPointerExit(StageIconChipUI chip)
         {
             if (chip == null) return;
+            chip.IsHovered = false;
             if (chip.PartFlightId > 0)
             {
                 StockStageActionService.SetPartHighlight(chip.PartFlightId, false);

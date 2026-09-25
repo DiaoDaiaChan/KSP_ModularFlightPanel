@@ -48,6 +48,7 @@ namespace ModularFlightPanel.Core
         public double Mach { get; private set; } = 0.0;
 
         // 高度与动力学
+        public AltitudeDisplayMode CurrentAltMode { get; set; } = AltitudeDisplayMode.Sea;
         public double AltitudeASL { get; private set; } = 74.0;
         public double AltitudeAGL { get; private set; } = 0.0;
         public double DisplayAltitude => AltitudeASL;
@@ -57,6 +58,8 @@ namespace ModularFlightPanel.Core
         public double DynamicPressure { get; private set; } = 0.0;
         public double AtmosphericPressure { get; private set; } = 1.0;
         public double GForce { get; private set; } = 1.0;
+        public bool HasAtmosphere { get; private set; } = true;
+        public double AtmosphereDepth { get; private set; } = 70000.0;
 
         // 推进系统
         public float Throttle { get; private set; } = 0.0f;
@@ -100,30 +103,27 @@ namespace ModularFlightPanel.Core
 
         private static readonly CommLinkInfo[] DefaultSimulationLinks = new CommLinkInfo[]
         {
-            new CommLinkInfo("未命名飞船3", 63000.0, 1.0f, false),
-            new CommLinkInfo("未命名飞船3 探测器", 126000.0, 1.0f, false),
-            new CommLinkInfo("未命名飞船3", 504000.0, 1.0f, false),
-            new CommLinkInfo("未命名飞船3 探测器", 504000.0, 1.0f, false),
-            new CommLinkInfo("未命名飞船3 探测器", 252000.0, 1.0f, false),
-            new CommLinkInfo("KSAT - Singapore", 15800.0, 1.0f, true)
+            new CommLinkInfo("US - Cape Canaveral", 15800.0, 1.0f, true),
+            new CommLinkInfo("Tracking Station Madrid", 63000.0, 0.92f, false),
+            new CommLinkInfo("Kerbin Relay Alpha", 504000.0, 0.98f, false)
         };
 
         private static readonly AntennaTelemetryInfo[] DefaultSimulationAntennas = new AntennaTelemetryInfo[]
         {
             new AntennaTelemetryInfo("Communotron 16", "DIRECT", 500000.0, "500k", 0.95f, "LINKED", true),
-            new AntennaTelemetryInfo("RA-2 Relay Antenna", "RELAY", 2000000000.0, "2.0G", 1.0f, "LINKED", true),
-            new AntennaTelemetryInfo("Internal Pod Antenna", "INTERNAL", 5000.0, "5.0k", 0.90f, "LINKED", true)
+            new AntennaTelemetryInfo("RA-2 Relay Antenna", "RELAY", 2000000000.0, "2.0G", 1.0f, "STANDBY", true),
+            new AntennaTelemetryInfo("Internal Pod Antenna", "INTERNAL", 5000.0, "5.0k", 0.90f, "STANDBY", true)
         };
 
         // 通信网络
-        public double CommSignal { get; private set; } = 0.90;
+        public double CommSignal { get; private set; } = 1.0;
         public bool IsConnected { get; private set; } = true;
         public string ControlLevelStr { get; private set; } = "FULL CONTROL";
-        public int AntennaCount { get; private set; } = 2;
-        public double SignalTx { get; private set; } = 0.90;
-        public double SignalRx { get; private set; } = 0.90;
+        public int AntennaCount { get; private set; } = 3;
+        public double SignalTx { get; private set; } = 1.0;
+        public double SignalRx { get; private set; } = 1.0;
         public double DataRateBps { get; private set; } = 15800.0;
-        public string DirectLinkTarget { get; private set; } = "KSAT - Singapore";
+        public string DirectLinkTarget { get; private set; } = "US - Cape Canaveral";
         public IReadOnlyList<CommLinkInfo> ActiveCommLinks { get; private set; } = DefaultSimulationLinks;
         public IReadOnlyList<AntennaTelemetryInfo> Antennas { get; private set; } = DefaultSimulationAntennas;
 
@@ -249,12 +249,59 @@ namespace ModularFlightPanel.Core
         private static List<StageDeltaVInfo> CreateSimulatedStages(int currentStage, float stageFuel, double activeDv, double activeBurnTime, double activeTwr)
         {
             var list = new List<StageDeltaVInfo>();
+            if (currentStage >= 6)
+            {
+                // S00: 载荷与伞降 (Parachute) - 纯功能级
+                list.Add(new StageDeltaVInfo(0, 0.0, 0.0, 0.0, 0.0, currentStage == 0, new List<StagePartIconData>
+                {
+                    new StagePartIconData("PARACHUTES", 8, 1, "Mk16 Parachute", null, -1f, default, false, 1007)
+                }));
+
+                // S01: 空分级 (Empty Stage)
+                list.Add(new StageDeltaVInfo(1, 0.0, 0.0, 0.0, 0.0, currentStage == 1, new List<StagePartIconData>()));
+
+                // S02: 芯二级动力 (LV-T45 'Swivel' + TD-12 Decoupler)
+                double s2Dv = currentStage == 2 ? activeDv : 2530.0;
+                double s2Time = currentStage == 2 ? activeBurnTime : 75.0;
+                double s2Twr = currentStage == 2 ? activeTwr : 1.65;
+                list.Add(new StageDeltaVInfo(2, s2Dv, s2Time, s2Twr, 320.0, currentStage == 2, new List<StagePartIconData>
+                {
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "LV-T45 'Swivel' Liquid Fuel Engine", "Liquid Fuel", currentStage == 2 ? stageFuel : 1.0f, default, false, 1002),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-12 Decoupler", null, -1f, default, false, 1004)
+                }));
+
+                // S03: 空分级 (Empty Stage)
+                list.Add(new StageDeltaVInfo(3, 0.0, 0.0, 0.0, 0.0, currentStage == 3, new List<StagePartIconData>()));
+
+                // S04: 径向推进级 (24-77 'Twitch' Liquid Engine x2)
+                double s4Dv = currentStage == 4 ? activeDv : 1024.0;
+                double s4Time = currentStage == 4 ? activeBurnTime : 48.0;
+                double s4Twr = currentStage == 4 ? activeTwr : 2.10;
+                list.Add(new StageDeltaVInfo(4, s4Dv, s4Time, s4Twr, 310.0, currentStage == 4, new List<StagePartIconData>
+                {
+                    new StagePartIconData("LIQUID_ENGINE", 2, 2, "24-77 'Twitch' Liquid Engine", "Liquid Fuel", currentStage == 4 ? stageFuel : 1.0f, default, false, 1005)
+                }));
+
+                // S05: 芯一级级间脱离器 (TD-12 Decoupler) - 纯功能级
+                list.Add(new StageDeltaVInfo(5, 0.0, 0.0, 0.0, 0.0, currentStage == 5, new List<StagePartIconData>
+                {
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-12 Decoupler", null, -1f, default, false, 1006)
+                }));
+
+                // S06: 径向分离器 (TT-38K Radial Decoupler x2) - 纯功能级 / 发射台首发触发级
+                list.Add(new StageDeltaVInfo(6, 0.0, 0.0, 0.0, 0.0, currentStage == 6, new List<StagePartIconData>
+                {
+                    new StagePartIconData("DECOUPLER_HOR", 6, 2, "TT-38K Radial Decoupler", null, -1f, default, false, 1003)
+                }));
+                return list;
+            }
+
             if (currentStage >= 3)
             {
                 list.Add(new StageDeltaVInfo(3, activeDv, activeBurnTime, activeTwr, 312.0, currentStage == 3, new List<StagePartIconData>
                 {
-                    new StagePartIconData("SOLID_BOOSTER", 3, 6, "BACC 固体燃料助推器", "Solid Fuel", stageFuel, default, false, 1001),
-                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-M3 'Mainsail' 液体发动机", "Liquid Fuel", Mathf.Clamp01(stageFuel + 0.15f), default, false, 1002)
+                    new StagePartIconData("SOLID_BOOSTER", 3, 6, "BACC Solid Fuel Booster", "Solid Fuel", stageFuel, default, false, 1001),
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-M3 'Mainsail' Liquid Engine", "Liquid Fuel", Mathf.Clamp01(stageFuel + 0.15f), default, false, 1002)
                 }));
             }
             if (currentStage >= 2)
@@ -264,8 +311,8 @@ namespace ModularFlightPanel.Core
                 double s2Twr = currentStage == 2 ? activeTwr : 1.40;
                 list.Add(new StageDeltaVInfo(2, s2Dv, s2Time, s2Twr, 345.0, currentStage == 2, new List<StagePartIconData>
                 {
-                    new StagePartIconData("DECOUPLER_HOR", 6, 4, "TT-70 径向分离挂架", null, -1f, default, false, 1003),
-                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-25 垂直级间分离器", null, -1f, default, false, 1004)
+                    new StagePartIconData("DECOUPLER_HOR", 6, 4, "TT-70 Radial Decoupler", null, -1f, default, false, 1003),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-25 Decoupler", null, -1f, default, false, 1004)
                 }));
             }
             if (currentStage >= 1)
@@ -275,14 +322,14 @@ namespace ModularFlightPanel.Core
                 double s1Twr = currentStage == 1 ? activeTwr : 0.95;
                 list.Add(new StageDeltaVInfo(1, s1Dv, s1Time, s1Twr, 380.0, currentStage == 1, new List<StagePartIconData>
                 {
-                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-L10 'Poodle' 上级发动机", "Liquid Fuel", currentStage == 1 ? stageFuel : 1.0f, default, false, 1005),
-                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-12 载荷分离环", null, -1f, default, false, 1006)
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-L10 'Poodle' Liquid Fuel Engine", "Liquid Fuel", currentStage == 1 ? stageFuel : 1.0f, default, false, 1005),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-12 Decoupler", null, -1f, default, false, 1006)
                 }));
             }
             list.Add(new StageDeltaVInfo(0, 0.0, 0.0, 0.0, 0.0, currentStage == 0, new List<StagePartIconData>
             {
-                new StagePartIconData("PARACHUTES", 8, 2, "Mk16-XL 主降落伞", null, -1f, default, false, 1007),
-                new StagePartIconData("COMMAND_POD", 4, 1, "Mk1-3 载人指令舱", null, -1f, default, false, 1008)
+                new StagePartIconData("PARACHUTES", 8, 2, "Mk16-XL Parachute", null, -1f, default, false, 1007),
+                new StagePartIconData("COMMAND_POD", 4, 1, "Mk1-3 Command Pod", null, -1f, default, false, 1008)
             }));
             return list;
         }
@@ -400,12 +447,12 @@ namespace ModularFlightPanel.Core
                     Throttle = 0.0f;
                     StagePropellantFraction = 1.0f;
                     TWR = 0.0;
-                    CurrentStage = 3;
-                    StageDeltaV = 2350.0;
-                    TotalDeltaV = 4850.0;
-                    StageBurnTime = 52.0;
-                    TotalBurnTime = 196.0;
-                    StageDeltaVList = CreateSimulatedStages(3, 1.0f, 2350.0, 52.0, 1.65);
+                    CurrentStage = 6;
+                    StageDeltaV = 0.0;
+                    TotalDeltaV = 3554.0;
+                    StageBurnTime = 0.0;
+                    TotalBurnTime = 123.0;
+                    StageDeltaVList = CreateSimulatedStages(6, 1.0f, 0.0, 0.0, 0.0);
                     ActiveEngines = 0;
                     Pitch = 90f;
                     Heading = 90f;

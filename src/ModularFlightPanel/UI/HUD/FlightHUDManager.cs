@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
@@ -33,6 +34,7 @@ namespace ModularFlightPanel.UI
         private CanvasScaler _scaler;
         private GraphicRaycaster _raycaster;
         private GameObject _hudRoot;
+        public GameObject HUDRoot => _hudRoot;
 
         // 统一小组件集合 (全部继承 BaseFlightWidget)
         private List<BaseFlightWidget> _modularWidgets = new List<BaseFlightWidget>();
@@ -44,7 +46,7 @@ namespace ModularFlightPanel.UI
             set => WidgetLayoutManager.Instance.CurrentLayout.GlobalScale = value;
         }
 
-        public static bool IsMouseOverFloatingToolbar { get; private set; } = false;
+        public static bool IsMouseOverFloatingToolbar { get; set; } = false;
 
         private void Awake()
         {
@@ -67,6 +69,7 @@ namespace ModularFlightPanel.UI
         {
             WidgetLayoutManager.Instance.Initialize();
             ThemeManager.Instance.OnThemeChanged += OnThemeChanged;
+            I18nManager.OnLanguageChanged += HandleLanguageChanged;
             if (WidgetRenderManager.Instance != null)
             {
                 WidgetRenderManager.Instance.OnGlobalRenderScaleChanged += HandleGlobalRenderScaleChanged;
@@ -210,6 +213,7 @@ namespace ModularFlightPanel.UI
             }
             WidgetRenderManager.Instance.ClearAll();
             _modularWidgets.Clear();
+            WidgetSelectionManager.ClearSelection();
 
             ThemeConfig theme = ThemeManager.Instance.CurrentTheme;
 
@@ -238,15 +242,24 @@ namespace ModularFlightPanel.UI
             GameObject marqueeObj = new GameObject("MarqueeSelectionCatcher", typeof(RectTransform));
             marqueeObj.transform.SetParent(_hudRoot.transform, false);
             var marquee = marqueeObj.AddComponent<MarqueeSelectionHandler>();
-            marquee.Initialize(rootRt);            // 动态加载所有模块化小组件 (统一由 WidgetRegistry 泛型工厂驱动，消除 300+ 行重复分支与胶水代码)
-            var widgetConfigs = WidgetLayoutManager.Instance.CurrentLayout.Widgets;
+            marquee.Initialize(rootRt);
+
+            // 动态加载所有模块化小组件 (按 DrawOrder 升序排列，统一由 WidgetRegistry 泛型工厂驱动)
+            var widgetConfigs = WidgetLayoutManager.Instance.CurrentLayout.Widgets
+                .OrderBy(c => c.DrawOrder)
+                .ToList();
             foreach (var cfg in widgetConfigs)
             {
                 if (!cfg.IsEnabled) continue;
 
-                // 工具栏折叠坞检查：仅在模式 2 (折叠收纳坞) 下挂载进主画布
+                // 工具栏折叠坞与常用快捷坞检查：仅在模式 2 (折叠收纳坞) 下挂载进主画布
                 if ((cfg.WidgetType == "toolbar" || cfg.WidgetId == "core.toolbar" || cfg.WidgetId.StartsWith("toolbar.")) &&
                     ThemeManager.Instance.ToolbarStyleMode != 2)
+                {
+                    continue;
+                }
+                if ((cfg.WidgetType == "dock_favorites" || cfg.WidgetId == "core.dock_favorites" || cfg.WidgetId.StartsWith("dock_favorites") || cfg.WidgetId == "toolbar.favorites") &&
+                    (ThemeManager.Instance.ToolbarStyleMode != 2 || !ThemeManager.Instance.DockEnableFavoritePanel))
                 {
                     continue;
                 }
@@ -273,13 +286,38 @@ namespace ModularFlightPanel.UI
                 if (!hasDock)
                 {
                     var dockCfg = WidgetLayoutManager.Instance.GetConfig("core.toolbar") ??
-                        new WidgetConfig("core.toolbar", "AVIONICS 现代折叠工具栏", 890f, 0f, 1.0f)
+                        new WidgetConfig("core.toolbar", I18n.GetWidgetName("core.toolbar", "AVIONICS 现代折叠工具栏"), 890f, 0f, 1.0f)
                         {
                             WidgetType = "toolbar",
                             IsEnabled = true
                         };
                     BaseFlightWidget dockWidget = WidgetRegistry.Spawn(dockCfg, theme, _hudRoot.transform, _canvas, CustomScale);
                     if (dockWidget != null) _modularWidgets.Add(dockWidget);
+                }
+
+                // 独立常用快捷坞保障：若已启用常用面板且未在当前布局中，自动确保 FavoriteToolbarWidget 实例化
+                if (ThemeManager.Instance.DockEnableFavoritePanel)
+                {
+                    bool hasFavDock = false;
+                    for (int i = 0; i < _modularWidgets.Count; i++)
+                    {
+                        if (_modularWidgets[i] is FavoriteToolbarWidget)
+                        {
+                            hasFavDock = true;
+                            break;
+                        }
+                    }
+                    if (!hasFavDock)
+                    {
+                        var favCfg = WidgetLayoutManager.Instance.GetConfig("core.dock_favorites") ??
+                            new WidgetConfig("core.dock_favorites", I18n.GetWidgetName("core.dock_favorites", "AVIONICS 常用快捷工具栏"), ThemeManager.Instance.DockFavoritePosX, ThemeManager.Instance.DockFavoritePosY, 1.0f)
+                            {
+                                WidgetType = "dock_favorites",
+                                IsEnabled = true
+                            };
+                        BaseFlightWidget favWidget = WidgetRegistry.Spawn(favCfg, theme, _hudRoot.transform, _canvas, CustomScale);
+                        if (favWidget != null) _modularWidgets.Add(favWidget);
+                    }
                 }
             }
 
@@ -304,6 +342,9 @@ namespace ModularFlightPanel.UI
             gizmoObj.transform.SetAsLastSibling();
             var gizmo = gizmoObj.AddComponent<WidgetTransformGizmo>();
             gizmo.Initialize(rootRt, _canvas);
+
+            // 全量统一标准化并同步 UGUI Hierarchy 图层顺序
+            WidgetLayerManager.NormalizeAndSyncLayers(recordHistory: false);
         }
 
         public T SpawnWidget<T>(WidgetConfig cfg, ThemeConfig theme) where T : BaseFlightWidget
@@ -353,6 +394,8 @@ namespace ModularFlightPanel.UI
                 {
                     WidgetSelectionManager.Select(newWidget, addToSelection: true);
                 }
+
+                WidgetLayerManager.NormalizeAndSyncLayers(recordHistory: false);
             }
 
             return newWidget;
@@ -514,7 +557,7 @@ namespace ModularFlightPanel.UI
 
             IsMouseOverFloatingToolbar = false;
 
-            float toolbarW = 980f;
+            float toolbarW = 1040f;
             float toolbarH = 78f;
             float x = (Screen.width - toolbarW) * 0.5f;
             float y = 12f;
@@ -573,13 +616,22 @@ namespace ModularFlightPanel.UI
             {
                 WidgetCanvasGrid.ToggleGrid();
             }
+
+            bool layerOpen = WidgetLayerManager.IsLayerPanelOpen;
+            GUI.color = layerOpen ? accentCol : textCol;
+            if (GUILayout.Button(layerOpen ? "📑 图层: [开]" : "📑 图层: [关]", GUILayout.Width(84f), GUILayout.Height(22f)))
+            {
+                WidgetLayerManager.ToggleLayerPanel();
+            }
             GUI.color = textCol;
 
             if (selCount > 0)
             {
                 // 图层层级
-                if (GUILayout.Button("⤒ 置顶", GUILayout.Width(46f), GUILayout.Height(22f))) WidgetSelectionManager.BringToFront();
-                if (GUILayout.Button("⤓ 置底", GUILayout.Width(46f), GUILayout.Height(22f))) WidgetSelectionManager.SendToBack();
+                if (GUILayout.Button("⤒", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BringToFront();
+                if (GUILayout.Button("▲", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BringForward();
+                if (GUILayout.Button("▼", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.SendBackward();
+                if (GUILayout.Button("⤓", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.SendToBack();
 
                 // 快速删除/隐藏
                 if (GUILayout.Button("🗑 隐藏", GUILayout.Width(46f), GUILayout.Height(22f))) WidgetSelectionManager.DeleteSelected();
@@ -601,7 +653,7 @@ namespace ModularFlightPanel.UI
             else
             {
                 if (GUILayout.Button("全选 (Ctrl+A)", GUILayout.Width(88f), GUILayout.Height(22f))) WidgetSelectionManager.SelectAll(_modularWidgets);
-                GUILayout.Label("<color=#94A3B8><size=10>快捷键: 方向键微调(Shift+10px) | 拖拽手柄缩放/旋转 | Shift锁定轴向 | Ctrl+Z撤销 | G网格 | []图层</size></color>");
+                GUILayout.Label("<color=#94A3B8><size=10>快捷键: 方向微调(Shift+10px) | 拖拽缩放/旋转 | Shift轴向 | Ctrl+Z撤销 | G网格 | L图层 | []层级</size></color>");
             }
 
             if (GUILayout.Button("✔ 完成退出", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(84f), GUILayout.Height(24f)))
@@ -616,6 +668,9 @@ namespace ModularFlightPanel.UI
 
             // 绘制直接吸附在组件旁边的即时悬浮缩放/旋转操作盒 (点击一下即可!)
             DrawOnWidgetFloatingToolbar(selCount);
+
+            // 绘制 Photoshop 级悬浮图层管理器抽屉 (按 L 键或点击工具栏切换)
+            WidgetLayerManager.DrawLayerPanel(selCount);
 
             MFPInputLock.SetWindowHoverLock(IsMouseOverFloatingToolbar);
         }
@@ -654,8 +709,8 @@ namespace ModularFlightPanel.UI
             float guiMinY = Screen.height - maxY_screen;
             float guiMaxY = Screen.height - minY_screen;
 
-            float badgeW = 325f;
-            float badgeH = 82f;
+            float badgeW = 345f;
+            float badgeH = 108f;
 
             // 优先置于组件右侧，留出 10px 空隙
             float bx = maxX + 10f;
@@ -759,6 +814,24 @@ namespace ModularFlightPanel.UI
             }
             GUILayout.EndHorizontal();
 
+            // 4. 图层层级控制行 (Layer & Drawing Order)
+            GUILayout.BeginHorizontal();
+            int curLayer = WidgetLayerManager.GetLayerNumber(primary);
+            int totalLayers = WidgetLayerManager.TotalLayers;
+            GUILayout.Label($"<color=#38BDF8><b>图层: #{curLayer}/{totalLayers}</b></color>", GUILayout.Width(92f));
+            if (GUILayout.Button("⤒", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.BringToFront(WidgetSelectionManager.SelectedWidgets);
+            if (GUILayout.Button("▲", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.BringForward(WidgetSelectionManager.SelectedWidgets);
+            if (GUILayout.Button("▼", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.SendBackward(WidgetSelectionManager.SelectedWidgets);
+            if (GUILayout.Button("⤓", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.SendToBack(WidgetSelectionManager.SelectedWidgets);
+            GUILayout.Space(6f);
+            bool isLocked = primary.Config?.IsLocked == true;
+            string lockBtn = isLocked ? "<color=#FFB703>🔒 锁定</color>" : "<color=#94A3B8>🔓 解锁</color>";
+            if (GUILayout.Button(lockBtn, GUILayout.Width(58f), GUILayout.Height(20f)))
+            {
+                WidgetLayerManager.ToggleLock(primary);
+            }
+            GUILayout.EndHorizontal();
+
             GUILayout.EndArea();
         }
 #endif
@@ -771,9 +844,15 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        private void HandleLanguageChanged(string newLang)
+        {
+            RebuildHUD();
+        }
+
         private void OnDestroy()
         {
             ThemeManager.Instance.OnThemeChanged -= OnThemeChanged;
+            I18nManager.OnLanguageChanged -= HandleLanguageChanged;
             if (WidgetRenderManager.Instance != null)
             {
                 WidgetRenderManager.Instance.OnGlobalRenderScaleChanged -= HandleGlobalRenderScaleChanged;

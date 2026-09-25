@@ -295,7 +295,7 @@ namespace ModularFlightPanel.Core
             float h = _showDetailedBreakdown ? 185f : 88f;
             _overlayRect.height = h;
 
-            _overlayRect = GUI.Window(923841, _overlayRect, DrawOverlayWindow, "MFP 航电性能探针 (Avionics Profiler)");
+            _overlayRect = GUI.Window(923841, _overlayRect, DrawOverlayWindow, I18n.Tr("PROF_WINDOW_TITLE", "MFP 航电性能探针"));
             GUI.color = theme != null ? (Color)theme.TextPrimaryColor : GUI.contentColor;
         }
 
@@ -309,14 +309,14 @@ namespace ModularFlightPanel.Core
             GUILayout.BeginHorizontal();
             string statusColor = _isMasterBypassed ? "#FF3B30" : (AvgTotalMs < 0.5 ? "#00E5FF" : (AvgTotalMs < 1.5 ? "#FFCC00" : "#FF3B30"));
             string bypassText = _isMasterBypassed ? "<color=#FF3B30><b>[BYPASSED 0.00ms]</b></color>" : $"<color={statusColor}><b>{AvgTotalMs:F2} ms</b></color> ({FrameBudgetPercent:F1}%)";
-            GUILayout.Label($"<b>MFP 耗时:</b> {bypassText}", GUILayout.ExpandWidth(true));
+            GUILayout.Label($"<b>{I18n.Tr("PROF_TIME_COST", "MFP 耗时:")}</b> {bypassText}", GUILayout.ExpandWidth(true));
             GUILayout.Label($"<b>FPS:</b> {CurrentFPS:F0}", GUILayout.Width(65f));
             GUILayout.EndHorizontal();
 
             // 操作控制行
             GUILayout.BeginHorizontal();
             ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
-            string bypassBtnLabel = _isMasterBypassed ? "▶ 恢复 MFP" : "⏸ 完全 Bypass (F11)";
+            string bypassBtnLabel = _isMasterBypassed ? I18n.Tr("PROF_BTN_RESUME", "▶ 恢复 MFP") : I18n.Tr("PROF_BTN_BYPASS", "⏸ 完全旁路 (F11)");
             GUI.color = _isMasterBypassed
                 ? (theme != null ? (Color)theme.AccentPrimary : GUI.contentColor)
                 : (theme != null ? (Color)theme.WarningColor : GUI.contentColor);
@@ -326,7 +326,7 @@ namespace ModularFlightPanel.Core
             }
             GUI.color = theme != null ? (Color)theme.TextPrimaryColor : GUI.contentColor;
 
-            if (GUILayout.Button(_showDetailedBreakdown ? "▲ 收起" : "▼ 详情", GUILayout.Width(60f), GUILayout.Height(22f)))
+            if (GUILayout.Button(_showDetailedBreakdown ? I18n.Tr("PROF_BTN_COLLAPSE", "▲ 收起") : I18n.Tr("PROF_BTN_DETAILS", "▼ 详情"), GUILayout.Width(60f), GUILayout.Height(22f)))
             {
                 _showDetailedBreakdown = !_showDetailedBreakdown;
             }
@@ -343,11 +343,11 @@ namespace ModularFlightPanel.Core
                 GUILayout.Space(4f);
                 GUILayout.Box("", GUILayout.Height(1f), GUILayout.ExpandWidth(true)); // 分割线
 
-                DrawStatRow("遥测核心 (TelemetryHub):", AvgTelemetryMs);
-                DrawStatRow("外部探针 (FAR/RA/MJ):", AvgProbesMs);
-                DrawStatRow("组件呈现 (Widgets Update):", AvgWidgetsMs);
-                DrawStatRow("飞船剪影 (Silhouette Baker):", AvgSilhouetteMs);
-                DrawStatRow("原版挂钩 (Stock Hooks):", AvgHooksMs);
+                DrawStatRow(I18n.Tr("PROF_ROW_TELEMETRY", "遥测核心:"), AvgTelemetryMs);
+                DrawStatRow(I18n.Tr("PROF_ROW_PROBES", "外部探针 (FAR/RA/MJ):"), AvgProbesMs);
+                DrawStatRow(I18n.Tr("PROF_ROW_WIDGETS", "组件管线呈现:"), AvgWidgetsMs);
+                DrawStatRow(I18n.Tr("PROF_ROW_SILHOUETTE", "飞船剪影烘焙:"), AvgSilhouetteMs);
+                DrawStatRow(I18n.Tr("PROF_ROW_HOOKS", "原版界面挂钩:"), AvgHooksMs);
             }
 
             GUILayout.EndVertical();

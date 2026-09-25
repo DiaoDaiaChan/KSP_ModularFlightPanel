@@ -48,7 +48,8 @@ namespace ModularFlightPanel.UI
         Secondary, // 辅助次级计量条
         Warning,   // 告警计量条
         Danger,    // 极危计量条
-        Track      // 底槽轨道
+        Track,     // 底槽轨道
+        Accent     // 目标游标/刻度强调
     }
 
     /// <summary>
@@ -444,6 +445,7 @@ namespace ModularFlightPanel.UI
             _meterTable[(int)MeterStyleRole.Warning] = theme.WarningColor;
             _meterTable[(int)MeterStyleRole.Danger] = theme.DangerColor;
             _meterTable[(int)MeterStyleRole.Track] = theme.InactiveMeterColor;
+            _meterTable[(int)MeterStyleRole.Accent] = theme.AccentSecondary;
 
             // 5. 按钮底色 (ButtonVisualRole)
             Color pri = theme.AccentPrimary;

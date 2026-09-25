@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
@@ -21,7 +22,18 @@ namespace ModularFlightPanel.UI.Settings
         private static Vector2 _rightScroll = Vector2.zero;
         private static string _widgetSearchQuery = "";
         private static int _widgetCategoryFilter = 0; // 0=All, 1=Gauges, 2=Systems, 3=SpaceX, 4=Controls
-        private static readonly string[] WidgetCatNames = new string[] { "全部", "仪表", "系统", "SPX", "控制" };
+        private static string GetCatName(int index)
+        {
+            switch (index)
+            {
+                case 0: return I18n.Tr("ASM_FILTER_ALL", "全部");
+                case 1: return I18n.Tr("ASM_FILTER_GAUGES", "仪表");
+                case 2: return I18n.Tr("ASM_FILTER_SYSTEMS", "系统");
+                case 3: return I18n.Tr("ASM_FILTER_SPACEX", "SPX");
+                case 4: return I18n.Tr("ASM_FILTER_CONTROLS", "控制");
+                default: return "All";
+            }
+        }
 
         private static string _selectedWidgetId = null;
 
@@ -56,7 +68,7 @@ namespace ModularFlightPanel.UI.Settings
             var widgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets;
             if (widgets == null || widgets.Count == 0)
             {
-                GUILayout.Label("<color=#FFAA00><b>当前没有任何组件，请在「航电库」中先添加组件。</b></color>");
+                GUILayout.Label($"<color=#FFAA00><b>{I18n.Tr("ASM_NO_WIDGETS", "当前没有任何组件，请在「航电库」中先添加组件。")}</b></color>");
                 return;
             }
 
@@ -119,18 +131,18 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.BeginCard(GUILayout.Height(SettingsGUI.ContentHeight));
 
             // 1. 标题与搜索框
-            MFPGuiSkin.DrawHeader("组件导航 (WIDGETS)", $"共 {widgets.Count} 项");
-            MFPGuiSkin.DrawSearchBar(ref _widgetSearchQuery, "筛选组件名称/ID...");
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_HEADER_NAV", "组件导航 (WIDGETS)"), I18n.TrFormat("ASM_TOTAL_COUNT", "共 {0} 项", widgets.Count));
+            MFPGuiSkin.DrawSearchBar(ref _widgetSearchQuery, I18n.Tr("ASM_SEARCH_WIDGET", "筛选组件名称/ID..."));
 
             GUILayout.Space(4f);
 
             // 2. 分类筛选按钮
             GUILayout.BeginHorizontal();
-            for (int i = 0; i < WidgetCatNames.Length; i++)
+            for (int i = 0; i < 5; i++)
             {
                 bool isCat = (_widgetCategoryFilter == i);
                 GUIStyle catStyle = isCat ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
-                if (GUILayout.Button(WidgetCatNames[i], catStyle, GUILayout.Height(20f)))
+                if (GUILayout.Button(GetCatName(i), catStyle, GUILayout.Height(20f)))
                 {
                     _widgetCategoryFilter = i;
                 }
@@ -193,7 +205,7 @@ namespace ModularFlightPanel.UI.Settings
             if (matchCount == 0)
             {
                 GUILayout.Space(20f);
-                GUILayout.Label("<color=#8899AA><size=11>未搜索到匹配项</size></color>");
+                GUILayout.Label($"<color=#8899AA><size=11>{I18n.Tr("ASM_NO_MATCH", "未搜索到匹配项")}</size></color>");
             }
 
             GUILayout.EndScrollView();
@@ -259,14 +271,14 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
 
-            string typeTag = w.WidgetType == "tape" ? "PFD 滚动标尺带" :
-                            (w.WidgetType == "ecam_dial" ? "ECAM 圆弧仪表" :
-                            (w.WidgetId.StartsWith("spacex.") ? "SpaceX 航电组件" :
-                            (w.WidgetId.StartsWith("custom.") ? "遥测卡片" : "原生核心组件")));
+            string typeTag = w.WidgetType == "tape" ? I18n.Tr("ASM_TAG_TAPE", "PFD 滚动标尺带") :
+                            (w.WidgetType == "ecam_dial" ? I18n.Tr("ASM_TAG_ECAM", "ECAM 圆弧仪表") :
+                            (w.WidgetId.StartsWith("spacex.") ? I18n.Tr("ASM_TAG_SPACEX", "SpaceX 航电组件") :
+                            (w.WidgetId.StartsWith("custom.") ? I18n.Tr("ASM_TAG_CARD", "遥测卡片") : I18n.Tr("ASM_TAG_CORE", "原生核心组件"))));
 
             MFPGuiSkin.DrawBadge(typeTag, Color.white, new Color(0.00f, 0.45f, 0.65f, 0.95f), 120f);
 
-            GUILayout.Label("组件显示名称:", GUILayout.Width(85f));
+            GUILayout.Label(I18n.Tr("ASM_PROP_NAME", "组件显示名称:"), GUILayout.Width(85f));
             string newName = GUILayout.TextField(w.DisplayName ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.ExpandWidth(true));
             if (newName != w.DisplayName)
             {
@@ -277,7 +289,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(8f);
 
             bool prevEnabled = w.IsEnabled;
-            w.IsEnabled = GUILayout.Toggle(w.IsEnabled, w.IsEnabled ? "● 运行显示" : "○ 挂起隐藏", GUILayout.Width(85f));
+            w.IsEnabled = GUILayout.Toggle(w.IsEnabled, w.IsEnabled ? I18n.Tr("ASM_STATUS_RUNNING", "● 运行显示") : I18n.Tr("ASM_STATUS_SUSPENDED", "○ 挂起隐藏"), GUILayout.Width(85f));
             if (prevEnabled != w.IsEnabled)
             {
                 MarkDirty();
@@ -291,11 +303,11 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawTransformCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("📐 空间几何与快速对齐标定 (Transform & Alignment)");
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CARD_ALIGN", "📐 快速几何对齐工具"));
 
             // X / Y 坐标
             GUILayout.BeginHorizontal();
-            GUILayout.Label("坐标 X (px):", GUILayout.Width(75f));
+            GUILayout.Label(I18n.Tr("ASM_POS_X", "坐标 X (px):"), GUILayout.Width(75f));
             float newX = MFPGuiSkin.DrawBufferedFloatField($"posX_{w.WidgetId}", w.PositionX, 65f);
             if (Math.Abs(newX - w.PositionX) > 0.01f) { w.PositionX = newX; ApplyTransformRuntime(w); }
 
@@ -308,7 +320,7 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.Space(12f);
 
-            GUILayout.Label("坐标 Y (px):", GUILayout.Width(75f));
+            GUILayout.Label(I18n.Tr("ASM_POS_Y", "坐标 Y (px):"), GUILayout.Width(75f));
             float newY = MFPGuiSkin.DrawBufferedFloatField($"posY_{w.WidgetId}", w.PositionY, 65f);
             if (Math.Abs(newY - w.PositionY) > 0.01f) { w.PositionY = newY; ApplyTransformRuntime(w); }
 
@@ -324,12 +336,12 @@ namespace ModularFlightPanel.UI.Settings
 
             // 一键对齐工具集
             GUILayout.BeginHorizontal();
-            GUILayout.Label("快速对齐:", GUILayout.Width(75f));
-            if (GUILayout.Button("水平居中 0", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f))) { w.PositionX = 0f; ApplyTransformRuntime(w); }
-            if (GUILayout.Button("垂直居中 0", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f))) { w.PositionY = 0f; ApplyTransformRuntime(w); }
-            if (GUILayout.Button("贴左 -440", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f))) { w.PositionX = -440f; ApplyTransformRuntime(w); }
-            if (GUILayout.Button("贴右 +440", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f))) { w.PositionX = 440f; ApplyTransformRuntime(w); }
-            if (GUILayout.Button("🧲 吸附 10px 网格", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(115f)))
+            GUILayout.Label(I18n.Tr("ASM_QUICK_ALIGN", "快速对齐:"), GUILayout.Width(75f));
+            if (GUILayout.Button(I18n.Tr("ASM_ALIGN_CENTER_H", "水平居中 0"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f))) { w.PositionX = 0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button(I18n.Tr("ASM_ALIGN_CENTER_V", "垂直居中 0"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f))) { w.PositionY = 0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button(I18n.Tr("ASM_ALIGN_LEFT", "贴左 -440"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f))) { w.PositionX = -440f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button(I18n.Tr("ASM_ALIGN_RIGHT", "贴右 +440"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f))) { w.PositionX = 440f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button(I18n.Tr("ASM_SNAP_GRID", "🧲 吸附 10px 网格"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(115f)))
             {
                 w.PositionX = Mathf.Round(w.PositionX / 10f) * 10f;
                 w.PositionY = Mathf.Round(w.PositionY / 10f) * 10f;
@@ -341,7 +353,7 @@ namespace ModularFlightPanel.UI.Settings
 
             // 缩放比例
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"缩放比例: <b>{w.Scale:F2}x</b>", GUILayout.Width(95f));
+            GUILayout.Label(I18n.TrFormat("ASM_SCALE_LABEL", "缩放比例: <b>{0:F2}x</b>", w.Scale), GUILayout.Width(95f));
             float sVal = GUILayout.HorizontalSlider(w.Scale, 0.3f, 3.0f, GUILayout.Width(140f));
             if (Math.Abs(sVal - w.Scale) > 0.01f) { w.Scale = Mathf.Round(sVal * 20f) / 20f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("0.8x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Scale = 0.8f; ApplyTransformRuntime(w); }
@@ -352,12 +364,65 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(12f);
 
             // 旋转角
-            GUILayout.Label($"旋转角: <b>{w.Rotation:F0}°</b>", GUILayout.Width(80f));
+            GUILayout.Label(I18n.TrFormat("ASM_ROTATION_LABEL", "旋转角: <b>{0:F0}°</b>", w.Rotation), GUILayout.Width(80f));
             float rVal = GUILayout.HorizontalSlider(w.Rotation, 0f, 360f, GUILayout.Width(120f));
             if (Math.Abs(rVal - w.Rotation) > 0.5f) { w.Rotation = Mathf.Round(rVal / 5f) * 5f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("0°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(30f))) { w.Rotation = 0f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("90°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(34f))) { w.Rotation = 90f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("180°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Rotation = 180f; ApplyTransformRuntime(w); }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 非对称纵横比拉伸 (细长 / 矮胖调节)
+            GUILayout.BeginHorizontal();
+            float effX = w.EffectiveScaleX;
+            GUILayout.Label(I18n.TrFormat("ASM_SCALE_X_LABEL", "宽度 X: <b>{0:F2}x</b>", effX), GUILayout.Width(95f));
+            float sxVal = GUILayout.HorizontalSlider(effX, 0.3f, 3.0f, GUILayout.Width(140f));
+            if (Math.Abs(sxVal - effX) > 0.01f) { w.ScaleX = Mathf.Round(sxVal * 20f) / 20f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("0.7x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleX = 0.7f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("1.0x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleX = 1.0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("1.4x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleX = 1.4f; ApplyTransformRuntime(w); }
+
+            GUILayout.Space(12f);
+
+            float effY = w.EffectiveScaleY;
+            GUILayout.Label(I18n.TrFormat("ASM_SCALE_Y_LABEL", "高度 Y: <b>{0:F2}x</b>", effY), GUILayout.Width(80f));
+            float syVal = GUILayout.HorizontalSlider(effY, 0.3f, 3.0f, GUILayout.Width(120f));
+            if (Math.Abs(syVal - effY) > 0.01f) { w.ScaleY = Mathf.Round(syVal * 20f) / 20f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("0.7x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleY = 0.7f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("1.0x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleY = 1.0f; ApplyTransformRuntime(w); }
+            if (GUILayout.Button("1.4x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleY = 1.4f; ApplyTransformRuntime(w); }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 图层层级与安全锁定
+            GUILayout.BeginHorizontal();
+            int curLayer = w.DrawOrder + 1;
+            int totalLayers = WidgetLayerManager.TotalLayers;
+            GUILayout.Label(I18n.TrFormat("ASM_LAYER_LABEL", "渲染图层: <b>#{0}/{1}</b>", curLayer, totalLayers), GUILayout.Width(130f));
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_BOTTOM", "⤓ 置底"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f))) { WidgetLayerManager.SendToBack(w); }
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_DOWN", "▼ 降层"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f))) { WidgetLayerManager.SendBackward(w); }
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_UP", "▲ 升层"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f))) { WidgetLayerManager.BringForward(w); }
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_TOP", "⤒ 置顶"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f))) { WidgetLayerManager.BringToFront(w); }
+
+            GUILayout.Space(12f);
+            bool isLocked = GUILayout.Toggle(w.IsLocked, w.IsLocked ? I18n.Tr("LAYER_LOCKED", "🔒 锁定图层") : I18n.Tr("LAYER_UNLOCKED", "🔓 未锁定"));
+            if (isLocked != w.IsLocked)
+            {
+                var widgets = FlightHUDManager.Instance?.ModularWidgets;
+                var targetWidget = widgets != null ? widgets.FirstOrDefault(x => x.WidgetId == w.WidgetId) : null;
+                if (targetWidget != null)
+                {
+                    WidgetLayerManager.SetLock(targetWidget, isLocked);
+                }
+                else
+                {
+                    w.IsLocked = isLocked;
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+            }
             GUILayout.EndHorizontal();
 
             MFPGuiSkin.EndCard();
@@ -366,15 +431,15 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawDialOrTapeCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("📊 仪表数据驱动与量程标定 (Calibration)");
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CARD_CALIBRATION", "📊 仪表数据驱动与量程标定"));
 
             // 数据源绑定
             GUILayout.BeginHorizontal();
-            GUILayout.Label("当前驱动数据源:", GUILayout.Width(110f));
-            string tokenText = string.IsNullOrEmpty(w.NumericToken) ? "<未绑定>" : w.NumericToken;
+            GUILayout.Label(I18n.Tr("ASM_TOKEN_NUMERIC", "当前驱动数据源:"), GUILayout.Width(110f));
+            string tokenText = string.IsNullOrEmpty(w.NumericToken) ? I18n.Tr("ASM_TOKEN_UNBOUND", "<未绑定>") : w.NumericToken;
             MFPGuiSkin.DrawBadge(tokenText, Color.white, new Color(0.00f, 0.40f, 0.60f, 0.95f));
 
-            if (GUILayout.Button("解绑数据源", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f)))
+            if (GUILayout.Button(I18n.Tr("ASM_TOKEN_UNBIND", "解绑数据源"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(80f)))
             {
                 w.NumericToken = "";
                 MarkDirty();
@@ -392,26 +457,26 @@ namespace ModularFlightPanel.UI.Settings
 
             // Min & Max
             GUILayout.BeginHorizontal();
-            GUILayout.Label("量程下限 (Min):", GUILayout.Width(105f));
+            GUILayout.Label(I18n.Tr("ASM_RANGE_MIN", "量程下限:"), GUILayout.Width(105f));
             double newMin = MFPGuiSkin.DrawBufferedDoubleField($"min_{w.WidgetId}", w.MinValue, 75f);
             if (Math.Abs(newMin - w.MinValue) > 0.0001) { w.MinValue = (float)newMin; MarkDirty(); }
 
             GUILayout.Space(16f);
 
-            GUILayout.Label("量程上限 (Max):", GUILayout.Width(105f));
+            GUILayout.Label(I18n.Tr("ASM_RANGE_MAX", "量程上限:"), GUILayout.Width(105f));
             double newMax = MFPGuiSkin.DrawBufferedDoubleField($"max_{w.WidgetId}", w.MaxValue, 75f);
             if (Math.Abs(newMax - w.MaxValue) > 0.0001) { w.MaxValue = (float)newMax; MarkDirty(); }
             GUILayout.EndHorizontal();
 
             // Caution & Warning
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<color=#FFB800>黄色警示 (Caution):</color>", GUILayout.Width(125f));
+            GUILayout.Label(I18n.Tr("ASM_RANGE_CAUT", "<color=#FFB800>黄色注意门限:</color>"), GUILayout.Width(125f));
             double newCaution = MFPGuiSkin.DrawBufferedDoubleField($"caut_{w.WidgetId}", w.CautionThreshold, 75f);
             if (Math.Abs(newCaution - w.CautionThreshold) > 0.0001) { w.CautionThreshold = (float)newCaution; MarkDirty(); }
 
             GUILayout.Space(16f);
 
-            GUILayout.Label("<color=#FF4D4D>红色告警 (Warn):</color>", GUILayout.Width(125f));
+            GUILayout.Label(I18n.Tr("ASM_RANGE_WARN", "<color=#FF4D4D>红色危急门限:</color>"), GUILayout.Width(125f));
             double newWarn = MFPGuiSkin.DrawBufferedDoubleField($"warn_{w.WidgetId}", w.WarningThreshold, 75f);
             if (Math.Abs(newWarn - w.WarningThreshold) > 0.0001) { w.WarningThreshold = (float)newWarn; MarkDirty(); }
             GUILayout.EndHorizontal();
@@ -421,10 +486,10 @@ namespace ModularFlightPanel.UI.Settings
             // Limit Mode
             string curLimit = string.IsNullOrEmpty(w.LimitMode) ? (w.IsSoftLimit ? "soft" : "hard") : w.LimitMode.ToLowerInvariant();
             GUILayout.BeginHorizontal();
-            GUILayout.Label("量程模式:", GUILayout.Width(75f));
-            if (GUILayout.Toggle(curLimit == "hard", "硬截断 (Hard Clamp)", "Button", GUILayout.Height(22f))) curLimit = "hard";
-            if (GUILayout.Toggle(curLimit == "soft", "软上限爆表警报 (Soft Alert)", "Button", GUILayout.Height(22f))) curLimit = "soft";
-            if (GUILayout.Toggle(curLimit == "none", "无上限直通 (None)", "Button", GUILayout.Height(22f))) curLimit = "none";
+            GUILayout.Label(I18n.Tr("ASM_LIMIT_MODE", "量程模式:"), GUILayout.Width(75f));
+            if (GUILayout.Toggle(curLimit == "hard", I18n.Tr("ASM_LIMIT_HARD", "硬限幅"), "Button", GUILayout.Height(22f))) curLimit = "hard";
+            if (GUILayout.Toggle(curLimit == "soft", I18n.Tr("ASM_LIMIT_SOFT", "软限幅"), "Button", GUILayout.Height(22f))) curLimit = "soft";
+            if (GUILayout.Toggle(curLimit == "none", I18n.Tr("ASM_LIMIT_NONE", "无限制"), "Button", GUILayout.Height(22f))) curLimit = "none";
             GUILayout.EndHorizontal();
 
             if (w.LimitMode != curLimit)
@@ -436,13 +501,13 @@ namespace ModularFlightPanel.UI.Settings
 
             // 单位
             GUILayout.BeginHorizontal();
-            GUILayout.Label("单位标注 (Unit):", GUILayout.Width(105f));
+            GUILayout.Label(I18n.Tr("ASM_RANGE_UNIT", "单位标注:"), GUILayout.Width(105f));
             string newUnit = GUILayout.TextField(w.UnitLabel ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Width(80f));
             if (newUnit != w.UnitLabel) { w.UnitLabel = newUnit; MarkDirty(); }
 
             if (w.WidgetType == "tape")
             {
-                GUILayout.Label("标尺步长:", GUILayout.Width(65f));
+                GUILayout.Label(I18n.Tr("ASM_TAPE_STEP", "标尺步长:"), GUILayout.Width(65f));
                 float newStep = MFPGuiSkin.DrawBufferedFloatField($"step_{w.WidgetId}", w.StepInterval, 60f);
                 if (Math.Abs(newStep - w.StepInterval) > 0.01f) { w.StepInterval = newStep; MarkDirty(); }
             }
@@ -454,7 +519,7 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawCardTemplateCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("📝 遥测监控卡片模板 (Custom Template)");
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CARD_TEMPLATE", "📝 遥测监控卡片模板"));
 
             string newTemplate = GUILayout.TextArea(w.CustomTemplate ?? "", GUILayout.Height(55f));
             if (newTemplate != w.CustomTemplate)
@@ -464,17 +529,17 @@ namespace ModularFlightPanel.UI.Settings
             }
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("+ ' | ' 分隔符", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            if (GUILayout.Button(I18n.Tr("ASM_TPL_DELIM", "+ ' | ' 分隔符"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
             {
                 w.CustomTemplate = (w.CustomTemplate ?? "") + " | ";
                 MarkDirty();
             }
-            if (GUILayout.Button("+ 换行 \\n", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            if (GUILayout.Button(I18n.Tr("ASM_TPL_NEWLINE", "+ 换行 \\n"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
             {
                 w.CustomTemplate = (w.CustomTemplate ?? "") + "\n";
                 MarkDirty();
             }
-            if (GUILayout.Button("清空模板", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            if (GUILayout.Button(I18n.Tr("ASM_TPL_CLEAR", "清空模板"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
             {
                 w.CustomTemplate = "";
                 MarkDirty();
@@ -491,15 +556,15 @@ namespace ModularFlightPanel.UI.Settings
                 try
                 {
                     _cachedEvaluation = TelemetryTokenEngine.Evaluate(w.CustomTemplate, TelemetryHub.Instance);
-                    if (string.IsNullOrEmpty(_cachedEvaluation)) _cachedEvaluation = "<空模板>";
+                    if (string.IsNullOrEmpty(_cachedEvaluation)) _cachedEvaluation = I18n.Tr("ASM_TPL_EMPTY", "<空模板>");
                 }
                 catch (Exception ex)
                 {
-                    _cachedEvaluation = $"[语法错误]: {ex.Message}";
+                    _cachedEvaluation = I18n.TrFormat("ASM_TPL_SYNTAX_ERR", "[语法错误]: {0}", ex.Message);
                 }
             }
 
-            GUILayout.Label("<b>🌟 航电真实遥测实时解算预览 (Live Preview):</b>");
+            GUILayout.Label(I18n.Tr("ASM_LIVE_PREVIEW", "<b>🌟 航电真实遥测实时解算预览:</b>"));
             MFPGuiSkin.DrawBadge(_cachedEvaluation, MFPGuiSkin.AccentGreen, new Color(0.04f, 0.08f, 0.12f, 0.98f));
 
             MFPGuiSkin.EndCard();
@@ -508,10 +573,10 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawCoreInfoCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("⚙️ 核心内建飞行仪表组件");
-            GUILayout.Label($"• 组件标识 (WidgetId): <color=#00E5FF>{w.WidgetId}</color>");
-            GUILayout.Label($"• 运行状态: {(w.IsEnabled ? "<color=#00FF88>● 正在运行</color>" : "<color=#888888>○ 已挂起隐藏</color>")}");
-            GUILayout.Label("<color=#88AACC><size=11>核心组件包含底层管线逻辑 (如 3D 姿态球、滑动罗盘、SAS底座、工具栏坞)，位置与缩放可在上方直接调整或在屏幕拖拽。</size></color>");
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CARD_CORE_TITLE", "⚙️ 核心内建飞行仪表组件"));
+            GUILayout.Label($"{I18n.Tr("ASM_CORE_WIDGET_ID", "• 组件标识: ")}<color=#00E5FF>{w.WidgetId}</color>");
+            GUILayout.Label($"{I18n.Tr("ASM_CORE_STATUS", "• 运行状态: ")}{(w.IsEnabled ? $"<color=#00FF88>{I18n.Tr("ASM_CORE_RUNNING", "● 正在运行")}</color>" : $"<color=#888888>{I18n.Tr("ASM_CORE_SUSPENDED", "○ 已挂起隐藏")}</color>")}");
+            GUILayout.Label($"<color=#88AACC><size=11>{I18n.Tr("ASM_CORE_DESC", "核心组件包含底层管线逻辑 (如 3D 姿态球、滑动罗盘、SAS底座、工具栏坞)，位置与缩放可在上方直接调整或在屏幕拖拽。")}</size></color>");
             MFPGuiSkin.EndCard();
         }
 
@@ -520,10 +585,10 @@ namespace ModularFlightPanel.UI.Settings
             UpdateCatalogFilter();
 
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("📖 全球遥测参数字典库 (Telemetry Catalog)", $"匹配 {_filteredParams.Count} 项");
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CATALOG_TITLE", "📖 遥测字典速查"), I18n.TrFormat("ASM_CATALOG_MATCHED", "匹配 {0} 项", _filteredParams.Count));
 
             // 搜索框
-            MFPGuiSkin.DrawSearchBar(ref _catalogSearchQuery, "搜索遥测参数 / 通配符...");
+            MFPGuiSkin.DrawSearchBar(ref _catalogSearchQuery, I18n.Tr("ASM_CATALOG_SEARCH", "搜索遥测参数 / 通配符..."));
 
             GUILayout.Space(4f);
 
@@ -558,22 +623,22 @@ namespace ModularFlightPanel.UI.Settings
 
             if (total == 0)
             {
-                GUILayout.Label("<color=#778899><size=11>未找到匹配的参数</size></color>");
+                GUILayout.Label($"<color=#778899><size=11>{I18n.Tr("ASM_CATALOG_NO_PARAM", "未找到匹配的参数")}</size></color>");
             }
 
             // 分页栏
             GUILayout.Space(4f);
             GUILayout.BeginHorizontal();
             GUI.enabled = _catalogPage > 0;
-            if (GUILayout.Button("◀ 上页", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(22f))) _catalogPage--;
+            if (GUILayout.Button(I18n.Tr("ASM_PAGE_PREV", "◀ 上页"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(22f))) _catalogPage--;
             GUI.enabled = true;
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label($"<b>第 {_catalogPage + 1} / {totalPages} 页</b>");
+            GUILayout.Label(I18n.TrFormat("ASM_PAGE_INDICATOR", "第 {0} / {1} 页", _catalogPage + 1, totalPages));
             GUILayout.FlexibleSpace();
 
             GUI.enabled = _catalogPage < totalPages - 1;
-            if (GUILayout.Button("下页 ▶", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(22f))) _catalogPage++;
+            if (GUILayout.Button(I18n.Tr("ASM_PAGE_NEXT", "下页 ▶"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(70f), GUILayout.Height(22f))) _catalogPage++;
             GUI.enabled = true;
             GUILayout.EndHorizontal();
 
@@ -624,7 +689,7 @@ namespace ModularFlightPanel.UI.Settings
             if (curWidget.WidgetType == "ecam_dial" || curWidget.WidgetType == "tape" || curWidget.WidgetType == "bar_gauge")
             {
                 bool isBound = (curWidget.NumericToken == p.Token);
-                string btnTxt = isBound ? "✔ 已绑定" : "⚡ 绑定至此表盘";
+                string btnTxt = isBound ? I18n.Tr("ASM_BTN_BOUND", "✔ 已绑定") : I18n.Tr("ASM_BTN_BIND", "⚡ 绑定至此表盘");
                 GUIStyle bStyle = isBound ? MFPGuiSkin.StepperButtonStyle : MFPGuiSkin.SuccessButtonStyle;
 
                 if (GUILayout.Button(btnTxt, bStyle, GUILayout.Width(125f), GUILayout.Height(22f)))
@@ -641,26 +706,26 @@ namespace ModularFlightPanel.UI.Settings
 
                     CommitPendingSaves();
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast($"已绑定「{p.DisplayName}」至仪表！");
+                    ShowToast(I18n.TrFormat("ASM_TOAST_BOUND", "已绑定「{0}」至仪表！", p.DisplayName));
                 }
             }
             else if (curWidget.WidgetId.StartsWith("custom.") || curWidget.WidgetType == "custom")
             {
-                if (GUILayout.Button("+ 插入模板", MFPGuiSkin.WarningButtonStyle, GUILayout.Width(95f), GUILayout.Height(22f)))
+                if (GUILayout.Button(I18n.Tr("ASM_BTN_INSERT_TPL", "+ 插入模板"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(95f), GUILayout.Height(22f)))
                 {
                     string prefix = string.IsNullOrEmpty(curWidget.CustomTemplate) ? "" : (curWidget.CustomTemplate.EndsWith(" ") ? "" : " | ");
                     curWidget.CustomTemplate = (curWidget.CustomTemplate ?? "") + prefix + $"{p.DisplayName}: {p.Token}";
                     CommitPendingSaves();
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast($"已插入「{p.DisplayName}」到模板！");
+                    ShowToast(I18n.TrFormat("ASM_TOAST_INSERTED", "已插入「{0}」到模板！", p.DisplayName));
                 }
             }
             else
             {
-                if (GUILayout.Button("📋 复制", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(60f), GUILayout.Height(22f)))
+                if (GUILayout.Button(I18n.Tr("ASM_BTN_COPY", "📋 复制"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(60f), GUILayout.Height(22f)))
                 {
                     GUIUtility.systemCopyBuffer = p.Token;
-                    ShowToast($"已复制 {p.Token}");
+                    ShowToast(I18n.TrFormat("ASM_TOAST_COPIED", "已复制 {0}", p.Token));
                 }
             }
 
@@ -668,7 +733,7 @@ namespace ModularFlightPanel.UI.Settings
 
             // 实时求值与说明
             string liveVal = TelemetryTokenEngine.Evaluate(p.Token, TelemetryHub.Instance);
-            GUILayout.Label($"<color=#7088A8><size=10>{p.Description} | 当前实时读数: <color=#00FF88>{liveVal}</color></size></color>");
+            GUILayout.Label($"<color=#7088A8><size=10>{p.Description} | {I18n.Tr("ASM_LIVE_READOUT", "当前实时读数: ")}<color=#00FF88>{liveVal}</color></size></color>");
 
             MFPGuiSkin.EndInset();
         }
@@ -676,24 +741,24 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawPerformanceCard(WidgetConfig w)
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("⚡ 绘制性能单独调优 (Performance & Sub-Canvas)");
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CARD_PERF", "⚡ 绘制性能单独调优"));
 
             // 画布隔离
             bool prevIsolate = w.IsolateCanvas;
-            w.IsolateCanvas = GUILayout.Toggle(w.IsolateCanvas, " 启用独立画布隔离 (Isolate Sub-Canvas 杜绝全屏重绘网格污染)");
+            w.IsolateCanvas = GUILayout.Toggle(w.IsolateCanvas, I18n.Tr("ASM_PROP_ISOLATE_CANVAS", " 启用独立画布"));
             if (w.IsolateCanvas != prevIsolate)
             {
                 MarkDirty();
                 FlightHUDManager.Instance?.RebuildHUD();
-                ShowToast($"已{(w.IsolateCanvas ? "开启" : "关闭")}画布隔离");
+                ShowToast(w.IsolateCanvas ? I18n.Tr("ASM_CANVAS_ENABLED", "已开启画布隔离") : I18n.Tr("ASM_CANVAS_DISABLED", "已关闭画布隔离"));
             }
 
             GUILayout.Space(4f);
 
             // 刷新阶梯
             GUILayout.BeginHorizontal();
-            GUILayout.Label("刷新分频模式:", GUILayout.Width(90f));
-            string hzLabel = w.UpdateInterval <= 0f ? "60Hz+ (每帧)" :
+            GUILayout.Label(I18n.Tr("ASM_PERF_REFRESH_MODE", "刷新分频模式:"), GUILayout.Width(90f));
+            string hzLabel = w.UpdateInterval <= 0f ? I18n.Tr("ASM_HZ_60_PLUS", "60Hz+ (每帧)") :
                             (w.UpdateInterval <= 0.06f ? "20Hz (0.05s)" :
                             (w.UpdateInterval <= 0.15f ? "10Hz (0.1s)" :
                             (w.UpdateInterval <= 0.25f ? "5Hz (0.2s)" : "2Hz (0.5s)")));
@@ -701,10 +766,10 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("60Hz 满血", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0f; MarkDirty(); ShowToast("已设为 60Hz 满帧刷新"); }
-            if (GUILayout.Button("20Hz 标称", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.05f; MarkDirty(); ShowToast("已设为 20Hz"); }
-            if (GUILayout.Button("10Hz 舒缓", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.1f; MarkDirty(); ShowToast("已设为 10Hz"); }
-            if (GUILayout.Button("2Hz 节能", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.5f; MarkDirty(); ShowToast("已设为 2Hz 节能"); }
+            if (GUILayout.Button(I18n.Tr("ASM_PERF_60HZ", "60Hz 满血"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0f; MarkDirty(); ShowToast(I18n.Tr("ASM_TOAST_HZ_60", "已设为 60Hz 满帧刷新")); }
+            if (GUILayout.Button(I18n.Tr("ASM_PERF_20HZ", "20Hz 标称"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.05f; MarkDirty(); ShowToast(I18n.Tr("ASM_TOAST_HZ_20", "已设为 20Hz")); }
+            if (GUILayout.Button(I18n.Tr("ASM_PERF_10HZ", "10Hz 舒缓"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.1f; MarkDirty(); ShowToast(I18n.Tr("ASM_TOAST_HZ_10", "已设为 10Hz")); }
+            if (GUILayout.Button(I18n.Tr("ASM_PERF_2HZ", "2Hz 节能"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f))) { w.UpdateInterval = 0.5f; MarkDirty(); ShowToast(I18n.Tr("ASM_TOAST_HZ_2", "已设为 2Hz 节能")); }
             GUILayout.EndHorizontal();
 
             MFPGuiSkin.EndCard();
@@ -722,7 +787,7 @@ namespace ModularFlightPanel.UI.Settings
                 var target = FlightHUDManager.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
                 if (target != null)
                 {
-                    target.UpdateTransform(w.PositionX, w.PositionY, w.Scale, w.Rotation);
+                    target.UpdateTransform(w.PositionX, w.PositionY, w.Scale, w.Rotation, w.ScaleX, w.ScaleY);
                 }
             }
         }

@@ -16,6 +16,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 游戏暂停与物理加速 (PHYSICS) 琥珀色警示状态机
     /// 5. 原版顶部时间栏非破坏性安全隐显切换 (STOCK TOGGLE)
     /// </summary>
+    [FlightWidget("time_warp", "timewarp", "warp_control", Category = WidgetCategory.Controls, DisplayName = "平滑时间加速控制器", Description = "物理/轨道时间加速等级指示器与一键平滑倍率切换条。", DefaultWidgetId = "core.time_warp", DefaultX = 0f, DefaultY = 210f, IsSingleton = true, ExactIds = new[] { "core.time_warp", "core.timewarp" })]
     public class TimeWarpWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
@@ -231,7 +232,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastPausedState = isPaused;
                 if (_pauseBtnText != null && _pauseBtn != null)
                 {
-                    _pauseBtnText.text = isPaused ? "PAUSED" : "PAUSE";
+                    _pauseBtnText.text = isPaused ? I18n.Tr("WIDGET_TIMEWARP_PAUSED", "PAUSED") : I18n.Tr("WIDGET_TIMEWARP_PAUSE", "PAUSE");
                     _pauseBtn.GetComponent<Image>().color = isPaused 
                         ? WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger) 
                         : Color.clear;
@@ -249,8 +250,8 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastPhysState = isPhys;
                 if (_warpModeText != null)
                 {
-                    string physLabel = GetTemplateChannel("PHYS_LABEL", "PHYS");
-                    string warpLabel = GetTemplateChannel("WARP_LABEL", "WARP");
+                    string physLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS"));
+                    string warpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP"));
                     _warpModeText.text = isPhys ? physLabel : warpLabel;
                     ApplyText(_warpModeText, isPhys ? TextStyleRole.Warning : TextStyleRole.Label, theme);
                 }
@@ -398,6 +399,23 @@ namespace ModularFlightPanel.UI.Widgets
         private void OnCancelWarp()
         {
             _lastTelemetry?.CancelTimeWarp();
+        }
+
+        protected override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            _hasInitState = false;
+            _lastClockStr = null;
+            if (_pauseBtnText != null)
+            {
+                _pauseBtnText.text = _lastPausedState ? I18n.Tr("WIDGET_TIMEWARP_PAUSED", "PAUSED") : I18n.Tr("WIDGET_TIMEWARP_PAUSE", "PAUSE");
+            }
+            if (_warpModeText != null)
+            {
+                string physLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS"));
+                string warpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP"));
+                _warpModeText.text = _lastPhysState ? physLabel : warpLabel;
+            }
         }
 
         protected override void OnDestroy()

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -41,6 +42,7 @@ namespace ModularFlightPanel.UI.Settings
         // 核心 UIStyles
         public static GUIStyle WindowStyle { get; private set; }
         public static GUIStyle HeaderStyle { get; private set; }
+        public static GUIStyle HeaderLabelStyle => HeaderStyle ?? SectionTitleStyle ?? GUI.skin.button;
         public static GUIStyle CardStyle { get; private set; }
         public static GUIStyle CardHoverStyle { get; private set; }
         public static GUIStyle InsetStyle { get; private set; }
@@ -237,6 +239,20 @@ namespace ModularFlightPanel.UI.Settings
             };
             SubtitleStyle.normal.textColor = TextMuted;
 
+            HeaderStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontStyle = FontStyle.Bold,
+                fontSize = 11,
+                alignment = TextAnchor.MiddleLeft,
+                padding = new RectOffset(4, 4, 3, 3)
+            };
+            HeaderStyle.normal.background = null;
+            HeaderStyle.normal.textColor = AccentCyan;
+            HeaderStyle.hover.background = null;
+            HeaderStyle.hover.textColor = Color.white;
+            HeaderStyle.active.background = null;
+            HeaderStyle.active.textColor = AccentGreen;
+
             // 7. 交互行项样式 (用于 Master-Detail 导航列表)
             RowNormalStyle = new GUIStyle(GUI.skin.box)
             {
@@ -309,8 +325,9 @@ namespace ModularFlightPanel.UI.Settings
             }
         }
 
-        public static void DrawSearchBar(ref string query, string placeholder = "搜索...", float width = 0)
+        public static void DrawSearchBar(ref string query, string placeholder = null, float width = 0)
         {
+            placeholder = placeholder ?? I18n.Tr("GUI_SEARCH_PLACEHOLDER", "搜索...");
             EnsureInitialized();
             GUILayout.BeginHorizontal();
             GUILayout.Label("🔍", GUILayout.Width(20f));

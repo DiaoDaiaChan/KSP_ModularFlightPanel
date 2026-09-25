@@ -23,6 +23,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     /// 5. 严格遵守 MFP 规范：
     ///    0 颜色字面量 (MFP-SPEC-006)、0 场景查询 (MFP-SPEC-007)、纯 C# IFlightTelemetry 解耦。
     /// </summary>
+    [FlightWidget("maneuver_timeline", "burn_timeline", Category = WidgetCategory.Navigation, DisplayName = "MANEUVER 轨道机动时序与三轴矢量轴", Description = "横排时间轴形式机动节点指示器：点火窗口时序轨、T0 节点与 Prograde/Normal/Radial 三轴矢量分解。", DefaultWidgetId = "custom.maneuver_timeline", DefaultX = 0f, DefaultY = 260f, IsSingleton = true, ExactIds = new[] { "custom.maneuver_timeline", "core.maneuver_timeline" })]
     public class ManeuverTimelineWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

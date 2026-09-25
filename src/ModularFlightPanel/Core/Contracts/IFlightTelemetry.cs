@@ -18,6 +18,12 @@ namespace ModularFlightPanel.Core
         Maneuver
     }
 
+    public enum AltitudeDisplayMode
+    {
+        Ground, // AGL 雷达真高
+        Sea     // ASL 绝对海拔
+    }
+
     /// <summary>
     /// 标准化机载遥测数据接口 (Pure Unity / C# 契约)
     /// 彻底剥离对 KSP 游戏内部类 (Vessel, FlightGlobals, Part, ModuleEngines) 的依赖。
@@ -39,13 +45,15 @@ namespace ModularFlightPanel.Core
         float Roll { get; }
 
         // 速度与马赫数
+        string SpeedModeName { get; }
         double CurrentSpeed { get; }
         double SurfaceSpeed { get; }
         double OrbitalSpeed { get; }
         double TargetSpeed { get; }
         double Mach { get; }
 
-        // 高度与大气动力学
+        // 高度与大气动力学 (100% 通用化天体物理参数，0 硬编码任何星球)
+        AltitudeDisplayMode CurrentAltMode { get; }
         double AltitudeASL { get; }
         double AltitudeAGL { get; }
         double DisplayAltitude { get; }
@@ -55,6 +63,8 @@ namespace ModularFlightPanel.Core
         double AtmosphericPressure { get; }
         double GForce { get; }
         bool IsTouchdownAlert { get; }
+        bool HasAtmosphere { get; }
+        double AtmosphereDepth { get; }
 
         // 动力、推重比与分级推进
         float Throttle { get; }
@@ -128,7 +138,6 @@ namespace ModularFlightPanel.Core
         bool IsRCSEnabled { get; }
         bool IsSASEnabled { get; }
         FlightSASMode CurrentSASMode { get; }
-        string SpeedModeName { get; }
 
         // 三轴姿态操纵量与配平 (-1.0 ~ +1.0)
         float PitchInput { get; }

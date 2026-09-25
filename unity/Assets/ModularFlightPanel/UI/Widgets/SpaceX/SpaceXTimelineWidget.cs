@@ -14,6 +14,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     ///   3. 任务阶段 (Mission Phase)：时钟下方副标题标牌 (STARSHIP FLIGHT TEST / 动态分级飞行情景)
     /// 严格遵循 MFP 架构规范：零硬编码与零颜色字面量 (MFP-SPEC-006)。
     /// </summary>
+    [FlightWidget("spacex_timeline", "dragon_timeline", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 飞行关键时序甘特轴", Description = "横排甘特式任务阶段进度标尺：MECO、分级、入轨、对接窗口各节点动态光标推进。", DefaultWidgetId = "spacex.timeline", DefaultX = 0f, DefaultY = 320f, IsSingleton = true, ExactIds = new[] { "spacex.timeline" })]
     public class SpaceXTimelineWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

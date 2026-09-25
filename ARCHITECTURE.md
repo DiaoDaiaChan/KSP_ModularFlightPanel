@@ -31,10 +31,10 @@ flowchart TD
 
     subgraph AssemblyAndWidgets["三、装配与组件呈现层"]
         HUD["【HUD 装配总管】FlightHUDManager [Order: +100]<br/>MasterUpdate 单点调度分发 / Sub-Canvas 隔离 / 拖拽把手"]
-        
+        REG["【自动装配中枢】WidgetRegistry<br/>• [FlightWidget] 特性反射全自动发现<br/>• 动态类型工厂与别名映射<br/>• 驱动 TabLibrary 动态分类目录"]
         BFW["【组件通用基类】BaseFlightWidget<br/>FastFormat / SetTextIfChanged / SetImageFillIfChanged"]
         
-        subgraph WidgetFamilies["34 个标准化飞行仪表组件族"]
+        subgraph WidgetFamilies["42 个标准化飞行仪表组件族"]
             W_Nav["导航与姿态<br/>(Navball 3D球, PFD 航向弧, ND 罗盘, 轨道参数)"]
             W_Gauges["表盘与带状仪表<br/>(双速带, 高度计, ECAM, 动压动压表)"]
             W_SpaceX["SpaceX 现代座舱 HUD<br/>(龙飞船准星, 星舰瓦片热工, Raptor 网格, 航迹弧)"]
@@ -60,6 +60,8 @@ flowchart TD
     TH -->|IFlightTelemetry| HUD
     TPM -->|外部参数注入| HUD
     
+    HUD <-->|类型工厂查询| REG
+    REG --> BFW
     HUD --> WRM
     WRM -->|分级 Tick 分发| BFW
     CM -->|零 GC 字符串与外推几何| BFW
@@ -202,26 +204,28 @@ flowchart TD
 
 ---
 
-## 5. 34 个全量航电小组件谱系表 (Widget Family Taxonomy)
+## 5. 42 个全量航电小组件谱系表 (Widget Family Taxonomy)
 
-全仓库 34 个小组件统一置于 `src/ModularFlightPanel/UI/Widgets/`，完全合规通过 8/8 无头自动化审计：
+全仓库 42 个小组件统一置于 `src/ModularFlightPanel/UI/Widgets/`，完全合规通过 9/9 无头自动化审计：
 
 ```
 UI/Widgets/
-├── Navigation/              # [姿态与轨道导航族]
+├── Navigation/              # [姿态与轨道导航族 - 5 个]
 │   ├── NavballSphereWidget        # 3D 离屏相机渲染姿态球 (节流对齐 + 静止 10Hz 降频)
 │   ├── HeadingArcWidget           # PFD 航向指示弧 (Critical 60Hz)
 │   ├── SASDialWidget              # 环形 SAS 航向罗盘 (Standard 30Hz)
 │   ├── NDNavigationWidget         # 综合导航罗盘 (Standard 30Hz)
 │   └── OrbitalInfoWidget          # 轨道根数与交会参数面板 (Relaxed 10Hz)
 │
-├── Gauges/                  # [表盘与垂直滚带族]
+├── Gauges/                  # [表盘与垂直滚带族 - 6 个]
 │   ├── TapeGaugeWidget            # 双侧速度 / 气压高度物理滚带 (Standard 30Hz)
 │   ├── AvionicsBarGaugeWidget     # 垂直多段式动力学柱状条 (Standard 30Hz)
 │   ├── ArcMeterWidget             # 弧形油门与推力百分比表 (Standard 30Hz)
-│   └── EcamDialGaugeWidget        # 空客风格 ECAM 圆形指针表盘 (Standard 30Hz)
+│   ├── EcamDialGaugeWidget        # 空客风格 ECAM 圆形指针表盘 (Standard 30Hz)
+│   ├── B747EicasWidget            # 波音 747 主发动机参数指示 EICAS (Standard 30Hz)
+│   └── B747LowerEicasWidget       # 波音 747 辅助动力与控制面 EICAS (Standard 30Hz)
 │
-├── SpaceX/                  # [SpaceX 载人龙飞船与星舰航电族]
+├── SpaceX/                  # [SpaceX 载人龙飞船与星舰航电族 - 19 个]
 │   ├── SpaceXDockingReticleWidget # ISS 空间站对接光标 HUD (P3 运动学外推联动)
 │   ├── SpaceXStarshipHudWidget    # 星舰全息平显 HUD
 │   ├── SpaceXRaptorGridWidget     # 33 发动机环形推力阵列监视器
@@ -235,9 +239,14 @@ UI/Widgets/
 │   ├── SpaceXPfdRollWidget        # 滚转对齐精密微调环
 │   ├── SpaceXClockWidget          # 任务发射时钟 (T- / T+)
 │   ├── SpaceXDeltaVWidget         # 分级入轨 ΔV 剩余预算卡
-│   └── SpaceXOverviewWidget       # 综合全船状态轮廓看板
+│   ├── SpaceXOverviewWidget       # 综合全船状态轮廓看板
+│   ├── SpaceXBottomBarWidget      # 触控式航电功能控制底栏
+│   ├── SpaceXHeaderWidget         # 顶部任务时钟与天体状态条
+│   ├── SpaceXAttitudeWidget       # 极简数字姿态指示盒
+│   ├── SpaceXArcGaugeWidget       # 龙飞船专属圆弧平滑表盘
+│   └── SpaceXEngineWidget         # 发动机集群状态矩阵与室压监视
 │
-├── Systems/                 # [飞船子系统与工程监视族]
+├── Systems/                 # [飞船子系统与工程监视族 - 7 个]
 │   ├── ElectricalSystemWidget     # 电力拓扑图 (GetConnectedResourceTotals 优化)
 │   ├── LifeSupportWidget          # 氧气/水/气压维生环境监视 (Relaxed 10Hz)
 │   ├── Rocket2DWidget             # 2D 分级轮廓剪影与级间状态 (Relaxed 10Hz)
@@ -246,8 +255,9 @@ UI/Widgets/
 │   ├── EcamStatusWidget           # 报警备忘清单与系统状态卡 (Relaxed 10Hz)
 │   └── CustomTokenTextWidget      # 自由通配符文本卡片 (100% 用户自定义)
 │
-└── Controls/                # [交互控制台与操纵族]
+└── Controls/                # [交互控制台与操纵族 - 5 个]
     ├── StageControlWidget         # 分级触发、倒计时与安全防误触锁 (IsInteractive)
+    ├── StageDeltaVWidget          # 实时分级 ΔV 列表与分级控制 (IsInteractive)
     ├── BottomControlsWidget       # SAS / RCS / 模式快速切换底栏 (IsInteractive)
     ├── ModernToolbarWidget        # 悬浮功能呼出工具栏 (IsInteractive)
     └── TimeWarpWidget             # 时间加速倍率步进控制器 (IsInteractive)
@@ -263,22 +273,23 @@ flowchart LR
     
     Build --> SyncMirror["HeadlessValidator --mirror-fix<br/>按 unity_mirror.manifest 逐字节同步镜像"]
     
-    SyncMirror --> Gate["test-ui.ps1 -NoAscii<br/>执行全量 8/8 无头门禁"]
+    SyncMirror --> Gate["test-ui.ps1 -NoAscii<br/>执行全量 9/9 无头门禁"]
     
-    subgraph EightGates["8/8 无头自动化门禁"]
+    subgraph NineGates["9/9 无头自动化门禁"]
         direction TB
-        G1["[1/8] layout.json 语法载入"]
-        G2["[2/8] LayoutShareHub GZip+Base64 编解码无损往返"]
-        G3["[3/8] AABB 视口几何与重叠碰撞检测"]
-        G4["[4/8] TelemetryTokenEngine 通配符语法审计"]
-        G5["[5/8] 7 阶段 700 Ticks 物理遥测解耦仿真高压测试"]
-        G6["[6/8] 34/34 组件架构合法性校验 (0 颜色字面量 / 0 场景查询)"]
-        G7["[7/8] 审计内核 Linter 自检"]
-        G8["[8/8] Unity 镜像一致性校验 (逐字节对齐)"]
-        G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> G7 --> G8
+        G1["[1/9] layout.json 语法载入"]
+        G2["[2/9] LayoutShareHub GZip+Base64 编解码无损往返"]
+        G3["[3/9] AABB 视口几何与重叠碰撞检测"]
+        G4["[4/9] TelemetryTokenEngine 通配符语法审计"]
+        G5["[5/9] 7 阶段 700 Ticks 物理遥测解耦仿真高压测试"]
+        G6["[6/9] 42/42 组件架构合法性校验 (0 颜色字面量 / 0 场景查询)"]
+        G7["[7/9] 审计内核 Linter 自检"]
+        G8["[8/9] 全量组件 [FlightWidget] 自动注册与元数据契约审计"]
+        G9["[9/9] Unity 镜像一致性校验 (逐字节对齐)"]
+        G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> G7 --> G8 --> G9
     end
     
-    Gate --> EightGates
-    EightGates --> Deploy["deploy.ps1<br/>发布到 GameData/ModularFlightPanel"]
+    Gate --> NineGates
+    NineGates --> Deploy["deploy.ps1<br/>发布到 GameData/ModularFlightPanel"]
     Deploy --> KSP_Run["KSP 运行时实装验证 (极致满帧 / 零 GC 顿挫)"]
 ```

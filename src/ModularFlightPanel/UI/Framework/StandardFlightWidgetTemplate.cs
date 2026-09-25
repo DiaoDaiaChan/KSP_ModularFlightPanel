@@ -12,9 +12,9 @@ namespace ModularFlightPanel.UI
     /// ====================================================================================
     /// 
     /// 所有官方原生组件与自定义派生组件【必须 100% 遵照本模板结构与规范书写】，禁止任何天马行空的各行其是！
-    /// 本文件是规范审计（MFP-SPEC-001..007）的标杆：它自身必须是 0 违规（含 0 颜色字面量）。
+    /// 本文件是规范审计（MFP-SPEC-001..008）的标杆：它自身必须是 0 违规（含 0 颜色字面量）。
     /// 
-    /// 【五大核心铁律 (Non-Negotiable Rules)】:
+    /// 【七大核心铁律 (Non-Negotiable Rules)】:
     /// 1. 【严禁任何硬编码 (No Hardcoding)】:
     ///    - 严禁出现 new Color(...) / Color.xxx 字面量（占位色同样禁止，唯一例外是容器透明用的 Color.clear）。
     ///      所有颜色必须来自 WidgetStyleManager 的语义接口（ApplyCard / ApplyText / ApplyButton / ApplyMeter）
@@ -36,7 +36,14 @@ namespace ModularFlightPanel.UI
     /// 6. 【统一缓存中枢与零 GC 契约 (Unified Caching & Zero-GC Contract)】:
     ///    - 高频遥测数字与标签优先使用 FastFormat / FastIntString / FastPercentString / FastDegreeString，
     ///      配合 SetTextIfChanged 阻断 70%~85% 的无意义 UGUI 顶点重绘与垃圾回收微卡顿。
+    /// 7. 【声明式全自动装配契约 (Declarative Auto-Registration & Metadata Contract, MFP-SPEC-008)】:
+    ///    - 必须通过 [FlightWidget("type_name", Category = WidgetCategory.Xxx, ...)] 进行声明式元数据标注，
+    ///      自动打通 WidgetRegistry 反射装配中枢与 TabLibrary 仪表库动态目录，彻底杜绝手工修改工厂分支。
     /// </summary>
+    [FlightWidget("standard_template",
+        Category = WidgetCategory.Gauges,
+        DisplayName = "Standard Flight Widget Template",
+        Description = "Standard reference template for flight instruments.")]
     public class StandardFlightWidgetTemplate : BaseFlightWidget
     {
         // ------------------------------------------------------------------------------------

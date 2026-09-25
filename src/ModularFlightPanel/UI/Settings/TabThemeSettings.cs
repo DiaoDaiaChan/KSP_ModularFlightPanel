@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI;
+using ModularFlightPanel.UI.Widgets;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -18,7 +20,7 @@ namespace ModularFlightPanel.UI.Settings
     public static class TabThemeSettings
     {
         private static Vector2 _scrollPos = Vector2.zero;
-        private static string _lastSpecAuditSummary = "未运行 (含源码级规范审计)";
+        private static string _lastSpecAuditSummary = I18n.Tr("THM_SPEC_NOT_RUN", "未运行 (含源码级规范审计)");
         private static bool _showDockSettingsFold = false;
 
         public static void Draw()
@@ -27,6 +29,13 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight));
+
+            // =========================================================================
+            // 模块 0: 语言与国际化 (Language & i18n)
+            // =========================================================================
+            DrawLanguageCard();
+
+            GUILayout.Space(6f);
 
             // =========================================================================
             // 模块 1: 视觉主题预设风格 (Aero Themes)
@@ -58,12 +67,58 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndVertical();
         }
 
+        #region Module 0: Language & i18n
+
+        private static void DrawLanguageCard()
+        {
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_LANG", "🌐 语言设置"),
+                I18n.Tr("THM_DESC_LANG", "实时切换航电系统界面与组件语言，即刻生效无需重启"));
+
+            GUILayout.BeginHorizontal();
+
+            var languages = I18nManager.Instance.AvailableLanguages;
+            string currentLang = I18nManager.Instance.CurrentLanguage;
+
+            for (int i = 0; i < languages.Count; i++)
+            {
+                var lang = languages[i];
+                bool isCur = currentLang.Equals(lang.Code, StringComparison.OrdinalIgnoreCase);
+                GUIStyle bStyle = isCur ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
+
+                string label = lang.Code.Equals("zh-CN", StringComparison.OrdinalIgnoreCase)
+                    ? I18n.Tr("THM_LANG_ZH_CN", "🇨🇳 简体中文")
+                    : lang.Code.Equals("en-US", StringComparison.OrdinalIgnoreCase)
+                        ? I18n.Tr("THM_LANG_EN_US", "🇺🇸 English")
+                        : $"{lang.DisplayName} ({lang.Code})";
+
+                if (GUILayout.Button(label, bStyle, GUILayout.Height(28f)))
+                {
+                    I18nManager.Instance.SetLanguage(lang.Code);
+                    ThemeManager.Instance.SaveSettings();
+                }
+            }
+
+            if (GUILayout.Button(I18n.Tr("THM_LANG_AUTO_DETECT", "🔄 自动检测语言"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(28f)))
+            {
+                string detected = I18nManager.Instance.DetectSystemLanguage();
+                I18nManager.Instance.SetLanguage(detected);
+                ThemeManager.Instance.SaveSettings();
+            }
+
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndCard();
+        }
+
+        #endregion
+
         #region Module 1: Themes
 
         private static void DrawThemesCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🎨 视觉主题风格预设 (Visual Themes Palette)", "点击即刻全局动态换肤");
+            MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_PALETTES", "🎨 视觉主题风格预设"),
+                I18n.Tr("THM_SUBHEADER_PALETTES", "点击即刻全局动态换肤"));
 
             var themes = ThemeManager.Instance.AvailableThemes;
             GUILayout.BeginHorizontal();
@@ -85,7 +140,8 @@ namespace ModularFlightPanel.UI.Settings
             if (current != null)
             {
                 GUILayout.Space(4f);
-                GUILayout.Label($"<color=#7088A8><size=11>当前生效主题: <color=#00E5FF><b>{current.DisplayName}</b></color> | 着色器模式: <color=#00FF88>{current.UiStyle}</color></size></color>");
+                string activeFmt = I18n.Tr("THM_ACTIVE_THEME", "当前生效主题: <color=#00E5FF><b>{0}</b></color> | 着色器模式: <color=#00FF88>{1}</color>");
+                GUILayout.Label($"<color=#7088A8><size=11>{string.Format(activeFmt, current.DisplayName, current.UiStyle)}</size></color>");
             }
 
             MFPGuiSkin.EndCard();
@@ -98,21 +154,22 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawStockIntegrationCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🌐 KSP 原生 UI 深度融合控制 (Stock UI Integration)", "彻底隐藏原版老旧组件，由 MFP 航电全面接管");
+            MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_STOCK", "🔌 KSP 原生界面深度融合控制"),
+                I18n.Tr("THM_SUBHEADER_STOCK", "彻底隐藏原版老旧组件，由 MFP 航电全面接管"));
 
             // 1. 自定义姿态球
             var navCfg = WidgetLayoutManager.Instance.GetConfig("core.navball");
             bool isBallOn = navCfg == null || navCfg.IsEnabled;
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>自定义 3D 姿态球 (Modular Navball):</b>", GUILayout.Width(240f));
-            string ballText = isBallOn ? "● [显示中] 点击隐藏自定义姿态球" : "○ [已隐藏] 点击开启自定义姿态球";
+            GUILayout.Label($"<b>{I18n.Tr("THM_MODULAR_NAVBALL", "自定义 3D 姿态球:")}</b>", GUILayout.Width(240f));
+            string ballText = isBallOn ? I18n.Tr("THM_NAVBALL_SHOWING", "● [显示中] 点击隐藏自定义姿态球") : I18n.Tr("THM_NAVBALL_HIDDEN", "○ [已隐藏] 点击开启自定义姿态球");
             GUIStyle ballStyle = isBallOn ? MFPGuiSkin.SuccessButtonStyle : MFPGuiSkin.WarningButtonStyle;
             if (GUILayout.Button(ballText, ballStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
             {
                 if (navCfg != null) navCfg.IsEnabled = !navCfg.IsEnabled;
                 else
                 {
-                    navCfg = new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, 0f) { IsEnabled = false };
+                    navCfg = new WidgetConfig("core.navball", I18n.GetWidgetName("core.navball", "3D 姿态球"), 0f, 0f) { IsEnabled = false };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(navCfg);
                 }
                 WidgetLayoutManager.Instance.SaveLayout();
@@ -124,7 +181,8 @@ namespace ModularFlightPanel.UI.Settings
 
             // 2. 原版底栏导航球
             bool hideStockBall = HarmonyPatches.IsStockNavballHidden;
-            DrawStockToggleRow("KSP 原生底栏导航球:", hideStockBall, "已屏蔽原生导航球", "显示原生导航球", val =>
+            DrawStockToggleRow(I18n.Tr("THM_STOCK_NAVBALL", "KSP 原生底栏导航球:"), hideStockBall,
+                I18n.Tr("THM_STOCK_NAVBALL_HIDE", "已屏蔽原生导航球"), I18n.Tr("THM_STOCK_NAVBALL_SHOW", "显示原生导航球"), val =>
             {
                 HarmonyPatches.IsStockNavballHidden = val;
                 StockNavBallHook.HideStockNavballCompletely(val);
@@ -133,7 +191,8 @@ namespace ModularFlightPanel.UI.Settings
 
             // 3. 原版顶部高度计
             bool hideStockAlti = HarmonyPatches.IsStockAltimeterHidden;
-            DrawStockToggleRow("KSP 原生顶部高度计盒:", hideStockAlti, "已屏蔽原生高度计", "显示原生高度计", val =>
+            DrawStockToggleRow(I18n.Tr("THM_STOCK_ALTI", "KSP 原生顶部高度计盒:"), hideStockAlti,
+                I18n.Tr("THM_STOCK_ALTI_HIDE", "已屏蔽原生高度计"), I18n.Tr("THM_STOCK_ALTI_SHOW", "显示原生高度计"), val =>
             {
                 HarmonyPatches.IsStockAltimeterHidden = val;
                 StockNavBallHook.HideStockAltimeter(val);
@@ -142,7 +201,8 @@ namespace ModularFlightPanel.UI.Settings
 
             // 4. 原版左下操纵分级台
             bool hideStockBottom = HarmonyPatches.IsStockBottomLeftHidden;
-            DrawStockToggleRow("KSP 原生左下操纵分级台:", hideStockBottom, "已屏蔽原生分级操纵台", "显示原生分级操纵台", val =>
+            DrawStockToggleRow(I18n.Tr("THM_STOCK_STAGE", "KSP 原生左下操纵分级台:"), hideStockBottom,
+                I18n.Tr("THM_STOCK_STAGE_HIDE", "已屏蔽原生分级操纵台"), I18n.Tr("THM_STOCK_STAGE_SHOW", "显示原生分级操纵台"), val =>
             {
                 HarmonyPatches.IsStockBottomLeftHidden = val;
                 StockNavBallHook.HideStockBottomLeft(val);
@@ -151,7 +211,8 @@ namespace ModularFlightPanel.UI.Settings
 
             // 5. 原版时间加速与时钟
             bool hideStockTime = HarmonyPatches.IsStockTimeWarpHidden;
-            DrawStockToggleRow("KSP 原生时间加速/时钟:", hideStockTime, "已屏蔽原生加速与时钟", "显示原生加速与时钟", val =>
+            DrawStockToggleRow(I18n.Tr("THM_STOCK_TIME", "KSP 原生时间加速/时钟:"), hideStockTime,
+                I18n.Tr("THM_STOCK_TIME_HIDE", "已屏蔽原生加速与时钟"), I18n.Tr("THM_STOCK_TIME_SHOW", "显示原生加速与时钟"), val =>
             {
                 HarmonyPatches.IsStockTimeWarpHidden = val;
                 StockNavBallHook.HideStockTimeWarp(val);
@@ -160,7 +221,8 @@ namespace ModularFlightPanel.UI.Settings
 
             // 6. 原版通信信号栏
             bool hideStockComm = HarmonyPatches.IsStockCommNetHidden;
-            DrawStockToggleRow("KSP 原生通信信号栏:", hideStockComm, "已屏蔽原生 CommNet", "显示原生 CommNet", val =>
+            DrawStockToggleRow(I18n.Tr("THM_STOCK_COMM", "KSP 原生通信信号栏:"), hideStockComm,
+                I18n.Tr("THM_STOCK_COMM_HIDE", "已屏蔽原生 CommNet"), I18n.Tr("THM_STOCK_COMM_SHOW", "显示原生 CommNet"), val =>
             {
                 HarmonyPatches.IsStockCommNetHidden = val;
                 StockNavBallHook.HideStockCommNet(val);
@@ -171,24 +233,29 @@ namespace ModularFlightPanel.UI.Settings
 
             // 7. 工具栏现代化模式
             GUILayout.BeginHorizontal();
-            GUILayout.Label("<b>右侧工具栏接管模式:</b>", GUILayout.Width(240f));
+            GUILayout.Label($"<b>{I18n.Tr("THM_TOOLBAR_MODE", "右侧工具栏接管模式:")}</b>", GUILayout.Width(240f));
             int curTbMode = ThemeManager.Instance.ToolbarStyleMode;
 
-            if (GUILayout.Button(curTbMode == 0 ? "● 原版经典 (0)" : "○ 原版经典 (0)", curTbMode == 0 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
+            string tb0 = curTbMode == 0 ? I18n.Tr("THM_TB_CLASSIC_ON", "● 原版经典 (0)") : I18n.Tr("THM_TB_CLASSIC_OFF", "○ 原版经典 (0)");
+            if (GUILayout.Button(tb0, curTbMode == 0 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
             {
                 ThemeManager.Instance.ToolbarStyleMode = 0;
                 StockToolbarHook.ApplyStyleMode(0);
                 ThemeManager.Instance.SaveSettings();
                 FlightHUDManager.Instance?.RebuildHUD();
             }
-            if (GUILayout.Button(curTbMode == 1 ? "● 黑晶重肤 (1)" : "○ 黑晶重肤 (1)", curTbMode == 1 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
+
+            string tb1 = curTbMode == 1 ? I18n.Tr("THM_TB_SKIN_ON", "● 黑晶重肤 (1)") : I18n.Tr("THM_TB_SKIN_OFF", "○ 黑晶重肤 (1)");
+            if (GUILayout.Button(tb1, curTbMode == 1 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
             {
                 ThemeManager.Instance.ToolbarStyleMode = 1;
                 StockToolbarHook.ApplyStyleMode(1);
                 ThemeManager.Instance.SaveSettings();
                 FlightHUDManager.Instance?.RebuildHUD();
             }
-            if (GUILayout.Button(curTbMode == 2 ? "● 折叠收纳坞 (2)" : "○ 折叠收纳坞 (2)", curTbMode == 2 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
+
+            string tb2 = curTbMode == 2 ? I18n.Tr("THM_TB_DOCK_ON", "● 折叠收纳坞 (2)") : I18n.Tr("THM_TB_DOCK_OFF", "○ 折叠收纳坞 (2)");
+            if (GUILayout.Button(tb2, curTbMode == 2 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f)))
             {
                 ThemeManager.Instance.ToolbarStyleMode = 2;
                 StockToolbarHook.ApplyStyleMode(2);
@@ -218,41 +285,189 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
         }
 
+        private static Vector2 _dockRulesScrollPos = Vector2.zero;
+        private static int _dockFilterCategory = 0; // 0 = 全部, 1 = 常用, 2 = 主坞, 3 = 隐藏
+
         private static void DrawDockRulesDrawer()
         {
             MFPGuiSkin.BeginInset();
             var rules = ThemeManager.Instance.DockRules;
+            if (rules == null) rules = new List<DockButtonRule>();
+
+            int favCount = 0;
+            int hiddenCount = 0;
+            for (int i = 0; i < rules.Count; i++)
+            {
+                if (rules[i].IsFavorite) favCount++;
+                if (!rules[i].IsVisible) hiddenCount++;
+            }
+            int mainCount = rules.Count - favCount;
+            if (mainCount < 0) mainCount = 0;
+
             GUILayout.BeginHorizontal();
             string foldSymbol = _showDockSettingsFold ? "▼" : "▶";
-            if (GUILayout.Button($"<b>{foldSymbol} 折叠收纳坞 (Dock) 按钮显隐过滤:</b> (共 {rules.Count} 项)", "label", GUILayout.ExpandWidth(true)))
+            string dockTitle = I18n.TrFormat("THM_DOCK_FILTER", rules.Count, favCount);
+            GUIStyle foldBtnStyle = MFPGuiSkin.HeaderLabelStyle ?? GUI.skin.button;
+            if (GUILayout.Button($"<b>{foldSymbol} {dockTitle}</b>", foldBtnStyle, GUILayout.ExpandWidth(true)))
             {
                 _showDockSettingsFold = !_showDockSettingsFold;
             }
 
-            if (GUILayout.Button("全显", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f), GUILayout.Height(20f)))
+            if (GUILayout.Button(I18n.Tr("THM_DOCK_BTN_RECOMMEND", "★ 推荐常用"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(95f), GUILayout.Height(22f)))
+            {
+                ThemeManager.Instance.AutoRecommendFavorites();
+                ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
+            }
+            if (GUILayout.Button(I18n.Tr("THM_BTN_SHOW_ALL", "全显"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f), GUILayout.Height(22f)))
             {
                 foreach (var r in rules) r.IsVisible = true;
                 ThemeManager.Instance.SaveSettings();
-                Widgets.ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
             }
-            if (GUILayout.Button("全隐", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f), GUILayout.Height(20f)))
+            if (GUILayout.Button(I18n.Tr("THM_BTN_HIDE_ALL", "全隐"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f), GUILayout.Height(22f)))
             {
                 foreach (var r in rules) r.IsVisible = false;
                 ThemeManager.Instance.SaveSettings();
-                Widgets.ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
             }
             GUILayout.EndHorizontal();
 
             if (_showDockSettingsFold)
             {
+                GUILayout.Space(6f);
+
+                // 模块 A: 常用 MOD 独立快捷面板全局设置
+                MFPGuiSkin.BeginCard();
+                GUILayout.BeginHorizontal();
+                bool favEnabled = GUILayout.Toggle(ThemeManager.Instance.DockEnableFavoritePanel,
+                    $" <b>{I18n.Tr("THM_DOCK_FAV_ENABLE", "启用常用 MOD 独立快捷面板")}</b>", GUILayout.Width(250f));
+                if (favEnabled != ThemeManager.Instance.DockEnableFavoritePanel)
+                {
+                    ThemeManager.Instance.DockEnableFavoritePanel = favEnabled;
+                    ThemeManager.Instance.SaveSettings();
+                    ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                    FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
+                }
+
+                if (ThemeManager.Instance.DockEnableFavoritePanel)
+                {
+                    GUILayout.Label(I18n.Tr("THM_DOCK_FAV_ORIENT", "构型:"), GUILayout.Width(45f));
+                    int curOrient = ThemeManager.Instance.DockFavoriteOrientation;
+                    string[] orientLabels = {
+                        I18n.Tr("THM_DOCK_FAV_VERT", "纵向单列"),
+                        I18n.Tr("THM_DOCK_FAV_HORIZ", "横向单行"),
+                        I18n.Tr("THM_DOCK_FAV_DUAL", "横向双行")
+                    };
+                    for (int oIdx = 0; oIdx < orientLabels.Length; oIdx++)
+                    {
+                        bool isSel = (curOrient == oIdx);
+                        GUIStyle oStyle = isSel ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.StepperButtonStyle;
+                        if (GUILayout.Button(orientLabels[oIdx], oStyle, GUILayout.Height(20f)))
+                        {
+                            ThemeManager.Instance.DockFavoriteOrientation = oIdx;
+                            ThemeManager.Instance.SaveSettings();
+                            FavoriteToolbarWidget.Instance?.RebuildFavoritesLayout();
+                        }
+                    }
+
+                    GUILayout.Space(10f);
+                    bool keepInMain = GUILayout.Toggle(ThemeManager.Instance.DockKeepFavoritesInMain,
+                        $" {I18n.Tr("THM_DOCK_KEEP_MAIN", "主收纳坞同时保留常用项")}");
+                    if (keepInMain != ThemeManager.Instance.DockKeepFavoritesInMain)
+                    {
+                        ThemeManager.Instance.DockKeepFavoritesInMain = keepInMain;
+                        ThemeManager.Instance.SaveSettings();
+                        ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                    }
+                }
+                GUILayout.EndHorizontal();
+                MFPGuiSkin.EndCard();
+
                 GUILayout.Space(4f);
+
+                // 模块 B: 过滤分类标签与快捷操作
+                GUILayout.BeginHorizontal();
+                string[] catLabels = {
+                    I18n.TrFormat("THM_DOCK_TAB_ALL", rules.Count),
+                    I18n.TrFormat("THM_DOCK_TAB_FAV", favCount),
+                    I18n.TrFormat("THM_DOCK_TAB_MAIN", mainCount),
+                    I18n.TrFormat("THM_DOCK_TAB_HIDDEN", hiddenCount)
+                };
+                for (int cIdx = 0; cIdx < catLabels.Length; cIdx++)
+                {
+                    bool isSel = (_dockFilterCategory == cIdx);
+                    GUIStyle catStyle = isSel ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.StepperButtonStyle;
+                    if (GUILayout.Button(catLabels[cIdx], catStyle, GUILayout.Height(22f)))
+                    {
+                        _dockFilterCategory = cIdx;
+                    }
+                }
+
+                GUILayout.FlexibleSpace();
+                if (favCount > 0 && GUILayout.Button(I18n.Tr("THM_DOCK_BTN_CLEAR_FAV", "清空常用"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f), GUILayout.Height(22f)))
+                {
+                    foreach (var r in rules) r.IsFavorite = false;
+                    ThemeManager.Instance.SaveSettings();
+                    ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                    FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(4f);
+
+                // 模块 C: 模组条目列表
+                _dockRulesScrollPos = GUILayout.BeginScrollView(_dockRulesScrollPos, GUILayout.MaxHeight(260f));
                 for (int i = 0; i < rules.Count; i++)
                 {
                     var r = rules[i];
+                    if (_dockFilterCategory == 1 && !r.IsFavorite) continue;
+                    if (_dockFilterCategory == 2 && r.IsFavorite && !ThemeManager.Instance.DockKeepFavoritesInMain) continue;
+                    if (_dockFilterCategory == 3 && r.IsVisible) continue;
+
                     GUILayout.BeginHorizontal();
-                    r.IsVisible = GUILayout.Toggle(r.IsVisible, $" {r.Key} ({(string.IsNullOrEmpty(r.CustomLabel) ? r.DefaultName : r.CustomLabel)})", GUILayout.Width(200f));
+
+                    // 常用面板切换按键
+                    GUIStyle favStyle = r.IsFavorite ? MFPGuiSkin.WarningButtonStyle : MFPGuiSkin.StepperButtonStyle;
+                    string favText = r.IsFavorite ? I18n.Tr("THM_DOCK_ITEM_FAV", "★ 常用") : I18n.Tr("THM_DOCK_ITEM_UNFAV", "☆ 普通");
+                    if (GUILayout.Button(favText, favStyle, GUILayout.Width(62f), GUILayout.Height(20f)))
+                    {
+                        r.IsFavorite = !r.IsFavorite;
+                        if (r.IsFavorite) r.IsVisible = true;
+                        ThemeManager.Instance.SaveSettings();
+                        ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                        FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
+                    }
+
+                    // 显隐开关
+                    bool vis = GUILayout.Toggle(r.IsVisible, "", GUILayout.Width(20f));
+                    if (vis != r.IsVisible)
+                    {
+                        r.IsVisible = vis;
+                        ThemeManager.Instance.SaveSettings();
+                        ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                        FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
+                    }
+
+                    // 模组 Key 与名称
+                    GUILayout.Label($"<b>{r.Key}</b> <color=#7088A8>({r.DefaultName})</color>", GUILayout.Width(200f));
+
+                    // 自定义别名文本框
+                    GUILayout.Label(I18n.Tr("THM_DOCK_ALIAS_PLACEHOLDER", "别名:"), GUILayout.Width(35f));
+                    string newLabel = GUILayout.TextField(r.CustomLabel ?? "", GUILayout.Width(75f));
+                    if (newLabel != (r.CustomLabel ?? ""))
+                    {
+                        r.CustomLabel = newLabel;
+                        ThemeManager.Instance.SaveSettings();
+                        ModernToolbarWidget.Instance?.RefreshToolbarButtons();
+                        FavoriteToolbarWidget.Instance?.RefreshToolbarButtons();
+                    }
+
                     GUILayout.EndHorizontal();
                 }
+                GUILayout.EndScrollView();
             }
             MFPGuiSkin.EndInset();
         }
@@ -264,12 +479,12 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawNavballQualityCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("🎯 姿态球生成模式与视网膜超采样 (Navball Quality & Resolution)");
+            MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_QUALITY", "🎯 姿态球生成模式与视网膜超采样"));
 
             // 1. 生成模式说明 (已固化为纯矢量程序化解算管线)
             MFPGuiSkin.BeginInset();
-            GUILayout.Label("<color=#00E5FF><b>姿态球渲染引擎:</b></color> <color=#00FF88>全量矢量程序化解算 (Procedural Vector Engine)</color>");
-            GUILayout.Label("<color=#7088A8><size=11>• 彻底脱离原版 2D 贴图依赖，消除极点 UV 挤压畸变，实现无极视网膜矢量精度。</size></color>");
+            GUILayout.Label($"<color=#00E5FF><b>{I18n.Tr("THM_NAVBALL_ENGINE", "姿态球渲染引擎:")}</b></color> <color=#00FF88>{I18n.Tr("THM_PROC_ENGINE", "全量矢量程序化解算")}</color>");
+            GUILayout.Label($"<color=#7088A8><size=11>{I18n.Tr("THM_ENGINE_DESC", "• 彻底脱离原版 2D 贴图依赖，消除极点 UV 挤压畸变，实现无极视网膜矢量精度。")}</size></color>");
             MFPGuiSkin.EndInset();
 
             GUILayout.Space(4f);
@@ -280,10 +495,10 @@ namespace ModularFlightPanel.UI.Settings
             {
                 float currentRenderScale = renderMgr.GlobalRenderScaleMultiplier;
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"<b>渲染倍率 (Render Scale):</b> <color=#00E5FF>{currentRenderScale:F2}x</color>", GUILayout.Width(220f));
+                GUILayout.Label($"<b>{I18n.Tr("THM_RENDER_SCALE", "渲染倍率:")}</b> <color=#00E5FF>{currentRenderScale:F2}x</color>", GUILayout.Width(220f));
 
                 float[] presets = new float[] { 0.8f, 1.0f, 1.25f, 1.5f, 2.0f };
-                string[] presetLabels = new string[] { "0.8x 节能", "1.0x 原生", "1.25x 细腻", "1.5x 视网膜", "2.0x 极致" };
+                string[] presetLabels = new string[] { I18n.Tr("THM_SCALE_08", "0.8x 节能"), I18n.Tr("THM_SCALE_10", "1.0x 原生"), I18n.Tr("THM_SCALE_125", "1.25x 细腻"), I18n.Tr("THM_SCALE_15", "1.5x 视网膜"), I18n.Tr("THM_SCALE_20", "2.0x 极致") };
                 for (int pIdx = 0; pIdx < presets.Length; pIdx++)
                 {
                     float pVal = presets[pIdx];
@@ -306,8 +521,12 @@ namespace ModularFlightPanel.UI.Settings
                 float ballPhysical = renderMgr.CalculatePhysicalPixelSize(new Vector2(ballDiameter, ballDiameter));
                 int optimalTex = renderMgr.CalculateOptimalResolution(new Vector2(ballDiameter, ballDiameter));
 
-                GUILayout.Label($"• 物理屏幕: <color=#00FF88>{screenW} x {screenH} px</color> (Canvas: <color=#00E5FF>{canvasScale:F2}x</color>) | 3D 姿态球屏幕占用: <color=#FFAA00>~{ballPhysical:F0} x {ballPhysical:F0} px</color>");
-                GUILayout.Label($"• 动态分配贴图: <color=#00FF88>{optimalTex} x {optimalTex} px</color> (显存占用: ~{(optimalTex * optimalTex * 4 / (1024f * 1024f)):F2} MB) | 其余 34 个航电小组件为原生 UGUI 1:1 满血矢量输出。");
+                string screenDiag = I18n.TrFormat("THM_DIAG_SCREEN", "• 物理屏幕: <color=#00FF88>{0} x {1} px</color> (Canvas: <color=#00E5FF>{2:F2}x</color>) | 3D 姿态球屏幕占用: <color=#FFAA00>~{3:F0} x {4:F0} px</color>", screenW, screenH, canvasScale, ballPhysical, ballPhysical);
+                GUILayout.Label(screenDiag);
+
+                float vramMb = optimalTex * optimalTex * 4 / (1024f * 1024f);
+                string texDiag = I18n.TrFormat("THM_DIAG_TEX", "• 动态分配贴图: <color=#00FF88>{0} x {1} px</color> (显存占用: ~{2:F2} MB) | 其余 34 个航电小组件为原生 UGUI 1:1 满血矢量输出。", optimalTex, optimalTex, vramMb);
+                GUILayout.Label(texDiag);
                 MFPGuiSkin.EndInset();
             }
 
@@ -321,12 +540,12 @@ namespace ModularFlightPanel.UI.Settings
         private static void DrawPerformanceAndSpecCard()
         {
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader("⚡ 性能分析探针与主干旁路 (Profiler & Master Bypass)");
+            MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_PROFILER", "⚡ 性能探针诊断与全局主干旁路"));
 
             GUILayout.BeginHorizontal();
             bool bypassed = MFPProfiler.IsMasterBypassed;
             GUIStyle bypassStyle = bypassed ? MFPGuiSkin.DangerButtonStyle : MFPGuiSkin.SuccessButtonStyle;
-            string bypassLabel = bypassed ? "● [已完全旁路 Bypass] 所有 MFP 逻辑/渲染已关闭 (0.00ms)" : "○ [正常运行中] 点击完全 Bypass (或按 F11) 查看原生纯净性能";
+            string bypassLabel = bypassed ? I18n.Tr("THM_BYPASS_ON", "● [已完全旁路] 所有 MFP 逻辑/渲染已关闭 (0.00ms)") : I18n.Tr("THM_BYPASS_OFF", "○ [正常运行中] 点击完全 Bypass (或按 F11) 查看原生纯净性能");
             if (GUILayout.Button(bypassLabel, bypassStyle, GUILayout.Height(26f), GUILayout.ExpandWidth(true)))
             {
                 MFPProfiler.ToggleMasterBypass();
@@ -334,7 +553,8 @@ namespace ModularFlightPanel.UI.Settings
             }
 
             GUIStyle hudStyle = MFPProfiler.ShowOverlay ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.StepperButtonStyle;
-            if (GUILayout.Button(MFPProfiler.ShowOverlay ? "✔ 隐藏性能探针 HUD (F10)" : "显示性能探针 HUD (F10)", hudStyle, GUILayout.Width(180f), GUILayout.Height(26f)))
+            string hudText = MFPProfiler.ShowOverlay ? I18n.Tr("THM_HIDE_PROFILER", "✔ 隐藏性能探针 HUD (F10)") : I18n.Tr("THM_SHOW_PROFILER", "显示性能探针 HUD (F10)");
+            if (GUILayout.Button(hudText, hudStyle, GUILayout.Width(180f), GUILayout.Height(26f)))
             {
                 MFPProfiler.ShowOverlay = !MFPProfiler.ShowOverlay;
                 ThemeManager.Instance.SaveSettings();
@@ -345,13 +565,13 @@ namespace ModularFlightPanel.UI.Settings
 
             // 规范审计
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>组件规范自检:</b> {_lastSpecAuditSummary}", GUILayout.ExpandWidth(true));
-            if (GUILayout.Button("运行 MFP-SPEC 规范审计", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(190f), GUILayout.Height(24f)))
+            GUILayout.Label($"<b>{I18n.Tr("THM_SPEC_AUDIT", "组件规范自检:")}</b> {_lastSpecAuditSummary}", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button(I18n.Tr("THM_BTN_RUN_SPEC", "运行 MFP-SPEC 规范审计"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(190f), GUILayout.Height(24f)))
             {
                 WidgetValidationReport auditReport = WidgetSpecificationValidator.RunDevelopmentAudit();
                 _lastSpecAuditSummary = auditReport.IsCompliant
-                    ? $"✔ 合规 ({auditReport.TotalWidgetsAudited} 组件 / {auditReport.TotalChecksPerformed} 项检查 / 告警 {auditReport.WarningCount})"
-                    : $"✘ 违规 {auditReport.ErrorCount} 项 / 告警 {auditReport.WarningCount} 项";
+                    ? I18n.TrFormat("THM_SPEC_OK", "✔ 合规 ({0} 组件 / {1} 项检查 / 告警 {2})", auditReport.TotalWidgetsAudited, auditReport.TotalChecksPerformed, auditReport.WarningCount)
+                    : I18n.TrFormat("THM_SPEC_FAIL", "✘ 违规 {0} 项 / 告警 {1} 项", auditReport.ErrorCount, auditReport.WarningCount);
             }
             GUILayout.EndHorizontal();
 

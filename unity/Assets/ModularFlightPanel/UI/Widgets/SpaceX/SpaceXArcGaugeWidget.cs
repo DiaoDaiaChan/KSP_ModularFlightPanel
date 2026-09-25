@@ -17,6 +17,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     ///   - 阶梯刷新与脏标记保护 (MFP-SPEC-002, 004)
     ///   - 纯 UGUI 原生填充与抗锯齿矢量光栅化
     /// </summary>
+    [FlightWidget("spacex_arc", "spacex_gauge", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 环形遥测仪表", Description = "SpaceX 龙飞船高精度同心圆弧表盘，带发光步进游标与动态数字标定。", DefaultWidgetId = "spacex.speed", DefaultX = -240f, DefaultY = 0f, ExactIds = new[] { "spacex.speed", "spacex.altitude" })]
     public class SpaceXArcGaugeWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

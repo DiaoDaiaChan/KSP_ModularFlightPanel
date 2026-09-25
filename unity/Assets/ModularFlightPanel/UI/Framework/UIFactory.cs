@@ -92,7 +92,7 @@ namespace ModularFlightPanel.UI
             return go;
         }
 
-        public static Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment, Color color, Material customMaterial = null, bool addShadow = false)
+        public static Text CreateText(Transform parent, string name, string content, int fontSize, TextAnchor alignment, Color color, Material customMaterial = null, bool addShadow = false, bool alignByGeometry = false)
         {
             GameObject go = new GameObject(name, typeof(RectTransform), typeof(Text));
             go.transform.SetParent(parent, false);
@@ -106,7 +106,7 @@ namespace ModularFlightPanel.UI
             txt.raycastTarget = false;
             txt.horizontalOverflow = HorizontalWrapMode.Overflow;
             txt.verticalOverflow = VerticalWrapMode.Overflow;
-            txt.alignByGeometry = true;
+            txt.alignByGeometry = alignByGeometry;
 
             if (customMaterial != null)
             {

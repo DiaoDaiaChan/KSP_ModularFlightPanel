@@ -48,6 +48,7 @@ namespace ModularFlightPanel.Config
                     CurrentLayout = JsonUtility.FromJson<WidgetLayoutData>(json);
                     if (CurrentLayout != null && CurrentLayout.Widgets != null && CurrentLayout.Widgets.Count > 0)
                     {
+                        EnsureValidDrawOrders();
                         MigrateToUnifiedPfdLayout();
                         MFPLogger.Info(MFPLogger.CatUI, $"Successfully loaded layout with {CurrentLayout.Widgets.Count} widgets.");
                         return;
@@ -70,6 +71,7 @@ namespace ModularFlightPanel.Config
                     if (backup != null && backup.Widgets != null && backup.Widgets.Count > 0)
                     {
                         CurrentLayout = backup;
+                        EnsureValidDrawOrders();
                         MigrateToUnifiedPfdLayout();
                         SaveLayout();
                         MFPLogger.Warn(MFPLogger.CatUI, $"Successfully recovered layout ({CurrentLayout.Widgets.Count} widgets) from backup!");
@@ -81,6 +83,7 @@ namespace ModularFlightPanel.Config
 
             // 初始化默认布局 (含预置核心组件及通配符示例组件)
             CreateDefaultLayout();
+            EnsureValidDrawOrders();
             SaveLayout();
         }
 
@@ -91,7 +94,7 @@ namespace ModularFlightPanel.Config
             WidgetConfig speedTape = GetConfig("tape.speed");
             if (speedTape == null)
             {
-                speedTape = new WidgetConfig("tape.speed", "PFD 速度标尺带", -225f, 0f)
+                speedTape = new WidgetConfig("tape.speed", I18n.GetWidgetName("tape.speed", "PFD 速度标尺带"), -225f, 0f)
                 {
                     WidgetType = "tape",
                     NumericToken = "{SPD}",
@@ -107,7 +110,7 @@ namespace ModularFlightPanel.Config
             WidgetConfig altTape = GetConfig("tape.altitude");
             if (altTape == null)
             {
-                altTape = new WidgetConfig("tape.altitude", "PFD 高度标尺带", 225f, 0f)
+                altTape = new WidgetConfig("tape.altitude", I18n.GetWidgetName("tape.altitude", "PFD 高度标尺带"), 225f, 0f)
                 {
                     WidgetType = "tape",
                     NumericToken = "{ALT}",
@@ -211,6 +214,35 @@ namespace ModularFlightPanel.Config
             }
         }
 
+        public void EnsureValidDrawOrders()
+        {
+            if (CurrentLayout?.Widgets == null || CurrentLayout.Widgets.Count == 0) return;
+            bool allZero = CurrentLayout.Widgets.TrueForAll(w => w.DrawOrder == 0);
+            if (allZero && CurrentLayout.Widgets.Count > 1)
+            {
+                for (int i = 0; i < CurrentLayout.Widgets.Count; i++)
+                {
+                    CurrentLayout.Widgets[i].DrawOrder = i;
+                }
+            }
+        }
+
+        public bool ApplyLayout(WidgetLayoutData newLayout)
+        {
+            if (newLayout == null || newLayout.Widgets == null || newLayout.Widgets.Count == 0)
+            {
+                MFPLogger.Warn(MFPLogger.CatUI, "Cannot apply layout: Layout is null or contains 0 widgets.");
+                return false;
+            }
+
+            CurrentLayout = newLayout;
+            EnsureValidDrawOrders();
+            if (CurrentLayout.GlobalScale <= 0.1f) CurrentLayout.GlobalScale = 1.25f;
+            SaveLayout();
+            MFPLogger.Info(MFPLogger.CatUI, $"Applied new layout successfully with {CurrentLayout.Widgets.Count} widgets.");
+            return true;
+        }
+
         public bool ReloadFromDisk()
         {
             if (!File.Exists(ConfigPath)) return false;
@@ -221,6 +253,7 @@ namespace ModularFlightPanel.Config
                 if (loaded != null && loaded.Widgets != null && loaded.Widgets.Count > 0)
                 {
                     CurrentLayout = loaded;
+                    EnsureValidDrawOrders();
                     MigrateToUnifiedPfdLayout();
                     MFPLogger.Info(MFPLogger.CatUI, "Reloaded layout from disk successfully.");
                     return true;
@@ -354,7 +387,7 @@ namespace ModularFlightPanel.Config
             {
                 exists = false;
                 size = 0;
-                lastWrite = "不存在";
+                lastWrite = I18n.Tr("CFG_FILE_NOT_FOUND", "不存在");
                 return;
             }
             FileInfo fi = new FileInfo(ConfigPath);
@@ -369,7 +402,7 @@ namespace ModularFlightPanel.Config
             {
                 exists = false;
                 size = 0;
-                lastWrite = "无备份";
+                lastWrite = I18n.Tr("CFG_FILE_NO_BACKUP", "无备份");
                 return;
             }
             FileInfo fi = new FileInfo(BackupPath);
@@ -381,15 +414,15 @@ namespace ModularFlightPanel.Config
         public string GetLayoutFileInfo()
         {
             GetLayoutFileInfo(out bool exists, out long size, out string lastWrite);
-            if (!exists) return "不存在 (使用内存默认)";
-            return $"大小: {size / 1024f:F1} KB | 修改: {lastWrite}";
+            if (!exists) return I18n.Tr("CFG_LAYOUT_NOT_EXISTS_MEM", "不存在 (使用内存默认)");
+            return I18n.TrFormat("CFG_FILE_SIZE_MODIFIED_FMT", "大小: {0:F1} KB | 修改: {1}", size / 1024f, lastWrite);
         }
 
         public string GetBackupFileInfo()
         {
             GetBackupFileInfo(out bool exists, out long size, out string lastWrite);
-            if (!exists) return "无备份副本";
-            return $"大小: {size / 1024f:F1} KB | 修改: {lastWrite}";
+            if (!exists) return I18n.Tr("CFG_LAYOUT_NO_BACKUP_COPY", "无备份副本");
+            return I18n.TrFormat("CFG_FILE_SIZE_MODIFIED_FMT", "大小: {0:F1} KB | 修改: {1}", size / 1024f, lastWrite);
         }
 
         public void ResetToDefault()
@@ -405,15 +438,15 @@ namespace ModularFlightPanel.Config
             CurrentLayout = new WidgetLayoutData { GlobalScale = 1.25f };
 
             // 核心飞行仪表集群 (紧凑人体工学布局：姿态球、速度高度带、航向指示器、全新光柱油门/气压计、一体化底控与SAS控制台)
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, 0f));
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.heading_arc", "PFD 航向指示弧 (Set 2)", 0f, 0f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.navball", I18n.GetWidgetName("core.navball", "姿态球 (Navball)"), 0f, 0f));
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.heading_arc", I18n.GetWidgetName("core.heading_arc", "PFD 航向指示弧 (Set 2)"), 0f, 0f)
             {
                 WidgetType = "heading_arc",
                 IsEnabled = true
             });
 
             // 全新高精垂直光柱推力带与动压气压带 (严丝合缝外切速度/高度带两翼)
-            var thrGauge = new WidgetConfig("gauge.throttle", "AVIONICS 油门推力带", -158f, 0f, 1.0f)
+            var thrGauge = new WidgetConfig("gauge.throttle", I18n.GetWidgetName("gauge.throttle", "AVIONICS 油门推力带"), -158f, 0f, 1.0f)
             {
                 WidgetType = "bar_gauge",
                 NumericToken = "{THROTTLE}",
@@ -427,7 +460,7 @@ namespace ModularFlightPanel.Config
             };
             CurrentLayout.Widgets.Add(thrGauge);
 
-            var baroGauge = new WidgetConfig("gauge.barometer", "AVIONICS 大气压强带", 158f, 0f, 1.0f)
+            var baroGauge = new WidgetConfig("gauge.barometer", I18n.GetWidgetName("gauge.barometer", "AVIONICS 大气压强带"), 158f, 0f, 1.0f)
             {
                 WidgetType = "bar_gauge",
                 NumericToken = "{ATM}",
@@ -443,7 +476,7 @@ namespace ModularFlightPanel.Config
             CurrentLayout.Widgets.Add(baroGauge);
 
             // PFD 风格窄体滚动速度带与高度带套件预设 (外切光柱与姿态球，紧凑一体化)
-            var speedTape = new WidgetConfig("tape.speed", "PFD 速度标尺带", -120f, 0f, 1.0f)
+            var speedTape = new WidgetConfig("tape.speed", I18n.GetWidgetName("tape.speed", "PFD 速度标尺带"), -120f, 0f, 1.0f)
             {
                 WidgetType = "tape",
                 NumericToken = "{SPD}",
@@ -454,7 +487,7 @@ namespace ModularFlightPanel.Config
             };
             CurrentLayout.Widgets.Add(speedTape);
 
-            var altTape = new WidgetConfig("tape.altitude", "PFD 高度标尺带", 120f, 0f, 1.0f)
+            var altTape = new WidgetConfig("tape.altitude", I18n.GetWidgetName("tape.altitude", "PFD 高度标尺带"), 120f, 0f, 1.0f)
             {
                 WidgetType = "tape",
                 NumericToken = "{ALT}",
@@ -466,47 +499,47 @@ namespace ModularFlightPanel.Config
             CurrentLayout.Widgets.Add(altTape);
 
             // 一体化紧凑底控栏 (嵌合在姿态球正下方与双带之间)
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.bottom_controls", "RCS与SAS底控台", 0f, -88f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.bottom_controls", I18n.GetWidgetName("core.bottom_controls", "RCS与SAS底控台"), 0f, -88f)
             {
                 IsEnabled = true
             });
 
             // 环形 SAS 航向罗盘 (位于底控栏正下方，带飞船滚转剪影与 9 大模式按键)
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.sas_dial", "环形 SAS 罗盘", 0f, -150f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.sas_dial", I18n.GetWidgetName("core.sas_dial", "环形 SAS 罗盘"), 0f, -150f)
             {
                 IsEnabled = true
             });
 
             // 现代化分级与飞行姿态操纵台 (左下角标准航电柱)
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.stage_control", "分级与飞行操纵台", -360f, -120f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.stage_control", I18n.GetWidgetName("core.stage_control", "分级与飞行操纵台"), -360f, -120f)
             {
                 WidgetType = "stage_control",
                 IsEnabled = true
             });
 
             // 现代化垂直分级时序序列仪 (垂直挂载于操纵台上方)
-            CurrentLayout.Widgets.Add(new WidgetConfig("custom.staging_sequence", "垂直分级时序序列仪", -360f, 110f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("custom.staging_sequence", I18n.GetWidgetName("custom.staging_sequence", "垂直分级时序序列仪"), -360f, 110f)
             {
                 WidgetType = "staging_sequence",
                 IsEnabled = true
             });
 
             // 现代化平滑时间加速控制器 (左上角状态栏)
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.time_warp", "AVIONICS 时间加速与任务时钟", -560f, 460f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.time_warp", I18n.GetWidgetName("core.time_warp", "AVIONICS 时间加速与任务时钟"), -560f, 460f)
             {
                 WidgetType = "time_warp",
                 IsEnabled = true
             });
 
             // 现代化天线通信网络监控仪 (右上角通信网络)
-            CurrentLayout.Widgets.Add(new WidgetConfig("custom.signal", "AVIONICS 通信网络与天线探针", 560f, 460f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("custom.signal", I18n.GetWidgetName("custom.signal", "AVIONICS 通信网络与天线探针"), 560f, 460f)
             {
                 WidgetType = "signal",
                 IsEnabled = true
             });
 
             // 现代化折叠工具栏 (右侧边栏)
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.toolbar", "AVIONICS 现代折叠工具栏", 890f, 0f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.toolbar", I18n.GetWidgetName("core.toolbar", "AVIONICS 现代折叠工具栏"), 890f, 0f)
             {
                 WidgetType = "toolbar",
                 IsEnabled = true
@@ -521,7 +554,11 @@ namespace ModularFlightPanel.Config
         public string AddCustomWidget(string title, string template, Vector2 initialPos)
         {
             string id = "custom." + Guid.NewGuid().ToString().Substring(0, 8);
-            CurrentLayout.Widgets.Add(new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f, template));
+            var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f, template)
+            {
+                DrawOrder = CurrentLayout.Widgets.Count
+            };
+            CurrentLayout.Widgets.Add(cfg);
             SaveLayout();
             return id;
         }
@@ -536,11 +573,45 @@ namespace ModularFlightPanel.Config
                 StepInterval = step,
                 IsLeftOrientation = isLeft,
                 UnitLabel = isLeft ? "m/s" : "m",
+                DrawOrder = CurrentLayout.Widgets.Count,
                 IsEnabled = true
             };
             CurrentLayout.Widgets.Add(cfg);
             SaveLayout();
             return id;
+        }
+
+        public string AddArcTapeWidget(string title, string token, bool isSpeedTape, float curvature, float radius, float span, bool isLeft, Vector2 initialPos)
+        {
+            string prefix = isSpeedTape ? "arc_speed." : "arc_alt.";
+            string id = prefix + Guid.NewGuid().ToString().Substring(0, 8);
+            string template = isSpeedTape
+                ? $"CURVATURE={curvature:F2};RADIUS={radius:F0};SPAN={span:F0};SIDE={(isLeft ? "LEFT" : "RIGHT")};TYPE=SPEED;VAL={token};MODE={{SPD:MODE}};ACC={{ACC}}"
+                : $"CURVATURE={curvature:F2};RADIUS={radius:F0};SPAN={span:F0};SIDE={(isLeft ? "LEFT" : "RIGHT")};TYPE=ALT;VAL={token};MODE=ALT;BOTTOM={{ALT:AGL:DIST}};TREND={{VSI}}";
+
+            var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f, template)
+            {
+                WidgetType = isSpeedTape ? "arc_speed_tape" : "arc_altitude_tape",
+                NumericToken = token,
+                StepInterval = isSpeedTape ? 10f : 100f,
+                IsLeftOrientation = isLeft,
+                UnitLabel = isSpeedTape ? "m/s" : "m",
+                DrawOrder = CurrentLayout.Widgets.Count,
+                IsEnabled = true
+            };
+            CurrentLayout.Widgets.Add(cfg);
+            SaveLayout();
+            return id;
+        }
+
+        public string AddArcSpeedTapeWidget(string title, string token, float curvature, float radius, float span, bool isLeft, Vector2 initialPos)
+        {
+            return AddArcTapeWidget(title, token, true, curvature, radius, span, isLeft, initialPos);
+        }
+
+        public string AddArcAltitudeTapeWidget(string title, string token, float curvature, float radius, float span, bool isLeft, Vector2 initialPos)
+        {
+            return AddArcTapeWidget(title, token, false, curvature, radius, span, isLeft, initialPos);
         }
 
         public string AddEcamDialWidget(string title, string token, double min, double max, double caution, double warning, bool isSoftLimit, string unit, Vector2 initialPos)
@@ -557,6 +628,7 @@ namespace ModularFlightPanel.Config
                 IsSoftLimit = isSoftLimit,
                 LimitMode = isSoftLimit ? "soft" : "hard",
                 UnitLabel = unit,
+                DrawOrder = CurrentLayout.Widgets.Count,
                 IsEnabled = true
             };
             CurrentLayout.Widgets.Add(cfg);
@@ -575,10 +647,10 @@ namespace ModularFlightPanel.Config
             var src = GetConfig(widgetId);
             if (src == null) return;
 
-            string prefix = src.WidgetType == "ecam_dial" ? "ecam." : (src.WidgetType == "tape" ? "tape." : "custom.");
+            string prefix = src.WidgetType == "ecam_dial" ? "ecam." : (src.WidgetType == "tape" ? "tape." : (src.WidgetType == "arc_tape" ? "arc_tape." : "custom."));
             string newId = prefix + Guid.NewGuid().ToString().Substring(0, 8);
 
-            var clone = new WidgetConfig(newId, src.DisplayName + " (副本)", src.PositionX + 25f, src.PositionY + 25f, src.Scale, src.CustomTemplate)
+            var clone = new WidgetConfig(newId, src.DisplayName + I18n.Tr("CFG_DUPLICATE_SUFFIX", " (副本)"), src.PositionX + 25f, src.PositionY + 25f, src.Scale, src.CustomTemplate)
             {
                 WidgetType = src.WidgetType,
                 NumericToken = src.NumericToken,
@@ -591,6 +663,9 @@ namespace ModularFlightPanel.Config
                 UnitLabel = src.UnitLabel,
                 StepInterval = src.StepInterval,
                 IsLeftOrientation = src.IsLeftOrientation,
+                ScaleX = src.ScaleX,
+                ScaleY = src.ScaleY,
+                DrawOrder = CurrentLayout.Widgets.Count,
                 IsEnabled = true
             };
 
@@ -606,7 +681,7 @@ namespace ModularFlightPanel.Config
 
         public void ClearAllCustomWidgets()
         {
-            CurrentLayout.Widgets.RemoveAll(w => w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("ecam.") || w.WidgetId.StartsWith("tape."));
+            CurrentLayout.Widgets.RemoveAll(w => w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("ecam.") || w.WidgetId.StartsWith("tape.") || w.WidgetId.StartsWith("arc_tape."));
             SaveLayout();
         }
     }

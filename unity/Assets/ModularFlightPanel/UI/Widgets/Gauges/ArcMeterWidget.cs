@@ -17,6 +17,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 姿态球外缘弧度计量仪表 (Arc Meter Widget - Throttle / VSI / Propellant)
     /// 100% 遵照 MFP 标准：通配符驱动、主题语义管道、脏检查保护、0 颜色字面量。
     /// </summary>
+    [FlightWidget("arc_meter", "meter_arc", Category = WidgetCategory.Gauges, DisplayName = "圆弧计量仪表", Description = "高精度 270° 圆弧指示仪表，适用于油门、升降率 (VSI) 或单项推进剂实时监测。", DefaultWidgetId = "core.throttle", DefaultX = 0f, DefaultY = 0f, ExactIds = new[] { "core.throttle", "core.vsi", "core.propellant" })]
     public class ArcMeterWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;

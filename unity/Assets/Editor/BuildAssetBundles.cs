@@ -9,6 +9,17 @@ namespace ModularFlightPanel.Editor
         [MenuItem("ModularFlightPanel/Build AssetBundles")]
         public static void BuildAllAssetBundles()
         {
+            BuildAssetBundlesCore(true);
+        }
+
+        // Batch builds use this entry point so the caller controls the deploy destination.
+        public static void BuildWorkspaceAssetBundles()
+        {
+            BuildAssetBundlesCore(false);
+        }
+
+        private static void BuildAssetBundlesCore(bool syncLegacyInstall)
+        {
             string assetBundleDirectory = Path.Combine(Application.dataPath, "../../GameData/ModularFlightPanel/AssetBundles");
             if (!Directory.Exists(assetBundleDirectory))
             {
@@ -31,9 +42,10 @@ namespace ModularFlightPanel.Editor
                 BuildTarget.StandaloneWindows64
             );
 
-            // Copy to KSP instance if it exists
+            // Preserve the legacy menu behavior. Build scripts call the workspace-only entry point
+            // and perform an explicit, validated deployment themselves.
             string kspTarget = @"C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program_newmod\GameData\ModularFlightPanel\AssetBundles";
-            if (Directory.Exists(@"C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program_newmod\GameData"))
+            if (syncLegacyInstall && Directory.Exists(@"C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program_newmod\GameData"))
             {
                 if (!Directory.Exists(kspTarget)) Directory.CreateDirectory(kspTarget);
                 foreach (string file in Directory.GetFiles(assetBundleDirectory))

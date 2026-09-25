@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.Config
 {
@@ -7,13 +8,18 @@ namespace ModularFlightPanel.Config
     public class WidgetConfig
     {
         public string WidgetId = "unnamed_widget";
-        public string DisplayName = "未命名组件";
+        public string DisplayName = I18n.Tr("WIDGET_DEFAULT_NAME", "未命名组件");
         public bool IsEnabled = true;
         public float PositionX = 0f;
         public float PositionY = 0f;
         public float Scale = 1.0f;
+        public float ScaleX = 1.0f; // 独立水平缩放 (支持编辑模式自由调整细长/矮胖)
+        public float ScaleY = 1.0f; // 独立垂直缩放 (支持编辑模式自由调整细长/矮胖)
         public float Rotation = 0f; // 旋转角度 (度, 0~360)
         public string CustomTemplate = "";
+
+        public float EffectiveScaleX => ScaleX > 0.01f ? ScaleX : (Scale > 0.01f ? Scale : 1.0f);
+        public float EffectiveScaleY => ScaleY > 0.01f ? ScaleY : (Scale > 0.01f ? Scale : 1.0f);
 
         // 航电套件元数据 (Kit Metadata)
         public string WidgetType = "custom"; // "core", "custom", "tape", "ecam_dial"
@@ -34,6 +40,10 @@ namespace ModularFlightPanel.Config
         public float CustomHz = 0f;           // 任意浮点数自定义刷新率 (Hz, 例如 11.2f)。0f 表示遵循全局阶梯或 UpdateInterval，>0f 表示独立精确定义
         public float RenderScale = 1.0f;      // 单组件渲染分辨率缩放倍率 (0.5x~2.0x, 缺省 1.0f，支持 0.8x 节能或 1.5x 超采样)
 
+        // 图层与绘制顺序 (Layer & Drawing Order)
+        public int DrawOrder = 0;             // 渲染图层层级 (0为最底层，数值越大越靠前/顶层)
+        public bool IsLocked = false;         // 是否锁定图层 (锁定后禁止在画布中点击拖拽/变换，防止误触大背景面板)
+
         // ===== 视图策略 (原硬编码常量的配置化出口，可在 layout.json / 预设 JSON 中逐组件覆盖) =====
         /// <summary>脏标记阈值：读数变化量小于该值时不触发任何 UI 重绘 (避免每帧 UGUI 顶点全量重建)</summary>
         public float ValueDeltaThreshold = 0.05f;
@@ -46,16 +56,18 @@ namespace ModularFlightPanel.Config
 
         public WidgetConfig() { }
 
-        public WidgetConfig(string id, string name, float x, float y, float scale = 1.0f, string template = "", float rotation = 0f)
+        public WidgetConfig(string id, string name, float x, float y, float scale = 1.0f, string template = "", float rotation = 0f, float scaleX = 1.0f, float scaleY = 1.0f)
         {
             WidgetId = id;
             DisplayName = name;
             PositionX = x;
             PositionY = y;
             Scale = scale;
+            ScaleX = scaleX > 0.01f ? scaleX : scale;
+            ScaleY = scaleY > 0.01f ? scaleY : scale;
             CustomTemplate = template;
             Rotation = rotation;
-            WidgetType = id.StartsWith("tape.") ? "tape" : (id.StartsWith("ecam.") ? "ecam_dial" : (id.StartsWith("custom.") ? "custom" : "core"));
+            WidgetType = id.StartsWith("tape.") ? "tape" : (id.StartsWith("arc_tape.") ? "arc_tape" : (id.StartsWith("ecam.") ? "ecam_dial" : (id.StartsWith("custom.") ? "custom" : "core")));
         }
     }
 }

@@ -7,6 +7,7 @@ using ModularFlightPanel.Config;
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>Compact ECAM-style flight status strip: readable at a glance without covering the navball.</summary>
+    [FlightWidget("ecam_status", "status_memo", Category = WidgetCategory.Systems, DisplayName = "ECAM 飞行状态备忘录", Description = "单行状态备忘横条：飞行阶段徽标、关键警告速览与系统就绪摘要。", DefaultWidgetId = "core.ecam_status", DefaultX = 0f, DefaultY = 80f, IsSingleton = true, ExactIds = new[] { "core.ecam_status" })]
     public class EcamStatusWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

@@ -16,6 +16,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     ///   4. 实时点火发光与节流推力羽流辉光，完全还原截图中 5 发点火亮起 + 1 发停机关机的经典画面；
     ///   5. 严格遵循 MFP 架构规范：零硬编码与零颜色字面量 (MFP-SPEC-006)。
     /// </summary>
+    [FlightWidget("spacex_engines", "dragon_engines", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 引擎状态阵列", Description = "SpaceX 猎鹰 9 发动机多孔圆环/星舰猛禽集群点火状态阵列图。", DefaultWidgetId = "spacex.engines", DefaultX = 360f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "spacex.engines" })]
     public class SpaceXEngineWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

@@ -30,6 +30,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     ///    - 右键点击中央飞船切换观察视角（追尾 3D / 俯视 3D）。
     /// 6. 严格落实 MFP-SPEC-001..007 铁律（0 颜色字面量、0 场景查询、分频阶梯 Critical 60Hz、零 GC 缓存守卫）。
     /// </summary>
+    [FlightWidget("vessel_navball", "vessel_attitude_sphere", "attitude_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 飞船球形姿态仪", Description = "全新球形姿态仪：以真实 3D 飞船为中心，外层环绕 3D 姿态球体、人工地平标尺、SAS 目标飞行指引仪与全量导航矢量。", DefaultWidgetId = "nav.vessel_navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "nav.vessel_navball", "nav.vessel_attitude_sphere", "core.vessel_navball", "core.vessel_attitude_sphere", "nav.attitude_sphere_3d" })]
     public class VesselAttitudeSphereWidget : BaseNavballSphereWidget, IPointerClickHandler
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;

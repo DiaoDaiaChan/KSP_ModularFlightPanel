@@ -14,6 +14,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 航路航点引导 (Target / Waypoint Diamond) 以及四角专业航电数据 (GS/TAS, 风向风速, 目标ETA, VOR导引)。
     /// 严格继承 BaseFlightWidget，杜绝硬编码，由 IFlightTelemetry 与 TelemetryTokenEngine 统一驱动。
     /// </summary>
+    [FlightWidget("nd_navigation", "nd", "navigation_display", Category = WidgetCategory.Navigation, DisplayName = "AERO ND 综合水平态势导航屏", Description = "飞机航电综合水平态势显示器 (ND)，包含罗盘弧、测距环、飞机微标与航点航路。", DefaultWidgetId = "custom.nd_navigation", DefaultX = -440f, DefaultY = 25f, IsSingleton = true, ExactIds = new[] { "custom.nd_navigation", "core.nd_arc", "core.nd_navigation" })]
     public class NDNavigationWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

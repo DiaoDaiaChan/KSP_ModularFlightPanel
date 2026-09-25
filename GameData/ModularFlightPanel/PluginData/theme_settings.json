@@ -1,6 +1,7 @@
 {
-    "SelectedThemeId": "sr71_blackbird",
-    "RenderMode": 0,
+    "SelectedThemeId": "modern_aero",
+    "SelectedLanguage": "zh-CN",
+    "RenderMode": 1,
     "HideStockNavball": true,
     "HideStockAltimeter": false,
     "HideStockBottomLeft": false,
@@ -17,51 +18,64 @@
             "Key": "MOCK_RES",
             "DefaultName": "RES",
             "CustomLabel": "资源",
-            "IsVisible": true
+            "IsVisible": true,
+            "IsFavorite": false
         },
         {
             "Key": "MOCK_COMM",
             "DefaultName": "COMM",
             "CustomLabel": "",
-            "IsVisible": false
+            "IsVisible": false,
+            "IsFavorite": false
         },
         {
             "Key": "MOCK_TIME",
             "DefaultName": "TIME",
             "CustomLabel": "时钟",
-            "IsVisible": true
+            "IsVisible": true,
+            "IsFavorite": false
         },
         {
             "Key": "MOCK_MJ",
             "DefaultName": "MJ",
             "CustomLabel": "智驾",
-            "IsVisible": true
+            "IsVisible": true,
+            "IsFavorite": false
         },
         {
             "Key": "MOCK_FAR",
             "DefaultName": "FAR",
             "CustomLabel": "",
-            "IsVisible": false
+            "IsVisible": false,
+            "IsFavorite": false
         },
         {
             "Key": "MOCK_RA",
             "DefaultName": "RA",
             "CustomLabel": "",
-            "IsVisible": false
+            "IsVisible": false,
+            "IsFavorite": false
         },
         {
             "Key": "MOCK_ALARM",
             "DefaultName": "ALARM",
             "CustomLabel": "警报",
-            "IsVisible": true
+            "IsVisible": true,
+            "IsFavorite": false
         },
         {
             "Key": "MOCK_MFP",
             "DefaultName": "MFP",
             "CustomLabel": "面板",
-            "IsVisible": true
+            "IsVisible": true,
+            "IsFavorite": false
         }
     ],
     "DockShowHiddenDrawer": true,
-    "DockOrientation": 0
+    "DockOrientation": 0,
+    "DockEnableFavoritePanel": true,
+    "DockFavoriteOrientation": 1,
+    "DockKeepFavoritesInMain": false,
+    "DockFavoritePosX": 0.0,
+    "DockFavoritePosY": -380.0
 }

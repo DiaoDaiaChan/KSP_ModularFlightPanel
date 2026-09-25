@@ -12,6 +12,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     /// 以及气闸、推进剂、热控回路与机械对接口的 4 路状态矩阵。
     /// 严格遵循 MFP 规范，0 颜色字面量，10Hz Relaxed 阶梯刷新。
     /// </summary>
+    [FlightWidget("spacex_overview", "dragon_overview", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 综合工况与 ECLSS 面板", Description = "飞船综合工况与维生监控：客舱压力、氧分压、客舱温度、电网功率与气闸/推进剂/热控状态。", DefaultWidgetId = "spacex.overview", DefaultX = -460f, DefaultY = 120f, IsSingleton = true, ExactIds = new[] { "spacex.overview" })]
     public class SpaceXOverviewWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

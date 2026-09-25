@@ -14,6 +14,7 @@ namespace ModularFlightPanel.Config
         public string DefaultName = "";
         public string CustomLabel = "";
         public bool IsVisible = true;
+        public bool IsFavorite = false;
 
         public string ButtonKey { get => Key; set => Key = value; }
         public string DisplayName { get => string.IsNullOrEmpty(CustomLabel) ? DefaultName : CustomLabel; set => CustomLabel = value; }
@@ -23,6 +24,7 @@ namespace ModularFlightPanel.Config
     public class ThemeSettingsData
     {
         public string SelectedThemeId = "modern_aero";
+        public string SelectedLanguage = "auto"; // "auto", "zh-CN", "en-US"
         public int RenderMode = 1; // 0 = Texture, 1 = Procedural
         public bool HideStockNavball = true;
         public bool HideStockAltimeter = false;
@@ -42,6 +44,13 @@ namespace ModularFlightPanel.Config
         public List<DockButtonRule> DockRules = new List<DockButtonRule>();
         public bool DockShowHiddenDrawer = false;
         public int DockOrientation = 0; // 0 = 纵向双列, 1 = 横向双行, 2 = 横向单行
+
+        // 常用 MOD 独立快捷面板设置
+        public bool DockEnableFavoritePanel = true;
+        public int DockFavoriteOrientation = 1; // 0 = 纵向单列, 1 = 横向单行, 2 = 横向双行
+        public bool DockKeepFavoritesInMain = false;
+        public float DockFavoritePosX = 0f;
+        public float DockFavoritePosY = -380f;
     }
 
     public class ThemeManager
@@ -60,6 +69,12 @@ namespace ModularFlightPanel.Config
         public bool DockShowHiddenDrawer { get; set; } = false;
         public int DockOrientation { get; set; } = 0;
 
+        public bool DockEnableFavoritePanel { get; set; } = true;
+        public int DockFavoriteOrientation { get; set; } = 1;
+        public bool DockKeepFavoritesInMain { get; set; } = false;
+        public float DockFavoritePosX { get; set; } = 0f;
+        public float DockFavoritePosY { get; set; } = -380f;
+
         public DockButtonRule GetOrCreateDockRule(string key, string defaultName)
         {
             if (string.IsNullOrEmpty(key)) return null;
@@ -67,12 +82,20 @@ namespace ModularFlightPanel.Config
             var rule = DockRules.Find(r => r.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
             if (rule == null)
             {
+                bool isDefaultFav = false;
+                string lower = (key + " " + (defaultName ?? "")).ToLowerInvariant();
+                if (lower.Contains("mechjeb") || lower.Contains("engineer") || lower.Contains("trajector") || lower.Contains("docking") || lower.Contains("dpai") || lower.Contains("mfp") || lower.Contains("alarm"))
+                {
+                    isDefaultFav = true;
+                }
+
                 rule = new DockButtonRule
                 {
                     Key = key,
                     DefaultName = defaultName ?? key,
                     CustomLabel = "",
-                    IsVisible = true
+                    IsVisible = true,
+                    IsFavorite = isDefaultFav
                 };
                 DockRules.Add(rule);
             }
@@ -81,6 +104,26 @@ namespace ModularFlightPanel.Config
                 rule.DefaultName = defaultName;
             }
             return rule;
+        }
+
+        public void AutoRecommendFavorites()
+        {
+            if (DockRules == null || DockRules.Count == 0) return;
+            string[] favKeywords = new[] { "mechjeb", "mj", "ker", "engineer", "trajector", "dpai", "docking", "alarm", "mfp", "naviball", "kac", "transfer" };
+            foreach (var rule in DockRules)
+            {
+                string combined = (rule.Key + " " + rule.DefaultName + " " + rule.CustomLabel).ToLowerInvariant();
+                foreach (var kw in favKeywords)
+                {
+                    if (combined.Contains(kw))
+                    {
+                        rule.IsFavorite = true;
+                        rule.IsVisible = true;
+                        break;
+                    }
+                }
+            }
+            SaveSettings();
         }
         public bool MasterBypass
         {
@@ -146,6 +189,7 @@ namespace ModularFlightPanel.Config
                 var data = new ThemeSettingsData
                 {
                     SelectedThemeId = CurrentTheme != null ? CurrentTheme.ThemeId : "modern_aero",
+                    SelectedLanguage = I18nManager.Instance.CurrentLanguage,
                     RenderMode = (int)_globalRenderMode,
                     HideStockNavball = IsStockNavballHidden,
                     HideStockAltimeter = IsStockAltimeterHidden,
@@ -160,7 +204,12 @@ namespace ModularFlightPanel.Config
                     GlobalRenderScaleMultiplier = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalRenderScaleMultiplier : 1.0f,
                     DockRules = DockRules != null ? new List<DockButtonRule>(DockRules) : new List<DockButtonRule>(),
                     DockShowHiddenDrawer = DockShowHiddenDrawer,
-                    DockOrientation = DockOrientation
+                    DockOrientation = DockOrientation,
+                    DockEnableFavoritePanel = DockEnableFavoritePanel,
+                    DockFavoriteOrientation = DockFavoriteOrientation,
+                    DockKeepFavoritesInMain = DockKeepFavoritesInMain,
+                    DockFavoritePosX = DockFavoritePosX,
+                    DockFavoritePosY = DockFavoritePosY
                 };
                 string json = JsonUtility.ToJson(data, true);
                 File.WriteAllText(SettingsFilePath, json);
@@ -190,6 +239,10 @@ namespace ModularFlightPanel.Config
                         var found = AvailableThemes.Find(t => t.ThemeId == data.SelectedThemeId);
                         if (found != null) CurrentTheme = found;
                     }
+                    if (!string.IsNullOrEmpty(data.SelectedLanguage) && data.SelectedLanguage != "auto")
+                    {
+                        I18nManager.Instance.SetLanguage(data.SelectedLanguage, false);
+                    }
                     _globalRenderMode = NavballRenderMode.Procedural;
                     IsStockNavballHidden = data.HideStockNavball;
                     IsStockAltimeterHidden = data.HideStockAltimeter;
@@ -203,6 +256,11 @@ namespace ModularFlightPanel.Config
                     if (data.DockRules != null) DockRules = data.DockRules;
                     DockShowHiddenDrawer = data.DockShowHiddenDrawer;
                     DockOrientation = data.DockOrientation;
+                    DockEnableFavoritePanel = data.DockEnableFavoritePanel;
+                    DockFavoriteOrientation = data.DockFavoriteOrientation;
+                    DockKeepFavoritesInMain = data.DockKeepFavoritesInMain;
+                    DockFavoritePosX = data.DockFavoritePosX;
+                    DockFavoritePosY = data.DockFavoritePosY;
 
                     if (WidgetRenderManager.Instance != null)
                     {

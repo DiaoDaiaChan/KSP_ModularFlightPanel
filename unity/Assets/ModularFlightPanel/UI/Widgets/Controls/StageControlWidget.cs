@@ -3,187 +3,236 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
     /// 现代化多功能航电分级与飞行姿态操纵台 (Modern Flight Control & Staging Suite)
-    /// 
-    /// 完美替代 KSP 原版左下角粗糙方框，整合：
-    /// 1. 现代化三位数字分级滚轮显示器 (Digital Stage Counter: STAGE 02) 与单级 Δv / TWR 遥测
-    /// 2. 分级状态指示 LED (RDY 绿色就绪 / LCK 红色锁定) 与交互式分级触发键 + 安全锁按键
-    /// 3. 三轴舵面实时偏转量与机械微调标尺 (Pitch 俯仰, Roll 滚转, Yaw 偏航，双向零位标线与配平游标)
-    /// 4. 当前分级活跃推进剂监测条 (动态识别液氢/甲烷/液态燃料/固推名称与剩余百分比，三段式预警变色)
-    /// 5. 快速飞行模式与微调切换 (NORM/PREC 微调模式, STG/DCK 分级/对接口模式, 原版左下角隐藏切换)
+    /// 遵照 MFP-SPEC-001..007 标准航电规范与现代全玻璃座舱 HUD 交互标准：
+    /// 1. 顶栏安全联动：专业分级安全锁 (SAFE / ARMED) 与防误触分级点火触发总成 (FIRE STAGE ▶)；
+    /// 2. 分级性能中枢：深晶数显分级窗 (STAGE 07) 结合单级 Δv、燃烧时序 (01:24)、推重比 (TWR) 与发动机计数；
+    /// 3. 三轴姿态仪表：PITCH / ROLL / YAW 双向微光导轨、零位基准中轴线、极限量程刻线与机械配平游标 (Trim Pip)；
+    /// 4. 推进剂监测槽：动态识别推进剂名称 (LIQUID FUEL / METHALOX 等)、剩余百分比与三段式预警变色；
+    /// 5. 模式快速切换：NORM/PREC 微调操纵模式、STG/DCK 飞行/对接口模式与 KSP HUD 原生面板无缝显隐切换；
+    /// 6. 严格落实 0 颜色字面量、零场景查询与 Critical (60Hz) 阶梯高保真刷新。
     /// </summary>
+    [FlightWidget("stage_control", "staging_ctrl", Category = WidgetCategory.Controls, DisplayName = "操纵量指示与分级锁控制台", Description = "Pitch/Roll/Yaw 实时舵量标尺与分级安全锁定 (Alt+L) 防误触操作台。", DefaultWidgetId = "core.stage_control", DefaultX = -360f, DefaultY = -180f, IsSingleton = true, ExactIds = new[] { "core.stage_control" })]
     public class StageControlWidget : BaseFlightWidget
     {
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+
+        // 基础背板
         private Image _panelBg;
         private Outline _panelOutline;
 
-        // 顶栏控件
+        // 顶栏安全联动总成
         private Text _titleText;
+        private Text _subStatusText;
         private Button _lockBtn;
+        private Image _lockBtnBg;
         private Text _lockBtnText;
         private Button _fireBtn;
+        private Image _fireBtnBg;
         private Text _fireBtnText;
 
-        // 分级读数区
+        // 分级遥测中枢凹槽窗
+        private GameObject _stageBayPanel;
+        private Image _stageBayBg;
+        private Outline _stageBayOutline;
+        private Text _stageLabelText;
         private Text _stageNumText;
         private Text _stageDvText;
         private Text _stageTwrEngText;
 
         // 三轴操纵量标尺 (Pitch, Roll, Yaw)
-        private Text _pitchLabel;
-        private RectTransform _pitchFillRt;
-        private Image _pitchFillImg;
-        private RectTransform _pitchTrimRt;
-        private Text _pitchValText;
+        private struct AxisMeterUI
+        {
+            public Text Label;
+            public RectTransform FillRt;
+            public Image FillImg;
+            public RectTransform TrimRt;
+            public Text ValText;
+        }
 
-        private Text _rollLabel;
-        private RectTransform _rollFillRt;
-        private Image _rollFillImg;
-        private RectTransform _rollTrimRt;
-        private Text _rollValText;
+        private AxisMeterUI _pitchMeter;
+        private AxisMeterUI _rollMeter;
+        private AxisMeterUI _yawMeter;
 
-        private Text _yawLabel;
-        private RectTransform _yawFillRt;
-        private Image _yawFillImg;
-        private RectTransform _yawTrimRt;
-        private Text _yawValText;
+        private const float TrackWidth = 104f;
 
-        // 分级推进剂指示条
+        // 分级推进剂计量槽
         private Text _propNameText;
         private Text _propPctText;
         private RectTransform _propFillRt;
         private Image _propFillImg;
+        private Image _propTrackBg;
 
-        // 底部快捷切换按键
+        // 底部快捷切换按键组
         private Button _precBtn;
-        private Text _precText;
         private Image _precImg;
+        private Text _precText;
 
         private Button _modeBtn;
-        private Text _modeText;
         private Image _modeImg;
+        private Text _modeText;
 
         private Button _stockToggleBtn;
+        private Image _stockToggleImg;
         private Text _stockToggleText;
         private bool _stockHidden = true;
 
-        private const float TrackWidth = 104f;
-
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+        // 脏检查与缓存守卫
+        private string _lastStageNumStr = string.Empty;
+        private string _lastStageDvStr = string.Empty;
+        private string _lastStageTwrStr = string.Empty;
+        private string _lastPropNameStr = string.Empty;
+        private bool _lastLockedState = false;
+        private float _lastPropFrac = -1f;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            Vector2 panelSize = new Vector2(204f * s, 172f * s);
+            Vector2 panelSize = new Vector2(204f * s, 186f * s);
             RectTransform.sizeDelta = panelSize;
 
-            Color primaryAccent = theme.AccentPrimary;
-            Color secondaryAccent = theme.AccentSecondary;
-            Color textPrimary = theme.TextPrimaryColor;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 主背板与淡框 (现代化暗晶毛玻璃背板 0.75 Alpha)
-            GameObject panel = UIFactory.CreatePanel(transform, "StageControlPanel", panelSize, Vector2.zero,
-                WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f),
-                WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost), 1f * s);
-            _panelBg = panel.GetComponent<Image>();
-            _panelOutline = panel.GetComponent<Outline>();
+            // 1. 主背板与暗晶外边框 (0 颜色字面量，统一由 ApplyCard 注入)
+            _panelBg = gameObject.AddComponent<Image>();
+            _panelBg.color = Color.clear;
+            _panelOutline = gameObject.AddComponent<Outline>();
             _panelOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
 
-            // 2. 顶栏：标题、安全锁、分级触发
+            // ==========================================
+            // 2. 顶栏安全联动总成 (Safety Header)
+            // ==========================================
             float topY = panelSize.y * 0.5f - 14f * s;
 
-            _titleText = UIFactory.CreateText(panel.transform, "Title", "STAGE CONTROL",
-                Mathf.Max(7, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleLeft, secondaryAccent);
+            _titleText = UIFactory.CreateText(transform, "Title", I18n.Tr("WIDGET_STAGE_CTRL_TITLE", "STAGE CONTROL"),
+                Mathf.Max(7, Mathf.RoundToInt(8.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, theme));
             _titleText.fontStyle = FontStyle.Bold;
             RectTransform titleRt = _titleText.GetComponent<RectTransform>();
-            titleRt.sizeDelta = new Vector2(90f * s, 16f * s);
-            titleRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 52f * s, topY);
+            titleRt.sizeDelta = new Vector2(82f * s, 14f * s);
+            titleRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 48f * s, topY + 4f * s);
 
-            // 安全锁按键 (Alt+L) - 极简药丸
-            _lockBtn = UIFactory.CreateButton(panel.transform, "Btn_Lock", new Vector2(44f * s, 16f * s),
-                new Vector2(panelSize.x * 0.5f - 68f * s, topY), OnToggleLock);
-            _lockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            _subStatusText = UIFactory.CreateText(transform, "SubStatus", "SAFETY INTERLOCK",
+                Mathf.Max(5, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            RectTransform subRt = _subStatusText.GetComponent<RectTransform>();
+            subRt.sizeDelta = new Vector2(82f * s, 11f * s);
+            subRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 48f * s, topY - 7f * s);
+
+            // 安全锁按键 (SAFE / ARMED)
+            Vector2 lockBtnSize = new Vector2(42f * s, 18f * s);
+            _lockBtn = UIFactory.CreateButton(transform, "Btn_Lock", lockBtnSize,
+                new Vector2(panelSize.x * 0.5f - 72f * s, topY), OnToggleLock);
+            _lockBtnBg = _lockBtn.GetComponent<Image>();
+            _lockBtnBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             _lockBtnText = UIFactory.CreateText(_lockBtn.transform, "Text", "ARMED",
-                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, primaryAccent);
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
             _lockBtnText.fontStyle = FontStyle.Bold;
-            _lockBtnText.GetComponent<RectTransform>().sizeDelta = new Vector2(44f * s, 16f * s);
+            _lockBtnText.GetComponent<RectTransform>().sizeDelta = lockBtnSize;
+            _lockBtn.gameObject.SetTooltip(I18n.Tr("TOOLTIP_STAGE_LOCK_TITLE", "分级安全锁 (Alt+L)"),
+                I18n.Tr("TOOLTIP_STAGE_LOCK_DESC", "切换火箭分级保险回路。处于锁定状态时阻断一切误触发操作。"), "Alt+L");
 
-            // 分级触发键 (STAGE ▶) - 醒目药丸
-            _fireBtn = UIFactory.CreateButton(panel.transform, "Btn_Fire", new Vector2(42f * s, 16f * s),
-                new Vector2(panelSize.x * 0.5f - 23f * s, topY), OnFireStage);
-            _fireBtn.GetComponent<Image>().color = WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution);
+            // 分级触发键 (STAGE ▶)
+            Vector2 fireBtnSize = new Vector2(46f * s, 18f * s);
+            _fireBtn = UIFactory.CreateButton(transform, "Btn_Fire", fireBtnSize,
+                new Vector2(panelSize.x * 0.5f - 26f * s, topY), OnFireStage);
+            _fireBtnBg = _fireBtn.GetComponent<Image>();
+            _fireBtnBg.color = style.GetMeterColor(MeterStyleRole.Warning, theme);
             _fireBtnText = UIFactory.CreateText(_fireBtn.transform, "Text", "STAGE ▶",
-                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.Warning));
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _fireBtnText.fontStyle = FontStyle.Bold;
-            _fireBtnText.GetComponent<RectTransform>().sizeDelta = new Vector2(42f * s, 16f * s);
+            _fireBtnText.GetComponent<RectTransform>().sizeDelta = fireBtnSize;
+            _fireBtn.gameObject.SetTooltip(I18n.Tr("TOOLTIP_STAGE_FIRE_TITLE", "分级触发 (Space)"),
+                I18n.Tr("TOOLTIP_STAGE_FIRE_DESC", "手动执行下一分级点火分离序列。"), "Space");
 
-            // 3. 数字分级微章与单级 Δv / TWR
-            float stageY = panelSize.y * 0.5f - 38f * s;
-            GameObject stageBadge = UIFactory.CreatePanel(panel.transform, "StageBadge",
-                new Vector2(28f * s, 18f * s), new Vector2(-panelSize.x * 0.5f + 24f * s, stageY),
-                primaryAccent);
+            // ==========================================
+            // 3. 分级遥测中枢凹槽窗 (Stage Telemetry Bay)
+            // ==========================================
+            Vector2 baySize = new Vector2(panelSize.x - 14f * s, 36f * s);
+            float bayY = panelSize.y * 0.5f - 44f * s;
+            _stageBayPanel = UIFactory.CreatePanel(transform, "StageBay", baySize,
+                new Vector2(0f, bayY),
+                WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme),
+                WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost), 1f * s);
+            _stageBayBg = _stageBayPanel.GetComponent<Image>();
+            _stageBayOutline = _stageBayPanel.GetComponent<Outline>();
 
-            _stageNumText = UIFactory.CreateText(stageBadge.transform, "StageNum", "S02",
-                Mathf.Max(9, Mathf.RoundToInt(9.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.InverseOnAccent, theme));
+            // 左部：级数数显小窗 (内嵌黑底)
+            Vector2 numBoxSize = new Vector2(30f * s, 28f * s);
+            GameObject numBox = UIFactory.CreatePanel(_stageBayPanel.transform, "NumBox", numBoxSize,
+                new Vector2(-baySize.x * 0.5f + 20f * s, 0f),
+                WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme),
+                WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost), 1f * s);
+
+            _stageLabelText = UIFactory.CreateText(numBox.transform, "Label", "STAGE",
+                Mathf.Max(5, Mathf.RoundToInt(5.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            RectTransform slRt = _stageLabelText.GetComponent<RectTransform>();
+            slRt.sizeDelta = new Vector2(numBoxSize.x, 9f * s);
+            slRt.anchoredPosition = new Vector2(0f, 8f * s);
+
+            _stageNumText = UIFactory.CreateText(numBox.transform, "StageNum", "07",
+                Mathf.Max(8, Mathf.RoundToInt(11.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _stageNumText.fontStyle = FontStyle.Bold;
-            RectTransform stageNumRt = _stageNumText.GetComponent<RectTransform>();
-            stageNumRt.sizeDelta = new Vector2(28f * s, 18f * s);
-            stageNumRt.anchoredPosition = Vector2.zero;
+            RectTransform snRt = _stageNumText.GetComponent<RectTransform>();
+            snRt.sizeDelta = new Vector2(numBoxSize.x, 16f * s);
+            snRt.anchoredPosition = new Vector2(0f, -4f * s);
 
-            // 级间性能遥测 (Δv, TWR, ENGINES)
-            _stageDvText = UIFactory.CreateText(panel.transform, "StageDv", "2,350 m/s",
-                Mathf.Max(8, Mathf.RoundToInt(10.5f * s)), TextAnchor.MiddleLeft, primaryAccent);
+            // 右部：单级性能 (Δv, 燃烧时间, TWR, 发动机数)
+            _stageDvText = UIFactory.CreateText(_stageBayPanel.transform, "StageDv", "2,350 m/s",
+                Mathf.Max(8, Mathf.RoundToInt(10.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _stageDvText.fontStyle = FontStyle.Bold;
             RectTransform dvRt = _stageDvText.GetComponent<RectTransform>();
-            dvRt.sizeDelta = new Vector2(140f * s, 16f * s);
-            dvRt.anchoredPosition = new Vector2(20f * s, stageY + 6f * s);
+            dvRt.sizeDelta = new Vector2(136f * s, 16f * s);
+            dvRt.anchoredPosition = new Vector2(-baySize.x * 0.5f + 108f * s, 6.5f * s);
 
-            _stageTwrEngText = UIFactory.CreateText(panel.transform, "StageTwrEng", "01:24 · 1.45 TWR · 4 ENG",
-                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft, secondaryAccent);
+            _stageTwrEngText = UIFactory.CreateText(_stageBayPanel.transform, "StageTwrEng", "01:24 · 1.45 TWR · 4 ENG",
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform twrRt = _stageTwrEngText.GetComponent<RectTransform>();
-            twrRt.sizeDelta = new Vector2(140f * s, 14f * s);
-            twrRt.anchoredPosition = new Vector2(20f * s, stageY - 7f * s);
+            twrRt.sizeDelta = new Vector2(136f * s, 13f * s);
+            twrRt.anchoredPosition = new Vector2(-baySize.x * 0.5f + 108f * s, -7f * s);
 
-            // 4. 三轴姿态操纵量仪表 (Pitch, Roll, Yaw)
-            float axisStartY = stageY - 24f * s;
+            // ==========================================
+            // 4. 三轴姿态操纵量仪表区 (Pitch, Roll, Yaw)
+            // ==========================================
+            float axisStartY = bayY - 29f * s;
             float axisSpacing = 16f * s;
 
-            BuildAxisMeter(panel.transform, "Pitch", "PITCH", axisStartY, s, theme.TextAccentColor,
-                out _pitchFillRt, out _pitchFillImg, out _pitchTrimRt, out _pitchValText, out _pitchLabel);
+            _pitchMeter = BuildAxisMeter(transform, "Pitch", I18n.Tr("WIDGET_AXIS_PITCH", "PITCH"), axisStartY, s, theme);
+            _rollMeter = BuildAxisMeter(transform, "Roll", I18n.Tr("WIDGET_AXIS_ROLL", "ROLL"), axisStartY - axisSpacing, s, theme);
+            _yawMeter = BuildAxisMeter(transform, "Yaw", I18n.Tr("WIDGET_AXIS_YAW", "YAW"), axisStartY - axisSpacing * 2f, s, theme);
 
-            BuildAxisMeter(panel.transform, "Roll", "ROLL", axisStartY - axisSpacing, s, theme.TextAccentColor,
-                out _rollFillRt, out _rollFillImg, out _rollTrimRt, out _rollValText, out _rollLabel);
-
-            BuildAxisMeter(panel.transform, "Yaw", "YAW", axisStartY - axisSpacing * 2f, s, theme.TextAccentColor,
-                out _yawFillRt, out _yawFillImg, out _yawTrimRt, out _yawValText, out _yawLabel);
-
-            // 5. 分级推进剂指示条 (左名称右百分比，杜绝重叠)
+            // ==========================================
+            // 5. 分级推进剂监测槽 (Propellant Tank)
+            // ==========================================
             float propY = axisStartY - axisSpacing * 2f - 20f * s;
 
-            _propNameText = UIFactory.CreateText(panel.transform, "PropName", "PROPELLANT",
-                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, theme.TextAccentColor);
+            _propNameText = UIFactory.CreateText(transform, "PropName", I18n.Tr("WIDGET_PROP_PROPELLANT", "PROPELLANT"),
+                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform pNameRt = _propNameText.GetComponent<RectTransform>();
             pNameRt.sizeDelta = new Vector2(110f * s, 12f * s);
-            pNameRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 65f * s, propY + 7f * s);
+            pNameRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 62f * s, propY + 7f * s);
 
-            _propPctText = UIFactory.CreateText(panel.transform, "PropPct", "100.0%",
-                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleRight, primaryAccent);
+            _propPctText = UIFactory.CreateText(transform, "PropPct", "100.0%",
+                Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            _propPctText.fontStyle = FontStyle.Bold;
             RectTransform pPctRt = _propPctText.GetComponent<RectTransform>();
             pPctRt.sizeDelta = new Vector2(60f * s, 12f * s);
             pPctRt.anchoredPosition = new Vector2(panelSize.x * 0.5f - 38f * s, propY + 7f * s);
 
-            // 推进剂槽微线
-            GameObject propTrack = UIFactory.CreatePanel(panel.transform, "PropTrack",
-                new Vector2(184f * s, 2.5f * s), new Vector2(0f, propY - 2f * s),
-                WidgetStyleManager.Surface(SurfaceStyleRole.Inset));
+            // 推进剂槽轨道 (宽 188px, 高 3.5px)
+            GameObject propTrack = UIFactory.CreatePanel(transform, "PropTrack",
+                new Vector2(188f * s, 3.5f * s), new Vector2(0f, propY - 3f * s),
+                WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+            _propTrackBg = propTrack.GetComponent<Image>();
 
+            // 推进剂填充条
             GameObject propFill = UIFactory.CreatePanel(propTrack.transform, "Fill",
-                new Vector2(184f * s, 2.5f * s), Vector2.zero, primaryAccent);
+                new Vector2(188f * s, 3.5f * s), Vector2.zero, style.GetMeterColor(MeterStyleRole.Primary, theme));
             _propFillRt = propFill.GetComponent<RectTransform>();
             _propFillRt.anchorMin = new Vector2(0f, 0.5f);
             _propFillRt.anchorMax = new Vector2(0f, 0.5f);
@@ -191,76 +240,98 @@ namespace ModularFlightPanel.UI.Widgets
             _propFillRt.anchoredPosition = Vector2.zero;
             _propFillImg = propFill.GetComponent<Image>();
 
-            // 6. 底部快捷功能条 (PREC 微调 / MODE 对接 / 隐藏原版) - 极简药丸
-            float bottomY = -panelSize.y * 0.5f + 12f * s;
-            Vector2 miniBtnSize = new Vector2(58f * s, 15f * s);
+            // ==========================================
+            // 6. 底部快捷模式切换按键组
+            // ==========================================
+            float bottomY = -panelSize.y * 0.5f + 14f * s;
+            Vector2 miniBtnSize = new Vector2(56f * s, 18f * s);
 
-            _precBtn = UIFactory.CreateButton(panel.transform, "Btn_Prec", miniBtnSize,
+            _precBtn = UIFactory.CreateButton(transform, "Btn_Prec", miniBtnSize,
                 new Vector2(-60f * s, bottomY), OnTogglePrecision);
             _precImg = _precBtn.GetComponent<Image>();
             _precImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             _precText = UIFactory.CreateText(_precBtn.transform, "Text", "NORM",
-                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, secondaryAccent);
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            _precText.fontStyle = FontStyle.Bold;
             _precText.GetComponent<RectTransform>().sizeDelta = miniBtnSize;
+            _precBtn.gameObject.SetTooltip(I18n.Tr("TOOLTIP_STAGE_PREC_TITLE", "操纵微调 (Caps Lock)"),
+                I18n.Tr("TOOLTIP_STAGE_PREC_DESC", "切换常规舵面操纵与精密微调操纵模式。"), "Caps Lock");
 
-            _modeBtn = UIFactory.CreateButton(panel.transform, "Btn_Mode", miniBtnSize,
+            _modeBtn = UIFactory.CreateButton(transform, "Btn_Mode", miniBtnSize,
                 new Vector2(0f, bottomY), OnToggleMode);
             _modeImg = _modeBtn.GetComponent<Image>();
             _modeImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             _modeText = UIFactory.CreateText(_modeBtn.transform, "Text", "STG",
-                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, secondaryAccent);
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            _modeText.fontStyle = FontStyle.Bold;
             _modeText.GetComponent<RectTransform>().sizeDelta = miniBtnSize;
+            _modeBtn.gameObject.SetTooltip(I18n.Tr("TOOLTIP_STAGE_MODE_TITLE", "控制模式切换"),
+                I18n.Tr("TOOLTIP_STAGE_MODE_DESC", "在常规分级飞行姿态模式与对接口平移操纵模式间切换。"), "Flight Mode");
 
-            _stockToggleBtn = UIFactory.CreateButton(panel.transform, "Btn_Stock", miniBtnSize,
+            _stockToggleBtn = UIFactory.CreateButton(transform, "Btn_Stock", miniBtnSize,
                 new Vector2(60f * s, bottomY), OnToggleStockVisibility);
-            _stockToggleBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _stockToggleText = UIFactory.CreateText(_stockToggleBtn.transform, "Text", "HIDE STOCK",
-                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
+            _stockToggleImg = _stockToggleBtn.GetComponent<Image>();
+            _stockToggleImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            _stockToggleText = UIFactory.CreateText(_stockToggleBtn.transform, "Text", "KSP HUD",
+                Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            _stockToggleText.fontStyle = FontStyle.Bold;
             _stockToggleText.GetComponent<RectTransform>().sizeDelta = miniBtnSize;
+            _stockToggleBtn.gameObject.SetTooltip(I18n.Tr("TOOLTIP_STAGE_STOCK_TITLE", "原生界面显隐"),
+                I18n.Tr("TOOLTIP_STAGE_STOCK_DESC", "隐藏或还原游戏左下角原版分级控制面板。"), "HUD Toggle");
 
-            // 初始化时默认执行静默隐藏原版左下角，保障现代化玻璃仪表无遮挡生效
+            // 初始化时默认执行静默隐藏原版左下角
             NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden);
 
             ApplyTheme(theme);
         }
 
-        private void BuildAxisMeter(Transform parent, string name, string label, float yPos, float s, Color accent,
-            out RectTransform fillRt, out Image fillImg, out RectTransform trimRt, out Text valText, out Text lblText)
+        private AxisMeterUI BuildAxisMeter(Transform parent, string name, string label, float yPos, float s, ThemeConfig theme)
         {
-            // 轴名称 (PITCH / ROLL / YAW) - 高对比度文字
-            Text lbl = UIFactory.CreateText(parent, name + "_Label", label,
-                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, accent);
-            lblText = lbl;
-            RectTransform lblRt = lbl.GetComponent<RectTransform>();
+            AxisMeterUI meter = new AxisMeterUI();
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            // 轴标签 (PITCH / ROLL / YAW)
+            meter.Label = UIFactory.CreateText(parent, name + "_Label", label,
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            RectTransform lblRt = meter.Label.GetComponent<RectTransform>();
             lblRt.sizeDelta = new Vector2(36f * s, 14f * s);
             lblRt.anchoredPosition = new Vector2(-76f * s, yPos);
 
-            // 标尺轨道背景 (宽 104px, 高 3px) - 极简细线
+            // 标尺轨道背景 (宽 104px, 高 3.5px)
             GameObject track = UIFactory.CreatePanel(parent, name + "_Track",
-                new Vector2(TrackWidth * s, 3f * s), new Vector2(4f * s, yPos),
-                WidgetStyleManager.Surface(SurfaceStyleRole.Inset));
+                new Vector2(TrackWidth * s, 3.5f * s), new Vector2(4f * s, yPos),
+                WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
 
-            // 零位中心基准刻线
+            // 两端极限量程刻线 (-100% / +100%)
+            Color tickCol = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            UIFactory.CreatePanel(track.transform, "TickNeg",
+                new Vector2(1f * s, 5f * s), new Vector2(-(TrackWidth * 0.5f) * s, 0f), tickCol);
+            UIFactory.CreatePanel(track.transform, "TickPos",
+                new Vector2(1f * s, 5f * s), new Vector2((TrackWidth * 0.5f) * s, 0f), tickCol);
+
+            // 零位中心基准刻线 (中轴线高光)
             UIFactory.CreatePanel(track.transform, "CenterTick",
-                new Vector2(1f * s, 6f * s), Vector2.zero, WidgetStyleManager.Weighted(accent, LineWeight.Heavy));
+                new Vector2(1.5f * s, 7f * s), Vector2.zero, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
 
-            // 双向偏转填充条 (Bidirectional Fill)
+            // 双向偏转填充条
             GameObject fill = UIFactory.CreatePanel(track.transform, "Fill",
-                new Vector2(0f, 3f * s), Vector2.zero, accent);
-            fillRt = fill.GetComponent<RectTransform>();
-            fillImg = fill.GetComponent<Image>();
+                new Vector2(0f, 3.5f * s), Vector2.zero, style.GetMeterColor(MeterStyleRole.Primary, theme));
+            meter.FillRt = fill.GetComponent<RectTransform>();
+            meter.FillImg = fill.GetComponent<Image>();
 
-            // 配平指示微标 (Trim Pip)
+            // 配平指示游标 (Trim Pip)
             GameObject trim = UIFactory.CreatePanel(track.transform, "TrimPip",
-                new Vector2(2f * s, 6f * s), Vector2.zero, WidgetStyleManager.Tinted(TextStyleRole.Warning, LineWeight.Solid));
-            trimRt = trim.GetComponent<RectTransform>();
+                new Vector2(2f * s, 7f * s), Vector2.zero, style.GetMeterColor(MeterStyleRole.Warning, theme));
+            meter.TrimRt = trim.GetComponent<RectTransform>();
 
             // 偏转读数百分比 (+24%)
-            valText = UIFactory.CreateText(parent, name + "_Val", "0%",
-                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleRight, WidgetStyleManager.Text(TextStyleRole.PrimaryValue));
-            RectTransform valRt = valText.GetComponent<RectTransform>();
+            meter.ValText = UIFactory.CreateText(parent, name + "_Val", "0%",
+                Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            RectTransform valRt = meter.ValText.GetComponent<RectTransform>();
             valRt.sizeDelta = new Vector2(34f * s, 14f * s);
             valRt.anchoredPosition = new Vector2(80f * s, yPos);
+
+            return meter;
         }
 
         private void OnToggleLock()
@@ -289,134 +360,128 @@ namespace ModularFlightPanel.UI.Widgets
             NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden);
             if (_stockToggleText != null)
             {
-                _stockToggleText.text = _stockHidden ? "HIDE STOCK" : "SHOW STOCK";
+                _stockToggleText.text = _stockHidden ? "KSP HUD" : "KSP [ON]";
             }
         }
-
-        private string _lastStageNumStr;
-        private string _lastStageDvStr;
-        private string _lastStageTwrStr;
-        private string _lastPropNameStr;
-        private bool _lastLockedState = false;
-        private float _lastPropFrac = -1f;
 
         public override void OnUpdateTelemetry(IFlightTelemetry telem)
         {
             if (telem == null || !telem.HasVessel) return;
             float s = CurrentDpiScale;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
+            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 分级安全锁与就绪灯
+            // 1. 分级安全锁与就绪联动
             bool isLocked = telem.IsStageLocked;
-            bool hasStages = telem.CurrentStage > 0;
 
-
-            if (_lockBtnText != null && (_lockBtnText.text == null || isLocked != _lastLockedState))
+            if (isLocked != _lastLockedState)
             {
                 _lastLockedState = isLocked;
-                string armedLabel = GetTemplateChannel("ARMED_LABEL", "ARMED");
-                string lockedLabel = GetTemplateChannel("LOCKED_LABEL", "LOCKED");
-                _lockBtnText.text = isLocked ? lockedLabel : armedLabel;
-                ApplyText(_lockBtnText, isLocked ? TextStyleRole.Danger : TextStyleRole.Accent, theme);
+                string lockLabel = isLocked ? "LOCKED" : "ARMED";
+                SetTextIfChanged(_lockBtnText, lockLabel);
+
+                if (isLocked)
+                {
+                    _lockBtnBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+                    ApplyText(_lockBtnText, TextStyleRole.Danger, theme);
+                    _fireBtnBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
+                    ApplyText(_fireBtnText, TextStyleRole.SecondaryValue, theme);
+                    SetTextIfChanged(_subStatusText, "SAFETY LOCKED");
+                    ApplyText(_subStatusText, TextStyleRole.Danger, theme);
+                }
+                else
+                {
+                    _lockBtnBg.color = WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success);
+                    ApplyText(_lockBtnText, TextStyleRole.Accent, theme);
+                    _fireBtnBg.color = style.GetMeterColor(MeterStyleRole.Warning, theme);
+                    ApplyText(_fireBtnText, TextStyleRole.PrimaryValue, theme);
+                    SetTextIfChanged(_subStatusText, "SYSTEM ARMED");
+                    ApplyText(_subStatusText, TextStyleRole.Accent, theme);
+                }
             }
 
             // 2. 分级数字读数与性能参数 (Dirty Checking)
-            if (_stageNumText != null)
+            string sNumStr = $"{telem.CurrentStage:D2}";
+            if (sNumStr != _lastStageNumStr)
             {
-                string sNumStr = $"S{telem.CurrentStage:D2}";
-                if (sNumStr != _lastStageNumStr)
-                {
-                    _lastStageNumStr = sNumStr;
-                    _stageNumText.text = sNumStr;
-                }
+                _lastStageNumStr = sNumStr;
+                SetTextIfChanged(_stageNumText, sNumStr);
             }
 
-            if (_stageDvText != null)
+            double dv = telem.StageDeltaV;
+            string dvStr = $"{dv:N0} m/s";
+            if (dvStr != _lastStageDvStr)
             {
-                double dv = telem.StageDeltaV;
-                string dvStr = $"{dv:N0} m/s";
-                if (dvStr != _lastStageDvStr)
-                {
-                    _lastStageDvStr = dvStr;
-                    _stageDvText.text = dvStr;
-                }
+                _lastStageDvStr = dvStr;
+                SetTextIfChanged(_stageDvText, dvStr);
             }
 
-            if (_stageTwrEngText != null)
+            int burnSec = Mathf.Max(0, (int)telem.StageBurnTime);
+            int m = burnSec / 60;
+            int sec = burnSec % 60;
+            string twrStr = telem.TWR > 0.01 
+                ? $"{m:00}:{sec:00} · {telem.TWR:F2} TWR · {telem.ActiveEngines} ENG" 
+                : $"{m:00}:{sec:00} · {telem.ActiveEngines} ENG";
+            if (twrStr != _lastStageTwrStr)
             {
-                int burnSec = Mathf.Max(0, (int)telem.StageBurnTime);
-                int m = burnSec / 60;
-                int sec = burnSec % 60;
-                string twrStr = telem.TWR > 0.01 
-                    ? $"{m:00}:{sec:00} · {telem.TWR:F2} TWR · {telem.ActiveEngines} ENG" 
-                    : $"{m:00}:{sec:00} · {telem.ActiveEngines} ENG";
-                if (twrStr != _lastStageTwrStr)
-                {
-                    _lastStageTwrStr = twrStr;
-                    _stageTwrEngText.text = twrStr;
-                }
+                _lastStageTwrStr = twrStr;
+                SetTextIfChanged(_stageTwrEngText, twrStr);
             }
-            // 3. 三轴舵面实时偏转与配平
-            UpdateAxisVisuals(telem.PitchInput, telem.PitchTrim, _pitchFillRt, _pitchTrimRt, _pitchValText, s);
-            UpdateAxisVisuals(telem.RollInput, telem.RollTrim, _rollFillRt, _rollTrimRt, _rollValText, s);
-            UpdateAxisVisuals(telem.YawInput, telem.YawTrim, _yawFillRt, _yawTrimRt, _yawValText, s);
+
+            // 3. 三轴舵面偏转与配平
+            UpdateAxisVisuals(telem.PitchInput, telem.PitchTrim, _pitchMeter.FillRt, _pitchMeter.TrimRt, _pitchMeter.ValText, s);
+            UpdateAxisVisuals(telem.RollInput, telem.RollTrim, _rollMeter.FillRt, _rollMeter.TrimRt, _rollMeter.ValText, s);
+            UpdateAxisVisuals(telem.YawInput, telem.YawTrim, _yawMeter.FillRt, _yawMeter.TrimRt, _yawMeter.ValText, s);
 
             // 4. 分级推进剂指示条 (100% 语义驱动)
             float propFrac = Mathf.Clamp01(telem.StagePropellantFraction);
-            if (_propNameText != null)
-            {
-                string rawName = telem.StagePropellantName;
-                if (string.IsNullOrEmpty(rawName)) rawName = "PROP";
-                if (rawName.StartsWith("PROP:", StringComparison.OrdinalIgnoreCase))
-                    rawName = rawName.Substring(5).Trim();
-                else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
-                    rawName = rawName.Substring(4).Trim();
-                if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
+            string rawName = telem.StagePropellantName;
+            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
+            if (rawName.StartsWith("PROP:", StringComparison.OrdinalIgnoreCase))
+                rawName = rawName.Substring(5).Trim();
+            else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
+                rawName = rawName.Substring(4).Trim();
+            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
 
-                string pNameStr = rawName.ToUpperInvariant();
-                if (pNameStr != _lastPropNameStr)
-                {
-                    _lastPropNameStr = pNameStr;
-                    _propNameText.text = pNameStr;
-                }
+            string pNameStr = rawName.ToUpperInvariant();
+            if (pNameStr != _lastPropNameStr)
+            {
+                _lastPropNameStr = pNameStr;
+                SetTextIfChanged(_propNameText, pNameStr);
             }
 
             if (Math.Abs(propFrac - _lastPropFrac) > 0.005f)
             {
                 _lastPropFrac = propFrac;
-                if (_propPctText != null)
-                {
-                    float warnThresh = float.TryParse(GetTemplateChannel("WARN_THRESHOLD", "0.25"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wt) ? wt : 0.25f;
-                    float dangerThresh = float.TryParse(GetTemplateChannel("DANGER_THRESHOLD", "0.10"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dt) ? dt : 0.10f;
+                string pPctStr = $"{propFrac * 100f:F1}%";
+                SetTextIfChanged(_propPctText, pPctStr);
 
-                    string pPctStr = $"{propFrac * 100f:F1}%";
-                    _propPctText.text = pPctStr;
-                    TextStyleRole pRole = (propFrac > warnThresh) ? TextStyleRole.PrimaryValue : ((propFrac > dangerThresh) ? TextStyleRole.Warning : TextStyleRole.Danger);
-                    ApplyText(_propPctText, pRole, theme);
-                }
+                TextStyleRole pRole = (propFrac > 0.25f) ? TextStyleRole.PrimaryValue : ((propFrac > 0.10f) ? TextStyleRole.Warning : TextStyleRole.Danger);
+                ApplyText(_propPctText, pRole, theme);
+
                 if (_propFillRt != null)
                 {
-                    _propFillRt.sizeDelta = new Vector2(184f * s * propFrac, 2.5f * s);
+                    _propFillRt.sizeDelta = new Vector2(188f * s * propFrac, 3.5f * s);
                 }
                 if (_propFillImg != null)
                 {
-                    float warnThresh = float.TryParse(GetTemplateChannel("WARN_THRESHOLD", "0.25"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wt) ? wt : 0.25f;
-                    float dangerThresh = float.TryParse(GetTemplateChannel("DANGER_THRESHOLD", "0.10"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dt) ? dt : 0.10f;
-                    MeterStyleRole fillRole = (propFrac > warnThresh) ? MeterStyleRole.Primary : ((propFrac > dangerThresh) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
-                    _propFillImg.color = WidgetStyleManager.Meter(fillRole, theme);
+                    MeterStyleRole fillRole = (propFrac > 0.25f) ? MeterStyleRole.Primary : ((propFrac > 0.10f) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
+                    _propFillImg.color = style.GetMeterColor(fillRole, theme);
                 }
             }
 
-            // 5. 底部微调模式与对接口模式
+            // 5. 底部模式按键
             if (_precText != null)
             {
-                _precText.text = telem.IsPrecisionControl ? "PREC" : "NORM";
+                string pStr = telem.IsPrecisionControl ? "PREC" : "NORM";
+                SetTextIfChanged(_precText, pStr);
                 ApplyText(_precText, telem.IsPrecisionControl ? TextStyleRole.Warning : TextStyleRole.SecondaryValue, theme);
             }
             if (_modeText != null)
             {
-                _modeText.text = telem.IsDockingMode ? "DCK" : "STG";
+                string mStr = telem.IsDockingMode ? "DCK" : "STG";
+                SetTextIfChanged(_modeText, mStr);
                 ApplyText(_modeText, telem.IsDockingMode ? TextStyleRole.Warning : TextStyleRole.SecondaryValue, theme);
             }
         }
@@ -430,7 +495,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (fillRt != null)
             {
-                fillRt.sizeDelta = new Vector2(fillWidth, 3f * s);
+                fillRt.sizeDelta = new Vector2(fillWidth, 3.5f * s);
                 fillRt.anchoredPosition = new Vector2(fillCenterOffset, 0f);
             }
 
@@ -443,59 +508,68 @@ namespace ModularFlightPanel.UI.Widgets
             if (valText != null)
             {
                 int pct = Mathf.RoundToInt(clampedInput * 100f);
-                valText.text = (pct > 0) ? $"+{pct}%" : $"{pct}%";
+                string str = (pct > 0) ? $"+{pct}%" : $"{pct}%";
+                SetTextIfChanged(valText, str);
             }
         }
-
-        private ThemeConfig _cachedTheme;
 
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
-            _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            if (_panelBg != null) _panelBg.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
-            if (_panelOutline != null)
-            {
-                _panelOutline.enabled = true;
-                _panelOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
-            }
+            ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
 
+            // 顶栏
             if (_titleText != null)
             {
-                _titleText.text = GetTemplateChannel("TITLE", "STAGE CONTROL");
+                _titleText.text = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_STAGE_CTRL_TITLE", "STAGE CONTROL"));
                 ApplyText(_titleText, TextStyleRole.Cardinal, theme);
             }
+            if (_subStatusText != null) ApplyText(_subStatusText, _lastLockedState ? TextStyleRole.Danger : TextStyleRole.SecondaryValue, theme);
+
+            if (_lockBtnBg != null) _lockBtnBg.color = _lastLockedState ? WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme) : WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success);
+            if (_lockBtnText != null) ApplyText(_lockBtnText, _lastLockedState ? TextStyleRole.Danger : TextStyleRole.Accent, theme);
+
+            if (_fireBtnBg != null) _fireBtnBg.color = _lastLockedState ? WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme) : style.GetMeterColor(MeterStyleRole.Warning, theme);
+            if (_fireBtnText != null) ApplyText(_fireBtnText, TextStyleRole.PrimaryValue, theme);
+
+            // 分级中枢凹槽窗
+            if (_stageBayBg != null) _stageBayBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_stageBayOutline != null) _stageBayOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            if (_stageLabelText != null) ApplyText(_stageLabelText, TextStyleRole.SecondaryValue, theme);
+            if (_stageNumText != null) ApplyText(_stageNumText, TextStyleRole.PrimaryValue, theme);
             if (_stageDvText != null) ApplyText(_stageDvText, TextStyleRole.PrimaryValue, theme);
             if (_stageTwrEngText != null) ApplyText(_stageTwrEngText, TextStyleRole.SecondaryValue, theme);
-            if (_propNameText != null) ApplyText(_propNameText, TextStyleRole.SecondaryValue, theme);
-            if (_pitchLabel != null) ApplyText(_pitchLabel, TextStyleRole.SecondaryValue, theme);
-            if (_rollLabel != null) ApplyText(_rollLabel, TextStyleRole.SecondaryValue, theme);
-            if (_yawLabel != null) ApplyText(_yawLabel, TextStyleRole.SecondaryValue, theme);
-            if (_pitchFillImg != null) _pitchFillImg.color = theme.AccentPrimary;
-            if (_rollFillImg != null) _rollFillImg.color = theme.AccentPrimary;
-            if (_yawFillImg != null) _yawFillImg.color = theme.AccentPrimary;
 
-            if (_lockBtn != null)
-            {
-                _lockBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                if (_lockBtnText != null) ApplyText(_lockBtnText, _lastLockedState ? TextStyleRole.Danger : TextStyleRole.Accent, theme);
-            }
-            if (_fireBtn != null)
-            {
-                _fireBtn.GetComponent<Image>().color = WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution);
-                if (_fireBtnText != null)
-                {
-                    _fireBtnText.text = GetTemplateChannel("FIRE_LABEL", "STAGE ▶");
-                    ApplyText(_fireBtnText, TextStyleRole.Warning, theme);
-                }
-            }
-            if (_precBtn != null) _precBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            if (_modeBtn != null) _modeBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            if (_stockToggleBtn != null) _stockToggleBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            // 三轴仪表
+            ApplyText(_pitchMeter.Label, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_pitchMeter.ValText, TextStyleRole.PrimaryValue, theme);
+            if (_pitchMeter.FillImg != null) _pitchMeter.FillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+
+            ApplyText(_rollMeter.Label, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_rollMeter.ValText, TextStyleRole.PrimaryValue, theme);
+            if (_rollMeter.FillImg != null) _rollMeter.FillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+
+            ApplyText(_yawMeter.Label, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_yawMeter.ValText, TextStyleRole.PrimaryValue, theme);
+            if (_yawMeter.FillImg != null) _yawMeter.FillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+
+            // 推进剂槽
+            if (_propNameText != null) ApplyText(_propNameText, TextStyleRole.SecondaryValue, theme);
+            if (_propPctText != null) ApplyText(_propPctText, TextStyleRole.PrimaryValue, theme);
+            if (_propTrackBg != null) _propTrackBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_propFillImg != null) _propFillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+
+            // 底部按键
+            if (_precImg != null) _precImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (_precText != null) ApplyText(_precText, TextStyleRole.SecondaryValue, theme);
+
+            if (_modeImg != null) _modeImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (_modeText != null) ApplyText(_modeText, TextStyleRole.SecondaryValue, theme);
+
+            if (_stockToggleImg != null) _stockToggleImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (_stockToggleText != null) ApplyText(_stockToggleText, TextStyleRole.SecondaryValue, theme);
         }
 

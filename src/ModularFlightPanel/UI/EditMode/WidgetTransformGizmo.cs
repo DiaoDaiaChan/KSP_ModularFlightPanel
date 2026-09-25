@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.UI
 {
@@ -35,6 +36,12 @@ namespace ModularFlightPanel.UI
         private RectTransform _handleBL;
         private RectTransform _handleBR;
 
+        // 4 边手柄 (用于独立调整长宽比/细长与矮胖)
+        private RectTransform _handleT;
+        private RectTransform _handleB;
+        private RectTransform _handleL;
+        private RectTransform _handleR;
+
         // 旋转手柄
         private GameObject _rotStemObj;
         private RectTransform _rotStemRt;
@@ -50,16 +57,20 @@ namespace ModularFlightPanel.UI
         {
             None,
             ScaleTL, ScaleTR, ScaleBL, ScaleBR,
+            ScaleT, ScaleB, ScaleL, ScaleR,
             Rotate
         }
         private DragGizmoMode _currentDragMode = DragGizmoMode.None;
         private Vector2 _dragStartMousePos;
         private float _initialScale;
+        private float _initialScaleX = 1f;
+        private float _initialScaleY = 1f;
         private float _initialAngle;
         private Rect _initialGroupBounds;
         private Vector2 _initialCenter;
 
         private readonly Dictionary<BaseFlightWidget, float> _initialWidgetScales = new Dictionary<BaseFlightWidget, float>();
+        private readonly Dictionary<BaseFlightWidget, Vector2> _initialWidgetScalesXY = new Dictionary<BaseFlightWidget, Vector2>();
 
         private Color _cyanCol;
         private Color _goldCol;
@@ -135,6 +146,12 @@ namespace ModularFlightPanel.UI
             _handleBL = CreateHandle("Handle_BL", new Vector2(0f, 0f), DragGizmoMode.ScaleBL);
             _handleBR = CreateHandle("Handle_BR", new Vector2(1f, 0f), DragGizmoMode.ScaleBR);
 
+            // 1b. 创建 4 边中点拉伸手柄 (独立调整细长与矮胖)
+            _handleT = CreateHandle("Handle_T", new Vector2(0.5f, 1f), DragGizmoMode.ScaleT, new Vector2(14f, 6f));
+            _handleB = CreateHandle("Handle_B", new Vector2(0.5f, 0f), DragGizmoMode.ScaleB, new Vector2(14f, 6f));
+            _handleL = CreateHandle("Handle_L", new Vector2(0f, 0.5f), DragGizmoMode.ScaleL, new Vector2(6f, 14f));
+            _handleR = CreateHandle("Handle_R", new Vector2(1f, 0.5f), DragGizmoMode.ScaleR, new Vector2(6f, 14f));
+
             // 2. 创建顶部旋转手柄与延伸立柱
             _rotStemObj = new GameObject("RotStem", typeof(RectTransform), typeof(Image));
             _rotStemObj.transform.SetParent(_gizmoBox.transform, false);
@@ -157,7 +174,7 @@ namespace ModularFlightPanel.UI
             _infoBadgeRt.anchorMin = new Vector2(0.5f, 0f);
             _infoBadgeRt.anchorMax = new Vector2(0.5f, 0f);
             _infoBadgeRt.pivot = new Vector2(0.5f, 1f);
-            _infoBadgeRt.sizeDelta = new Vector2(230f, 20f);
+            _infoBadgeRt.sizeDelta = new Vector2(250f, 20f);
             _infoBadgeRt.anchoredPosition = new Vector2(0f, -8f);
 
             Image bImg = _infoBadgeObj.GetComponent<Image>();
@@ -176,8 +193,9 @@ namespace ModularFlightPanel.UI
             iTrt.anchoredPosition = Vector2.zero;
         }
 
-        private RectTransform CreateHandle(string name, Vector2 anchor, DragGizmoMode mode)
+        private RectTransform CreateHandle(string name, Vector2 anchor, DragGizmoMode mode, Vector2 size = default)
         {
+            if (size == default) size = new Vector2(10f, 10f);
             GameObject handleObj = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Outline), typeof(GizmoHandleTrigger));
             handleObj.transform.SetParent(_gizmoBox.transform, false);
 
@@ -185,7 +203,7 @@ namespace ModularFlightPanel.UI
             rt.anchorMin = anchor;
             rt.anchorMax = anchor;
             rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(10f, 10f);
+            rt.sizeDelta = size;
             rt.anchoredPosition = Vector2.zero;
 
             Image img = handleObj.GetComponent<Image>();
@@ -272,16 +290,45 @@ namespace ModularFlightPanel.UI
             // 单选时旋转角度跟随该组件，多选时保持 0°
             if (sel.Count == 1)
             {
-                float rot = sel[0].Config?.Rotation ?? 0f;
+                var target = sel[0];
+                bool isLocked = target.Config?.IsLocked == true;
+                float rot = target.Config?.Rotation ?? 0f;
                 _gizmoBoxRt.localEulerAngles = new Vector3(0f, 0f, rot);
-                float sc = sel[0].Config?.Scale ?? 1f;
-                _infoText.text = $"<b>{sel[0].DisplayName}</b> | X:{center.x:F0} Y:{center.y:F0} | {sc:F2}x {rot:F0}°";
+                float sx = target.Config?.EffectiveScaleX ?? 1f;
+                float sy = target.Config?.EffectiveScaleY ?? 1f;
+                string scaleStr = Math.Abs(sx - sy) < 0.001f ? $"{sx:F2}x" : $"{sx:F2}x,{sy:F2}y";
+                int layerNum = WidgetLayerManager.GetLayerNumber(target);
+                int totalLayers = WidgetLayerManager.TotalLayers;
+                string lockBadge = isLocked ? " <color=#FFB703>🔒 [已锁定]</color>" : "";
+                _infoText.text = $"<b>{target.DisplayName}</b>{lockBadge} | <color=#38BDF8>#{layerNum}/{totalLayers}</color> | X:{center.x:F0} Y:{center.y:F0} | {scaleStr} {rot:F0}°";
+
+                if (_boxOutline != null)
+                {
+                    _boxOutline.effectColor = isLocked ? new Color(1f, 0.7f, 0.2f, 0.75f) : _cyanCol;
+                }
+                SetHandlesActive(!isLocked);
             }
             else
             {
                 _gizmoBoxRt.localEulerAngles = Vector3.zero;
-                _infoText.text = $"<b>多选群组 ({sel.Count} 项)</b> | X:{center.x:F0} Y:{center.y:F0} | W:{w_total:F0} H:{h_total:F0}";
+                _infoText.text = $"<b>{I18n.TrFormat("GIZMO_GROUP_COUNT_FMT", "多选群组 ({0} 项)", sel.Count)}</b> | X:{center.x:F0} Y:{center.y:F0} | W:{w_total:F0} H:{h_total:F0}";
+                if (_boxOutline != null) _boxOutline.effectColor = _cyanCol;
+                SetHandlesActive(true);
             }
+        }
+
+        private void SetHandlesActive(bool active)
+        {
+            if (_handleTL != null) _handleTL.gameObject.SetActive(active);
+            if (_handleTR != null) _handleTR.gameObject.SetActive(active);
+            if (_handleBL != null) _handleBL.gameObject.SetActive(active);
+            if (_handleBR != null) _handleBR.gameObject.SetActive(active);
+            if (_handleT != null) _handleT.gameObject.SetActive(active);
+            if (_handleB != null) _handleB.gameObject.SetActive(active);
+            if (_handleL != null) _handleL.gameObject.SetActive(active);
+            if (_handleR != null) _handleR.gameObject.SetActive(active);
+            if (_rotStemObj != null) _rotStemObj.SetActive(active);
+            if (_rotHandle != null) _rotHandle.gameObject.SetActive(active);
         }
 
         public void HideGizmo()
@@ -303,13 +350,17 @@ namespace ModularFlightPanel.UI
             if (sel.Count > 0)
             {
                 _initialScale = sel[0].Config?.Scale ?? 1f;
+                _initialScaleX = sel[0].Config?.EffectiveScaleX ?? 1f;
+                _initialScaleY = sel[0].Config?.EffectiveScaleY ?? 1f;
                 _initialAngle = sel[0].Config?.Rotation ?? 0f;
                 _initialWidgetScales.Clear();
+                _initialWidgetScalesXY.Clear();
                 foreach (var w in sel)
                 {
                     if (w != null && w.Config != null)
                     {
                         _initialWidgetScales[w] = w.Config.Scale;
+                        _initialWidgetScalesXY[w] = new Vector2(w.Config.EffectiveScaleX, w.Config.EffectiveScaleY);
                     }
                 }
 
@@ -350,11 +401,63 @@ namespace ModularFlightPanel.UI
                 WidgetSelectionManager.BatchSetRotation(targetAngle);
                 UpdateGizmoPosition();
             }
+            else if (_currentDragMode == DragGizmoMode.ScaleT || _currentDragMode == DragGizmoMode.ScaleB)
+            {
+                // 垂直方向拉伸/压缩 (高度、矮胖与细长调节)
+                float angleForProj = (WidgetSelectionManager.Count == 1) ? _initialAngle : 0f;
+                Vector2 localDelta = Quaternion.Euler(0, 0, -angleForProj) * mouseDelta;
+                float distY = (_currentDragMode == DragGizmoMode.ScaleT) ? localDelta.y : -localDelta.y;
+                float baseH = Mathf.Max(20f, _initialGroupBounds.height);
+                float factorY = Mathf.Max(0.1f, 1.0f + (distY / (baseH * 0.5f)));
+
+                if (shift)
+                {
+                    factorY = Mathf.Round(factorY * 20f) / 20f;
+                }
+
+                if (_initialWidgetScalesXY.Count > 1)
+                {
+                    WidgetSelectionManager.BatchScaleRelativeXY(_initialWidgetScalesXY, null, factorY, commit: false);
+                }
+                else
+                {
+                    float newScaleY = Mathf.Clamp(_initialScaleY * factorY, 0.2f, 4.0f);
+                    WidgetSelectionManager.BatchSetScaleXY(null, newScaleY, commit: false);
+                }
+                UpdateGizmoPosition();
+            }
+            else if (_currentDragMode == DragGizmoMode.ScaleL || _currentDragMode == DragGizmoMode.ScaleR)
+            {
+                // 水平方向拉伸/压缩 (宽度调节)
+                float angleForProj = (WidgetSelectionManager.Count == 1) ? _initialAngle : 0f;
+                Vector2 localDelta = Quaternion.Euler(0, 0, -angleForProj) * mouseDelta;
+                float distX = (_currentDragMode == DragGizmoMode.ScaleR) ? localDelta.x : -localDelta.x;
+                float baseW = Mathf.Max(20f, _initialGroupBounds.width);
+                float factorX = Mathf.Max(0.1f, 1.0f + (distX / (baseW * 0.5f)));
+
+                if (shift)
+                {
+                    factorX = Mathf.Round(factorX * 20f) / 20f;
+                }
+
+                if (_initialWidgetScalesXY.Count > 1)
+                {
+                    WidgetSelectionManager.BatchScaleRelativeXY(_initialWidgetScalesXY, factorX, null, commit: false);
+                }
+                else
+                {
+                    float newScaleX = Mathf.Clamp(_initialScaleX * factorX, 0.2f, 4.0f);
+                    WidgetSelectionManager.BatchSetScaleXY(newScaleX, null, commit: false);
+                }
+                UpdateGizmoPosition();
+            }
             else
             {
-                // 角手柄缩放拖拽解算 (按比例缩放，彻底消除多选比例坍塌)
+                // 角手柄等比例缩放 (按对角线比例缩放，彻底消除多选比例坍塌)
+                float angleForProj = (WidgetSelectionManager.Count == 1) ? _initialAngle : 0f;
+                Vector2 localDelta = Quaternion.Euler(0, 0, -angleForProj) * mouseDelta;
                 float baseDiag = Mathf.Max(30f, Mathf.Sqrt(_initialGroupBounds.width * _initialGroupBounds.width + _initialGroupBounds.height * _initialGroupBounds.height));
-                float dist = Vector2.Dot(mouseDelta.normalized, GetHandleDirection(_currentDragMode)) * mouseDelta.magnitude;
+                float dist = Vector2.Dot(localDelta.normalized, GetHandleDirection(_currentDragMode)) * localDelta.magnitude;
 
                 float scaleFactor = Mathf.Max(0.1f, 1.0f + (dist / (baseDiag * 0.5f)));
 
@@ -393,7 +496,7 @@ namespace ModularFlightPanel.UI
         {
             if (_currentDragMode != DragGizmoMode.None)
             {
-                string desc = _currentDragMode == DragGizmoMode.Rotate ? "手柄旋转" : "手柄缩放";
+                string desc = _currentDragMode == DragGizmoMode.Rotate ? I18n.Tr("GIZMO_ACTION_ROTATE", "手柄旋转") : I18n.Tr("GIZMO_ACTION_SCALE", "手柄缩放");
                 bool wasScale = _currentDragMode != DragGizmoMode.Rotate;
                 _currentDragMode = DragGizmoMode.None;
                 WidgetEditHistory.CommitAction(desc);

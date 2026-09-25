@@ -22,12 +22,26 @@ namespace ModularFlightPanel.Core.Probes
         private static Type _adapterType;
         private static Type _interfaceType;
         private static MethodInfo _hasVesselMethod;
+        private static MethodInfo _vesselVelocityMethod;
+        private static MethodInfo _unmanageableVesselVelocityMethod;
+        private static MethodInfo _vesselTangentMethod;
+        private static MethodInfo _vesselNormalMethod;
+        private static MethodInfo _vesselBinormalMethod;
         private static MethodInfo _flightPlanExistsMethod;
         private static MethodInfo _flightPlanNumManoeuvresMethod;
         private static MethodInfo _flightPlanGetManoeuvreMethod;
 
+        private static Type _qpType;
+        private static Type _xyzType;
+        private static FieldInfo _qpQField;
+        private static FieldInfo _qpPField;
+        private static FieldInfo _xyzXField;
+        private static FieldInfo _xyzYField;
+        private static FieldInfo _xyzZField;
+
         private static FieldInfo _pluginField;
         private static MethodInfo _pluginMethod;
+        private static MethodInfo _hasActiveManageableVesselMethod;
         private static PropertyInfo _plannerPluginProp;
         private static PropertyInfo _plannerPredictedVesselProp;
         private static PropertyInfo _analyserPredictedVesselProp;
@@ -48,7 +62,7 @@ namespace ModularFlightPanel.Core.Probes
         private static MethodInfo _setToOrbitalFrameMethod;
         private static MethodInfo _setTargetFrameMethod;
         private static MethodInfo _unsetTargetFrameMethod;
-        private static MethodInfo _toggleButtonMethod;
+        private static MethodInfo _toggleMethod;
 
         private static PropertyInfo _showGuidanceProp;
         private static MethodInfo _getManoeuvreMethod;
@@ -82,9 +96,32 @@ namespace ModularFlightPanel.Core.Probes
                     if (_interfaceType != null)
                     {
                         _hasVesselMethod = _interfaceType.GetMethod("HasVessel", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null);
+                        _vesselVelocityMethod = _interfaceType.GetMethod("VesselVelocity", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null)
+                                                ?? _interfaceType.GetMethod("VesselVelocity", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                        _unmanageableVesselVelocityMethod = _interfaceType.GetMethod("UnmanageableVesselVelocity", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                        _vesselTangentMethod = _interfaceType.GetMethod("VesselTangent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null)
+                                               ?? _interfaceType.GetMethod("VesselTangent", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                        _vesselNormalMethod = _interfaceType.GetMethod("VesselNormal", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null)
+                                              ?? _interfaceType.GetMethod("VesselNormal", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                        _vesselBinormalMethod = _interfaceType.GetMethod("VesselBinormal", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null)
+                                                ?? _interfaceType.GetMethod("VesselBinormal", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
                         _flightPlanExistsMethod = _interfaceType.GetMethod("FlightPlanExists", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null);
                         _flightPlanNumManoeuvresMethod = _interfaceType.GetMethod("FlightPlanNumberOfManoeuvres", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string) }, null);
                         _flightPlanGetManoeuvreMethod = _interfaceType.GetMethod("FlightPlanGetManoeuvre", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, new[] { typeof(IntPtr), typeof(string), typeof(int) }, null);
+                    }
+
+                    _qpType = principiaAssembly.GetType("principia.ksp_plugin_adapter.QP");
+                    _xyzType = principiaAssembly.GetType("principia.ksp_plugin_adapter.XYZ");
+                    if (_qpType != null)
+                    {
+                        _qpQField = _qpType.GetField("q", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                        _qpPField = _qpType.GetField("p", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                    }
+                    if (_xyzType != null)
+                    {
+                        _xyzXField = _xyzType.GetField("x", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                        _xyzYField = _xyzType.GetField("y", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                        _xyzZField = _xyzType.GetField("z", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
                     }
 
                     _adapterType = principiaAssembly.GetType("principia.ksp_plugin_adapter.PrincipiaPluginAdapter");
@@ -92,6 +129,7 @@ namespace ModularFlightPanel.Core.Probes
                     {
                         _pluginField = _adapterType.GetField("plugin_", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                         _pluginMethod = _adapterType.GetMethod("Plugin", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, Type.EmptyTypes, null);
+                        _hasActiveManageableVesselMethod = _adapterType.GetMethod("has_active_manageable_vessel", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
                         // 1. 遍历 PrincipiaPluginAdapter 公开与内部组件
                         _frameSelectorField = _adapterType.GetField("plotting_frame_selector_", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
@@ -119,7 +157,8 @@ namespace ModularFlightPanel.Core.Probes
                             _setToOrbitalFrameMethod = selectorType.GetMethod("SetToOrbitalFrame", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
                             _setTargetFrameMethod = selectorType.GetMethod("SetTargetFrame", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
                             _unsetTargetFrameMethod = selectorType.GetMethod("UnsetTargetFrame", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
-                            _toggleButtonMethod = selectorType.GetMethod("ToggleButton", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                            _toggleMethod = selectorType.GetMethod("Toggle", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null)
+                                            ?? selectorType.GetMethod("ToggleButton", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
                         }
 
                         // 3. 遍历飞行计划与机动编辑器 (FlightPlanner)
@@ -249,6 +288,19 @@ namespace ModularFlightPanel.Core.Probes
                 }
                 return "";
             }, "Principia 权威参考系 (ReferenceFrame)", "当前参考系主参考天体", new[] { "PRIMARY", "PRIMARYBODY" });
+
+            Traverser.RegisterCustom("PlottingFrameSpeed", typeof(double), () =>
+            {
+                if (GetActiveVesselSpeed(out double s)) return s;
+                return double.NaN;
+            }, "Principia 权威参考系 (ReferenceFrame)", "当前绘制参考系下载具速率 (m/s)", new[] { "FRAME_SPD", "FRAMESPEED", "PRINCIPIA_SPD" });
+
+            Traverser.RegisterCustom("PlottingFrameVelocity", typeof(Vector3d), () =>
+            {
+                Vessel v = FlightGlobals.ActiveVessel;
+                if (v != null && GetVesselVelocity(v.id.ToString(), out Vector3d vel)) return vel;
+                return Vector3d.zero;
+            }, "Principia 权威参考系 (ReferenceFrame)", "当前绘制参考系下载具速度矢量", new[] { "FRAME_VEL", "FRAMEVELOCITY" });
 
             // 机动计划 (Next Planned Burn)
             Traverser.RegisterCustom("ManeuverDeltaV", typeof(double), () =>
@@ -420,7 +472,6 @@ namespace ModularFlightPanel.Core.Probes
         }
 
         private static object _cachedAdapterInstance;
-        private static float _lastAdapterSearchTime = -10f;
 
         private static object GetAdapterInstance()
         {
@@ -430,16 +481,20 @@ namespace ModularFlightPanel.Core.Probes
                 return _cachedAdapterInstance;
             }
 
-            float now = Time.unscaledTime;
-            if (now - _lastAdapterSearchTime < 2.0f)
-            {
-                return null;
-            }
-            _lastAdapterSearchTime = now;
-
             try
             {
-                // 1. 优先从场景对象查找
+                // 1. 黄金路径：PrincipiaPluginAdapter 恒定挂载在 ScenarioRunner 单例上，O(1) 获取零开销
+                if (ScenarioRunner.Instance != null)
+                {
+                    var comp = ScenarioRunner.Instance.GetComponent(_adapterType);
+                    if (comp != null)
+                    {
+                        _cachedAdapterInstance = comp;
+                        return _cachedAdapterInstance;
+                    }
+                }
+
+                // 2. 从场景对象查找
                 var obj = UnityEngine.Object.FindObjectOfType(_adapterType);
                 if (obj != null)
                 {
@@ -447,7 +502,7 @@ namespace ModularFlightPanel.Core.Probes
                     return _cachedAdapterInstance;
                 }
 
-                // 2. 备选：从 HighLogic 剧本模块列表查找
+                // 3. 备选：从 HighLogic 剧本模块列表查找
                 if (HighLogic.CurrentGame != null && HighLogic.CurrentGame.scenarios != null)
                 {
                     for (int i = 0; i < HighLogic.CurrentGame.scenarios.Count; i++)
@@ -879,12 +934,52 @@ namespace ModularFlightPanel.Core.Probes
             }
         }
 
+        public enum ReferenceFrameCategory
+        {
+            Inertial,
+            Surface,
+            Orbital,
+            Lagrange,
+            Target
+        }
+
+        public static ReferenceFrameCategory CurrentFrameCategory
+        {
+            get
+            {
+                if (IsTargetFrameSelected) return ReferenceFrameCategory.Target;
+                object sel = GetFrameSelectorInstance();
+                if (sel != null && _frameTypeProp != null)
+                {
+                    try
+                    {
+                        object val = _frameTypeProp.GetValue(sel, null);
+                        if (val != null)
+                        {
+                            int intVal = Convert.ToInt32(val);
+                            switch (intVal)
+                            {
+                                case 6000: return ReferenceFrameCategory.Inertial;
+                                case 6001: return ReferenceFrameCategory.Lagrange;
+                                case 6002: return ReferenceFrameCategory.Orbital;
+                                case 6003: return ReferenceFrameCategory.Surface;
+                                case 6004: return ReferenceFrameCategory.Lagrange;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+                if (IsSurfaceFrameSelected) return ReferenceFrameCategory.Surface;
+                return ReferenceFrameCategory.Inertial;
+            }
+        }
+
         public static void ToggleReferenceFrameWindow()
         {
             object sel = GetFrameSelectorInstance();
-            if (sel != null && _toggleButtonMethod != null)
+            if (sel != null && _toggleMethod != null)
             {
-                try { _toggleButtonMethod.Invoke(sel, null); } catch { }
+                try { _toggleMethod.Invoke(sel, null); } catch { }
             }
         }
 
@@ -932,6 +1027,213 @@ namespace ModularFlightPanel.Core.Probes
             {
                 Debug.LogWarning($"[ModularFlightPanel] CycleReferenceFrame warning: {ex.Message}");
             }
+        }
+
+        private static object CreateQp(Vector3d pos, Vector3d vel)
+        {
+            if (_qpType == null || _xyzType == null || _qpQField == null || _qpPField == null ||
+                _xyzXField == null || _xyzYField == null || _xyzZField == null) return null;
+            try
+            {
+                object qp = Activator.CreateInstance(_qpType);
+                object q = Activator.CreateInstance(_xyzType);
+                object p = Activator.CreateInstance(_xyzType);
+
+                _xyzXField.SetValue(q, pos.x);
+                _xyzYField.SetValue(q, pos.y);
+                _xyzZField.SetValue(q, pos.z);
+
+                _xyzXField.SetValue(p, vel.x);
+                _xyzYField.SetValue(p, vel.y);
+                _xyzZField.SetValue(p, vel.z);
+
+                _qpQField.SetValue(qp, q);
+                _qpPField.SetValue(qp, p);
+                return qp;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool TryExtractXyz(object xyz, out Vector3d result)
+        {
+            result = Vector3d.zero;
+            if (xyz == null) return false;
+            try
+            {
+                if (xyz is Vector3d v)
+                {
+                    result = v;
+                    return true;
+                }
+                if (_xyzXField != null && _xyzYField != null && _xyzZField != null)
+                {
+                    double x = Convert.ToDouble(_xyzXField.GetValue(xyz));
+                    double y = Convert.ToDouble(_xyzYField.GetValue(xyz));
+                    double z = Convert.ToDouble(_xyzZField.GetValue(xyz));
+                    result = new Vector3d(x, y, z);
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// 获取载具在当前 Principia 绘制参考系下的速度矢量 (m/s)
+        /// 严格遵循 Principia 官方解算策略：
+        /// 1. 若当前载具被 Principia 纳管，优先调用原生 VesselVelocity(plugin, guid)；
+        /// 2. 若当前载具未纳管或处于过渡态，调用原生 UnmanageableVesselVelocity 兜底计算，0 盲目估算，100% 绝对物理线速度。
+        /// </summary>
+        public static bool GetVesselVelocity(Vessel vessel, out Vector3d velocity)
+        {
+            velocity = Vector3d.zero;
+            if (!_isAvailable || vessel == null) return false;
+
+            IntPtr plugin = GetPluginPointer();
+            if (plugin == IntPtr.Zero) return false;
+
+            string guid = vessel.id.ToString();
+            object adapter = GetAdapterInstance();
+
+            bool hasManageable = false;
+            if (adapter != null && _hasActiveManageableVesselMethod != null)
+            {
+                try { hasManageable = (bool)_hasActiveManageableVesselMethod.Invoke(adapter, null); }
+                catch { }
+            }
+            else
+            {
+                hasManageable = true;
+            }
+
+            bool hasVessel = false;
+            if (_hasVesselMethod != null)
+            {
+                try { hasVessel = (bool)_hasVesselMethod.Invoke(null, new object[] { plugin, guid }); }
+                catch { }
+            }
+
+            // 1. 如果 Principia 已纳管该活动载具，直接从 C++ 核心获取当前参考系速度矢量
+            if (hasManageable && hasVessel && _vesselVelocityMethod != null)
+            {
+                try
+                {
+                    object xyz = _vesselVelocityMethod.Invoke(null, new object[] { plugin, guid });
+                    if (TryExtractXyz(xyz, out velocity))
+                    {
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            // 2. 兜底策略：调用 Principia 官方导出的 UnmanageableVesselVelocity 接口
+            if (_unmanageableVesselVelocityMethod != null && vessel.orbit != null && vessel.orbit.referenceBody != null)
+            {
+                try
+                {
+                    object qp = CreateQp(vessel.orbit.pos, vessel.orbit.vel);
+                    if (qp != null)
+                    {
+                        int bodyIndex = vessel.orbit.referenceBody.flightGlobalsIndex;
+                        object xyz = _unmanageableVesselVelocityMethod.Invoke(null, new object[] { plugin, qp, bodyIndex });
+                        if (TryExtractXyz(xyz, out velocity))
+                        {
+                            return true;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        public static bool GetVesselVelocity(string guid, out Vector3d velocity)
+        {
+            velocity = Vector3d.zero;
+            if (string.IsNullOrEmpty(guid)) return false;
+
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v != null && v.id.ToString() == guid)
+            {
+                return GetVesselVelocity(v, out velocity);
+            }
+
+            if (FlightGlobals.fetch != null && FlightGlobals.Vessels != null)
+            {
+                for (int i = 0; i < FlightGlobals.Vessels.Count; i++)
+                {
+                    var cand = FlightGlobals.Vessels[i];
+                    if (cand != null && cand.id.ToString() == guid)
+                    {
+                        return GetVesselVelocity(cand, out velocity);
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 获取当前绘制参考系下 Frenet 三轴基底（切向 Prograde、法向 Normal、副法向/径向 Radial）
+        /// </summary>
+        public static bool GetVesselFrenetTrihedron(out Vector3d tangent, out Vector3d normal, out Vector3d binormal)
+        {
+            tangent = Vector3d.zero;
+            normal = Vector3d.zero;
+            binormal = Vector3d.zero;
+            if (!_isAvailable || _vesselTangentMethod == null || _vesselNormalMethod == null || _vesselBinormalMethod == null) return false;
+
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null) return false;
+
+            IntPtr plugin = GetPluginPointer();
+            if (plugin == IntPtr.Zero) return false;
+
+            string guid = v.id.ToString();
+            if (_hasVesselMethod != null)
+            {
+                try
+                {
+                    bool hasVessel = (bool)_hasVesselMethod.Invoke(null, new object[] { plugin, guid });
+                    if (!hasVessel) return false;
+                }
+                catch { return false; }
+            }
+
+            try
+            {
+                object tObj = _vesselTangentMethod.Invoke(null, new object[] { plugin, guid });
+                object nObj = _vesselNormalMethod.Invoke(null, new object[] { plugin, guid });
+                object bObj = _vesselBinormalMethod.Invoke(null, new object[] { plugin, guid });
+                if (TryExtractXyz(tObj, out tangent) && TryExtractXyz(nObj, out normal) && TryExtractXyz(bObj, out binormal))
+                {
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// 获取活动载具在当前 Principia 权威绘制参考系下的标量速率 (m/s)
+        /// 支持日心惯性系、地月质心系、脉动系、地表系及目标系
+        /// </summary>
+        public static bool GetActiveVesselSpeed(out double speed)
+        {
+            speed = 0.0;
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v == null) return false;
+
+            if (GetVesselVelocity(v, out Vector3d vel))
+            {
+                speed = vel.magnitude;
+                return !double.IsNaN(speed) && !double.IsInfinity(speed);
+            }
+            return false;
         }
     }
 }

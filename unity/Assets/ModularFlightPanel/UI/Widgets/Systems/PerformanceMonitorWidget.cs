@@ -11,6 +11,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 实时监控 MFP 遥测、外部探针、组件渲染、飞船剪影耗时、物理帧率与宿主内存分配，
     /// 提供一键主干旁路 (Master Bypass) 控制，100% 遵照 BaseFlightWidget 与 TelemetryTokenEngine 规范。
     /// </summary>
+    [FlightWidget("performance_monitor", "perf_monitor", "profiler", Category = WidgetCategory.Systems, DisplayName = "SYS PERF 航电性能探针监控屏", Description = "实时监控 MFP 遥测、外部探针、组件渲染耗时与帧率 FPS，支持一键主干旁路。", DefaultWidgetId = "custom.perf_monitor", DefaultX = 440f, DefaultY = -40f, IsSingleton = true, ExactIds = new[] { "core.performance_monitor", "custom.perf_monitor" })]
     public class PerformanceMonitorWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

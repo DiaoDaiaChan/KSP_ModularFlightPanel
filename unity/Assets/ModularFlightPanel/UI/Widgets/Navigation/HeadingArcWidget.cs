@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -13,6 +15,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 顶部气泡框 (Speech-bubble) 权威数显标牌以及翡翠绿反T型基准游标。
     /// 严格继承 BaseFlightWidget，所有视觉样式与数值全生命周期数据驱动。
     /// </summary>
+    [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 120f, IsSingleton = true, ExactIds = new[] { "core.heading_arc" })]
     public class HeadingArcWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
@@ -45,7 +48,6 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _bubblePointerTip;
         private Outline _bubblePointerOutline;
         private Text _headingText;
-        private Text _frameModeText;
         private Button _bubbleBtn;
 
         // 翡翠绿基准游标 (绿反T)
@@ -60,7 +62,6 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 通配符通道与配置
         private string _valueToken = "{HDG}";
-        private string _modeTemplate = "{SPD:MODE}";
 
         // 航向平滑阻尼动力学引擎 (EFIS Avionics Damping Filter)
         private float _targetHeading = 0f;
@@ -69,9 +70,9 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _isHeadingInitialized = false;
         private float _lastRenderedHeading = -999f;
         private int _lastBubbleDeg = -1;
-        private string _lastFrameMode = string.Empty;
 
         public static Action OnCycleHeadingModeAction;
+        public static Action OnToggleReferenceFrameWindowAction;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -124,7 +125,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else if (k == "MODE" || k == "FRAME")
                 {
-                    _modeTemplate = v;
+                    // Reference frame is now handled by ReferenceFrameWidget
                 }
             }
         }
@@ -225,7 +226,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildSpeechBubble(float radius, float s, ThemeConfig theme)
         {
-            Vector2 boxSize = new Vector2(76f * s, 22f * s);
+            Vector2 boxSize = new Vector2(50f * s, 20f * s);
             Vector2 bubblePos = new Vector2(0f, radius + 15f * s);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
@@ -245,8 +246,23 @@ namespace ModularFlightPanel.UI.Widgets
             _bubbleBtn = _speechBubbleRoot.GetComponent<Button>();
             if (_bubbleBtn != null)
             {
-                _bubbleBtn.onClick.AddListener(OnBubbleClicked);
+                _bubbleBtn.transition = Selectable.Transition.None;
             }
+
+            var clickHandler = _speechBubbleRoot.AddComponent<HeadingBubblePointerHandler>();
+            clickHandler.OnLeftClick = OnBubbleClicked;
+            clickHandler.OnRightClick = () =>
+            {
+                if (OnToggleReferenceFrameWindowAction != null)
+                    OnToggleReferenceFrameWindowAction.Invoke();
+                else
+                    OnBubbleClicked();
+            };
+
+            _speechBubbleRoot.SetTooltip(
+                I18n.Tr("WIDGET_NAME_CORE_HEADING_ARC", "PFD 航向指示标尺弧"),
+                I18n.Tr("LIB_DESC_HEADING_ARC", "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。")
+            );
 
             // 气泡框向下尖角指针
             GameObject tipObj = new GameObject("Bubble_Pointer_Tip", typeof(RectTransform), typeof(Image));
@@ -262,28 +278,16 @@ namespace ModularFlightPanel.UI.Widgets
             _bubblePointerOutline.effectColor = style.GetCardBorderColor(CardStyleRole.Emphasized, theme);
             _bubblePointerOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
-            // 气泡框内部数显读数 (189°)
-            int fontSize = Mathf.RoundToInt(13f * s);
+            // 气泡框内部数显读数 (189°) - 纯净居中航向角
+            int fontSize = Mathf.RoundToInt(12.5f * s);
             _headingText = UIFactory.CreateText(_speechBubbleRoot.transform, "Heading_Value", "000°", fontSize,
-                TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _headingText.fontStyle = FontStyle.Bold;
             RectTransform textRt = _headingText.GetComponent<RectTransform>();
-            textRt.anchorMin = new Vector2(0.02f, 0f);
-            textRt.anchorMax = new Vector2(0.56f, 1f);
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
             textRt.sizeDelta = Vector2.zero;
             textRt.anchoredPosition = Vector2.zero;
-
-            // 模式角标 (如 SRF / OBT / 地心惯性)
-            _frameModeText = UIFactory.CreateText(_speechBubbleRoot.transform, "Mode_Tag", "SRF",
-                Mathf.Max(8, Mathf.RoundToInt(8.5f * s)), TextAnchor.MiddleLeft,
-                style.GetTextColor(TextStyleRole.Label, theme));
-            _frameModeText.fontStyle = FontStyle.Bold;
-            _frameModeText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            RectTransform modeRt = _frameModeText.GetComponent<RectTransform>();
-            modeRt.anchorMin = new Vector2(0.58f, 0f);
-            modeRt.anchorMax = new Vector2(0.98f, 1f);
-            modeRt.sizeDelta = Vector2.zero;
-            modeRt.anchoredPosition = Vector2.zero;
         }
 
         private void BuildLubberMark(float radius, float s, ThemeConfig theme)
@@ -340,27 +344,6 @@ namespace ModularFlightPanel.UI.Widgets
                 _isHeadingInitialized = true;
                 UpdateRotatingCompassRose(_displayedHeading);
                 UpdateBubbleHeadingText(_displayedHeading);
-            }
-
-            // 更新参考系模式角标 (通配符驱动与脏检查)
-            if (_frameModeText != null)
-            {
-                string evalMode = TelemetryTokenEngine.Evaluate(_modeTemplate, telemetry);
-                if (string.IsNullOrEmpty(evalMode))
-                {
-                    var hook = NavBallHookService.Provider;
-                    evalMode = telemetry.SpeedModeName ?? hook?.FrameName ?? "SRF";
-                }
-                string frameTag = "SRF";
-                if (evalMode.StartsWith("ORB", StringComparison.OrdinalIgnoreCase)) frameTag = "OBT";
-                else if (evalMode.StartsWith("TG", StringComparison.OrdinalIgnoreCase) || evalMode.StartsWith("TAR", StringComparison.OrdinalIgnoreCase)) frameTag = "TGT";
-                else frameTag = evalMode.Length <= 4 ? evalMode.ToUpperInvariant() : evalMode.Substring(0, 3).ToUpperInvariant();
-
-                if (frameTag != _lastFrameMode)
-                {
-                    _lastFrameMode = frameTag;
-                    _frameModeText.text = frameTag;
-                }
             }
         }
 
@@ -535,7 +518,6 @@ namespace ModularFlightPanel.UI.Widgets
                 _bubblePointerOutline.effectColor = style.GetCardBorderColor(CardStyleRole.Emphasized, theme);
             }
             ApplyText(_headingText, TextStyleRole.PrimaryValue, theme);
-            ApplyText(_frameModeText, TextStyleRole.Label, theme);
 
             Color lubberColor = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
             if (_lubberBar != null) _lubberBar.color = lubberColor;
@@ -593,4 +575,23 @@ namespace ModularFlightPanel.UI.Widgets
             base.OnDestroy();
         }
     }
+
+    public class HeadingBubblePointerHandler : MonoBehaviour, IPointerClickHandler
+    {
+        public Action OnLeftClick;
+        public Action OnRightClick;
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (eventData != null && eventData.button == PointerEventData.InputButton.Right)
+            {
+                OnRightClick?.Invoke();
+            }
+            else
+            {
+                OnLeftClick?.Invoke();
+            }
+        }
+    }
 }
+

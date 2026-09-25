@@ -316,6 +316,8 @@ namespace ModularFlightPanel.Core
             {
                 case "prograde": return StockInstance.progradeVector;
                 case "retrograde": return StockInstance.retrogradeVector;
+                // Stock NavBall has no separate velocityVector field: its native prograde marker
+                // is driven by the selected Surface/Orbit/Target speed display mode.
                 case "velocity_vector": return StockInstance.progradeVector;
                 case "anti_velocity_vector": return StockInstance.retrogradeVector;
                 case "normal": return StockInstance.normalVector;
@@ -629,6 +631,81 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        /// <summary>
+        /// 从原版姿态球/Principia 权威速度指示牌 (SpeedDisplay) 读取并解析当前显示的实际速度 (m/s)
+        /// 普适兼容所有劫持原生 UI 的外部模组 (Principia, FAR 等)
+        /// </summary>
+        public static bool TryGetNavballSpeed(out double speed)
+        {
+            speed = 0.0;
+            if (SpeedDisplay.Instance == null || SpeedDisplay.Instance.textSpeed == null) return false;
+            string raw = SpeedDisplay.Instance.textSpeed.text;
+            if (string.IsNullOrEmpty(raw)) return false;
+
+            return FastParseSpeed(raw, out speed);
+        }
+
+        private static bool FastParseSpeed(string raw, out double speed)
+        {
+            speed = 0.0;
+            if (string.IsNullOrEmpty(raw)) return false;
+
+            try
+            {
+                int len = raw.Length;
+                int start = -1;
+                int end = -1;
+                for (int i = 0; i < len; i++)
+                {
+                    char c = raw[i];
+                    if (char.IsDigit(c) || c == '-' || c == '+' || c == '.' || c == ',')
+                    {
+                        if (start < 0) start = i;
+                        end = i;
+                    }
+                    else if (start >= 0 && (c == ' ' || c == 'm' || c == 'k' || c == 'M'))
+                    {
+                        break;
+                    }
+                }
+
+                if (start < 0 || end < start) return false;
+
+                string numStr = raw.Substring(start, end - start + 1).Trim();
+                if (numStr.Contains(",") && numStr.Contains("."))
+                {
+                    numStr = numStr.Replace(",", "");
+                }
+                else if (numStr.Contains(",") && !numStr.Contains("."))
+                {
+                    int commaIdx = numStr.LastIndexOf(',');
+                    if (numStr.Length - 1 - commaIdx <= 2)
+                    {
+                        numStr = numStr.Replace(',', '.');
+                    }
+                    else
+                    {
+                        numStr = numStr.Replace(",", "");
+                    }
+                }
+
+                if (double.TryParse(numStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out speed))
+                {
+                    if (raw.IndexOf("km/h", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        speed /= 3.6;
+                    }
+                    else if (raw.IndexOf("km/s", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        speed *= 1000.0;
+                    }
+                    return !double.IsNaN(speed) && !double.IsInfinity(speed);
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static Texture _lastSampledTexture = null;
         private static string _cachedPixelFingerprintCategory = null;
 
@@ -729,7 +806,7 @@ namespace ModularFlightPanel.Core
             switch (FlightGlobals.speedDisplayMode)
             {
                 case FlightGlobals.SpeedDisplayModes.Target: return "TARGET";
-                case FlightGlobals.SpeedDisplayModes.Orbit: return "INERTIAL";
+                case FlightGlobals.SpeedDisplayModes.Orbit: return "ORBIT";
                 case FlightGlobals.SpeedDisplayModes.Surface: return "SURFACE";
                 default: return "SURFACE";
             }
@@ -1151,6 +1228,7 @@ namespace ModularFlightPanel.Core
 
         public string FrameName => StockNavBallHook.GetReferenceFrameName();
         public string ReferenceFrameCategory => StockNavBallHook.GetReferenceFrameCategory();
+        public bool TryGetNavballSpeed(out double speed) => StockNavBallHook.TryGetNavballSpeed(out speed);
         public float HeadingAngle
         {
             get

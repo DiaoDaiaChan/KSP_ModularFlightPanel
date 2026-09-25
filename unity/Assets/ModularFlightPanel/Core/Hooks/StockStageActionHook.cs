@@ -73,10 +73,12 @@ namespace ModularFlightPanel.Core
                         for (int i = 0; i < stages.Count; i++)
                         {
                             var grp = stages[i];
-                            if (grp != null && grp.defaultStage == stageIndex)
+                            int stgIdx = (grp != null && grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
+                            if (grp != null && (stgIdx == stageIndex || grp.defaultStage == stageIndex))
                             {
                                 mgr.DeleteStage(grp, true);
                                 mgr.SortIcons(false);
+                                mgr.UpdateStageGroups(false);
                                 Debug.Log($"[ModularFlightPanel] Deleted stage S{stageIndex:00}");
                                 return;
                             }
@@ -121,6 +123,7 @@ namespace ModularFlightPanel.Core
                 if (KSP.UI.Screens.StageManager.Instance != null)
                 {
                     KSP.UI.Screens.StageManager.Instance.SortIcons(false);
+                    KSP.UI.Screens.StageManager.Instance.UpdateStageGroups(false);
                 }
             }
             catch (Exception ex)
@@ -150,7 +153,8 @@ namespace ModularFlightPanel.Core
                         for (int i = 0; i < stages.Count; i++)
                         {
                             var grp = stages[i];
-                            if (grp != null && grp.defaultStage == fromStage && grp.Icons != null && partIndex >= 0 && partIndex < grp.Icons.Count)
+                            int stgIdx = (grp != null && grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
+                            if (grp != null && (stgIdx == fromStage || grp.defaultStage == fromStage) && grp.Icons != null && partIndex >= 0 && partIndex < grp.Icons.Count)
                             {
                                 var icon = grp.Icons[partIndex];
                                 if (icon != null && icon.Part != null)
@@ -178,6 +182,7 @@ namespace ModularFlightPanel.Core
                     if (KSP.UI.Screens.StageManager.Instance != null)
                     {
                         KSP.UI.Screens.StageManager.Instance.SortIcons(false);
+                        KSP.UI.Screens.StageManager.Instance.UpdateStageGroups(false);
                     }
                     Debug.Log($"[ModularFlightPanel] Moved part '{targetPart.name}' to Stage S{targetStage:00}");
                 }

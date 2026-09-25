@@ -1,0 +1,331 @@
+using System;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Rendering;
+using ModularFlightPanel.UI;
+
+namespace ModularFlightPanel.UI.Widgets.Navigation
+{
+    /// <summary>
+    /// 权威导航参考系与坐标系高反差航电小组件 (Navigation Reference Frame Indicator Widget - Streamlined)
+    /// 极简纯粹航电卡片设计：仅保留专属矢量图标与权威参考系全称，去除繁杂药丸与底行信息。
+    /// 支持单击循环切换参考系与右键唤起 Principia 原生参考系窗口。
+    /// 100% 遵照 MFP 标准：0 硬编码、0 颜色字面量、通配符双驱动。
+    /// </summary>
+    [FlightWidget("reference_frame", "ref_frame", "frame_indicator", "nav_frame", Category = WidgetCategory.Navigation, DisplayName = "REF FRAME 导航参考系指示卡", Description = "极简权威导航参考系指示卡：矢量图标与权威参考系名称。支持单击循环切换与右键打开 Principia 窗口。", DefaultWidgetId = "nav.reference_frame", DefaultX = -300f, DefaultY = 200f, IsSingleton = true, ExactIds = new[] { "nav.reference_frame", "nav.ref_frame", "core.reference_frame" })]
+    public class ReferenceFrameWidget : BaseFlightWidget, IPointerClickHandler
+    {
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // UI 视图节点
+        private Image _bgImage;
+        private Outline _bgOutline;
+
+        // 左侧参考系矢量微标徽章
+        private GameObject _iconBox;
+        private Image _iconBoxBg;
+        private Outline _iconBoxOutline;
+        private RawImage _iconRawImage;
+
+        // 权威参考系主名称
+        private Text _frameTitleText;
+
+        // 通配符通道与模板配置
+        private string _frameToken = "{FRAME}";
+        private string _typeToken = "{FRAME:TYPE}";
+
+        // 尺寸与排版参数 (支持按文字宽度全自动适应)
+        private float _cardHeight = 32f;
+        private float _padLeft = 6f;
+        private float _padRight = 8f;
+        private float _spacing = 6f;
+        private float _iconBoxSize = 24f;
+        private RectTransform _titleRt;
+
+        // 脏检查与平滑缓存
+        private string _lastCategory = string.Empty;
+        private string _lastTitle = string.Empty;
+
+        public static Action OnCycleReferenceFrameAction;
+        public static Action OnToggleReferenceFrameWindowAction;
+
+        protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
+        {
+            theme = WidgetStyleManager.ResolveTheme(theme);
+            float s = CurrentDpiScale;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            // 1. 初始化排版缩放参数
+            _cardHeight = 32f * s;
+            _padLeft = 6f * s;
+            _padRight = 8f * s;
+            _spacing = 6f * s;
+            _iconBoxSize = 24f * s;
+
+            // 2. 底板卡片与边框 (0 颜色字面量，统一由 ApplyCard 注入语义角色)
+            _bgImage = gameObject.AddComponent<Image>();
+            _bgImage.color = Color.clear;
+            _bgOutline = gameObject.AddComponent<Outline>();
+            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
+
+            ParseCustomTemplate(config?.CustomTemplate);
+
+            // 3. 左侧图标插槽徽章 (左对齐，垂直居中)
+            _iconBox = UIFactory.CreatePanel(transform, "Frame_Icon_Box",
+                new Vector2(_iconBoxSize, _iconBoxSize), Vector2.zero, Color.clear);
+            RectTransform iconBoxRt = _iconBox.GetComponent<RectTransform>();
+            iconBoxRt.anchorMin = new Vector2(0f, 0.5f);
+            iconBoxRt.anchorMax = new Vector2(0f, 0.5f);
+            iconBoxRt.pivot = new Vector2(0f, 0.5f);
+            iconBoxRt.anchoredPosition = new Vector2(_padLeft, 0f);
+
+            _iconBoxBg = _iconBox.GetComponent<Image>();
+            _iconBoxOutline = _iconBox.AddComponent<Outline>();
+            _iconBoxOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            ApplyCard(_iconBoxBg, _iconBoxOutline, CardStyleRole.SubtleSlot, theme);
+
+            // 矢量图集 RawImage (20 x 20 px)
+            GameObject rawImgObj = new GameObject("Frame_Vector_Icon", typeof(RectTransform), typeof(RawImage));
+            rawImgObj.transform.SetParent(_iconBox.transform, false);
+            _iconRawImage = rawImgObj.GetComponent<RawImage>();
+            _iconRawImage.texture = ReferenceFrameIconAtlasGenerator.GetAtlas();
+            _iconRawImage.uvRect = ReferenceFrameIconAtlasGenerator.GetIconUv(ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL);
+            _iconRawImage.color = style.GetTextColor(TextStyleRole.Cardinal, theme);
+
+            RectTransform rawRt = _iconRawImage.GetComponent<RectTransform>();
+            rawRt.sizeDelta = new Vector2(20f * s, 20f * s);
+            rawRt.anchoredPosition = Vector2.zero;
+
+            // 4. 右侧权威参考系名称 (左对齐，紧随图标，自适应宽度)
+            _frameTitleText = UIFactory.CreateText(transform, "Frame_Title", "SURFACE", Mathf.RoundToInt(11f * s),
+                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            _frameTitleText.fontStyle = FontStyle.Bold;
+            _frameTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            _frameTitleText.verticalOverflow = VerticalWrapMode.Truncate;
+
+            _titleRt = _frameTitleText.GetComponent<RectTransform>();
+            _titleRt.anchorMin = new Vector2(0f, 0.5f);
+            _titleRt.anchorMax = new Vector2(0f, 0.5f);
+            _titleRt.pivot = new Vector2(0f, 0.5f);
+            _titleRt.anchoredPosition = new Vector2(_padLeft + _iconBoxSize + _spacing, 0f);
+
+            // 立即计算初始自适应宽度，消除右侧空白
+            AdjustCardWidth("SURFACE");
+
+            // 5. 挂载整卡交互监听与提示
+            Button wholeCardBtn = gameObject.AddComponent<Button>();
+            wholeCardBtn.transition = Selectable.Transition.None;
+            wholeCardBtn.onClick.AddListener(OnCycleClicked);
+
+            gameObject.SetTooltip(
+                I18n.Tr("TOOLTIP_REF_FRAME_TITLE", "导航参考系 (Reference Frame)"),
+                I18n.Tr("TOOLTIP_REF_FRAME_DESC", "显示当前绘图与速度解算参考系。左键循环切换参考系，右键打开/关闭 Principia 参考系选择器窗口。"),
+                "[L-Click] 切换 [R-Click] 窗口"
+            );
+        }
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (eventData != null && eventData.button == PointerEventData.InputButton.Right)
+            {
+                if (OnToggleReferenceFrameWindowAction != null)
+                {
+                    OnToggleReferenceFrameWindowAction.Invoke();
+                }
+                else
+                {
+                    OnCycleClicked();
+                }
+            }
+            else
+            {
+                OnCycleClicked();
+            }
+        }
+
+        private void ParseCustomTemplate(string template)
+        {
+            if (string.IsNullOrEmpty(template)) return;
+            var pairs = template.Split(';');
+            foreach (var p in pairs)
+            {
+                var kv = p.Split('=');
+                if (kv.Length != 2) continue;
+                string k = kv[0].Trim().ToUpperInvariant();
+                string v = kv[1].Trim();
+                if (k == "FRAME" || k == "NAME" || k == "TITLE") _frameToken = v;
+                else if (k == "TYPE" || k == "CATEGORY") _typeToken = v;
+            }
+        }
+
+        private void OnCycleClicked()
+        {
+            if (OnCycleReferenceFrameAction != null)
+            {
+                OnCycleReferenceFrameAction.Invoke();
+            }
+            else
+            {
+                FlightTelemetryContext.Current?.CycleSpeedMode();
+            }
+        }
+
+        public override void ApplyTheme(ThemeConfig theme)
+        {
+            if (theme == null) return;
+            theme = WidgetStyleManager.ResolveTheme(theme);
+
+            ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
+            ApplyCard(_iconBoxBg, _iconBoxOutline, CardStyleRole.SubtleSlot, theme);
+            ApplyText(_frameTitleText, TextStyleRole.PrimaryValue, theme);
+
+            UpdateCategoryVisuals(_lastCategory, theme);
+            AdjustCardWidth(_lastTitle);
+        }
+
+        private void AdjustCardWidth(string title)
+        {
+            if (_titleRt == null || _frameTitleText == null || RectTransform == null) return;
+            float s = CurrentDpiScale;
+            float textW = _frameTitleText.preferredWidth;
+            float targetW = _padLeft + _iconBoxSize + _spacing + textW + _padRight;
+
+            // 限幅保护：最小 76px，最大 260px，消除右侧大片空白
+            float minW = 76f * s;
+            float maxW = 260f * s;
+            if (targetW < minW) targetW = minW;
+            if (targetW > maxW)
+            {
+                targetW = maxW;
+                textW = targetW - (_padLeft + _iconBoxSize + _spacing + _padRight);
+            }
+
+            _titleRt.sizeDelta = new Vector2(textW + 4f * s, _cardHeight - 4f * s);
+            RectTransform.sizeDelta = new Vector2(targetW, _cardHeight);
+        }
+
+        private void UpdateCategoryVisuals(string category, ThemeConfig theme)
+        {
+            if (theme == null) theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            TextStyleRole textRole = TextStyleRole.Cardinal;
+            int iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL;
+
+            switch (category.ToUpperInvariant())
+            {
+                case "SURFACE":
+                case "GROUND":
+                case "TOPOCENTRIC":
+                case "HORIZON":
+                    textRole = TextStyleRole.Accent;
+                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_SURFACE;
+                    break;
+
+                case "BODY_FIXED":
+                case "BODY_SURFACE":
+                case "ROTATING":
+                case "ECEF":
+                    textRole = TextStyleRole.Accent;
+                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_BODY_FIXED;
+                    break;
+
+                case "ORBIT":
+                case "ORBITAL":
+                case "LVLH":
+                case "FRENET":
+                    textRole = TextStyleRole.Cardinal;
+                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_ORBITAL;
+                    break;
+
+                case "BARYCENTRIC":
+                case "LAGRANGE":
+                case "PULSATING":
+                case "ROTATING_PULSATING":
+                case "THREE_BODY":
+                    textRole = TextStyleRole.Accent;
+                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_LAGRANGE;
+                    break;
+
+                case "TARGET":
+                case "TARGET_ORBITAL":
+                case "DOCKING":
+                case "RELATIVE":
+                    textRole = TextStyleRole.Warning;
+                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_TARGET;
+                    break;
+
+                case "INERTIAL":
+                case "NON_ROTATING":
+                case "HELIOCENTRIC":
+                case "J2000":
+                case "ECI":
+                default:
+                    textRole = TextStyleRole.Cardinal;
+                    iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL;
+                    break;
+            }
+
+            if (_iconRawImage != null)
+            {
+                _iconRawImage.uvRect = ReferenceFrameIconAtlasGenerator.GetIconUv(iconIndex);
+                _iconRawImage.color = style.GetTextColor(textRole, theme);
+            }
+        }
+
+        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        {
+            if (telemetry == null || !telemetry.HasVessel) return;
+
+            // 1. 动态评估当前参考系类型类别 (INERTIAL / SURFACE / ORBIT / LAGRANGE / TARGET)
+            string category = TelemetryTokenEngine.Evaluate(_typeToken, telemetry);
+            if (string.IsNullOrEmpty(category) || category == "---")
+            {
+                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.ReferenceFrameCategory))
+                {
+                    category = NavBallHookService.Provider.ReferenceFrameCategory;
+                }
+                else
+                {
+                    category = !string.IsNullOrEmpty(telemetry.SpeedModeName) ? telemetry.SpeedModeName.ToUpperInvariant() : "ORBIT";
+                }
+            }
+
+            if (category != _lastCategory)
+            {
+                _lastCategory = category;
+                UpdateCategoryVisuals(category, ThemeManager.Instance?.CurrentTheme);
+            }
+
+            // 2. 动态评估参考系全称标题 (如 "HELIOCENTRIC INERTIAL", "KERBIN SURFACE", "ORBIT")
+            string title = TelemetryTokenEngine.Evaluate(_frameToken, telemetry);
+            if (string.IsNullOrEmpty(title) || title == "---")
+            {
+                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.FrameName))
+                {
+                    title = NavBallHookService.Provider.FrameName;
+                }
+                else
+                {
+                    title = telemetry.SpeedModeName ?? category;
+                }
+            }
+
+            if (title != _lastTitle)
+            {
+                _lastTitle = title;
+                SetTextIfChanged(_frameTitleText, title);
+                AdjustCardWidth(title);
+            }
+        }
+
+        protected override void OnDestroy()
+        {
+            base.OnDestroy();
+        }
+    }
+}

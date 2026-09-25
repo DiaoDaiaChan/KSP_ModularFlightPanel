@@ -25,6 +25,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 顶部 LED 技术胶囊与底部机动档位标牌 (IDLE / SPOOL / MIL / MAX | SEA / TROP / STRAT / MESO / VAC)
     /// 5. 100% 遵照 MFP-SPEC-001..007 标准：0 颜色字面量、通配符双驱动、零运行时 GC
     /// </summary>
+    [FlightWidget("bar_gauge", "bar", "avionics_bar", Category = WidgetCategory.Gauges, DisplayName = "垂直柱状计量表", Description = "高刷新线性竖条计量标尺，适用于节流阀、过载或推进剂余量。", DefaultWidgetId = "gauge.bar", DefaultX = 0f, DefaultY = 0f)]
     public class AvionicsBarGaugeWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
@@ -144,7 +145,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _maxVal = config != null && config.MaxValue > 0 ? config.MaxValue : 100.0;
             }
 
-            if (!string.IsNullOrEmpty(config?.DisplayName) && config.DisplayName.Length <= 4 && !config.DisplayName.Contains("带"))
+            if (!string.IsNullOrEmpty(config?.DisplayName) && config.DisplayName.Length <= 4 && !config.DisplayName.Contains(I18n.Tr("SUFFIX_TAPE_CHAR", "带")))
             {
                 _titleTemplate = config.DisplayName;
             }

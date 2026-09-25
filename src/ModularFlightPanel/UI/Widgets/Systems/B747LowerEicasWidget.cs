@@ -19,6 +19,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 7. Row 7: VIB (机械震动等级) 宽频 BB / 转子 N2 读数 + 真实双 U 型括号标尺与滑动指针 + VIB 标签
     /// 8. 100% 由 TelemetryTokenEngine 与 CustomTemplate 双驱动，零硬编码，统一样式管道。
     /// </summary>
+    [FlightWidget("b747_lower_eicas", "eicas_lower", Category = WidgetCategory.Systems, DisplayName = "B747 下部辅助发动机 EICAS", Description = "经典波音 747 四发下部系统 CRT：N2/N3 转速表条、燃油流量 FF、滑油压力/温度双轴游标表与震动监控。", DefaultWidgetId = "custom.b747_lower_eicas", DefaultX = -440f, DefaultY = -120f, IsSingleton = true, ExactIds = new[] { "custom.b747_lower_eicas", "core.b747_lower_eicas" })]
     public class B747LowerEicasWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

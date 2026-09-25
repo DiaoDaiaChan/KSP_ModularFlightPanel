@@ -12,6 +12,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     /// 当前航向指向状态 (POINTING MODE)、以及 SPX 地面站 / TDRS / ISS 通信链路矩阵。
     /// 严格遵循 MFP 规范，0 颜色字面量，10Hz Relaxed 阶梯刷新。
     /// </summary>
+    [FlightWidget("spacex_bottom", "dragon_bottom", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 底部控制与链路操作栏", Description = "SpaceX 底部药丸触控条：RCS/SAS/参考系/精细控制开关、指向模式与通信链路矩阵。", DefaultWidgetId = "spacex.bottom", DefaultX = 0f, DefaultY = -150f, IsSingleton = true, ExactIds = new[] { "spacex.bottom" })]
     public class SpaceXBottomBarWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

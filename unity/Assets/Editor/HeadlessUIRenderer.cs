@@ -46,13 +46,13 @@ namespace ModularFlightPanel.Editor
                     if (_texture != null && !string.IsNullOrEmpty(_texture.name))
                     {
                         string n = _texture.name.ToLowerInvariant();
-                        if (n.Contains("barycentric")) return "BARYCENTRIC";
-                        if (n.Contains("inertial")) return "INERTIAL";
+                        if (n.Contains("barycentric") || n.Contains("lagrange") || n.Contains("pulsating") || n.Contains("l1") || n.Contains("l2")) return "LAGRANGE";
+                        if (n.Contains("inertial") || n.Contains("non_rotating")) return "INERTIAL";
                         if (n.Contains("orbit")) return "ORBIT";
-                        if (n.Contains("target")) return "TARGET";
+                        if (n.Contains("target") || n.Contains("dock")) return "TARGET";
                         if (n.Contains("body_direction")) return "BODY_DIRECTION";
-                        if (n.Contains("body_surface")) return "BODY_SURFACE";
-                        if (n.Contains("surface")) return "SURFACE";
+                        if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("rotating") || n.Contains("fixed")) return "BODY_FIXED";
+                        if (n.Contains("surface") || n.Contains("ground")) return "SURFACE";
                     }
                     return "SURFACE";
                 }
@@ -215,6 +215,7 @@ namespace ModularFlightPanel.Editor
             string targetScenario = null;
             string artifactDir = @"C:\Users\43701\.gemini\antigravity\brain\18f4211a-21db-4b60-901c-abc74392326e";
             string outputName = "unity_headless_render.png";
+            int animFrames = 0;
             string[] cmdArgs = System.Environment.GetCommandLineArgs();
             for (int i = 0; i < cmdArgs.Length; i++)
             {
@@ -256,6 +257,10 @@ namespace ModularFlightPanel.Editor
                 {
                     outputName = cmdArgs[i + 1].Trim();
                 }
+                if ((cmdArgs[i] == "-animFrames" || cmdArgs[i] == "--animFrames") && i + 1 < cmdArgs.Length)
+                {
+                    int.TryParse(cmdArgs[i + 1].Trim(), out animFrames);
+                }
             }
 
             if (!string.IsNullOrEmpty(targetTheme))
@@ -277,7 +282,9 @@ namespace ModularFlightPanel.Editor
             }
             else if (!string.IsNullOrEmpty(targetScenario))
             {
-                if (targetScenario.IndexOf("power", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (targetScenario.IndexOf("pad", StringComparison.OrdinalIgnoreCase) >= 0)
+                    simEngine.ApplyScenario(FlightScenario.PadHold);
+                else if (targetScenario.IndexOf("power", StringComparison.OrdinalIgnoreCase) >= 0)
                     simEngine.ApplyScenario(FlightScenario.PowerCrisis);
                 else if (targetScenario.IndexOf("reentry", StringComparison.OrdinalIgnoreCase) >= 0 || targetScenario.IndexOf("blackout", StringComparison.OrdinalIgnoreCase) >= 0)
                     simEngine.ApplyScenario(FlightScenario.ReentryBlackout);
@@ -369,6 +376,16 @@ namespace ModularFlightPanel.Editor
             FlightHUDManager hud = hudHost.GetComponent<FlightHUDManager>();
             hud.Initialize(renderCam);
 
+            bool triggerSep = false;
+            bool triggerEng = false;
+            bool triggerNode = false;
+            bool triggerMeco = false;
+            bool triggerDeorb = false;
+            bool triggerEsc = false;
+            bool forceM2 = false;
+            bool forceM3 = false;
+            bool triggerSts = false;
+
             if (!string.IsNullOrEmpty(targetPreset))
             {
                 string presetPath = targetPreset;
@@ -404,23 +421,85 @@ namespace ModularFlightPanel.Editor
             else if (!string.IsNullOrEmpty(targetWidgetId))
             {
                 string cleanTargetId = targetWidgetId;
-                bool triggerSep = false;
-                bool triggerEng = false;
-                if (cleanTargetId.EndsWith(".sep", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_sep", StringComparison.OrdinalIgnoreCase))
+
+                bool loop = true;
+                while (loop)
                 {
-                    cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
-                    triggerSep = true;
-                }
-                else if (cleanTargetId.EndsWith(".eng", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_eng", StringComparison.OrdinalIgnoreCase))
-                {
-                    cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
-                    triggerEng = true;
+                    loop = false;
+                    if (cleanTargetId.EndsWith(".sep", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_sep", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
+                        triggerSep = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".eng", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_eng", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
+                        triggerEng = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".node", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_node", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 5);
+                        triggerNode = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".meco", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_meco", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 5);
+                        triggerMeco = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".deorb", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_deorb", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 6);
+                        triggerDeorb = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".esc", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_esc", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
+                        triggerEsc = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".m2", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_m2", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 3);
+                        forceM2 = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".m3", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_m3", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 3);
+                        forceM3 = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith("_3mod", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 5);
+                        forceM3 = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith("_2mod", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 5);
+                        forceM2 = true;
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".sts", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_sts", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
+                        triggerSts = true;
+                        loop = true;
+                    }
                 }
 
-                Debug.Log($"[HeadlessUIRenderer] >>> Isolating single widget for drawing optimization: {cleanTargetId} (sep={triggerSep}, eng={triggerEng})");
-                if (cleanTargetId.Equals("core.toolbar", StringComparison.OrdinalIgnoreCase) || cleanTargetId.Equals("toolbar", StringComparison.OrdinalIgnoreCase))
+                Debug.Log($"[HeadlessUIRenderer] >>> Isolating single widget for drawing optimization: {cleanTargetId} (sep={triggerSep}, eng={triggerEng}, node={triggerNode}, meco={triggerMeco}, deorb={triggerDeorb}, esc={triggerEsc}, m2={forceM2}, m3={forceM3})");
+                if (cleanTargetId.Equals("core.toolbar", StringComparison.OrdinalIgnoreCase) || cleanTargetId.Equals("toolbar", StringComparison.OrdinalIgnoreCase) ||
+                    cleanTargetId.Equals("core.dock_favorites", StringComparison.OrdinalIgnoreCase) || cleanTargetId.Equals("dock_favorites", StringComparison.OrdinalIgnoreCase))
                 {
                     ThemeManager.Instance.ToolbarStyleMode = 2;
+                    ThemeManager.Instance.DockEnableFavoritePanel = true;
                 }
                 EnablePreviewWidgets();
                 SetWidgetState(cleanTargetId, true, 0f, 0f);
@@ -437,16 +516,19 @@ namespace ModularFlightPanel.Editor
                 }
                 hud.RebuildHUD();
 
-                if (triggerSep || triggerEng)
+                BaseFlightWidget[] earlyWidgets = UnityEngine.Object.FindObjectsOfType<BaseFlightWidget>();
+                foreach (var ew in earlyWidgets)
                 {
-                    BaseFlightWidget[] earlyWidgets = UnityEngine.Object.FindObjectsOfType<BaseFlightWidget>();
-                    foreach (var ew in earlyWidgets)
+                    if (ew is MasterWarningWidget mww)
                     {
-                        if (ew is MasterWarningWidget mww)
-                        {
-                            if (triggerSep) mww.TriggerBanner(MasterWarningWidget.BannerEventType.Separation, true);
-                            else if (triggerEng) mww.TriggerBanner(MasterWarningWidget.BannerEventType.EngineStart, true);
-                        }
+                        if (forceM2) mww.SetModulesCount(2);
+                        if (forceM3) mww.SetModulesCount(3);
+                        if (triggerSep) mww.TriggerBanner(MasterWarningWidget.BannerEventType.Separation, true);
+                        else if (triggerEng) mww.TriggerBanner(MasterWarningWidget.BannerEventType.EngineStart, true);
+                        else if (triggerNode) mww.TriggerBanner(MasterWarningWidget.BannerEventType.ManeuverApproach, true);
+                        else if (triggerMeco) mww.TriggerBanner(MasterWarningWidget.BannerEventType.MECO, true);
+                        else if (triggerDeorb) mww.TriggerBanner(MasterWarningWidget.BannerEventType.Deorbit, true);
+                        else if (triggerEsc) mww.TriggerBanner(MasterWarningWidget.BannerEventType.Escape, true);
                     }
                 }
             }
@@ -467,18 +549,40 @@ namespace ModularFlightPanel.Editor
             int subCanvasCount = 0;
             foreach (var w in widgets)
             {
-                if (w is MasterWarningWidget mww2)
+                if (w is MasterWarningWidget mww2 && !string.IsNullOrEmpty(targetWidgetId))
                 {
-                    if (targetWidgetId.EndsWith("_sep", StringComparison.OrdinalIgnoreCase) || targetWidgetId.EndsWith(".sep", StringComparison.OrdinalIgnoreCase))
+                    if (forceM2) mww2.SetModulesCount(2);
+                    if (forceM3) mww2.SetModulesCount(3);
+
+                    if (triggerSep) mww2.TriggerBanner(MasterWarningWidget.BannerEventType.Separation, true);
+                    else if (triggerEng) mww2.TriggerBanner(MasterWarningWidget.BannerEventType.EngineStart, true);
+                    else if (triggerNode) mww2.TriggerBanner(MasterWarningWidget.BannerEventType.ManeuverApproach, true);
+                    else if (triggerMeco) mww2.TriggerBanner(MasterWarningWidget.BannerEventType.MECO, true);
+                    else if (triggerDeorb) mww2.TriggerBanner(MasterWarningWidget.BannerEventType.Deorbit, true);
+                    else if (triggerEsc) mww2.TriggerBanner(MasterWarningWidget.BannerEventType.Escape, true);
+                }
+                if (w is ModularFlightPanel.UI.Widgets.EcamAlertLogWidget ecamWidget && !string.IsNullOrEmpty(targetWidgetId) && targetWidgetId.IndexOf("ecam", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    ecamWidget.PushLogEntry(new ModularFlightPanel.UI.Widgets.EcamLogEntry(
+                        ModularFlightPanel.UI.Widgets.EcamAlertSeverity.Caution, "DEORB", "▲",
+                        ModularFlightPanel.Core.I18n.Tr("WIDGET_ALERT_DEORBIT", "飞船离轨"), "Pe 32km", "+00:14:22", 862.0));
+                    ecamWidget.PushLogEntry(new ModularFlightPanel.UI.Widgets.EcamLogEntry(
+                        ModularFlightPanel.UI.Widgets.EcamAlertSeverity.Advisory, "NODE", "◆",
+                        ModularFlightPanel.Core.I18n.Tr("WIDGET_ALERT_MANEUVER_APPROACH", "接近机动节点"), "Δv 412", "+00:08:45", 525.0));
+                    ecamWidget.PushLogEntry(new ModularFlightPanel.UI.Widgets.EcamLogEntry(
+                        ModularFlightPanel.UI.Widgets.EcamAlertSeverity.Memo, "STG", "●",
+                        ModularFlightPanel.Core.I18n.Tr("WIDGET_ALERT_SEPARATION", "级间分级分离"), "STG 01", "+00:02:18", 138.0));
+                    if (targetWidgetId.IndexOf("sts", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        mww2.TriggerBanner(MasterWarningWidget.BannerEventType.Separation, true);
-                    }
-                    else if (targetWidgetId.EndsWith("_eng", StringComparison.OrdinalIgnoreCase) || targetWidgetId.EndsWith(".eng", StringComparison.OrdinalIgnoreCase))
-                    {
-                        mww2.TriggerBanner(MasterWarningWidget.BannerEventType.EngineStart, true);
+                        ecamWidget.ToggleStatusPage();
                     }
                 }
                 w.OnUpdateTelemetry(simEngine);
+                var update = w.GetType().GetMethod("Update", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (update != null)
+                {
+                    update.Invoke(w, null);
+                }
                 var lateUpdate = w.GetType().GetMethod("LateUpdate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                 if (lateUpdate != null)
                 {
@@ -536,7 +640,7 @@ namespace ModularFlightPanel.Editor
                 BaseFlightWidget targetWidget = null;
                 foreach (var w in widgets)
                 {
-                    if (w.Config != null && w.Config.WidgetId.Equals(targetWidgetId, StringComparison.OrdinalIgnoreCase))
+                    if (w.Config != null && (w.Config.WidgetId.Equals(targetWidgetId, StringComparison.OrdinalIgnoreCase) || targetWidgetId.StartsWith(w.Config.WidgetId, StringComparison.OrdinalIgnoreCase)))
                     {
                         targetWidget = w;
                         break;
@@ -598,6 +702,78 @@ namespace ModularFlightPanel.Editor
                     SafeWriteAllBytes(navballPreviewArtifact, targetBytes);
                 }
                 Debug.Log($"[HeadlessUIRenderer] Exported isolated single-widget render to: {isolatedOut}");
+
+                if (animFrames > 1)
+                {
+                    float animDuration = 1.6f;
+                    float frameStep = animDuration / animFrames;
+                    for (int f = 0; f < animFrames; f++)
+                    {
+                        float simTime = f * frameStep;
+                        ModularFlightPanel.UI.Widgets.Controls.StagingSequenceWidget.CustomAnimationTime = simTime;
+                        ModularFlightPanel.UI.Widgets.Controls.StagingSequenceWidget.CustomAnimationDeltaTime = frameStep;
+
+                        foreach (var w in widgets)
+                        {
+                            var update = w.GetType().GetMethod("Update", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                            if (update != null) update.Invoke(w, null);
+                            var lateUpdate = w.GetType().GetMethod("LateUpdate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                            if (lateUpdate != null) lateUpdate.Invoke(w, null);
+                        }
+
+                        Canvas.ForceUpdateCanvases();
+                        renderCam.Render();
+
+                        RenderTexture.active = rt;
+                        tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                        tex.Apply();
+                        RenderTexture.active = prevActive;
+
+                        byte[] frameTargetBytes = tex.EncodeToPNG();
+                        if (targetWidget != null && targetWidget.RectTransform != null)
+                        {
+                            Vector3[] cArr = new Vector3[4];
+                            targetWidget.RectTransform.GetWorldCorners(cArr);
+                            float mX = float.MaxValue, mY = float.MaxValue, maX = float.MinValue, maY = float.MinValue;
+                            for (int c = 0; c < 4; c++)
+                            {
+                                Vector3 sp = renderCam.WorldToScreenPoint(cArr[c]);
+                                if (sp.x < mX) mX = sp.x;
+                                if (sp.x > maX) maX = sp.x;
+                                if (sp.y < mY) mY = sp.y;
+                                if (sp.y > maY) maY = sp.y;
+                            }
+                            float pad = 40f;
+                            float wW = (maX - mX) + pad * 2f;
+                            float wH = (maY - mY) + pad * 2f;
+                            float side = Mathf.Max(wW, wH, 300f);
+                            float cX = (mX + maX) * 0.5f;
+                            float cY = (mY + maY) * 0.5f;
+                            int sX = Mathf.Clamp(Mathf.RoundToInt(cX - side * 0.5f), 0, width - Mathf.RoundToInt(side));
+                            int sY = Mathf.Clamp(Mathf.RoundToInt(cY - side * 0.5f), 0, height - Mathf.RoundToInt(side));
+                            int cSide = Mathf.Min(Mathf.RoundToInt(side), width - sX, height - sY);
+                            if (cSide > 10)
+                            {
+                                Color[] px = tex.GetPixels(sX, sY, cSide, cSide);
+                                Texture2D cTex = new Texture2D(cSide, cSide, TextureFormat.RGB24, false);
+                                cTex.SetPixels(px);
+                                cTex.Apply();
+                                frameTargetBytes = cTex.EncodeToPNG();
+                                UnityEngine.Object.DestroyImmediate(cTex);
+                            }
+                        }
+
+                        string frameFileName = $"staging_anim_frame_{f:D2}.png";
+                        if (!string.IsNullOrEmpty(artifactDir))
+                        {
+                            SafeWriteAllBytes(Path.Combine(artifactDir, frameFileName), frameTargetBytes);
+                        }
+                        SafeWriteAllBytes(Path.Combine(projectRoot, "GameData", "ModularFlightPanel", "PluginData", frameFileName), frameTargetBytes);
+                    }
+                    Debug.Log($"[HeadlessUIRenderer] Exported {animFrames} animation frames for {targetWidgetId}");
+                    ModularFlightPanel.UI.Widgets.Controls.StagingSequenceWidget.CustomAnimationTime = -1f;
+                    ModularFlightPanel.UI.Widgets.Controls.StagingSequenceWidget.CustomAnimationDeltaTime = -1f;
+                }
             }
 
             // 11. 资源清理
@@ -713,6 +889,15 @@ namespace ModularFlightPanel.Editor
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(tb);
                 }
+                else if (id == "core.dock_favorites" || id == "dock_favorites" || id == "toolbar.favorites")
+                {
+                    var fav = new WidgetConfig("core.dock_favorites", "AVIONICS 常用快捷工具栏", x, y, 1.0f)
+                    {
+                        WidgetType = "dock_favorites",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(fav);
+                }
                 else if (id == "core.ui_widget" || id == "ui_widget")
                 {
                     var ui = new WidgetConfig("core.ui_widget", "AVIONICS 全局 UI 控制中枢", x, y, 1.0f)
@@ -721,6 +906,15 @@ namespace ModularFlightPanel.Editor
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(ui);
+                }
+                else if (id == "nav.reference_frame" || id == "nav.ref_frame" || id == "reference_frame" || id == "ref_frame")
+                {
+                    var rf = new WidgetConfig("nav.reference_frame", "REF FRAME 导航参考系指示卡", x, y, 1.0f)
+                    {
+                        WidgetType = "reference_frame",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(rf);
                 }
                 else if (id == "gauge.throttle")
                 {
@@ -830,6 +1024,15 @@ namespace ModularFlightPanel.Editor
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(pm);
+                }
+                else if (id == "custom.ecam_alert_log" || id == "ecam.alert_log" || id == "core.ecam_alert_log" || id == "ecam_alert_log" || id == "alert_log" || id.StartsWith("ecam.alert_log"))
+                {
+                    var logWidget = new WidgetConfig("ecam.alert_log", "ECAM 飞行告警与备忘日志", x, y, 1.0f)
+                    {
+                        WidgetType = "ecam_alert_log",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(logWidget);
                 }
                 else if (id == "custom.maneuver_timeline" || id == "maneuver_timeline")
                 {
@@ -969,6 +1172,32 @@ namespace ModularFlightPanel.Editor
                     cfg = new WidgetConfig("spacex.timeline", "SpaceX 时序飞行时间轴", x, y, 1.0f)
                     {
                         WidgetType = "spacex_timeline",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "custom.arc_speed_tape" || id == "arc_speed_tape" || id == "arc_tape")
+                {
+                    cfg = new WidgetConfig("custom.arc_speed_tape", "弧形速度带", x, y, 1.0f, "CURVATURE=0.5;RADIUS=200;SPAN=80;SIDE=LEFT;TYPE=SPEED;VAL={SPD};MODE={SPD:MODE};ACC={ACC}")
+                    {
+                        WidgetType = "arc_speed_tape",
+                        NumericToken = "{SPD}",
+                        StepInterval = 10f,
+                        IsLeftOrientation = true,
+                        UnitLabel = "m/s",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "custom.arc_altitude_tape" || id == "arc_altitude_tape" || id == "arc_alt_tape")
+                {
+                    cfg = new WidgetConfig("custom.arc_altitude_tape", "弧形高度带", x, y, 1.0f, "CURVATURE=0.5;RADIUS=200;SPAN=80;SIDE=RIGHT;TYPE=ALT;VAL={ALT};MODE=ALT;BOTTOM={ALT:AGL:DIST};TREND={VSI}")
+                    {
+                        WidgetType = "arc_altitude_tape",
+                        NumericToken = "{ALT}",
+                        StepInterval = 100f,
+                        IsLeftOrientation = false,
+                        UnitLabel = "m",
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);

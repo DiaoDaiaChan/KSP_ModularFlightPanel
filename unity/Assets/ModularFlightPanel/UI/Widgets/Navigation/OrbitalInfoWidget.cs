@@ -11,6 +11,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 实时呈现远拱点 (AP) 与近拱点 (PE) 距离与倒计时。
     /// 100% 通配符数据驱动，支持自定义模板，统一样式管道。
     /// </summary>
+    [FlightWidget("orbital_info", "orbit", "orbital", Category = WidgetCategory.Navigation, DisplayName = "ORBITAL 轨道动力学面板", Description = "轨道力学四项精简读数面板：远地点 (AP)、近地点 (PE)、到达时间与轨道偏心率。", DefaultWidgetId = "core.orbital_info", DefaultX = 0f, DefaultY = 180f, IsSingleton = true, ExactIds = new[] { "core.orbital_info" })]
     public class OrbitalInfoWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

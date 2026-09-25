@@ -13,6 +13,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     /// 相对距离 (RANGE) 与接近率 (RATE)、以及 4 轴姿控喷管脉冲指示器 (Thruster Arrows)。
     /// 严格遵循 MFP 规范，0 颜色字面量，60Hz Critical 满帧驱动。
     /// </summary>
+    [FlightWidget("spacex_docking", "dragon_docking", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 空间站对接与姿态准星", Description = "SpaceX ISS 空间站对接瞄准器：同心双环准星、3 轴姿态偏差角与角速度、测距接近率与 RCS 点亮。", DefaultWidgetId = "spacex.docking", DefaultX = 0f, DefaultY = 170f, IsSingleton = true, ExactIds = new[] { "spacex.docking" })]
     public class SpaceXDockingReticleWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;

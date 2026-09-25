@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.UI
 {
@@ -87,7 +88,7 @@ namespace ModularFlightPanel.UI
             bOut.effectColor = _axisCol;
             bOut.effectDistance = new Vector2(1f, 1f);
 
-            _axisXBadge = UIFactory.CreateText(badgeObj.transform, "Text", "⌖ X = 0 对称轴", 8, TextAnchor.MiddleCenter, _axisCol);
+            _axisXBadge = UIFactory.CreateText(badgeObj.transform, "Text", I18n.Tr("GRID_AXIS_X0", "⌖ X = 0 对称轴"), 8, TextAnchor.MiddleCenter, _axisCol);
             RectTransform btRt = _axisXBadge.GetComponent<RectTransform>();
             btRt.anchorMin = Vector2.zero;
             btRt.anchorMax = Vector2.one;
@@ -170,7 +171,7 @@ namespace ModularFlightPanel.UI
             IsGridVisible = !IsGridVisible;
             _instance?.UpdateVisibility();
             OnGridVisibilityChanged?.Invoke(IsGridVisible);
-            MFPToastBridge.Show(IsGridVisible ? "▦ 蓝图辅助网格: [开启]" : "▦ 蓝图辅助网格: [关闭]");
+            MFPToastBridge.Show(IsGridVisible ? I18n.Tr("GRID_BLUEPRINT_ON", "▦ 蓝图辅助网格: [开启]") : I18n.Tr("GRID_BLUEPRINT_OFF", "▦ 蓝图辅助网格: [关闭]"));
         }
 
         public void UpdateVisibility()

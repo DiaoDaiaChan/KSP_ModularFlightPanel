@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.UI
 {
@@ -161,7 +162,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            WidgetEditHistory.RecordInstantAction("左对齐", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_ALIGN_LEFT", "左对齐"), () =>
             {
                 float minX = list.Min(w => GetWidgetBounds(w).xMin);
                 foreach (var w in list)
@@ -179,7 +180,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            WidgetEditHistory.RecordInstantAction("水平居中", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_ALIGN_HCENTER", "水平居中"), () =>
             {
                 float avgX = list.Average(w => w.RectTransform.anchoredPosition.x);
                 foreach (var w in list)
@@ -195,7 +196,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            WidgetEditHistory.RecordInstantAction("右对齐", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_ALIGN_RIGHT", "右对齐"), () =>
             {
                 float maxX = list.Max(w => GetWidgetBounds(w).xMax);
                 foreach (var w in list)
@@ -213,7 +214,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            WidgetEditHistory.RecordInstantAction("顶对齐", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_ALIGN_TOP", "顶对齐"), () =>
             {
                 float maxY = list.Max(w => GetWidgetBounds(w).yMax);
                 foreach (var w in list)
@@ -231,7 +232,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            WidgetEditHistory.RecordInstantAction("垂直居中", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_ALIGN_VCENTER", "垂直居中"), () =>
             {
                 float avgY = list.Average(w => w.RectTransform.anchoredPosition.y);
                 foreach (var w in list)
@@ -247,7 +248,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count < 2) return;
 
-            WidgetEditHistory.RecordInstantAction("底对齐", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_ALIGN_BOTTOM", "底对齐"), () =>
             {
                 float minY = list.Min(w => GetWidgetBounds(w).yMin);
                 foreach (var w in list)
@@ -265,7 +266,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.OrderBy(w => w.RectTransform.anchoredPosition.x).ToList();
             if (list.Count < 3) return;
 
-            WidgetEditHistory.RecordInstantAction("水平等距分布", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_DISTRIBUTE_H", "水平等距分布"), () =>
             {
                 float minX = list.First().RectTransform.anchoredPosition.x;
                 float maxX = list.Last().RectTransform.anchoredPosition.x;
@@ -285,7 +286,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.OrderBy(w => w.RectTransform.anchoredPosition.y).ToList();
             if (list.Count < 3) return;
 
-            WidgetEditHistory.RecordInstantAction("垂直等距分布", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_DISTRIBUTE_V", "垂直等距分布"), () =>
             {
                 float minY = list.First().RectTransform.anchoredPosition.y;
                 float maxY = list.Last().RectTransform.anchoredPosition.y;
@@ -305,7 +306,7 @@ namespace ModularFlightPanel.UI
             var list = SelectedWidgets.ToList();
             if (list.Count == 0) return;
 
-            WidgetEditHistory.RecordInstantAction("对齐至机体对称轴(X=0)", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_ALIGN_AXIS_X0", "对齐至机体对称轴(X=0)"), () =>
             {
                 if (list.Count == 1)
                 {
@@ -330,7 +331,7 @@ namespace ModularFlightPanel.UI
         public static void Nudge(Vector2 delta)
         {
             if (Count == 0) return;
-            WidgetEditHistory.RecordInstantAction("键盘微调位移", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_KEY_NUDGE", "键盘微调位移"), () =>
             {
                 BatchMove(delta);
                 WidgetLayoutManager.Instance.SaveLayout();
@@ -339,39 +340,29 @@ namespace ModularFlightPanel.UI
 
         public static void BringToFront()
         {
-            var list = SelectedWidgets.ToList();
-            if (list.Count == 0) return;
-            WidgetEditHistory.RecordInstantAction("置于顶层", () =>
-            {
-                foreach (var w in list)
-                {
-                    if (w != null) w.transform.SetAsLastSibling();
-                }
-                WidgetLayoutManager.Instance.SaveLayout();
-            });
-            MFPToastBridge.Show("⤒ 已置于顶层");
+            WidgetLayerManager.BringToFront(SelectedWidgets);
         }
 
         public static void SendToBack()
         {
-            var list = SelectedWidgets.ToList();
-            if (list.Count == 0) return;
-            WidgetEditHistory.RecordInstantAction("置于底层", () =>
-            {
-                foreach (var w in list)
-                {
-                    if (w != null) w.transform.SetAsFirstSibling();
-                }
-                WidgetLayoutManager.Instance.SaveLayout();
-            });
-            MFPToastBridge.Show("⤓ 已置于底层");
+            WidgetLayerManager.SendToBack(SelectedWidgets);
+        }
+
+        public static void BringForward()
+        {
+            WidgetLayerManager.BringForward(SelectedWidgets);
+        }
+
+        public static void SendBackward()
+        {
+            WidgetLayerManager.SendBackward(SelectedWidgets);
         }
 
         public static void DeleteSelected()
         {
             var list = SelectedWidgets.ToList();
             if (list.Count == 0) return;
-            WidgetEditHistory.RecordInstantAction($"隐藏 {list.Count} 个组件", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.TrFormat("HIST_HIDE_WIDGETS_FMT", "隐藏 {0} 个组件", list.Count), () =>
             {
                 foreach (var w in list)
                 {
@@ -384,7 +375,7 @@ namespace ModularFlightPanel.UI
                 ClearSelection();
                 WidgetLayoutManager.Instance.SaveLayout();
             });
-            MFPToastBridge.Show($"已隐藏选中的组件 (Ctrl+Z 可撤销)");
+            MFPToastBridge.Show(I18n.Tr("TOAST_HIDDEN_CTRLZ", "已隐藏选中的组件 (Ctrl+Z 可撤销)"));
         }
 
         // ==========================================
@@ -394,7 +385,7 @@ namespace ModularFlightPanel.UI
         {
             foreach (var w in SelectedWidgets)
             {
-                if (w != null && w.RectTransform != null)
+                if (w != null && w.RectTransform != null && (w.Config == null || !w.Config.IsLocked))
                 {
                     Vector2 newPos = w.RectTransform.anchoredPosition + delta;
                     w.UpdateTransform(x: newPos.x, y: newPos.y);
@@ -406,7 +397,7 @@ namespace ModularFlightPanel.UI
         {
             foreach (var w in SelectedWidgets)
             {
-                if (w != null && w.Config != null)
+                if (w != null && w.Config != null && !w.Config.IsLocked)
                 {
                     float currentScale = (w.Config.Scale > 0.01f) ? w.Config.Scale : 1.0f;
                     float newScale = Mathf.Clamp(currentScale + deltaScale, 0.2f, 4.0f);
@@ -426,9 +417,27 @@ namespace ModularFlightPanel.UI
             float clamped = Mathf.Clamp(targetScale, 0.2f, 4.0f);
             foreach (var w in SelectedWidgets)
             {
-                if (w != null && w.Config != null)
+                if (w != null && w.Config != null && !w.Config.IsLocked)
                 {
                     w.UpdateTransform(scale: clamped);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
+        }
+
+        public static void BatchSetScaleXY(float? targetScaleX, float? targetScaleY, bool commit = true)
+        {
+            float? clampedX = targetScaleX.HasValue ? (float?)Mathf.Clamp(targetScaleX.Value, 0.2f, 4.0f) : null;
+            float? clampedY = targetScaleY.HasValue ? (float?)Mathf.Clamp(targetScaleY.Value, 0.2f, 4.0f) : null;
+            foreach (var w in SelectedWidgets)
+            {
+                if (w != null && w.Config != null && !w.Config.IsLocked)
+                {
+                    w.UpdateTransform(scaleX: clampedX, scaleY: clampedY);
                 }
             }
             WidgetLayoutManager.Instance.SaveLayout();
@@ -442,7 +451,7 @@ namespace ModularFlightPanel.UI
         {
             foreach (var w in SelectedWidgets)
             {
-                if (w != null && w.Config != null)
+                if (w != null && w.Config != null && !w.Config.IsLocked)
                 {
                     float newAngle = (w.Config.Rotation + deltaAngle) % 360f;
                     if (newAngle < 0f) newAngle += 360f;
@@ -457,7 +466,7 @@ namespace ModularFlightPanel.UI
             float clamped = (targetRotation % 360f + 360f) % 360f;
             foreach (var w in SelectedWidgets)
             {
-                if (w != null && w.Config != null)
+                if (w != null && w.Config != null && !w.Config.IsLocked)
                 {
                     w.UpdateTransform(rotation: clamped);
                 }
@@ -467,7 +476,7 @@ namespace ModularFlightPanel.UI
 
         public static void ResetRotation()
         {
-            WidgetEditHistory.RecordInstantAction("复位旋转至0°", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_RESET_ROT", "复位旋转至0°"), () =>
             {
                 foreach (var w in SelectedWidgets)
                 {
@@ -479,7 +488,7 @@ namespace ModularFlightPanel.UI
 
         public static void ResetScale()
         {
-            WidgetEditHistory.RecordInstantAction("复位缩放至1.0x", () =>
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_RESET_SCALE", "复位缩放至1.0x"), () =>
             {
                 foreach (var w in SelectedWidgets)
                 {
@@ -509,6 +518,26 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        public static void BatchScaleRelativeXY(Dictionary<BaseFlightWidget, Vector2> initialScalesXY, float? factorX, float? factorY, bool commit = false)
+        {
+            if (initialScalesXY == null || initialScalesXY.Count == 0) return;
+            foreach (var kvp in initialScalesXY)
+            {
+                var w = kvp.Key;
+                if (w != null && w.Config != null)
+                {
+                    float? targetX = factorX.HasValue ? (float?)Mathf.Clamp(kvp.Value.x * factorX.Value, 0.2f, 4.0f) : null;
+                    float? targetY = factorY.HasValue ? (float?)Mathf.Clamp(kvp.Value.y * factorY.Value, 0.2f, 4.0f) : null;
+                    w.UpdateTransform(scaleX: targetX, scaleY: targetY);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
+        }
+
         /// <summary>
         /// 全局编辑模式热键单例轮询（集中在 FlightHUDManager.Update 单点驱动，彻底杜绝多实例竞争触发）
         /// </summary>
@@ -528,7 +557,7 @@ namespace ModularFlightPanel.UI
                 if (FlightHUDManager.Instance != null && FlightHUDManager.Instance.ModularWidgets != null)
                 {
                     SelectAll(FlightHUDManager.Instance.ModularWidgets);
-                    MFPToastBridge.Show("已全选所有小组件");
+                    MFPToastBridge.Show(I18n.Tr("TOAST_SELECT_ALL", "已全选所有小组件"));
                 }
                 return;
             }
@@ -540,27 +569,44 @@ namespace ModularFlightPanel.UI
                 return;
             }
 
+            // 3. 切换图层管理面板 (L 键)
+            if (Input.GetKeyDown(KeyCode.L) && !ctrl)
+            {
+                WidgetLayerManager.ToggleLayerPanel();
+                return;
+            }
+
             if (Count == 0) return;
 
-            // 3. 像素级方向键微调 (Arrow Keys Nudge)
+            // 4. 像素级方向键微调 (Arrow Keys Nudge)
             float nudge = shift ? 10f : (ctrl ? 5f : 1f);
             if (Input.GetKeyDown(KeyCode.UpArrow)) Nudge(new Vector2(0f, nudge));
             else if (Input.GetKeyDown(KeyCode.DownArrow)) Nudge(new Vector2(0f, -nudge));
             else if (Input.GetKeyDown(KeyCode.LeftArrow)) Nudge(new Vector2(-nudge, 0f));
             else if (Input.GetKeyDown(KeyCode.RightArrow)) Nudge(new Vector2(nudge, 0f));
 
-            // 4. 图层层级移动 ([ 键置底，] 键置顶)
-            if (Input.GetKeyDown(KeyCode.RightBracket)) BringToFront();
-            else if (Input.GetKeyDown(KeyCode.LeftBracket)) SendToBack();
+            // 5. 图层层级移动：
+            // ] 上移一层，Shift+] 或 Ctrl+] 置于顶层
+            // [ 下移一层，Shift+[ 或 Ctrl+[ 置于底层
+            if (Input.GetKeyDown(KeyCode.RightBracket))
+            {
+                if (shift || ctrl) BringToFront();
+                else BringForward();
+            }
+            else if (Input.GetKeyDown(KeyCode.LeftBracket))
+            {
+                if (shift || ctrl) SendToBack();
+                else SendBackward();
+            }
 
-            // 5. 快速隐藏/删除选中组件 (Delete / Backspace)
+            // 6. 快速隐藏/删除选中组件 (Delete / Backspace)
             if (Input.GetKeyDown(KeyCode.Delete) || Input.GetKeyDown(KeyCode.Backspace))
             {
                 DeleteSelected();
                 return;
             }
 
-            // 6. 快捷复位 (R 复位旋转，0 复位缩放)
+            // 7. 快捷复位 (R 复位旋转，0 复位缩放)
             if (Input.GetKeyDown(KeyCode.R) && !ctrl)
             {
                 ResetRotation();
@@ -570,14 +616,14 @@ namespace ModularFlightPanel.UI
                 ResetScale();
             }
 
-            // 7. 滚轮辅助缩放与旋转
+            // 8. 滚轮辅助缩放与旋转
             float scroll = Input.GetAxis("Mouse ScrollWheel");
             if (ctrl && !shift && Math.Abs(scroll) > 0.001f)
             {
                 float deltaScale = scroll > 0f ? 0.05f : -0.05f;
                 WidgetEditHistory.BeginAction();
                 BatchScale(deltaScale);
-                WidgetEditHistory.CommitAction("滚轮缩放");
+                WidgetEditHistory.CommitAction(I18n.Tr("HIST_SCROLL_SCALE", "滚轮缩放"));
                 WidgetLayoutManager.Instance.SaveLayout();
             }
             else if (shift && Math.Abs(scroll) > 0.001f)
@@ -586,7 +632,7 @@ namespace ModularFlightPanel.UI
                 float deltaAngle = scroll > 0f ? step : -step;
                 WidgetEditHistory.BeginAction();
                 BatchRotate(deltaAngle);
-                WidgetEditHistory.CommitAction("滚轮旋转");
+                WidgetEditHistory.CommitAction(I18n.Tr("HIST_SCROLL_ROT", "滚轮旋转"));
                 WidgetLayoutManager.Instance.SaveLayout();
             }
         }

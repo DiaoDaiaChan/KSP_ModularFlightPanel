@@ -24,6 +24,7 @@ namespace ModularFlightPanel.UI.Widgets
     ///    - TOTAL FUEL 燃油总重与机载油温
     /// 5. 100% 由 TelemetryTokenEngine 与 CustomTemplate 驱动，0 硬编码与 0 颜色字面量。
     /// </summary>
+    [FlightWidget("b747_eicas", "boeing_eicas", "eicas", Category = WidgetCategory.Systems, DisplayName = "B747 EICAS 主发动机与机组告警显示", Description = "经典波音 747 四发主发动机 CRT：EPR/N1/EGT 四发柱状表、数字框显、TAT/推力模式与起落架状态。", DefaultWidgetId = "custom.b747_eicas", DefaultX = -440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "custom.b747_eicas", "core.b747_eicas" })]
     public class B747EicasWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;

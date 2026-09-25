@@ -44,6 +44,7 @@ namespace ModularFlightPanel.UI.Widgets
         }
     }
 
+    [FlightWidget("sas_dial", "sas_compass", "sas", Category = WidgetCategory.Controls, DisplayName = "环形 SAS 模式选择罗盘", Description = "10 向全功能快速 SAS 模式选择罗盘，带飞船实时滚转与级间剪影。", DefaultWidgetId = "core.sas_dial", DefaultX = 0f, DefaultY = -100f, IsSingleton = true, ExactIds = new[] { "core.sas_dial" })]
     public class SASDialWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
@@ -683,14 +684,14 @@ namespace ModularFlightPanel.UI.Widgets
             TextStyleRole textRole;
             if (!sasOn)
             {
-                statusText = GetTemplateChannel("OFF_LABEL", "SAS: OFF");
+                statusText = GetTemplateChannel("OFF_LABEL", I18n.Tr("SAS_STATUS_OFF", "SAS: OFF"));
                 textRole = TextStyleRole.Warning;
             }
             else
             {
                 string prefix = GetTemplateChannel("BADGE_PREFIX", "SAS: ");
                 string modeStr = GetSASModeDisplayName(currentMode);
-                string lockSuffix = _isDirectorLocked ? " [LOCK]" : "";
+                string lockSuffix = _isDirectorLocked ? I18n.Tr("SAS_STATUS_LOCK", " [LOCK]") : "";
                 statusText = $"{prefix}{modeStr}{lockSuffix}";
                 textRole = _isDirectorLocked ? TextStyleRole.Accent : TextStyleRole.PrimaryValue;
             }
@@ -745,15 +746,15 @@ namespace ModularFlightPanel.UI.Widgets
         {
             switch (mode)
             {
-                case FlightSASMode.StabilityAssist: return "STABILITY";
-                case FlightSASMode.Prograde: return "PROGRADE";
-                case FlightSASMode.Retrograde: return "RETROGRADE";
-                case FlightSASMode.Normal: return "NORMAL";
-                case FlightSASMode.Antinormal: return "ANTINORMAL";
-                case FlightSASMode.RadialIn: return "RADIAL IN";
-                case FlightSASMode.RadialOut: return "RADIAL OUT";
-                case FlightSASMode.Target: return "TARGET";
-                case FlightSASMode.Maneuver: return "MANEUVER";
+                case FlightSASMode.StabilityAssist: return I18n.Tr("SAS_MODE_STABILITY", "STABILITY");
+                case FlightSASMode.Prograde: return I18n.Tr("SAS_MODE_PROGRADE", "PROGRADE");
+                case FlightSASMode.Retrograde: return I18n.Tr("SAS_MODE_RETROGRADE", "RETROGRADE");
+                case FlightSASMode.Normal: return I18n.Tr("SAS_MODE_NORMAL", "NORMAL");
+                case FlightSASMode.Antinormal: return I18n.Tr("SAS_MODE_ANTINORMAL", "ANTINORMAL");
+                case FlightSASMode.RadialIn: return I18n.Tr("SAS_MODE_RADIAL_IN", "RADIAL IN");
+                case FlightSASMode.RadialOut: return I18n.Tr("SAS_MODE_RADIAL_OUT", "RADIAL OUT");
+                case FlightSASMode.Target: return I18n.Tr("SAS_MODE_TARGET", "TARGET");
+                case FlightSASMode.Maneuver: return I18n.Tr("SAS_MODE_MANEUVER", "MANEUVER");
                 default: return mode.ToString().ToUpperInvariant();
             }
         }
@@ -1360,6 +1361,13 @@ namespace ModularFlightPanel.UI.Widgets
             tex.SetPixels(cols);
             tex.Apply(true, true);
             return tex;
+        }
+
+        protected override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            _hasInitializedState = false;
+            _lastStatusText = null;
         }
 
         protected override void OnDestroy()

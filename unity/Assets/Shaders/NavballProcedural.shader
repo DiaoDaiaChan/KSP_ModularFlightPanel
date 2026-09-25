@@ -216,7 +216,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                     float terrainPhase = headDeg * 0.42 + absPitch * 1.15;
                     float terrainLine = abs(frac(terrainPhase / 11.0 + 0.5) - 0.5);
                     float terrainHatch = 1.0 - smoothstep(0.012, 0.038, terrainLine);
-                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb, terrainHatch * 0.16);
+                    col.rgb = lerp(col.rgb, _GroundNadirColor.rgb, terrainHatch * 0.30);
 
                     // GPWS / 近地大下沉率防撞动态斑马纹 (Ground Terrain Hazard Pull-Up Stripes)
                     if (_GroundHazardAlert > 0.01)

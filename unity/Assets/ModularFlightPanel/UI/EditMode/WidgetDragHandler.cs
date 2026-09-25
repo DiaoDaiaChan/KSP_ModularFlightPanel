@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Widgets.Controls;
 
 namespace ModularFlightPanel.UI
@@ -116,7 +117,7 @@ namespace ModularFlightPanel.UI
                 _editOutline.effectDistance = new Vector2(1.2f, 1.2f);
             }
 
-            _editTitleText = UIFactory.CreateText(_editOverlay.transform, "Title", $"[拖拽] {_ownerWidget.DisplayName}", 10, TextAnchor.MiddleCenter, Color.white);
+            _editTitleText = UIFactory.CreateText(_editOverlay.transform, "Title", I18n.TrFormat("DRAG_TITLE_FMT", "[拖拽] {0}", _ownerWidget.DisplayName), 10, TextAnchor.MiddleCenter, Color.white);
             RectTransform trt = _editTitleText.GetComponent<RectTransform>();
             trt.anchorMin = new Vector2(0.5f, 1f);
             trt.anchorMax = new Vector2(0.5f, 1f);
@@ -157,13 +158,20 @@ namespace ModularFlightPanel.UI
             if (_ownerWidget == null || _editOverlay == null || !IsEditModeActive) return;
 
             bool isSelected = WidgetSelectionManager.IsSelected(_ownerWidget);
+            bool isLocked = _ownerWidget.Config?.IsLocked == true;
             float scale = _ownerWidget.Config?.Scale ?? 1.0f;
             float rot = _ownerWidget.Config?.Rotation ?? 0f;
+
+            if (_overlayImage != null)
+            {
+                // 锁定态且未选中时，关闭射线拦截，允许穿透点击底层仪表
+                _overlayImage.raycastTarget = !isLocked || isSelected;
+            }
 
             if (isSelected)
             {
                 // 选中高亮: 边框柔和青蓝底衬，主手柄由 WidgetTransformGizmo 接管
-                Color goldColor = WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Warning, null);
+                Color goldColor = isLocked ? new Color(1f, 0.65f, 0.15f, 0.95f) : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Warning, null);
                 if (_editOutline != null)
                 {
                     _editOutline.effectColor = goldColor;
@@ -183,6 +191,30 @@ namespace ModularFlightPanel.UI
                 {
                     // 选中态由顶层 TransformGizmo 的浮动徽标统一展示，避免文字重叠冲突
                     _editTitleText.gameObject.SetActive(false);
+                }
+            }
+            else if (isLocked)
+            {
+                // 锁定未选中态：低调灰金框衬与微弱半透明底衬，标题展示锁定图标
+                Color lockCol = new Color(0.7f, 0.6f, 0.4f, 0.45f);
+                if (_editOutline != null)
+                {
+                    _editOutline.effectColor = lockCol;
+                    _editOutline.effectDistance = new Vector2(1f, 1f);
+                }
+                if (_ringImg != null)
+                {
+                    _ringImg.color = lockCol;
+                }
+                if (_overlayImage != null)
+                {
+                    _overlayImage.color = new Color(0.5f, 0.45f, 0.35f, 0.03f);
+                }
+                if (_editTitleText != null)
+                {
+                    _editTitleText.gameObject.SetActive(true);
+                    _editTitleText.text = $"🔒 {_ownerWidget.DisplayName}";
+                    _editTitleText.color = new Color(0.9f, 0.75f, 0.4f, 0.85f);
                 }
             }
             else
@@ -218,11 +250,18 @@ namespace ModularFlightPanel.UI
         {
             if (!IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar) return;
 
+            // 锁定图层拦截：禁止画布直接拖拽，引导用户按 L 或在图层面板解锁
+            if (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked)
+            {
+                MFPToastBridge.Show(I18n.TrFormat("TOAST_LOCKED_HINT_FMT", "🔒 图层 [{0}] 已锁定 (按 L 打开图层面板可解锁)", _ownerWidget.DisplayName));
+                return;
+            }
+
             // 双击快速唤起装配台聚焦检视 (像 Figma 双击图层一样丝滑)
             if (eventData.clickCount == 2)
             {
                 UIWidget.OnRequestOpenWorkbench?.Invoke();
-                MFPToastBridge.Show($"🛠️ 正在装配台检视: {_ownerWidget.DisplayName}");
+                MFPToastBridge.Show(I18n.TrFormat("DRAG_TOAST_INSPECT_FMT", "🛠️ 正在装配台检视: {0}", _ownerWidget.DisplayName));
                 return;
             }
 
@@ -251,6 +290,7 @@ namespace ModularFlightPanel.UI
         public void OnDrag(PointerEventData eventData)
         {
             if (!IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar || _rectTransform == null || _canvas == null) return;
+            if (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked) return;
 
             _isDragging = true;
             Vector2 delta = eventData.delta / _canvas.scaleFactor;
@@ -313,7 +353,7 @@ namespace ModularFlightPanel.UI
 
         public void OnEndDrag(PointerEventData eventData)
         {
-            if (!IsEditModeActive) return;
+            if (!IsEditModeActive || (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked)) return;
 
             WidgetSmartGuides.Instance?.HideAllGuides();
 
@@ -340,7 +380,7 @@ namespace ModularFlightPanel.UI
 
             if (_isDragging)
             {
-                WidgetEditHistory.CommitAction($"移动 {_ownerWidget.DisplayName}");
+                WidgetEditHistory.CommitAction(I18n.TrFormat("DRAG_HIST_MOVE_FMT", "移动 {0}", _ownerWidget.DisplayName));
                 _isDragging = false;
             }
 

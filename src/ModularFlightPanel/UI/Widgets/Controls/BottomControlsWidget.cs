@@ -16,6 +16,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 3. REF FRAME 权威参考系一键切换胶囊 (SURFACE / ORBIT / TARGET)
     /// 严格继承 BaseFlightWidget，零硬编码。
     /// </summary>
+    [FlightWidget("bottom_controls", "bottom_bar_controls", Category = WidgetCategory.Controls, DisplayName = "底部快捷操纵条", Description = "RCS/SAS/刹车/起落架/车灯综合药丸式状态切换条。", DefaultWidgetId = "core.bottom_controls", DefaultX = 0f, DefaultY = -210f, IsSingleton = true, ExactIds = new[] { "core.bottom_controls" })]
     public class BottomControlsWidget : BaseFlightWidget
     {
         private Image _panelImage;
@@ -64,7 +65,6 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. RCS 开关
             _rcsBtn = UIFactory.CreateButton(parent, "Btn_RCS", toggleBtnSize, new Vector2(-68f * s, 0f), OnRCSToggle);
-            _rcsBtn.SetTooltip("RCS 姿态推力系统", "开启/关闭反作用力姿态微调喷气动力 (Reaction Control System)", "R");
             _rcsImg = _rcsBtn.GetComponent<Image>();
             _rcsOutline = _rcsBtn.GetComponent<Outline>();
 
@@ -77,7 +77,6 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 2. SAS 主开关
             _sasBtn = UIFactory.CreateButton(parent, "Btn_SAS", toggleBtnSize, new Vector2(-26f * s, 0f), OnSASToggle);
-            _sasBtn.SetTooltip("SAS 稳定性增益系统", "开启/关闭姿态稳定性自动保持 (Stability Augmentation System)", "T");
             _sasImg = _sasBtn.GetComponent<Image>();
             _sasOutline = _sasBtn.GetComponent<Outline>();
 
@@ -91,13 +90,14 @@ namespace ModularFlightPanel.UI.Widgets
             // 3. REF FRAME 模式胶囊按钮 (左键切换, 右键展开 Principia 参考系窗口)
             Vector2 frameBtnSize = new Vector2(90f * s, 18f * s);
             _frameBtn = UIFactory.CreateButton(parent, "Btn_RefFrame", frameBtnSize, new Vector2(43f * s, 0f), null);
-            _frameBtn.SetTooltip("速度参考系模式", "左键点击轮换 SURFACE / ORBIT / TARGET 参考系；右键呼出 Principia 权威参考系设置窗口。");
             _frameImg = _frameBtn.GetComponent<Image>();
             _frameOutline = _frameBtn.GetComponent<Outline>();
 
             var clickHandler = _frameBtn.gameObject.AddComponent<RefFrameButtonHandler>();
             clickHandler.OnLeftClick = OnCycleSpeedMode;
             clickHandler.OnRightClick = OnTogglePrincipiaWindow;
+
+            ApplyTooltips();
 
             _frameText = UIFactory.CreateText(_frameBtn.transform, "Text", "REF: SURFACE ▾", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _frameText.fontStyle = FontStyle.Bold;
@@ -225,6 +225,21 @@ namespace ModularFlightPanel.UI.Widgets
                 _frameBtn.GetFeedback()?.ApplyTheme(theme);
                 if (_frameText != null) ApplyText(_frameText, TextStyleRole.SecondaryValue, theme);
             }
+        }
+
+        private void ApplyTooltips()
+        {
+            if (_rcsBtn != null)
+                _rcsBtn.SetTooltip(I18n.Tr("WIDGET_BOTTOM_RCS_TITLE", "RCS 姿态推力系统"), I18n.Tr("WIDGET_BOTTOM_RCS_DESC", "开启/关闭反作用姿控喷气动力 (RCS)"), "R");
+            if (_sasBtn != null)
+                _sasBtn.SetTooltip(I18n.Tr("WIDGET_BOTTOM_SAS_TITLE", "SAS 稳定性增益系统"), I18n.Tr("WIDGET_BOTTOM_SAS_DESC", "开启/关闭姿态稳定增益系统 (SAS)"), "T");
+            if (_frameBtn != null)
+                _frameBtn.SetTooltip(I18n.Tr("WIDGET_BOTTOM_FRAME_TITLE", "速度参考系模式"), I18n.Tr("WIDGET_BOTTOM_FRAME_DESC", "左键点击轮换 SURFACE / ORBIT / TARGET 参考系；右键呼出 Principia 权威参考系设置窗口。"));
+        }
+
+        protected override void OnLanguageChanged()
+        {
+            ApplyTooltips();
         }
 
         protected override void OnDestroy()

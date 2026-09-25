@@ -33,6 +33,13 @@ namespace ModularFlightPanel.UI
         public int ReflectionWidgetsAudited { get; set; }
         public int SourceWidgetsAudited { get; set; }
 
+        /// <summary>
+        /// 源码级审计是否真的执行过。
+        /// 发布版插件（只有 DLL、旁边没有仓库源码）必然拿不到仓库根，源码级规则完全不会运行；
+        /// 这种情况下报告绝不允许再声称"全量组件 100% 合规"—— 那正是最典型的假绿。
+        /// </summary>
+        public bool SourceAuditExecuted { get; set; }
+
         private int _totalWidgetsAudited;
         public int TotalWidgetsAudited
         {
@@ -53,10 +60,11 @@ namespace ModularFlightPanel.UI
             sb.AppendLine("           MODULAR FLIGHT PANEL 组件规范合法性校验报告 (SPEC AUDIT)");
             sb.AppendLine("=======================================================================");
             sb.AppendLine($"已审计组件总数: {TotalWidgetsAudited} (反射检查: {ReflectionWidgetsAudited}, 源码扫描: {SourceWidgetsAudited})");
+            sb.AppendLine($"源码级规则 (SPEC-001..008): {(SourceAuditExecuted ? "已执行" : "★未执行 (仓库源码不可见，本次结论仅覆盖反射级检查)")}");
             sb.AppendLine($"已执行规则检查: {TotalChecksPerformed}");
             sb.AppendLine($"错误违规项 (ERROR):   {ErrorCount}");
             sb.AppendLine($"潜在风险项 (WARNING): {WarningCount}");
-            sb.AppendLine($"颜色基线债务 (DEBT):  {WidgetColorLiteralAudit.TotalRegisteredDebt} 行 (当前目标: 0 容忍)");
+            sb.AppendLine($"颜色基线债务 (DEBT):  {WidgetColorLiteralAudit.TotalRegisteredDebt} 处 (当前目标: 0 容忍)");
             sb.AppendLine("-----------------------------------------------------------------------");
 
             if (ErrorCount == 0 && WarningCount == 0)
@@ -68,7 +76,23 @@ namespace ModularFlightPanel.UI
                 sb.AppendLine("  ├─ [MFP-SPEC-004] 遥测契约解耦 (OnUpdateTelemetry) 与脏标记阈值重绘保护 (0 强引用 Vessel/Part)");
                 sb.AppendLine("  ├─ [MFP-SPEC-005] 严格 override OnDestroy / Update，生命周期无泄漏、无成员隐藏 (0 CS0114)");
                 sb.AppendLine("  ├─ [MFP-SPEC-006] 零颜色字面量 (0 Color Literals, 零容忍)，100% 接入 WidgetStyleManager 语义角色");
-                sb.AppendLine("  └─ [MFP-SPEC-007] 杜绝组件内场景查询 (0 FindObjectOfType / FindObjectsByType / GameObject.Find 家族)");
+                sb.AppendLine("  ├─ [MFP-SPEC-007] 杜绝组件内场景查询 (Find*ObjectByType / GameObject.Find* / Camera.main / GetRootGameObjects)");
+                sb.AppendLine("  └─ [MFP-SPEC-008] 具体组件声明 [FlightWidget] 自动注册与预设库元数据");
+            }
+            else if (ErrorCount == 0 && !SourceAuditExecuted)
+            {
+                // 关键：源码级规则没跑过时，绝不能再输出"全量 100% 合规"。
+                // 发布版插件只有 DLL，仓库源码不在旁边，SPEC-001..008 一条都不会执行；
+                // 旧实现照样打印 100% 合规，等于把"没测"汇报成"测过且全过"。
+                sb.AppendLine("⚠ [REFLECTION-ONLY] 反射级组件契约检查通过，但源码级规范审计【本次未执行】:");
+                sb.AppendLine("  · 未执行原因: 仓库源码不可见（发布版插件只带 DLL），源码头文件规则 SPEC-001..008 无法运行。");
+                sb.AppendLine("  · 本次结论仅覆盖: 继承关系 / 刷新阶梯声明 / ApplyTheme / OnUpdateTelemetry /");
+                sb.AppendLine("    OnDestroy·Update 隐藏 / Vessel·Part 强引用字段 / 静态颜色字段 等反射可判定项。");
+                sb.AppendLine("  · 要得到完整结论，请在仓库根目录执行无头验证器 [6/9] 规范审计。");
+                foreach (var v in Violations.Where(v => v.Severity == "WARNING"))
+                {
+                    sb.AppendLine($"  {v}");
+                }
             }
             else if (ErrorCount == 0)
             {
@@ -149,15 +173,16 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
-        /// 开发机/游戏内一键审计：反射规则 + 源码级规则（MFP-SPEC-001..007）+ 内核自检
+        /// 开发机/游戏内一键审计：反射规则 + 源码级规则（MFP-SPEC-001..008）+ 内核自检
         /// </summary>
         public static WidgetValidationReport RunDevelopmentAudit()
         {
             var report = ValidateAllWidgets(WidgetSourceAudit.ResolveRepositoryRoot());
 
-            // 运行审计内核自检，杜绝规则与词法清洗器静默失效
+            // 运行审计内核自检，杜绝规则与词法清洗器静默失效。
+            // 计数用内核回传的真实用例数，不再写死 16（写死数字必然随用例增删漂移成假信息）。
             var selfTestFailures = RunSelfTest();
-            report.TotalChecksPerformed += 16;
+            report.TotalChecksPerformed += CSharpSourceLinter.LastSelfTestCaseCount + WidgetSourceAudit.LastSelfTestCaseCount;
             foreach (var failure in selfTestFailures)
             {
                 report.Violations.Add(new WidgetViolation
@@ -229,13 +254,49 @@ namespace ModularFlightPanel.UI
                 repositoryRoot = WidgetSourceAudit.ResolveRepositoryRoot();
             }
 
-            var componentFiles = WidgetSourceAudit.DiscoverComponentFiles(repositoryRoot);
+            var discoveryDiagnostics = new List<string>();
+            var componentFiles = WidgetSourceAudit.DiscoverComponentFiles(repositoryRoot, discoveryDiagnostics);
             report.SourceWidgetsAudited = componentFiles.Count;
+
+            // 发现层护栏：绝不"扫不到就跳过"。
+            // 发布版插件（只有 DLL、仓库源码不在旁边）必然拿不到仓库根 —— 这时必须显式标记
+            // "源码级审计未执行"，而不是让汇总照样打印"全量 100% 合规"（那就是把没测汇报成测过）。
+            // 注意这里是 WARNING 而不是 ERROR：发布环境降级属预期行为，不该阻断游戏内使用；
+            // 无头 CI（Program.cs [6/9]）对同一条件判 ERROR，因为 CI 环境本就应该拿得到仓库根。
+            string floorFailure = WidgetSourceAudit.CheckDiscoveryFloor(repositoryRoot, componentFiles.Count);
+            if (floorFailure != null)
+            {
+                report.SourceAuditExecuted = false;
+                report.Violations.Add(new WidgetViolation
+                {
+                    WidgetName = "DiscoveryFloor",
+                    RuleCode = Rule_Inheritance,
+                    Severity = "WARNING",
+                    Description = "源码级规范审计未执行: " + floorFailure,
+                    Location = repositoryRoot ?? "(repoRoot = null)"
+                });
+            }
+            else
+            {
+                report.SourceAuditExecuted = true;
+            }
+
+            for (int i = 0; i < discoveryDiagnostics.Count; i++)
+            {
+                report.Violations.Add(new WidgetViolation
+                {
+                    WidgetName = "DiscoveryRead",
+                    RuleCode = Rule_Inheritance,
+                    Severity = "ERROR",
+                    Description = discoveryDiagnostics[i],
+                    Location = repositoryRoot ?? "(repoRoot = null)"
+                });
+            }
 
             if (componentFiles.Count > 0)
             {
                 var sourceReport = WidgetSourceAudit.Scan(componentFiles);
-                report.TotalChecksPerformed += sourceReport.WidgetsScanned * 7;
+                report.TotalChecksPerformed += sourceReport.WidgetsScanned * WidgetSpecRules.RuleCount;
 
                 foreach (var v in sourceReport.Violations)
                 {

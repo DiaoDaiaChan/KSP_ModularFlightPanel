@@ -17,7 +17,7 @@ namespace ModularFlightPanel.UI
     {
         public WidgetConfig Config { get; set; }
         public string WidgetId => Config?.WidgetId ?? "unknown";
-        public string DisplayName => Config?.DisplayName ?? "组件";
+        public string DisplayName => Config?.DisplayName ?? I18n.Tr("WIDGET_FALLBACK_NAME", "组件");
 
         public RectTransform RectTransform { get; private set; }
         public WidgetDragHandler DragHandler { get; private set; }
@@ -75,7 +75,11 @@ namespace ModularFlightPanel.UI
 
             // 应用保存的绝对/相对坐标、缩放与旋转 (以原生 1:1 坐标系建立)
             RectTransform.anchoredPosition = new Vector2(config.PositionX, config.PositionY);
-            RectTransform.localScale = Vector3.one;
+            float effX = config.EffectiveScaleX;
+            float effY = config.EffectiveScaleY;
+            float initRatioX = CommittedScale > 0.001f ? (effX / CommittedScale) : 1.0f;
+            float initRatioY = CommittedScale > 0.001f ? (effY / CommittedScale) : 1.0f;
+            RectTransform.localScale = new Vector3(initRatioX, initRatioY, 1.0f);
             RectTransform.localEulerAngles = new Vector3(0f, 0f, config.Rotation);
 
             // 独立画布绘制优化 (Sub-Canvas Isolation)：
@@ -89,6 +93,9 @@ namespace ModularFlightPanel.UI
             // 注册进全局绘制与生命周期管理器 (WidgetRenderManager)
             WidgetRenderManager.Instance.RegisterWidget(this, RefreshTier);
             IsManagedByRenderManager = true;
+
+            // 监听全局语言切换通知
+            I18nManager.OnLanguageChanged += HandleLanguageChanged;
 
             // 调用派生类专用初始化与样式应用
             OnInitialize(config, theme);
@@ -128,7 +135,18 @@ namespace ModularFlightPanel.UI
         {
             WidgetDragHandler.OnEditModeChanged -= HandleEditModeChanged;
             WidgetRenderManager.Instance?.UnregisterWidget(this);
+            I18nManager.OnLanguageChanged -= HandleLanguageChanged;
         }
+
+        private void HandleLanguageChanged(string newLang)
+        {
+            OnLanguageChanged();
+        }
+
+        /// <summary>
+        /// 当系统界面语言切换时自动触发，派生组件可重写以即刻更新标签、工具提示及备忘文本
+        /// </summary>
+        protected virtual void OnLanguageChanged() { }
 
         private void HandleEditModeChanged(bool isEdit)
         {
@@ -395,13 +413,20 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 动态更新小组件的几何变换 (坐标、缩放与旋转) 并保持配置同步
         /// </summary>
-        public void UpdateTransform(float? x = null, float? y = null, float? scale = null, float? rotation = null)
+        public void UpdateTransform(float? x = null, float? y = null, float? scale = null, float? rotation = null, float? scaleX = null, float? scaleY = null)
         {
             if (Config != null)
             {
                 if (x.HasValue) Config.PositionX = x.Value;
                 if (y.HasValue) Config.PositionY = y.Value;
-                if (scale.HasValue) Config.Scale = Mathf.Clamp(scale.Value, 0.2f, 4.0f);
+                if (scale.HasValue)
+                {
+                    Config.Scale = Mathf.Clamp(scale.Value, 0.2f, 4.0f);
+                    Config.ScaleX = Config.Scale;
+                    Config.ScaleY = Config.Scale;
+                }
+                if (scaleX.HasValue) Config.ScaleX = Mathf.Clamp(scaleX.Value, 0.2f, 4.0f);
+                if (scaleY.HasValue) Config.ScaleY = Mathf.Clamp(scaleY.Value, 0.2f, 4.0f);
                 if (rotation.HasValue) Config.Rotation = (rotation.Value % 360f + 360f) % 360f;
             }
 
@@ -411,12 +436,14 @@ namespace ModularFlightPanel.UI
                 {
                     RectTransform.anchoredPosition = new Vector2(Config?.PositionX ?? RectTransform.anchoredPosition.x, Config?.PositionY ?? RectTransform.anchoredPosition.y);
                 }
-                if (scale.HasValue)
+                if (scale.HasValue || scaleX.HasValue || scaleY.HasValue)
                 {
-                    float targetScale = (Config != null && Config.Scale > 0.01f) ? Config.Scale : 1.0f;
-                    float ratio = CommittedScale > 0.001f ? (targetScale / CommittedScale) : targetScale;
-                    RectTransform.localScale = new Vector3(ratio, ratio, 1.0f);
-                    OnScaleChanged(targetScale, ratio);
+                    float effX = Config != null ? Config.EffectiveScaleX : 1.0f;
+                    float effY = Config != null ? Config.EffectiveScaleY : 1.0f;
+                    float ratioX = CommittedScale > 0.001f ? (effX / CommittedScale) : effX;
+                    float ratioY = CommittedScale > 0.001f ? (effY / CommittedScale) : effY;
+                    RectTransform.localScale = new Vector3(ratioX, ratioY, 1.0f);
+                    OnScaleChanged((effX + effY) * 0.5f, (ratioX + ratioY) * 0.5f);
                 }
                 if (rotation.HasValue)
                 {

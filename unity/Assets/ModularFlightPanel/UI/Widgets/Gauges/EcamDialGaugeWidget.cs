@@ -18,6 +18,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 三色安全区间切换 (正常绿/青 -> 注意黄 -> 警告红/爆表闪烁)
     /// 5. 100% 通配符与 CustomTemplate 双驱动，零硬编码，统一样式管道
     /// </summary>
+    [FlightWidget("ecam_dial", "ecam_gauge", "dial", Category = WidgetCategory.Gauges, DisplayName = "ECAM 圆弧通用仪表", Description = "270° 马蹄形高对比度圆弧表盘，支持动态指针、数显与软上限爆表模式。可在装配台绑定任意遥测通配符。", DefaultWidgetId = "ecam.dial", DefaultX = 0f, DefaultY = 0f)]
     public class EcamDialGaugeWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
@@ -167,10 +168,15 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         name = name.Substring(5).Trim();
                     }
-                    if (name.EndsWith("监控表")) name = name.Substring(0, name.Length - 3).Trim();
-                    else if (name.EndsWith("过载表")) name = name.Substring(0, name.Length - 3).Trim();
-                    else if (name.EndsWith("推力表")) name = name.Substring(0, name.Length - 3).Trim();
-                    else if (name.EndsWith("表") && name.Length > 2) name = name.Substring(0, name.Length - 1).Trim();
+                    string sfxMonitor = I18n.Tr("SUFFIX_DIAL_MONITOR", "监控表");
+                    string sfxG = I18n.Tr("SUFFIX_DIAL_G", "过载表");
+                    string sfxThrust = I18n.Tr("SUFFIX_DIAL_THRUST", "推力表");
+                    string sfxDial = I18n.Tr("SUFFIX_DIAL_CHAR", "表");
+
+                    if (name.EndsWith(sfxMonitor)) name = name.Substring(0, name.Length - sfxMonitor.Length).Trim();
+                    else if (name.EndsWith(sfxG)) name = name.Substring(0, name.Length - sfxG.Length).Trim();
+                    else if (name.EndsWith(sfxThrust)) name = name.Substring(0, name.Length - sfxThrust.Length).Trim();
+                    else if (name.EndsWith(sfxDial) && name.Length > 2) name = name.Substring(0, name.Length - sfxDial.Length).Trim();
 
                     _titleTemplate = name;
                 }

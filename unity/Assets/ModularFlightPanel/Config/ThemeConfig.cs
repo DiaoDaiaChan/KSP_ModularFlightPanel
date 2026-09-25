@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.Config
 {
@@ -157,7 +158,7 @@ namespace ModularFlightPanel.Config
     public class ThemeConfig
     {
         public string ThemeId = "modern_aero";
-        public string DisplayName = "Modern Glass Cockpit (极简全息)";
+        public string DisplayName = I18n.Tr("THEME_MODERN_GLASS", "现代极简全息玻璃座舱");
         public NavballStyleType Style = NavballStyleType.Modern_Aero;
         public NavballRenderMode RenderMode = NavballRenderMode.Procedural;
         public UiShaderStyle UiStyle = UiShaderStyle.Modern_Glass;
@@ -219,7 +220,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "cyber_neon",
-                DisplayName = "Cyber Neon (赛博点阵)",
+                DisplayName = I18n.Tr("THEME_CYBER_NEON", "赛博霓虹点阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Cyber_Neon,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
@@ -251,7 +252,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "spacex_dragon",
-                DisplayName = "SpaceX Dragon (载人龙飞船极简全息)",
+                DisplayName = I18n.Tr("THEME_SPACEX_DRAGON", "SpaceX 龙飞船全息"),
                 Style = NavballStyleType.Modern_Aero,
                 UiStyle = UiShaderStyle.Modern_Glass,
                 ShaderName = "ModularFlightPanel/NavballModern",
@@ -280,7 +281,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "modern_aero",
-                DisplayName = "Modern Glass Cockpit (极简全息)",
+                DisplayName = I18n.Tr("THEME_MODERN_GLASS", "现代极简全息玻璃座舱"),
                 Style = NavballStyleType.Modern_Aero,
                 ShaderName = "ModularFlightPanel/NavballModern",
                 EnableHalftoneDither = false,
@@ -308,7 +309,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "classic_aero",
-                DisplayName = "Classic Aero (经典蓝棕)",
+                DisplayName = I18n.Tr("THEME_CLASSIC_AERO", "经典航空蓝棕"),
                 Style = NavballStyleType.Classic_Aero,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = false,
@@ -330,7 +331,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "apollo_1969",
-                DisplayName = "Apollo 1969 AGC (阿波罗复古)",
+                DisplayName = I18n.Tr("THEME_APOLLO_1969", "阿波罗 1969 AGC 复古"),
                 Style = NavballStyleType.Apollo_1969,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
@@ -358,7 +359,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "apollo_dsky",
-                DisplayName = "Apollo DSKY (物理荧光绿点阵)",
+                DisplayName = I18n.Tr("THEME_APOLLO_DSKY", "阿波罗 DSKY 荧光绿点阵"),
                 Style = NavballStyleType.Apollo_1969,
                 UiStyle = UiShaderStyle.Dot_Matrix,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
@@ -391,7 +392,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "diffractive_hud",
-                DisplayName = "F-16 Diffractive HUD (衍射全息冰蓝)",
+                DisplayName = I18n.Tr("THEME_F16_DIFFRACTIVE_HUD", "F-16 衍射全息冰蓝 HUD"),
                 Style = NavballStyleType.Modern_Aero,
                 UiStyle = UiShaderStyle.Phosphor_HUD,
                 ShaderName = "ModularFlightPanel/NavballModern",
@@ -422,7 +423,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "vintage_amber",
-                DisplayName = "Vintage Amber CRT (等离子琥珀金)",
+                DisplayName = I18n.Tr("THEME_VINTAGE_AMBER_CRT", "复古等离子琥珀金 CRT"),
                 Style = NavballStyleType.Classic_Aero,
                 UiStyle = UiShaderStyle.Phosphor_HUD,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
@@ -453,7 +454,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "cyber_matrix",
-                DisplayName = "Cyber Matrix (赛博霓虹点阵)",
+                DisplayName = I18n.Tr("THEME_CYBER_MATRIX", "赛博黑客矩阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Dot_Matrix,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
@@ -486,7 +487,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "starship_mars",
-                DisplayName = "Starship Mars (星舰火星开拓者)",
+                DisplayName = I18n.Tr("THEME_STARSHIP_MARS", "星舰火星开拓者"),
                 Style = NavballStyleType.Modern_Aero,
                 UiStyle = UiShaderStyle.Phosphor_HUD,
                 ShaderName = "ModularFlightPanel/NavballModern",
@@ -517,7 +518,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "deep_space_voyager",
-                DisplayName = "Deep Space Voyager (深空旅行者金黄)",
+                DisplayName = I18n.Tr("THEME_DEEP_SPACE_VOYAGER", "深空旅行者金黄"),
                 Style = NavballStyleType.Classic_Aero,
                 UiStyle = UiShaderStyle.Dot_Matrix,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
@@ -554,7 +555,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "sr71_blackbird",
-                DisplayName = "SR-71 Blackbird (黑鸟高空战术暗红)",
+                DisplayName = I18n.Tr("THEME_SR71_BLACKBIRD", "SR-71 黑鸟战术暗红"),
                 Style = NavballStyleType.Modern_Aero,
                 UiStyle = UiShaderStyle.Modern_Glass,
                 ShaderName = "ModularFlightPanel/NavballModern",
@@ -586,7 +587,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "vostok_1961",
-                DisplayName = "Vostok 1961 (东方号苏联机械青)",
+                DisplayName = I18n.Tr("THEME_VOSTOK_1961", "东方一号苏联机械青"),
                 Style = NavballStyleType.Classic_Aero,
                 UiStyle = UiShaderStyle.Dot_Matrix,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
@@ -623,7 +624,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "matrix_hacker",
-                DisplayName = "Matrix Terminal (赛博黑客终端绿点阵)",
+                DisplayName = I18n.Tr("THEME_MATRIX_TERMINAL", "矩阵终端绿点阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Dot_Matrix,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
@@ -660,7 +661,7 @@ namespace ModularFlightPanel.Config
             return new ThemeConfig
             {
                 ThemeId = "eva_unit01",
-                DisplayName = "EVA Unit-01 (EVA初号机暴走电光点阵)",
+                DisplayName = I18n.Tr("THEME_EVA_UNIT01", "EVA 初号机暴走电光点阵"),
                 Style = NavballStyleType.Cyber_Neon,
                 UiStyle = UiShaderStyle.Dot_Matrix,
                 ShaderName = "ModularFlightPanel/NavballHalftone",

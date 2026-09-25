@@ -51,6 +51,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 多构型自适应矩阵：支持纵向双列、横向双行、横向单行 (Multi-Orientation Matrix Layout)
     /// 5. 极简微光折叠胶囊 (Collapsed 38x38px Pill)：随时收纳，还给驾驶舱纯净视野
     /// </summary>
+    [FlightWidget("toolbar", "modern_toolbar", "dock", Category = WidgetCategory.Controls, DisplayName = "AVIONICS 现代折叠工具栏收纳坞", Description = "接管原版 20+ MOD 图标的超现代黑晶抽屉坞，彻底消灭屏幕长龙。", DefaultWidgetId = "core.toolbar", DefaultX = -460f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "core.toolbar" })]
     public class ModernToolbarWidget : BaseFlightWidget
     {
         public static ModernToolbarWidget Instance { get; private set; }
@@ -386,6 +387,9 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
             _itemViews.Clear();
+#if KSP_RUNTIME
+            DockAnchorTracker.UnregisterWidget(this);
+#endif
 
             bool hasRealLauncher = false;
 #if KSP_RUNTIME
@@ -480,6 +484,13 @@ namespace ModularFlightPanel.UI.Widgets
                 if (btn == null) continue;
                 GetButtonIdentity(btn, i, out string key, out string defName);
                 var rule = ThemeManager.Instance.GetOrCreateDockRule(key, defName);
+
+                // 若按钮已移入独立常用面板，且未开启主坞同时保留，则由独立快捷坞呈现
+                if (rule.IsFavorite && !ThemeManager.Instance.DockKeepFavoritesInMain && ThemeManager.Instance.DockEnableFavoritePanel)
+                {
+                    continue;
+                }
+
                 if (rule.IsVisible)
                 {
                     primaryBtns.Add(new KeyValuePair<KSP.UI.Screens.ApplicationLauncherButton, DockButtonRule>(btn, rule));
@@ -552,7 +563,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
-                    string drawerText = _drawerExpanded ? "▲ 收起" : $"▼ 更多 ({hiddenBtns.Count})";
+                    string drawerText = _drawerExpanded ? I18n.Tr("MOD_TOOLBAR_COLLAPSE", "▲ 收起") : I18n.TrFormat("MOD_TOOLBAR_MORE_N", hiddenBtns.Count);
                     CreateVerticalDrawerButton(parent, 0f, drawerY, 78f * s, drawerH, drawerText, s);
 
                     if (_drawerExpanded)
@@ -753,13 +764,27 @@ namespace ModularFlightPanel.UI.Widgets
                 initialActive: active,
                 hasExplicitCustomLabel: !string.IsNullOrEmpty(rule.CustomLabel),
                 kspBtnRef: kspBtn);
+
+#if KSP_RUNTIME
+            if (kspBtn != null && _itemViews.Count > 0)
+            {
+                var latest = _itemViews[_itemViews.Count - 1];
+                if (latest != null && latest.Root != null)
+                {
+                    DockAnchorTracker.RegisterButton(kspBtn, latest.Root.GetComponent<RectTransform>(), this, false);
+                }
+            }
+#endif
         }
 
-        private static void TriggerKspButtonClick(KSP.UI.Screens.ApplicationLauncherButton kspBtn, PointerEventData pe, bool isRightClick = false)
+        public static void TriggerKspButtonClick(KSP.UI.Screens.ApplicationLauncherButton kspBtn, PointerEventData pe, bool isRightClick = false)
         {
             if (kspBtn == null) return;
             try
             {
+#if KSP_RUNTIME
+                DockAnchorTracker.SyncButtonNow(kspBtn);
+#endif
                 if (kspBtn.toggleButton != null)
                 {
                     kspBtn.toggleButton.Interactable = true;
@@ -812,6 +837,10 @@ namespace ModularFlightPanel.UI.Widgets
                         kspBtn.onRightClick?.Invoke();
                     }
                 }
+
+#if KSP_RUNTIME
+                DockAnchorTracker.OnPostButtonClick(kspBtn);
+#endif
             }
             catch (Exception ex)
             {
@@ -819,11 +848,14 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private static void TriggerKspButtonHover(KSP.UI.Screens.ApplicationLauncherButton kspBtn, PointerEventData pe, bool isEnter)
+        public static void TriggerKspButtonHover(KSP.UI.Screens.ApplicationLauncherButton kspBtn, PointerEventData pe, bool isEnter)
         {
             if (kspBtn == null) return;
             try
             {
+#if KSP_RUNTIME
+                DockAnchorTracker.SyncButtonNow(kspBtn);
+#endif
                 if (isEnter)
                 {
                     if (pe != null && kspBtn.toggleButton != null)
@@ -872,6 +904,10 @@ namespace ModularFlightPanel.UI.Widgets
             for (int i = 0; i < mockNames.Length; i++)
             {
                 var rule = ThemeManager.Instance.GetOrCreateDockRule("MOCK_" + mockNames[i], mockNames[i]);
+                // 若预设或用户将其标记为常用，且未开启主坞同时保留，则由独立快捷坞呈现
+                if (rule.IsFavorite && !ThemeManager.Instance.DockKeepFavoritesInMain && ThemeManager.Instance.DockEnableFavoritePanel)
+                    continue;
+
                 if (rule.IsVisible)
                     primaryItems.Add(i);
                 else
@@ -937,7 +973,9 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
-                    string drawerText = _drawerExpanded ? "▲ 收起" : $"▼ 更多 ({hiddenItems.Count})";
+                    string drawerText = _drawerExpanded 
+                        ? I18n.Tr("MOD_TOOLBAR_COLLAPSE", "▲ 收起") 
+                        : I18n.TrFormat("MOD_TOOLBAR_MORE_N", hiddenItems.Count);
                     CreateVerticalDrawerButton(parent, 0f, drawerY, 78f * s, drawerH, drawerText, s);
 
                     if (_drawerExpanded)
@@ -1345,6 +1383,8 @@ namespace ModularFlightPanel.UI.Widgets
                             view.ActiveLed.color = active ? ledOn : ledOff;
                         }
                     }
+
+                    DockAnchorTracker.SyncAll();
                 }
             }
             catch (Exception ex)
@@ -1380,6 +1420,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (Instance == this) Instance = null;
             if (_collapseBtn != null) _collapseBtn.onClick.RemoveAllListeners();
+#if KSP_RUNTIME
+            DockAnchorTracker.UnregisterWidget(this);
+#endif
             if (ThemeManager.Instance.ToolbarStyleMode != 2)
             {
                 StockToolbarHook.HideStockToolbar(false);

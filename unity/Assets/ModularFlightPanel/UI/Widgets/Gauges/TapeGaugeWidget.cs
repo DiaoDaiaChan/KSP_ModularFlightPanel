@@ -18,6 +18,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 6. 太空全场景动态无极工程量纲引擎 (带 15% 滞后死区平滑防抖)
     /// 7. 严格遵照 MFP-SPEC-001..007 标准化铁律，0 颜色字面量，100% 通配符双驱动，零 GC
     /// </summary>
+    [FlightWidget("tape", "tape_gauge", "speed_tape", "altitude_tape", Category = WidgetCategory.Gauges, DisplayName = "PFD 垂直动态标尺带", Description = "PFD 风格平滑滚动动态标尺带，支持任意物理数据与步长。", DefaultWidgetId = "tape.speed", DefaultX = -235f, DefaultY = 0f)]
     public class TapeGaugeWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
@@ -154,7 +155,7 @@ namespace ModularFlightPanel.UI.Widgets
         private string _trendToken = "{GFORCE}";
         private string _trendTagTemplate = "ACC";
         private string _terrainToken = "{ALT:AGL}";
-        private float _trendMaxScale = 4.0f;
+        private float _trendMaxScale = 8.0f;
         private bool _isSpeedTape = false;
 
         // 太空全场景动态无极工程量纲引擎 (Dynamic Multi-Scale Engine)
@@ -182,6 +183,7 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastRateText = string.Empty;
         private bool _lastTrendPositive = true;
         private int _lastAccAlertLevel = -1;
+        private bool _showingIntegerReadout = false;
 
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
@@ -254,16 +256,16 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isSpeedTape)
             {
                 _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
-                _topModeTemplate = "SPD";
+                _topModeTemplate = "{SPD:MODE}";
                 _bottomSecTemplate = "{MACH}";
                 _trendToken = "{GFORCE}";
                 _trendTagTemplate = "ACC";
-                _trendMaxScale = 4.0f;
+                _trendMaxScale = 8.0f;
             }
             else
             {
                 _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{ALT}";
-                _topModeTemplate = "ALT";
+                _topModeTemplate = "{ALT:MODE}";
                 _bottomSecTemplate = "RDR {ALT:AGL:DIST}";
                 _trendToken = "{VSI}";
                 _trendTagTemplate = "V/S";
@@ -273,7 +275,9 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (!string.IsNullOrEmpty(config?.DisplayName))
             {
-                if (config.DisplayName.Length <= 4 && !config.DisplayName.Contains("标尺带"))
+                if (config.DisplayName.Length <= 4 &&
+                    !config.DisplayName.Contains(I18n.Tr("SUFFIX_SCALE_TAPE", "标尺带")) &&
+                    config.DisplayName != "SPD" && config.DisplayName != "ALT")
                 {
                     _topModeTemplate = config.DisplayName;
                 }
@@ -521,6 +525,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _centerValueText = UIFactory.CreateText(boxObj.transform, "Readout_Value", "0", valFontSize,
                     TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                 _centerValueText.fontStyle = FontStyle.Bold;
+                _centerValueText.alignByGeometry = false;
                 RectTransform valRt = _centerValueText.GetComponent<RectTransform>();
                 valRt.pivot = new Vector2(1f, 0.5f);
                 valRt.sizeDelta = new Vector2(36f * s, boxH);
@@ -529,6 +534,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
                 _centerUnitText.fontStyle = FontStyle.Bold;
+                _centerUnitText.alignByGeometry = false;
                 RectTransform unitRt = _centerUnitText.GetComponent<RectTransform>();
                 unitRt.pivot = new Vector2(0f, 0.5f);
                 unitRt.sizeDelta = new Vector2(18f * s, boxH);
@@ -540,6 +546,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _centerValueText = UIFactory.CreateText(boxObj.transform, "Readout_Value", "0", valFontSize,
                     TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                 _centerValueText.fontStyle = FontStyle.Bold;
+                _centerValueText.alignByGeometry = false;
                 RectTransform valRt = _centerValueText.GetComponent<RectTransform>();
                 valRt.pivot = new Vector2(1f, 0.5f);
                 valRt.sizeDelta = new Vector2(36f * s, boxH);
@@ -548,6 +555,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
                 _centerUnitText.fontStyle = FontStyle.Bold;
+                _centerUnitText.alignByGeometry = false;
                 RectTransform unitRt = _centerUnitText.GetComponent<RectTransform>();
                 unitRt.pivot = new Vector2(0f, 0.5f);
                 unitRt.sizeDelta = new Vector2(17f * s, boxH);
@@ -583,6 +591,11 @@ namespace ModularFlightPanel.UI.Widgets
             int topFontSize = Mathf.RoundToInt(8.5f * s);
             _topModeText = UIFactory.CreateText(_topModeBox.transform, "Top_Mode", _topModeTemplate, topFontSize, TextAnchor.MiddleCenter,
                 style.GetTextColor(TextStyleRole.Cardinal, theme));
+            _topModeText.resizeTextForBestFit = true;
+            _topModeText.resizeTextMinSize = Mathf.RoundToInt(6f * s);
+            _topModeText.resizeTextMaxSize = topFontSize;
+            _topModeText.fontStyle = FontStyle.Bold;
+            _topModeText.alignByGeometry = false;
             RectTransform topRt = _topModeText.GetComponent<RectTransform>();
             topRt.sizeDelta = new Vector2(w - 12f * s, topBoxSize.y);
             topRt.anchoredPosition = new Vector2(2f * s, 0f);
@@ -670,13 +683,14 @@ namespace ModularFlightPanel.UI.Widgets
                     style.GetMeterColor(MeterStyleRole.Track, theme));
                 _accTrack = accTrackLine.GetComponent<Image>();
 
-                // 标尺刻度线 (0G: -58, 1G: -29, 2G: 0, 3G: +29, 4G: +58)
+                // 标尺刻度线 (0G: -58, 2G: -29, 4G: 0 [黄色告警门限], 6G: +29, 8G: +58 [红色极危门限])
                 Color trackTickCol = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.35f);
                 float[] accTicks = new float[] { -58f * s, -29f * s, 0f, 29f * s, 58f * s };
                 for (int t = 0; t < accTicks.Length; t++)
                 {
                     float yPos = accTicks[t];
-                    float tickLen = (t == 2) ? (5.5f * s) : (3.5f * s);
+                    // 0G (t=0), 4G (t=2, 中间告警门限), 8G (t=4, 顶端过载门限) 采用长刻线 (5.5px)，2G/6G 采用短刻线 (3.5px)
+                    float tickLen = (t % 2 == 0) ? (5.5f * s) : (3.5f * s);
                     UIFactory.CreatePanel(_accTrackBgObj.transform, $"ACC_Tick_{t}",
                         new Vector2(tickLen, 1f * s), new Vector2(0f, yPos), trackTickCol);
                 }
@@ -749,12 +763,10 @@ namespace ModularFlightPanel.UI.Widgets
                     style.GetMeterColor(MeterStyleRole.Track, theme));
                 _rateTrack = rateTrackLine.GetComponent<Image>();
 
-                // 水平零位基准菱形能量收敛锚点 (Zero Datum Anchor at y = 0)
+                // 水平零位基准刻线 (Zero Datum Notch at y = 0)
+                Color trackDatumCol = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.60f);
                 GameObject rateZeroObj = UIFactory.CreatePanel(_rateTrackBgObj.transform, "Rate_ZeroAnchor",
-                    new Vector2(5f * s, 5f * s), Vector2.zero,
-                    WidgetStyleManager.Meter(MeterStyleRole.Primary, theme));
-                RectTransform rateZeroRt = rateZeroObj.GetComponent<RectTransform>();
-                rateZeroRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                    new Vector2(6f * s, 1.2f * s), Vector2.zero, trackDatumCol);
                 _rateZeroAnchor = rateZeroObj.GetComponent<Image>();
 
                 // 辅助刻度线 (±10 m/s²: ±29, ±20 m/s²: ±58)
@@ -843,11 +855,10 @@ namespace ModularFlightPanel.UI.Widgets
                     style.GetMeterColor(MeterStyleRole.Track, theme));
                 _vsiTrack = trackObj.GetComponent<Image>();
 
+                // 水平零位基准刻线 (Zero Datum Notch at y = 0)
                 GameObject zeroObj = UIFactory.CreatePanel(_vsiTrackBgObj.transform, "VSI_ZeroAnchor",
-                    new Vector2(5f * s, 5f * s), Vector2.zero,
-                    WidgetStyleManager.Meter(MeterStyleRole.Primary, theme));
-                RectTransform zeroRt = zeroObj.GetComponent<RectTransform>();
-                zeroRt.localEulerAngles = new Vector3(0f, 0f, 45f);
+                    new Vector2(6f * s, 1.2f * s), Vector2.zero,
+                    WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.60f));
                 _vsiZeroAnchor = zeroObj.GetComponent<Image>();
 
                 Color trackTickCol = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.35f);
@@ -1045,18 +1056,23 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 formatted = $"{displayVal:F2}";
             }
-            else if (Math.Abs(displayVal) >= 1000.0)
-            {
-                formatted = $"{displayVal:F0}";
-            }
-            else if (Math.Abs(displayVal) >= 100.0)
-            {
-                formatted = $"{displayVal:F1}";
-            }
             else
             {
-                formatted = $"{displayVal:F1}";
+                double abs = Math.Abs(displayVal);
+                // 迟滞死区：>= 1000 显示整数，防止在 999.9 与 1000 临界点高频跳变
+                if (_showingIntegerReadout)
+                {
+                    if (abs < 995.0) _showingIntegerReadout = false;
+                }
+                else
+                {
+                    if (abs >= 1000.0) _showingIntegerReadout = true;
+                }
+
+                formatted = _showingIntegerReadout ? $"{displayVal:F0}" : $"{displayVal:F1}";
             }
+
+            formatted = UIFactory.FormatTabular(formatted);
 
             if (formatted != _lastCenterText)
             {
@@ -1169,25 +1185,25 @@ namespace ModularFlightPanel.UI.Widgets
                 double gForce = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
                 if (double.IsNaN(gForce)) gForce = 0.0;
 
-                string accStr = $"{gForce:F1}G";
+                string accStr = UIFactory.FormatTabular($"{gForce:F1}G");
                 if (accStr != _lastAccText)
                 {
                     _lastAccText = accStr;
                     if (_accValText != null) _accValText.text = accStr;
                 }
 
-                // 航天生理与结构载荷警戒判定 (对齐 KSP 股票 G-Meter 与真实航电标准)：
-                // 正常 (Level 0): < 2.0G 且 > -0.5G (绿色/主读数色)
-                // 警告 (Level 1): 2.0G ~ 4.0G 或 -0.5G ~ -1.5G (琥珀金 Warning)
-                // 危险 (Level 2): >= 4.0G 或 <= -1.5G (珊瑚红 Danger 晕厥/过载)
+                // 航天生理与结构载荷警戒判定 (对齐用户规范：4G 黄色，8G 红色)：
+                // 正常 (Level 0): < 4.0G 且 > -1.5G (绿色/主读数色)
+                // 警告 (Level 1): 4.0G ~ 8.0G 或 -1.5G ~ -3.0G (琥珀金 Warning)
+                // 危险 (Level 2): >= 8.0G 或 <= -3.0G (珊瑚红 Danger 晕厥/过载)
                 int alertLevel = 0;
-                if (gForce >= 4.0 || gForce <= -1.5)
+                if (gForce >= 8.0 || gForce <= -3.0)
                 {
-                    alertLevel = 2; // 极危
+                    alertLevel = 2; // 极危 (8G 红色)
                 }
-                else if (gForce >= 2.0 || gForce <= -0.5)
+                else if (gForce >= 4.0 || gForce <= -1.5)
                 {
-                    alertLevel = 1; // 告警
+                    alertLevel = 1; // 告警 (4G 黄色)
                 }
 
                 if (alertLevel != _lastAccAlertLevel)
@@ -1236,8 +1252,8 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                // ACC 纵向滑动 ──► 指针与微痕发丝 (0~4G 线性标尺，-58 至 +58)
-                float accFraction = Mathf.Clamp01((float)(gForce / 4.0));
+                // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-58 至 +58)
+                float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
                 float pointerY = Mathf.Lerp(-58f * s, 58f * s, accFraction);
                 if (_accPointerRt != null)
                 {
@@ -1263,12 +1279,24 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _lastSampleSpeed = rawSpeed;
                     _lastSampleTime = now;
-                    _calculatedAccelMps2 = gForce * 9.80665;
+                    _calculatedAccelMps2 = 0.0;
                 }
 
+                // 速度变化率零位死区 (0.08 m/s²)，彻底消除物理微颤引起的正负频繁跳变与闪烁
+                const double RATE_DEADBAND = 0.08;
+                bool isRateDeadband = Math.Abs(_calculatedAccelMps2) < RATE_DEADBAND;
+
                 string rateStr;
-                if (Math.Abs(_calculatedAccelMps2) < 0.05) rateStr = "0.0";
-                else rateStr = _calculatedAccelMps2 > 0 ? $"+{_calculatedAccelMps2:F1}" : $"{_calculatedAccelMps2:F1}";
+                if (isRateDeadband)
+                {
+                    rateStr = "0.0";
+                }
+                else
+                {
+                    rateStr = _calculatedAccelMps2 > 0 ? $"+{_calculatedAccelMps2:F1}" : $"{_calculatedAccelMps2:F1}";
+                }
+
+                rateStr = UIFactory.FormatTabular(rateStr);
 
                 if (rateStr != _lastRateText)
                 {
@@ -1276,16 +1304,29 @@ namespace ModularFlightPanel.UI.Widgets
                     if (_rateValText != null)
                     {
                         _rateValText.text = rateStr;
-                        TextStyleRole rateRole = _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
+                        TextStyleRole rateRole = isRateDeadband || _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
                         ApplyText(_rateValText, rateRole, theme);
                     }
                 }
 
-                float maxScale = _trendMaxScale > 0.001f ? _trendMaxScale * 9.80665f : 20.0f;
-                float rateFraction = Mathf.Clamp((float)(_calculatedAccelMps2 / maxScale), -1f, 1f);
-                bool isPositive = rateFraction >= 0f;
+                float maxScale = 20.0f;
+                float rateFraction;
+                bool isRatePositive;
+                MeterStyleRole rateMeterRole;
 
-                MeterStyleRole rateMeterRole = isPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
+                if (isRateDeadband)
+                {
+                    rateFraction = 0f;
+                    isRatePositive = true;
+                    rateMeterRole = MeterStyleRole.Primary;
+                }
+                else
+                {
+                    rateFraction = Mathf.Clamp((float)(_calculatedAccelMps2 / maxScale), -1f, 1f);
+                    isRatePositive = rateFraction >= 0f;
+                    rateMeterRole = isRatePositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
+                }
+
                 Color rateCol = WidgetStyleManager.Meter(rateMeterRole, theme);
                 if (_ratePointerHead != null) _ratePointerHead.color = rateCol;
                 if (_ratePointerStem != null) _ratePointerStem.color = rateCol;
@@ -1298,17 +1339,21 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 if (_rateTraceRt != null)
                 {
-                    if (isPositive)
+                    if (isRateDeadband)
+                    {
+                        _rateTraceRt.sizeDelta = Vector2.zero;
+                    }
+                    else if (isRatePositive)
                     {
                         _rateTraceRt.pivot = new Vector2(0.5f, 0f);
                         _rateTraceRt.anchoredPosition = Vector2.zero;
-                        _rateTraceRt.sizeDelta = new Vector2(1.2f * s, ratePointerY);
+                        _rateTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, ratePointerY));
                     }
                     else
                     {
                         _rateTraceRt.pivot = new Vector2(0.5f, 1f);
                         _rateTraceRt.anchoredPosition = Vector2.zero;
-                        _rateTraceRt.sizeDelta = new Vector2(1.2f * s, -ratePointerY);
+                        _rateTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, -ratePointerY));
                     }
                 }
             }
@@ -1318,26 +1363,43 @@ namespace ModularFlightPanel.UI.Widgets
                 double vs = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
                 if (double.IsNaN(vs)) vs = 0.0;
 
+                // 垂直速度零位死区 (0.08 m/s)，彻底消除微小振荡引起的正负频繁跳变与闪烁
+                const double VSI_DEADBAND = 0.08;
+                bool isVsiDeadband = Math.Abs(vs) < VSI_DEADBAND;
+
                 float maxScale = _trendMaxScale > 0.001f ? _trendMaxScale : 100.0f;
-                float rateFraction = Mathf.Clamp((float)(vs / maxScale), -1f, 1f);
-                bool isPositive = rateFraction >= 0f;
+                float rateFraction;
+                bool isPositive;
+                MeterStyleRole meterRole;
+
+                if (isVsiDeadband)
+                {
+                    rateFraction = 0f;
+                    isPositive = true;
+                    meterRole = MeterStyleRole.Primary;
+                }
+                else
+                {
+                    rateFraction = Mathf.Clamp((float)(vs / maxScale), -1f, 1f);
+                    isPositive = rateFraction >= 0f;
+                    meterRole = isPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
+                }
 
                 if (double.IsNaN(_lastTrendVal) || Math.Abs(vs - _lastTrendVal) > 0.05 || isPositive != _lastTrendPositive)
                 {
                     _lastTrendVal = vs;
                     _lastTrendPositive = isPositive;
 
-                    MeterStyleRole meterRole = isPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                     Color vsiCol = WidgetStyleManager.Meter(meterRole, theme);
                     if (_vsiPointerHead != null) _vsiPointerHead.color = vsiCol;
                     if (_vsiPointerStem != null) _vsiPointerStem.color = vsiCol;
                     if (_vsiTraceImg != null) _vsiTraceImg.color = WidgetStyleManager.WithAlpha(vsiCol, 0.40f);
 
-                    TextStyleRole textRole = isPositive ? TextStyleRole.Accent : TextStyleRole.Warning;
+                    TextStyleRole textRole = isVsiDeadband || isPositive ? TextStyleRole.Accent : TextStyleRole.Warning;
                     ApplyText(_vsiRateText, textRole, theme);
 
                     string formattedRate;
-                    if (Math.Abs(vs) < 0.05)
+                    if (isVsiDeadband)
                         formattedRate = "0.0";
                     else if (vs > 0.0)
                         formattedRate = vs >= 1000.0 ? $"+{vs / 1000.0:F1}k" : $"+{vs:F1}";
@@ -1346,6 +1408,8 @@ namespace ModularFlightPanel.UI.Widgets
                         double absVal = Math.Abs(vs);
                         formattedRate = absVal >= 1000.0 ? $"-{absVal / 1000.0:F1}k" : $"-{absVal:F1}";
                     }
+
+                    formattedRate = UIFactory.FormatTabular(formattedRate);
 
                     if (formattedRate != _lastTrendRateText)
                     {
@@ -1361,17 +1425,21 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 if (_vsiTraceRt != null)
                 {
-                    if (isPositive)
+                    if (isVsiDeadband)
+                    {
+                        _vsiTraceRt.sizeDelta = Vector2.zero;
+                    }
+                    else if (isPositive)
                     {
                         _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
                         _vsiTraceRt.anchoredPosition = Vector2.zero;
-                        _vsiTraceRt.sizeDelta = new Vector2(1.2f * s, vsiPointerY);
+                        _vsiTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, vsiPointerY));
                     }
                     else
                     {
                         _vsiTraceRt.pivot = new Vector2(0.5f, 1f);
                         _vsiTraceRt.anchoredPosition = Vector2.zero;
-                        _vsiTraceRt.sizeDelta = new Vector2(1.2f * s, -vsiPointerY);
+                        _vsiTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, -vsiPointerY));
                     }
                 }
             }
@@ -1516,7 +1584,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_rateValText != null) ApplyText(_rateValText, _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
                 if (_rateTrackBg != null) ApplyCard(_rateTrackBg, _rateTrackOutline, CardStyleRole.SubtleSlot, theme);
                 if (_rateTrack != null) _rateTrack.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
-                if (_rateZeroAnchor != null) _rateZeroAnchor.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
+                if (_rateZeroAnchor != null) _rateZeroAnchor.color = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.60f);
 
                 MeterStyleRole rateRole = _calculatedAccelMps2 >= 0 ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                 Color rateCol = WidgetStyleManager.Meter(rateRole, theme);
@@ -1531,7 +1599,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_vsiRateText != null) ApplyText(_vsiRateText, _lastTrendPositive ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
                 if (_vsiTrackBg != null) ApplyCard(_vsiTrackBg, _vsiTrackOutline, CardStyleRole.SubtleSlot, theme);
                 if (_vsiTrack != null) _vsiTrack.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
-                if (_vsiZeroAnchor != null) _vsiZeroAnchor.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
+                if (_vsiZeroAnchor != null) _vsiZeroAnchor.color = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.60f);
 
                 MeterStyleRole vsiRole = _lastTrendPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                 Color vsiCol = WidgetStyleManager.Meter(vsiRole, theme);

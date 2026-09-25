@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.UI
 {
@@ -16,6 +17,8 @@ namespace ModularFlightPanel.UI
         public float Scale;
         public float Rotation;
         public int SiblingIndex;
+        public int DrawOrder;
+        public bool IsLocked;
         public bool IsEnabled;
     }
 
@@ -135,7 +138,7 @@ namespace ModularFlightPanel.UI
             ApplyState(step.BeforeStates);
             _redoStack.Add(step);
 
-            MFPToastBridge.Show($"↶ 撤销: {step.Description}");
+            MFPToastBridge.Show(I18n.TrFormat("HIST_TOAST_UNDO_FMT", "↶ 撤销: {0}", step.Description));
             OnHistoryChanged?.Invoke();
             return true;
         }
@@ -154,7 +157,7 @@ namespace ModularFlightPanel.UI
             ApplyState(step.AfterStates);
             _undoStack.Add(step);
 
-            MFPToastBridge.Show($"↷ 重做: {step.Description}");
+            MFPToastBridge.Show(I18n.TrFormat("HIST_TOAST_REDO_FMT", "↷ 重做: {0}", step.Description));
             OnHistoryChanged?.Invoke();
             return true;
         }
@@ -205,6 +208,8 @@ namespace ModularFlightPanel.UI
                     Scale = w.Config.Scale,
                     Rotation = w.Config.Rotation,
                     SiblingIndex = w.transform.GetSiblingIndex(),
+                    DrawOrder = w.Config.DrawOrder,
+                    IsLocked = w.Config.IsLocked,
                     IsEnabled = w.Config.IsEnabled
                 });
             }
@@ -236,9 +241,12 @@ namespace ModularFlightPanel.UI
 
                     if (widget.Config != null)
                     {
+                        widget.Config.DrawOrder = state.DrawOrder;
+                        widget.Config.IsLocked = state.IsLocked;
                         widget.Config.IsEnabled = state.IsEnabled;
                     }
                     widget.gameObject.SetActive(state.IsEnabled);
+                    widget.DragHandler?.UpdateSelectionAppearance();
                     if (scaleChanged) rescaledWidgets.Add(widget);
                 }
             }
@@ -248,6 +256,7 @@ namespace ModularFlightPanel.UI
                 FlightHUDManager.Instance?.RespawnWidgets(rescaledWidgets);
             }
 
+            WidgetLayerManager.NormalizeAndSyncLayers(false);
             WidgetLayoutManager.Instance.SaveLayout();
             WidgetSelectionManager.NotifySelectionChanged();
         }
@@ -268,6 +277,8 @@ namespace ModularFlightPanel.UI
                     Mathf.Abs(a[i].Scale - stateB.Scale) > 0.005f ||
                     Mathf.Abs(a[i].Rotation - stateB.Rotation) > 0.05f ||
                     a[i].SiblingIndex != stateB.SiblingIndex ||
+                    a[i].DrawOrder != stateB.DrawOrder ||
+                    a[i].IsLocked != stateB.IsLocked ||
                     a[i].IsEnabled != stateB.IsEnabled)
                 {
                     return true;

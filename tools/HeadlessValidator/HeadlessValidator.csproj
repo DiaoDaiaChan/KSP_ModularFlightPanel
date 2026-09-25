@@ -6,11 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <RootNamespace>ModularFlightPanel.HeadlessValidator</RootNamespace>
+    <KSPRoot Condition="'$(KSPRoot)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program_newmod</KSPRoot>
   </PropertyGroup>
 
   <ItemGroup>
     <Reference Include="Mono.Cecil">
-      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program_newmod\KSP_x64_Data\Managed\Mono.Cecil.dll</HintPath>
+      <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\Mono.Cecil.dll</HintPath>
     </Reference>
   </ItemGroup>
 
@@ -19,6 +20,11 @@
          保证规则码 / 正则 / 扫描范围 / 颜色基线只有一份定义，杜绝验证器副本漂移。 -->
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetSourceAudit.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetColorLiteralAudit.cs" />
+    <Compile Include="..\..\src\ModularFlightPanel\Core\I18nJsonParser.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.0.1" />
   </ItemGroup>
 
 </Project>

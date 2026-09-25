@@ -35,12 +35,12 @@ namespace ModularFlightPanel.UI
         private int _currentTab = 1; // 默认打开遥测装配台
         private readonly string[] TabTitles = new string[]
         {
-            "📦 航电库 (Library)",
-            "🛠️ 遥测装配台 (Assembler)",
-            "📋 挂载清单 (Manager)",
-            "🎨 视觉风格 (Themes)",
-            "💾 档案与配置 (Profiles)",
-            "🚀 仿真沙盒 (Sandbox)"
+            I18n.Tr("UI_TAB_LIBRARY", "📦 航电库"),
+            I18n.Tr("UI_TAB_ASSEMBLER", "🛠️ 遥测装配台"),
+            I18n.Tr("UI_TAB_MANAGER", "📋 挂载清单"),
+            I18n.Tr("UI_TAB_THEMES", "🎨 视觉风格"),
+            I18n.Tr("UI_TAB_PROFILES", "💾 档案与配置"),
+            I18n.Tr("UI_TAB_SANDBOX", "🚀 仿真沙盒")
         };
 
         private void Awake()
@@ -48,6 +48,23 @@ namespace ModularFlightPanel.UI
             _instance = this;
             UIWidget.OnRequestOpenWorkbench = ToggleWindow;
             MFPToastBridge.OnShowToast = (msg) => Settings.MFPGuiSkin.ShowToast(msg);
+            I18nManager.OnLanguageChanged += HandleLanguageChanged;
+            UpdateTabTitles();
+        }
+
+        private void UpdateTabTitles()
+        {
+            TabTitles[0] = I18n.Tr("UI_TAB_LIBRARY", "📦 航电库");
+            TabTitles[1] = I18n.Tr("UI_TAB_ASSEMBLER", "🛠️ 遥测装配台");
+            TabTitles[2] = I18n.Tr("UI_TAB_MANAGER", "📋 挂载清单");
+            TabTitles[3] = I18n.Tr("UI_TAB_THEMES", "🎨 视觉风格");
+            TabTitles[4] = I18n.Tr("UI_TAB_PROFILES", "💾 档案与配置");
+            TabTitles[5] = I18n.Tr("UI_TAB_SANDBOX", "🚀 仿真沙盒");
+        }
+
+        private void HandleLanguageChanged(string newLang)
+        {
+            UpdateTabTitles();
         }
 
         private void Update()
@@ -75,6 +92,13 @@ namespace ModularFlightPanel.UI
         {
             if (_currentTab == 1) TabAssembler.CommitPendingSaves();
             _currentTab = Mathf.Clamp(tabIndex, 0, TabTitles.Length - 1);
+        }
+
+        public void OpenToTab(int tabIndex)
+        {
+            _isOpen = true;
+            SwitchTab(tabIndex);
+            OnWindowStateChanged?.Invoke(_isOpen);
         }
 
         public void ToggleWindow()
@@ -127,6 +151,7 @@ namespace ModularFlightPanel.UI
             {
                 UIWidget.OnRequestOpenWorkbench = null;
             }
+            I18nManager.OnLanguageChanged -= HandleLanguageChanged;
             MFPInputLock.ReleaseAllLocks();
         }
 
@@ -184,7 +209,8 @@ namespace ModularFlightPanel.UI
             GUILayout.BeginHorizontal();
 
             // 标题徽章
-            GUILayout.Label("<color=#00E5FF><b>MODULAR FLIGHT PANEL</b></color> <color=#88AACC><size=11>| 航电工程工作台</size></color>", GUILayout.Width(270f));
+            string subTitle = I18n.Tr("UI_WORKBENCH_SUBTITLE", "航电工程工作台");
+            GUILayout.Label($"<color=#00E5FF><b>MODULAR FLIGHT PANEL</b></color> <color=#88AACC><size=11>| {subTitle}</size></color>", GUILayout.Width(270f));
 
             GUILayout.FlexibleSpace();
 
@@ -194,7 +220,9 @@ namespace ModularFlightPanel.UI
             double mfpMs = MFPProfiler.AvgTotalMs;
             float fps = MFPProfiler.CurrentFPS;
 
-            string statusText = $"<color=#7088A8>载具: <color=#FFFFFF>{vesselName}</color> | 参考系: <color=#00E5FF>{frameName}</color> | MFP: <color=#00FF88>{mfpMs:F2}ms</color> | <color=#FFB800>{fps:F0} FPS</color></color>";
+            string vesselLabel = I18n.Tr("UI_VESSEL", "载具");
+            string frameLabel = I18n.Tr("UI_REF_FRAME", "参考系");
+            string statusText = $"<color=#7088A8>{vesselLabel}: <color=#FFFFFF>{vesselName}</color> | {frameLabel}: <color=#00E5FF>{frameName}</color> | MFP: <color=#00FF88>{mfpMs:F2}ms</color> | <color=#FFB800>{fps:F0} FPS</color></color>";
             GUILayout.Label(statusText);
 
             GUILayout.FlexibleSpace();
@@ -202,8 +230,8 @@ namespace ModularFlightPanel.UI
             // 自由拖拽编辑模式开关
             bool isEdit = WidgetDragHandler.IsEditModeActive;
             GUIStyle dragBtnStyle = isEdit ? MFPGuiSkin.SuccessButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
-            string dragBtn = isEdit ? "🎯 [拖拽模式中] 点击锁定" : "🎯 [开启自由拖拽]";
-            if (GUILayout.Button(dragBtn, dragBtnStyle, GUILayout.Height(24f), GUILayout.Width(145f)))
+            string dragBtn = isEdit ? I18n.Tr("UI_DRAG_MODE_ACTIVE", "🎯 [拖拽模式中] 点击锁定") : I18n.Tr("UI_DRAG_MODE_IDLE", "🎯 [开启自由拖拽]");
+            if (GUILayout.Button(dragBtn, dragBtnStyle, GUILayout.Height(24f), GUILayout.Width(150f)))
             {
                 WidgetDragHandler.IsEditModeActive = !WidgetDragHandler.IsEditModeActive;
                 if (!WidgetDragHandler.IsEditModeActive)
@@ -219,8 +247,8 @@ namespace ModularFlightPanel.UI
             var navCfg = WidgetLayoutManager.Instance.GetConfig("core.navball");
             bool isBallOn = navCfg == null || navCfg.IsEnabled;
             GUIStyle ballBtnStyle = isBallOn ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.WarningButtonStyle;
-            string ballBtn = isBallOn ? "🌐 姿态球: 开" : "🌐 姿态球: 关";
-            if (GUILayout.Button(ballBtn, ballBtnStyle, GUILayout.Height(24f), GUILayout.Width(95f)))
+            string ballBtn = isBallOn ? I18n.Tr("UI_NAVBALL_ON", "🌐 姿态球: 开") : I18n.Tr("UI_NAVBALL_OFF", "🌐 姿态球: 关");
+            if (GUILayout.Button(ballBtn, ballBtnStyle, GUILayout.Height(24f), GUILayout.Width(105f)))
             {
                 if (navCfg != null)
                 {
@@ -228,11 +256,26 @@ namespace ModularFlightPanel.UI
                 }
                 else
                 {
-                    navCfg = new WidgetConfig("core.navball", "姿态球 (Navball)", 0f, 0f) { IsEnabled = false };
+                    navCfg = new WidgetConfig("core.navball", I18n.GetWidgetName("core.navball", "3D 姿态球"), 0f, 0f) { IsEnabled = false };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(navCfg);
                 }
                 WidgetLayoutManager.Instance.SaveLayout();
                 FlightHUDManager.Instance?.RebuildHUD();
+            }
+
+            GUILayout.Space(6f);
+
+            // 全局语言快速切换按钮 (顶栏常驻)
+            string curLang = I18nManager.Instance.CurrentLanguage;
+            bool isZh = curLang.Equals("zh-CN", StringComparison.OrdinalIgnoreCase);
+            string langBtnLabel = isZh ? I18n.Tr("UI_LANG_ZH", "🇨🇳 中文") : I18n.Tr("UI_LANG_EN", "🇺🇸 EN");
+            string langTooltip = isZh ? I18n.Tr("UI_LANG_TIP_TO_EN", "点击切换至英文") : I18n.Tr("UI_LANG_TIP_TO_ZH", "点击切换至中文");
+            if (GUILayout.Button(new GUIContent(langBtnLabel, langTooltip), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.Width(76f)))
+            {
+                string nextLang = isZh ? "en-US" : "zh-CN";
+                I18nManager.Instance.SetLanguage(nextLang);
+                ThemeManager.Instance.SaveSettings();
+                MFPGuiSkin.ShowToast(isZh ? I18n.Tr("UI_TOAST_LANG_EN", "已切换为英文") : I18n.Tr("UI_TOAST_LANG_ZH", "已切换为简体中文"));
             }
 
             GUILayout.Space(6f);
@@ -306,9 +349,10 @@ namespace ModularFlightPanel.UI
             GUILayout.BeginHorizontal();
 
             int totalWidgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets.Count ?? 0;
-            GUILayout.Label($"<color=#7088A8><size=11>当前布局: <b>{totalWidgets}</b> 个组件 | 快捷键: <b>Alt+N / ESC</b> 关闭 | <b>F2</b> 隐藏全UI | <b>F10</b> 性能HUD | <b>F11</b> 纯净旁路</size></color>", GUILayout.ExpandWidth(true));
+            string footerFmt = I18n.Tr("UI_FOOTER_STATUS", "当前布局: <b>{0}</b> 个组件 | 快捷键: <b>Alt+N / ESC</b> 关闭 | <b>F2</b> 隐藏全UI | <b>F10</b> 性能HUD | <b>F11</b> 纯净旁路");
+            GUILayout.Label($"<color=#7088A8><size=11>{string.Format(footerFmt, totalWidgets)}</size></color>", GUILayout.ExpandWidth(true));
 
-            if (GUILayout.Button("✔ 保存配置并关闭 (Alt+N)", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(200f)))
+            if (GUILayout.Button(I18n.Tr("UI_SAVE_AND_CLOSE", "✔ 保存配置并关闭 (Alt+N)"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(220f)))
             {
                 ToggleWindow();
             }
