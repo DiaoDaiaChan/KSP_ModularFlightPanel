@@ -24,10 +24,11 @@ namespace ModularFlightPanel.UI.Widgets
         DefaultWidgetId = "custom.telemetry_card",
         DefaultX = 0f,
         DefaultY = 0f)]
-    public class CustomTokenTextWidget : BaseAvionicsWidget
+    public class CustomTokenTextWidget : BaseFlightWidget
     {
         // ── 头部集中声明区：尺寸、刷新率与全部语义泊靠 DSL 控件 (一屏之内尽收眼底) ──
         public override Vector2 BaseSize => new Vector2(210f, 56f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         public TextWidget Title = TextWidget.Title("TELEMETRY");

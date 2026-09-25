@@ -306,27 +306,36 @@ namespace ModularFlightPanel.UI
                 {
                     _boxOutline.effectColor = isLocked ? new Color(1f, 0.7f, 0.2f, 0.75f) : _cyanCol;
                 }
-                SetHandlesActive(!isLocked);
+                bool allowEdge = !isLocked;
+                if (target is ModularFlightPanel.UI.Framework.IAdaptiveSizeWidget adaptive)
+                {
+                    allowEdge = !isLocked && adaptive.AllowNonUniformScale;
+                }
+                else if (target.GetType().Name.Contains("Sphere") || target.GetType().Name.Contains("Navball"))
+                {
+                    allowEdge = false;
+                }
+                SetHandlesActive(!isLocked, allowEdge);
             }
             else
             {
                 _gizmoBoxRt.localEulerAngles = Vector3.zero;
                 _infoText.text = $"<b>{I18n.TrFormat("GIZMO_GROUP_COUNT_FMT", "多选群组 ({0} 项)", sel.Count)}</b> | X:{center.x:F0} Y:{center.y:F0} | W:{w_total:F0} H:{h_total:F0}";
                 if (_boxOutline != null) _boxOutline.effectColor = _cyanCol;
-                SetHandlesActive(true);
+                SetHandlesActive(true, true);
             }
         }
 
-        private void SetHandlesActive(bool active)
+        private void SetHandlesActive(bool active, bool allowEdgeHandles = true)
         {
             if (_handleTL != null) _handleTL.gameObject.SetActive(active);
             if (_handleTR != null) _handleTR.gameObject.SetActive(active);
             if (_handleBL != null) _handleBL.gameObject.SetActive(active);
             if (_handleBR != null) _handleBR.gameObject.SetActive(active);
-            if (_handleT != null) _handleT.gameObject.SetActive(active);
-            if (_handleB != null) _handleB.gameObject.SetActive(active);
-            if (_handleL != null) _handleL.gameObject.SetActive(active);
-            if (_handleR != null) _handleR.gameObject.SetActive(active);
+            if (_handleT != null) _handleT.gameObject.SetActive(active && allowEdgeHandles);
+            if (_handleB != null) _handleB.gameObject.SetActive(active && allowEdgeHandles);
+            if (_handleL != null) _handleL.gameObject.SetActive(active && allowEdgeHandles);
+            if (_handleR != null) _handleR.gameObject.SetActive(active && allowEdgeHandles);
             if (_rotStemObj != null) _rotStemObj.SetActive(active);
             if (_rotHandle != null) _rotHandle.gameObject.SetActive(active);
         }

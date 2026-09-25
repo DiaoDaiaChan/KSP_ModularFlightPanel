@@ -47,7 +47,7 @@ namespace ModularFlightPanel.UI
         Category = WidgetCategory.Gauges,
         DisplayName = "Standard Flight Widget Template",
         Description = "Standard reference template for flight instruments.")]
-    public class StandardFlightWidgetTemplate : BaseAvionicsWidget
+    public class StandardFlightWidgetTemplate : BaseFlightWidget
     {
         // ------------------------------------------------------------------------------------
         // [Part 1: 刷新层级契约与尺寸配置]
@@ -55,7 +55,7 @@ namespace ModularFlightPanel.UI
 
         /// <summary>
         /// 声明刷新率阶梯 (Critical 满帧直通 | Standard 30Hz | Relaxed 10Hz | UltraLow 2Hz)
-        /// BaseAvionicsWidget 默认即为 Standard 30Hz，此处显式声明示范
+        /// BaseFlightWidget 默认即为 Standard 30Hz，此处显式声明示范
         /// </summary>
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
@@ -64,6 +64,11 @@ namespace ModularFlightPanel.UI
         /// 基类在 BaseInitialize 阶段会自动将其乘以 CurrentDpiScale 并赋予 RectTransform.sizeDelta。
         /// </summary>
         public override Vector2 BaseSize => new Vector2(160f, 100f);
+
+        /// <summary>
+        /// 开启基类全自动卡片底板与微光边框
+        /// </summary>
+        protected override bool AutoCreateCardFrame => true;
 
         // ------------------------------------------------------------------------------------
         // [Part 2: 声明式微控件对象声明 (Object-DSL 语义泊靠范式)]

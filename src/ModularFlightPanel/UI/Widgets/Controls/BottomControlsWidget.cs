@@ -29,7 +29,7 @@ namespace ModularFlightPanel.UI.Widgets
         DefaultY = -210f,
         IsSingleton = true,
         ExactIds = new[] { "core.bottom_controls" })]
-    public class BottomControlsWidget : BaseAvionicsWidget
+    public class BottomControlsWidget : BaseFlightWidget
     {
         // ── 头部集中声明区：尺寸、刷新率与全部交互微控件 (一屏之内尽收眼底) ──
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;

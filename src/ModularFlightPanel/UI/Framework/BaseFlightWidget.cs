@@ -95,15 +95,36 @@ namespace ModularFlightPanel.UI
             RectTransform.anchoredPosition = new Vector2(config.PositionX, config.PositionY);
             float effX = config.EffectiveScaleX;
             float effY = config.EffectiveScaleY;
-            float initRatioX = CommittedScale > 0.001f ? (effX / CommittedScale) : 1.0f;
-            float initRatioY = CommittedScale > 0.001f ? (effY / CommittedScale) : 1.0f;
-            RectTransform.localScale = new Vector3(initRatioX, initRatioY, 1.0f);
+
+            bool isAdaptive = (this is IAdaptiveSizeWidget adaptiveWidget) && adaptiveWidget.AllowNonUniformScale;
+            if (isAdaptive)
+            {
+                // 自适应组件：彻底保持 localScale 1:1，杜绝字体/边框仿射拉伸畸变
+                RectTransform.localScale = Vector3.one;
+            }
+            else
+            {
+                float initRatioX = CommittedScale > 0.001f ? (effX / CommittedScale) : 1.0f;
+                float initRatioY = CommittedScale > 0.001f ? (effY / CommittedScale) : 1.0f;
+                RectTransform.localScale = new Vector3(initRatioX, initRatioY, 1.0f);
+            }
             RectTransform.localEulerAngles = new Vector3(0f, 0f, config.Rotation);
 
             // 上级自动尺寸派发：当派生类声明了 BaseSize 时，自动计算物理像素尺寸
             if (BaseSize.x > 0f && BaseSize.y > 0f)
             {
-                RectTransform.sizeDelta = BaseSize * CurrentDpiScale;
+                if (isAdaptive)
+                {
+                    float factorX = CommittedScale > 0.001f ? (effX / CommittedScale) : 1.0f;
+                    float factorY = CommittedScale > 0.001f ? (effY / CommittedScale) : 1.0f;
+                    Vector2 newSize = new Vector2(BaseSize.x * CurrentDpiScale * factorX, BaseSize.y * CurrentDpiScale * factorY);
+                    RectTransform.sizeDelta = newSize;
+                    ((IAdaptiveSizeWidget)this).OnAdaptiveResize(newSize);
+                }
+                else
+                {
+                    RectTransform.sizeDelta = BaseSize * CurrentDpiScale;
+                }
             }
 
             // 上级自动卡片底板派发：当启用 AutoCreateCardFrame 时，基类自动在根节点创建背景板与 Outline，
@@ -500,7 +521,64 @@ namespace ModularFlightPanel.UI
             OnUpdateTelemetry(telemetry);
         }
 
-        public abstract void OnUpdateTelemetry(IFlightTelemetry telemetry);
+        /// <summary>
+        /// 派生组件特异化遥测更新钩子。
+        /// 默认实现为空。若组件完全由声明式微控件 (Controls / DSL) 构成，派生类可直接省略重写此方法。
+        /// </summary>
+        public virtual void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        {
+        }
+
+        #region Avionics Evaluation & Computation Helpers
+
+        /// <summary>
+        /// 便捷通配符字符串求值工具（自动空值回退与安全保护）
+        /// </summary>
+        protected string EvalToken(string token, IFlightTelemetry telemetry, string fallback = "---")
+        {
+            if (telemetry == null || string.IsNullOrEmpty(token)) return fallback;
+            string res = TelemetryTokenEngine.Evaluate(token, telemetry);
+            return string.IsNullOrEmpty(res) ? fallback : res;
+        }
+
+        /// <summary>
+        /// 便捷数值型通配符求值工具（自动 NaN 保护与安全回退）
+        /// </summary>
+        protected double EvalNumeric(string token, IFlightTelemetry telemetry, double fallback = 0.0)
+        {
+            if (telemetry == null || string.IsNullOrEmpty(token)) return fallback;
+            double res = TelemetryTokenEngine.EvaluateNumeric(token, telemetry);
+            return double.IsNaN(res) ? fallback : res;
+        }
+
+        /// <summary>
+        /// 便捷数值范围归一化工具 (0.0 ~ 1.0)
+        /// </summary>
+        protected float NormalizeValue(double val, double min, double max)
+        {
+            if (double.IsNaN(val)) return 0f;
+            double range = max - min;
+            if (range <= 0.00001) return 0f;
+            return Mathf.Clamp01((float)((val - min) / range));
+        }
+
+        /// <summary>
+        /// 高效文本防抖写入（内容未改变时不触发 UGUI 网格与顶点重建）
+        /// </summary>
+        protected bool SetText(Text target, string text)
+        {
+            return SetTextIfChanged(target, text);
+        }
+
+        /// <summary>
+        /// 高效柱条/进度填充写入（比例未改变时不触发重绘）
+        /// </summary>
+        protected bool SetBarFill(Image fillImage, float ratio)
+        {
+            return SetImageFillIfChanged(fillImage, ratio);
+        }
+
+        #endregion
 
         #region WidgetStyleManager Convenience Helpers
 
@@ -674,10 +752,26 @@ namespace ModularFlightPanel.UI
                 {
                     float effX = Config != null ? Config.EffectiveScaleX : 1.0f;
                     float effY = Config != null ? Config.EffectiveScaleY : 1.0f;
-                    float ratioX = CommittedScale > 0.001f ? (effX / CommittedScale) : effX;
-                    float ratioY = CommittedScale > 0.001f ? (effY / CommittedScale) : effY;
-                    RectTransform.localScale = new Vector3(ratioX, ratioY, 1.0f);
-                    OnScaleChanged((effX + effY) * 0.5f, (ratioX + ratioY) * 0.5f);
+
+                    if ((this is IAdaptiveSizeWidget adaptive) && adaptive.AllowNonUniformScale)
+                    {
+                        RectTransform.localScale = Vector3.one;
+                        if (BaseSize.x > 0f && BaseSize.y > 0f)
+                        {
+                            float factorX = CommittedScale > 0.001f ? (effX / CommittedScale) : 1.0f;
+                            float factorY = CommittedScale > 0.001f ? (effY / CommittedScale) : 1.0f;
+                            Vector2 newSize = new Vector2(BaseSize.x * CurrentDpiScale * factorX, BaseSize.y * CurrentDpiScale * factorY);
+                            RectTransform.sizeDelta = newSize;
+                            adaptive.OnAdaptiveResize(newSize);
+                        }
+                    }
+                    else
+                    {
+                        float ratioX = CommittedScale > 0.001f ? (effX / CommittedScale) : effX;
+                        float ratioY = CommittedScale > 0.001f ? (effY / CommittedScale) : effY;
+                        RectTransform.localScale = new Vector3(ratioX, ratioY, 1.0f);
+                        OnScaleChanged((effX + effY) * 0.5f, (ratioX + ratioY) * 0.5f);
+                    }
                 }
                 if (rotation.HasValue)
                 {
@@ -815,4 +909,15 @@ namespace ModularFlightPanel.UI
             DisplayName = displayName ?? id;
         }
     }
+
+    /// <summary>
+    /// 通用航电卡片组件兼容基类 (向后兼容保留，新组件建议直接继承 BaseFlightWidget)
+    /// </summary>
+    [Obsolete("BaseFlightWidget 已全面内置航电算子与默认遥测更新，新组件推荐直接继承 BaseFlightWidget。")]
+    public abstract class BaseAvionicsWidget : BaseFlightWidget
+    {
+        public override Vector2 BaseSize => new Vector2(160f, 50f);
+        protected override bool AutoCreateCardFrame => true;
+    }
 }
+

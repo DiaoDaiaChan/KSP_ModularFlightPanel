@@ -20,11 +20,17 @@ namespace ModularFlightPanel.UI.Widgets
     /// 7. 严格遵照 MFP-SPEC-001..007 标准化铁律，0 颜色字面量，100% 通配符双驱动，零 GC
     /// </summary>
     [FlightWidget("tape", "tape_gauge", "speed_tape", "altitude_tape", Category = WidgetCategory.Gauges, DisplayName = "PFD 垂直动态标尺带", Description = "PFD 风格平滑滚动动态标尺带，支持任意物理数据与步长。", DefaultWidgetId = "tape.speed", DefaultX = -235f, DefaultY = 0f)]
-    public class TapeGaugeWidget : BaseFlightWidget
+    public class TapeGaugeWidget : BaseFlightWidget, IAdaptiveSizeWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override Vector2 BaseSize => new Vector2(50f, 240f);
+        protected override bool AutoCreateCardFrame => false;
 
-        private const int TICK_POOL_SIZE = 32;
+        public bool AllowNonUniformScale => true;
+        public Vector2 MinBaseSize => new Vector2(40f, 120f);
+        public Vector2 MaxBaseSize => new Vector2(100f, 960f);
+
+        private const int TICK_POOL_SIZE = 64;
 
         public enum DynamicUnitTier
         {
@@ -185,6 +191,7 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _lastTrendPositive = true;
         private int _lastAccAlertLevel = -1;
         private bool _showingIntegerReadout = false;
+        private float _currentHalfTrackH = 58f;
 
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
@@ -193,9 +200,10 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            float width = 50f * s;
-            float height = 240f * s; // 拉长高度至 240px，符合民航/航天 PFD 真实比例
+            float width = RectTransform.sizeDelta.x > 10f ? RectTransform.sizeDelta.x : (BaseSize.x * s);
+            float height = RectTransform.sizeDelta.y > 10f ? RectTransform.sizeDelta.y : (BaseSize.y * s);
             RectTransform.sizeDelta = new Vector2(width, height);
+            _currentHalfTrackH = Mathf.Max(30f * s, (height - 124f * s) * 0.5f);
 
             ParseCustomTemplate(config);
             InitializeUnitTier();
@@ -275,6 +283,138 @@ namespace ModularFlightPanel.UI.Widgets
             if (_groundRibbonObj != null)
             {
                 ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "ground_ribbon", "贴地雷达警戒带", _groundRibbonObj);
+            }
+
+            ApplyLayoutDimensions(width, height);
+        }
+
+        public void OnAdaptiveResize(Vector2 pixelSize)
+        {
+            ApplyLayoutDimensions(pixelSize.x, pixelSize.y);
+            if (!double.IsNaN(_lastRawVal))
+            {
+                UpdateRollingTape(_lastRawVal / _tierScale);
+            }
+        }
+
+        private void ApplyLayoutDimensions(float width, float height)
+        {
+            float s = CurrentDpiScale;
+            float halfH = height * 0.5f;
+
+            if (_viewportRt != null)
+            {
+                _viewportRt.sizeDelta = new Vector2(width, height - 12f * s);
+            }
+            if (_tickContainer != null && _viewportRt != null)
+            {
+                _tickContainer.sizeDelta = _viewportRt.sizeDelta;
+            }
+            if (_backboneRailObj != null)
+            {
+                var rt = _backboneRailObj.GetComponent<RectTransform>();
+                if (rt != null) rt.sizeDelta = new Vector2(1.0f * s, height - 12f * s);
+            }
+            if (_topGlossRim != null)
+            {
+                _topGlossRim.rectTransform.sizeDelta = new Vector2(width - 2f * s, 1f * s);
+                _topGlossRim.rectTransform.anchoredPosition = new Vector2(0f, halfH - 1f * s);
+            }
+            if (_bottomGlossRim != null)
+            {
+                _bottomGlossRim.rectTransform.sizeDelta = new Vector2(width - 2f * s, 1f * s);
+                _bottomGlossRim.rectTransform.anchoredPosition = new Vector2(0f, -halfH + 1f * s);
+            }
+            if (_topFadeImg != null)
+            {
+                _topFadeImg.rectTransform.sizeDelta = new Vector2(width, 16f * s);
+                _topFadeImg.rectTransform.anchoredPosition = new Vector2(0f, halfH - 8f * s);
+            }
+            if (_bottomFadeImg != null)
+            {
+                _bottomFadeImg.rectTransform.sizeDelta = new Vector2(width, 16f * s);
+                _bottomFadeImg.rectTransform.anchoredPosition = new Vector2(0f, -halfH + 8f * s);
+            }
+            if (_topModeBox != null)
+            {
+                var topRt = _topModeBox.GetComponent<RectTransform>();
+                if (topRt != null)
+                {
+                    topRt.sizeDelta = new Vector2(width, 18f * s);
+                    topRt.anchoredPosition = new Vector2(0f, halfH + 11f * s);
+                }
+            }
+            if (_bottomSecBox != null)
+            {
+                var btmRt = _bottomSecBox.GetComponent<RectTransform>();
+                if (btmRt != null)
+                {
+                    btmRt.sizeDelta = new Vector2(width, 16f * s);
+                    btmRt.anchoredPosition = new Vector2(0f, -halfH - 10f * s);
+                }
+            }
+            if (_trendRoot != null)
+            {
+                _trendRoot.sizeDelta = new Vector2(_trendRoot.sizeDelta.x, height);
+                float trendX = _isSpeedTape ? -(width * 0.5f + 21f * s) : (width * 0.5f + 14f * s);
+                _trendRoot.anchoredPosition = new Vector2(trendX, 0f);
+
+                float trackH = Mathf.Max(60f * s, height - 94f * s);
+                _currentHalfTrackH = (trackH - 30f * s) * 0.5f;
+
+                if (_isSpeedTape)
+                {
+                    if (_accTagBox != null)
+                    {
+                        var rt = _accTagBox.GetComponent<RectTransform>();
+                        if (rt != null) rt.anchoredPosition = new Vector2(-9.5f * s, halfH - 17f * s);
+                    }
+                    if (_accTrackBgObj != null)
+                    {
+                        var rt = _accTrackBgObj.GetComponent<RectTransform>();
+                        if (rt != null) rt.sizeDelta = new Vector2(14f * s, trackH);
+                    }
+                    if (_accTrack != null)
+                    {
+                        _accTrack.rectTransform.sizeDelta = new Vector2(1.2f * s, trackH - 12f * s);
+                    }
+                    if (_accTraceRt != null)
+                    {
+                        _accTraceRt.anchoredPosition = new Vector2(0f, -_currentHalfTrackH);
+                    }
+
+                    if (_rateTagBox != null)
+                    {
+                        var rt = _rateTagBox.GetComponent<RectTransform>();
+                        if (rt != null) rt.anchoredPosition = new Vector2(9.5f * s, halfH - 17f * s);
+                    }
+                    if (_rateTrackBgObj != null)
+                    {
+                        var rt = _rateTrackBgObj.GetComponent<RectTransform>();
+                        if (rt != null) rt.sizeDelta = new Vector2(14f * s, trackH);
+                    }
+                    if (_rateTrack != null)
+                    {
+                        _rateTrack.rectTransform.sizeDelta = new Vector2(1.2f * s, trackH - 12f * s);
+                    }
+                }
+                else
+                {
+                    if (_vsiTagBox != null)
+                    {
+                        var rt = _vsiTagBox.GetComponent<RectTransform>();
+                        if (rt != null) rt.anchoredPosition = new Vector2(0f, halfH - 17f * s);
+                    }
+                    if (_vsiTrackBgObj != null)
+                    {
+                        var rt = _vsiTrackBgObj.GetComponent<RectTransform>();
+                        if (rt != null) rt.sizeDelta = new Vector2(14f * s, trackH);
+                    }
+                    if (_vsiTrack != null)
+                    {
+                        _vsiTrack.rectTransform.sizeDelta = new Vector2(1.2f * s, trackH - 12f * s);
+                    }
+                }
             }
         }
 
@@ -1283,16 +1423,16 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-58 至 +58)
+                // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-_currentHalfTrackH 至 +_currentHalfTrackH)
                 float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
-                float pointerY = Mathf.Lerp(-58f * s, 58f * s, accFraction);
+                float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
                 if (_accPointerRt != null)
                 {
                     _accPointerRt.anchoredPosition = new Vector2(0f, pointerY);
                 }
                 if (_accTraceRt != null)
                 {
-                    float traceLen = pointerY - (-58f * s);
+                    float traceLen = pointerY - (-_currentHalfTrackH);
                     _accTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, traceLen));
                 }
 
@@ -1363,7 +1503,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_ratePointerStem != null) _ratePointerStem.color = rateCol;
                 if (_rateTraceImg != null) _rateTraceImg.color = WidgetStyleManager.WithAlpha(rateCol, 0.40f);
 
-                float ratePointerY = rateFraction * (58f * s);
+                float ratePointerY = rateFraction * _currentHalfTrackH;
                 if (_ratePointerRt != null)
                 {
                     _ratePointerRt.anchoredPosition = new Vector2(0f, ratePointerY);
@@ -1449,7 +1589,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                float vsiPointerY = rateFraction * (58f * s);
+                float vsiPointerY = rateFraction * _currentHalfTrackH;
                 if (_vsiPointerRt != null)
                 {
                     _vsiPointerRt.anchoredPosition = new Vector2(0f, vsiPointerY);
@@ -1508,6 +1648,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void ApplyTheme(ThemeConfig theme)
         {
+            base.ApplyTheme(theme);
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
