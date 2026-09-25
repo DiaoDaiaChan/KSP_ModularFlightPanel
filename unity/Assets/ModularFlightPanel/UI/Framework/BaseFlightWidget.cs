@@ -130,10 +130,13 @@ namespace ModularFlightPanel.UI
             // 监听全局语言切换通知
             I18nManager.OnLanguageChanged += HandleLanguageChanged;
 
-            // 调用派生类专用初始化与样式应用
+            // 自动扫描与提前注入特性微控件 (若派生类在头部特性中声明了布局，在此全自动构建 UGUI 并注入字段)
+            AutoRegisterAnnotatedControls();
+
+            // 调用派生类专用初始化与样式应用 (派生类可直接使用已自动注入的字段，或执行特异化排版)
             OnInitialize(config, theme);
 
-            // 自动扫描与注入特性微控件
+            // 二次扫描补全 (针对在 OnInitialize 中手动赋值的字段)
             AutoRegisterAnnotatedControls();
 
             // 全自动微控件治理：自动绑定配置与下发主题，派生组件彻底无需手写绑定与生效调用
@@ -351,6 +354,10 @@ namespace ModularFlightPanel.UI
         private void AutoRegisterAnnotatedControls()
         {
             var fields = GetType().GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            float s = CurrentDpiScale;
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
+            var style = WidgetStyleManager.Instance;
+
             for (int i = 0; i < fields.Length; i++)
             {
                 var f = fields[i];
@@ -359,21 +366,55 @@ namespace ModularFlightPanel.UI
                 {
                     var attr = (WidgetControlAttribute)attrs[0];
                     object val = f.GetValue(this);
-                    if (val is Text text && text != null)
+
+                    // 1. 若字段未赋值且显式指定了布局信息：由基类全自动通过 UIFactory 构建并回填字段
+                    bool hasLayout = attr.Width > 0f || attr.Height > 0f || Math.Abs(attr.X) > 0.001f || Math.Abs(attr.Y) > 0.001f || attr.DefaultText != null;
+                    if (val == null && attr.AutoInstantiate && hasLayout)
                     {
-                        this.Controls.Register(new WidgetReadoutControl(attr.Id, attr.DisplayName, text.gameObject, text, null, attr.TextRole, attr.Token));
+                        if (f.FieldType == typeof(Text))
+                        {
+                            int sz = Mathf.Max(6, Mathf.RoundToInt(attr.FontSize * s));
+                            string initialText = attr.DefaultText ?? attr.Token ?? "---";
+                            Text newText = UIFactory.CreateText(transform, attr.Id, initialText, sz, attr.Alignment, style.GetTextColor(attr.TextRole, theme));
+                            RectTransform rt = newText.rectTransform;
+                            Vector2 cardSz = RectTransform.sizeDelta;
+                            float w = attr.Width > 0f ? attr.Width * s : (cardSz.x > 0f ? cardSz.x - 12f * s : 100f * s);
+                            float h = attr.Height > 0f ? attr.Height * s : (sz + 6f * s);
+                            rt.sizeDelta = new Vector2(w, h);
+                            rt.anchoredPosition = new Vector2(attr.X * s, attr.Y * s);
+                            f.SetValue(this, newText);
+                            val = newText;
+                        }
+                        else if (f.FieldType == typeof(Image))
+                        {
+                            Vector2 sz = new Vector2((attr.Width > 0f ? attr.Width : 100f) * s, (attr.Height > 0f ? attr.Height : 6f) * s);
+                            Vector2 pos = new Vector2(attr.X * s, attr.Y * s);
+                            GameObject imgGo = UIFactory.CreatePanel(transform, attr.Id, sz, pos, style.GetMeterColor(attr.MeterRole, theme));
+                            Image newImg = imgGo.GetComponent<Image>();
+                            f.SetValue(this, newImg);
+                            val = newImg;
+                        }
                     }
-                    else if (val is Image img && img != null)
+
+                    // 2. 注册入 Controls（若尚未注册）
+                    if (this.Controls.Get<IWidgetControl>(attr.Id) == null)
                     {
-                        this.Controls.Register(new WidgetLinearBarControl(attr.Id, attr.DisplayName, img.gameObject, img, null, attr.MeterRole));
-                    }
-                    else if (val is Button btn && btn != null)
-                    {
-                        this.Controls.Register(new WidgetActionButtonControl(attr.Id, attr.DisplayName, btn.gameObject, btn, null, null, attr.ButtonRole));
-                    }
-                    else if (val is GameObject go && go != null)
-                    {
-                        this.Controls.Register(WidgetControlManager.WrapElement(this, attr.Id, attr.DisplayName, go));
+                        if (val is Text text && text != null)
+                        {
+                            this.Controls.Register(new WidgetReadoutControl(attr.Id, attr.DisplayName, text.gameObject, text, null, attr.TextRole, attr.Token));
+                        }
+                        else if (val is Image img && img != null)
+                        {
+                            this.Controls.Register(new WidgetLinearBarControl(attr.Id, attr.DisplayName, img.gameObject, img, null, attr.MeterRole));
+                        }
+                        else if (val is Button btn && btn != null)
+                        {
+                            this.Controls.Register(new WidgetActionButtonControl(attr.Id, attr.DisplayName, btn.gameObject, btn, null, null, attr.ButtonRole));
+                        }
+                        else if (val is GameObject go && go != null)
+                        {
+                            this.Controls.Register(WidgetControlManager.WrapElement(this, attr.Id, attr.DisplayName, go));
+                        }
                     }
                 }
             }
@@ -674,6 +715,16 @@ namespace ModularFlightPanel.UI
         public MeterStyleRole MeterRole { get; set; } = MeterStyleRole.Primary;
         public ButtonVisualRole ButtonRole { get; set; } = ButtonVisualRole.Normal;
         public string Token { get; set; }
+
+        // 头部集中式布局属性 (全自动由基类完成 DPI 缩放与实例化注入)
+        public float X { get; set; } = 0f;
+        public float Y { get; set; } = 0f;
+        public float Width { get; set; } = 0f;
+        public float Height { get; set; } = 0f;
+        public float FontSize { get; set; } = 10f;
+        public TextAnchor Alignment { get; set; } = TextAnchor.MiddleLeft;
+        public string DefaultText { get; set; } = null;
+        public bool AutoInstantiate { get; set; } = true;
 
         public WidgetControlAttribute(string id, string displayName = null)
         {

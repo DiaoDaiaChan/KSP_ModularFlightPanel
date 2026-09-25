@@ -40,10 +40,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         // 尺寸与排版参数 (支持按文字宽度全自动适应)
         private float _cardHeight = 32f;
-        private float _padLeft = 6f;
-        private float _padRight = 8f;
+        private float _padLeft = 5f;
+        private float _padRight = 7f;
         private float _spacing = 6f;
-        private float _iconBoxSize = 24f;
+        private float _iconBoxSize = 26f;
         private RectTransform _titleRt;
 
         // 脏检查与平滑缓存
@@ -61,10 +61,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             // 1. 初始化排版缩放参数
             _cardHeight = 32f * s;
-            _padLeft = 6f * s;
-            _padRight = 8f * s;
+            _padLeft = 5f * s;
+            _padRight = 7f * s;
             _spacing = 6f * s;
-            _iconBoxSize = 24f * s;
+            _iconBoxSize = 26f * s;
 
             // 2. 底板卡片与边框 (0 颜色字面量，统一由 ApplyCard 注入语义角色)
             _bgImage = gameObject.AddComponent<Image>();
@@ -98,7 +98,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _iconRawImage.color = style.GetTextColor(TextStyleRole.Cardinal, theme);
 
             RectTransform rawRt = _iconRawImage.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(20f * s, 20f * s);
+            rawRt.sizeDelta = new Vector2(24f * s, 24f * s);
             rawRt.anchoredPosition = Vector2.zero;
 
             // 4. 右侧权威参考系名称 (左对齐，紧随图标，自适应宽度)

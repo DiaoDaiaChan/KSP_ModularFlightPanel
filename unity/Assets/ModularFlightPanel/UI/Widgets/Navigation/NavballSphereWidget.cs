@@ -43,7 +43,10 @@ namespace ModularFlightPanel.UI.Widgets
 
         private static Mesh _primitiveSphereMesh;
         private Image _reticleImage;
+        private float _reticlePhase = 0.0f;
         private float _currentHazardAlert = 0.0f;
+        private bool _isHazardActive = false;
+        private float _hazardHoldTimer = 0.0f;
         private float _currentVernierDetail = 0.0f;
         private float _lastNavballProbeSampleTime = -1f;
         private double _cachedGpwsRadarAltitude = double.NaN;
@@ -386,6 +389,7 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _paletteInitialized = false;
         private Quaternion _previousAttitudeRotation = Quaternion.identity;
         private Quaternion _filteredTrendRotation = Quaternion.identity;
+        private Vector3 _smoothedAngularVelocity = Vector3.zero;
         private bool _hasPreviousAttitudeRotation;
         private float _attitudeTrendStrength;
         private float _lastFramePattern = -1f;
@@ -486,24 +490,49 @@ namespace ModularFlightPanel.UI.Widgets
 
                 Vector3 halfAxis = new Vector3(delta.x, delta.y, delta.z);
                 float sinHalfAngle = halfAxis.magnitude;
-                if (sinHalfAngle > 0.00001f)
+
+                Vector3 rawAngularVelocity = Vector3.zero;
+                if (sinHalfAngle > 0.00015f)
                 {
                     float angleDegrees = 2f * Mathf.Atan2(sinHalfAngle, Mathf.Clamp(delta.w, 0f, 1f)) * Mathf.Rad2Deg;
-                    float angularRate = angleDegrees / dt;
-                    Vector3 axis = halfAxis / sinHalfAngle;
-                    // Longer prediction window keeps low-rate attitude changes visible.
-                    float predictionAngle = Mathf.Min(angularRate * 0.75f, 24f);
-                    Quaternion parentPrediction = Quaternion.AngleAxis(predictionAngle, axis);
-                    targetTrendRotation = Quaternion.Inverse(currentRotation) * parentPrediction * currentRotation;
-                    targetStrength = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.25f, 5.0f, angularRate));
+                    float rawRate = angleDegrees / dt;
+                    if (rawRate < 180f)
+                    {
+                        rawAngularVelocity = (halfAxis / sinHalfAngle) * rawRate;
+                    }
                 }
+
+                // 低通滤波角速度矢量，彻底消除跨物理帧瞬时微步进与角轴旋转随机翻转
+                float filterBlend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 6.5f);
+                _smoothedAngularVelocity = Vector3.Lerp(_smoothedAngularVelocity, rawAngularVelocity, filterBlend);
+            }
+            else
+            {
+                _smoothedAngularVelocity = Vector3.zero;
             }
 
             _previousAttitudeRotation = currentRotation;
             _hasPreviousAttitudeRotation = true;
-            float blend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 9f);
+
+            float smoothRate = _smoothedAngularVelocity.magnitude;
+            // 死区量化守卫：低于 0.40°/s 的微幅扰动视为稳态静止，杜绝虚线趋势指示抖动
+            if (smoothRate > 0.40f)
+            {
+                Vector3 axis = _smoothedAngularVelocity / smoothRate;
+                float predictionAngle = Mathf.Clamp(smoothRate * 0.45f, 0f, 20f);
+                Quaternion parentPrediction = Quaternion.AngleAxis(predictionAngle, axis);
+                targetTrendRotation = Quaternion.Inverse(currentRotation) * parentPrediction * currentRotation;
+                targetStrength = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 5.0f, smoothRate));
+            }
+            else
+            {
+                targetTrendRotation = Quaternion.identity;
+                targetStrength = 0f;
+            }
+
+            float blend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 7.0f);
             _filteredTrendRotation = Quaternion.Slerp(_filteredTrendRotation, targetTrendRotation, blend);
-            _attitudeTrendStrength = Mathf.MoveTowards(_attitudeTrendStrength, targetStrength, (!Application.isPlaying ? 1f : dt * 5f));
+            _attitudeTrendStrength = Mathf.MoveTowards(_attitudeTrendStrength, targetStrength, (!Application.isPlaying ? 1f : dt * 3.5f));
 
             if (_sphereMaterial != null && _sphereMaterial.HasProperty("_TrendRotation"))
             {

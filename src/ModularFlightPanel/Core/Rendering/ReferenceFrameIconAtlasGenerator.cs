@@ -172,46 +172,24 @@ namespace ModularFlightPanel.Core.Rendering
         // =========================================================================
         private static void DrawInertialFrame(Rasterizer r)
         {
-            int cx = 64, cy = 64;
+            // 三维空间右手正交惯性笛卡尔坐标三脚架 (3D Orthogonal Inertial Triad Frame)
+            int ox = 64, oy = 52;
 
-            // 1. 天球坐标外导轨环与赤道椭圆面 (Celestial Reference Ring & Equator Disc)
-            r.DrawCircle(cx, cy, 52, 0.60f, 1.6f);
-            for (int deg = 0; deg < 360; deg += 30)
-            {
-                float rad = deg * Mathf.Deg2Rad;
-                float cos = Mathf.Cos(rad);
-                float sin = Mathf.Sin(rad);
-                r.DrawLine(cx + cos * 48f, cy + sin * 48f, cx + cos * 52f, cy + sin * 52f, 0.50f, 1.2f);
-            }
-            r.DrawEllipse(cx, cy, 52, 17, 0.40f, 1.2f);
+            // 1. 垂直天顶主极轴 (+Z 轴，北天极恒星基准)
+            r.DrawArrow(ox, oy, ox, 114, 18f, 26f, 1.0f, 7.0f);
 
-            // 2. 远方四象限导航不动恒星 (Four Fixed Sidereal Stars)
-            r.DrawStar(24, 24, 6, 0.75f);
-            r.DrawStar(104, 24, 6, 0.75f);
-            r.DrawStar(24, 104, 6, 0.75f);
-            r.DrawStar(104, 104, 6, 0.75f);
+            // 2. 斜右下主坐标轴 (+X 轴，春分点基准)
+            r.DrawArrow(ox, oy, 110, 22, 17f, 26f, 1.0f, 6.5f);
 
-            // 3. 贯通天球的惯性主极轴 (南北天极垂直极轴 Polar Vertical Axis: Z-Axis)
-            // 南半球极轴: 从南天极 (y=18) 穿入至天球中心 (y=cy)，使用工程虚线体现 3D 球体纵深遮挡
-            r.DrawDashedLine(cx, 18, cx, cy - 2, 4, 3, 0.70f, 1.6f);
-            r.DrawLine(cx - 4, 18, cx + 4, 18, 0.70f, 1.4f); // 南天极刻度基底
+            // 3. 斜左下正交坐标轴 (+Y 轴，空间正交补全)
+            r.DrawArrow(ox, oy, 18, 22, 17f, 26f, 1.0f, 6.5f);
 
-            // 北半球极轴: 从天球中心 (cy) 垂直高耸向上，穿出天球北极，纯净高亮指向天顶 (+Z North Celestial Pole)
-            r.DrawArrow(cx, cy, cx, 114, 9f, 24f, 1.0f, 2.4f);
-            r.DrawGlyph(cx + 6, 108, 'Z', 1.0f);
+            // 4. 坐标原点质心高亮实心球核
+            r.FillCircle(ox, oy, 7.5f, 1.0f);
 
-            // 4. 赤道平面正交两轴 (+X / +Y，朝斜前下延伸形成正交笛卡尔动基底)
-            // +X 轴 (春分点 Vernal Equinox Vector): 斜右下方延伸
-            r.DrawArrow(cx, cy, 102, 48, 8.5f, 25f, 1.0f, 2.2f);
-            r.DrawGlyph(109, 46, 'X', 1.0f);
-
-            // +Y 轴 (正交补全轴 Completing Orthogonal Frame): 斜左下方延伸
-            r.DrawArrow(cx, cy, 26, 48, 8.5f, 25f, 1.0f, 2.2f);
-            r.DrawGlyph(18, 46, 'Y', 1.0f);
-
-            // 5. 原点质心微标 (Inertial Origin Hub)
-            r.DrawCircle(cx, cy, 4, 1.0f, 1.6f);
-            r.FillCircle(cx, cy, 2, 0.6f);
+            // 5. 左上与右上象限空间不动恒星 (Fixed Sidereal Stars)
+            r.DrawStar(26, 96, 9, 0.95f);
+            r.DrawStar(102, 96, 9, 0.95f);
         }
 
         // =========================================================================
@@ -221,26 +199,24 @@ namespace ModularFlightPanel.Core.Rendering
         {
             int cx = 64, cy = 64;
 
-            // 1. 中心行星自转球体与赤道/经纬网格 (Central Rotating Celestial Globe)
-            r.FillCircle(cx, cy, 38, 0.12f);
-            r.DrawCircle(cx, cy, 38, 0.95f, 2.0f);
+            // 1. 中心行星自转球体轮廓与赤道
+            r.FillCircle(cx, cy, 34, 0.15f);
+            r.DrawCircle(cx, cy, 34, 0.95f, 6.0f);
 
-            // 赤道与南北回归线 (Equator & Parallels)
-            r.DrawLine(26, cy, 102, cy, 0.90f, 2.0f);
-            r.DrawEllipse(cx, 48, 33, 9, 0.45f, 1.0f);
-            r.DrawEllipse(cx, 80, 33, 9, 0.45f, 1.0f);
+            // 南北贯通自转极轴
+            r.DrawLine(cx, 16, cx, 112, 0.75f, 4.0f);
 
-            // 经线自旋网格 (Meridians)
-            r.DrawEllipse(cx, cy, 18, 38, 0.65f, 1.2f);
-            r.DrawEllipse(cx, cy, 30, 38, 0.40f, 1.0f);
+            // 赤道与主经线
+            r.DrawLine(cx - 31, cy, cx + 31, cy, 0.90f, 5.0f);
+            r.DrawEllipse(cx, cy, 14, 34, 0.55f, 4.0f);
 
-            // 2. 穿透南北两极的自转极轴 (Polar Rotation Axis)
-            r.DrawDashedLine(cx, 12, cx, 116, 5, 3, 0.85f, 1.8f);
-
-            // 3. 北极自转动量角速度矢量环弧 (Angular Velocity ω Spin Direction)
-            r.DrawArc(cx, 22, 16, -40f, 140f, 0.95f, 1.8f);
-            r.DrawArrowHead(78, 24, 12f, 30f, 1.0f, 2.0f);
-            r.DrawGlyph(88, 20, 'W', 1.0f); // ω-like W (Angular Velocity)
+            // 2. 环绕行星的粗自转动量弧与大箭头 (Spin Rotation Ring & Arrow ω)
+            r.DrawArc(cx, cy, 48, -25f, 185f, 1.0f, 7.0f);
+            // 自转箭头
+            float headRad = -25f * Mathf.Deg2Rad;
+            float ax = cx + Mathf.Cos(headRad) * 48f;
+            float ay = cy + Mathf.Sin(headRad) * 48f;
+            r.DrawArrow(ax - 12, ay - 6, ax + 8, ay + 6, 16f, 28f, 1.0f, 6.0f);
         }
 
         // =========================================================================
@@ -248,39 +224,21 @@ namespace ModularFlightPanel.Core.Rendering
         // =========================================================================
         private static void DrawOrbitalFrame(Rasterizer r)
         {
-            // 1. 引力焦点主天体 (Focus Body at left focal point)
-            int focusX = 42, focusY = 64;
-            r.FillCircle(focusX, focusY, 12, 0.85f);
-            r.DrawCircle(focusX, focusY, 12, 1.0f, 1.8f);
-            r.DrawCircle(focusX, focusY, 16, 0.35f, 1.0f);
+            // 1. 引力焦点中心主天体 (Focus Body at left focal point)
+            int focusX = 44, focusY = 64;
+            r.FillCircle(focusX, focusY, 16, 1.0f);
+            r.DrawCircle(focusX, focusY, 22, 0.35f, 3.0f);
 
-            // 2. 开普勒闭合椭圆轨道 (Keplerian Orbit: center at 58, major a=52, minor b=34)
-            int orbCenterX = 58, orbCenterY = 64;
-            r.DrawEllipse(orbCenterX, orbCenterY, 52, 34, 0.85f, 1.8f);
+            // 2. 粗开普勒闭合椭圆轨道 (Keplerian Orbit Ring)
+            int orbCenterX = 62, orbCenterY = 64;
+            r.DrawEllipse(orbCenterX, orbCenterY, 50, 28, 0.95f, 6.0f);
 
-            // 近拱点 Pe 与远拱点 Ap 标线
-            r.DrawLine(6, 61, 6, 67, 0.7f, 1.4f);
-            r.DrawGlyph(7, 56, 'P', 0.85f);
-            r.DrawLine(110, 61, 110, 67, 0.7f, 1.4f);
-            r.DrawGlyph(111, 56, 'A', 0.85f);
+            // 3. 轨道航天器节点与切向顺向速度箭头 (Spacecraft Node & Prograde Vector)
+            int scX = 68, scY = 92;
+            r.FillDiamond(scX, scY, 7.5f, 1.0f);
 
-            // 3. 轨道飞行器节点 (Spacecraft Node at top quadrant: 58, 30)
-            int scX = 58, scY = 30;
-            r.FillCircle(scX, scY, 4, 1.0f);
-            r.DrawCircle(scX, scY, 7, 0.6f, 1.2f);
-
-            // 4. 局部轨道参考系三向矢量 (Local Orbital Frame: V / R / N)
-            // V (Velocity / Prograde / Tangent): 切向右方
-            r.DrawArrow(scX, scY, 96, scY, 8f, 26f, 1.0f, 2.2f);
-            r.DrawGlyph(102, scY - 1, 'V', 1.0f);
-
-            // R (Radius / Radial-In): 指向引力焦点
-            r.DrawArrow(scX, scY, 46, 56, 7f, 24f, 0.95f, 1.8f);
-            r.DrawGlyph(51, 44, 'R', 0.95f);
-
-            // N (Normal / Angular Momentum h): 指向轨道平面外
-            r.DrawArrow(scX, scY, 42, 14, 7f, 24f, 0.90f, 1.8f);
-            r.DrawGlyph(38, 9, 'N', 0.90f);
+            // 切向速度前向箭头
+            r.DrawArrow(scX + 6, scY, 112, scY, 15f, 26f, 1.0f, 5.5f);
         }
 
         // =========================================================================
@@ -288,52 +246,29 @@ namespace ModularFlightPanel.Core.Rendering
         // =========================================================================
         private static void DrawLagrangeFrame(Rasterizer r)
         {
-            int m1X = 38, m1Y = 64; // Primary Body (M1)
-            int m2X = 88, m2Y = 64; // Secondary Body (M2)
+            int m1X = 36, m1Y = 64; // Primary Body (M1)
+            int m2X = 94, m2Y = 64; // Secondary Body (M2)
 
             // 1. 基线坐标轴与双天体 (Connecting Axis & Masses M1, M2)
-            r.DrawLine(10, 64, 118, 64, 0.40f, 1.2f);
-            r.FillCircle(m1X, m1Y, 13, 0.90f);
-            r.DrawCircle(m1X, m1Y, 13, 1.0f, 1.6f);
-            r.FillCircle(m2X, m2Y, 6, 0.90f);
-            r.DrawCircle(m2X, m2Y, 6, 1.0f, 1.4f);
+            r.DrawLine(12, 64, 116, 64, 0.40f, 3.0f);
 
-            // 2. 质心原点 (System Barycenter ⊕ at 48, 64)
-            int baryX = 48, baryY = 64;
-            r.DrawCircle(baryX, baryY, 5, 0.95f, 1.4f);
-            r.DrawCrosshair(baryX, baryY, 7, 0.95f, 1.2f);
+            // 2. 洛希瓣等势面哑铃双叶轮廓 (Roche Lobe Equipotential Curves)
+            r.DrawDumbbellContour(m1X, m1Y, m2X, m2Y, 0.85f, 5.0f);
 
-            // 3. 洛希瓣等势面哑铃双叶轮廓 (Roche Lobe Equipotential Curves)
-            r.DrawDumbbellContour(m1X, m1Y, m2X, m2Y, 0.35f, 1.2f);
+            // 3. 主次双天体高光实心球核
+            r.FillCircle(m1X, m1Y, 16, 1.0f);
+            r.FillCircle(m2X, m2Y, 10, 1.0f);
 
-            // 4. 等边三角形稳定性导引虚线 (L4 / L5 Equilateral Triangles at ±60°)
-            int l4X = 63, l4Y = 21;
-            int l5X = 63, l5Y = 107;
-            r.DrawDashedLine(m1X, m1Y, l4X, l4Y, 4, 3, 0.45f, 1.0f);
-            r.DrawDashedLine(m2X, m2Y, l4X, l4Y, 4, 3, 0.45f, 1.0f);
-            r.DrawDashedLine(m1X, m1Y, l5X, l5Y, 4, 3, 0.45f, 1.0f);
-            r.DrawDashedLine(m2X, m2Y, l5X, l5Y, 4, 3, 0.45f, 1.0f);
+            // 4. 平动点：L1 (两体质心平衡点), L4 (+60°), L5 (-60°)
+            r.FillDiamond(65, 64, 6f, 1.0f);
+            r.FillDiamond(65, 106, 6f, 1.0f);
+            r.FillDiamond(65, 22, 6f, 1.0f);
 
-            // 5. 五大平动点标示 (All Five Lagrange Points L1~L5)
-            // L1 (Between M1 and M2)
-            r.DrawCrosshair(65, 64, 5, 1.0f, 1.4f);
-            r.DrawGlyph(65, 54, '1', 1.0f);
-
-            // L2 (Beyond M2)
-            r.DrawCrosshair(107, 64, 5, 1.0f, 1.4f);
-            r.DrawGlyph(107, 54, '2', 1.0f);
-
-            // L3 (Opposite M1)
-            r.DrawCrosshair(17, 64, 5, 1.0f, 1.4f);
-            r.DrawGlyph(17, 54, '3', 1.0f);
-
-            // L4 (+60° Triangle Apex)
-            r.DrawCrosshair(l4X, l4Y, 5, 1.0f, 1.4f);
-            r.DrawGlyph(l4X + 7, l4Y - 1, '4', 1.0f);
-
-            // L5 (-60° Triangle Apex)
-            r.DrawCrosshair(l5X, l5Y, 5, 1.0f, 1.4f);
-            r.DrawGlyph(l5X + 7, l5Y - 1, '5', 1.0f);
+            // 5. 等边三角形稳定性导引虚线
+            r.DrawDashedLine(m1X, m1Y, 65, 106, 5, 4, 0.40f, 2.0f);
+            r.DrawDashedLine(m2X, m2Y, 65, 106, 5, 4, 0.40f, 2.0f);
+            r.DrawDashedLine(m1X, m1Y, 65, 22, 5, 4, 0.40f, 2.0f);
+            r.DrawDashedLine(m2X, m2Y, 65, 22, 5, 4, 0.40f, 2.0f);
         }
 
         // =========================================================================
@@ -343,23 +278,20 @@ namespace ModularFlightPanel.Core.Rendering
         {
             int cx = 64, cy = 64;
 
-            // 双环瞄准标度圈
-            r.DrawCircle(cx, cy, 46, 0.80f, 1.8f);
-            r.DrawCircle(cx, cy, 22, 0.60f, 1.4f);
+            // 1. 粗瞄准标度主环 (Tactical Targeting Reticle)
+            r.DrawCircle(cx, cy, 38, 0.90f, 6.0f);
 
-            // 四向雷达测距刻度线
-            r.DrawLine(cx - 52, cy, cx - 36, cy, 0.9f, 2.0f);
-            r.DrawLine(cx + 36, cy, cx + 52, cy, 0.9f, 2.0f);
-            r.DrawLine(cx, cy - 52, cx, cy - 36, 0.9f, 2.0f);
-            r.DrawLine(cx, cy + 36, cx, cy + 52, 0.9f, 2.0f);
+            // 2. 上下左右四向穿透雷达测距刻度线 (Four Quadrant Ticks)
+            r.DrawLine(cx, 96, cx, 116, 1.0f, 6.0f);
+            r.DrawLine(cx, 12, cx, 32, 1.0f, 6.0f);
+            r.DrawLine(12, cy, 32, cy, 1.0f, 6.0f);
+            r.DrawLine(96, cy, 116, cy, 1.0f, 6.0f);
 
-            // 核心对接十字与菱形瞄具
-            r.DrawCrosshair(cx, cy, 14, 1.0f, 1.8f);
-            r.DrawDiamond(cx, cy, 8, 0.85f, 1.4f);
+            // 3. 核心对接对中实心菱形 (Docking Target Center)
+            r.FillDiamond(cx, cy, 9f, 1.0f);
 
-            // 相对接近视线导引折线与三角游标
-            r.DrawArrow(cx - 30, cy + 30, cx - 8, cy + 8, 7f, 26f, 0.95f, 2.0f);
-            r.DrawGlyph(cx - 36, cy + 36, 'T', 0.9f);
+            // 4. 相对交会视线导引箭头 (Relative Approach Vector)
+            r.DrawArrow(28, 28, 52, 52, 14f, 28f, 1.0f, 5.5f);
         }
 
         // =========================================================================
@@ -368,31 +300,25 @@ namespace ModularFlightPanel.Core.Rendering
         private static void DrawSurfaceFrame(Rasterizer r)
         {
             int cx = 64;
+            int groundY = 38;
 
-            // 1. 行星地表微弧地平线 (Curved Planetary Horizon Arc)
-            r.DrawArc(cx, -16, 62, 48f, 132f, 0.90f, 2.0f);
+            // 1. 坚实的大地水平基线 (Earth Surface Baseline)
+            r.DrawLine(14, groundY, 114, groundY, 1.0f, 7.0f);
 
-            // 2. 地表测站基座与切线基线 (Ground Station & Tangent Baseline)
-            r.DrawLine(32, 44, 96, 44, 0.45f, 1.2f);
-            r.FillCircle(cx, 44, 4, 1.0f);
-            r.DrawCircle(cx, 44, 8, 0.7f, 1.4f);
-            r.DrawLine(cx - 8, 38, cx, 44, 0.8f, 1.6f);
-            r.DrawLine(cx + 8, 38, cx, 44, 0.8f, 1.6f);
+            // 2. 地下地质斜向阴影标线 (Subsurface Ground Hatch)
+            for (int hx = 28; hx <= 100; hx += 18)
+            {
+                r.DrawLine(hx, groundY - 4, hx - 10, groundY - 18, 0.60f, 4.0f);
+            }
 
-            // 3. 局部铅垂天顶轴 (+Up / Zenith Vector)
-            r.DrawArrow(cx, 44, cx, 110, 8f, 24f, 1.0f, 2.2f);
-            r.DrawGlyph(cx + 7, 104, 'U', 1.0f); // U for Up/Zenith
+            // 3. 地表发射台/测站实心底座 (Launch Pad Station Base)
+            r.FillTriangle(50, groundY, 78, groundY, 64, groundY + 12, 1.0f);
 
-            // 4. 局部地平切向水平速度矢量 (+East / Horizon Vector)
-            r.DrawArrow(cx, 44, 108, 44, 7.5f, 24f, 0.95f, 2.0f);
-            r.DrawGlyph(110, 50, 'H', 0.95f); // H for Horizon
+            // 4. 局部铅垂天顶粗箭头 (+Up / Zenith Vector)
+            r.DrawArrow(cx, groundY + 10, cx, 114, 18f, 26f, 1.0f, 7.0f);
 
-            // 5. 地表网格虚线提示 (Subsurface Terrain Hash Marks)
-            r.DrawLine(40, 38, 36, 28, 0.40f, 1.0f);
-            r.DrawLine(52, 41, 48, 31, 0.40f, 1.0f);
-            r.DrawLine(64, 42, 64, 32, 0.40f, 1.0f);
-            r.DrawLine(76, 41, 80, 31, 0.40f, 1.0f);
-            r.DrawLine(88, 38, 92, 28, 0.40f, 1.0f);
+            // 5. 局部地平切向水平速度粗箭头 (+Horizon Vector)
+            r.DrawArrow(cx + 6, groundY + 18, 108, groundY + 18, 16f, 26f, 0.95f, 6.0f);
         }
 
         // =========================================================================
@@ -402,17 +328,16 @@ namespace ModularFlightPanel.Core.Rendering
         {
             int cx = 64, cy = 64;
 
-            // 中心天体
-            r.FillCircle(cx, cy, 16, 0.8f);
-            r.DrawCircle(cx, cy, 16, 1.0f, 1.8f);
+            // 中心天体实心核与外环
+            r.FillCircle(cx, cy, 18, 1.0f);
+            r.DrawCircle(cx, cy, 24, 0.40f, 3.0f);
 
             // 定向射线与指向箭头
-            r.DrawArrow(cx, cy, cx + 46, cy - 34, 8f, 26f, 1.0f, 2.2f);
-            r.DrawDashedLine(cx - 34, cy + 26, cx, cy, 4, 3, 0.5f, 1.4f);
+            r.DrawArrow(cx, cy, cx + 46, cy - 34, 16f, 26f, 1.0f, 6.0f);
+            r.DrawDashedLine(cx - 34, cy + 26, cx, cy, 5, 4, 0.6f, 3.0f);
 
-            // 目标天体外框
-            r.DrawCircle(cx + 46, cy - 34, 8, 0.8f, 1.4f);
-            r.DrawGlyph(cx + 46, cy - 46, 'D', 0.9f);
+            // 目标天体实心核
+            r.FillCircle(cx + 46, cy - 34, 9, 1.0f);
         }
 
         #endregion
@@ -627,16 +552,70 @@ namespace ModularFlightPanel.Core.Rendering
                 float hx2 = x1 + Mathf.Cos(a2) * headLen;
                 float hy2 = y1 + Mathf.Sin(a2) * headLen;
 
+                FillTriangle(x1, y1, hx1, hy1, hx2, hy2, alpha);
                 DrawLine(x1, y1, hx1, hy1, alpha, width);
                 DrawLine(x1, y1, hx2, hy2, alpha, width);
+                DrawLine(hx1, hy1, hx2, hy2, alpha, width);
+            }
+
+            public void FillTriangle(float x0, float y0, float x1, float y1, float x2, float y2, float alpha)
+            {
+                int minX = Mathf.FloorToInt(Mathf.Min(x0, Mathf.Min(x1, x2)) - 1);
+                int maxX = Mathf.CeilToInt(Mathf.Max(x0, Mathf.Max(x1, x2)) + 1);
+                int minY = Mathf.FloorToInt(Mathf.Min(y0, Mathf.Min(y1, y2)) - 1);
+                int maxY = Mathf.CeilToInt(Mathf.Max(y0, Mathf.Max(y1, y2)) + 1);
+
+                float denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+                if (Mathf.Abs(denom) < 0.0001f) return;
+
+                for (int y = minY; y <= maxY; y++)
+                {
+                    for (int x = minX; x <= maxX; x++)
+                    {
+                        float w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / denom;
+                        float w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / denom;
+                        float w2 = 1.0f - w0 - w1;
+                        if (w0 >= -0.02f && w1 >= -0.02f && w2 >= -0.02f)
+                        {
+                            SetPixel(x, y, alpha);
+                        }
+                    }
+                }
+            }
+
+            public void FillDiamond(int cx, int cy, float size, float alpha)
+            {
+                int minX = Mathf.FloorToInt(cx - size - 1);
+                int maxX = Mathf.CeilToInt(cx + size + 1);
+                int minY = Mathf.FloorToInt(cy - size - 1);
+                int maxY = Mathf.CeilToInt(cy + size + 1);
+
+                for (int y = minY; y <= maxY; y++)
+                {
+                    for (int x = minX; x <= maxX; x++)
+                    {
+                        float manhattan = Mathf.Abs(x - cx) + Mathf.Abs(y - cy);
+                        if (manhattan <= size + 0.5f)
+                        {
+                            float a = Mathf.Clamp01(size + 0.5f - manhattan) * alpha;
+                            SetPixel(x, y, a);
+                        }
+                    }
+                }
             }
 
             public void DrawArrowHead(float tipX, float tipY, float headLen, float headAngleDeg, float alpha, float width = 2.0f)
             {
                 float a1 = Mathf.PI - headAngleDeg * Mathf.Deg2Rad;
                 float a2 = Mathf.PI + headAngleDeg * Mathf.Deg2Rad;
-                DrawLine(tipX, tipY, tipX + Mathf.Cos(a1) * headLen, tipY + Mathf.Sin(a1) * headLen, alpha, width);
-                DrawLine(tipX, tipY, tipX + Mathf.Cos(a2) * headLen, tipY + Mathf.Sin(a2) * headLen, alpha, width);
+                float hx1 = tipX + Mathf.Cos(a1) * headLen;
+                float hy1 = tipY + Mathf.Sin(a1) * headLen;
+                float hx2 = tipX + Mathf.Cos(a2) * headLen;
+                float hy2 = tipY + Mathf.Sin(a2) * headLen;
+                FillTriangle(tipX, tipY, hx1, hy1, hx2, hy2, alpha);
+                DrawLine(tipX, tipY, hx1, hy1, alpha, width);
+                DrawLine(tipX, tipY, hx2, hy2, alpha, width);
+                DrawLine(hx1, hy1, hx2, hy2, alpha, width);
             }
 
             public void DrawCrosshair(int cx, int cy, int size, float alpha, float width = 1.2f)
@@ -655,51 +634,39 @@ namespace ModularFlightPanel.Core.Rendering
 
             public void DrawStar(int cx, int cy, int r, float alpha)
             {
-                // 中心亮核
-                FillCircle(cx, cy, 1.8f, alpha);
-                // 十字射线衰减
-                for (int d = 1; d <= r; d++)
-                {
-                    float a = alpha * (1f - (float)d / (r + 1));
-                    SetPixel(cx + d, cy, a);
-                    SetPixel(cx - d, cy, a);
-                    SetPixel(cx, cy + d, a);
-                    SetPixel(cx, cy - d, a);
-                }
+                FillCircle(cx, cy, 3.5f, alpha);
+                DrawLine(cx - r, cy, cx + r, cy, alpha, 3.5f);
+                DrawLine(cx, cy - r, cx, cy + r, alpha, 3.5f);
             }
 
-            public void DrawDumbbellContour(int m1X, int m1Y, int m2X, int m2Y, float alpha, float width = 1.2f)
+            public void DrawDumbbellContour(int m1X, int m1Y, int m2X, int m2Y, float alpha, float width = 5.0f)
             {
-                int steps = 100;
+                int steps = 120;
                 float prevX = 0, prevY = 0;
                 for (int i = 0; i <= steps; i++)
                 {
                     float t = (i * 2f * Mathf.PI) / steps;
-                    // 双引力中心势能等势线方程参数逼近
-                    float baseR1 = 22f;
-                    float baseR2 = 12f;
+                    float baseR1 = 25f;
+                    float baseR2 = 17f;
                     float px, py;
 
-                    if (t < Mathf.PI)
+                    if (t <= Mathf.PI)
                     {
-                        // 上半周：从 M1 绕经 L4 跨向 M2
                         float u = t / Mathf.PI;
                         float cx = Mathf.Lerp(m1X, m2X, u);
                         float cy = m1Y;
                         float rSpan = Mathf.Lerp(baseR1, baseR2, u);
-                        // 在中心鞍点 (u ≈ 0.5) 发生轻微内凹颈缩
-                        float waist = 1f - 0.35f * Mathf.Sin(u * Mathf.PI);
+                        float waist = 1f - 0.45f * Mathf.Sin(u * Mathf.PI);
                         px = cx + Mathf.Cos(t) * rSpan;
-                        py = cy - Mathf.Sin(t) * (rSpan * waist);
+                        py = cy + Mathf.Sin(t) * (rSpan * waist);
                     }
                     else
                     {
-                        // 下半周：从 M2 绕经 L5 跨回 M1
                         float u = (t - Mathf.PI) / Mathf.PI;
                         float cx = Mathf.Lerp(m2X, m1X, u);
                         float cy = m1Y;
                         float rSpan = Mathf.Lerp(baseR2, baseR1, u);
-                        float waist = 1f - 0.35f * Mathf.Sin(u * Mathf.PI);
+                        float waist = 1f - 0.45f * Mathf.Sin(u * Mathf.PI);
                         px = cx + Mathf.Cos(t) * rSpan;
                         py = cy - Mathf.Sin(t) * (rSpan * waist);
                     }

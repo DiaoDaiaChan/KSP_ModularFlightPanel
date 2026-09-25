@@ -51,48 +51,32 @@ namespace ModularFlightPanel.UI.Widgets
         ExactIds = new[] { "core.bottom_controls" })]
     public class BottomControlsWidget : BaseFlightWidget
     {
-        // ------------------------------------------------------------------------------------
-        // [Part 1: 刷新阶梯与几何尺寸契约]
-        // ------------------------------------------------------------------------------------
-
-        /// <summary>
-        /// 控制栏采用 Relaxed 阶梯 (标称 10Hz)，状态开关类交互无需 60Hz 占用主线程
-        /// </summary>
+        // ====================================================================================
+        // 【头部全集中声明区】组件规格、几何常量与全部交互控件 (一屏之内尽收眼底)
+        // ====================================================================================
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
-
-        /// <summary>
-        /// 声明 1.0x DPI 下的原生尺寸 (宽 184px, 高 22px)
-        /// </summary>
         public override Vector2 BaseSize => new Vector2(184f, 22f);
 
-        // ------------------------------------------------------------------------------------
-        // [Part 2: 声明式微控件字段与节点引用]
-        // ------------------------------------------------------------------------------------
+        // 按钮规格常量：集中声明在头部，禁止在深层逻辑中四处散落
+        private static readonly Vector2 ToggleBtnSize = new Vector2(38f, 18f);
+        private static readonly Vector2 FrameBtnSize  = new Vector2(90f, 18f);
+        private const float RcsPosX   = -68f;
+        private const float SasPosX   = -26f;
+        private const float FramePosX = 43f;
 
-        // RCS 姿控开关按键
+        // 核心交互微控件
         [WidgetControl("rcs_btn", ButtonVisualRole.ActiveToggle, "RCS 开关按键")]
         private Button _rcsBtn;
-        private Image _rcsImg;
-        private Outline _rcsOutline;
         private Text _rcsText;
 
-        // SAS 主控开关按键
         [WidgetControl("sas_btn", ButtonVisualRole.ActiveToggle, "SAS 开关按键")]
         private Button _sasBtn;
-        private Image _sasImg;
-        private Outline _sasOutline;
         private Text _sasText;
 
-        // 参考系模式切换胶囊
         [WidgetControl("frame_btn", ButtonVisualRole.Normal, "参考系切换按键")]
         private Button _frameBtn;
-        private Image _frameImg;
-        private Outline _frameOutline;
         private Text _frameText;
-
-        // 底板引用
-        private Image _panelImage;
-        private Outline _panelOutline;
+        private Outline _frameOutline;
 
         // 运行时状态脏检查缓存
         private bool _lastRcs = false;
@@ -102,75 +86,44 @@ namespace ModularFlightPanel.UI.Widgets
 
         public static Action OnTogglePrincipiaWindowAction;
 
-        // ------------------------------------------------------------------------------------
-        // [Part 3: 视图构建与事件装配 (OnInitialize)]
-        // ------------------------------------------------------------------------------------
-
+        // ====================================================================================
+        // 【视图初始化与事件装配】集中连贯装配，杜绝碎片化多层嵌套
+        // ====================================================================================
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            Vector2 panelSize = RectTransform.sizeDelta;
+            var style = WidgetStyleManager.Instance;
 
-            // 1. 底衬容器 (透明容器，仅负责对齐与排版边界)
-            GameObject panel = UIFactory.CreatePanel(transform, "FlightControlBar", panelSize,
+            // 1. 底板容器
+            GameObject panel = UIFactory.CreatePanel(transform, "FlightControlBar", RectTransform.sizeDelta,
                 Vector2.zero, Color.clear, Color.clear, 0f);
-            _panelImage = panel.GetComponent<Image>();
-            _panelOutline = panel.GetComponent<Outline>();
-            if (_panelOutline != null) _panelOutline.enabled = false;
             this.Controls.Wrap("background", "底板边框", panel);
 
-            // 2. 构建控制按键: RCS (-68), SAS (-26), REF FRAME (+43)
-            BuildControlBar(panel.transform, s, theme);
-
-            // 3. 初始注入多语言 Tooltip 提示
-            ApplyTooltips();
-        }
-
-        private void BuildControlBar(Transform parent, float s, ThemeConfig theme)
-        {
-            Vector2 toggleBtnSize = new Vector2(38f * s, 18f * s);
-
-            // --- 1. RCS 姿控动力开关 ---
-            _rcsBtn = UIFactory.CreateButton(parent, "Btn_RCS", toggleBtnSize, new Vector2(-68f * s, 0f), OnRCSToggle);
-            _rcsImg = _rcsBtn.GetComponent<Image>();
-            _rcsOutline = _rcsBtn.GetComponent<Outline>();
-
-            _rcsText = UIFactory.CreateText(_rcsBtn.transform, "Text", "RCS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter,
-                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            // 2. RCS 开关按钮
+            _rcsBtn = UIFactory.CreateButton(panel.transform, "Btn_RCS", ToggleBtnSize * s, new Vector2(RcsPosX * s, 0f), OnRCSToggle);
+            _rcsText = UIFactory.CreateText(_rcsBtn.transform, "Text", "RCS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _rcsText.fontStyle = FontStyle.Bold;
-            RectTransform rcsRt = _rcsText.GetComponent<RectTransform>();
-            rcsRt.sizeDelta = toggleBtnSize;
-            rcsRt.anchoredPosition = Vector2.zero;
+            _rcsText.rectTransform.sizeDelta = ToggleBtnSize * s;
 
-            // --- 2. SAS 稳定性增益系统主开关 ---
-            _sasBtn = UIFactory.CreateButton(parent, "Btn_SAS", toggleBtnSize, new Vector2(-26f * s, 0f), OnSASToggle);
-            _sasImg = _sasBtn.GetComponent<Image>();
-            _sasOutline = _sasBtn.GetComponent<Outline>();
-
-            _sasText = UIFactory.CreateText(_sasBtn.transform, "Text", "SAS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter,
-                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            // 3. SAS 开关按钮
+            _sasBtn = UIFactory.CreateButton(panel.transform, "Btn_SAS", ToggleBtnSize * s, new Vector2(SasPosX * s, 0f), OnSASToggle);
+            _sasText = UIFactory.CreateText(_sasBtn.transform, "Text", "SAS", Mathf.Max(8, Mathf.RoundToInt(8f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _sasText.fontStyle = FontStyle.Bold;
-            RectTransform sasRt = _sasText.GetComponent<RectTransform>();
-            sasRt.sizeDelta = toggleBtnSize;
-            sasRt.anchoredPosition = Vector2.zero;
+            _sasText.rectTransform.sizeDelta = ToggleBtnSize * s;
 
-            // --- 3. REF FRAME 参考系模式胶囊按钮 (左键切换, 右键展开 Principia 窗口) ---
-            Vector2 frameBtnSize = new Vector2(90f * s, 18f * s);
-            _frameBtn = UIFactory.CreateButton(parent, "Btn_RefFrame", frameBtnSize, new Vector2(43f * s, 0f), null);
-            _frameImg = _frameBtn.GetComponent<Image>();
+            // 4. 参考系模式切换胶囊 (左键循环，右键展开 Principia 窗口)
+            _frameBtn = UIFactory.CreateButton(panel.transform, "Btn_RefFrame", FrameBtnSize * s, new Vector2(FramePosX * s, 0f), null);
             _frameOutline = _frameBtn.GetComponent<Outline>();
-
             var clickHandler = _frameBtn.gameObject.AddComponent<RefFrameButtonHandler>();
             clickHandler.OnLeftClick = OnCycleSpeedMode;
             clickHandler.OnRightClick = OnTogglePrincipiaWindow;
-
-            _frameText = UIFactory.CreateText(_frameBtn.transform, "Text", "REF: SURFACE ▾", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter,
-                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            _frameText = UIFactory.CreateText(_frameBtn.transform, "Text", "REF: SURFACE ▾", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _frameText.fontStyle = FontStyle.Bold;
-            RectTransform frt = _frameText.GetComponent<RectTransform>();
-            frt.sizeDelta = frameBtnSize;
-            frt.anchoredPosition = Vector2.zero;
+            _frameText.rectTransform.sizeDelta = FrameBtnSize * s;
+
+            // 5. 注入多语言 Tooltip
+            ApplyTooltips();
         }
 
         // ------------------------------------------------------------------------------------
@@ -284,9 +237,6 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. 基类自动将主题分发至已注册的各微控件
             base.ApplyTheme(theme);
-
-            if (_panelImage != null) _panelImage.color = Color.clear;
-            if (_panelOutline != null) _panelOutline.enabled = false;
 
             // 2. 刷新通道自定义文案
             if (_rcsText != null) _rcsText.text = GetTemplateChannel("RCS_LABEL", "RCS");

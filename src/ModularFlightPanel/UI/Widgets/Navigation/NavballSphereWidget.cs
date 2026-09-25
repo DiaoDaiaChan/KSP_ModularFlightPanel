@@ -43,7 +43,10 @@ namespace ModularFlightPanel.UI.Widgets
 
         private static Mesh _primitiveSphereMesh;
         private Image _reticleImage;
+        private float _reticlePhase = 0.0f;
         private float _currentHazardAlert = 0.0f;
+        private bool _isHazardActive = false;
+        private float _hazardHoldTimer = 0.0f;
         private float _currentVernierDetail = 0.0f;
         private float _lastNavballProbeSampleTime = -1f;
         private double _cachedGpwsRadarAltitude = double.NaN;
@@ -386,6 +389,7 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _paletteInitialized = false;
         private Quaternion _previousAttitudeRotation = Quaternion.identity;
         private Quaternion _filteredTrendRotation = Quaternion.identity;
+        private Vector3 _smoothedAngularVelocity = Vector3.zero;
         private bool _hasPreviousAttitudeRotation;
         private float _attitudeTrendStrength;
         private float _lastFramePattern = -1f;
@@ -486,24 +490,49 @@ namespace ModularFlightPanel.UI.Widgets
 
                 Vector3 halfAxis = new Vector3(delta.x, delta.y, delta.z);
                 float sinHalfAngle = halfAxis.magnitude;
-                if (sinHalfAngle > 0.00001f)
+
+                Vector3 rawAngularVelocity = Vector3.zero;
+                if (sinHalfAngle > 0.00015f)
                 {
                     float angleDegrees = 2f * Mathf.Atan2(sinHalfAngle, Mathf.Clamp(delta.w, 0f, 1f)) * Mathf.Rad2Deg;
-                    float angularRate = angleDegrees / dt;
-                    Vector3 axis = halfAxis / sinHalfAngle;
-                    // Longer prediction window keeps low-rate attitude changes visible.
-                    float predictionAngle = Mathf.Min(angularRate * 0.75f, 24f);
-                    Quaternion parentPrediction = Quaternion.AngleAxis(predictionAngle, axis);
-                    targetTrendRotation = Quaternion.Inverse(currentRotation) * parentPrediction * currentRotation;
-                    targetStrength = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.25f, 5.0f, angularRate));
+                    float rawRate = angleDegrees / dt;
+                    if (rawRate < 180f)
+                    {
+                        rawAngularVelocity = (halfAxis / sinHalfAngle) * rawRate;
+                    }
                 }
+
+                // 低通滤波角速度矢量，彻底消除跨物理帧瞬时微步进与角轴旋转随机翻转
+                float filterBlend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 6.5f);
+                _smoothedAngularVelocity = Vector3.Lerp(_smoothedAngularVelocity, rawAngularVelocity, filterBlend);
+            }
+            else
+            {
+                _smoothedAngularVelocity = Vector3.zero;
             }
 
             _previousAttitudeRotation = currentRotation;
             _hasPreviousAttitudeRotation = true;
-            float blend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 9f);
+
+            float smoothRate = _smoothedAngularVelocity.magnitude;
+            // 死区量化守卫：低于 0.40°/s 的微幅扰动视为稳态静止，杜绝虚线趋势指示抖动
+            if (smoothRate > 0.40f)
+            {
+                Vector3 axis = _smoothedAngularVelocity / smoothRate;
+                float predictionAngle = Mathf.Clamp(smoothRate * 0.45f, 0f, 20f);
+                Quaternion parentPrediction = Quaternion.AngleAxis(predictionAngle, axis);
+                targetTrendRotation = Quaternion.Inverse(currentRotation) * parentPrediction * currentRotation;
+                targetStrength = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 5.0f, smoothRate));
+            }
+            else
+            {
+                targetTrendRotation = Quaternion.identity;
+                targetStrength = 0f;
+            }
+
+            float blend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 7.0f);
             _filteredTrendRotation = Quaternion.Slerp(_filteredTrendRotation, targetTrendRotation, blend);
-            _attitudeTrendStrength = Mathf.MoveTowards(_attitudeTrendStrength, targetStrength, (!Application.isPlaying ? 1f : dt * 5f));
+            _attitudeTrendStrength = Mathf.MoveTowards(_attitudeTrendStrength, targetStrength, (!Application.isPlaying ? 1f : dt * 3.5f));
 
             if (_sphereMaterial != null && _sphereMaterial.HasProperty("_TrendRotation"))
             {
@@ -590,7 +619,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 // GPWS / 近地大下沉率防撞动态斑马纹警示驱动 (Ground Terrain Hazard Pull-Up Alert)
                 IFlightTelemetry curTelem = FlightTelemetryContext.Current;
-                bool isHazard = false;
+                bool isHazardTriggered = false;
                 if (curTelem != null && curTelem.HasVessel)
                 {
                     UpdateNavballProbeSnapshot(curTelem);
@@ -607,12 +636,29 @@ namespace ModularFlightPanel.UI.Widgets
 
                     // Trajectories 的预测撞击倒计时可提前提示高速再入/落地风险，不依赖是否已进入低空。
                     double impactTime = _cachedTrajImpactTime;
-                    bool predictedImpact = !double.IsNaN(impactTime) && !double.IsInfinity(impactTime) && impactTime > 0.0 && impactTime < 15.0;
-                    bool lowAltitudeDescent = radarAltitude > 0.0 && radarAltitude < 300.0 && curTelem.VerticalSpeed < 0.0 && descentRate > 8.0;
-                    isHazard = lowAltitudeDescent || predictedImpact || curTelem.IsTouchdownAlert;
+                    bool predictedImpact = !double.IsNaN(impactTime) && !double.IsInfinity(impactTime) && impactTime > 0.0 && impactTime < 12.0;
+                    bool lowAltitudeDescent = radarAltitude > 0.0 && radarAltitude < 280.0 && curTelem.VerticalSpeed < 0.0 && descentRate > 8.5;
+                    isHazardTriggered = lowAltitudeDescent || predictedImpact || curTelem.IsTouchdownAlert;
                 }
-                float targetHazard = isHazard ? 1.0f : 0.0f;
-                _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dt * 6.0f));
+
+                // 滞后滤波与持续维持计时器，彻底根治临界速度附近的单帧乱闪
+                if (isHazardTriggered)
+                {
+                    _isHazardActive = true;
+                    _hazardHoldTimer = 0.6f;
+                }
+                else if (_hazardHoldTimer > 0f)
+                {
+                    _hazardHoldTimer -= dt;
+                    if (_hazardHoldTimer <= 0f) _isHazardActive = false;
+                }
+                else
+                {
+                    _isHazardActive = false;
+                }
+
+                float targetHazard = _isHazardActive ? 1.0f : 0.0f;
+                _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dt * 3.5f));
                 if (_sphereMaterial.HasProperty("_GroundHazardAlert"))
                 {
                     _sphereMaterial.SetFloat("_GroundHazardAlert", _currentHazardAlert);
@@ -621,7 +667,7 @@ namespace ModularFlightPanel.UI.Widgets
                 // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
                 float pitchVal = (curTelem != null) ? Mathf.Abs(curTelem.Pitch) : 0f;
                 float targetVernier = (pitchVal < 6.0f) ? Mathf.Clamp01((6.0f - pitchVal) / 3.0f) : 0f;
-                _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dt * 4.0f));
+                _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dt * 3.5f));
                 if (_sphereMaterial.HasProperty("_VernierScaleDetail"))
                 {
                     _sphereMaterial.SetFloat("_VernierScaleDetail", _currentVernierDetail);
