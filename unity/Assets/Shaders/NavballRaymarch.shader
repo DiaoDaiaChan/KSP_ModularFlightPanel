@@ -4,7 +4,6 @@ Shader "ModularFlightPanel/NavballRaymarch"
     {
         [PerRendererData] _MainTex ("Navball Texture", 2D) = "white" {}
         _RenderMode ("Render Mode (0=Stock, 1=Vector, 2=Bake)", Float) = 0.0
-        _SphereInvRotation ("Sphere Inverse Rotation", Matrix) = (1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1)
 
         // 现代玻璃座舱配色与渐变 (Aero Glass Cockpit Palette)
         _SkyZenithColor ("Sky Zenith", Color) = (0.04, 0.16, 0.36, 1.0)
@@ -574,7 +573,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     // 姿态趋势预测动态虚线地平线
                     if (_TrendStrength > 0.01)
                     {
-                        float3 futureP = normalize(RotateByQuaternion(p, float4(-_TrendRotation.xyz, _TrendRotation.w)));
+                        float3 futureP = normalize(RotateByQuaternion(p, float4(-_TrendRotation.x, -_TrendRotation.y, -_TrendRotation.z, _TrendRotation.w)));
                         float trendAA = max(fwidth(futureP.y) * 2.2, 0.008);
                         float futureHorizon = 1.0 - smoothstep(0.003, 0.003 + trendAA, abs(futureP.y));
                         float dashVal = frac(headDeg / 24.0);
