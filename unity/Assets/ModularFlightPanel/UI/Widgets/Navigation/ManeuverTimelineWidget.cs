@@ -27,13 +27,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     [FlightWidget("maneuver_timeline", "burn_timeline", Category = WidgetCategory.Navigation, DisplayName = "MANEUVER 轨道机动时序与三轴矢量轴", Description = "横排时间轴形式机动节点指示器：点火窗口时序轨、T0 节点与 Prograde/Normal/Radial 三轴矢量分解。", DefaultWidgetId = "custom.maneuver_timeline", DefaultX = 0f, DefaultY = 260f, IsSingleton = true, ExactIds = new[] { "custom.maneuver_timeline", "core.maneuver_timeline" })]
     public class ManeuverTimelineWidget : BaseFlightWidget
     {
-        public override Vector2 BaseSize => new Vector2(520f, 88f);
+        public override Vector2 BaseSize => new Vector2(520f, 100f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
-        // 声明式微控件
-        public TextWidget HeroText = TextWidget.Value("---");
-        public TextWidget SubtitleText = TextWidget.Unit("STANDBY");
+        // 注意: 本组件不使用声明式 DSL 微控件 (TextWidget.Value/Unit)，
+        // 时间轴 Hero 与 Subtitle 由 OnInitialize 手动构建以支持多段异构布局。
 
         // UI 背景与卡片
         private Image _bgImage;
@@ -54,8 +53,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         }
         private MilestoneUI[] _milestones;
 
-        // 中央核心主读数 (T- 05:20    320.0 m/s / BURNING)
-        private Text _centerHeroText;
+        // 中央核心读数 — 分体式倒计时与 ΔV 双栏
+        private Text _countdownLabel;       // 左栏小标: COUNTDOWN
+        private Text _countdownText;        // 左栏: T- 05:20
+        private Text _deltaVLabel;          // 右栏小标: Δv REMAINING
+        private Text _deltaVText;           // 右栏: 320.0 m/s
+        private Image _heroDivider;         // 中央竖向分隔线
 
         // 底部单行三轴矢量副标牌 ([PRINCIPIA] PRO +310.0 · NRM +75.0 · RAD -25.0 m/s)
         private Text _vectorSubtitleText;
@@ -73,7 +76,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         // 几何参数 (基准像素)
         private const float TrackWidth = 460f;
-        private const float TrackCenterY = 24f;
+        private const float TrackCenterY = 32f;
         private const float ZoneIgnitionNorm = 0.38f;
         private const float ZoneBurnoutNorm = 0.88f;
 
@@ -140,7 +143,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ParseCustomTemplate(config?.CustomTemplate);
 
-            // 1. 组件包围盒 (基准 520x88 逻辑像素，SpaceX 直播标准规格)
+            // 1. 组件包围盒 (基准 520×100 逻辑像素，三级分层布局)
             Vector2 size = BaseSize * s;
             RectTransform.sizeDelta = size;
 
@@ -149,7 +152,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _bgOutline = CardOutline;
             if (_bgOutline != null) _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
-            // 3. 构建顶部水平直线时间轴轨道 (Straight Timeline Track)
+            // ═══════════════════════════════════════════════════════
+            // TIER 1 (上层): 水平直线时间轴轨道
+            // ═══════════════════════════════════════════════════════
+
             GameObject trackGo = new GameObject("Timeline_Track", typeof(RectTransform), typeof(Image));
             trackGo.transform.SetParent(transform, false);
             RectTransform trackRt = trackGo.GetComponent<RectTransform>();
@@ -169,10 +175,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _burnZoneImage = burnZoneGo.GetComponent<Image>();
             _burnZoneImage.raycastTarget = false;
 
-            // 4. 构建关键任务时序节点 (APPROACH, IGNITION, T0 NODE, BURNOUT)
+            // 关键任务时序节点 (APPROACH, IGNITION, T0 NODE, BURNOUT)
             BuildMilestones(s, theme);
 
-            // 5. 动态飞行光标 (Progress Pip)
+            // 动态飞行光标 (Progress Pip)
             GameObject pipGo = new GameObject("Progress_Pip", typeof(RectTransform), typeof(Image));
             pipGo.transform.SetParent(transform, false);
             _progressPipRt = pipGo.GetComponent<RectTransform>();
@@ -182,15 +188,63 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _progressPipImage = pipGo.GetComponent<Image>();
             _progressPipImage.raycastTarget = false;
 
-            // 6. 中央核心主读数 (T- 05:20    320.0 m/s)
-            _centerHeroText = UIFactory.CreateText(transform, "Center_Hero_Readout", "---", Mathf.RoundToInt(22f * s), TextAnchor.MiddleCenter,
-                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            _centerHeroText.fontStyle = FontStyle.Bold;
-            RectTransform heroRt = _centerHeroText.rectTransform;
-            heroRt.sizeDelta = new Vector2(480f * s, 30f * s);
-            heroRt.anchoredPosition = new Vector2(0f, -4f * s);
+            // ═══════════════════════════════════════════════════════
+            // TIER 2 (中层): 分体式双栏核心读数
+            //   ┌─────────────┬──────────────┐
+            //   │  COUNTDOWN  │ Δv REMAINING │  ← 小标签 (y=+14)
+            //   │  T- 05:20   │  320.0 m/s   │  ← 大字读数 (y=-2)
+            //   └─────────────┴──────────────┘
+            // ═══════════════════════════════════════════════════════
+            float labelY = 14f * s;
+            float heroY = -2f * s;
+            float colW = (TrackWidth * 0.5f - 20f) * s; // 每栏宽度 (留中央间距)
+            float leftCX = -colW * 0.5f - 10f * s;      // 左栏中心 X
+            float rightCX = colW * 0.5f + 10f * s;      // 右栏中心 X
 
-            // 7. 底部单行三向矢量遥测标牌 ([PRINCIPIA] PRO +310.0 · NRM +75.0 · RAD -25.0 m/s)
+            // 左栏小标签: COUNTDOWN
+            _countdownLabel = UIFactory.CreateText(transform, "Countdown_Label", "COUNTDOWN", Mathf.RoundToInt(7f * s), TextAnchor.MiddleRight,
+                style.GetTextColor(TextStyleRole.Label, theme));
+            _countdownLabel.fontStyle = FontStyle.Bold;
+            RectTransform clRt = _countdownLabel.rectTransform;
+            clRt.sizeDelta = new Vector2(colW, 12f * s);
+            clRt.anchoredPosition = new Vector2(leftCX, labelY);
+
+            // 左栏大字读数: T- 05:20
+            _countdownText = UIFactory.CreateText(transform, "Countdown_Readout", "T- --:--", Mathf.RoundToInt(20f * s), TextAnchor.MiddleRight,
+                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            _countdownText.fontStyle = FontStyle.Bold;
+            RectTransform cntRt = _countdownText.rectTransform;
+            cntRt.sizeDelta = new Vector2(colW, 26f * s);
+            cntRt.anchoredPosition = new Vector2(leftCX, heroY);
+
+            // 中央竖向分隔线 (2px 宽, 高度贯穿标签与读数两行)
+            GameObject divGo = new GameObject("Hero_Divider", typeof(RectTransform), typeof(Image));
+            divGo.transform.SetParent(transform, false);
+            RectTransform divRt = divGo.GetComponent<RectTransform>();
+            divRt.sizeDelta = new Vector2(1.5f * s, 28f * s);
+            divRt.anchoredPosition = new Vector2(0f, 6f * s);
+            _heroDivider = divGo.GetComponent<Image>();
+            _heroDivider.raycastTarget = false;
+
+            // 右栏小标签: Δv REMAINING
+            _deltaVLabel = UIFactory.CreateText(transform, "DeltaV_Label", "\u0394v REMAINING", Mathf.RoundToInt(7f * s), TextAnchor.MiddleLeft,
+                style.GetTextColor(TextStyleRole.Label, theme));
+            _deltaVLabel.fontStyle = FontStyle.Bold;
+            RectTransform dlRt = _deltaVLabel.rectTransform;
+            dlRt.sizeDelta = new Vector2(colW, 12f * s);
+            dlRt.anchoredPosition = new Vector2(rightCX, labelY);
+
+            // 右栏大字读数: 320.0 m/s
+            _deltaVText = UIFactory.CreateText(transform, "DeltaV_Readout", "--- m/s", Mathf.RoundToInt(20f * s), TextAnchor.MiddleLeft,
+                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            _deltaVText.fontStyle = FontStyle.Bold;
+            RectTransform dvRt = _deltaVText.rectTransform;
+            dvRt.sizeDelta = new Vector2(colW, 26f * s);
+            dvRt.anchoredPosition = new Vector2(rightCX, heroY);
+
+            // ═══════════════════════════════════════════════════════
+            // TIER 3 (下层): 单行三轴矢量遥测标牌 (y = -26)
+            // ═══════════════════════════════════════════════════════
             _vectorSubtitleText = UIFactory.CreateText(transform, "Vector_Subtitle", "STANDBY", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter,
                 style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _vectorSubtitleText.fontStyle = FontStyle.Bold;
@@ -223,7 +277,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 if (_trackLineImage != null) _trackLineImage.color = WidgetStyleManager.Weighted(t.AccentSecondary, LineWeight.Medium);
                 if (_burnZoneImage != null) _burnZoneImage.color = WidgetStyleManager.Weighted(t.AccentPrimary, LineWeight.Light);
             }));
-            this.Controls.Register(new WidgetReadoutControl("center_hero", "中央核心读数", _centerHeroText != null ? _centerHeroText.gameObject : null, _centerHeroText, null, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("countdown_readout", "倒计时读数", _countdownText != null ? _countdownText.gameObject : null, _countdownText, null, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("deltav_readout", "ΔV 读数", _deltaVText != null ? _deltaVText.gameObject : null, _deltaVText, null, TextStyleRole.PrimaryValue));
             this.Controls.Register(new WidgetReadoutControl("vector_subtitle", "三轴矢量副标牌", _vectorSubtitleText != null ? _vectorSubtitleText.gameObject : null, _vectorSubtitleText, null, TextStyleRole.SecondaryValue));
 
             this.Controls.BindConfigToControls(config);
@@ -338,8 +393,15 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            // 核心读数与副标牌
-            ApplyText(_centerHeroText, TextStyleRole.PrimaryValue, theme);
+            // 核心读数双栏标签、数值与分隔线
+            ApplyText(_countdownLabel, TextStyleRole.Label, theme);
+            ApplyText(_countdownText, TextStyleRole.PrimaryValue, theme);
+            ApplyText(_deltaVLabel, TextStyleRole.Label, theme);
+            ApplyText(_deltaVText, TextStyleRole.PrimaryValue, theme);
+            if (_heroDivider != null)
+            {
+                _heroDivider.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Light);
+            }
             ApplyText(_vectorSubtitleText, TextStyleRole.SecondaryValue, theme);
 
             this.Controls.ApplyThemeToControls(theme);
@@ -464,31 +526,44 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            // 5. 中央主读数求值 (SpaceX Webcast 大字号风格)
-            string heroText;
+            // 5. 分体式双栏核心读数 — 左: 倒计时 / 右: ΔV
+            string labelStr;
+            string countdownStr;
+            string dvStr;
+
             if (timeToBurn > 0.0)
             {
+                // 进场模式
+                labelStr = "COUNTDOWN";
                 int totalSec = Mathf.Abs((int)timeToBurn);
-                int m = totalSec / 60;
-                int sec = totalSec % 60;
-                heroText = $"T- {m:00}:{sec:00}    {dv:F1} m/s";
+                countdownStr = $"T- {totalSec / 60:00}:{totalSec % 60:00}";
+                dvStr = $"{dv:F1} m/s";
             }
             else if (dv > 0.1)
             {
+                // 正在燃烧
+                labelStr = "BURN ELAPSED";
                 int elapsed = Mathf.Abs((int)timeToBurn);
-                int m = elapsed / 60;
-                int sec = elapsed % 60;
-                heroText = $"BURNING (T+{m:00}:{sec:00})    {dv:F1} m/s";
+                countdownStr = $"T+ {elapsed / 60:00}:{elapsed % 60:00}";
+                dvStr = $"{dv:F1} m/s";
             }
             else
             {
-                heroText = "NODE COMPLETE    0.0 m/s";
+                // 关机完成
+                labelStr = "STATUS";
+                countdownStr = "COMPLETE";
+                dvStr = "0.0 m/s";
             }
 
-            if (heroText != _lastHeroStr)
+            if (countdownStr != _lastHeroStr)
             {
-                _lastHeroStr = heroText;
-                SetTextIfChanged(_centerHeroText, heroText);
+                _lastHeroStr = countdownStr;
+                SetTextIfChanged(_countdownText, countdownStr);
+                SetTextIfChanged(_countdownLabel, labelStr);
+            }
+            if (dvStr != _lastSubtitleStr || _lastDeltaV != dv)
+            {
+                SetTextIfChanged(_deltaVText, dvStr);
             }
 
             // 6. 底部单行三向矢量遥测标牌更新 ([PRINCIPIA] PRO +310.0 · NRM +75.0 · RAD -25.0 m/s)
@@ -529,7 +604,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _lastRadial = double.NaN;
             _lastCachedPipProgress = -1f;
 
-            SetTextIfChanged(_centerHeroText, "NO ACTIVE NODE");
+            SetTextIfChanged(_countdownText, "NO NODE");
+            SetTextIfChanged(_deltaVText, "--- m/s");
             SetTextIfChanged(_vectorSubtitleText, "AWAITING MANEUVER FLIGHT PLAN");
 
             if (_progressPipRt != null)

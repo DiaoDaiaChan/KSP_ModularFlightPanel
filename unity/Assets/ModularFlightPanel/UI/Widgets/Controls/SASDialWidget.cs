@@ -446,6 +446,16 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastStatusText;
         private bool _hasInitializedState = false;
 
+        // ── 平滑阻尼状态 (消除跳变) ──
+        private float _smoothedRotZ = 0f;
+        private float _rotZVelocity = 0f;
+        private Vector2 _smoothedDirectorPos = Vector2.zero;
+        private Vector2 _directorPosVelocity = Vector2.zero;
+        private float _smoothedDirectorRotZ = 0f;
+        private float _directorRotZVelocity = 0f;
+        private const float kSilhouetteSmoothTime = 0.12f; // 剪影旋转平滑时间常数
+        private const float kDirectorSmoothTime = 0.08f;   // 导引标平滑时间常数
+
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !telemetry.HasVessel) return;
@@ -556,11 +566,11 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_shipSilhouette == null) return;
 
-            float rotZ;
+            float targetRotZ;
             FlightSASMode mode = telemetry.CurrentSASMode;
             if (!telemetry.IsSASEnabled || mode == FlightSASMode.StabilityAssist)
             {
-                rotZ = (float)-telemetry.Roll;
+                targetRotZ = (float)-telemetry.Roll;
             }
             else
             {
@@ -568,17 +578,33 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_isDirectorLocked || !_currentMarkerHasDir || !_currentMarkerVisible)
                 {
                     // 已精准对齐锁定：小飞船剪影鼻锥 100% 绝对指向该激活模式按键
-                    rotZ = baseRotZ;
+                    targetRotZ = baseRotZ;
                 }
                 else
                 {
                     // 正在机动转向：根据横向角偏差动态过渡指向
-                    float beta = Mathf.Atan2(_currentMarkerDir.x, _currentMarkerDir.y) * Mathf.Rad2Deg;
-                    rotZ = baseRotZ + beta;
+                    // 仅在 marker z > 0 (目标在前半球) 且投影长度足够时才计算偏转，
+                    // 避免 z ≤ 0 时 Atan2 产生 ±180° 跳变
+                    float projLen = Mathf.Sqrt(_currentMarkerDir.x * _currentMarkerDir.x + _currentMarkerDir.y * _currentMarkerDir.y);
+                    float beta;
+                    if (_currentMarkerDir.z > 0.05f && projLen > 0.001f)
+                    {
+                        beta = Mathf.Atan2(_currentMarkerDir.x, _currentMarkerDir.y) * Mathf.Rad2Deg;
+                        // 将偏转限幅在 ±60° 内，防止极端偏差导致剪影翻转
+                        beta = Mathf.Clamp(beta, -60f, 60f);
+                    }
+                    else
+                    {
+                        beta = 0f;
+                    }
+                    targetRotZ = baseRotZ + beta;
                 }
             }
 
-            _shipSilhouette.transform.localRotation = Quaternion.Euler(0f, 0f, rotZ);
+            // 平滑阻尼过渡 (角度域，自动处理 360° 回绕)
+            float dt = Time.unscaledDeltaTime;
+            _smoothedRotZ = Mathf.SmoothDampAngle(_smoothedRotZ, targetRotZ, ref _rotZVelocity, kSilhouetteSmoothTime, Mathf.Infinity, dt);
+            _shipSilhouette.transform.localRotation = Quaternion.Euler(0f, 0f, _smoothedRotZ);
 
             if (_displayMode == SASDialDisplayMode.Mode3D)
             {
@@ -653,6 +679,11 @@ namespace ModularFlightPanel.UI.Widgets
             _currentMarkerHasDir = hasDir;
             _currentMarkerVisible = isVisible;
 
+            float dt = Time.unscaledDeltaTime;
+            Vector2 targetPos;
+            float targetRotZ;
+            Color targetColor;
+
             if (hasDir && isVisible)
             {
                 Vector2 screenDir = new Vector2(dir.x, dir.y);
@@ -664,36 +695,56 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 _currentMarkerAngleDeg = angleDeg;
 
-                if (angleDeg <= 1.5f)
+                // 滞回阈值：锁定 ≤1.5°, 解锁 >3.5°, 消除边界振荡
+                if (_isDirectorLocked)
                 {
-                    // 目标锁定 (≤ 1.5°)：自动吸附中心，转为强调色锁定状态
-                    _isDirectorLocked = true;
-                    _sasDirectorRoot.anchoredPosition = Vector2.zero;
-                    _sasDirectorRoot.localRotation = Quaternion.identity;
-                    _sasDirectorRawImage.color = theme.AccentPrimary;
+                    if (angleDeg > 3.5f)
+                    {
+                        _isDirectorLocked = false;
+                    }
+                }
+                else
+                {
+                    if (angleDeg <= 1.5f)
+                    {
+                        _isDirectorLocked = true;
+                    }
+                }
+
+                if (_isDirectorLocked)
+                {
+                    // 目标锁定：平滑归零
+                    targetPos = Vector2.zero;
+                    targetRotZ = 0f;
+                    targetColor = theme.AccentPrimary;
                 }
                 else
                 {
                     // 偏差导引模式：指引飞行员向目标方向修正
-                    _isDirectorLocked = false;
-                    float maxRadius = 22f * s; // 限制在内圈半径 22px 范围内，绝不与外围按钮重叠
-                    float normDist = Mathf.Clamp01(angleDeg / 45f); // 0 .. 45° 映射到 0 .. 22px
-                    Vector2 offset = screenDist > 0.001f ? (screenDir / screenDist) * (normDist * maxRadius) : Vector2.zero;
-                    _sasDirectorRoot.anchoredPosition = offset;
-
-                    // 导引标旋转指向目标方位
-                    float directorAngle = Mathf.Atan2(screenDir.y, screenDir.x) * Mathf.Rad2Deg - 90f;
-                    _sasDirectorRoot.localRotation = Quaternion.Euler(0f, 0f, directorAngle);
-                    _sasDirectorRawImage.color = theme.WarningColor;
+                    float maxRadius = 22f * s;
+                    float normDist = Mathf.Clamp01(angleDeg / 45f);
+                    targetPos = screenDist > 0.001f ? (screenDir / screenDist) * (normDist * maxRadius) : Vector2.zero;
+                    targetRotZ = Mathf.Atan2(screenDir.y, screenDir.x) * Mathf.Rad2Deg - 90f;
+                    targetColor = theme.WarningColor;
                 }
             }
             else
             {
                 _isDirectorLocked = false;
                 _currentMarkerAngleDeg = 0f;
-                _sasDirectorRoot.anchoredPosition = Vector2.zero;
-                _sasDirectorRawImage.color = WidgetStyleManager.WithAlpha(theme.TextAccentColor, 0.35f);
+                targetPos = Vector2.zero;
+                targetRotZ = 0f;
+                targetColor = WidgetStyleManager.WithAlpha(theme.TextAccentColor, 0.35f);
             }
+
+            // 平滑阻尼过渡位置与旋转
+            _smoothedDirectorPos.x = Mathf.SmoothDamp(_smoothedDirectorPos.x, targetPos.x, ref _directorPosVelocity.x, kDirectorSmoothTime, Mathf.Infinity, dt);
+            _smoothedDirectorPos.y = Mathf.SmoothDamp(_smoothedDirectorPos.y, targetPos.y, ref _directorPosVelocity.y, kDirectorSmoothTime, Mathf.Infinity, dt);
+            _smoothedDirectorRotZ = Mathf.SmoothDampAngle(_smoothedDirectorRotZ, targetRotZ, ref _directorRotZVelocity, kDirectorSmoothTime, Mathf.Infinity, dt);
+
+            _sasDirectorRoot.anchoredPosition = _smoothedDirectorPos;
+            _sasDirectorRoot.localRotation = Quaternion.Euler(0f, 0f, _smoothedDirectorRotZ);
+            _sasDirectorRawImage.color = Color.Lerp(_sasDirectorRawImage.color, targetColor, Mathf.Clamp01(dt / kDirectorSmoothTime));
         }
 
         private void UpdateStatusBadge(FlightSASMode currentMode, bool sasOn, ThemeConfig theme)
