@@ -208,6 +208,7 @@ namespace ModularFlightPanel.Config
                         I18nManager.Instance.SetLanguage(data.SelectedLanguage, false);
                     }
                     _globalRenderMode = (NavballRenderMode)Mathf.Clamp(data.RenderMode, 0, 3);
+                    if (_globalRenderMode == NavballRenderMode.ProceduralBake) _globalRenderMode = NavballRenderMode.ProceduralVector;
                     IsStockNavballHidden = data.HideStockNavball;
                     IsStockAltimeterHidden = data.HideStockAltimeter;
                     IsStockBottomLeftHidden = data.HideStockBottomLeft;

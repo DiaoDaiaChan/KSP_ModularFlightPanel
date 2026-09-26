@@ -15,7 +15,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 完整支持：
     /// 1. 原版与 Principia 动态多参考系 (Barycentric/Inertial/Surface/Target) 世界旋转与贴图
     /// 2. 2D 亚像素无畸变平滑投影矢量标线 (Prograde, Retrograde, Normal, Maneuver 等)
-    /// 3. 四种渲染模式 (原版贴图 / 纯程序化矢量 / 离屏转贴图 / 原版导航球直驱)
+    /// 3. 三种核心渲染模式 (原版贴图 / 程序化导航球 / 原版导航球直驱)
     /// 4. 自适应 KSP 原生 UI_SCALE_NAVBALL 与屏幕物理 DPI 缩放，大机动下 CPU 耗时恒定 0.005 ms！
     /// </summary>
     [DefaultExecutionOrder(10000)]
@@ -52,12 +52,6 @@ namespace ModularFlightPanel.UI.Widgets
         private double _cachedGpwsSinkRate = double.NaN;
         private double _cachedTrajImpactTime = double.NaN;
 
-        private RenderTexture _bakedSurfaceTexture;
-        private Material _bakeMaterial;
-        private bool _isBakeDirty = true;
-        private bool _bakedTextureInitialized = false;
-        private float _lastBakedHazard = -1f;
-        private float _lastBakedVernier = -1f;
         private GameObject _bezelRing;
 
         private float _lastUploadedHazard = -1f;
@@ -123,77 +117,6 @@ namespace ModularFlightPanel.UI.Widgets
         private static readonly int _PropNumeralTangentComp = Shader.PropertyToID("_NumeralTangentComp");
         #endregion
 
-        private void EnsureBakePipeline()
-        {
-            if (_bakedSurfaceTexture == null || !_bakedSurfaceTexture.IsCreated())
-            {
-                if (_bakedSurfaceTexture != null)
-                {
-                    if (_bakedSurfaceTexture.IsCreated()) _bakedSurfaceTexture.Release();
-                    Destroy(_bakedSurfaceTexture);
-                }
-                _bakedSurfaceTexture = new RenderTexture(1024, 512, 0, RenderTextureFormat.ARGB32)
-                {
-                    antiAliasing = 1,
-                    anisoLevel = 2,
-                    useMipMap = false,
-                    autoGenerateMips = false,
-                    filterMode = FilterMode.Bilinear,
-                    wrapModeU = TextureWrapMode.Repeat,
-                    wrapModeV = TextureWrapMode.Clamp
-                };
-                _bakedSurfaceTexture.Create();
-            }
-            if (_bakeMaterial == null)
-            {
-                Shader procShader = AssetLoader.ProceduralShader;
-                if (procShader != null)
-                {
-                    _bakeMaterial = new Material(procShader);
-                }
-            }
-        }
-
-        private void BakeSurfaceTexture()
-        {
-            EnsureBakePipeline();
-            if (_bakedSurfaceTexture == null || _bakeMaterial == null) return;
-
-            if (!_paletteInitialized)
-            {
-                string category = NavBallHookService.Provider?.ReferenceFrameCategory ?? "SURFACE";
-                _currentPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
-                _targetPalette = _currentPalette;
-                _paletteInitialized = true;
-            }
-
-            UploadPaletteToMaterial(_bakeMaterial, _currentPalette);
-
-            if (_bakeMaterial.HasProperty(_PropGroundHazardAlert))
-                _bakeMaterial.SetFloat(_PropGroundHazardAlert, _currentHazardAlert);
-            if (_bakeMaterial.HasProperty(_PropVernierScaleDetail))
-                _bakeMaterial.SetFloat(_PropVernierScaleDetail, _currentVernierDetail);
-            if (_bakeMaterial.HasProperty(_PropFramePattern))
-                _bakeMaterial.SetFloat(_PropFramePattern, _lastFramePattern);
-            if (_bakeMaterial.HasProperty(_PropDetailScale))
-                _bakeMaterial.SetFloat(_PropDetailScale, Mathf.Max(1.0f, _lastDetailScale));
-            if (_bakeMaterial.HasProperty(_PropEquatorWidth))
-                _bakeMaterial.SetFloat(_PropEquatorWidth, 0.004f);
-            if (_bakeMaterial.HasProperty(_PropPitchLadderWidth))
-                _bakeMaterial.SetFloat(_PropPitchLadderWidth, 0.003f);
-            if (_bakeMaterial.HasProperty(_PropNumeralUprightMode))
-                _bakeMaterial.SetFloat(_PropNumeralUprightMode, 0.0f);
-            if (_bakeMaterial.HasProperty(_PropNumeralRollAngle))
-                _bakeMaterial.SetFloat(_PropNumeralRollAngle, 0.0f);
-            if (_bakeMaterial.HasProperty(_PropNumeralTangentComp))
-                _bakeMaterial.SetFloat(_PropNumeralTangentComp, 0.0f);
-
-            Graphics.Blit(Texture2D.whiteTexture, _bakedSurfaceTexture, _bakeMaterial, 1);
-            _isBakeDirty = false;
-            _lastBakedHazard = _currentHazardAlert;
-            _lastBakedVernier = _currentVernierDetail;
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
@@ -238,10 +161,6 @@ namespace ModularFlightPanel.UI.Widgets
             if (initialMode == NavballRenderMode.StockDirect)
             {
                 NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
-            }
-            else if (initialMode == NavballRenderMode.ProceduralBake)
-            {
-                EnsureBakePipeline();
             }
 
             // 2. 2D 矢量标线层 (Prograde, Retrograde, Normal, Radial, Target, Maneuver)
@@ -416,6 +335,7 @@ namespace ModularFlightPanel.UI.Widgets
             var hook = NavBallHookService.Provider;
             bool hasHook = (hook != null && hook.HasStockNavBall);
             var mode = ThemeManager.Instance.GlobalRenderMode;
+            if (mode == NavballRenderMode.ProceduralBake) mode = NavballRenderMode.ProceduralVector;
 
             if (mode == NavballRenderMode.StockDirect)
             {
@@ -451,21 +371,6 @@ namespace ModularFlightPanel.UI.Widgets
                     if (_sphereMaterial.mainTextureOffset != hook.TextureOffset)
                     {
                         _sphereMaterial.mainTextureOffset = hook.TextureOffset;
-                    }
-                }
-                else if (mode == NavballRenderMode.ProceduralBake && _bakedSurfaceTexture != null)
-                {
-                    if (_sphereMaterial.mainTexture != _bakedSurfaceTexture)
-                    {
-                        _sphereMaterial.mainTexture = _bakedSurfaceTexture;
-                    }
-                    if (_sphereMaterial.mainTextureScale != Vector2.one)
-                    {
-                        _sphereMaterial.mainTextureScale = Vector2.one;
-                    }
-                    if (_sphereMaterial.mainTextureOffset != Vector2.zero)
-                    {
-                        _sphereMaterial.mainTextureOffset = Vector2.zero;
                     }
                 }
             }
@@ -508,7 +413,6 @@ namespace ModularFlightPanel.UI.Widgets
                     float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
                     _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
                     UploadPaletteToMaterial(_currentPalette);
-                    if (mode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
 
                     if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
                     {
@@ -554,8 +458,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _isHazardActive = false;
                 }
 
-                bool isProc = (mode == NavballRenderMode.ProceduralVector || mode == NavballRenderMode.ProceduralBake);
-                if (isProc)
+                if (mode == NavballRenderMode.ProceduralVector)
                 {
                     float targetHazard = _isHazardActive ? 1.0f : 0.0f;
                     _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dtHazard * 3.5f));
@@ -563,7 +466,6 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _sphereMaterial.SetFloat(_PropGroundHazardAlert, _currentHazardAlert);
                         _lastUploadedHazard = _currentHazardAlert;
-                        if (mode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
                     }
 
                     // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
@@ -574,7 +476,6 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _sphereMaterial.SetFloat(_PropVernierScaleDetail, _currentVernierDetail);
                         _lastUploadedVernier = _currentVernierDetail;
-                        if (mode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
                     }
                 }
             }
@@ -622,6 +523,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (!gameObject.activeInHierarchy) return;
 
             var mode = ThemeManager.Instance.GlobalRenderMode;
+            if (mode == NavballRenderMode.ProceduralBake) mode = NavballRenderMode.ProceduralVector;
+
             if (mode == NavballRenderMode.StockDirect)
             {
                 if (_displayImage != null && _displayImage.enabled) _displayImage.enabled = false;
@@ -656,12 +559,6 @@ namespace ModularFlightPanel.UI.Widgets
             SyncMarkers();
             UpdateReticleDynamics();
             UpdateProceduralDetailScale();
-
-            if (mode == NavballRenderMode.ProceduralBake && (_isBakeDirty || !_bakedTextureInitialized))
-            {
-                BakeSurfaceTexture();
-                _bakedTextureInitialized = true;
-            }
         }
 
         private float _lastMarkerDiagLogTime = -10f;
@@ -943,11 +840,6 @@ namespace ModularFlightPanel.UI.Widgets
         private void UploadPaletteToMaterial(NavballFramePalette palette)
         {
             UploadPaletteToMaterial(_sphereMaterial, palette);
-            if (_bakeMaterial != null)
-            {
-                UploadPaletteToMaterial(_bakeMaterial, palette);
-                _isBakeDirty = true;
-            }
         }
 
         private static NavballFramePalette LerpPalette(NavballFramePalette from, NavballFramePalette to, float t)
@@ -1079,9 +971,10 @@ namespace ModularFlightPanel.UI.Widgets
             _paletteInitialized = false;
             _lastFrameCategory = null;
             _lastFramePattern = -1f;
-            _isBakeDirty = true;
 
             var mode = ThemeManager.Instance.GlobalRenderMode;
+            if (mode == NavballRenderMode.ProceduralBake) mode = NavballRenderMode.ProceduralVector;
+
             if (mode == NavballRenderMode.StockDirect)
             {
                 NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
@@ -1114,24 +1007,14 @@ namespace ModularFlightPanel.UI.Widgets
                         _sphereMaterial.shader = targetShader;
                     }
 
-                    // 传递模式给 Raymarch Shader: 0=Stock, 1=Vector, 2=Bake
-                    float renderModeVal = (mode == NavballRenderMode.StockTexture) ? 0f :
-                                          (mode == NavballRenderMode.ProceduralBake) ? 2f : 1f;
+                    // 传递模式给 Raymarch Shader: 0=Stock, 1=Vector
+                    float renderModeVal = (mode == NavballRenderMode.StockTexture) ? 0f : 1f;
                     _sphereMaterial.SetFloat(_PropRenderMode, renderModeVal);
 
                     if (mode == NavballRenderMode.StockTexture)
                     {
                         Texture stockTex = NavBallHookService.Provider?.BallTexture;
                         if (stockTex != null) _sphereMaterial.mainTexture = stockTex;
-                    }
-                    else if (mode == NavballRenderMode.ProceduralBake)
-                    {
-                        if (_bakedSurfaceTexture != null) _sphereMaterial.mainTexture = _bakedSurfaceTexture;
-                        if (_sphereMaterial.HasProperty(_PropMainTex))
-                        {
-                            _sphereMaterial.mainTextureScale = Vector2.one;
-                            _sphereMaterial.mainTextureOffset = Vector2.zero;
-                        }
                     }
 
                     if (_sphereMaterial.HasProperty(_PropNumeralUprightMode)) _sphereMaterial.SetFloat(_PropNumeralUprightMode, 0.0f);
@@ -1167,15 +1050,6 @@ namespace ModularFlightPanel.UI.Widgets
 
                     if (_sphereMaterial.HasProperty(_PropLabelColor)) _sphereMaterial.SetColor(_PropLabelColor, theme.TextPrimaryColor);
                     if (_sphereMaterial.HasProperty(_PropLabelOutlineColor)) _sphereMaterial.SetColor(_PropLabelOutlineColor, theme.TextInverseColor);
-                }
-
-                if (mode == NavballRenderMode.ProceduralBake)
-                {
-                    BakeSurfaceTexture();
-                    if (_bakedSurfaceTexture != null && _sphereMaterial != null)
-                    {
-                        _sphereMaterial.mainTexture = _bakedSurfaceTexture;
-                    }
                 }
             }
 
@@ -1242,17 +1116,6 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 Destroy(_sphereMaterial);
                 _sphereMaterial = null;
-            }
-            if (_bakeMaterial != null)
-            {
-                Destroy(_bakeMaterial);
-                _bakeMaterial = null;
-            }
-            if (_bakedSurfaceTexture != null)
-            {
-                if (_bakedSurfaceTexture.IsCreated()) _bakedSurfaceTexture.Release();
-                Destroy(_bakedSurfaceTexture);
-                _bakedSurfaceTexture = null;
             }
             base.OnDestroy();
         }

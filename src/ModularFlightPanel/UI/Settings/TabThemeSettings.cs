@@ -628,11 +628,12 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.BeginCard();
             MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_QUALITY", "🎯 姿态球生成模式与视网膜超采样"));
 
-            // 1. 姿态球渲染模式选择器 (4 模式全量选择器)
+            // 1. 姿态球渲染模式选择器 (3 模式全量选择器)
             GUILayout.BeginHorizontal();
             GUILayout.Label($"<b>{I18n.Tr("THM_NAVBALL_MODE_LABEL", "渲染模式选择:")}</b>", GUILayout.Width(110f));
 
             var curMode = ThemeManager.Instance.GlobalRenderMode;
+            if (curMode == NavballRenderMode.ProceduralBake) curMode = NavballRenderMode.ProceduralVector;
 
             // 0: 原版贴图 (Stock Texture)
             bool isStockTex = (curMode == NavballRenderMode.StockTexture);
@@ -643,18 +644,9 @@ namespace ModularFlightPanel.UI.Settings
                 ThemeManager.Instance.SaveSettings();
             }
 
-            // 2: 程序化转贴图 (Procedural Bake)
-            bool isProcBake = (curMode == NavballRenderMode.ProceduralBake);
-            string procBakeLabel = isProcBake ? I18n.Tr("THM_MODE_PROC_BAKE_ON", "● 程序化转贴图") : I18n.Tr("THM_MODE_PROC_BAKE_OFF", "○ 程序化转贴图");
-            if (GUILayout.Button(procBakeLabel, isProcBake ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
-            {
-                ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.ProceduralBake;
-                ThemeManager.Instance.SaveSettings();
-            }
-
-            // 1: 真 3D 绘制 (Procedural Vector)
+            // 1: 程序化导航球 (Procedural Vector)
             bool isProcVec = (curMode == NavballRenderMode.ProceduralVector);
-            string procVecLabel = isProcVec ? I18n.Tr("THM_MODE_PROC_VEC_ON", "● 真 3D 绘制") : I18n.Tr("THM_MODE_PROC_VEC_OFF", "○ 真 3D 绘制");
+            string procVecLabel = isProcVec ? I18n.Tr("THM_MODE_PROC_VEC_ON", "● 程序化导航球") : I18n.Tr("THM_MODE_PROC_VEC_OFF", "○ 程序化导航球");
             if (GUILayout.Button(procVecLabel, isProcVec ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
             {
                 ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.ProceduralVector;
@@ -678,13 +670,10 @@ namespace ModularFlightPanel.UI.Settings
             switch (curMode)
             {
                 case NavballRenderMode.StockTexture:
-                    modeDesc = I18n.Tr("THM_MODE_STOCK_TEX_DESC", "• 采用 KSP 原版 / TextureReplacer 材质贴图与增强高动态着色器，100% 还原官方经典质感。");
-                    break;
-                case NavballRenderMode.ProceduralBake:
-                    modeDesc = I18n.Tr("THM_MODE_PROC_BAKE_DESC", "• 实时矢量计算动态展开烘焙为 2D 贴图，极低片元着色开销，兼具矢量美观与超低 GPU 负载。");
+                    modeDesc = I18n.Tr("THM_MODE_STOCK_TEX_DESC", "• 采用 KSP 原版 / TextureReplacer 材质贴图与屏幕空间解析光线投射着色器，100% 还原官方质感，零摄像机开销。");
                     break;
                 case NavballRenderMode.ProceduralVector:
-                    modeDesc = I18n.Tr("THM_MODE_PROC_VEC_DESC", "• 纯数学 SDF 几何矢量直出，超清视网膜级最高画质，全字号/刻度边缘平滑无畸变，提供极致视效。");
+                    modeDesc = I18n.Tr("THM_MODE_PROC_VEC_DESC", "• 纯数学 SDF 几何矢量屏幕空间解析直出，超清视网膜级最高画质，全字号/刻度边缘平滑无畸变，提供极致视效与超低 CPU 耗时。");
                     break;
                 case NavballRenderMode.StockDirect:
                     modeDesc = I18n.Tr("THM_MODE_STOCK_DIRECT_DESC", "• 直接调用官方 3D 导航球，剔除侧边仪表与装饰杂物仅保留纯净姿态球；无缝接入 MFP 编辑模式，支持拖拽与 8 向拉动手柄放大缩小。");
