@@ -128,7 +128,7 @@ namespace ModularFlightPanel.UI.Widgets
             float shellHeight = ballDiameter + (showHeadingBox ? 44f : 36f) * s;
 
             RectTransform.sizeDelta = showShell ? new Vector2(shellWidth, shellHeight) : new Vector2(ballDiameter, ballDiameter);
-            _visualRadius = ballDiameter * 0.5f * 0.94f;
+            _visualRadius = ballDiameter * 0.5f;
 
             ApplyCanvasIsolation(true);
 
@@ -551,18 +551,12 @@ namespace ModularFlightPanel.UI.Widgets
                     img.rectTransform.anchoredPosition = Vector2.Lerp(frontPos, rearPos, tRear);
 
                     float targetScale = Mathf.Lerp(1.0f, 0.65f, tRear);
-                    if (Mathf.Abs(img.rectTransform.localScale.x - targetScale) > 0.02f)
-                    {
-                        img.rectTransform.localScale = new Vector3(targetScale, targetScale, 1.0f);
-                    }
+                    img.rectTransform.localScale = new Vector3(targetScale, targetScale, 1.0f);
 
                     float alpha = (dir.z >= -0.08f) ? 1.0f : Mathf.Lerp(1.0f, 0.40f, tRear);
                     Color c = img.color;
-                    if (Mathf.Abs(c.a - alpha) > 0.02f)
-                    {
-                        c.a = alpha;
-                        img.color = c;
-                    }
+                    c.a = alpha;
+                    img.color = c;
 
                     // 避免球体字号与前方核心航向/机动标重叠遮挡
                     if (avoidIdx < 4 && dir.z > 0.1f)

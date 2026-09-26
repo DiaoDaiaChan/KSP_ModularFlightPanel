@@ -271,7 +271,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 }
                 else if (_FramePattern > 2.5 && _FramePattern < 3.5)
                 {
-                    float targetRange = acos(clamp(-p.z, -1.0, 1.0)) * 57.2957795;
+                    float targetRange = acos(clamp(p.z, -1.0, 1.0)) * 57.2957795;
                     float ringOffset = abs(fmod(targetRange + 7.5, 15.0) - 7.5);
                     frameDetail = (1.0 - smoothstep(0.20, 0.85, ringOffset)) * 0.24;
                 }
@@ -576,9 +576,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 3. 逆向求解正交视线与单位球相交：正面球体深度 Z
                 float z = sqrt(max(0.0, 1.0 - r2));
 
-                // 视线空间正面单位球面朝向原点向量：X 右 (+x)，Y 上 (+y)，面向观察者的正面半球满足 Z = -z
-                // 正交相机在 (0, 0, -D) 朝 +Z 看向原点，正面交点在视线空间的世界坐标严格为 (coord.x, coord.y, -z)
-                float3 viewRay = float3(coord.x, coord.y, -z);
+                // 视线空间正面单位球面向量：X 右 (+x)，Y 上 (+y)，面向观察者的正面半球满足 Z = +z (前向沿 +Z)
+                float3 viewRay = float3(coord.x, coord.y, z);
 
                 // 4. 将视线空间坐标通过姿态逆旋转四元数变换，求得球体模型本地三维坐标 p！
                 float3 p = RotateByQuaternion(viewRay, _SphereInvRotation);
@@ -594,7 +593,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 {
                     // StockTexture: 球面坐标转标准等距柱状 UV
                     float pitch = asin(clamp(p.y, -1.0, 1.0));
-                    float head = atan2(p.x, -p.z);
+                    float head = atan2(p.x, p.z);
                     if (head < 0.0) head += 6.28318530718;
 
                     // 原版 KSP 姿态球贴图坐标系校正：对齐地平线半球(天顶天底)与真航向
@@ -627,7 +626,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 {
                     // ProceduralVector: 纯数学解析矢量求值 (极致锐利、任意分辨率无损)
                     float pitchDeg = asin(clamp(p.y, -1.0, 1.0)) * 57.2957795;
-                    float headDeg = atan2(p.x, -p.z) * 57.2957795;
+                    float headDeg = atan2(p.x, p.z) * 57.2957795;
                     if (headDeg < 0.0) headDeg += 360.0;
                     float absY = abs(p.y);
                     float absPitch = abs(pitchDeg);

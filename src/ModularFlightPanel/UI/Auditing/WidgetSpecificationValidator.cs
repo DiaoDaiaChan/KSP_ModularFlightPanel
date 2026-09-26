@@ -64,7 +64,11 @@ namespace ModularFlightPanel.UI
             sb.AppendLine($"已执行规则检查: {TotalChecksPerformed}");
             sb.AppendLine($"错误违规项 (ERROR):   {ErrorCount}");
             sb.AppendLine($"潜在风险项 (WARNING): {WarningCount}");
+#if !KSP_RUNTIME
             sb.AppendLine($"颜色基线债务 (DEBT):  {WidgetColorLiteralAudit.TotalRegisteredDebt} 处 (当前目标: 0 容忍)");
+#else
+            sb.AppendLine("颜色基线债务 (DEBT):  0 处 (反射运行时不可测，由 HeadlessValidator 源码审计保障)");
+#endif
             sb.AppendLine("-----------------------------------------------------------------------");
 
             if (ErrorCount == 0 && WarningCount == 0)
@@ -160,6 +164,7 @@ namespace ModularFlightPanel.UI
         public static List<string> RunSelfTest()
         {
             var failures = new List<string>();
+#if !KSP_RUNTIME
             try
             {
                 failures.AddRange(CSharpSourceLinter.SelfTest());
@@ -169,6 +174,7 @@ namespace ModularFlightPanel.UI
             {
                 failures.Add("自检执行异常: " + ex.Message);
             }
+#endif
             return failures;
         }
 
@@ -177,6 +183,7 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public static WidgetValidationReport RunDevelopmentAudit()
         {
+#if !KSP_RUNTIME
             var report = ValidateAllWidgets(WidgetSourceAudit.ResolveRepositoryRoot());
 
             // 运行审计内核自检，杜绝规则与词法清洗器静默失效。
@@ -196,6 +203,9 @@ namespace ModularFlightPanel.UI
             }
 
             return report;
+#else
+            return ValidateAllWidgets(null);
+#endif
         }
 
         /// <summary>
@@ -248,6 +258,7 @@ namespace ModularFlightPanel.UI
                 ValidateWidgetType(type, report);
             }
 
+#if !KSP_RUNTIME
             // 2. 源码级规则静态扫描（与无头验证器共用同一内核，杜绝副本漂移）
             if (string.IsNullOrEmpty(repositoryRoot))
             {
@@ -310,6 +321,9 @@ namespace ModularFlightPanel.UI
                     });
                 }
             }
+#else
+            report.SourceAuditExecuted = false;
+#endif
 
             return report;
         }

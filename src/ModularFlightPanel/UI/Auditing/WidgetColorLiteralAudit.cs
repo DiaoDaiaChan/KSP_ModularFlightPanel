@@ -1,75 +1,26 @@
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace ModularFlightPanel.UI
 {
+    using ModularFlightPanel.UI.Auditing;
+
     /// <summary>
-    /// MFP-SPEC-006 颜色字面量审计器 (Color Literal Auditor)
+    /// MFP-SPEC-006 颜色字面量审计器 (Color Literal Auditor - Roslyn AST 驱动)
     /// ====================================================================================
-    /// 本文件是【纯 C# / 不依赖 UnityEngine】的单一定义，被两处共同编译使用：
-    ///   1. 插件本体（UI/WidgetSpecificationValidator.cs 的游戏内规范审计）
-    ///   2. tools/HeadlessValidator（无头 CLI 的 [6/9] 规范审计，通过 &lt;Compile Include&gt; 直接编译本文件）
-    /// 因此规则与基线永远只有一份，不存在"两份正则各说各话"的漂移。
-    ///
-    /// 【判定语义】违规点 = 源码里出现下列任一"颜色值直写"写法（注释与字符串内容一律不参与判定）：
-    ///   · new Color(...) / new Color32(...) / UnityEngine.Color(...) 等带命名空间或别名的写法
-    ///   · Color.white|black|red|green|blue|yellow|cyan|magenta|gray|grey（静态调色板成员）
-    ///   · Color.HSVToRGB(...) —— 由裸数字直接生成颜色，是"硬编码调色板"的等效写法
-    ///   · ColorUtility.TryParseHtmlString("#RRGGBB") —— 十六进制字面量的入口
-    ///   · (Color)new Vector4(1,0,0,1) 这类强制转换构造
-    ///   · using static UnityEngine.Color; 之后的裸成员名（white / red / ...）
-    ///
-    /// 【明确豁免】只有两条，都是"语义上不构成调色板复制品"的写法：
-    ///   · Color.clear —— 表达"无颜色/占位透明"，不携带任何语义色
-    ///   · new Color[n] —— 纹理/像素缓冲的**数组分配**，不是颜色值（要求紧跟 `(` 才判定）
-    ///   注意 new Color(0f,0f,0f,0f) 不豁免：它是绕开 clear 语义的写法，仍按违规处理。
-    ///
-    /// 【有意不纳入】Color.Lerp(a, b, t) / Color32.Lerp —— 它的入参本身是颜色对象，
-    /// 插值运算不产生新字面量；若两个入参是硬编码字面量，那两处字面量自己就会被本规则拦下。
-    ///
-    /// 【计数单位 = 处，不是行】
-    ///   旧实现按"行"计数：同一行写两个颜色字面量只算 1，一旦某文件登记了基线，
-    ///   往"已计数行"上再挂一个字面量即可白嫖额度。现在按出现次数计数，基线语义同步收紧。
-    ///
-    /// 【零容忍 + 代码强制的棘轮】
-    ///   334 处历史颜色字面量已全部逐一语义化迁移完毕，BaselineTable 当前为空 —— 全部组件基线 0，
-    ///   没有任何豁免名单：新建组件、范式模板、任何既有组件出现颜色字面量都是 ERROR。
-    ///   "基线只允许下降"过去只是注释里的口头约定，现在由 RatchetCeilingTable + ValidateRatchet()
-    ///   用代码强制：任何未登记上限的基线、或超过上限的基线，都会直接让审计内核自检失败。
-    ///
-    ///   迁移不是"把数字搬进 WidgetStyleManager"，而是语义化 ——
-    ///     · 面板/行/单元格/磁贴/LED 底色 -> SurfaceStyleRole
-    ///     · 状态徽标底/状态面板底        -> StatusSurfaceRole
-    ///     · 警告/危险/强调等前景色        -> TextStyleRole
-    ///     · 描边/刻度的透明度              -> LineWeight 视觉权重档位
-    ///     · 剪影/遮罩贴图与图标直通        -> NeutralOpaque（亮度通道，非调色板颜色）
+    /// 基于微软官方 Roslyn 抽象语法树构建的工业级颜色字面量审计器。
+    /// 彻底消除基于文本正则与字符清洗的脆弱性（天然免受注释、字符串字面量、内插洞或命名混淆干扰）。
     /// </summary>
     public static class WidgetColorLiteralAudit
     {
-        /// <summary>
-        /// 颜色字面量匹配（Color.clear 与 new Color[n] 两条豁免）。
-        /// 同时覆盖简单名与全限定/别名前缀写法；using 别名（using C = UnityEngine.Color;）
-        /// 由 CSharpSourceLinter.SanitizeAndNormalize 在清洗阶段还原成 Color，因此不会成为绕过通道。
-        /// ColorBlock 之类以 Color 开头的其它类型不会误伤（要求紧跟括号或点号）。
-        /// </summary>
-        private static readonly Regex ColorLiteralRegex = new Regex(
-            @"\bnew\s+(?:[A-Za-z_]\w*\s*\.\s*)*Color(?:32)?\s*\("
-            + @"|\b(?:[A-Za-z_]\w*\s*\.\s*)*Color\s*\.\s*(?!clear\b)(?:white|black|red|green|blue|yellow|cyan|magenta|gray|grey)\b"
-            + @"|\b(?:[A-Za-z_]\w*\s*\.\s*)*Color\s*\.\s*(?:HSVToRGB|HSVToRGBA)\s*\("
-            + @"|\b(?:[A-Za-z_]\w*\s*\.\s*)*ColorUtility\s*\.\s*TryParseHtmlString\s*\("
-            + @"|\(\s*(?:[A-Za-z_]\w*\s*\.\s*)*Color(?:32)?\s*\)\s*new\s+(?:Vector4|Vector3)\s*\(",
-            RegexOptions.Compiled);
-
-        /// <summary>`using static UnityEngine.Color;` 会让裸成员名（white / red / ...）变成颜色字面量</summary>
-        private static readonly Regex StaticColorImportRegex = new Regex(
-            @"\busing\s+static\s+(?:[A-Za-z_]\w*\s*\.\s*)*Color(?:32)?\s*;",
-            RegexOptions.Compiled);
-
-        /// <summary>裸调色板成员名（仅在存在 using static ...Color 时才启用，避免与普通变量名冲突）</summary>
-        private static readonly Regex BareColorMemberRegex = new Regex(
-            @"\b(?:white|black|red|green|blue|yellow|cyan|magenta|gray|grey)\b",
-            RegexOptions.Compiled);
+        private static readonly HashSet<string> BannedPaletteMembers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "white", "black", "red", "green", "blue", "yellow", "cyan", "magenta", "gray", "grey"
+        };
 
         /// <summary>
         /// 颜色字面量存量基线：文件名 -> 允许的违规**处数**上限。
@@ -83,15 +34,12 @@ namespace ModularFlightPanel.UI
 
         /// <summary>
         /// 棘轮上限（冻结值）：基线永远不得高于此表。此表为空 = 任何文件都不允许登记基线。
-        /// 这样"临时欠账"依然保留为一条可行的逃生通道，但它必须同时改两张表、
-        /// 在 diff 里留下显式痕迹，而不会再出现"悄悄把数字调大"的静默放水。
         /// </summary>
         private static readonly Dictionary<string, int> RatchetCeilingTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             // 结构保留、内容为空：登记新欠账时必须同时写入本表，并由 ValidateRatchet() 校验。
         };
 
-        /// <summary>全部已登记文件的存量欠账处数合计（诊断与报表用）</summary>
         public static int TotalRegisteredDebt
         {
             get
@@ -102,23 +50,18 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        /// <summary>某文件的允许上限（未登记 = 0，即零容忍）</summary>
-        public static int GetAllowedLines(string fileName)
+        /// <summary>该文件允许的颜色字面量**处数**上限（SPEC-006 判定口径是"处数"而非行数）</summary>
+        public static int GetAllowedOccurrences(string fileName)
         {
             if (string.IsNullOrEmpty(fileName)) return 0;
             return BaselineTable.TryGetValue(fileName, out int allowed) ? allowed : 0;
         }
 
-        /// <summary>该文件是否被登记为"存量欠账"（用于报表区分 ERROR 与 WARNING）</summary>
         public static bool IsRegistered(string fileName)
         {
             return !string.IsNullOrEmpty(fileName) && BaselineTable.ContainsKey(fileName);
         }
 
-        /// <summary>
-        /// 棘轮校验（无头验证器的常驻自检项，由 WidgetSourceAudit.SelfTest 调用）。
-        /// 返回失败描述列表，空列表 = 棘轮未被破坏。
-        /// </summary>
         public static List<string> ValidateRatchet()
         {
             var failures = new List<string>();
@@ -149,78 +92,269 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
-        /// 统计源码中的颜色字面量**处数**（注释与字符串内容已由共享词法器剥离，using 别名已归一化）。
+        /// 统计源码中的颜色字面量**处数** (基于 Roslyn AST 节点访问)。
         /// SPEC-006 的唯一计数入口。
         /// </summary>
         public static int CountOccurrences(string sourceText)
         {
-            if (string.IsNullOrEmpty(sourceText)) return 0;
-
-            string code = CSharpSourceLinter.SanitizeAndNormalize(sourceText);
-            int count = ColorLiteralRegex.Matches(code).Count;
-
-            // 只有在文件真的 using static 了 Color 时，裸成员名才当作颜色字面量
-            if (StaticColorImportRegex.IsMatch(code))
-            {
-                count += BareColorMemberRegex.Matches(code).Count;
-            }
-            return count;
+            if (string.IsNullOrWhiteSpace(sourceText)) return 0;
+            var walker = new ColorLiteralAstWalker();
+            walker.Visit(RoslynAstHelper.ParseRoot(sourceText));
+            return walker.Violations.Count;
         }
 
         /// <summary>
-        /// 兼容入口：按"行"统计颜色字面量（历史报表口径）。
-        /// SPEC-006 已改用 CountOccurrences，行口径不再参与门禁判定。
+        /// 兼容入口：按行统计（历史口径）
         /// </summary>
         public static int CountLines(string sourceText)
         {
-            if (string.IsNullOrEmpty(sourceText)) return 0;
-
-            int count = 0;
-            string[] lines = CSharpSourceLinter.SanitizeAndNormalizeLines(sourceText);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                if (ColorLiteralRegex.IsMatch(lines[i])) count++;
-            }
-            return count;
+            if (string.IsNullOrWhiteSpace(sourceText)) return 0;
+            var walker = new ColorLiteralAstWalker();
+            walker.Visit(RoslynAstHelper.ParseRoot(sourceText));
+            return walker.Violations.Select(v => v.Line).Distinct().Count();
         }
 
-        /// <summary>列出违规点（形如 "L123: xxx"，最多 limit 条，用于审计报告定位）</summary>
+        /// <summary>
+        /// 列出违规点（形如 "L123: xxx"，最多 limit 条，用于审计报告定位）
+        /// </summary>
         public static List<string> CollectOffendingLines(string sourceText, int limit = 8)
         {
-            var result = new List<string>();
-            if (string.IsNullOrEmpty(sourceText)) return result;
+            if (string.IsNullOrWhiteSpace(sourceText)) return new List<string>();
+            var walker = new ColorLiteralAstWalker();
+            walker.Visit(RoslynAstHelper.ParseRoot(sourceText));
+            return walker.Violations
+                .Take(limit)
+                .Select(v => $"L{v.Line}: {v.Snippet}")
+                .ToList();
+        }
 
-            string code = CSharpSourceLinter.SanitizeAndNormalize(sourceText);
-            foreach (Match m in ColorLiteralRegex.Matches(code))
-            {
-                if (result.Count >= limit) break;
-                result.Add("L" + LineOf(code, m.Index) + ": " + Flatten(m.Value));
-            }
+        public class ColorViolationInfo
+        {
+            public int Line;
+            public string Snippet;
+        }
 
-            if (result.Count < limit && StaticColorImportRegex.IsMatch(code))
+        /// <summary>
+        /// 语法树遍历器：遍历所有可能产生颜色字面量的语法节点
+        /// </summary>
+        private class ColorLiteralAstWalker : CSharpSyntaxWalker
+        {
+            public List<ColorViolationInfo> Violations { get; } = new List<ColorViolationInfo>();
+            private bool _hasStaticColorImport = false;
+            private readonly HashSet<string> _colorAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            public override void VisitUsingDirective(UsingDirectiveSyntax node)
             {
-                foreach (Match m in BareColorMemberRegex.Matches(code))
+                // 检查 using static UnityEngine.Color / using static Color
+                if (node.StaticKeyword.IsKind(SyntaxKind.StaticKeyword))
                 {
-                    if (result.Count >= limit) break;
-                    result.Add("L" + LineOf(code, m.Index) + ": " + Flatten(m.Value) + " (using static Color)");
+                    string name = node.Name.ToString().Split('.').Last();
+                    if (name == "Color" || name == "Color32")
+                    {
+                        _hasStaticColorImport = true;
+                    }
                 }
+                // 检查 using C = UnityEngine.Color 别名
+                else if (node.Alias != null)
+                {
+                    string target = node.Name.ToString().Split('.').Last();
+                    if (target == "Color" || target == "Color32")
+                    {
+                        _colorAliases.Add(node.Alias.Name.Identifier.Text);
+                    }
+                }
+
+                base.VisitUsingDirective(node);
             }
 
-            return result;
+            public override void VisitObjectCreationExpression(ObjectCreationExpressionSyntax node)
+            {
+                string typeName = RoslynAstHelper.GetSimpleTypeName(node.Type);
+                if (typeName == "Color" || typeName == "Color32" || _colorAliases.Contains(typeName))
+                {
+                    // new Color(...) / new Color32(...) - 数组分配 new Color[n] 是 ArrayCreationExpression，天然免除
+                    Violations.Add(new ColorViolationInfo
+                    {
+                        Line = RoslynAstHelper.GetLine(node),
+                        Snippet = Flatten(node.ToString())
+                    });
+                }
+
+                base.VisitObjectCreationExpression(node);
+            }
+
+            public override void VisitMemberAccessExpression(MemberAccessExpressionSyntax node)
+            {
+                string exprStr = node.Expression.ToString().Split('.').Last();
+                bool isColorType = exprStr == "Color" || exprStr == "Color32" || _colorAliases.Contains(exprStr);
+
+                if (isColorType)
+                {
+                    string memberName = node.Name.Identifier.Text;
+
+                    // Color.clear 是明确合法豁免的占位透明色
+                    if (string.Equals(memberName, "clear", StringComparison.OrdinalIgnoreCase))
+                    {
+                        base.VisitMemberAccessExpression(node);
+                        return;
+                    }
+
+                    // 静态调色板成员或由参数生成颜色的方法
+                    if (BannedPaletteMembers.Contains(memberName) ||
+                        string.Equals(memberName, "HSVToRGB", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(memberName, "HSVToRGBA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Violations.Add(new ColorViolationInfo
+                        {
+                            Line = RoslynAstHelper.GetLine(node),
+                            Snippet = Flatten(node.ToString())
+                        });
+                    }
+                }
+                else if (exprStr == "ColorUtility" && node.Name.Identifier.Text == "TryParseHtmlString")
+                {
+                    Violations.Add(new ColorViolationInfo
+                    {
+                        Line = RoslynAstHelper.GetLine(node),
+                        Snippet = Flatten(node.ToString())
+                    });
+                }
+
+                base.VisitMemberAccessExpression(node);
+            }
+
+            public override void VisitCastExpression(CastExpressionSyntax node)
+            {
+                string targetType = RoslynAstHelper.GetSimpleTypeName(node.Type);
+                if ((targetType == "Color" || targetType == "Color32" || _colorAliases.Contains(targetType))
+                    && ProducesColorFromLiteral(node.Expression))
+                {
+                    // 旧实现只识别 (Color)new Vector4(...)：于是 (Color32)0xFFFFFF 这类"字面量直转颜色"整类漏检。
+                    // 现在的判定口径是"操作数子树里存在数值字面量或颜色/向量构造"——即颜色值确实来自代码字面量。
+                    Violations.Add(new ColorViolationInfo
+                    {
+                        Line = RoslynAstHelper.GetLine(node),
+                        Snippet = Flatten(node.ToString())
+                    });
+                }
+
+                base.VisitCastExpression(node);
+            }
+
+            /// <summary>
+            /// 操作数是否由字面量/构造直接产生颜色值。
+            /// 纯变量转换（如 (Color)theme.PrimaryColor）不属于颜色字面量，不计数。
+            /// </summary>
+            private static bool ProducesColorFromLiteral(ExpressionSyntax expression)
+            {
+                if (expression == null) return false;
+
+                foreach (var node in expression.DescendantNodesAndSelf())
+                {
+                    if (node is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.NumericLiteralExpression))
+                    {
+                        return true;
+                    }
+                    if (node is ObjectCreationExpressionSyntax creation)
+                    {
+                        string created = RoslynAstHelper.GetSimpleTypeName(creation.Type);
+                        if (created == "Color" || created == "Color32" ||
+                            created == "Vector2" || created == "Vector3" || created == "Vector4")
+                        {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            public override void VisitIdentifierName(IdentifierNameSyntax node)
+            {
+                // 若存在 using static Color; 则直接引用的裸静态调色板成员也是违规
+                if (_hasStaticColorImport)
+                {
+                    string id = node.Identifier.Text;
+                    if (BannedPaletteMembers.Contains(id))
+                    {
+                        // 确保不是作为 MemberAccess 的右侧（已经在 VisitMemberAccessExpression 统计过）
+                        if (!(node.Parent is MemberAccessExpressionSyntax ma && ma.Name == node))
+                        {
+                            Violations.Add(new ColorViolationInfo
+                            {
+                                Line = RoslynAstHelper.GetLine(node),
+                                Snippet = Flatten(node.ToString()) + " (using static Color)"
+                            });
+                        }
+                    }
+                }
+
+                base.VisitIdentifierName(node);
+            }
+
+            private static string Flatten(string s)
+            {
+                if (string.IsNullOrEmpty(s)) return string.Empty;
+                return s.Replace("\r", " ").Replace("\n", " ").Trim();
+            }
         }
 
-        private static int LineOf(string code, int index)
-        {
-            int line = 1;
-            for (int i = 0; i < index && i < code.Length; i++)
-                if (code[i] == '\n') line++;
-            return line;
-        }
+        /// <summary>最近一次 SelfTest 实际执行的用例数（供门禁打印真实条数，避免写死数字漂移）</summary>
+        public static int LastSelfTestCaseCount { get; private set; }
 
-        private static string Flatten(string s)
+        /// <summary>
+        /// SPEC-006 计数器的正反用例自检（含棘轮完整性校验）。
+        /// 本计数器是 SPEC-006 的唯一判定入口，因此其边界行为必须自证。
+        /// </summary>
+        public static List<string> SelfTest()
         {
-            if (string.IsNullOrEmpty(s)) return string.Empty;
-            return s.Replace("\r", " ").Replace("\n", " ").Trim();
+            var failures = new List<string>();
+            int cases = 0;
+
+            Action<string, int> expectCount = (snippet, expected) =>
+            {
+                cases++;
+                int actual = CountOccurrences(snippet);
+                if (actual != expected)
+                {
+                    failures.Add($"SPEC-006 计数不符（期望 {expected} 处，实测 {actual} 处）: {snippet.Replace("\n", "\\n")}");
+                }
+            };
+
+            // ── 基础口径：注释 / 字符串 / 数组分配不计数 ──
+            expectCount("// new Color(1f,0f,0f,1f)\n", 0);
+            expectCount("string s = \"new Color(1f,0f,0f,1f)\";\n", 0);
+            expectCount("var c = new Color(1f, 0f, 0f, 1f);\n", 1);
+            expectCount("var c = Color.clear;\n", 0);
+            expectCount("Color[] a = new Color[16];\n", 0);
+            expectCount("var c = $\"{new Color(1f,0f,0f,1f)}\";\n", 1);
+            expectCount("var a = new Color(1,0,0,1); var b = new Color(0,1,0,1);\n", 2);
+
+            // ── 由参数生成颜色 / 字符串解析 / 具名调色板 ──
+            expectCount("var c = Color.HSVToRGB(1f,1f,1f);\n", 1);
+            expectCount("ColorUtility.TryParseHtmlString(\"#F00\", out var c);\n", 1);
+            expectCount("var c = Color.gray;\n", 1);
+            expectCount("var c = Color.Lerp(a, b, 0.5f);\n", 0);
+
+            // ── 命名混淆：using 别名与 using static ──
+            expectCount("using C = UnityEngine.Color;\nvar c = C.red;\n", 1);
+            expectCount("using C = UnityEngine.Color;\nvar c = (C)0xFF0000;\n", 1);
+            expectCount("using static UnityEngine.Color;\nvar c = white;\n", 1);
+
+            // ── 强转家族：字面量直转必须拦下，纯变量转换不算字面量 ──
+            expectCount("var c = (Color)new Vector4(1f,0f,0f,1f);\n", 1);
+            expectCount("var c = (Color32)0xFFFFFF;\n", 1);
+            expectCount("var c = (Color)(new Color32(255,0,0,255));\n", 1);
+            expectCount("var c = (Color)v4;\n", 0);
+
+            var ratchetFailures = ValidateRatchet();
+            for (int i = 0; i < ratchetFailures.Count; i++)
+            {
+                cases++;
+                failures.Add("SPEC-006 棘轮被破坏: " + ratchetFailures[i]);
+            }
+
+            LastSelfTestCaseCount = cases;
+            return failures;
         }
     }
 }

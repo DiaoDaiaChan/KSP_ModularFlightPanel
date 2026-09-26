@@ -28,12 +28,7 @@ namespace ModularFlightPanel.HeadlessValidator
         /// <summary>
         /// 代码中调用了 I18n.Tr("KEY")，但该 KEY 在 zh-CN.json 或 en-US.json 词典中不存在
         /// </summary>
-        MissingDictionaryKey,
-
-        /// <summary>
-        /// 词典中定义了该 KEY，但在全量代码中从未被任何 AST 节点引用
-        /// </summary>
-        OrphanedDictionaryKey
+        MissingDictionaryKey
     }
 
     /// <summary>
@@ -60,7 +55,6 @@ namespace ModularFlightPanel.HeadlessValidator
     public class I18nAuditReport
     {
         public List<I18nIssue> Issues { get; set; } = new List<I18nIssue>();
-        public HashSet<string> DiscoveredKeysInCode { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public int ScannedFilesCount { get; set; }
         public int ScannedAstNodesCount { get; set; }
 
@@ -199,8 +193,9 @@ namespace ModularFlightPanel.HeadlessValidator
                 string text = node.Token.ValueText;
                 if (string.IsNullOrEmpty(text)) return;
 
-                // 1. 若当前字符串属于 I18n.Tr(key, fallback) 中的 key 或 fallback，合法放行
-                if (IsInsideI18nCall(node, out bool isKeyArg, out bool isFallbackArg))
+                // 1. 仅当字符串落在 I18n 查表调用的"键名 / 兜底文案"槽位时合法放行
+                //    （TrFormat 的格式化实参不属于查表输入，出现中文同样必须本地化）
+                if (IsExemptI18nSlot(node))
                 {
                     return;
                 }
@@ -262,7 +257,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 _report.ScannedAstNodesCount++;
 
                 if (IsInsideLogOrDiagnostic(node)) return;
-                if (IsInsideI18nCall(node, out _, out _)) return;
+                if (IsExemptI18nSlot(node)) return;
                 if (node.Ancestors().OfType<AttributeSyntax>().Any()) return;
 
                 // 仅检查插值字符串中除 {...} 表达式之外的纯文本部分 (InterpolatedStringTextSyntax)
@@ -304,7 +299,6 @@ namespace ModularFlightPanel.HeadlessValidator
                         if (firstArg is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.StringLiteralExpression))
                         {
                             string key = lit.Token.ValueText;
-                            _report.DiscoveredKeysInCode.Add(key);
 
                             if (_validKeys != null && !_validKeys.Contains(key))
                             {

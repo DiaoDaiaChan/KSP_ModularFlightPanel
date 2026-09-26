@@ -155,10 +155,17 @@ namespace ModularFlightPanel.UI
             WidgetRenderManager.Instance.RegisterWidget(this, RefreshTier);
             IsManagedByRenderManager = true;
 
-            // 检查派生类是否重写了 Update()。若未重写，则关闭自身 MonoBehaviour.enabled，
-            // 避免 Unity 引擎每帧对 40+ 个组件无谓调用 Update() 消息（由 WidgetRenderManager 统一调度）
+            // 检查派生类是否显式重写了 Update() / LateUpdate() / FixedUpdate()。若均未重写，则关闭自身 MonoBehaviour.enabled，
+            // 避免 Unity 引擎每帧对无帧循环的组件产生无谓调度；同时保障重写了 LateUpdate() 的核心航电组件 (如姿态球) 正常触发
             var updateMethod = GetType().GetMethod("Update", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
-            if (updateMethod == null || updateMethod.DeclaringType == typeof(BaseFlightWidget))
+            var lateUpdateMethod = GetType().GetMethod("LateUpdate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            var fixedUpdateMethod = GetType().GetMethod("FixedUpdate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+
+            bool hasUnityLifecycle = (updateMethod != null && updateMethod.DeclaringType != typeof(BaseFlightWidget)) ||
+                                     (lateUpdateMethod != null && lateUpdateMethod.DeclaringType != typeof(BaseFlightWidget)) ||
+                                     (fixedUpdateMethod != null && fixedUpdateMethod.DeclaringType != typeof(BaseFlightWidget));
+
+            if (!hasUnityLifecycle)
             {
                 this.enabled = false;
             }

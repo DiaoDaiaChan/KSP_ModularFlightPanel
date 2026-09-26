@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace ModularFlightPanel.UI.Auditing
 {
@@ -23,7 +25,7 @@ namespace ModularFlightPanel.UI.Auditing
         Core3D,
 
         /// <summary>
-        /// 旧版过程式命令组装实现 (待标准化改造: 依赖 UIFactory 过程式布局 / 缺少 BaseSize)
+        /// 旧版过程式命令组装实现 (待标准化改造: 依赖 UIFactory 过程式布局 / 缺少 BaseSize / 运行时 CPU 软光栅)
         /// </summary>
         LegacyImperative
     }
@@ -77,17 +79,15 @@ namespace ModularFlightPanel.UI.Auditing
     }
 
     /// <summary>
-    /// 航电组件架构合规性与现代化改造审计内核 (Avionics Widget Modernization Auditor)
-    /// 核心功能：
-    /// 1. 自动扫描全量飞行仪表组件；
-    /// 2. 判定组件是否接入现代声明式微控件 DSL (BaseSize / AutoCreateCardFrame / Controls)；
-    /// 3. 精准列出仍使用旧版过程式命令拼装 (UIFactory) 的遗留组件清单及具体缺失项；
-    /// 4. 在编译期 (MSBuild Target) 与无头门禁中发出醒目提醒，指导开发者逐步完成标准化改造。
+    /// 航电组件架构合规性与现代化改造审计内核 (Avionics Widget Modernization Auditor - Roslyn AST 驱动)
     /// </summary>
     public static class WidgetModernizationAudit
     {
-        private static readonly Regex BaseSizeRegex = new Regex(@"override\s+Vector2\s+BaseSize", RegexOptions.Compiled);
-        private static readonly Regex ControlsDslRegex = new Regex(@"(TextWidget\.|LinearBarWidget\.|ToggleButtonWidget\.|ActionButtonWidget\.|Controls\.Add)", RegexOptions.Compiled);
+        private static readonly HashSet<string> MicroControlTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "TextWidget", "GaugeWidget", "LinearBarWidget", "TapeWidget",
+            "StateWidget", "IconWidget", "ToggleButtonWidget", "ActionButtonWidget"
+        };
 
         /// <summary>
         /// 执行全量组件现代化合规性扫描
@@ -128,16 +128,28 @@ namespace ModularFlightPanel.UI.Auditing
                     continue;
                 }
 
-                // 必须是具体的组件类定义
-                if (!rawText.Contains(": BaseFlightWidget") &&
-                    !rawText.Contains(": BaseNavballSphereWidget") &&
-                    !rawText.Contains(": BaseAvionicsWidget"))
+                CompilationUnitSyntax root = RoslynAstHelper.ParseRoot(rawText);
+
+                // 寻找派生自 BaseFlightWidget / BaseAvionicsWidget / BaseNavballSphereWidget 的类
+                var classDecls = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
+                ClassDeclarationSyntax widgetClass = null;
+
+                foreach (var cd in classDecls)
                 {
-                    continue;
+                    var baseTypes = RoslynAstHelper.GetBaseTypeNames(cd);
+                    if (baseTypes.Contains("BaseFlightWidget") ||
+                        baseTypes.Contains("BaseAvionicsWidget") ||
+                        baseTypes.Contains("BaseNavballSphereWidget"))
+                    {
+                        widgetClass = cd;
+                        break;
+                    }
                 }
 
-                string cleanText = CSharpSourceLinter.Sanitize(rawText);
-                string widgetName = Path.GetFileNameWithoutExtension(filePath);
+                if (widgetClass == null) continue;
+
+                string widgetName = widgetClass.Identifier.Text;
+                var baseTypeNames = RoslynAstHelper.GetBaseTypeNames(widgetClass);
 
                 var item = new WidgetModernizationItem
                 {
@@ -146,16 +158,89 @@ namespace ModularFlightPanel.UI.Auditing
                     FilePath = filePath
                 };
 
-                // 核心特征侦测
-                item.HasBaseSize = BaseSizeRegex.IsMatch(cleanText);
-                item.HasAutoCardFrame = cleanText.Contains("AutoCreateCardFrame");
-                item.UsesMicroControlsDsl = ControlsDslRegex.IsMatch(cleanText);
-                item.UsesImperativeUiFactory = cleanText.Contains("UIFactory.");
-                bool isCore3D = cleanText.Contains("BaseNavballSphereWidget");
+                bool isCore3D = baseTypeNames.Contains("BaseNavballSphereWidget") ||
+                                widgetName.Contains("NavballSphereWidget");
 
+                // ── 语法树 AST 深度特征检测 ──
+                // 1. BaseSize 属性重写检测
+                var baseSizeProp = widgetClass.Members.OfType<PropertyDeclarationSyntax>()
+                    .FirstOrDefault(p => p.Identifier.Text == "BaseSize" && RoslynAstHelper.HasModifier(p, SyntaxKind.OverrideKeyword));
+                item.HasBaseSize = baseSizeProp != null;
+
+                // 2. AutoCreateCardFrame 属性重写检测
+                var cardFrameProp = widgetClass.Members.OfType<PropertyDeclarationSyntax>()
+                    .FirstOrDefault(p => p.Identifier.Text == "AutoCreateCardFrame");
+                item.HasAutoCardFrame = cardFrameProp != null;
+
+                // 3. 微控件 DSL 字段与声明检测
+                int microControlFields = 0;
+                foreach (var field in widgetClass.Members.OfType<FieldDeclarationSyntax>())
+                {
+                    string typeName = RoslynAstHelper.GetSimpleTypeName(field.Declaration.Type);
+                    if (MicroControlTypes.Contains(typeName)) microControlFields++;
+                }
+                foreach (var prop in widgetClass.Members.OfType<PropertyDeclarationSyntax>())
+                {
+                    string typeName = RoslynAstHelper.GetSimpleTypeName(prop.Type);
+                    if (MicroControlTypes.Contains(typeName)) microControlFields++;
+                }
+
+                // 也检测方法体中是否调用了 Controls.Add / TextWidget.* / LinearBarWidget.*
+                bool hasControlsInvocation = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Any(inv =>
+                    {
+                        string expr = inv.Expression.ToString();
+                        return expr.StartsWith("Controls.Add", StringComparison.Ordinal) ||
+                               expr.StartsWith("TextWidget.", StringComparison.Ordinal) ||
+                               expr.StartsWith("LinearBarWidget.", StringComparison.Ordinal);
+                    });
+
+                item.UsesMicroControlsDsl = microControlFields > 0 || hasControlsInvocation;
+
+                // 4. 命令式 UIFactory 调用检测
+                int uiFactoryCalls = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Count(inv => inv.Expression.ToString().StartsWith("UIFactory.", StringComparison.Ordinal));
+                item.UsesImperativeUiFactory = uiFactoryCalls > 0;
+
+                // 5. 运行时 CPU 像素级软光栅化反模式侦测 (SetPixels32 / _texPixels 动态贴图)
+                bool hasCpuRasterizer = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Any(inv => inv.Expression.ToString().EndsWith(".SetPixels32", StringComparison.Ordinal)) ||
+                    widgetClass.Members.OfType<FieldDeclarationSyntax>()
+                    .Any(f => f.Declaration.Variables.Any(v => v.Identifier.Text == "_texPixels"));
+
+                // 6. 刷新率阶梯滥用侦测 (非姿态类组件虚标 Critical 满帧，违反 SPEC-002)
+                var tierProp = widgetClass.Members.OfType<PropertyDeclarationSyntax>()
+                    .FirstOrDefault(p => p.Identifier.Text == "RefreshTier");
+                bool isCritical = tierProp != null && tierProp.ToString().Contains("Critical");
+
+                bool isAttitudeWidget = isCore3D ||
+                    widgetName.Contains("Attitude") ||
+                    widgetName.Contains("Navball") ||
+                    widgetName.Contains("HeadingArc") ||
+                    widgetName.Contains("StageControl") ||
+                    widgetName.Contains("DockingReticle") ||
+                    widgetName.Contains("ArcMeter");
+
+                bool abusesCriticalTier = isCritical && !isAttitudeWidget;
+
+                // ── 综合现代化架构分类判定 ──
                 if (isCore3D)
                 {
                     item.Status = WidgetModernizationStatus.Core3D;
+                }
+                else if (hasCpuRasterizer)
+                {
+                    // 命中 CPU 纯软光栅反模式，坚决不能判为已标准化
+                    item.Status = WidgetModernizationStatus.LegacyImperative;
+                    item.MissingModernFeatures.Add("Contains unstandardized CPU software rasterizer (SetPixels32/_texPixels; must migrate to GPU procedural mesh or Core3D)");
+                    if (abusesCriticalTier)
+                    {
+                        item.MissingModernFeatures.Add("RefreshTier.Critical is invalid for non-attitude widget (violates SPEC-002; must use Standard/Relaxed)");
+                    }
+                    if (item.UsesImperativeUiFactory)
+                    {
+                        item.MissingModernFeatures.Add("Incomplete DSL modernization (imperative UIFactory readouts remain unstandardized)");
+                    }
                 }
                 else if (item.HasBaseSize && (item.UsesMicroControlsDsl || item.HasAutoCardFrame))
                 {
@@ -205,13 +290,10 @@ namespace ModularFlightPanel.UI.Auditing
         public static string GenerateMSBuildOutput(WidgetModernizationReport report)
         {
             var sb = new StringBuilder();
-            var legacyItems = report.LegacyWidgets.ToList();
-
             sb.AppendLine($"ModularFlightPanel.csproj : warning MFP_MODERNIZATION: [Avionics Modernization Audit] Standardized: {report.ModernCount}/{report.TotalCount} ({report.ModernizationPercentage:F1}%), Core3D: {report.Core3DCount}, Legacy to Modernize: {report.LegacyCount}");
 
-            for (int i = 0; i < legacyItems.Count; i++)
+            foreach (var item in report.LegacyWidgets)
             {
-                var item = legacyItems[i];
                 sb.AppendLine($"{item.FilePath}(1,1): warning MFP_LEGACY_WIDGET: [Legacy Widget / Needs Modernization] {item.WidgetName}: {item.GetMissingSummary()}");
             }
 
@@ -219,18 +301,18 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
-        /// 生成供终端控制台与报表展示的高清文本摘要
+        /// 生成终端人类可读的彩色/格式化审计汇总
         /// </summary>
         public static string GenerateTerminalSummary(WidgetModernizationReport report)
         {
             var sb = new StringBuilder();
             sb.AppendLine("=======================================================================");
-            sb.AppendLine("         MODULAR FLIGHT PANEL 组件架构合规性与现代化改造审计");
+            sb.AppendLine("         MODULAR FLIGHT PANEL 组件架构合规性与现代化改造审计 (Roslyn AST)");
             sb.AppendLine("=======================================================================");
             sb.AppendLine($"已审计组件总数: {report.TotalCount} 个");
-            sb.AppendLine($"现代微控件架构 (ModernDSL):   {report.ModernCount} 个 ({report.ModernCount * 100f / Math.Max(1, report.TotalCount):F1}%)");
+            sb.AppendLine($"现代微控件架构 (ModernDSL):   {report.ModernCount} 个 ({((float)report.ModernCount / Math.Max(1, report.TotalCount) * 100f):F1}%)");
             sb.AppendLine($"核心 3D 渲染引擎 (Core3D):    {report.Core3DCount} 个");
-            sb.AppendLine($"待改造旧版组件 (Legacy):     {report.LegacyCount} 个 ({report.LegacyCount * 100f / Math.Max(1, report.TotalCount):F1}%)");
+            sb.AppendLine($"待改造旧版组件 (Legacy):     {report.LegacyCount} 个 ({((float)report.LegacyCount / Math.Max(1, report.TotalCount) * 100f):F1}%)");
             sb.AppendLine($"整体现代化合规率:            {report.ModernizationPercentage:F1}%");
             sb.AppendLine("-----------------------------------------------------------------------");
 

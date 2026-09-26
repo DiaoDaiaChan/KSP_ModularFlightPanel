@@ -16,6 +16,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="UI\Auditing\RoslynAstHelper.cs" />
+    <Compile Remove="UI\Auditing\WidgetSourceAudit.cs" />
+    <Compile Remove="UI\Auditing\WidgetModernizationAudit.cs" />
+    <Compile Remove="UI\Auditing\WidgetColorLiteralAudit.cs" />
+    <Compile Remove="UI\Auditing\I18nSyntaxAuditor.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- KSP Core Assemblies -->
     <Reference Include="Assembly-CSharp">
       <HintPath>$(KSPRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll</HintPath>
