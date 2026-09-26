@@ -650,6 +650,67 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
+        /// 通用局部四元数旋转脏标记守卫：仅当旋转角度变化大于容差 (默认 0.05°) 时才写入 localRotation，
+        /// 彻底阻断微小浮点抖动引发的整颗 UGUI 树矩阵脏标记与 Canvas 重新布局
+        /// </summary>
+        public static bool SetLocalRotationIfChanged(Transform target, Quaternion newRotation, float angleTolerance = 0.05f)
+        {
+            if (target == null) return false;
+            if (Quaternion.Angle(target.localRotation, newRotation) <= angleTolerance) return false;
+            target.localRotation = newRotation;
+            return true;
+        }
+
+        /// <summary>
+        /// 通用局部欧拉角旋转脏标记守卫：仅当欧拉角变化大于容差时才写入 localEulerAngles
+        /// </summary>
+        public static bool SetLocalEulerAnglesIfChanged(Transform target, Vector3 newEuler, float angleTolerance = 0.05f)
+        {
+            if (target == null) return false;
+            Vector3 cur = target.localEulerAngles;
+            if (Mathf.Abs(Mathf.DeltaAngle(cur.x, newEuler.x)) <= angleTolerance &&
+                Mathf.Abs(Mathf.DeltaAngle(cur.y, newEuler.y)) <= angleTolerance &&
+                Mathf.Abs(Mathf.DeltaAngle(cur.z, newEuler.z)) <= angleTolerance)
+            {
+                return false;
+            }
+            target.localEulerAngles = newEuler;
+            return true;
+        }
+
+        /// <summary>
+        /// 通用 RectTransform 锚点坐标脏标记守卫：仅当位移变化大于容差 (默认 0.05 像素) 时才写入 anchoredPosition
+        /// </summary>
+        public static bool SetAnchoredPositionIfChanged(RectTransform target, Vector2 newPos, float distanceTolerance = 0.05f)
+        {
+            if (target == null) return false;
+            Vector2 cur = target.anchoredPosition;
+            if (Mathf.Abs(cur.x - newPos.x) <= distanceTolerance && Mathf.Abs(cur.y - newPos.y) <= distanceTolerance)
+            {
+                return false;
+            }
+            target.anchoredPosition = newPos;
+            return true;
+        }
+
+        /// <summary>
+        /// 通用局部缩放脏标记守卫：仅当缩放变化大于容差时才写入 localScale
+        /// </summary>
+        public static bool SetScaleIfChanged(Transform target, Vector3 newScale, float tolerance = 0.001f)
+        {
+            if (target == null) return false;
+            Vector3 cur = target.localScale;
+            if (Mathf.Abs(cur.x - newScale.x) <= tolerance &&
+                Mathf.Abs(cur.y - newScale.y) <= tolerance &&
+                Mathf.Abs(cur.z - newScale.z) <= tolerance)
+            {
+                return false;
+            }
+            target.localScale = newScale;
+            return true;
+        }
+
+        /// <summary>
         /// P1: 浮点数死区量化格式化（调用 CacheManager 统一中枢，避免每帧分配新 string 产生 GC 垃圾）
         /// </summary>
         public string FastFormat(string paramName, double value, string format = "F1", double tolerance = 0.05)
@@ -755,7 +816,7 @@ namespace ModularFlightPanel.UI
             {
                 if (x.HasValue || y.HasValue)
                 {
-                    RectTransform.anchoredPosition = new Vector2(Config?.PositionX ?? RectTransform.anchoredPosition.x, Config?.PositionY ?? RectTransform.anchoredPosition.y);
+                    SetAnchoredPositionIfChanged(RectTransform, new Vector2(Config?.PositionX ?? RectTransform.anchoredPosition.x, Config?.PositionY ?? RectTransform.anchoredPosition.y));
                 }
                 if (scale.HasValue || scaleX.HasValue || scaleY.HasValue)
                 {
@@ -785,7 +846,7 @@ namespace ModularFlightPanel.UI
                 if (rotation.HasValue)
                 {
                     float r = Config != null ? Config.Rotation : 0f;
-                    RectTransform.localEulerAngles = new Vector3(0f, 0f, r);
+                    SetLocalEulerAnglesIfChanged(RectTransform, new Vector3(0f, 0f, r));
                 }
             }
 

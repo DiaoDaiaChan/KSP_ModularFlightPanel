@@ -62,7 +62,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private bool _lastPrec = false;
         private string _lastModeStr = string.Empty;
         private string _lastPointing = string.Empty;
-        private bool _lastCommConnected = false;
+        private bool _lastSpxConn = false;
+        private bool _lastTdrsConn = false;
+        private bool _lastIssConn = false;
 
         // CustomTemplate 自定义通道
         private string _rcsLabel = "RCS";
@@ -274,15 +276,26 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 _pointingValue.text = pointing;
             }
 
-            // 6. 通信链路状态
-            bool conn = telemetry.IsConnected;
-            if (conn != _lastCommConnected)
+            // 6. 通信链路独立状态 (SPX地面站、TDRS中继、ISS空间站/目标近距遥测)
+            bool spxConn = telemetry.IsConnected;
+            if (spxConn != _lastSpxConn)
             {
-                _lastCommConnected = conn;
-                TextStyleRole role = conn ? TextStyleRole.Accent : TextStyleRole.Muted;
-                ApplyText(_commSpx, role, th);
-                ApplyText(_commTdrs, role, th);
-                ApplyText(_commIss, role, th);
+                _lastSpxConn = spxConn;
+                ApplyText(_commSpx, spxConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+            }
+
+            bool tdrsConn = telemetry.IsConnected && (telemetry.ActiveCommLinks != null && telemetry.ActiveCommLinks.Count > 1 || telemetry.AntennaCount > 1 || telemetry.SignalRx > 0.4);
+            if (tdrsConn != _lastTdrsConn)
+            {
+                _lastTdrsConn = tdrsConn;
+                ApplyText(_commTdrs, tdrsConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+            }
+
+            bool issConn = telemetry.HasTarget && telemetry.TargetDistance < 80000.0;
+            if (issConn != _lastIssConn)
+            {
+                _lastIssConn = issConn;
+                ApplyText(_commIss, issConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
         }
 
@@ -336,10 +349,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_pointingLabel != null) ApplyText(_pointingLabel, TextStyleRole.Label, theme);
             if (_pointingValue != null) ApplyText(_pointingValue, TextStyleRole.Accent, theme);
 
-            TextStyleRole commRole = _lastCommConnected ? TextStyleRole.Accent : TextStyleRole.Muted;
-            ApplyText(_commSpx, commRole, theme);
-            ApplyText(_commTdrs, commRole, theme);
-            ApplyText(_commIss, commRole, theme);
+            ApplyText(_commSpx, _lastSpxConn ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
+            ApplyText(_commTdrs, _lastTdrsConn ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
+            ApplyText(_commIss, _lastIssConn ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
         }
 
         protected override void OnDestroy()

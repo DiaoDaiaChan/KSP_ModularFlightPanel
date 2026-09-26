@@ -33,6 +33,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private readonly List<Image> _innerRingSegments = new List<Image>();
 
         // 十字准星与中心标
+        private RectTransform _crossRootRt;
         private Image _centerCrossH;
         private Image _centerCrossV;
         private Image _centerReticleRing;
@@ -201,6 +202,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             WidgetStyleManager style = WidgetStyleManager.Instance;
             GameObject crossRoot = new GameObject("CenterCrosshair", typeof(RectTransform));
             crossRoot.transform.SetParent(transform, false);
+            _crossRootRt = crossRoot.GetComponent<RectTransform>();
 
             Color lineCol = style.GetLineColor(LineWeight.Bold, theme);
 
@@ -303,31 +305,72 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !telemetry.HasVessel) return;
+            float s = CurrentDpiScale;
 
-            // 1. 三轴姿态读数
-            string rollStr = $"{telemetry.Roll:F1}°";
-            if (rollStr != _lastRoll && _rollValue != null)
+            // 1. 三轴姿态读数 (锁定目标时优先指示对齐偏差，未锁定时指示载具姿态)
+            if (telemetry.HasTarget)
             {
-                _lastRoll = rollStr;
-                _rollValue.text = rollStr;
+                string rollStr = $"{telemetry.TargetRollAlignment:+0.0;-0.0;0.0}°";
+                if (rollStr != _lastRoll && _rollValue != null)
+                {
+                    _lastRoll = rollStr;
+                    _rollValue.text = rollStr;
+                }
+
+                string pitchStr = $"{telemetry.TargetPitchAlignment:+0.0;-0.0;0.0}°";
+                if (pitchStr != _lastPitch && _pitchValue != null)
+                {
+                    _lastPitch = pitchStr;
+                    _pitchValue.text = pitchStr;
+                }
+
+                string yawStr = $"{telemetry.TargetYawAlignment:+0.0;-0.0;0.0}°";
+                if (yawStr != _lastYaw && _yawValue != null)
+                {
+                    _lastYaw = yawStr;
+                    _yawValue.text = yawStr;
+                }
+            }
+            else
+            {
+                string rollStr = $"{telemetry.Roll:F1}°";
+                if (rollStr != _lastRoll && _rollValue != null)
+                {
+                    _lastRoll = rollStr;
+                    _rollValue.text = rollStr;
+                }
+
+                string pitchStr = $"{telemetry.Pitch:F1}°";
+                if (pitchStr != _lastPitch && _pitchValue != null)
+                {
+                    _lastPitch = pitchStr;
+                    _pitchValue.text = pitchStr;
+                }
+
+                string yawStr = $"{telemetry.Heading:F1}°";
+                if (yawStr != _lastYaw && _yawValue != null)
+                {
+                    _lastYaw = yawStr;
+                    _yawValue.text = yawStr;
+                }
             }
 
-            string pitchStr = $"{telemetry.Pitch:F1}°";
-            if (pitchStr != _lastPitch && _pitchValue != null)
+            // 2. 距离与闭合速度 (有目标时取目标真值，无目标时安全回退)
+            string rangeStr;
+            if (telemetry.HasTarget)
             {
-                _lastPitch = pitchStr;
-                _pitchValue.text = pitchStr;
+                double dist = telemetry.TargetDistance;
+                rangeStr = dist >= 1000.0 ? $"{(dist * 0.001):F2} km" : $"{dist:F1} m";
             }
-
-            string yawStr = $"{telemetry.Heading:F1}°";
-            if (yawStr != _lastYaw && _yawValue != null)
+            else if (!string.IsNullOrEmpty(_rangeToken))
             {
-                _lastYaw = yawStr;
-                _yawValue.text = yawStr;
+                rangeStr = TelemetryTokenEngine.Evaluate(_rangeToken, telemetry);
             }
-
-            // 2. 距离与闭合速度
-            string rangeStr = TelemetryTokenEngine.Evaluate(_rangeToken, telemetry);
+            else
+            {
+                double alt = telemetry.AltitudeAGL;
+                rangeStr = alt >= 1000.0 ? $"{(alt * 0.001):F2} km" : $"{alt:F0} m";
+            }
             if (rangeStr != _lastRange && _rangeValue != null)
             {
                 _lastRange = rangeStr;
@@ -335,7 +378,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             string rateStr;
-            if (!string.IsNullOrEmpty(_rateToken))
+            if (telemetry.HasTarget)
+            {
+                float rate = telemetry.TargetClosingSpeed;
+                string sign = rate > 0.001f ? "+" : "";
+                rateStr = $"{sign}{rate:F2} m/s";
+            }
+            else if (!string.IsNullOrEmpty(_rateToken))
             {
                 rateStr = TelemetryTokenEngine.Evaluate(_rateToken, telemetry);
             }
@@ -350,25 +399,51 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 _rateValue.text = rateStr;
             }
 
-            // 3. XYZ 相对偏移 (支持模板)
-            float xOff = telemetry.Pitch * 0.2f;
-            float yOff = telemetry.Roll * 0.2f;
-            float zOff = (float)(telemetry.AltitudeAGL % 100.0);
-            string xyz = string.Format(_xyzTemplate, xOff, yOff, zOff);
-            if (xyz != _lastXyz && _xyzOffsets != null)
+            // 3. XYZ 相对空间偏差与准星平移导引
+            if (telemetry.HasTarget)
             {
-                _lastXyz = xyz;
-                _xyzOffsets.text = xyz;
+                float xOff = telemetry.TargetDeviationX;
+                float yOff = telemetry.TargetDeviationY;
+                float zOff = telemetry.TargetDeviationZ;
+                string xyz = string.Format(_xyzTemplate, xOff, yOff, zOff);
+                if (xyz != _lastXyz && _xyzOffsets != null)
+                {
+                    _lastXyz = xyz;
+                    _xyzOffsets.text = xyz;
+                }
+
+                // 物理准星动态指引：十字微标圈随 X / Y 偏差偏移 (最大偏转 38 逻辑像素)
+                if (_crossRootRt != null)
+                {
+                    float maxR = 38f * s;
+                    float ox = Mathf.Clamp(xOff * 2.5f * s, -maxR, maxR);
+                    float oy = Mathf.Clamp(yOff * 2.5f * s, -maxR, maxR);
+                    _crossRootRt.anchoredPosition = new Vector2(ox, oy);
+                }
+            }
+            else
+            {
+                string noTgt = "NO TARGET\nLOCKED";
+                if (noTgt != _lastXyz && _xyzOffsets != null)
+                {
+                    _lastXyz = noTgt;
+                    _xyzOffsets.text = noTgt;
+                }
+
+                if (_crossRootRt != null && _crossRootRt.anchoredPosition != Vector2.zero)
+                {
+                    _crossRootRt.anchoredPosition = Vector2.zero;
+                }
             }
 
-            // 4. RCS 喷管脉冲指示器
+            // 4. RCS 喷管脉冲指示器 (融合姿态回转与 X/Y 平移操纵)
             int tState = 0;
             if (telemetry.IsRCSEnabled)
             {
-                if (telemetry.PitchInput > 0.05f) tState |= 1;
-                if (telemetry.PitchInput < -0.05f) tState |= 2;
-                if (telemetry.YawInput < -0.05f || telemetry.RollInput < -0.05f) tState |= 4;
-                if (telemetry.YawInput > 0.05f || telemetry.RollInput > 0.05f) tState |= 8;
+                if (telemetry.PitchInput > 0.05f || telemetry.YInput > 0.05f) tState |= 1;
+                if (telemetry.PitchInput < -0.05f || telemetry.YInput < -0.05f) tState |= 2;
+                if (telemetry.YawInput < -0.05f || telemetry.RollInput < -0.05f || telemetry.XInput < -0.05f) tState |= 4;
+                if (telemetry.YawInput > 0.05f || telemetry.RollInput > 0.05f || telemetry.XInput > 0.05f) tState |= 8;
             }
 
             if (tState != _lastThrusterState)

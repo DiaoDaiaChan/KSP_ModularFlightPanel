@@ -154,6 +154,25 @@ namespace ModularFlightPanel.Core
         float RollTrim { get; }
         float YawTrim { get; }
 
+        // 三轴平移操纵量 (-1.0 ~ +1.0)
+        float XInput { get; }
+        float YInput { get; }
+        float ZInput { get; }
+
+        // 目标交会对接遥测
+        bool HasTarget { get; }
+        string TargetName { get; }
+        double TargetDistance { get; }
+        Vector3 TargetRelativePosition { get; }
+        Vector3 TargetRelativeVelocity { get; }
+        float TargetDeviationX { get; }
+        float TargetDeviationY { get; }
+        float TargetDeviationZ { get; }
+        float TargetClosingSpeed { get; }
+        float TargetPitchAlignment { get; }
+        float TargetRollAlignment { get; }
+        float TargetYawAlignment { get; }
+
         // 分级安全锁、模式与推进剂
         bool IsStageLocked { get; }
         bool IsPrecisionControl { get; }

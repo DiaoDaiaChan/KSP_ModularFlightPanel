@@ -330,7 +330,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 _peValue.text = peStr;
             }
 
-            // 6. 倾角 / 航向
+            // 6. 倾角 / 航向 (严格对应列标题 INCLINATION 真实天体轨道倾角)
             string incStr;
             if (!string.IsNullOrEmpty(_incToken))
             {
@@ -338,7 +338,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
             else
             {
-                incStr = $"{telemetry.Heading:F1}°";
+                incStr = $"{telemetry.Inclination:F2}°";
             }
             if (incStr != _lastInc && _incValue != null)
             {
@@ -349,17 +349,45 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         private static string InferFlightPhase(IFlightTelemetry t)
         {
-            if (t.CurrentSpeed < 1.0 && t.AltitudeASL < 150.0) return "PAD HOLD";
-            if (t.AtmosphericPressure > 0.001)
+            if (t.FlightSituation == "PRELAUNCH" || (t.CurrentSpeed < 1.0 && t.AltitudeASL < 150.0))
+                return "PAD HOLD";
+
+            if (t.FlightSituation == "SPLASHED")
+                return "SPLASHDOWN NOMINAL";
+
+            if (t.FlightSituation == "LANDED")
+                return "TOUCHDOWN NOMINAL";
+
+            if (t.IsTouchdownAlert)
+                return "TERMINAL DESCENT";
+
+            if (t.IsStageSeparating)
+                return "STAGE SEPARATION";
+
+            if (t.IsEngineIgniting)
+                return "IGNITION SEQUENCE";
+
+            if (t.IsDockingMode)
+                return t.HasTarget && t.TargetDistance < 50.0 ? "DOCKING FINAL" : "DOCKING APPROACH";
+
+            double atmDepth = t.HasAtmosphere ? t.AtmosphereDepth : 0.0;
+
+            if (t.HasAtmosphere && t.AltitudeASL < atmDepth)
             {
                 if (t.VerticalSpeed < -50.0) return "REENTRY ENTRY";
                 if (t.Mach >= 0.8 && t.Mach <= 1.3) return "TRANSONIC PASS";
                 if (t.VerticalSpeed > 10.0) return "ASCENT POWERED";
-                if (t.AltitudeAGL < 200.0 && t.VerticalSpeed < -2.0) return "CHUTE DESCENT";
+                if (t.AltitudeAGL < 400.0 && t.VerticalSpeed < -2.0) return "CHUTE DESCENT";
             }
-            if (t.Apoapsis > 70000.0 && t.Periapsis > 65000.0) return "ORBITAL COAST";
-            if (t.HasManeuverNode) return "APPROACH / BURN";
-            return "FREE FLIGHT";
+
+            if (t.Periapsis > atmDepth && t.Eccentricity < 1.0)
+            {
+                if (t.HasManeuverNode) return "APPROACH / BURN";
+                return "ORBITAL COAST";
+            }
+
+            if (t.HasManeuverNode) return "MANEUVER BURN";
+            return "SUBORBITAL FLIGHT";
         }
 
         private static string FormatSeconds(float sec)

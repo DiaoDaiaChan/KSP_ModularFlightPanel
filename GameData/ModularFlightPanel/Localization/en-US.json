@@ -470,6 +470,7 @@
     "PRESET_NAME_STARSHIP": "SpaceX Starship HUD",
     "PRESET_DESC_STARSHIP": "Minimalist Starship HUD: arched G-meter tape, docking crosshair, and panoramic attitude.",
     "PRESET_DESC_LOCAL": "Local Preset File ({0})",
+    "THEME_BOEING_787": "Boeing 787 Dreamliner",
     "THEME_MODERN_GLASS": "Modern Glass Cockpit",
     "THEME_CYBER_NEON": "Cyber Neon",
     "THEME_SPACEX_DRAGON": "SpaceX Crew Dragon",

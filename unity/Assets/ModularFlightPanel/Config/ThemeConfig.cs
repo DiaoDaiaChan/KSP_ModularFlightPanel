@@ -716,10 +716,50 @@ namespace ModularFlightPanel.Config
             };
         }
 
+        public static ThemeConfig CreateBoeing787()
+        {
+            return new ThemeConfig
+            {
+                ThemeId = "boeing_787",
+                DisplayName = I18n.Tr("THEME_BOEING_787", "波音 787 梦想客机航电"),
+                Style = NavballStyleType.Modern_Aero,
+                RenderMode = NavballRenderMode.ProceduralVector,
+                UiStyle = UiShaderStyle.Modern_Glass,
+                FontStyle = AvionicsFontStyle.ModernSmooth,
+                ShaderName = "ModularFlightPanel/NavballModern",
+                EnableHalftoneDither = false,
+                EnableScanlines = false,
+                UiDotSpacing = 1.3f,
+                UiScanlineStrength = 0.0f,
+                UiGlowStrength = 0.15f,
+                UiGhostColor = ColorHex.FromColor(new Color(0.02f, 0.03f, 0.04f, 0.20f)),
+                UiGlassChamfer = 0.0f,
+                UiGlassBorderWidth = 0.0f,
+                UiGlassGradientStrength = 0.03f,
+                SkyColor = ColorHex.FromColor(new Color(0.043f, 0.400f, 0.761f, 1.0f)),        // 波音经典航电湛蓝 (#0A66C2)
+                GroundColor = ColorHex.FromColor(new Color(0.471f, 0.267f, 0.082f, 1.0f)),     // 波音地平暖赭褐 (#784415)
+                HorizonLineColor = ColorHex.FromColor(new Color(1.0f, 1.0f, 1.0f, 1.0f)),       // 纯白高对比地平仪基准线
+                GridColor = ColorHex.FromColor(new Color(0.95f, 0.98f, 1.0f, 0.78f)),           // 纯白清晰俯仰标尺
+                RimGlowColor = ColorHex.FromColor(new Color(0.10f, 0.55f, 0.95f, 0.28f)),       // 姿态球边缘微蓝光晕
+                AccentPrimary = ColorHex.FromColor(new Color(0.0f, 0.898f, 0.322f, 1.0f)),      // 波音航电指示绿 (#00E552, 活化/正常/指令标)
+                AccentSecondary = ColorHex.FromColor(new Color(0.0f, 0.835f, 0.957f, 1.0f)),    // 波音航电青蓝 (#00D5F4, 系统标签与模式文案)
+                AccentMagenta = ColorHex.FromColor(new Color(0.961f, 0.161f, 0.678f, 1.0f)),    // 波音 FMC 目标品红 (#F529AD, 选定航向/速度/高度)
+                WarningColor = ColorHex.FromColor(new Color(1.0f, 0.627f, 0.0f, 1.0f)),         // 波音警示琥珀金 (#FFA000, 警戒限值与注意状态)
+                DangerColor = ColorHex.FromColor(new Color(1.0f, 0.180f, 0.180f, 1.0f)),         // 波音警戒超速/超温红线 (#FF2E2E)
+                FrameBgColor = ColorHex.FromColor(new Color(0.012f, 0.015f, 0.020f, 0.90f)),    // 梦想客机深邃纯黑晶液晶底板
+                FrameBorderColor = ColorHex.FromColor(new Color(0.55f, 0.65f, 0.75f, 0.38f)),    // 细腻钛灰仪表框架边框
+                InactiveMeterColor = ColorHex.FromColor(new Color(0.18f, 0.22f, 0.28f, 0.50f)),// 刻度标尺暗炭灰底轨
+                TextPrimaryColor = ColorHex.FromColor(new Color(0.98f, 0.99f, 1.0f, 1.0f)),     // 纯净高对比冷白读数大字
+                TextAccentColor = ColorHex.FromColor(new Color(0.0f, 0.835f, 0.957f, 1.0f)),    // 系统参数青蓝标识标签
+                TextInverseColor = ColorHex.FromColor(new Color(0.02f, 0.03f, 0.04f, 1.0f))     // 高光药丸反色黑字
+            };
+        }
+
         public static System.Collections.Generic.List<ThemeConfig> GetAllBuiltinThemes()
         {
             return new System.Collections.Generic.List<ThemeConfig>
             {
+                CreateBoeing787(),
                 CreateModernAero(),
                 CreateClassicAero(),
                 CreateSpaceXDragon(),

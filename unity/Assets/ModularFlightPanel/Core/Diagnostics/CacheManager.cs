@@ -323,8 +323,19 @@ namespace ModularFlightPanel.Core
             public float ClosingSpeed; // 接近速度
             public float DeviationX;    // 横向偏差
             public float DeviationY;    // 纵向偏差
-            public float RollAlignment; // 滚转对齐角 (度)
+            public float DeviationZ;    // 轴向距离/偏移
+            public float PitchAlignment;// 俯仰对齐角 (度, -180..+180)
+            public float RollAlignment; // 滚转对齐角 (度, -180..+180)
+            public float YawAlignment;  // 偏航对齐角 (度, -180..+180)
             public float SampleTimestamp;
+        }
+
+        private static float Wrap180(float angle)
+        {
+            angle %= 360f;
+            if (angle > 180f) return angle - 360f;
+            if (angle < -180f) return angle + 360f;
+            return angle;
         }
 
         private TargetKinematicState _cachedTargetState;
@@ -361,7 +372,12 @@ namespace ModularFlightPanel.Core
                 _cachedTargetState.ClosingSpeed = -Vector3.Dot(rawRelativeVel, rawRelativePos.normalized);
                 _cachedTargetState.DeviationX = rawRelativePos.x;
                 _cachedTargetState.DeviationY = rawRelativePos.y;
-                _cachedTargetState.RollAlignment = rawRelativeRot.eulerAngles.z;
+                _cachedTargetState.DeviationZ = rawRelativePos.z;
+
+                Vector3 euler = rawRelativeRot.eulerAngles;
+                _cachedTargetState.PitchAlignment = Wrap180(euler.x);
+                _cachedTargetState.YawAlignment = Wrap180(euler.y);
+                _cachedTargetState.RollAlignment = Wrap180(euler.z);
                 _cachedTargetState.SampleTimestamp = now;
                 return _cachedTargetState;
             }
@@ -371,6 +387,9 @@ namespace ModularFlightPanel.Core
             var result = _cachedTargetState;
             result.RelativePosition += result.RelativeVelocity * extrapolateDt;
             result.Distance = result.RelativePosition.magnitude;
+            result.DeviationX = result.RelativePosition.x;
+            result.DeviationY = result.RelativePosition.y;
+            result.DeviationZ = result.RelativePosition.z;
             return result;
         }
 

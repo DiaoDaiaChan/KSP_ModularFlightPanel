@@ -715,7 +715,7 @@ namespace ModularFlightPanel.UI.Framework
                 _lastValue = val;
                 float frac = Mathf.Clamp01((float)((val - MinValue) / (MaxValue - MinValue)));
                 float angle = Mathf.Lerp(StartAngle, EndAngle, frac);
-                PivotRt.localRotation = Quaternion.Euler(0f, 0f, angle);
+                BaseFlightWidget.SetLocalRotationIfChanged(PivotRt, Quaternion.Euler(0f, 0f, angle), 0.05f);
             }
         }
     }

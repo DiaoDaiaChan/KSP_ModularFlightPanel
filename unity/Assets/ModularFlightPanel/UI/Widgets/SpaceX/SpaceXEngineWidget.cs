@@ -334,11 +334,16 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 RebuildEngineLayout(totalEngines, s, theme);
             }
 
-            // 引擎点火逻辑：
-            // 当油门 > 0 且存在激活引擎时点亮
-            // 若 6 发构型且激活 5 发（截图像素级对照：第 6 发外圈下方真空猛禽关机）
-            bool isFiring = throttle > 0.005f && activeEngines > 0;
-            int litCount = isFiring ? Mathf.Min(activeEngines, _engineNodes.Count) : 0;
+            // 引擎点火逻辑 (严格关联油门、点火瞬态与燃料耗尽状态)
+            bool isIgniting = telemetry.IsEngineIgniting;
+            bool isFlameout = throttle > 0.05f && (activeEngines == 0 || telemetry.StagePropellantFraction <= 0.0001f);
+            bool isFiring = !isFlameout && (isIgniting || (throttle > 0.005f && activeEngines > 0));
+            int litCount = isFiring ? Mathf.Min(activeEngines > 0 ? activeEngines : totalEngines, _engineNodes.Count) : 0;
+
+            float throttleScale = Mathf.Lerp(0.5f, 1.0f, Mathf.Clamp01(throttle));
+            Color activeColor = isFlameout
+                ? WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Danger, theme)
+                : WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Primary, theme);
 
             for (int i = 0; i < _engineNodes.Count; i++)
             {
@@ -358,20 +363,44 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     {
                         node.CoreLight.gameObject.SetActive(shouldLight);
                     }
-                    if (node.BaseRing != null)
-                    {
-                        Color activeColor = WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Primary, theme);
-                        node.BaseRing.color = shouldLight
-                            ? activeColor
-                            : WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep);
-                    }
+                }
+
+                // 核心羽流光斑随油门动态平滑缩放
+                if (node.CoreLight != null && shouldLight)
+                {
+                    node.CoreLight.transform.localScale = new Vector3(throttleScale, throttleScale, 1f);
+                    node.CoreLight.color = activeColor;
+                }
+
+                if (node.BaseRing != null)
+                {
+                    node.BaseRing.color = shouldLight
+                        ? activeColor
+                        : WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep);
                 }
             }
 
             // 更新状态文案 (支持自定义与脏缓存)
             if (_statusText != null)
             {
-                string sStr = (throttle <= 0.005f) ? _cutoffLabel : string.Format(_activeTemplate, litCount, _engineNodes.Count);
+                string sStr;
+                if (isFlameout)
+                {
+                    sStr = "FLAMEOUT / DEPLETED";
+                }
+                else if (isIgniting)
+                {
+                    sStr = "IGNITION SEQUENCE";
+                }
+                else if (throttle <= 0.005f)
+                {
+                    sStr = _cutoffLabel;
+                }
+                else
+                {
+                    sStr = string.Format(_activeTemplate, litCount, _engineNodes.Count);
+                }
+
                 if (sStr != _lastStatusStr)
                 {
                     _lastStatusStr = sStr;

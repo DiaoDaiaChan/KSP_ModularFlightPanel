@@ -576,8 +576,9 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 3. 逆向求解正交视线与单位球相交：正面球体深度 Z
                 float z = sqrt(max(0.0, 1.0 - r2));
 
-                // 视线空间正面单位球面朝向观察者向量：X 取反匹配球体外观向右偏航，Y 上，Z 面向观察者 (+z)
-                float3 viewRay = float3(-coord.x, coord.y, z);
+                // 视线空间正面单位球面朝向原点向量：X 右 (+x)，Y 上 (+y)，面向观察者的正面半球满足 Z = -z
+                // 正交相机在 (0, 0, -D) 朝 +Z 看向原点，正面交点在视线空间的世界坐标严格为 (coord.x, coord.y, -z)
+                float3 viewRay = float3(coord.x, coord.y, -z);
 
                 // 4. 将视线空间坐标通过姿态逆旋转四元数变换，求得球体模型本地三维坐标 p！
                 float3 p = RotateByQuaternion(viewRay, _SphereInvRotation);
@@ -597,8 +598,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (head < 0.0) head += 6.28318530718;
 
                     // 原版 KSP 姿态球贴图坐标系校正：对齐地平线半球(天顶天底)与真航向
-                    float u = frac(0.5 - head * 0.159154943);
-                    float v = clamp(0.5 - pitch * 0.318309886, 0.001, 0.999);
+                    float u = frac(head * 0.159154943 + 0.5);
+                    float v = clamp(0.5 + pitch * 0.318309886, 0.001, 0.999);
 
                     float2 stockUV = float2(u, v) * _MainTex_ST.xy + _MainTex_ST.zw;
 

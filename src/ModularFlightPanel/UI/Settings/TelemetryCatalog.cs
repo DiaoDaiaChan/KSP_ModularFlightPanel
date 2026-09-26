@@ -79,8 +79,18 @@ namespace ModularFlightPanel.UI.Settings
             new TelemetryParam("{MN:TIME}", "🌌 轨道与机动", "到达机动节点时间", "距离计划机动节点的到达倒计时", "", 0, 3600, 1800, 300, true),
             new TelemetryParam("{MN:BURNTIME}", "🌌 轨道与机动", "预计变轨燃烧时长", "根据当前引擎推力推算之燃烧持续秒数", "", 0, 600, 300, 60, true),
             new TelemetryParam("{MN:TIMETOBURN}", "🌌 轨道与机动", "提前点火倒计时", "按50%燃烧时长提前启动引擎之倒计时时刻", "", 0, 3600, 1800, 60, true),
+            new TelemetryParam("{INC}", "🌌 轨道与机动", "轨道倾角 (Inc)", "航天器轨道平面相对于基准参考平面的夹角", "°", 0, 180, 90, 120, false, 5f),
 
-            // 5. 姿态与控制
+            // 5. 目标交会对接
+            new TelemetryParam("{TGT:DIST}", "🎯 目标交会对接", "目标距离 (智能单位)", "自动在 m / km 间切换的目标绝对间距", "m", 0, 50000, 2000, 500, true),
+            new TelemetryParam("{TGT:RATE}", "🎯 目标交会对接", "目标接近率 (Closing Rate)", "相对于锁定目标的接近速度(+接近/-远离)", "m/s", -20, 20, 5, 10, true, 1f),
+            new TelemetryParam("{TGT:X}", "🎯 目标交会对接", "目标横向偏差 (Dev X)", "沿对接口横向轴的线性横移偏离量", "m", -10, 10, 2, 5, false, 0.5f),
+            new TelemetryParam("{TGT:Y}", "🎯 目标交会对接", "目标纵向偏差 (Dev Y)", "沿对接口垂直轴的线性垂向偏离量", "m", -10, 10, 2, 5, false, 0.5f),
+            new TelemetryParam("{TGT:Z}", "🎯 目标交会对接", "目标轴向距离 (Dev Z)", "沿对接口前向轴的轴向接近间距", "m", 0, 100, 10, 2, false, 1f),
+            new TelemetryParam("{TGT:ROLL}", "🎯 目标交会对接", "对接口滚转对齐角", "对接口滚转相位角偏差 (-180°~+180°)", "°", -180, 180, 5, 10, false, 5f),
+            new TelemetryParam("{TGT:NAME}", "🎯 目标交会对接", "目标载具/对接口名称", "当前锁定的目标名称或空间站标识", "", 0, 0, 0, 0, false),
+
+            // 6. 姿态与控制
             new TelemetryParam("{HDG}", "🧭 姿态与控制", "航向角 (HDG)", "真北罗盘方位角 (000°~359°)", "°", 0, 360, 360, 360, false, 10f),
             new TelemetryParam("{PITCH}", "🧭 姿态与控制", "俯仰角 (Pitch)", "相对于当地水平面的俯仰倾角 (-90°~+90°)", "°", -90, 90, 45, 75, false, 10f),
             new TelemetryParam("{ROLL}", "🧭 姿态与控制", "滚转角 (Roll)", "载具绕纵轴旋转角 (-180°~+180°)", "°", -180, 180, 90, 120, false, 15f),

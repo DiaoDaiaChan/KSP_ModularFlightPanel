@@ -142,6 +142,44 @@ namespace ModularFlightPanel.Core
             try
             {
                 if (fromStage == toStage) return;
+                if (TelemetryHub.Instance != null && TelemetryHub.Instance.IsSimulationMode)
+                {
+                    TelemetryHub.Instance.SimulationEngine.MoveSimulatedStage(fromStage, toStage);
+                    return;
+                }
+
+                if (KSP.UI.Screens.StageManager.Instance != null)
+                {
+                    var mgr = KSP.UI.Screens.StageManager.Instance;
+                    var stages = mgr.Stages;
+                    if (stages != null)
+                    {
+                        KSP.UI.Screens.StageGroup srcGroup = null;
+                        KSP.UI.Screens.StageGroup dstGroup = null;
+                        for (int i = 0; i < stages.Count; i++)
+                        {
+                            var grp = stages[i];
+                            if (grp != null)
+                            {
+                                int idx = grp.inverseStageIndex >= 0 ? grp.inverseStageIndex : i;
+                                if (idx == fromStage || grp.defaultStage == fromStage) srcGroup = grp;
+                                if (idx == toStage || grp.defaultStage == toStage) dstGroup = grp;
+                            }
+                        }
+
+                        if (srcGroup != null && dstGroup != null)
+                        {
+                            mgr.RemoveStage(srcGroup);
+                            mgr.InsertStageAt(srcGroup, dstGroup.inverseStageIndex, dstGroup.transform.GetSiblingIndex());
+                            srcGroup.transform.localScale = Vector3.one;
+                            srcGroup.SetManualStageOffset();
+                            dstGroup.SetManualStageOffset();
+                            KSP.UI.Screens.StageManager.SetSeparationIndices();
+                            GameEvents.StageManager.OnGUIStageSequenceModified.Fire();
+                        }
+                    }
+                }
+
                 var parts = GetCurrentVesselParts();
                 if (parts != null)
                 {
@@ -163,11 +201,13 @@ namespace ModularFlightPanel.Core
                         }
                     }
                 }
+
                 if (KSP.UI.Screens.StageManager.Instance != null)
                 {
                     KSP.UI.Screens.StageManager.Instance.SortIcons(false);
                     KSP.UI.Screens.StageManager.Instance.UpdateStageGroups(false);
                 }
+                Debug.Log($"[ModularFlightPanel] Moved stage S{fromStage:00} -> S{toStage:00}");
             }
             catch (Exception ex)
             {

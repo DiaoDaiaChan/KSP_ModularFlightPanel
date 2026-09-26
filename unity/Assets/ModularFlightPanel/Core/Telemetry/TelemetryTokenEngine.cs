@@ -435,6 +435,18 @@ namespace ModularFlightPanel.Core
             RegisterNumericToken("TPE", (t, sub) => Math.Max(0.0, t.TimeToPe));
             RegisterStringToken("TPE", (t, sub, fmt) => FormatTime(Math.Max(0.0, t.TimeToPe)));
 
+            RegisterNumericToken("INC", (t, sub) => t.Inclination, "INCLINATION");
+            RegisterStringToken("INC", (t, sub, fmt) => FormatNumber(t.Inclination, fmt, "F2", "tok_inc") + "°", "INCLINATION");
+
+            RegisterNumericToken("ECC", (t, sub) => t.Eccentricity, "ECCENTRICITY");
+            RegisterStringToken("ECC", (t, sub, fmt) => FormatNumber(t.Eccentricity, fmt, "F3", "tok_ecc"), "ECCENTRICITY");
+
+            RegisterNumericToken("SMA", (t, sub) => t.SemiMajorAxis);
+            RegisterStringToken("SMA", (t, sub, fmt) => fmt == "DIST" ? FormatDistance(t.SemiMajorAxis) : FormatNumber(t.SemiMajorAxis, fmt, "N0", "tok_sma"));
+
+            RegisterNumericToken("PERIOD", (t, sub) => t.OrbitalPeriod);
+            RegisterStringToken("PERIOD", (t, sub, fmt) => FormatTime(t.OrbitalPeriod));
+
             // --- 电气与通信 ---
             RegisterNumericToken("EC", (t, sub) =>
             {
@@ -601,10 +613,59 @@ namespace ModularFlightPanel.Core
             RegisterStringToken("TRIM_ROLL", (t, sub, fmt) => FormatNumber(t.RollTrim * 100.0, fmt, "+0;-0;0") + "%");
             RegisterStringToken("TRIM_YAW", (t, sub, fmt) => FormatNumber(t.YawTrim * 100.0, fmt, "+0;-0;0") + "%");
 
+            RegisterNumericToken("CTRL_TRANSX", (t, sub) => t.XInput * 100.0);
+            RegisterNumericToken("CTRL_TRANSY", (t, sub) => t.YInput * 100.0);
+            RegisterNumericToken("CTRL_TRANSZ", (t, sub) => t.ZInput * 100.0);
+            RegisterStringToken("CTRL_TRANSX", (t, sub, fmt) => FormatNumber(t.XInput * 100.0, fmt, "+0;-0;0") + "%");
+            RegisterStringToken("CTRL_TRANSY", (t, sub, fmt) => FormatNumber(t.YInput * 100.0, fmt, "+0;-0;0") + "%");
+            RegisterStringToken("CTRL_TRANSZ", (t, sub, fmt) => FormatNumber(t.ZInput * 100.0, fmt, "+0;-0;0") + "%");
+
             RegisterStringToken("STAGE_LOCK", (t, sub, fmt) => t.IsStageLocked ? "LOCKED" : "ARMED");
             RegisterStringToken("CTRL_MODE", (t, sub, fmt) => t.IsDockingMode ? "DOCKING" : "STAGING");
             RegisterStringToken("CTRL_PREC", (t, sub, fmt) => t.IsPrecisionControl ? "PREC" : "NORM");
             RegisterStringToken("STAGE_PROP_NAME", (t, sub, fmt) => t.StagePropellantName);
+
+            // --- 目标交会与对接 (Target & Docking) ---
+            RegisterNumericToken("TGT", (t, sub) =>
+            {
+                if (sub == "DIST" || sub == "DISTANCE") return t.TargetDistance;
+                if (sub == "RATE" || sub == "CLOSING" || sub == "CLOSINGSPEED") return t.TargetClosingSpeed;
+                if (sub == "X" || sub == "DEVX") return t.TargetDeviationX;
+                if (sub == "Y" || sub == "DEVY") return t.TargetDeviationY;
+                if (sub == "Z" || sub == "DEVZ") return t.TargetDeviationZ;
+                if (sub == "PITCH" || sub == "PITCHERR") return t.TargetPitchAlignment;
+                if (sub == "ROLL" || sub == "ROLLERR") return t.TargetRollAlignment;
+                if (sub == "YAW" || sub == "YAWERR") return t.TargetYawAlignment;
+                if (sub == "HAS" || sub == "LOCKED") return t.HasTarget ? 1.0 : 0.0;
+                return t.TargetSpeed;
+            }, "TARGET");
+
+            RegisterStringToken("TGT", (t, sub, fmt) =>
+            {
+                if (sub == "NAME") return t.TargetName;
+                if (sub == "HAS" || sub == "LOCKED") return t.HasTarget ? "YES" : "NO";
+                if (sub == "STATUS") return t.HasTarget ? "LOCKED" : "NO TARGET";
+                if (!t.HasTarget && (sub == "DIST" || sub == "RATE" || sub == "X" || sub == "Y" || sub == "Z" || sub == "PITCH" || sub == "ROLL" || sub == "YAW")) return "---";
+
+                if (sub == "DIST" || sub == "DISTANCE")
+                {
+                    if (fmt == "RAW") return t.TargetDistance.ToString("F1");
+                    return FormatDistance(t.TargetDistance);
+                }
+                if (sub == "RATE" || sub == "CLOSING" || sub == "CLOSINGSPEED")
+                {
+                    string sign = t.TargetClosingSpeed > 0 ? "+" : "";
+                    return sign + FormatNumber(t.TargetClosingSpeed, fmt, "F2") + " m/s";
+                }
+                if (sub == "X" || sub == "DEVX") return FormatNumber(t.TargetDeviationX, fmt, "+0.0;-0.0;0.0") + "m";
+                if (sub == "Y" || sub == "DEVY") return FormatNumber(t.TargetDeviationY, fmt, "+0.0;-0.0;0.0") + "m";
+                if (sub == "Z" || sub == "DEVZ") return FormatNumber(t.TargetDeviationZ, fmt, "+0.0;-0.0;0.0") + "m";
+                if (sub == "PITCH" || sub == "PITCHERR") return FormatNumber(t.TargetPitchAlignment, fmt, "+0.0;-0.0;0.0") + "°";
+                if (sub == "ROLL" || sub == "ROLLERR") return FormatNumber(t.TargetRollAlignment, fmt, "+0.0;-0.0;0.0") + "°";
+                if (sub == "YAW" || sub == "YAWERR") return FormatNumber(t.TargetYawAlignment, fmt, "+0.0;-0.0;0.0") + "°";
+
+                return FormatNumber(t.TargetSpeed, fmt, "F1") + " m/s";
+            }, "TARGET");
 
             // --- 乘员与生命维持 ---
             RegisterNumericToken("CREW", (t, sub) =>

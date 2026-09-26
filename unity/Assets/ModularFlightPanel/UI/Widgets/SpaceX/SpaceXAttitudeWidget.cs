@@ -261,15 +261,23 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 _gimbalRingRt.anchoredPosition = new Vector2(0f, pitchFactor * 10f * s);
             }
 
-            // 2. 飞船剪影姿态联动：随罗盘航向旋转 (0° 指北 N, 90° 指东 E)，微量随俯仰透视平移
+            // 2. 飞船剪影姿态联动：中心剪影随纵滚俯仰透视平移
             if (_shipSilhouetteRt != null)
             {
-                _shipSilhouetteRt.localEulerAngles = new Vector3(0f, 0f, -heading);
+                _shipSilhouetteRt.localEulerAngles = new Vector3(0f, 0f, -roll);
                 float pitchFactor = Mathf.Clamp(pitch / 90f, -1f, 1f);
                 _shipSilhouetteRt.anchoredPosition = new Vector2(0f, pitchFactor * 5f * s);
             }
 
-            // 3. 底部文字简报 (支持自定义格式与脏缓存)
+            // 3. 罗盘真北微标：沿外圆周动态环绕旋转指向真实北方
+            if (_northIndicatorText != null)
+            {
+                float radius = (96f * s * 0.5f) - 10f * s;
+                float rad = -heading * Mathf.Deg2Rad;
+                _northIndicatorText.rectTransform.anchoredPosition = new Vector2(Mathf.Sin(rad) * radius, Mathf.Cos(rad) * radius);
+            }
+
+            // 4. 底部文字简报 (支持自定义格式与脏缓存)
             if (_attitudeLabelText != null)
             {
                 string attStr = string.Format(_attitudeFormat, pitch, roll);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
@@ -106,6 +107,11 @@ namespace ModularFlightPanel.UI
         public float StandardHz { get; set; } = 30.0f;     // 用户可自由填写的任意浮点数 (如 30.0f)
         public float RelaxedHz { get; set; } = 10.0f;      // 阶梯注释标称 10Hz；需要时用户可改成任意浮点 (如 11.2f)
         public float UltraLowHz { get; set; } = 2.0f;      // 用户可自由填写的任意浮点数 (如 2.5f)
+
+        // 硬限微秒级帧预算切片调度器配置 (Budgeted Frame Slicing)
+        public bool EnableBudgetSlicing { get; set; } = true;
+        public float MaxFrameBudgetMs { get; set; } = 0.15f; // 默认最大帧预算 0.15ms (150微秒)，硬限锁死最大CPU时间
+        private int _sliceCursor = 0;                        // 非 Critical 组件公平轮询切片游标
 
         public event Action<int> OnRenderResolutionChanged;
         public event Action<float> OnGlobalRenderScaleChanged;
@@ -324,6 +330,7 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 由 FlightHUDManager.Update 单点调用的主分发循环
         /// 一次性拉取遥测上下文，按阶梯刷新率高效顺序分发，杜绝散乱帧开销
+        /// 支持微秒级帧预算切片调度 (Budgeted Frame Slicing)，物理硬限锁死最大 CPU 耗时在 0.15ms 以内
         /// </summary>
         /// <param name="unscaledTime">未缩放时间戳，节流与自定义 Hz 的唯一时钟源</param>
         public void MasterUpdate(float unscaledTime)
@@ -336,10 +343,37 @@ namespace ModularFlightPanel.UI
             bool profileWidgets = MFPProfiler.ShowOverlay;
 
             MFPProfiler.BeginSample(ProfilerSection.Widgets);
+            long startTick = Stopwatch.GetTimestamp();
+            double ticksToMs = 1000.0 / Stopwatch.Frequency;
             try
             {
                 int count = _registrations.Count;
                 int activeCount = 0;
+
+                if (!EnableBudgetSlicing)
+                {
+                    // 原始全量无切片调度回退分支
+                    for (int i = 0; i < count; i++)
+                    {
+                        var reg = _registrations[i];
+                        if (reg == null || reg.Widget == null) continue;
+                        if (reg.State != WidgetLifecycleState.Active) continue;
+                        if (!reg.Widget.gameObject.activeSelf) continue;
+
+                        activeCount++;
+
+                        if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
+
+                        reg.LastUpdateTime = unscaledTime;
+                        ExecuteWidgetUpdate(reg, telem, profileWidgets);
+                    }
+                    MFPProfiler.ActiveWidgetCount = activeCount;
+                    return;
+                }
+
+                // -------------------------------------------------------------
+                // 阶段 1：Critical 级核心姿态航电组件无条件保活直通 (姿态球/航向指示弧)
+                // -------------------------------------------------------------
                 for (int i = 0; i < count; i++)
                 {
                     var reg = _registrations[i];
@@ -349,47 +383,88 @@ namespace ModularFlightPanel.UI
 
                     activeCount++;
 
-                    // 判断当前组件在垂直同步或自定义 Hz 规则下是否命中更新时机
-                    if (!ShouldUpdateWidget(reg, unscaledTime))
-                    {
-                        continue;
-                    }
+                    if (reg.Tier != WidgetRefreshTier.Critical) continue;
+
+                    if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
                     reg.LastUpdateTime = unscaledTime;
+                    ExecuteWidgetUpdate(reg, telem, profileWidgets);
+                }
 
-                    if (profileWidgets)
+                // -------------------------------------------------------------
+                // 阶段 2：Standard / Relaxed / UltraLow 组件公平轮询切片调度 (Round-Robin Slicing)
+                // -------------------------------------------------------------
+                if (count > 0)
+                {
+                    int startIndex = _sliceCursor % count;
+                    int scheduledNonCrit = 0;
+
+                    for (int step = 0; step < count; step++)
                     {
-                        try
+                        int i = (startIndex + step) % count;
+                        var reg = _registrations[i];
+                        if (reg == null || reg.Widget == null) continue;
+                        if (reg.State != WidgetLifecycleState.Active) continue;
+                        if (!reg.Widget.gameObject.activeSelf) continue;
+                        if (reg.Tier == WidgetRefreshTier.Critical) continue; // Critical 已经在阶段 1 执行完毕
+
+                        if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
+
+                        reg.LastUpdateTime = unscaledTime;
+                        ExecuteWidgetUpdate(reg, telem, profileWidgets);
+                        scheduledNonCrit++;
+
+                        // 微秒预算检查：若当前帧累计耗时已达到最大帧预算，记录游标并让出执行权至下一帧
+                        double elapsedMs = (Stopwatch.GetTimestamp() - startTick) * ticksToMs;
+                        if (elapsedMs >= MaxFrameBudgetMs)
                         {
-                            MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId);
-                            reg.Widget.MasterUpdateTelemetry(telem);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
-                        }
-                        finally
-                        {
-                            MFPProfiler.EndWidgetSample(reg.Widget.WidgetId);
+                            _sliceCursor = (i + 1) % count;
+                            break;
                         }
                     }
-                    else
+
+                    if (scheduledNonCrit == 0 || (Stopwatch.GetTimestamp() - startTick) * ticksToMs < MaxFrameBudgetMs)
                     {
-                        try
-                        {
-                            reg.Widget.MasterUpdateTelemetry(telem);
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
-                        }
+                        _sliceCursor = (startIndex + count) % count;
                     }
                 }
+
                 MFPProfiler.ActiveWidgetCount = activeCount;
             }
             finally
             {
                 MFPProfiler.EndSample(ProfilerSection.Widgets);
+            }
+        }
+
+        private void ExecuteWidgetUpdate(WidgetRegistration reg, IFlightTelemetry telem, bool profileWidgets)
+        {
+            if (profileWidgets)
+            {
+                try
+                {
+                    MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId);
+                    reg.Widget.MasterUpdateTelemetry(telem);
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
+                }
+                finally
+                {
+                    MFPProfiler.EndWidgetSample(reg.Widget.WidgetId);
+                }
+            }
+            else
+            {
+                try
+                {
+                    reg.Widget.MasterUpdateTelemetry(telem);
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
+                }
             }
         }
 

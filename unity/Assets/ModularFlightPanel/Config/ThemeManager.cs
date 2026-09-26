@@ -272,6 +272,10 @@ namespace ModularFlightPanel.Config
                             {
                                 AvailableThemes.Add(theme);
                             }
+                            else
+                            {
+                                AvailableThemes[existingIdx] = theme;
+                            }
                         }
                     }
                     catch (Exception ex)

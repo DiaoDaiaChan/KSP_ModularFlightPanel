@@ -40,6 +40,10 @@ namespace ModularFlightPanel.Core
 
         public void MoveStage(int fromStage, int toStage)
         {
+            if (_simEngine != null)
+            {
+                _simEngine.MoveSimulatedStage(fromStage, toStage);
+            }
             Debug.Log($"[HeadlessStageActionHook] Reordered simulated stage from S{fromStage:00} to S{toStage:00}");
         }
 

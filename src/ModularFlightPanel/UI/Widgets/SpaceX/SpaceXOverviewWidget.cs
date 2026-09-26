@@ -238,12 +238,24 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (telemetry == null || !telemetry.HasVessel) return;
 
             // 1. 舱压 (Cabin Pressure)
-            float press = (float)telemetry.AtmosphericPressure * 101.325f;
-            if (press <= 0.01f) press = 101.3f; // 默认封闭座舱压力
+            float press;
+            if (telemetry.CrewCapacity == 0)
+            {
+                press = 0f;
+            }
+            else
+            {
+                press = (float)telemetry.CabinPressure;
+                if (press <= 0.01f && telemetry.AtmosphericPressure > 0.01)
+                    press = (float)(telemetry.AtmosphericPressure * 101.325);
+                else if (press <= 0.01f)
+                    press = 101.3f; // 封闭气闸标称舱压
+            }
+
             if (Mathf.Abs(press - _lastPress) > 0.1f)
             {
                 _lastPress = press;
-                string pStr = $"{press:F1} kPa";
+                string pStr = telemetry.CrewCapacity == 0 ? "0.0 kPa [UNCREWED]" : $"{press:F1} kPa";
                 if (pStr != _lastPressStr && _pressValue != null)
                 {
                     _lastPressStr = pStr;
@@ -257,11 +269,11 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             // 2. 氧气百分比 (O2)
-            float o2 = telemetry.OxygenPercent > 0.001f ? telemetry.OxygenPercent : 100f;
+            float o2 = telemetry.OxygenPercent;
             if (Mathf.Abs(o2 - _lastO2) > 0.5f)
             {
                 _lastO2 = o2;
-                string oStr = $"{o2:F0}%";
+                string oStr = telemetry.CrewCapacity == 0 ? "N/A" : $"{o2:F0}%";
                 if (oStr != _lastO2Str && _o2Value != null)
                 {
                     _lastO2Str = oStr;
@@ -276,7 +288,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             // 3. 客舱温度 (Cabin Temp)
             float temp = (float)telemetry.CabinTemp;
-            if (temp <= 0.1f) temp = 21.5f;
             if (Mathf.Abs(temp - _lastTemp) > 0.2f)
             {
                 _lastTemp = temp;
@@ -295,7 +306,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             // 4. 电力与总线电压 (Net Power)
             float ec = (float)telemetry.EcPercent;
-            float volt = telemetry.BusVoltage > 0f ? telemetry.BusVoltage : 28.2f;
+            float volt = telemetry.BusVoltage;
             if (Mathf.Abs(ec - _lastEc) > 0.5f)
             {
                 _lastEc = ec;
@@ -312,8 +323,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 }
             }
 
-            // 5. 推进剂储备 (Draco Prop)
-            float prop = telemetry.StagePropellantFraction * 100f;
+            // 5. 推进剂储备 (优先读取 Draco 单组元 RCS 推进剂，无姿控推进剂时回退至主级燃料)
+            float prop = telemetry.MonoPercent > 0.001f ? telemetry.MonoPercent : (telemetry.StagePropellantFraction * 100f);
             if (Mathf.Abs(prop - _lastProp) > 0.5f)
             {
                 _lastProp = prop;
@@ -325,8 +336,48 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 }
             }
 
-            // 6. 总体警告判定
-            string badge = (o2 < 20f || ec < 15f) ? "WARN" : "NOMINAL";
+            // 6. 四大子系统遥测状态动态解算
+            if (_subsysAirlock != null)
+            {
+                string airlockState = telemetry.CrewCapacity == 0
+                    ? "UNCREWED"
+                    : (telemetry.AtmosphericPressure < 0.01 ? "SEALED / 1 ATM" : "EQUALIZED");
+                _subsysAirlock.text = airlockState;
+            }
+
+            if (_subsysThermal != null)
+            {
+                string thermalState;
+                if (telemetry.DynamicPressure > 20.0 || telemetry.VerticalSpeed < -100.0)
+                    thermalState = "REENTRY / HIGH AERO";
+                else if (telemetry.CabinTemp > 35.0)
+                    thermalState = "ACTIVE COOLING HI";
+                else if (telemetry.CabinTemp < 5.0)
+                    thermalState = "HEATERS ENGAGED";
+                else
+                    thermalState = "LOOP NOMINAL [21°C]";
+                _subsysThermal.text = thermalState;
+            }
+
+            if (_subsysDock != null)
+            {
+                string dockState;
+                if (telemetry.IsDockingMode)
+                {
+                    if (telemetry.HasTarget && telemetry.TargetDistance < 15.0) dockState = "CAPTURE / NEAR";
+                    else if (telemetry.HasTarget) dockState = "APPROACH / ARMED";
+                    else dockState = "DOCKING MODE";
+                }
+                else
+                {
+                    dockState = "STANDBY / LATCHED";
+                }
+                _subsysDock.text = dockState;
+            }
+
+            // 7. 总体警告判定
+            bool hasWarn = (telemetry.CrewCapacity > 0 && o2 < 20f) || ec < 15f || (telemetry.CrewCapacity > 0 && press < 30f);
+            string badge = hasWarn ? "WARN" : "NOMINAL";
             if (badge != _lastStatusBadge && _statusBadge != null)
             {
                 _lastStatusBadge = badge;

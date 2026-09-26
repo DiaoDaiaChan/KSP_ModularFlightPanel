@@ -543,23 +543,26 @@ namespace ModularFlightPanel.UI.Widgets
                     float bearingMag = bearing.magnitude;
                     Vector2 normBearing = bearingMag > 0.001f ? (bearing / bearingMag) : Vector2.up;
 
-                    float rFrac;
-                    if (dir.z >= 0f)
+                    // 过渡权重：前向半球 (> -0.08) 为 0，地平圈内缘 (< -0.20) 为 1
+                    float tRear = Mathf.Clamp01((-0.08f - dir.z) / 0.12f);
+
+                    Vector2 frontPos = new Vector2(dir.x, dir.y) * _visualRadius;
+                    Vector2 rearPos = normBearing * (_visualRadius * 0.84f);
+                    img.rectTransform.anchoredPosition = Vector2.Lerp(frontPos, rearPos, tRear);
+
+                    float targetScale = Mathf.Lerp(1.0f, 0.65f, tRear);
+                    if (Mathf.Abs(img.rectTransform.localScale.x - targetScale) > 0.02f)
                     {
-                        rFrac = Mathf.Clamp01(bearingMag);
-                    }
-                    else
-                    {
-                        rFrac = Mathf.Lerp(1.0f, 1.15f, Mathf.Clamp01(-dir.z / 0.24f));
+                        img.rectTransform.localScale = new Vector3(targetScale, targetScale, 1.0f);
                     }
 
-                    Vector2 screenOffset = normBearing * (rFrac * _visualRadius);
-                    img.rectTransform.anchoredPosition = screenOffset;
-
-                    float alpha = (dir.z >= 0f) ? 1.0f : Mathf.Clamp01(1.0f - (-dir.z / 0.24f));
+                    float alpha = (dir.z >= -0.08f) ? 1.0f : Mathf.Lerp(1.0f, 0.40f, tRear);
                     Color c = img.color;
-                    c.a = alpha;
-                    img.color = c;
+                    if (Mathf.Abs(c.a - alpha) > 0.02f)
+                    {
+                        c.a = alpha;
+                        img.color = c;
+                    }
 
                     // 避免球体字号与前方核心航向/机动标重叠遮挡
                     if (avoidIdx < 4 && dir.z > 0.1f)

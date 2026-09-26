@@ -18,6 +18,9 @@ namespace ModularFlightPanel.Core
         private float _pitchTrim = 0f;
         private float _rollTrim = 0f;
         private float _yawTrim = 0f;
+        private float _xInput = 0f;
+        private float _yInput = 0f;
+        private float _zInput = 0f;
         private bool _isStageLocked = false;
         private bool _isPrecisionControl = false;
         private bool _isDockingMode = false;
@@ -117,6 +120,36 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        public float XInput
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.XInput;
+                EnsureControlsUpdated();
+                return _xInput;
+            }
+        }
+
+        public float YInput
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.YInput;
+                EnsureControlsUpdated();
+                return _yInput;
+            }
+        }
+
+        public float ZInput
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.ZInput;
+                EnsureControlsUpdated();
+                return _zInput;
+            }
+        }
+
         public bool IsStageLocked
         {
             get
@@ -180,6 +213,9 @@ namespace ModularFlightPanel.Core
                 _pitchTrim = Mathf.Clamp(ctrl.pitchTrim, -1f, 1f);
                 _rollTrim = Mathf.Clamp(ctrl.rollTrim, -1f, 1f);
                 _yawTrim = Mathf.Clamp(ctrl.yawTrim, -1f, 1f);
+                _xInput = Mathf.Clamp(ctrl.X, -1f, 1f);
+                _yInput = Mathf.Clamp(ctrl.Y, -1f, 1f);
+                _zInput = Mathf.Clamp(ctrl.Z, -1f, 1f);
             }
 
             if (FlightInputHandler.fetch != null)

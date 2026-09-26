@@ -294,6 +294,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 {
                     _progressPipRt.anchoredPosition = new Vector2(pipX, pipY);
                 }
+
+                // 动态高亮已达成里程碑节点
+                UpdateMilestones(pipProgress);
             }
 
             // 3. 动态任务阶段文本推导
@@ -308,36 +311,67 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
         }
 
+        private void UpdateMilestones(float currentProgress)
+        {
+            if (_milestones == null) return;
+            ThemeConfig th = WidgetStyleManager.Instance.CurrentTheme;
+            Color activeDot = th.AccentPrimary;
+            Color futureDot = WidgetStyleManager.Weighted(th.AccentSecondary, LineWeight.Ghost);
+
+            for (int i = 0; i < _milestones.Length; i++)
+            {
+                bool isReached = currentProgress >= (_milestones[i].NormalizedX - 0.015f);
+                if (_milestones[i].Dot != null)
+                {
+                    _milestones[i].Dot.color = isReached ? activeDot : futureDot;
+                }
+                if (_milestones[i].Label != null)
+                {
+                    ApplyText(_milestones[i].Label, isReached ? TextStyleRole.Accent : TextStyleRole.Label, th);
+                }
+            }
+        }
+
         private float CalculateMissionProgress(IFlightTelemetry telem)
         {
-            if (telem.FlightSituation == "PRELAUNCH" || telem.FlightSituation == "LANDED")
+            if (telem.FlightSituation == "PRELAUNCH")
             {
                 return 0.08f;
             }
+            if (telem.FlightSituation == "LANDED" || telem.FlightSituation == "SPLASHED")
+            {
+                return 0.95f;
+            }
 
-            // 根据入轨速度与高度合成飞行进度
-            double speed = telem.CurrentSpeed;
+            double atmDepth = telem.HasAtmosphere ? telem.AtmosphereDepth : 10000.0;
             double alt = telem.AltitudeASL;
 
-            if (alt < 15000.0)
+            // 1. 已入轨 (近地点脱离大气且非逃逸)：使用真近点角 (True Anomaly) 精准指示环绕轨位
+            if (telem.Periapsis > atmDepth && telem.Eccentricity < 1.0)
             {
-                // 地面至穿音障 (0.08 .. 0.28)
-                return Mathf.Lerp(0.08f, 0.28f, (float)(alt / 15000.0));
-            }
-            if (alt < 65000.0 && telem.CurrentStage >= 2)
-            {
-                // 一级爬升与分级 (0.28 .. 0.44)
-                return Mathf.Lerp(0.28f, 0.44f, (float)((alt - 15000.0) / 50000.0));
-            }
-            if (speed < 6500.0 && alt < 160000.0)
-            {
-                // 二级加速飞向入轨点 (0.44 .. 0.76)
-                float t = Mathf.Clamp01((float)(speed / 6500.0));
-                return Mathf.Lerp(0.44f, 0.76f, t);
+                float trueAnomalyFrac = Mathf.Repeat((float)(telem.TrueAnomaly / 360.0), 1f);
+                return Mathf.Lerp(0.76f, 0.96f, trueAnomalyFrac);
             }
 
-            // 轨道巡航与任务完成 (0.76 .. 0.95)
-            return Mathf.Clamp(0.76f + (float)(telem.MissionTime % 600.0 / 600.0) * 0.19f, 0.76f, 0.95f);
+            // 2. 爬升与入轨加速阶段
+            if (alt < atmDepth * 0.25)
+            {
+                // 地面起飞至 Max-Q (0.08 .. 0.28)
+                float t = Mathf.Clamp01((float)(alt / (atmDepth * 0.25)));
+                return Mathf.Lerp(0.08f, 0.28f, t);
+            }
+
+            if (alt < atmDepth * 0.85 && telem.CurrentStage >= 2)
+            {
+                // 一级飞行至分级点 (0.28 .. 0.44)
+                float t = Mathf.Clamp01((float)((alt - atmDepth * 0.25) / (atmDepth * 0.60)));
+                return Mathf.Lerp(0.28f, 0.44f, t);
+            }
+
+            // 二级飞向入轨点 (0.44 .. 0.76)
+            double targetOrbitalSpeed = Math.Max(telem.OrbitalSpeed, 1200.0);
+            float speedFrac = Mathf.Clamp01((float)(telem.CurrentSpeed / targetOrbitalSpeed));
+            return Mathf.Lerp(0.44f, 0.76f, speedFrac);
         }
 
         private string ResolveMissionPhase(IFlightTelemetry telem)
@@ -356,21 +390,26 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (sit == "PRELAUNCH") return "PAD STANDBY / COUNTDOWN";
             if (sit == "LANDED" || sit == "SPLASHED") return "TOUCHDOWN NOMINAL";
 
-            if (telem.AltitudeASL < 15000.0 && telem.VerticalSpeed > 10.0)
+            if (telem.IsStageSeparating) return "STAGE SEPARATION OCCURRED";
+            if (telem.IsEngineIgniting) return "IGNITION SEQUENCE START";
+
+            double atmDepth = telem.HasAtmosphere ? telem.AtmosphereDepth : 0.0;
+
+            if (telem.HasAtmosphere && telem.AltitudeASL < atmDepth)
             {
-                return telem.DynamicPressure > 25.0 ? "MAX-Q DYNAMIC PRESSURE" : "SUPER HEAVY POWERED ASCENT";
+                if (telem.VerticalSpeed < -50.0) return "ATMOSPHERIC ENTRY PHASE";
+                if (telem.DynamicPressure > 25.0) return "MAX-Q DYNAMIC PRESSURE";
+                if (telem.VerticalSpeed > 10.0 && telem.CurrentStage >= 2) return "SUPER HEAVY POWERED ASCENT";
             }
+
             if (telem.CurrentStage <= 1 && telem.Throttle > 0.05f)
             {
                 return "STARSHIP SECOND STAGE BURN";
             }
-            if (telem.OrbitalSpeed > 2000.0 && telem.VerticalSpeed < 50.0 && telem.VerticalSpeed > -50.0)
+
+            if (telem.Periapsis > atmDepth && telem.Eccentricity < 1.0)
             {
-                return "ORBITAL INSERTION / COAST";
-            }
-            if (telem.VerticalSpeed < -50.0 && telem.AltitudeASL < 70000.0)
-            {
-                return "ATMOSPHERIC ENTRY PHASE";
+                return telem.Throttle <= 0.01f ? "ORBITAL INSERTION / COAST" : "ORBITAL MANEUVER BURN";
             }
 
             return "STARSHIP FLIGHT TEST";

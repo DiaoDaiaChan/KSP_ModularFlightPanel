@@ -1040,6 +1040,15 @@ namespace ModularFlightPanel.Editor
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(eicas);
                 }
+                else if (id == "custom.b787_eicas" || id == "core.b787_eicas" || id == "b787_eicas" || id == "b787")
+                {
+                    var eicas = new WidgetConfig("custom.b787_eicas", "波音 787 EICAS 综合航电组件", x, y, 1.0f)
+                    {
+                        WidgetType = "b787_eicas",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(eicas);
+                }
                 else if (id == "custom.b747_lower_eicas" || id == "core.b747_lower_eicas" || id == "b747_lower_eicas")
                 {
                     var leicas = new WidgetConfig("custom.b747_lower_eicas", "波音 747 下部辅助发动机 EICAS", x, y, 1.0f)

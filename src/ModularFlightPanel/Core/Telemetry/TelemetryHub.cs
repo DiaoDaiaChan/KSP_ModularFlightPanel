@@ -101,12 +101,29 @@ namespace ModularFlightPanel.Core
                 return CacheManager.Instance.GetOrExtrapolateTargetState(false, Vector3.zero, Vector3.zero, Quaternion.identity, Time.time);
             }
 
-            Vector3 relPos = targetT.position - ActiveVessel.transform.position;
-            Vector3 relVel = (ActiveVessel.obt_velocity - target.GetObtVelocity()).xzy;
-            Quaternion relRot = Quaternion.Inverse(ActiveVessel.transform.rotation) * targetT.rotation;
+            Transform refT = ActiveVessel.ReferenceTransform != null ? ActiveVessel.ReferenceTransform : ActiveVessel.transform;
+            Vector3 worldRelPos = targetT.position - refT.position;
+            Vector3 localRelPos = refT.InverseTransformDirection(worldRelPos);
+            Vector3 worldRelVel = (ActiveVessel.obt_velocity - target.GetObtVelocity()).xzy;
+            Vector3 localRelVel = refT.InverseTransformDirection(worldRelVel);
+            Quaternion relRot = Quaternion.Inverse(refT.rotation) * targetT.rotation;
 
-            return CacheManager.Instance.GetOrExtrapolateTargetState(true, relPos, relVel, relRot, Time.time);
+            return CacheManager.Instance.GetOrExtrapolateTargetState(true, localRelPos, localRelVel, relRot, Time.time);
         }
+
+        // 目标交会对接遥测 (Target & Docking Telemetry)
+        public bool HasTarget => IsSimulationMode ? SimulationEngine.HasTarget : (FlightGlobals.fetch != null && FlightGlobals.fetch.VesselTarget != null);
+        public string TargetName => IsSimulationMode ? SimulationEngine.TargetName : (FlightGlobals.fetch != null && FlightGlobals.fetch.VesselTarget != null ? FlightGlobals.fetch.VesselTarget.GetName() : "NO TARGET");
+        public double TargetDistance => IsSimulationMode ? SimulationEngine.TargetDistance : GetTargetKinematics().Distance;
+        public Vector3 TargetRelativePosition => IsSimulationMode ? SimulationEngine.TargetRelativePosition : GetTargetKinematics().RelativePosition;
+        public Vector3 TargetRelativeVelocity => IsSimulationMode ? SimulationEngine.TargetRelativeVelocity : GetTargetKinematics().RelativeVelocity;
+        public float TargetDeviationX => IsSimulationMode ? SimulationEngine.TargetDeviationX : GetTargetKinematics().DeviationX;
+        public float TargetDeviationY => IsSimulationMode ? SimulationEngine.TargetDeviationY : GetTargetKinematics().DeviationY;
+        public float TargetDeviationZ => IsSimulationMode ? SimulationEngine.TargetDeviationZ : GetTargetKinematics().DeviationZ;
+        public float TargetClosingSpeed => IsSimulationMode ? SimulationEngine.TargetClosingSpeed : GetTargetKinematics().ClosingSpeed;
+        public float TargetPitchAlignment => IsSimulationMode ? SimulationEngine.TargetPitchAlignment : GetTargetKinematics().PitchAlignment;
+        public float TargetRollAlignment => IsSimulationMode ? SimulationEngine.TargetRollAlignment : GetTargetKinematics().RollAlignment;
+        public float TargetYawAlignment => IsSimulationMode ? SimulationEngine.TargetYawAlignment : GetTargetKinematics().YawAlignment;
 
         private void Awake()
         {

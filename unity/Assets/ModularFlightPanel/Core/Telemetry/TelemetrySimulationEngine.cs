@@ -168,6 +168,25 @@ namespace ModularFlightPanel.Core
         public float RollTrim { get; set; } = 0.0f;
         public float YawTrim { get; set; } = -0.02f;
 
+        // 三轴平移操纵量 (-1.0 ~ +1.0)
+        public float XInput { get; set; } = 0.0f;
+        public float YInput { get; set; } = 0.0f;
+        public float ZInput { get; set; } = 0.0f;
+
+        // 目标交会对接遥测
+        public bool HasTarget { get; set; } = true;
+        public string TargetName { get; set; } = "ISS-STATION";
+        public double TargetDistance { get; set; } = 42.5;
+        public Vector3 TargetRelativePosition { get; set; } = new Vector3(0.4f, -0.2f, 42.5f);
+        public Vector3 TargetRelativeVelocity { get; set; } = new Vector3(-0.02f, 0.01f, -0.35f);
+        public float TargetDeviationX => TargetRelativePosition.x;
+        public float TargetDeviationY => TargetRelativePosition.y;
+        public float TargetDeviationZ => TargetRelativePosition.z;
+        public float TargetClosingSpeed { get; set; } = 0.35f;
+        public float TargetPitchAlignment { get; set; } = 0.2f;
+        public float TargetRollAlignment { get; set; } = 0.5f;
+        public float TargetYawAlignment { get; set; } = -0.1f;
+
         // 分级安全锁、模式与推进剂
         public bool IsStageLocked { get; set; } = false;
         public bool IsPrecisionControl { get; set; } = false;
@@ -307,8 +326,13 @@ namespace ModularFlightPanel.Core
             {
                 list.Add(new StageDeltaVInfo(3, activeDv, activeBurnTime, activeTwr, 312.0, currentStage == 3, new List<StagePartIconData>
                 {
-                    new StagePartIconData("SOLID_BOOSTER", 3, 6, "BACC Solid Fuel Booster", "Solid Fuel", stageFuel, default, false, 1001),
-                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-M3 'Mainsail' Liquid Engine", "Liquid Fuel", Mathf.Clamp01(stageFuel + 0.15f), default, false, 1002)
+                    new StagePartIconData("SOLID_BOOSTER", 3, 6, "BACC 'Thumper' Solid Fuel Booster", "Solid Fuel", stageFuel, default, false, 1001),
+                    new StagePartIconData("LIQUID_ENGINE", 2, 1, "RE-M3 'Mainsail' Liquid Engine", "Liquid Fuel", Mathf.Clamp01(stageFuel + 0.15f), default, false, 1002),
+                    new StagePartIconData("DECOUPLER_HOR", 6, 6, "TT-38K Radial Decoupler", null, -1f, default, false, 1010),
+                    new StagePartIconData("LAUNCH_CLAMP", 7, 4, "TT18-A Launch Stability Enhancer", null, -1f, default, false, 1011),
+                    new StagePartIconData("SOLID_BOOSTER", 3, 8, "Sepratron I", "Solid Fuel", 1.0f, default, false, 1012),
+                    new StagePartIconData("PARACHUTES", 8, 2, "Mk2-R Radial-Mount Parachute", null, -1f, default, false, 1013),
+                    new StagePartIconData("DECOUPLER_VERT", 5, 1, "TD-25 Decoupler", null, -1f, default, false, 1014)
                 }));
             }
             if (currentStage >= 2)
@@ -379,6 +403,31 @@ namespace ModularFlightPanel.Core
                 list[i] = new StageDeltaVInfo(list.Count - 1 - i, s.DeltaV, s.BurnTime, s.TWR, s.Isp, s.IsActive, s.PartIcons);
             }
             StageDeltaVList = list;
+        }
+
+        public void MoveSimulatedStage(int fromStage, int toStage)
+        {
+            var list = new List<StageDeltaVInfo>(StageDeltaVList);
+            int fromIdx = -1;
+            int toIdx = -1;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Stage == fromStage) fromIdx = i;
+                if (list[i].Stage == toStage) toIdx = i;
+            }
+
+            if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx)
+            {
+                var item = list[fromIdx];
+                list.RemoveAt(fromIdx);
+                list.Insert(toIdx, item);
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var s = list[i];
+                    list[i] = new StageDeltaVInfo(list.Count - 1 - i, s.DeltaV, s.BurnTime, s.TWR, s.Isp, s.IsActive, s.PartIcons);
+                }
+                StageDeltaVList = list;
+            }
         }
 
         public void MoveSimulatedPartToStage(uint partFlightId, int fromStage, int partIndex, int targetStage)
@@ -760,6 +809,13 @@ namespace ModularFlightPanel.Core
                         ManeuverDeltaVRadial *= fraction;
                     }
                 }
+            }
+
+            // 轨道动力学推进 (真近点角随轨道周期连续演化)
+            if (OrbitalPeriod > 1.0)
+            {
+                double meanMotion = 360.0 / OrbitalPeriod;
+                TrueAnomaly = (TrueAnomaly + meanMotion * dt * TimeWarpRate) % 360.0;
             }
         }
 

@@ -488,6 +488,17 @@ namespace ModularFlightPanel.Core
                 _cabinPressure = v.staticPressurekPa > 0.01 ? v.staticPressurekPa : 101.3;
                 double rawTempK = (v.rootPart != null && v.rootPart.temperature > 0.1) ? v.rootPart.temperature : v.externalTemperature;
                 _cabinTemp = rawTempK > 100.0 ? (rawTempK - 273.15) : rawTempK;
+
+                // 4. 姿控单组元推进剂 (MonoPropellant)
+                if (PartResourceLibrary.Instance != null)
+                {
+                    var mpDef = PartResourceLibrary.Instance.GetDefinition("MonoPropellant");
+                    if (mpDef != null)
+                    {
+                        v.GetConnectedResourceTotals(mpDef.id, out double curMp, out double maxMp);
+                        _monoPercent = maxMp > 0.001 ? (float)(curMp / maxMp * 100.0) : 0f;
+                    }
+                }
             }
             catch (Exception) { }
         }

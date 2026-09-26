@@ -470,6 +470,7 @@
     "PRESET_NAME_STARSHIP": "SpaceX 星舰抬头显示",
     "PRESET_DESC_STARSHIP": "极简 Starship HUD：弧形过载指示带、对接准星与全景姿态",
     "PRESET_DESC_LOCAL": "本地预设文件 ({0})",
+    "THEME_BOEING_787": "波音 787 梦想客机航电",
     "THEME_MODERN_GLASS": "现代极简全息玻璃座舱",
     "THEME_CYBER_NEON": "赛博霓虹点阵",
     "THEME_SPACEX_DRAGON": "SpaceX 龙飞船全息",
