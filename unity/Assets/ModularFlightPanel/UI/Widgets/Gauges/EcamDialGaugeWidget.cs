@@ -22,7 +22,13 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("ecam_dial", "ecam_gauge", "dial", Category = WidgetCategory.Gauges, DisplayName = "ECAM 圆弧通用仪表", Description = "270° 马蹄形高对比度圆弧表盘，支持动态指针、数显与软上限爆表模式。可在装配台绑定任意遥测通配符。", DefaultWidgetId = "ecam.dial", DefaultX = 0f, DefaultY = 0f)]
     public class EcamDialGaugeWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(112f, 112f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("N1");
+        public TextWidget Value = TextWidget.Value("{ENG:N1}");
 
         private const float START_ANGLE = 225.0f; // 左下 225° 顺时针旋转
         private const float END_ANGLE = 315.0f;   // 右下 315° (即 -45°)
@@ -66,16 +72,15 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            float size = 112f * s;
-            RectTransform.sizeDelta = new Vector2(size, size);
+            Vector2 panelSize = BaseSize * s;
+            float size = panelSize.x;
+            RectTransform.sizeDelta = panelSize;
 
-            // 1. 卡片底衬
-            _bgPanel = gameObject.AddComponent<Image>();
-            _bgPanel.color = Color.clear;
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Normal, theme);
-            UIFactory.ApplyCockpitChrome(gameObject, _bgPanel.color, _bgOutline.effectColor, s);
+            // 1. 卡片底衬 (由基类 AutoCreateCardFrame 托管)
+            _bgPanel = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null) _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgPanel != null ? _bgPanel.color : Color.clear, _bgOutline != null ? _bgOutline.effectColor : Color.clear, s);
 
             // 解析自定义通配符通道
             ParseCustomTemplate(config);
@@ -445,6 +450,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
 
             CardStyleRole cardRole = _lastAlertState == 2 ? CardStyleRole.Danger : (_lastAlertState == 1 ? CardStyleRole.Warning : CardStyleRole.Normal);
             ApplyCard(_bgPanel, _bgOutline, cardRole, theme);

@@ -56,7 +56,12 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("ecam_alert_log", "alert_log", "eicas_messages", "warning_log", Category = WidgetCategory.Systems, DisplayName = "ECAM 飞行告警与备忘日志", Description = "仿空客 ECAM / 波音 EICAS 集中式电子飞行告警屏：实时推演离轨、逃逸、黑障、分级与遥测异常全时序事件日志。", DefaultWidgetId = "custom.ecam_alert_log", DefaultX = 440f, DefaultY = -40f, IsSingleton = true, ExactIds = new[] { "core.ecam_alert_log", "ecam.alert_log", "custom.ecam_alert_log" })]
     public class EcamAlertLogWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(BASE_WIDTH, BASE_HEIGHT);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget HeaderTitle = TextWidget.Title("ECAM / EICAS");
 
         // 几何布局常量 (乘 CurrentDpiScale)
         private const float BASE_WIDTH = 300f;
@@ -184,9 +189,10 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform.sizeDelta = new Vector2(BASE_WIDTH * s, BASE_HEIGHT * s);
 
             // 2. 卡片底板与边框 (0 颜色字面量)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1.2f * s, 1.2f * s);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+                _bgOutline.effectDistance = new Vector2(1.2f * s, 1.2f * s);
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Emphasized, theme);
 
             // 顶端外壳荧光科技条 (Top Accent Pip)
@@ -558,6 +564,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 

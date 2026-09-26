@@ -128,7 +128,7 @@ namespace ModularFlightPanel.UI.Settings
 
         private static void DrawWidgetMasterList(List<WidgetConfig> widgets, WidgetConfig curWidget)
         {
-            MFPGuiSkin.BeginCard(GUILayout.Height(SettingsGUI.ContentHeight));
+            MFPGuiSkin.BeginCard();
 
             // 1. 标题与搜索框
             MFPGuiSkin.DrawHeader(I18n.Tr("ASM_HEADER_NAV", "组件导航 (WIDGETS)"), I18n.TrFormat("ASM_TOTAL_COUNT", "共 {0} 项", widgets.Count));
@@ -152,7 +152,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(6f);
 
             // 3. 滚动组件卡片列表
-            _leftScroll = GUILayout.BeginScrollView(_leftScroll, GUILayout.Height(SettingsGUI.ContentHeight - 114f));
+            _leftScroll = GUILayout.BeginScrollView(_leftScroll, GUILayout.Height(Mathf.Max(120f, SettingsGUI.ContentHeight - 128f)));
 
             bool hasQuery = !string.IsNullOrEmpty(_widgetSearchQuery);
             int matchCount = 0;

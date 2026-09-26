@@ -35,7 +35,7 @@ namespace ModularFlightPanel.Config
 
             try
             {
-                string json = JsonUtility.ToJson(layout);
+                string json = AvionicsConfigParser.SerializeLayout(layout, false);
                 byte[] rawBytes = Encoding.UTF8.GetBytes(json);
 
                 using (MemoryStream outputStream = new MemoryStream())
@@ -55,7 +55,6 @@ namespace ModularFlightPanel.Config
             }
         }
 
-        /// <summary>
         /// <summary>
         /// 从多种来源导入并还原布局数据：支持单行社区分享码 (MFP:v1:)、原始 JSON 文本、或本地预设文件路径/文件名
         /// </summary>
@@ -94,12 +93,12 @@ namespace ModularFlightPanel.Config
                     try
                     {
                         string json = File.ReadAllText(targetPath);
-                        layout = JsonUtility.FromJson<WidgetLayoutData>(json);
+                        layout = AvionicsConfigParser.ParseLayout(json, out error);
                         if (layout != null && layout.Widgets != null && layout.Widgets.Count > 0)
                         {
                             return true;
                         }
-                        error = I18n.TrFormat("ERR_FILE_NO_WIDGETS", "文件「{0}」存在但未包含有效组件配置", Path.GetFileName(targetPath));
+                        error = I18n.TrFormat("ERR_FILE_NO_WIDGETS", "文件「{0}」存在但未包含有效组件配置 ({1})", Path.GetFileName(targetPath), error);
                         return false;
                     }
                     catch (Exception ex)
@@ -115,7 +114,7 @@ namespace ModularFlightPanel.Config
             {
                 try
                 {
-                    layout = JsonUtility.FromJson<WidgetLayoutData>(clean);
+                    layout = AvionicsConfigParser.ParseLayout(clean, out error);
                     if (layout != null && layout.Widgets != null && layout.Widgets.Count > 0)
                     {
                         return true;
@@ -148,7 +147,7 @@ namespace ModularFlightPanel.Config
                 {
                     gzip.CopyTo(outputStream);
                     string json = Encoding.UTF8.GetString(outputStream.ToArray());
-                    layout = JsonUtility.FromJson<WidgetLayoutData>(json);
+                    layout = AvionicsConfigParser.ParseLayout(json, out error);
 
                     if (layout == null || layout.Widgets == null || layout.Widgets.Count == 0)
                     {
@@ -268,12 +267,12 @@ namespace ModularFlightPanel.Config
                 try
                 {
                     string json = File.ReadAllText(preset.FilePath);
-                    var data = JsonUtility.FromJson<WidgetLayoutData>(json);
+                    var data = AvionicsConfigParser.ParseLayout(json, out string parseErr);
                     if (data != null && data.Widgets != null && data.Widgets.Count > 0)
                     {
                         return data;
                     }
-                    MFPLogger.Warn(MFPLogger.CatPresets, $"Preset '{preset.Name}' file exists but contains 0 widgets. Falling back to built-in generator.");
+                    MFPLogger.Warn(MFPLogger.CatPresets, $"Preset '{preset.Name}' file exists but contains 0 widgets ({parseErr}). Falling back to built-in generator.");
                 }
                 catch (Exception ex)
                 {
@@ -314,7 +313,7 @@ namespace ModularFlightPanel.Config
                 string cleanName = string.Join("_", presetName.Split(Path.GetInvalidFileNameChars())).Trim();
                 string filePath = Path.Combine(PresetsDir, $"{cleanName}.json");
 
-                string json = JsonUtility.ToJson(layout, true);
+                string json = AvionicsConfigParser.SerializeLayout(layout, true);
                 File.WriteAllText(filePath, json);
                 return true;
             }

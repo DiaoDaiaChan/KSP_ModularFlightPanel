@@ -34,6 +34,8 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("master_warning", "warning_annunciator", "annunciator", "cws", Category = WidgetCategory.Systems, DisplayName = "中央主告警光字牌", Description = "双等级航电警告光字牌：黄色注意与红色危急双通道轮播，支持拉起、失速、低油、低电、缺氧全量监测，点击可消警。", DefaultWidgetId = "core.master_warning", DefaultX = 0f, DefaultY = -66f, IsSingleton = true, ExactIds = new[] { "core.master_warning" })]
     public class MasterWarningWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(184f, 42f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 模块数量：2 (经典聚拢) 或 3 (金字塔型)
@@ -241,15 +243,18 @@ namespace ModularFlightPanel.UI.Widgets
             if (!_customEngExplicit) _engTitleTemplate = I18n.Tr("WIDGET_ALERT_ENGINE_START", "引擎启动");
             _currentEvent = BuildEventItem(BannerEventType.Separation);
 
-            // 2. 航空外框底盘 (Outer Bezel)
+            // 2. 航空外框底盘 (Outer Bezel 由基类托管)
             Vector2 initialSize = (_modulesCount == 3) ? new Vector2(184f * s, 42f * s) : new Vector2(184f * s, 22f * s);
             RectTransform.sizeDelta = initialSize;
 
-            _outerBezel = gameObject.AddComponent<Image>();
-            _outerBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
-            _outerOutline = gameObject.AddComponent<Outline>();
-            _outerOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            _outerOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            _outerBezel = CardBackground;
+            if (_outerBezel != null) _outerBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
+            _outerOutline = CardOutline;
+            if (_outerOutline != null)
+            {
+                _outerOutline.effectDistance = new Vector2(1f * s, 1f * s);
+                _outerOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            }
 
             // 3. 中央硬派机械隔离筋条 (Mechanical Divider Rib)
             GameObject divObj = UIFactory.CreatePanel(transform, "Divider", new Vector2(2f * s, 18f * s),
@@ -1741,6 +1746,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
 
             if (_outerBezel != null) _outerBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);

@@ -17,7 +17,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     [FlightWidget("spacex_docking", "dragon_docking", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 空间站对接与姿态准星", Description = "SpaceX ISS 空间站对接瞄准器：同心双环准星、3 轴姿态偏差角与角速度、测距接近率与 RCS 点亮。", DefaultWidgetId = "spacex.docking", DefaultX = 0f, DefaultY = 170f, IsSingleton = true, ExactIds = new[] { "spacex.docking" })]
     public class SpaceXDockingReticleWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(220f, 220f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+
+        // 声明式微控件
+        public TextWidget RangeTitle = TextWidget.Title("RANGE");
+        public TextWidget RateTitle = TextWidget.Title("RATE");
 
         private Image _bgImage;
         private Outline _outline;
@@ -115,9 +121,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             Vector2 panelSize = new Vector2(220f * s, 220f * s);
             RectTransform.sizeDelta = panelSize;
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _outline = CardOutline;
+            if (_outline != null)
+                _outline.effectDistance = new Vector2(1f * s, 1f * s);
 
             // 1. 构建同心圆环准星 (外环 R=82, 内环 R=44)
             BuildReticleRings(82f * s, 44f * s, s, theme);
@@ -382,6 +389,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);

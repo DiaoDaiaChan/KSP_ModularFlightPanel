@@ -82,7 +82,12 @@ namespace ModularFlightPanel.UI.Widgets
         private const float DefaultPanelHeight = 186f;
         private const float TrackWidth = 54f;
 
+        public override Vector2 BaseSize => new Vector2(DefaultPanelWidth, DefaultPanelHeight);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("STAGE ΔV");
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -90,36 +95,29 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             _cachedScale = s;
 
-            Vector2 panelSize = new Vector2(DefaultPanelWidth * s, DefaultPanelHeight * s);
-            RectTransform.sizeDelta = panelSize;
+            Vector2 panelSize = BaseSize * s;
+            _panelBg = CardBackground;
+            _panelOutline = CardOutline;
 
-            Color bgCol = theme.FrameBgColor;
-            Color borderCol = theme.FrameBorderColor;
             Color primaryAccent = theme.AccentPrimary;
 
-            // 1. 主背板
-            GameObject panel = UIFactory.CreatePanel(transform, "StageDvPanel", panelSize, Vector2.zero, bgCol, borderCol, 1.2f * s);
-            _panelBg = panel.GetComponent<Image>();
-            _panelOutline = panel.GetComponent<Outline>();
-
             // 2. 顶部微光警示饰条 (Accent Header Stripe)
-            _topStripe = UIFactory.CreatePanel(panel.transform, "TopAccentStripe", new Vector2(panelSize.x, 3f * s),
+            _topStripe = UIFactory.CreatePanel(transform, "TopAccentStripe", new Vector2(panelSize.x, 3f * s),
                 new Vector2(0f, panelSize.y * 0.5f - 1.5f * s), primaryAccent).GetComponent<Image>();
 
             // 3. 顶栏：标题、数据源标识、总 ΔV、总烧燃时序
-            BuildHeader(panel.transform, panelSize, s, theme);
+            BuildHeader(transform, panelSize, s, theme);
 
             // 4. 左侧 2D 飞船剪影视窗 (Vessel Silhouette Bay)
-            BuildSilhouetteBay(panel.transform, panelSize, s, theme);
+            BuildSilhouetteBay(transform, panelSize, s, theme);
 
             // 5. 右侧分级速度条带状栈 (Stage Tape Rows)
-            BuildStageRows(panel.transform, panelSize, s, theme);
+            BuildStageRows(transform, panelSize, s, theme);
 
             // 6. 底栏：活跃级摘要
-            BuildFooter(panel.transform, panelSize, s, theme);
+            BuildFooter(transform, panelSize, s, theme);
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Panel Background", _panelBg.gameObject, "主背板", t => ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, t)));
             if (_topStripe != null)
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "top_stripe", "Top Stripe", _topStripe.gameObject, "顶部微光警示饰条", t => { if (_topStripe != null) _topStripe.color = t.AccentPrimary; }));
@@ -639,10 +637,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             _currentTheme = theme;
             if (theme == null) return;
-
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
+            base.ApplyTheme(theme);
 
             Color primaryAccent = (Color)theme.AccentPrimary;
             Color secondaryAccent = (Color)theme.AccentSecondary;

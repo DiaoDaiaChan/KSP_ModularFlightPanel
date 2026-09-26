@@ -19,7 +19,12 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 120f, IsSingleton = true, ExactIds = new[] { "core.heading_arc" })]
     public class HeadingArcWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(202f, 78f);
+        protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+
+        // 声明式微控件
+        public TextWidget HeadingText = TextWidget.Title("000°");
 
         private const int MAX_VISIBLE_TICKS = 24;
         private const float ARC_RADIUS = 92f;
@@ -531,6 +536,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             ApplyCard(_bubbleBg, _bubbleOutline, CardStyleRole.Emphasized, theme);

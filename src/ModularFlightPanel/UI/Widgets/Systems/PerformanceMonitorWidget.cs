@@ -15,16 +15,16 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("performance_monitor", "perf_monitor", "profiler", Category = WidgetCategory.Systems, DisplayName = "SYS PERF 航电性能探针监控屏", Description = "实时监控 MFP 遥测、外部探针、组件渲染耗时与帧率 FPS，支持一键主干旁路。", DefaultWidgetId = "custom.perf_monitor", DefaultX = 440f, DefaultY = -40f, IsSingleton = true, ExactIds = new[] { "core.performance_monitor", "custom.perf_monitor" })]
     public class PerformanceMonitorWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(240f, 195f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        private Image _bgImage;
-        private Outline _outline;
+        // 声明式微控件头部与状态徽标
+        public TextWidget Title = TextWidget.Title("SYS PERF MONITOR");
+        public TextWidget StatusBadge = TextWidget.Badge("● LIVE");
+
         private Image _headerLine;
         private Image _midLine;
-
-        // 头部标题与运行状态徽标
-        private Text _titleText;
-        private Text _statusText;
 
         // 核心性能数值 (大字 FPS 与整帧耗时)
         private Text _fpsValText;
@@ -96,30 +96,8 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            Vector2 panelSize = new Vector2(240f * s, 195f * s);
-            RectTransform.sizeDelta = panelSize;
-
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1.2f * s, 1.2f * s);
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-
             ParseTemplateChannels(config?.CustomTemplate);
-
-            // 1. 顶部 Header
-            _titleText = UIFactory.CreateText(transform, "Title", _titleTemplate, Mathf.RoundToInt(11f * s),
-                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, theme));
-            RectTransform titRt = _titleText.GetComponent<RectTransform>();
-            titRt.sizeDelta = new Vector2(135f * s, 18f * s);
-            titRt.anchoredPosition = new Vector2(-40f * s, 78f * s);
-
-            _statusText = UIFactory.CreateText(transform, "Status", "● LIVE", Mathf.RoundToInt(9f * s),
-                TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.Accent, theme));
-            RectTransform statRt = _statusText.GetComponent<RectTransform>();
-            statRt.sizeDelta = new Vector2(65f * s, 18f * s);
-            statRt.anchoredPosition = new Vector2(75f * s, 78f * s);
+            Title.Text = _titleTemplate;
 
             // 分割横线 1
             GameObject hlObj = UIFactory.CreatePanel(transform, "HeaderLine", new Vector2(224f * s, 1f * s), new Vector2(0f, 66f * s), theme.FrameBorderColor);
@@ -198,8 +176,6 @@ namespace ModularFlightPanel.UI.Widgets
             bLblRt.offsetMax = Vector2.zero;
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Panel Background", _bgImage.gameObject, "监控器主卡片底板", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
-            this.Controls.Register(new WidgetHeaderControl(_titleText, _statusText, "Header", "性能监视器顶栏与状态"));
             this.Controls.Register(new WidgetReadoutControl(_fpsValText, _fpsLabel, TextStyleRole.Cardinal, "FPS Readout", "帧率主读数"));
             this.Controls.Register(new WidgetReadoutControl(_mfpMsText, _budgetPctText, TextStyleRole.PrimaryValue, "MFP Overhead", "MFP整帧耗时与预算占比"));
             this.Controls.Register(new WidgetLinearBarControl(_widgetsFill, _widgetsTrack, MeterStyleRole.Primary, false, "Widgets Meter", "组件渲染耗时条"));
@@ -281,12 +257,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
-
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-            ApplyText(_titleText, TextStyleRole.Cardinal, theme);
-            ApplyText(_statusText, MFPProfiler.IsMasterBypassed ? TextStyleRole.Warning : TextStyleRole.Accent, theme);
+            base.ApplyTheme(theme);
 
             if (_headerLine != null) _headerLine.color = theme.FrameBorderColor;
             if (_midLine != null) _midLine.color = theme.FrameBorderColor;
@@ -335,8 +306,8 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _lastBypassState = bypassed;
                 ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
-                _statusText.text = bypassed ? "● BYPASS" : "● LIVE";
-                ApplyText(_statusText, bypassed ? TextStyleRole.Warning : TextStyleRole.Accent, theme);
+                StatusBadge.Text = bypassed ? "● BYPASS" : "● LIVE";
+                StatusBadge.SetRole(bypassed ? TextStyleRole.Warning : TextStyleRole.Accent);
                 _bypassBtnLabel.text = bypassed ? "▶ RESUME MFP HUD" : "⏸ BYPASS MFP (ZERO OVERHEAD)";
                 ApplyButton(_bypassBtn, _bypassBtnBg, _bypassBtnLabel, bypassed ? ButtonVisualRole.Warning : ButtonVisualRole.Normal, false, theme);
             }

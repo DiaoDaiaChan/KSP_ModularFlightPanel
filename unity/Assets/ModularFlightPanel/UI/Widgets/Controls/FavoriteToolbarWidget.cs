@@ -87,8 +87,13 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public static FavoriteToolbarWidget Instance { get; private set; }
 
+        public override Vector2 BaseSize => new Vector2(220f, 46f);
+        protected override bool AutoCreateCardFrame => false;
         public override bool IsInteractive => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        // 声明式微控件
+        public TextWidget TitleWidget = TextWidget.Title("★ QUICK DOCK");
 
         private Image _panelBg;
         private Outline _panelOutline;
@@ -813,6 +818,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             _currentTheme = theme;
             if (theme == null) return;
+            base.ApplyTheme(theme);
 
             ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
             if (_accentStripe != null) _accentStripe.color = (Color)theme.AccentPrimary;

@@ -57,7 +57,12 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public static ModernToolbarWidget Instance { get; private set; }
 
+        public override Vector2 BaseSize => new Vector2(88f, 240f);
+        protected override bool AutoCreateCardFrame => false;
         public override bool IsInteractive => true;
+
+        // 声明式微控件
+        public TextWidget CollapseTitle = TextWidget.Title("« DOCK");
 
         private Image _panelBg;
         private Outline _panelOutline;
@@ -1415,6 +1420,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             _currentTheme = theme;
             if (theme == null) return;
+            base.ApplyTheme(theme);
 
             ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
 

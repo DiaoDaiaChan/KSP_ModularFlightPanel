@@ -14,14 +14,15 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("life_support", "life", "ecls", Category = WidgetCategory.Systems, DisplayName = "LIFE SUPPORT 维生消耗品监控", Description = "乘员居住舱压环境、氧气/电力/RCS/维生消耗品 2x2 进度仪表。", DefaultWidgetId = "custom.life", DefaultX = -440f, DefaultY = -40f, IsSingleton = true, ExactIds = new[] { "custom.life", "custom.life_support", "core.life_support" })]
     public class LifeSupportWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(270f, 160f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        private Image _bgImage;
-        private Outline _outline;
+        // 声明式微控件头部与状态徽标
+        public TextWidget Title = TextWidget.Title("LIFE SUPPORT");
+        public TextWidget StatusBadge = TextWidget.Badge("● NOMINAL");
 
-        private Text _titleText;
         private Text _subTitleText;
-        private Text _statusBadge;
 
         // 居住环境简报
         private Text _crewText;
@@ -46,32 +47,13 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            Vector2 panelSize = new Vector2(270f * s, 160f * s);
-            RectTransform.sizeDelta = panelSize;
+            Vector2 panelSize = BaseSize * s;
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = theme.FrameBgColor;
-
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectColor = theme.FrameBorderColor;
-            _outline.effectDistance = new Vector2(1.5f * s, 1.5f * s);
-            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _outline.effectColor, s);
-
-            // 1. 顶部 Header
-            _titleText = UIFactory.CreateText(transform, "Title", "LIFE SUPPORT", Mathf.RoundToInt(12f * s), TextAnchor.MiddleLeft, theme.TextPrimaryColor);
-            RectTransform titRt = _titleText.GetComponent<RectTransform>();
-            titRt.sizeDelta = new Vector2(100f * s, 18f * s);
-            titRt.anchoredPosition = new Vector2(-70f * s, 64f * s);
-
+            // 1. 顶部 Header (Title & StatusBadge 已由基类微控件 DSL 自动构建)
             _subTitleText = UIFactory.CreateText(transform, "SubTitle", "HABITAT & CREW", Mathf.RoundToInt(8f * s), TextAnchor.MiddleLeft, theme.AccentSecondary);
             RectTransform subRt = _subTitleText.GetComponent<RectTransform>();
             subRt.sizeDelta = new Vector2(85f * s, 16f * s);
             subRt.anchoredPosition = new Vector2(25f * s, 64f * s);
-
-            _statusBadge = UIFactory.CreateText(transform, "Badge", "● NOMINAL", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight, theme.AccentPrimary);
-            RectTransform statRt = _statusBadge.GetComponent<RectTransform>();
-            statRt.sizeDelta = new Vector2(70f * s, 16f * s);
-            statRt.anchoredPosition = new Vector2(95f * s, 64f * s);
 
             // 分割线
             UIFactory.CreatePanel(transform, "Div1", new Vector2(panelSize.x - 16f * s, 1f * s), new Vector2(0f, 52f * s), theme.FrameBorderColor);
@@ -119,18 +101,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
-            this.Controls.Register(new WidgetHeaderControl("header", "标题栏", _titleText != null ? _titleText.gameObject : null, _titleText, _statusBadge));
             this.Controls.Register(new WidgetReadoutControl("environment_summary", "乘员环境摘要", _crewText != null ? _crewText.gameObject : null, _crewText, _pressureText, TextStyleRole.SecondaryValue));
             if (_gauges[0].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("o2_gauge", "氧气余量", _gauges[0].BoxObj, _gauges[0].BarFill != null ? _gauges[0].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
             if (_gauges[1].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("power_gauge", "电力储备", _gauges[1].BoxObj, _gauges[1].BarFill != null ? _gauges[1].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
             if (_gauges[2].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("rcs_gauge", "RCS姿控", _gauges[2].BoxObj, _gauges[2].BarFill != null ? _gauges[2].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
             if (_gauges[3].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("water_gauge", "水/燃料储备", _gauges[3].BoxObj, _gauges[3].BarFill != null ? _gauges[3].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
-
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
         }
 
         private ResourceGaugeUI CreateResourceGauge(Transform parent, string name, Vector2 size, Vector2 pos,
@@ -242,18 +217,18 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastStatusBadgeState = badgeState;
                 if (badgeState == 2)
                 {
-                    _statusBadge.text = "▲ WARNING";
-                    ApplyText(_statusBadge, TextStyleRole.Danger, theme);
+                    StatusBadge.Text = "▲ WARNING";
+                    StatusBadge.SetRole(TextStyleRole.Danger);
                 }
                 else if (badgeState == 1)
                 {
-                    _statusBadge.text = "● CAUTION";
-                    ApplyText(_statusBadge, TextStyleRole.Warning, theme);
+                    StatusBadge.Text = "● CAUTION";
+                    StatusBadge.SetRole(TextStyleRole.Warning);
                 }
                 else
                 {
-                    _statusBadge.text = "● NOMINAL";
-                    ApplyText(_statusBadge, TextStyleRole.Accent, theme);
+                    StatusBadge.Text = "● NOMINAL";
+                    StatusBadge.SetRole(TextStyleRole.Accent);
                 }
             }
         }
@@ -286,19 +261,13 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
 
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-            if (_titleText != null)
-            {
-                _titleText.text = GetTemplateChannel("TITLE", "LIFE SUPPORT");
-                ApplyText(_titleText, TextStyleRole.PrimaryValue, theme);
-            }
             if (_subTitleText != null)
             {
                 _subTitleText.text = GetTemplateChannel("SUBTITLE", "HABITAT & CREW");
                 ApplyText(_subTitleText, TextStyleRole.Label, theme);
             }
-            if (_statusBadge != null) ApplyText(_statusBadge, TextStyleRole.Accent, theme);
             if (_pressureText != null) ApplyText(_pressureText, TextStyleRole.SecondaryValue, theme);
             if (_tempText != null) ApplyText(_tempText, TextStyleRole.SecondaryValue, theme);
 
@@ -309,8 +278,6 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_gauges[i].PercentText != null) ApplyText(_gauges[i].PercentText, TextStyleRole.PrimaryValue, theme);
                 if (_gauges[i].StatusText != null) ApplyText(_gauges[i].StatusText, TextStyleRole.Label, theme);
             }
-
-            this.Controls.ApplyThemeToControls(theme);
         }
 
         protected override void OnDestroy()

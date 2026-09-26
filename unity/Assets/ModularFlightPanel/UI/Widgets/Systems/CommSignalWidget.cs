@@ -20,6 +20,12 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("comm_signal", "commsignal", Category = WidgetCategory.Systems, DisplayName = "COMM 天线通信信号条", Description = "紧凑型通信天线连接质量与中继跳数状态条。", DefaultWidgetId = "core.comm_signal", DefaultX = 300f, DefaultY = 200f, IsSingleton = true, ExactIds = new[] { "core.comm_signal", "core.commsignal" })]
     public class CommSignalWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(264f, 26f);
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        // 声明式微控件
+        public TextWidget TargetName = TextWidget.Title("COMMNET");
+
         private Image _panelBg;
         private Outline _panelOutline;
 
@@ -57,8 +63,6 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _stockHidden = true;
         private ThemeConfig _currentTheme;
         private IFlightTelemetry _lastTelemetry;
-
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {

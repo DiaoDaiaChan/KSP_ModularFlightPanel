@@ -21,14 +21,14 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("stage_control", "staging_ctrl", Category = WidgetCategory.Controls, DisplayName = "操纵量指示与分级锁控制台", Description = "Pitch/Roll/Yaw 实时舵量标尺与分级安全锁定 (Alt+L) 防误触操作台。", DefaultWidgetId = "core.stage_control", DefaultX = -360f, DefaultY = -180f, IsSingleton = true, ExactIds = new[] { "core.stage_control" })]
     public class StageControlWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(204f, 186f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
-        // 基础背板
-        private Image _panelBg;
-        private Outline _panelOutline;
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("STAGE CONTROL");
 
         // 顶栏安全联动总成
-        private Text _titleText;
         private Text _subStatusText;
         private Button _lockBtn;
         private Image _lockBtnBg;
@@ -95,29 +95,27 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            Vector2 panelSize = new Vector2(204f * s, 186f * s);
+            Vector2 panelSize = BaseSize * s;
             RectTransform.sizeDelta = panelSize;
 
             WidgetStyleManager style = WidgetStyleManager.Instance;
-
-            // 1. 主背板与暗晶外边框 (0 颜色字面量，统一由 ApplyCard 注入)
-            _panelBg = gameObject.AddComponent<Image>();
-            _panelBg.color = Color.clear;
-            _panelOutline = gameObject.AddComponent<Outline>();
-            _panelOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
 
             // ==========================================
             // 2. 顶栏安全联动总成 (Safety Header)
             // ==========================================
             float topY = panelSize.y * 0.5f - 14f * s;
 
-            _titleText = UIFactory.CreateText(transform, "Title", I18n.Tr("WIDGET_STAGE_CTRL_TITLE", "STAGE CONTROL"),
-                Mathf.Max(7, Mathf.RoundToInt(8.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, theme));
-            _titleText.fontStyle = FontStyle.Bold;
-            RectTransform titleRt = _titleText.GetComponent<RectTransform>();
-            titleRt.sizeDelta = new Vector2(82f * s, 14f * s);
-            titleRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 48f * s, topY + 4f * s);
+            if (Title != null && Title.TextComponent != null)
+            {
+                Title.Text = I18n.Tr("WIDGET_STAGE_CTRL_TITLE", "STAGE CONTROL");
+                Title.SetRole(TextStyleRole.Cardinal);
+                RectTransform titleRt = Title.TextComponent.rectTransform;
+                if (titleRt != null)
+                {
+                    titleRt.sizeDelta = new Vector2(82f * s, 14f * s);
+                    titleRt.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 48f * s, topY + 4f * s);
+                }
+            }
 
             _subStatusText = UIFactory.CreateText(transform, "SubStatus", "SAFETY INTERLOCK",
                 Mathf.Max(5, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
@@ -284,10 +282,6 @@ namespace ModularFlightPanel.UI.Widgets
             NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden);
 
             // 标准化组件内部控件注册至管理器
-            if (_titleText != null)
-            {
-                ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "title", "控制台标题", _titleText.gameObject);
-            }
             if (_fireBtn != null)
             {
                 ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
@@ -541,16 +535,15 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            ApplyCard(_panelBg, _panelOutline, CardStyleRole.Normal, theme);
-
             // 顶栏
-            if (_titleText != null)
+            if (Title != null)
             {
-                _titleText.text = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_STAGE_CTRL_TITLE", "STAGE CONTROL"));
-                ApplyText(_titleText, TextStyleRole.Cardinal, theme);
+                Title.Text = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_STAGE_CTRL_TITLE", "STAGE CONTROL"));
+                Title.SetRole(TextStyleRole.Cardinal);
             }
             if (_subStatusText != null) ApplyText(_subStatusText, _lastLockedState ? TextStyleRole.Danger : TextStyleRole.SecondaryValue, theme);
 

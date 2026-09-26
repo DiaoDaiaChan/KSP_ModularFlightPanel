@@ -221,6 +221,10 @@ namespace ModularFlightPanel.UI
             if (mat.HasProperty("_PhosphorColor")) mat.SetColor("_PhosphorColor", theme.AccentPrimary);
             if (mat.HasProperty("_CoreHotColor")) mat.SetColor("_CoreHotColor", Lighten((Color)theme.AccentPrimary, 0.40f));
             if (mat.HasProperty("_SegmentLitColor")) mat.SetColor("_SegmentLitColor", theme.AccentPrimary);
+            if (mat.HasProperty("_NeonGlowColor")) mat.SetColor("_NeonGlowColor", theme.AccentSecondary);
+            if (mat.HasProperty("_ChromaticShift")) mat.SetFloat("_ChromaticShift", 0.65f);
+            if (mat.HasProperty("_Aberration")) mat.SetFloat("_Aberration", 0.65f);
+            if (mat.HasProperty("_DotRadius")) mat.SetFloat("_DotRadius", 0.40f);
             if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", theme.FrameBgColor);
             if (mat.HasProperty("_BackgroundColor")) mat.SetColor("_BackgroundColor", theme.FrameBgColor);
             if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", theme.FrameBorderColor);

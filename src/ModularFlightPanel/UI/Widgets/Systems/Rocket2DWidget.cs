@@ -36,7 +36,13 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("rocket2d", "rocket", "staging_diagram", Category = WidgetCategory.Systems, DisplayName = "ROCKET 2D 垂直推进栈姿态卡", Description = "多级火箭垂直推进栈、推进剂实时耗尽进度条、发动机工况与本级 dV。", DefaultWidgetId = "custom.rocket", DefaultX = 440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "custom.rocket", "custom.stage", "custom.staging", "core.rocket2d" })]
     public class Rocket2DWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(DefaultWidth, DefaultHeight);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("ROCKET 2D");
+        public TextWidget StatusBadge = TextWidget.Badge("ARMED");
 
         // 单级推进堆叠行 UI 结构
         private class StageRowUI
@@ -155,15 +161,9 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ParseCustomTemplate(config?.CustomTemplate);
 
-            Vector2 panelSize = new Vector2(DefaultWidth * s, DefaultHeight * s);
-            RectTransform.sizeDelta = panelSize;
-
-            // 1. 卡片主底板 (0 颜色字面量，统一由 ApplyCard 注入语义角色与材质)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
+            Vector2 panelSize = BaseSize * s;
+            _bgImage = CardBackground;
+            _outline = CardOutline;
 
             // 2. 顶部航电综合简报栏 (Header)
             BuildHeader(transform, panelSize, s, theme);
@@ -175,16 +175,10 @@ namespace ModularFlightPanel.UI.Widgets
             BuildPropulsionStack(transform, panelSize, s, theme);
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
             this.Controls.Register(new WidgetHeaderControl("header_summary", "顶部简报栏", _titleText != null ? _titleText.gameObject : null, _titleText, _subTitleText));
             this.Controls.Register(new WidgetReadoutControl("twr_dv_readout", "TWR与总速度增量", _summaryDvText != null ? _summaryDvText.gameObject : null, _summaryDvText, _summaryTwrText, TextStyleRole.PrimaryValue));
             if (_silhouetteBayObj != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "silhouette_bay", "飞船剪影视窗", _silhouetteBayObj));
             if (_stageRows.Count > 0) this.Controls.Register(WidgetControlManager.WrapElement(this, "propulsion_stack", "多级推进栈", _stageRows[0].Root));
-
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
         }
 
         private void BuildHeader(Transform parent, Vector2 panelSize, float s, ThemeConfig theme)
@@ -487,8 +481,7 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
-
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
+            base.ApplyTheme(theme);
             ApplyText(_titleText, TextStyleRole.Cardinal, theme);
             ApplyText(_subTitleText, TextStyleRole.Label, theme);
             ApplyText(_summaryTwrText, TextStyleRole.PrimaryValue, theme);

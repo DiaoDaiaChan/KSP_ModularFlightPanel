@@ -24,6 +24,13 @@ namespace ModularFlightPanel.UI.Widgets.Controls
     {
         public static UIWidget Instance { get; private set; }
 
+        public override Vector2 BaseSize => new Vector2(290f, 340f);
+        protected override bool AutoCreateCardFrame => true;
+
+        // 声明式微控件
+        public TextWidget TitleWidget = TextWidget.Title("UI MANAGER");
+        public TextWidget StatusBadgeWidget = TextWidget.Badge("ACTIVE");
+
         /// <summary>
         /// 外部委托：请求打开航电设计工作台 (Alt+N)
         /// 解耦 IMGUI 与 UGUI，纯 Unity / 无头测试模式下安全静默
@@ -91,10 +98,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             RectTransform.sizeDelta = new Vector2(baseW, baseH);
 
             // 2. 底板与边框 (0 颜色字面量)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+                _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, _cachedTheme);
 
             // 3. 顶部标题栏 (Header, 36px)
@@ -556,6 +563,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             _cachedTheme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 

@@ -21,7 +21,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     [FlightWidget("spacex_attitude", "dragon_attitude", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 载人龙飞船姿态指示器", Description = "SpaceX 极简黑白双轴陀螺姿态仪，显示俯仰、滚转与偏航微步。", DefaultWidgetId = "spacex.attitude", DefaultX = -360f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "spacex.attitude" })]
     public class SpaceXAttitudeWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(96f, 96f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+
+        // 声明式微控件
+        public TextWidget NorthMark = TextWidget.Title("N");
+        public TextWidget AttitudeText = TextWidget.Value("P +0° R +0°");
 
         // UI 视图节点
         private Image _bgImage;
@@ -84,9 +90,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float diameter = 96f * s;
             RectTransform.sizeDelta = new Vector2(diameter, diameter);
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+                _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             EnsureSharedTextures();
 
@@ -183,6 +190,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);

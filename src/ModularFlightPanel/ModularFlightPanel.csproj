@@ -112,4 +112,17 @@
     <Copy SourceFiles="@(LocalizationFiles)" DestinationFolder="$(KSPRoot)\GameData\ModularFlightPanel\Localization\" Condition="Exists('$(KSPRoot)\GameData')" SkipUnchangedFiles="true" ContinueOnError="true" />
   </Target>
 
+  <!-- 编译期航电组件合规性与架构现代化进度提醒 (Compliance & Legacy Widget Audit Notice) -->
+  <Target Name="AuditWidgetModernization" AfterTargets="CoreCompile" Condition="'$(SkipModernizationAudit)' != 'true'">
+    <PropertyGroup>
+      <ValidatorDll Condition="Exists('$(MSBuildProjectDirectory)\..\..\tools\HeadlessValidator\bin\Debug\net6.0\HeadlessValidator.dll')">$(MSBuildProjectDirectory)\..\..\tools\HeadlessValidator\bin\Debug\net6.0\HeadlessValidator.dll</ValidatorDll>
+      <ValidatorDll Condition="'$(ValidatorDll)' == '' and Exists('$(MSBuildProjectDirectory)\..\..\tools\HeadlessValidator\bin\Release\net6.0\HeadlessValidator.dll')">$(MSBuildProjectDirectory)\..\..\tools\HeadlessValidator\bin\Release\net6.0\HeadlessValidator.dll</ValidatorDll>
+    </PropertyGroup>
+    <Exec Condition="'$(ValidatorDll)' != ''"
+          Command="dotnet &quot;$(ValidatorDll)&quot; --audit-legacy --msbuild"
+          StandardOutputImportance="High"
+          StandardErrorImportance="High"
+          ContinueOnError="true" />
+  </Target>
+
 </Project>

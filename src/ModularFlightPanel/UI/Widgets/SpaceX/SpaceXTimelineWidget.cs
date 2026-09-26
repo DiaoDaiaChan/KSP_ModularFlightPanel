@@ -18,7 +18,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     [FlightWidget("spacex_timeline", "dragon_timeline", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 飞行关键时序甘特轴", Description = "横排甘特式任务阶段进度标尺：MECO、分级、入轨、对接窗口各节点动态光标推进。", DefaultWidgetId = "spacex.timeline", DefaultX = 0f, DefaultY = 320f, IsSingleton = true, ExactIds = new[] { "spacex.timeline" })]
     public class SpaceXTimelineWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(520f, 88f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget Clock = TextWidget.Value("T+ 00:00:00");
+        public TextWidget Phase = TextWidget.Unit("STARSHIP FLIGHT TEST");
 
         // UI 视图节点
         private Image _bgImage;
@@ -90,9 +96,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             RectTransform.sizeDelta = size;
 
             // 2. 半透卡片底板 (全息透明 HUD 风格)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+                _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             // 3. 构建顶部抛物线轨迹弧 (Trajectory Arc)
             EnsureSharedArcTexture();
@@ -222,6 +229,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);

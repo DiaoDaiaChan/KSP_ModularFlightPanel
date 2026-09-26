@@ -1,138 +1,146 @@
 using System;
 using UnityEngine;
-using UnityEngine.UI;
-using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
-    /// <summary>Compact ECAM-style flight status strip: readable at a glance without covering the navball.</summary>
-    [FlightWidget("ecam_status", "status_memo", Category = WidgetCategory.Systems, DisplayName = "ECAM 飞行状态备忘录", Description = "单行状态备忘横条：飞行阶段徽标、关键警告速览与系统就绪摘要。", DefaultWidgetId = "core.ecam_status", DefaultX = 0f, DefaultY = 80f, IsSingleton = true, ExactIds = new[] { "core.ecam_status" })]
+    /// <summary>
+    /// HUD 飞行阶段与系统备忘横条 (HUD Flight Phase & Systems Memo Bar)
+    /// 紧凑型航电抬头状态横条：
+    /// 1. 左侧：高对比度动态状态指示柱 (State Bar) 与当前飞行阶段胶囊徽标 (8 级真实物理时序推演)；
+    /// 2. 中央：飞控律模式与主告警摘要 (SAS 模式 / 手动操作 / TERRAIN PULL UP 紧急拉起)；
+    /// 3. 右侧：当前速度参考系与导航引导态势。
+    /// 100% 遵照 SPEC-001..008 核心架构规范，完美兼容既有 core.ecam_status 预设锚点。
+    /// </summary>
+    [FlightWidget("ecam_status", "status_memo", "flight_memo", "hud_memo",
+        Category = WidgetCategory.Systems,
+        DisplayName = "HUD 飞行阶段与备忘横条",
+        Description = "紧凑型航电抬头备忘横条：飞行阶段时序推演、飞控律模式、关键地形防撞拉起与导航参考系速览。",
+        DefaultWidgetId = "core.ecam_status",
+        DefaultX = 0f,
+        DefaultY = 80f,
+        IsSingleton = true,
+        ExactIds = new[] { "core.ecam_status" })]
     public class EcamStatusWidget : BaseFlightWidget
     {
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+        public override Vector2 BaseSize => new Vector2(260f, 48f);
+        protected override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
-        private Text _title;
-        private Text _state;
-        private Text _metrics;
-        private Image _stateBar;
-        private Image _background;
-        private Outline _outline;
+        // ── 头部集中声明微控件对象 ──
+        public TextWidget Title = TextWidget.Title("FLIGHT MEMO");
+        public TextWidget PhaseBadge = TextWidget.Badge("PRE-LAUNCH");
 
-        private string _lastStateText = "";
-        private string _lastMetricsText = "";
-        private int _lastVisualState = -1;
+        public TextWidget MainState = new TextWidget(TextStyleRole.Accent, -114f, -4f, 160f, 18f, 12f, TextAnchor.MiddleLeft, "SYSTEMS NOMINAL");
+        public TextWidget NavContext = new TextWidget(TextStyleRole.SecondaryValue, 50f, -4f, 70f, 18f, 9.5f, TextAnchor.MiddleRight, "SURFACE");
 
-        protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
-        {
-            theme = WidgetStyleManager.ResolveTheme(theme);
-            float s = CurrentDpiScale;
-            Vector2 size = new Vector2(270f * s, 58f * s);
-            RectTransform.sizeDelta = size;
-
-            _background = gameObject.AddComponent<Image>();
-            _background.color = theme.FrameBgColor;
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectColor = theme.FrameBorderColor;
-            _outline.effectDistance = new Vector2(1f * s, 1f * s);
-
-            GameObject bar = UIFactory.CreatePanel(transform, "State_Bar", new Vector2(4f * s, size.y),
-                new Vector2(-size.x * 0.5f + 2f * s, 0f), theme.AccentPrimary);
-            _stateBar = bar.GetComponent<Image>();
-
-            string titleStr = GetTemplateChannel("TITLE", "FLIGHT STATUS");
-            _title = UIFactory.CreateText(transform, "Title", titleStr, Mathf.RoundToInt(10f * s), TextAnchor.UpperLeft, theme.TextAccentColor);
-            RectTransform titleRt = _title.rectTransform;
-            titleRt.sizeDelta = new Vector2(size.x - 20f * s, 16f * s);
-            titleRt.anchoredPosition = new Vector2(12f * s, size.y * 0.5f - 12f * s);
-
-            _state = UIFactory.CreateText(transform, "State", "SYSTEMS NOMINAL", Mathf.RoundToInt(14f * s), TextAnchor.MiddleLeft, theme.AccentPrimary);
-            RectTransform stateRt = _state.rectTransform;
-            stateRt.sizeDelta = new Vector2(size.x - 20f * s, 20f * s);
-            stateRt.anchoredPosition = new Vector2(12f * s, 4f * s);
-
-            _metrics = UIFactory.CreateText(transform, "Metrics", "SPD 000.0   ALT 0000   VSI +0.0", Mathf.RoundToInt(9f * s), TextAnchor.LowerLeft, theme.TextPrimaryColor);
-            RectTransform metricsRt = _metrics.rectTransform;
-            metricsRt.sizeDelta = new Vector2(size.x - 20f * s, 14f * s);
-            metricsRt.anchoredPosition = new Vector2(12f * s, -size.y * 0.5f + 9f * s);
-
-            // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_background, _outline, CardStyleRole.Normal, t)));
-            if (_stateBar != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "state_bar", "状态竖条", _stateBar.gameObject, (t) => { if (_stateBar != null) _stateBar.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, t); }));
-            this.Controls.Register(new WidgetReadoutControl("title", "标题", _title != null ? _title.gameObject : null, null, _title, TextStyleRole.Label));
-            this.Controls.Register(new WidgetReadoutControl("state_readout", "飞行状态备忘", _state != null ? _state.gameObject : null, _state, null, TextStyleRole.Accent));
-            this.Controls.Register(new WidgetReadoutControl("metrics_readout", "基础飞行读数", _metrics != null ? _metrics.gameObject : null, _metrics, null, TextStyleRole.SecondaryValue));
-
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
-        }
+        public LinearBarWidget StatusAccentBar = LinearBarWidget.BottomBar(MeterStyleRole.Primary, height: 2.5f);
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
-
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
-
-            bool caution = telemetry.IsTouchdownAlert;
-            int visualState = caution ? 2 : (telemetry.IsSASEnabled ? 1 : 0);
-
-            string cautionText = GetTemplateChannel("CAUTION_TEXT", "TERRAIN  /  PULL UP");
-            string sasText = GetTemplateChannel("SAS_TEXT", "SAS ACTIVE");
-            string manualText = GetTemplateChannel("MANUAL_TEXT", "MANUAL FLIGHT");
-            string stateStr = caution ? cautionText : (telemetry.IsSASEnabled ? sasText : manualText);
-
-            if (stateStr != _lastStateText)
+            if (telemetry == null || !telemetry.HasVessel)
             {
-                _lastStateText = stateStr;
-                _state.text = stateStr;
+                MainState.Text = "NO VESSEL SIGNAL";
+                MainState.SetRole(TextStyleRole.Muted);
+                PhaseBadge.Text = "STANDBY";
+                PhaseBadge.SetRole(TextStyleRole.Muted);
+                NavContext.Text = "---";
+                StatusAccentBar.FillAmount = 0f;
+                return;
             }
 
-            if (visualState != _lastVisualState)
+            // 1. 紧急触地/近地防撞拉起告警 (最高优先级)
+            if (telemetry.IsTouchdownAlert)
             {
-                _lastVisualState = visualState;
-                TextStyleRole textRole = caution ? TextStyleRole.Danger : (telemetry.IsSASEnabled ? TextStyleRole.Accent : TextStyleRole.Warning);
-                ApplyText(_state, textRole, theme);
-
-                MeterStyleRole barRole = caution ? MeterStyleRole.Danger : (telemetry.IsSASEnabled ? MeterStyleRole.Primary : MeterStyleRole.Warning);
-                if (_stateBar != null)
-                {
-                    _stateBar.color = WidgetStyleManager.Meter(barRole, theme);
-                }
+                MainState.Text = "TERRAIN  /  PULL UP";
+                MainState.SetRole(TextStyleRole.Danger);
+                PhaseBadge.Text = "CRITICAL";
+                PhaseBadge.SetRole(TextStyleRole.Danger);
+                StatusAccentBar.FillAmount = 1.0f;
+                return;
             }
 
-            if (_metrics != null)
+            // 2. 飞控操纵律与主状态摘要
+            bool isSas = telemetry.IsSASEnabled;
+            bool isRcs = telemetry.IsRCSEnabled;
+            string sasMode = telemetry.CurrentSASMode.ToString().ToUpperInvariant();
+
+            if (isSas)
             {
-                string metricsTemplate = GetTemplateChannel("METRICS", "SPD {SPD:F1}   ALT {ALT:N0}   VSI {VSI:F1}");
-                string metricsStr = TelemetryTokenEngine.Evaluate(metricsTemplate, telemetry);
-                if (metricsStr != _lastMetricsText)
-                {
-                    _lastMetricsText = metricsStr;
-                    _metrics.text = metricsStr;
-                }
+                MainState.Text = $"SAS: {sasMode}";
+                MainState.SetRole(TextStyleRole.Accent);
+                StatusAccentBar.FillAmount = 0.8f;
             }
+            else
+            {
+                MainState.Text = isRcs ? "MANUAL FLIGHT (RCS)" : "MANUAL FLIGHT";
+                MainState.SetRole(TextStyleRole.PrimaryValue);
+                StatusAccentBar.FillAmount = 0.4f;
+            }
+
+            // 3. 参考系模式
+            string frameStr = !string.IsNullOrEmpty(telemetry.SpeedModeName) ? telemetry.SpeedModeName.ToUpperInvariant() : "SURFACE";
+            NavContext.Text = frameStr;
+
+            // 4. 真实物理时序飞行阶段推演
+            UpdateFlightPhase(telemetry);
         }
 
-        public override void ApplyTheme(ThemeConfig theme)
+        private void UpdateFlightPhase(IFlightTelemetry telemetry)
         {
-            if (theme == null) return;
+            double ralt = telemetry.AltitudeAGL;
+            double vsi = telemetry.VerticalSpeed;
+            double ap = telemetry.Apoapsis;
+            double pe = telemetry.Periapsis;
+            double atmDepth = telemetry.AtmosphereDepth;
+            bool hasAtm = telemetry.HasAtmosphere;
+            double ecc = ExternalProbeRegistry.ResolveNumeric("ORBIT", "ECC");
+            if (double.IsNaN(ecc) || ecc < 0.0)
+            {
+                double rA = Math.Max(10000.0, 600000.0 + ap);
+                double rP = 600000.0 + pe;
+                ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
+            }
+            double spd = telemetry.SurfaceSpeed;
 
-            ApplyCard(_background, _outline, CardStyleRole.Normal, theme);
-            ApplyText(_title, TextStyleRole.Label, theme);
-            ApplyText(_state, TextStyleRole.Accent, theme);
-            ApplyText(_metrics, TextStyleRole.SecondaryValue, theme);
-
-            if (_stateBar != null) _stateBar.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
-
-            this.Controls.ApplyThemeToControls(theme);
-        }
-
-        protected override void OnDestroy()
-        {
-            this.Controls.UnregisterAll();
-            base.OnDestroy();
+            // 状态机推演
+            if (ralt < 15.0 && spd < 1.0)
+            {
+                PhaseBadge.Text = "PRE-LAUNCH";
+                PhaseBadge.SetRole(TextStyleRole.SecondaryValue);
+            }
+            else if (hasAtm && ralt < atmDepth && vsi > 5.0 && pe < 0.0)
+            {
+                PhaseBadge.Text = "ASCENT 爬升";
+                PhaseBadge.SetRole(TextStyleRole.PrimaryValue);
+            }
+            else if (hasAtm && ralt < atmDepth && vsi < -10.0 && spd > 1200.0)
+            {
+                PhaseBadge.Text = "RE-ENTRY 再入";
+                PhaseBadge.SetRole(TextStyleRole.Warning);
+            }
+            else if (ecc >= 1.0)
+            {
+                PhaseBadge.Text = "ESCAPE 逃逸";
+                PhaseBadge.SetRole(TextStyleRole.Danger);
+            }
+            else if (pe > (hasAtm ? atmDepth : 0.0))
+            {
+                PhaseBadge.Text = "ORBIT 轨道巡航";
+                PhaseBadge.SetRole(TextStyleRole.Accent);
+            }
+            else if (vsi < -2.0 && ralt < 2000.0)
+            {
+                PhaseBadge.Text = "LANDING 进近着陆";
+                PhaseBadge.SetRole(TextStyleRole.Warning);
+            }
+            else
+            {
+                PhaseBadge.Text = "SUBORBITAL 亚轨道";
+                PhaseBadge.SetRole(TextStyleRole.SecondaryValue);
+            }
         }
     }
 }

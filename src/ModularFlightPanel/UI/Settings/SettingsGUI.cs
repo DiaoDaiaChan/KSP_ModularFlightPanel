@@ -24,13 +24,26 @@ namespace ModularFlightPanel.UI
         private bool _isOpen = false;
         public bool IsOpen => _isOpen;
 
-        public const float WindowWidth = 1040f;
-        public const float WindowHeight = 740f;
-        public const float ContentHeight = 550f;
+        public const float DefaultWindowWidth = 1040f;
+        public const float DefaultWindowHeight = 650f;
+        public const float MinWindowWidth = 840f;
+        public const float MinWindowHeight = 440f;
+        public const float WindowWidth = DefaultWindowWidth;
+        public const float WindowHeight = DefaultWindowHeight;
 
-        private Rect _windowRect = new Rect(100f, 60f, WindowWidth, WindowHeight);
+        public static float ContentHeight => Instance != null ? Instance.CurrentContentHeight : 480f;
+        public float CurrentContentHeight => Mathf.Max(240f, _windowRect.height - 170f);
+
+        private Rect _windowRect = new Rect(100f, 60f, DefaultWindowWidth, DefaultWindowHeight);
         private int _windowId = 849204;
         private bool _rectInitialized = false;
+
+        // 自由拉伸与全自适应视口状态机
+        private bool _isResizing = false;
+        private Vector2 _resizeStartMousePos;
+        private Vector2 _resizeStartWindowSize;
+        private bool _isMaximized = false;
+        private Rect _preMaximizeRect = new Rect(100f, 60f, DefaultWindowWidth, DefaultWindowHeight);
 
         private int _currentTab = 1; // 默认打开遥测装配台
         private readonly string[] TabTitles = new string[]
@@ -106,11 +119,13 @@ namespace ModularFlightPanel.UI
             _isOpen = !_isOpen;
             if (!_isOpen)
             {
-                // 关闭窗口时退出拖拽编辑模式、释放输入锁并提交暂存
+                // 关闭窗口时退出拖拽编辑模式、释放输入锁、提交暂存并持久化几何布局
+                _isResizing = false;
                 WidgetDragHandler.IsEditModeActive = false;
                 WidgetSelectionManager.ClearSelection();
                 TabAssembler.CommitPendingSaves();
                 WidgetLayoutManager.Instance.SaveLayout();
+                SaveWindowSettings();
                 MFPInputLock.ReleaseAllLocks();
             }
             else
@@ -126,17 +141,98 @@ namespace ModularFlightPanel.UI
         {
             if (!_rectInitialized)
             {
-                float x = Mathf.Max(0f, (Screen.width - WindowWidth) * 0.5f);
-                float y = Mathf.Max(0f, (Screen.height - WindowHeight) * 0.5f);
-                _windowRect = new Rect(x, y, WindowWidth, WindowHeight);
+                var tm = ThemeManager.Instance;
+                float savedW = tm != null && tm.SettingsWindowWidth > 0f ? tm.SettingsWindowWidth : DefaultWindowWidth;
+                float savedH = tm != null && tm.SettingsWindowHeight > 0f ? tm.SettingsWindowHeight : DefaultWindowHeight;
+                bool savedMax = tm != null && tm.SettingsWindowMaximized;
+
+                // 防御性校验：如果持久化的高度几乎占满屏幕且并非最大化，自动重置为标准默认高度
+                if (!savedMax && (savedH >= Screen.height - 30f || savedH < MinWindowHeight))
+                {
+                    savedH = Mathf.Min(DefaultWindowHeight, Mathf.Max(MinWindowHeight, Screen.height - 80f));
+                }
+                if (savedW >= Screen.width - 10f || savedW < MinWindowWidth)
+                {
+                    savedW = Mathf.Min(DefaultWindowWidth, Mathf.Max(MinWindowWidth, Screen.width - 40f));
+                }
+
+                float savedX = tm != null && tm.SettingsWindowX >= 0f ? tm.SettingsWindowX : Mathf.Max(15f, (Screen.width - savedW) * 0.5f);
+                float savedY = tm != null && tm.SettingsWindowY >= 0f ? tm.SettingsWindowY : Mathf.Max(15f, (Screen.height - savedH) * 0.5f);
+
+                // 防御越界：如果窗口跑出屏幕可视区，拉回中央
+                if (savedX > Screen.width - 80f || savedY > Screen.height - 80f || savedY < 5f)
+                {
+                    savedX = Mathf.Max(15f, (Screen.width - savedW) * 0.5f);
+                    savedY = Mathf.Max(15f, (Screen.height - savedH) * 0.5f);
+                }
+
+                _windowRect = new Rect(savedX, savedY, savedW, savedH);
+                _isMaximized = savedMax;
+                _preMaximizeRect = new Rect(savedX, savedY, savedW, savedH);
                 _rectInitialized = true;
+            }
+            ClampWindowToScreen();
+        }
+
+        private void ClampWindowToScreen()
+        {
+            float maxAllowedW = Mathf.Max(MinWindowWidth, Screen.width - 20f);
+            float maxAllowedH = Mathf.Max(MinWindowHeight, Screen.height - 20f);
+            _windowRect.width = Mathf.Clamp(_windowRect.width, MinWindowWidth, maxAllowedW);
+            _windowRect.height = Mathf.Clamp(_windowRect.height, MinWindowHeight, maxAllowedH);
+
+            float maxX = Mathf.Max(0f, Screen.width - _windowRect.width);
+            float maxY = Mathf.Max(0f, Screen.height - _windowRect.height);
+            _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, maxX);
+            _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, maxY);
+        }
+
+        private void SaveWindowSettings()
+        {
+            if (ThemeManager.Instance == null) return;
+            ThemeManager.Instance.SettingsWindowX = _windowRect.x;
+            ThemeManager.Instance.SettingsWindowY = _windowRect.y;
+            ThemeManager.Instance.SettingsWindowWidth = _windowRect.width;
+            ThemeManager.Instance.SettingsWindowHeight = _windowRect.height;
+            ThemeManager.Instance.SettingsWindowMaximized = _isMaximized;
+            ThemeManager.Instance.SaveSettings();
+        }
+
+        public void ResetToDefault()
+        {
+            _isMaximized = false;
+            float defaultH = Mathf.Min(DefaultWindowHeight, Mathf.Max(MinWindowHeight, Screen.height - 80f));
+            float defaultW = Mathf.Min(DefaultWindowWidth, Mathf.Max(MinWindowWidth, Screen.width - 40f));
+            _windowRect.width = defaultW;
+            _windowRect.height = defaultH;
+            _windowRect.x = Mathf.Max(15f, (Screen.width - defaultW) * 0.5f);
+            _windowRect.y = Mathf.Max(15f, (Screen.height - defaultH) * 0.5f);
+            ClampWindowToScreen();
+            SaveWindowSettings();
+            MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_RESET_WINDOW", "✔ 已还原标准窗口尺寸 (1040x650)"));
+        }
+
+        public void ToggleMaximize()
+        {
+            if (!_isMaximized)
+            {
+                _preMaximizeRect = _windowRect;
+                float maxW = Mathf.Max(MinWindowWidth, Screen.width * 0.94f);
+                float maxH = Mathf.Max(MinWindowHeight, Screen.height * 0.92f);
+                float posX = Mathf.Max(0f, (Screen.width - maxW) * 0.5f);
+                float posY = Mathf.Max(0f, (Screen.height - maxH) * 0.5f);
+                _windowRect = new Rect(posX, posY, maxW, maxH);
+                _isMaximized = true;
+                SaveWindowSettings();
+                MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_MAXIMIZE_WINDOW", "⛶ 已最大化窗口"));
             }
             else
             {
-                _windowRect.width = WindowWidth;
-                _windowRect.height = WindowHeight;
-                _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, Mathf.Max(0f, Screen.width - WindowWidth));
-                _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, Mathf.Max(0f, Screen.height - WindowHeight));
+                _isMaximized = false;
+                _windowRect = _preMaximizeRect;
+                ClampWindowToScreen();
+                SaveWindowSettings();
+                MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_RESTORE_WINDOW", "⧉ 已还原窗口尺寸"));
             }
         }
 
@@ -168,9 +264,16 @@ namespace ModularFlightPanel.UI
             MFPGuiSkin.EnsureInitialized();
             GUI.skin = HighLogic.Skin;
 
-            // 严格锁定固定物理尺寸，彻底关闭自适应拉伸与拖拽改变大小
-            _windowRect.width = WindowWidth;
-            _windowRect.height = WindowHeight;
+            // 保持窗口在屏幕安全可视范围内
+            ClampWindowToScreen();
+
+            // 自由拉伸交互状态机 (安全兜底：如果外部抬起鼠标，确保释放拉伸状态)
+            if (_isResizing && (Event.current.rawType == EventType.MouseUp || Event.current.type == EventType.MouseUp))
+            {
+                GUIUtility.hotControl = 0;
+                _isResizing = false;
+                SaveWindowSettings();
+            }
 
             // 输入穿透安全防护
             bool isMouseOver = _windowRect.Contains(Event.current.mousePosition);
@@ -179,23 +282,26 @@ namespace ModularFlightPanel.UI
             bool isTextFocused = !string.IsNullOrEmpty(GUI.GetNameOfFocusedControl());
             MFPInputLock.SetKeyboardFocusLock(isTextFocused);
 
+            // 严格保护用户指定或拖拽的窗口尺寸，严禁 GUILayout 内部弹性内容在帧间滚雪球无限撑大
+            float targetW = _windowRect.width;
+            float targetH = _windowRect.height;
+
             _windowRect = GUILayout.Window(
                 _windowId,
                 _windowRect,
                 DrawWindowContent,
                 "",
                 MFPGuiSkin.WindowStyle,
-                GUILayout.Width(WindowWidth),
-                GUILayout.Height(WindowHeight)
+                GUILayout.Width(targetW),
+                GUILayout.Height(targetH)
             );
 
-            // 保持固定尺寸，防止 GUILayout.Window 内部内容推挤改变大小
-            _windowRect.width = WindowWidth;
-            _windowRect.height = WindowHeight;
+            // 恢复物理尺寸锁定，消解 GUILayout 内部弹性内容导致的尺寸漂移
+            _windowRect.width = targetW;
+            _windowRect.height = targetH;
 
-            // 保持窗口在屏幕安全可视范围内
-            _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, Mathf.Max(0f, Screen.width - WindowWidth));
-            _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, Mathf.Max(0f, Screen.height - WindowHeight));
+            // 绘制后再次约束在安全屏幕视口内
+            ClampWindowToScreen();
         }
 
         private void DrawWindowContent(int id)
@@ -208,13 +314,13 @@ namespace ModularFlightPanel.UI
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
 
-            // 标题徽章
+            // 标题徽章 (色标联动主题配色)
             string subTitle = I18n.Tr("UI_WORKBENCH_SUBTITLE", "航电工程工作台");
-            GUILayout.Label($"<color=#00E5FF><b>MODULAR FLIGHT PANEL</b></color> <color=#88AACC><size=11>| {subTitle}</size></color>", GUILayout.Width(270f));
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><b>MODULAR FLIGHT PANEL</b></color> <color=#{MFPGuiSkin.HexTextSecondary}><size=11>| {subTitle}</size></color>", GUILayout.Width(270f));
 
             GUILayout.FlexibleSpace();
 
-            // 载具状态摘要
+            // 载具状态摘要 (状态色动态派生自主题)
             string vesselName = FlightTelemetryContext.Current?.VesselName ?? "---";
             string frameName = TelemetryTokenEngine.Evaluate("{FRAME}", FlightTelemetryContext.Current);
             double mfpMs = MFPProfiler.AvgTotalMs;
@@ -222,7 +328,7 @@ namespace ModularFlightPanel.UI
 
             string vesselLabel = I18n.Tr("UI_VESSEL", "载具");
             string frameLabel = I18n.Tr("UI_REF_FRAME", "参考系");
-            string statusText = $"<color=#7088A8>{vesselLabel}: <color=#FFFFFF>{vesselName}</color> | {frameLabel}: <color=#00E5FF>{frameName}</color> | MFP: <color=#00FF88>{mfpMs:F2}ms</color> | <color=#FFB800>{fps:F0} FPS</color></color>";
+            string statusText = $"<color=#{MFPGuiSkin.HexTextSecondary}>{vesselLabel}: <color=#FFFFFF>{vesselName}</color> | {frameLabel}: <color=#{MFPGuiSkin.HexAccentCyan}>{frameName}</color> | MFP: <color=#{MFPGuiSkin.HexAccentGreen}>{mfpMs:F2}ms</color> | <color=#{MFPGuiSkin.HexAccentAmber}>{fps:F0} FPS</color></color>";
             GUILayout.Label(statusText);
 
             GUILayout.FlexibleSpace();
@@ -280,8 +386,26 @@ namespace ModularFlightPanel.UI
 
             GUILayout.Space(6f);
 
+            // 一键重置基线尺寸 (1040x650)
+            if (GUILayout.Button(new GUIContent("⟲", I18n.Tr("UI_WINDOW_RESET", "重置窗口尺寸 (1040×650)")), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
+            {
+                ResetToDefault();
+            }
+
+            GUILayout.Space(4f);
+
+            // 一键最大化 / 还原尺寸
+            string maxIcon = _isMaximized ? "⧉" : "⛶";
+            string maxTip = _isMaximized ? I18n.Tr("UI_WINDOW_RESTORE", "还原窗口大小") : I18n.Tr("UI_WINDOW_MAXIMIZE", "最大化窗口 (适应屏幕)");
+            if (GUILayout.Button(new GUIContent(maxIcon, maxTip), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
+            {
+                ToggleMaximize();
+            }
+
+            GUILayout.Space(4f);
+
             // 顶栏关闭按钮
-            if (GUILayout.Button("✕", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(28f), GUILayout.Height(24f)))
+            if (GUILayout.Button("✕", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
             {
                 ToggleWindow();
             }
@@ -309,9 +433,9 @@ namespace ModularFlightPanel.UI
             GUILayout.Space(6f);
 
             // =========================================================================
-            // 3. 标签主体渲染 (Tab Content Area - 严格锁定高度 550f，彻底杜绝跳变与截断)
+            // 3. 标签主体渲染 (Tab Content Area - 动态响应式 CurrentContentHeight 自适应铺满)
             // =========================================================================
-            GUILayout.BeginVertical(GUILayout.Height(ContentHeight), GUILayout.MaxHeight(ContentHeight));
+            GUILayout.BeginVertical(GUILayout.Height(CurrentContentHeight), GUILayout.MaxHeight(CurrentContentHeight));
             switch (_currentTab)
             {
                 case 0:
@@ -350,20 +474,71 @@ namespace ModularFlightPanel.UI
 
             int totalWidgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets.Count ?? 0;
             string footerFmt = I18n.Tr("UI_FOOTER_STATUS", "当前布局: <b>{0}</b> 个组件 | 快捷键: <b>Alt+N / ESC</b> 关闭 | <b>F2</b> 隐藏全UI | <b>F10</b> 性能HUD | <b>F11</b> 纯净旁路");
-            GUILayout.Label($"<color=#7088A8><size=11>{string.Format(footerFmt, totalWidgets)}</size></color>", GUILayout.ExpandWidth(true));
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=11>{string.Format(footerFmt, totalWidgets)}</size></color>", GUILayout.ExpandWidth(true));
 
             if (GUILayout.Button(I18n.Tr("UI_SAVE_AND_CLOSE", "✔ 保存配置并关闭 (Alt+N)"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(26f), GUILayout.Width(220f)))
             {
                 ToggleWindow();
             }
 
+            GUILayout.Space(18f); // 预留给右下角拉伸手柄的空隙
+
             GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
 
             GUILayout.EndVertical();
 
-            // 限制拖拽响应区域为顶栏，防止吞噬窗口内部按钮点击；仅支持移动位置，彻底杜绝改变大小
-            GUI.DragWindow(new Rect(0f, 0f, WindowWidth, 42f));
+            // 右下角折角拉伸放大交互手柄 (独立 ControlID，获得独占 HotControl，支持平滑缩放)
+            int resizeControlId = GUIUtility.GetControlID("MFPSettingsResizeHandle".GetHashCode(), FocusType.Passive);
+            Rect gripRect = new Rect(_windowRect.width - 24f, _windowRect.height - 24f, 24f, 24f);
+            GUI.Label(gripRect, new GUIContent("◢", I18n.Tr("UI_RESIZE_GRIP_TIP", "按住并拖拽以自由调整窗口大小")), MFPGuiSkin.ResizeGripStyle);
+
+            Event e = Event.current;
+            switch (e.type)
+            {
+                case EventType.MouseDown:
+                    if (gripRect.Contains(e.mousePosition) && e.button == 0)
+                    {
+                        GUIUtility.hotControl = resizeControlId;
+                        _isResizing = true;
+                        _resizeStartMousePos = e.mousePosition;
+                        _resizeStartWindowSize = new Vector2(_windowRect.width, _windowRect.height);
+                        e.Use();
+                    }
+                    break;
+
+                case EventType.MouseDrag:
+                    if (GUIUtility.hotControl == resizeControlId && _isResizing)
+                    {
+                        Vector2 delta = e.mousePosition - _resizeStartMousePos;
+                        float maxAllowedW = Screen.width - _windowRect.x - 10f;
+                        float maxAllowedH = Screen.height - _windowRect.y - 10f;
+                        _windowRect.width = Mathf.Clamp(_resizeStartWindowSize.x + delta.x, MinWindowWidth, maxAllowedW);
+                        _windowRect.height = Mathf.Clamp(_resizeStartWindowSize.y + delta.y, MinWindowHeight, maxAllowedH);
+                        _isMaximized = false;
+                        e.Use();
+                    }
+                    break;
+
+                case EventType.MouseUp:
+                    if (GUIUtility.hotControl == resizeControlId)
+                    {
+                        GUIUtility.hotControl = 0;
+                        _isResizing = false;
+                        SaveWindowSettings();
+                        e.Use();
+                    }
+                    break;
+            }
+
+            // 双区域平滑自由拖拽 (仅在未处于拉伸调整状态时响应)：
+            if (GUIUtility.hotControl != resizeControlId && !_isResizing)
+            {
+                // 1. 顶栏拖动区域 (避开右侧控制按钮群约 470px)
+                GUI.DragWindow(new Rect(0f, 0f, Mathf.Max(80f, _windowRect.width - 470f), 44f));
+                // 2. 底栏拖动区域 (避开右侧保存按钮与拉伸手柄约 260px)
+                GUI.DragWindow(new Rect(0f, _windowRect.height - 36f, Mathf.Max(80f, _windowRect.width - 260f), 36f));
+            }
         }
     }
 }

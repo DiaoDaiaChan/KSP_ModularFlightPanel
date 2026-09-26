@@ -15,7 +15,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     [FlightWidget("spacex_header", "dragon_header", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 任务遥测顶栏", Description = "SpaceX 顶部贯通式航电状态栏：主动飞行阶段胶囊徽章、倒计时与 5 组高对比度轨道数显列。", DefaultWidgetId = "spacex.header", DefaultX = 0f, DefaultY = 420f, IsSingleton = true, ExactIds = new[] { "spacex.header" })]
     public class SpaceXHeaderWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(960f, 42f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget PhaseTitle = TextWidget.Title("ACTIVE PHASE");
+        public TextWidget PhaseValue = TextWidget.Badge("ORBITAL COAST");
 
         // UI 视图节点
         private Image _bgImage;
@@ -129,9 +135,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             Vector2 panelSize = new Vector2(960f * s, 42f * s);
             RectTransform.sizeDelta = panelSize;
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _outline = CardOutline;
+            if (_outline != null)
+                _outline.effectDistance = new Vector2(1f * s, 1f * s);
 
             // 底部电光青色细强调线 (1.5px)
             GameObject lineObj = UIFactory.CreatePanel(transform, "BottomAccentLine", new Vector2(panelSize.x, 1.5f * s), new Vector2(0f, -panelSize.y * 0.5f + 0.75f * s), theme.AccentPrimary);
@@ -368,6 +375,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);

@@ -7,11 +7,9 @@ Shader "ModularFlightPanel/PhosphorHoloUI"
 
         _PhosphorColor ("Phosphor Emission Color", Color) = (0.2, 0.95, 0.65, 1.0)
         _CoreHotColor ("Beam Overdrive Hot Core", Color) = (0.95, 1.0, 0.98, 1.0)
-        _Aberration ("Chromatic Aberration Offset", Range(0.0, 0.006)) = 0.0003
-        _ScanlineFreq ("Micro Scanline Frequency", Float) = 320.0
-        _ScanlineDepth ("Scanline Shadow Depth", Range(0.0, 0.5)) = 0.18
-        _BloomStrength ("Phosphor Halo Bloom", Range(0.0, 1.0)) = 0.35
-        _OverdriveThreshold ("Core Overdrive Intensity", Range(0.3, 1.0)) = 0.65
+        _Aberration ("Chromatic Dispersion (Texels)", Range(0.0, 1.5)) = 0.65
+        _ScanlineDepth ("Scanline Shadow Depth", Range(0.0, 0.5)) = 0.12
+        _BloomStrength ("Phosphor Halo Bloom", Range(0.0, 1.0)) = 0.40
 
         // UGUI Stencil Mask Support
         _StencilComp ("Stencil Comparison", Float) = 8
@@ -73,13 +71,14 @@ Shader "ModularFlightPanel/PhosphorHoloUI"
 
             struct v2f
             {
-                float4 vertex   : SV_POSITION;
-                fixed4 color    : COLOR;
-                float2 texcoord : TEXCOORD0;
+                float4 vertex        : SV_POSITION;
+                fixed4 color         : COLOR;
+                float2 texcoord      : TEXCOORD0;
                 float4 worldPosition : TEXCOORD1;
             };
 
             sampler2D _MainTex;
+            float4 _MainTex_TexelSize;
             fixed4 _Color;
             fixed4 _TextureSampleAdd;
             float4 _ClipRect;
@@ -87,10 +86,8 @@ Shader "ModularFlightPanel/PhosphorHoloUI"
             fixed4 _PhosphorColor;
             fixed4 _CoreHotColor;
             float _Aberration;
-            float _ScanlineFreq;
             float _ScanlineDepth;
             float _BloomStrength;
-            float _OverdriveThreshold;
 
             v2f vert(appdata_t v)
             {
@@ -104,42 +101,48 @@ Shader "ModularFlightPanel/PhosphorHoloUI"
 
             fixed4 frag(v2f IN) : SV_Target
             {
-                // 1. 三通道视差微色散采样 (RGB Chromatic Aberration - 全息衍射镜片效应)
                 float2 uv = IN.texcoord;
-                float offset = _Aberration;
 
-                half4 sampleR = (tex2D(_MainTex, uv + float2(offset, 0)) + _TextureSampleAdd);
-                half4 sampleG = (tex2D(_MainTex, uv) + _TextureSampleAdd);
-                half4 sampleB = (tex2D(_MainTex, uv - float2(offset, 0)) + _TextureSampleAdd);
-
-                float alphaR = sampleR.a;
+                // 1. 中心主通道采样 (Green Channel)
+                half4 sampleG = tex2D(_MainTex, uv) + _TextureSampleAdd;
                 float alphaG = sampleG.a;
-                float alphaB = sampleB.a;
 
-                float maxAlpha = max(alphaG, max(alphaR, alphaB));
-                if (maxAlpha < 0.005) discard;
+                // 严格绝缘：若字模主笔画透明，直接丢弃，绝不允许任何邻近字符污染
+                if (alphaG < 0.005)
+                {
+                    discard;
+                }
 
-                // 2. 电子束高频微扫描线 (CRT / Holographic Scanlines)
-                float scan = 1.0 - (sin(IN.worldPosition.y * _ScanlineFreq) * 0.5 + 0.5) * _ScanlineDepth;
+                // 2. 贴图像素受控微色散 (Texel-Constrained Dispersion)
+                float2 offset = float2(_Aberration * _MainTex_TexelSize.x * 0.75, 0.0);
+                float alphaR = (tex2D(_MainTex, uv + offset) + _TextureSampleAdd).a;
+                float alphaB = (tex2D(_MainTex, uv - offset) + _TextureSampleAdd).a;
 
-                // 3. 矢量高能过载白热核 (Beam Overdrive White-Hot Core)
-                // 笔画较厚或能量集中处呈现亮白核心，边缘呈饱和磷光微光
-                float coreWeight = smoothstep(0.82, 1.0, alphaG) * 0.75;
+                // 严格以主字模 Alpha 进行钳制门控，杜绝越界拾取邻近字符
+                alphaR = min(alphaR, alphaG * 1.35);
+                alphaB = min(alphaB, alphaG * 1.35);
+
+                // 3. 电子束高能过载白热核 (Beam Overdrive White-Hot Core)
+                float coreWeight = pow(alphaG, 2.2);
                 fixed3 tint = _PhosphorColor.rgb * IN.color.rgb;
-                fixed3 baseColor = lerp(tint, _CoreHotColor.rgb, coreWeight);
+                fixed3 baseColor = lerp(tint, _CoreHotColor.rgb, coreWeight * 0.85);
 
                 // 4. 边缘微色散重组
                 fixed3 finalRgb = fixed3(
-                    baseColor.r * alphaR,
-                    baseColor.g * alphaG,
-                    baseColor.b * alphaB
-                ) * scan;
+                    baseColor.r * lerp(1.0, alphaR / max(alphaG, 0.001), 0.25),
+                    baseColor.g,
+                    baseColor.b * lerp(1.0, alphaB / max(alphaG, 0.001), 0.25)
+                );
 
-                // 5. 磷光光子辉光余辉 (Phosphor Bleed)
-                float totalAlpha = saturate(maxAlpha * (1.0 + _BloomStrength * 0.4));
-                fixed4 finalCol = fixed4(finalRgb, totalAlpha * IN.color.a);
+                // 5. 本地 Canvas 空间平滑微扫描线 (Canvas-Local Anti-Aliased Scanlines)
+                float scan = 1.0 - (sin(IN.worldPosition.y * 1.5708) * 0.5 + 0.5) * _ScanlineDepth;
+                finalRgb *= scan;
 
-                // 6. UGUI 视口裁切支持
+                // 6. 磷光光子辉光与透明度合成
+                float totalAlpha = saturate(alphaG * (1.0 + _BloomStrength * 0.35)) * IN.color.a;
+                fixed4 finalCol = fixed4(finalRgb, totalAlpha);
+
+                // 7. UGUI 视口裁切保护
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

@@ -28,7 +28,7 @@ namespace ModularFlightPanel.UI.Settings
             TelemetryHub hub = TelemetryHub.Instance;
             TelemetrySimulationEngine sim = hub.SimulationEngine;
 
-            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
+            GUILayout.BeginVertical();
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight));
 
             // 1. 仿真模式总开关卡片

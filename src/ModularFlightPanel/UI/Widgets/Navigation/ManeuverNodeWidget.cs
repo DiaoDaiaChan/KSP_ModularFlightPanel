@@ -24,7 +24,13 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("maneuver", "maneuver_node", Category = WidgetCategory.Navigation, DisplayName = "MANEUVER 轨道机动节点指示器", Description = "实时机动节点指示器：剩余 Delta-V 进度条、节点倒计时、燃烧时长与一键推演。", DefaultWidgetId = "core.maneuver", DefaultX = 440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "core.maneuver" })]
     public class ManeuverNodeWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(200f, 105f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget HeaderTitle = TextWidget.Title("MANEUVER NODE");
+        public TextWidget StatusBadge = TextWidget.Badge("STANDBY");
 
         // UI 层次节点
         private Image _bgImage;
@@ -83,33 +89,58 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 卡片包围盒 (200 x 105 px)
-            Vector2 cardSize = new Vector2(200f * s, 105f * s);
+            Vector2 cardSize = BaseSize * s;
             RectTransform.sizeDelta = cardSize;
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
 
             ParseCustomTemplate(config);
 
-            // 2. 顶部 Header (标题 + 状态徽标)
-            _headerTitleText = UIFactory.CreateText(transform, "Header_Title", _titleTemplate, Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleLeft,
-                style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform titleRt = _headerTitleText.rectTransform;
-            titleRt.pivot = new Vector2(0f, 0.5f);
-            titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 0.5f);
-            titleRt.sizeDelta = new Vector2(120f * s, 16f * s);
-            titleRt.anchoredPosition = new Vector2(-92f * s, 42f * s);
+            // 2. 顶部 Header (标题 + 状态徽标已由微控件挂载)
+            if (HeaderTitle != null && HeaderTitle.TextComponent != null)
+            {
+                HeaderTitle.Text = _titleTemplate;
+                HeaderTitle.SetRole(TextStyleRole.Label);
+                _headerTitleText = HeaderTitle.TextComponent;
+                RectTransform titleRt = _headerTitleText.rectTransform;
+                titleRt.pivot = new Vector2(0f, 0.5f);
+                titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 0.5f);
+                titleRt.sizeDelta = new Vector2(120f * s, 16f * s);
+                titleRt.anchoredPosition = new Vector2(-92f * s, 42f * s);
+            }
+            else
+            {
+                _headerTitleText = UIFactory.CreateText(transform, "Header_Title", _titleTemplate, Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleLeft,
+                    style.GetTextColor(TextStyleRole.Label, theme));
+                RectTransform titleRt = _headerTitleText.rectTransform;
+                titleRt.pivot = new Vector2(0f, 0.5f);
+                titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 0.5f);
+                titleRt.sizeDelta = new Vector2(120f * s, 16f * s);
+                titleRt.anchoredPosition = new Vector2(-92f * s, 42f * s);
+            }
 
-            _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", "STANDBY", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight,
-                style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            RectTransform badgeRt = _statusBadgeText.rectTransform;
-            badgeRt.pivot = new Vector2(1f, 0.5f);
-            badgeRt.anchorMin = badgeRt.anchorMax = new Vector2(0.5f, 0.5f);
-            badgeRt.sizeDelta = new Vector2(60f * s, 16f * s);
-            badgeRt.anchoredPosition = new Vector2(92f * s, 42f * s);
+            if (StatusBadge != null && StatusBadge.TextComponent != null)
+            {
+                StatusBadge.Text = "STANDBY";
+                StatusBadge.SetRole(TextStyleRole.SecondaryValue);
+                _statusBadgeText = StatusBadge.TextComponent;
+                RectTransform badgeRt = _statusBadgeText.rectTransform;
+                badgeRt.pivot = new Vector2(1f, 0.5f);
+                badgeRt.anchorMin = badgeRt.anchorMax = new Vector2(0.5f, 0.5f);
+                badgeRt.sizeDelta = new Vector2(60f * s, 16f * s);
+                badgeRt.anchoredPosition = new Vector2(92f * s, 42f * s);
+            }
+            else
+            {
+                _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", "STANDBY", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight,
+                    style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+                RectTransform badgeRt = _statusBadgeText.rectTransform;
+                badgeRt.pivot = new Vector2(1f, 0.5f);
+                badgeRt.anchorMin = badgeRt.anchorMax = new Vector2(0.5f, 0.5f);
+                badgeRt.sizeDelta = new Vector2(60f * s, 16f * s);
+                badgeRt.anchoredPosition = new Vector2(92f * s, 42f * s);
+            }
 
             // 3. 核心主读数 (剩余 Delta-V + 单位)
             _deltaVValueText = UIFactory.CreateText(transform, "DeltaV_Value", "---", Mathf.RoundToInt(22f * s), TextAnchor.MiddleLeft,
@@ -261,8 +292,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
-
-            ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
+            base.ApplyTheme(theme);
 
             ApplyText(_headerTitleText, TextStyleRole.Label, theme);
             ApplyText(_statusBadgeText, TextStyleRole.SecondaryValue, theme);

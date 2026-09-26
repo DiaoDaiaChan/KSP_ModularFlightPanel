@@ -19,15 +19,16 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("signal", "signal_list", "antenna", Category = WidgetCategory.Systems, DisplayName = "COMMNET 天线通信网络", Description = "原版 CommNet 连接状态、控制权级别、天线阵列规格与 5 格信号计量柱。", DefaultWidgetId = "custom.signal", DefaultX = 440f, DefaultY = -40f, IsSingleton = true, ExactIds = new[] { "custom.signal", "custom.signal_list", "core.signal" })]
     public class SignalStatusWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(270f, 168f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        // 基础面板
-        private Image _bgImage;
-        private Outline _outline;
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("COMMNET");
+        public TextWidget StatusBadge = TextWidget.Badge("● LINKED");
 
         // 顶栏 (Header)
         private GameObject _headerRoot;
-        private Text _titleText;
         private Text _subTitleText;
         private Image _ctrlBadgeBg;
         private Text _ctrlBadgeText;
@@ -87,12 +88,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 卡片底座 (0 颜色字面量，统一经由 ApplyCard 注入语义角色)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
+
 
             // ==========================================
             // 2. 顶栏系统与状态 (Header)
@@ -107,12 +103,7 @@ namespace ModularFlightPanel.UI.Widgets
             hdrRt.anchoredPosition = Vector2.zero;
 
             string defTitle = GetTemplateChannel("TITLE", "COMMNET");
-            _titleText = UIFactory.CreateText(_headerRoot.transform, "Title", defTitle,
-                Mathf.Max(9, Mathf.RoundToInt(10.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            _titleText.fontStyle = FontStyle.Bold;
-            RectTransform titRt = _titleText.GetComponent<RectTransform>();
-            titRt.sizeDelta = new Vector2(90f * s, 18f * s);
-            titRt.anchoredPosition = new Vector2(-baseW * 0.5f + 53f * s, 0f);
+            Title.Text = defTitle;
 
             _subTitleText = UIFactory.CreateText(_headerRoot.transform, "SubTitle", "AVIONICS RF",
                 Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
@@ -251,8 +242,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
-            this.Controls.Register(new WidgetHeaderControl("header", "顶栏标题", _titleText != null ? _titleText.gameObject : null, _titleText, _subTitleText));
             this.Controls.Register(new WidgetAnnunciatorControl("ctrl_badge", "控制权徽章", _ctrlBadgeText != null ? _ctrlBadgeText.gameObject : null, _ctrlBadgeText, _linkBadgeText, _ctrlBadgeBg, null));
             if (_rfMatrixPanel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "rf_matrix", "射频矩阵面板", _rfMatrixPanel, (t) => { if (_rfMatrixBg != null) _rfMatrixBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, t); }));
             this.Controls.Register(new WidgetReadoutControl("target_readout", "目标对端与速率", _targetNameText != null ? _targetNameText.gameObject : null, _targetNameText, _rateText, TextStyleRole.PrimaryValue));
@@ -539,16 +528,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
-
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-
-            // 顶栏
-            if (_titleText != null)
-            {
-                string defTitle = GetTemplateChannel("TITLE", "COMMNET");
-                _titleText.text = defTitle;
-                ApplyText(_titleText, TextStyleRole.PrimaryValue, theme);
-            }
+            base.ApplyTheme(theme);
             if (_subTitleText != null)
             {
                 _subTitleText.text = GetTemplateChannel("SUBTITLE", "AVIONICS RF");

@@ -1,161 +1,194 @@
 using System;
 using UnityEngine;
-using UnityEngine.UI;
-using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
-    /// 轨道参数卡片 (Orbital Info Widget)
-    /// 实时呈现远拱点 (AP) 与近拱点 (PE) 距离与倒计时。
-    /// 100% 通配符数据驱动，支持自定义模板，统一样式管道。
+    /// 轨道力学综合态势面板 (Orbital Dynamics & Kinematics Card)
+    /// 现代航电双列 6 参量轨道力学监控卡片：
+    /// 左列：远地点 (AP) 与近地点 (PE) 绝对高度、到达倒计时 (T-AP / T-PE)；
+    /// 右列：轨道偏心率 (Ecc)、轨道倾角 (Inc) 及顺/逆行极向标、轨道周期 (Period)；
+    /// 顶部状态微标：根据轨道能量状态机动态推演 SUBORBITAL / CIRCULAR / ELLIPTIC / ESCAPE 并变色。
+    /// 100% 遵照 SPEC-001..008 核心架构规范。
     /// </summary>
-    [FlightWidget("orbital_info", "orbit", "orbital", Category = WidgetCategory.Navigation, DisplayName = "ORBITAL 轨道动力学面板", Description = "轨道力学四项精简读数面板：远地点 (AP)、近地点 (PE)、到达时间与轨道偏心率。", DefaultWidgetId = "core.orbital_info", DefaultX = 0f, DefaultY = 180f, IsSingleton = true, ExactIds = new[] { "core.orbital_info" })]
+    [FlightWidget("orbital_info", "orbit", "orbital", "orbital_dynamics",
+        Category = WidgetCategory.Navigation,
+        DisplayName = "ORBITAL 轨道动力学面板",
+        Description = "轨道力学六根数综合面板：远地点/近地点、拱点倒计时、偏心率、倾角、周期与轨道动力学状态胶囊。",
+        DefaultWidgetId = "core.orbital_info",
+        DefaultX = 0f,
+        DefaultY = 180f,
+        IsSingleton = true,
+        ExactIds = new[] { "core.orbital_info" })]
     public class OrbitalInfoWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(260f, 96f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        private Text _titleText;
-        private Text _apText;
-        private Text _peText;
-        private Image _bgImage;
-        private Outline _outline;
+        // ── 顶部系统标题与轨道动力学能量胶囊 ──
+        public TextWidget Title = TextWidget.Title("ORBITAL DYNAMICS");
+        public TextWidget OrbitBadge = TextWidget.Badge("SUBORBITAL");
 
-        private string _titleTemplate = "ORBITAL PARAMETERS";
-        private string _apTemplate = "AP {AP:DIST} in T-{TAP}";
-        private string _peTemplate = "PE {PE:DIST} in T-{TPE}";
+        // ── 左列：拱点几何与倒计时 (X = -60f) ──
+        public TextWidget ApLabel = new TextWidget(TextStyleRole.Label, -120f, 16f, 26f, 16f, 8.5f, TextAnchor.MiddleLeft, "AP");
+        public TextWidget ApVal = new TextWidget(TextStyleRole.PrimaryValue, -94f, 16f, 60f, 16f, 11f, TextAnchor.MiddleRight, "---");
+        public TextWidget ApUnit = new TextWidget(TextStyleRole.Unit, -32f, 16f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "km");
 
-        private string _lastTitleText = string.Empty;
-        private string _lastApText = string.Empty;
-        private string _lastPeText = string.Empty;
+        public TextWidget PeLabel = new TextWidget(TextStyleRole.Label, -120f, -6f, 26f, 16f, 8.5f, TextAnchor.MiddleLeft, "PE");
+        public TextWidget PeVal = new TextWidget(TextStyleRole.PrimaryValue, -94f, -6f, 60f, 16f, 11f, TextAnchor.MiddleRight, "---");
+        public TextWidget PeUnit = new TextWidget(TextStyleRole.Unit, -32f, -6f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "km");
 
-        protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
-        {
-            theme = WidgetStyleManager.ResolveTheme(theme);
-            float s = CurrentDpiScale;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
+        public TextWidget TimeReadout = new TextWidget(TextStyleRole.SecondaryValue, -120f, -28f, 112f, 16f, 8f, TextAnchor.MiddleLeft, "T-AP: --:--  PE: --:--");
 
-            Vector2 panelSize = new Vector2(260f * s, 54f * s);
-            RectTransform.sizeDelta = panelSize;
+        // ── 右列：轨道形态六根数 (X = 60f) ──
+        public TextWidget EccLabel = new TextWidget(TextStyleRole.Label, 12f, 16f, 28f, 16f, 8.5f, TextAnchor.MiddleLeft, "ECC");
+        public TextWidget EccVal = new TextWidget(TextStyleRole.PrimaryValue, 42f, 16f, 68f, 16f, 11f, TextAnchor.MiddleRight, "0.000");
 
-            ParseCustomTemplate(config);
+        public TextWidget IncLabel = new TextWidget(TextStyleRole.Label, 12f, -6f, 28f, 16f, 8.5f, TextAnchor.MiddleLeft, "INC");
+        public TextWidget IncVal = new TextWidget(TextStyleRole.PrimaryValue, 42f, -6f, 50f, 16f, 11f, TextAnchor.MiddleRight, "0.0°");
+        public TextWidget IncDir = new TextWidget(TextStyleRole.Unit, 94f, -6f, 22f, 16f, 8f, TextAnchor.MiddleLeft, "PRO");
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1.5f * s, 1.5f * s);
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _outline.effectColor, s);
-
-            int infoFontSize = Mathf.RoundToInt(11f * s);
-            int titleFontSize = Mathf.RoundToInt(9f * s);
-
-            _titleText = UIFactory.CreateText(transform, "Title_Text", _titleTemplate, titleFontSize, TextAnchor.MiddleLeft,
-                style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform titRt = _titleText.GetComponent<RectTransform>();
-            titRt.sizeDelta = new Vector2(240f * s, 14f * s);
-            titRt.anchoredPosition = new Vector2(0f, 16f * s);
-
-            _apText = UIFactory.CreateText(transform, "AP_Text", "AP --- in T---", infoFontSize, TextAnchor.MiddleLeft,
-                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            RectTransform apRt = _apText.GetComponent<RectTransform>();
-            apRt.sizeDelta = new Vector2(240f * s, 16f * s);
-            apRt.anchoredPosition = new Vector2(0f, 0f);
-
-            _peText = UIFactory.CreateText(transform, "PE_Text", "PE --- in T---", infoFontSize, TextAnchor.MiddleLeft,
-                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            RectTransform peRt = _peText.GetComponent<RectTransform>();
-            peRt.sizeDelta = new Vector2(240f * s, 16f * s);
-            peRt.anchoredPosition = new Vector2(0f, -16f * s);
-
-            // 注册子控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
-            this.Controls.Register(new WidgetReadoutControl("title", "标题", _titleText != null ? _titleText.gameObject : null, null, _titleText, TextStyleRole.Label));
-            this.Controls.Register(new WidgetReadoutControl("ap_readout", "远地点读数", _apText != null ? _apText.gameObject : null, _apText, null, TextStyleRole.PrimaryValue));
-            this.Controls.Register(new WidgetReadoutControl("pe_readout", "近地点读数", _peText != null ? _peText.gameObject : null, _peText, null, TextStyleRole.PrimaryValue));
-
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
-        }
-
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (config != null && !string.IsNullOrEmpty(config.DisplayName))
-            {
-                _titleTemplate = config.DisplayName.ToUpperInvariant();
-            }
-
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "TITLE": _titleTemplate = v; break;
-                    case "AP":
-                    case "AP_TEMPLATE": _apTemplate = v; break;
-                    case "PE":
-                    case "PE_TEMPLATE": _peTemplate = v; break;
-                }
-            }
-        }
+        public TextWidget PeriodLabel = new TextWidget(TextStyleRole.Label, 12f, -28f, 28f, 16f, 8.5f, TextAnchor.MiddleLeft, "PER");
+        public TextWidget PeriodVal = new TextWidget(TextStyleRole.SecondaryValue, 42f, -28f, 74f, 16f, 8.5f, TextAnchor.MiddleRight, "--m --s");
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
-
-            string newTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-            if (newTitle != _lastTitleText)
+            if (telemetry == null || !telemetry.HasVessel)
             {
-                _lastTitleText = newTitle;
-                if (_titleText != null) _titleText.text = newTitle;
+                ApVal.Text = "---";
+                PeVal.Text = "---";
+                TimeReadout.Text = "T-AP: --:--  PE: --:--";
+                EccVal.Text = "---";
+                IncVal.Text = "---";
+                PeriodVal.Text = "---";
+                OrbitBadge.Text = "NO VESSEL";
+                OrbitBadge.SetRole(TextStyleRole.Muted);
+                return;
             }
 
-            if (_apText != null)
+            // 1. 远拱点 AP 与近拱点 PE
+            double ap = telemetry.Apoapsis;
+            double pe = telemetry.Periapsis;
+            ApVal.Text = FormatDistanceKm(ap);
+            PeVal.Text = pe < -100000.0 ? "IMPACT" : FormatDistanceKm(pe);
+
+            // 2. 拱点时间倒计时
+            double tAp = telemetry.TimeToAp;
+            double tPe = telemetry.TimeToPe;
+            string tApStr = FormatTimeCompact(tAp);
+            string tPeStr = FormatTimeCompact(tPe);
+            TimeReadout.Text = $"T-AP {tApStr}  PE {tPeStr}";
+
+            // 3. 轨道偏心率 Ecc (优先检索探针，无缝开普勒几何推算 Fallback)
+            double ecc = ExternalProbeRegistry.ResolveNumeric("ORBIT", "ECC");
+            if (double.IsNaN(ecc) || ecc < 0.0)
             {
-                string newAp = TelemetryTokenEngine.Evaluate(_apTemplate, telemetry);
-                if (newAp != _lastApText)
+                double rA = Math.Max(10000.0, 600000.0 + ap);
+                double rP = 600000.0 + pe;
+                ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
+            }
+            EccVal.Text = ecc.ToString("F3");
+
+            // 4. 轨道倾角 Inc (探针优先)
+            double inc = ExternalProbeRegistry.ResolveNumeric("ORBIT", "INC");
+            if (double.IsNaN(inc)) inc = 0.0;
+            IncVal.Text = $"{inc:F1}°";
+            if (inc > 90.0)
+            {
+                IncDir.Text = "RET"; // 逆行
+                IncDir.SetRole(TextStyleRole.Warning);
+            }
+            else
+            {
+                IncDir.Text = "PRO"; // 顺行
+                IncDir.SetRole(TextStyleRole.Unit);
+            }
+
+            // 5. 轨道周期 Period (探针优先或基于拱点时钟推算)
+            double period = ExternalProbeRegistry.ResolveNumeric("ORBIT", "PERIOD");
+            if (double.IsNaN(period) || period <= 0.0)
+            {
+                period = ecc < 1.0 ? Math.Abs(tAp - tPe) * 2.0 : 0.0;
+            }
+            PeriodVal.Text = FormatPeriod(period);
+
+            // 6. 轨道动力学能量状态胶囊
+            UpdateOrbitState(telemetry, ap, pe, ecc);
+        }
+
+        private void UpdateOrbitState(IFlightTelemetry telemetry, double ap, double pe, double ecc)
+        {
+            double atmDepth = telemetry.AtmosphereDepth;
+            bool hasAtm = telemetry.HasAtmosphere;
+            double safeAlt = hasAtm ? atmDepth : 0.0;
+
+            if (ecc >= 1.0)
+            {
+                OrbitBadge.Text = "ESCAPE 逃逸";
+                OrbitBadge.SetRole(TextStyleRole.Danger);
+            }
+            else if (pe < safeAlt)
+            {
+                if (pe < 0.0)
                 {
-                    _lastApText = newAp;
-                    _apText.text = newAp;
+                    OrbitBadge.Text = "BALLISTIC 撞击";
+                    OrbitBadge.SetRole(TextStyleRole.Danger);
+                }
+                else
+                {
+                    OrbitBadge.Text = "SUBORBITAL 亚轨道";
+                    OrbitBadge.SetRole(TextStyleRole.Warning);
                 }
             }
-            if (_peText != null)
+            else if (ecc < 0.015)
             {
-                string newPe = TelemetryTokenEngine.Evaluate(_peTemplate, telemetry);
-                if (newPe != _lastPeText)
-                {
-                    _lastPeText = newPe;
-                    _peText.text = newPe;
-                }
+                OrbitBadge.Text = "CIRCULAR 圆轨道";
+                OrbitBadge.SetRole(TextStyleRole.Accent);
+            }
+            else
+            {
+                OrbitBadge.Text = "ELLIPTIC 椭圆轨";
+                OrbitBadge.SetRole(TextStyleRole.PrimaryValue);
             }
         }
 
-        public override void ApplyTheme(ThemeConfig theme)
+        private static string FormatDistanceKm(double meters)
         {
-            if (theme == null) return;
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-            if (_titleText != null) ApplyText(_titleText, TextStyleRole.Label, theme);
-            if (_apText != null) ApplyText(_apText, TextStyleRole.PrimaryValue, theme);
-            if (_peText != null) ApplyText(_peText, TextStyleRole.PrimaryValue, theme);
-
-            this.Controls.ApplyThemeToControls(theme);
+            if (double.IsNaN(meters) || double.IsInfinity(meters)) return "---";
+            if (Math.Abs(meters) >= 1000000000.0) return (meters * 1e-9).ToString("F2") + "Gm";
+            if (Math.Abs(meters) >= 1000000.0) return (meters * 1e-6).ToString("F2") + "Mm";
+            return (meters * 0.001).ToString("F1");
         }
 
-        protected override void OnDestroy()
+        private static string FormatTimeCompact(double seconds)
         {
-            this.Controls.UnregisterAll();
-            base.OnDestroy();
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0) return "--:--";
+            if (seconds > 86400.0) return $"{seconds / 86400.0:F0}d";
+            int sec = (int)seconds;
+            int m = (sec % 3600) / 60;
+            int s = sec % 60;
+            if (sec >= 3600)
+            {
+                int h = sec / 3600;
+                return $"{h:D2}:{m:D2}";
+            }
+            return $"{m:D2}:{s:D2}";
+        }
+
+        private static string FormatPeriod(double seconds)
+        {
+            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds <= 0.0) return "---";
+            if (seconds >= 86400.0) return $"{seconds / 86400.0:F1}d";
+            int sec = (int)seconds;
+            int h = sec / 3600;
+            int m = (sec % 3600) / 60;
+            int s = sec % 60;
+            if (h > 0) return $"{h}h {m}m";
+            return $"{m}m {s}s";
         }
     }
 }

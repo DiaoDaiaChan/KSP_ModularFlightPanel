@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Rendering;
 
 namespace ModularFlightPanel.UI.Framework
 {
@@ -511,6 +512,206 @@ namespace ModularFlightPanel.UI.Framework
             {
                 OnLeftClick?.Invoke();
             }
+        }
+    }
+
+    /// <summary>
+    /// 声明式导航参考系胶囊微控件 (Declarative Reference Frame Capsule Button Widget)
+    /// 封装高反差矢量微标 (ReferenceFrameIconAtlasGenerator)、权威参考系全称、左键切换/右键呼出、语义主题着色与抗抖脏检查
+    /// </summary>
+    public class ReferenceFrameButtonWidget : BaseWidgetControl, IWidgetDslControl
+    {
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Width { get; set; }
+        public float Height { get; set; }
+        public float FontSize { get; set; } = 8f;
+        public float IconSize { get; set; } = 14f;
+
+        public Button ButtonComponent { get; private set; }
+        public Image BackgroundComponent { get; private set; }
+        public Outline OutlineComponent { get; private set; }
+        public RawImage IconComponent { get; private set; }
+        public Text LabelComponent { get; private set; }
+
+        public Action OnClick { get; set; }
+        public Action OnRightClick { get; set; }
+
+        private string _frameCategory = string.Empty;
+        private string _frameTitle = string.Empty;
+        private int _iconIndex = ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL;
+        private TextStyleRole _currentRole = TextStyleRole.Cardinal;
+
+        public string FrameCategory => _frameCategory;
+        public string FrameTitle => _frameTitle;
+        public int IconIndex => _iconIndex;
+
+        private string _tooltipTitle;
+        private string _tooltipDesc;
+        private string _tooltipKey;
+
+        public ReferenceFrameButtonWidget(float x = 0f, float y = 0f, float w = 92f, float h = 18f, float font = 8f, float iconSize = 14f)
+            : base("ref_frame_ctrl", "Reference Frame Button", WidgetControlCategory.ActionButton, null)
+        {
+            X = x;
+            Y = y;
+            Width = w;
+            Height = h;
+            FontSize = font;
+            IconSize = iconSize;
+        }
+
+        public void SetTooltip(string title, string description = null, string shortcut = null)
+        {
+            _tooltipTitle = title;
+            _tooltipDesc = description;
+            _tooltipKey = shortcut;
+            if (ButtonComponent != null)
+            {
+                ButtonComponent.SetTooltip(title, description, shortcut);
+            }
+        }
+
+        public void Build(BaseFlightWidget parent, string fieldName, float dpiScale, ThemeConfig theme)
+        {
+            ParentWidget = parent;
+            if (string.IsNullOrEmpty(Id) || Id == "ref_frame_ctrl") Id = fieldName;
+            DisplayName = fieldName;
+            Category = WidgetControlCategory.ActionButton;
+
+            theme = WidgetStyleManager.ResolveTheme(theme);
+            var style = WidgetStyleManager.Instance;
+
+            Vector2 sz = new Vector2(Width * dpiScale, Height * dpiScale);
+            Vector2 pos = new Vector2(X * dpiScale, Y * dpiScale);
+
+            ButtonComponent = UIFactory.CreateButton(parent.transform, Id, sz, pos, null);
+            RootGameObject = ButtonComponent.gameObject;
+            BackgroundComponent = ButtonComponent.GetComponent<Image>();
+            OutlineComponent = ButtonComponent.GetComponent<Outline>();
+
+            var handler = ButtonComponent.gameObject.AddComponent<DslButtonClickHandler>();
+            handler.OnLeftClick = () => OnClick?.Invoke();
+            handler.OnRightClick = () => OnRightClick?.Invoke();
+
+            // 1. 左侧矢量微标图标
+            float iconDpi = Mathf.Max(12f, IconSize * dpiScale);
+            GameObject iconObj = new GameObject("Icon", typeof(RectTransform), typeof(RawImage));
+            iconObj.transform.SetParent(ButtonComponent.transform, false);
+            IconComponent = iconObj.GetComponent<RawImage>();
+            IconComponent.texture = ReferenceFrameIconAtlasGenerator.GetAtlas();
+            IconComponent.uvRect = ReferenceFrameIconAtlasGenerator.GetIconUv(ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL);
+
+            RectTransform iconRt = IconComponent.rectTransform;
+            iconRt.anchorMin = new Vector2(0f, 0.5f);
+            iconRt.anchorMax = new Vector2(0f, 0.5f);
+            iconRt.pivot = new Vector2(0f, 0.5f);
+            iconRt.anchoredPosition = new Vector2(4f * dpiScale, 0f);
+            iconRt.sizeDelta = new Vector2(iconDpi, iconDpi);
+
+            // 2. 右侧权威参考系名称
+            int fontSz = Mathf.Max(6, Mathf.RoundToInt(FontSize * dpiScale));
+            float leftPad = (4f + IconSize + 3f) * dpiScale;
+            float rightPad = 3f * dpiScale;
+            float textW = sz.x - leftPad - rightPad;
+
+            LabelComponent = UIFactory.CreateText(ButtonComponent.transform, "Text", "SURFACE", fontSz, TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            LabelComponent.fontStyle = FontStyle.Bold;
+            LabelComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
+            LabelComponent.verticalOverflow = VerticalWrapMode.Truncate;
+
+            RectTransform labelRt = LabelComponent.rectTransform;
+            labelRt.anchorMin = new Vector2(0f, 0.5f);
+            labelRt.anchorMax = new Vector2(0f, 0.5f);
+            labelRt.pivot = new Vector2(0f, 0.5f);
+            labelRt.anchoredPosition = new Vector2(leftPad, 0f);
+            labelRt.sizeDelta = new Vector2(textW, sz.y);
+
+            if (!string.IsNullOrEmpty(_tooltipTitle))
+            {
+                ButtonComponent.SetTooltip(_tooltipTitle, _tooltipDesc, _tooltipKey);
+            }
+
+            ApplyTheme(theme);
+        }
+
+        public void UpdateFrame(string category, string title, ThemeConfig theme = null)
+        {
+            if (string.IsNullOrEmpty(category)) category = "SURFACE";
+            if (string.IsNullOrEmpty(title)) title = category;
+
+            bool categoryChanged = _frameCategory != category;
+            bool titleChanged = _frameTitle != title;
+
+            if (!categoryChanged && !titleChanged) return;
+
+            _frameCategory = category;
+            _frameTitle = title;
+
+            _iconIndex = ReferenceFrameIconAtlasGenerator.GetIconIndex(category);
+
+            switch (_iconIndex)
+            {
+                case ReferenceFrameIconAtlasGenerator.INDEX_SURFACE:
+                case ReferenceFrameIconAtlasGenerator.INDEX_BODY_FIXED:
+                case ReferenceFrameIconAtlasGenerator.INDEX_LAGRANGE:
+                    _currentRole = TextStyleRole.Accent;
+                    break;
+                case ReferenceFrameIconAtlasGenerator.INDEX_TARGET:
+                    _currentRole = TextStyleRole.Warning;
+                    break;
+                case ReferenceFrameIconAtlasGenerator.INDEX_ORBITAL:
+                case ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL:
+                default:
+                    _currentRole = TextStyleRole.Cardinal;
+                    break;
+            }
+
+            if (IconComponent != null)
+            {
+                IconComponent.uvRect = ReferenceFrameIconAtlasGenerator.GetIconUv(_iconIndex);
+            }
+
+            if (LabelComponent != null && titleChanged)
+            {
+                BaseFlightWidget.SetTextIfChanged(LabelComponent, title);
+            }
+
+            ApplyVisualRole(theme);
+        }
+
+        public override void ApplyTheme(ThemeConfig theme)
+        {
+            theme = WidgetStyleManager.ResolveTheme(theme);
+            var style = WidgetStyleManager.Instance;
+            if (ButtonComponent != null)
+            {
+                style.ApplyButtonStyle(ButtonComponent, BackgroundComponent, LabelComponent, ButtonVisualRole.Normal, false, theme);
+            }
+            ApplyVisualRole(theme);
+        }
+
+        private void ApplyVisualRole(ThemeConfig theme)
+        {
+            theme = WidgetStyleManager.ResolveTheme(theme);
+            var style = WidgetStyleManager.Instance;
+            Color clr = style.GetTextColor(_currentRole, theme);
+            if (IconComponent != null)
+            {
+                IconComponent.color = clr;
+            }
+            if (LabelComponent != null)
+            {
+                LabelComponent.color = clr;
+            }
+        }
+
+        public override void UpdateTelemetry(IFlightTelemetry telemetry)
+        {
+            if (telemetry == null || !IsVisible) return;
+            string category = TelemetryTokenEngine.Evaluate("{FRAME:TYPE}", telemetry);
+            string title = TelemetryTokenEngine.Evaluate("{FRAME}", telemetry);
+            UpdateFrame(category, title);
         }
     }
 

@@ -16,7 +16,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     [FlightWidget("spacex_bottom", "dragon_bottom", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 底部控制与链路操作栏", Description = "SpaceX 底部药丸触控条：RCS/SAS/参考系/精细控制开关、指向模式与通信链路矩阵。", DefaultWidgetId = "spacex.bottom", DefaultX = 0f, DefaultY = -150f, IsSingleton = true, ExactIds = new[] { "spacex.bottom" })]
     public class SpaceXBottomBarWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(420f, 38f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        // 声明式微控件
+        public TextWidget PointingTitle = TextWidget.Title("POINTING MODE");
+        public TextWidget PointingMode = TextWidget.Value("PROGRADE");
 
         private Image _bgImage;
         private Outline _outline;
@@ -108,9 +114,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             Vector2 panelSize = new Vector2(420f * s, 38f * s);
             RectTransform.sizeDelta = panelSize;
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _outline = CardOutline;
+            if (_outline != null)
+                _outline.effectDistance = new Vector2(1f * s, 1f * s);
 
             // 1. 左侧药丸按钮群 (RCS, SAS, MODE, PREC)
             float startX = -panelSize.x * 0.5f + 14f * s;
@@ -311,6 +318,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);

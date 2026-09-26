@@ -34,7 +34,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
     [FlightWidget("staging_sequence", "stage_sequence", Category = WidgetCategory.Controls, DisplayName = "STAGE 垂直分级时序序列仪", Description = "垂直火箭分级序列仪：逐级剩余 ΔV、燃烧时间、推重比与单级推进剂微量程，重构原版左侧分级。", DefaultWidgetId = "custom.staging_sequence", DefaultX = -440f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "custom.staging_sequence", "custom.stage_sequence", "core.staging_sequence" })]
     public class StagingSequenceWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(DefaultWidth, DefaultHeight);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("STAGE SEQUENCE");
 
         // UI 根与卡片
         private Image _bgImage;
@@ -195,24 +200,33 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             ParseCustomTemplate(config?.CustomTemplate);
 
             // 1. 组件包围盒 (基准 160x260 逻辑像素)
-            Vector2 size = new Vector2(DefaultWidth * s, DefaultHeight * s);
+            Vector2 size = BaseSize * s;
             RectTransform.sizeDelta = size;
 
             // 2. 底板卡片 (现代化暗晶毛玻璃背板 0.75 Alpha)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
-            _bgImage.raycastTarget = false; // 不遮挡子元素与 EditMode 交互
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            _bgOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
+            _bgImage = CardBackground;
+            if (_bgImage != null)
+            {
+                _bgImage.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
+                _bgImage.raycastTarget = false; // 不遮挡子元素与 EditMode 交互
+            }
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+            {
+                _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+                _bgOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
+            }
 
             // 3. 顶部总览行 (标题 + 插入级 [+] + 全级总 ΔV)
-            _titleText = UIFactory.CreateText(transform, "Title_Text", _titleTemplate, Mathf.RoundToInt(8f * s),
-                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, theme));
-            _titleText.fontStyle = FontStyle.Bold;
-            RectTransform titleRt = _titleText.rectTransform;
-            titleRt.sizeDelta = new Vector2(76f * s, 16f * s);
-            titleRt.anchoredPosition = new Vector2(-36f * s, (DefaultHeight * 0.5f - 14f) * s);
+            if (Title != null && Title.TextComponent != null)
+            {
+                Title.Text = _titleTemplate;
+                Title.SetRole(TextStyleRole.Cardinal);
+                _titleText = Title.TextComponent;
+                RectTransform titleRt = _titleText.rectTransform;
+                titleRt.sizeDelta = new Vector2(76f * s, 16f * s);
+                titleRt.anchoredPosition = new Vector2(-36f * s, (DefaultHeight * 0.5f - 14f) * s);
+            }
 
             // 顶栏快速插入新分级 [+] 按键
             GameObject addTopGo = new GameObject("Btn_Add_Top", typeof(RectTransform), typeof(Image), typeof(Button));
@@ -654,6 +668,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;

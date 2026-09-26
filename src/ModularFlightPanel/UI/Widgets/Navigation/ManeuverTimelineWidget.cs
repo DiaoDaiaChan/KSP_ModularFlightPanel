@@ -27,7 +27,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     [FlightWidget("maneuver_timeline", "burn_timeline", Category = WidgetCategory.Navigation, DisplayName = "MANEUVER 轨道机动时序与三轴矢量轴", Description = "横排时间轴形式机动节点指示器：点火窗口时序轨、T0 节点与 Prograde/Normal/Radial 三轴矢量分解。", DefaultWidgetId = "custom.maneuver_timeline", DefaultX = 0f, DefaultY = 260f, IsSingleton = true, ExactIds = new[] { "custom.maneuver_timeline", "core.maneuver_timeline" })]
     public class ManeuverTimelineWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(520f, 88f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget HeroText = TextWidget.Value("---");
+        public TextWidget SubtitleText = TextWidget.Unit("STANDBY");
 
         // UI 背景与卡片
         private Image _bgImage;
@@ -135,13 +141,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             ParseCustomTemplate(config?.CustomTemplate);
 
             // 1. 组件包围盒 (基准 520x88 逻辑像素，SpaceX 直播标准规格)
-            Vector2 size = new Vector2(520f * s, 88f * s);
+            Vector2 size = BaseSize * s;
             RectTransform.sizeDelta = size;
 
-            // 2. 底板卡片 (全息透明 HUD / 极简淡框风格)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            // 2. 底板卡片 (由基类 AutoCreateCardFrame 托管)
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null) _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             // 3. 构建顶部水平直线时间轴轨道 (Straight Timeline Track)
             GameObject trackGo = new GameObject("Timeline_Track", typeof(RectTransform), typeof(Image));
@@ -278,6 +284,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;

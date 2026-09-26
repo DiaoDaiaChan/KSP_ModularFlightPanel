@@ -450,6 +450,8 @@ namespace ModularFlightPanel.UI
             RegisterExactId<ArcTapeWidget>("core.arc_altitude_tape");
 
             RegisterExactId<BottomControlsWidget>("core.bottom_controls");
+            RegisterExactId<BottomControlsWidget>("core.ref_rcs_sas");
+            RegisterExactId<BottomControlsWidget>("core.rcs_ref_sas");
             RegisterExactId<StageControlWidget>("core.stage_control");
             RegisterExactId<EcamStatusWidget>("core.ecam_status");
             RegisterExactId<EcamAlertLogWidget>("core.ecam_alert_log");

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Config;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -19,25 +20,35 @@ namespace ModularFlightPanel.UI.Settings
         private static readonly Dictionary<string, Texture2D> _textureCache = new Dictionary<string, Texture2D>();
         private static readonly Dictionary<string, string> _inputBufferMap = new Dictionary<string, string>();
 
-        // 核心调色板 (Cyber Aero Dark Glass Palette)
-        public static readonly Color WindowBgColor = new Color(0.06f, 0.08f, 0.12f, 0.98f);
-        public static readonly Color HeaderBgColor = new Color(0.10f, 0.14f, 0.20f, 1.0f);
-        public static readonly Color CardBgColor = new Color(0.08f, 0.11f, 0.16f, 0.92f);
-        public static readonly Color CardBorderColor = new Color(0.18f, 0.26f, 0.38f, 0.75f);
-        public static readonly Color CardHoverBgColor = new Color(0.12f, 0.16f, 0.24f, 0.96f);
-        public static readonly Color InsetBgColor = new Color(0.04f, 0.06f, 0.09f, 0.95f);
-        public static readonly Color InsetBorderColor = new Color(0.12f, 0.18f, 0.26f, 0.60f);
+        // 核心调色板 (动态根据 ThemeConfig 派生，彻底联动当前选中的视觉风格)
+        public static Color WindowBgColor { get; private set; } = new Color(0.06f, 0.08f, 0.12f, 0.98f);
+        public static Color HeaderBgColor { get; private set; } = new Color(0.10f, 0.14f, 0.20f, 1.0f);
+        public static Color CardBgColor { get; private set; } = new Color(0.08f, 0.11f, 0.16f, 0.92f);
+        public static Color CardBorderColor { get; private set; } = new Color(0.18f, 0.26f, 0.38f, 0.75f);
+        public static Color CardHoverBgColor { get; private set; } = new Color(0.12f, 0.16f, 0.24f, 0.96f);
+        public static Color InsetBgColor { get; private set; } = new Color(0.04f, 0.06f, 0.09f, 0.95f);
+        public static Color InsetBorderColor { get; private set; } = new Color(0.12f, 0.18f, 0.26f, 0.60f);
 
-        public static readonly Color AccentCyan = new Color(0.00f, 0.88f, 1.00f, 1.0f);
-        public static readonly Color AccentGreen = new Color(0.00f, 0.92f, 0.55f, 1.0f);
-        public static readonly Color AccentAmber = new Color(1.00f, 0.72f, 0.10f, 1.0f);
-        public static readonly Color AccentRed = new Color(1.00f, 0.30f, 0.30f, 1.0f);
-        public static readonly Color AccentMagenta = new Color(0.85f, 0.35f, 1.00f, 1.0f);
-        public static readonly Color AccentBlue = new Color(0.20f, 0.55f, 0.95f, 1.0f);
+        public static Color AccentCyan { get; private set; } = new Color(0.00f, 0.88f, 1.00f, 1.0f);
+        public static Color AccentGreen { get; private set; } = new Color(0.00f, 0.92f, 0.55f, 1.0f);
+        public static Color AccentAmber { get; private set; } = new Color(1.00f, 0.72f, 0.10f, 1.0f);
+        public static Color AccentRed { get; private set; } = new Color(1.00f, 0.30f, 0.30f, 1.0f);
+        public static Color AccentMagenta { get; private set; } = new Color(0.85f, 0.35f, 1.00f, 1.0f);
+        public static Color AccentBlue { get; private set; } = new Color(0.20f, 0.55f, 0.95f, 1.0f);
 
-        public static readonly Color TextPrimary = new Color(0.94f, 0.97f, 1.00f, 1.0f);
-        public static readonly Color TextSecondary = new Color(0.65f, 0.75f, 0.88f, 1.0f);
-        public static readonly Color TextMuted = new Color(0.42f, 0.50f, 0.62f, 1.0f);
+        public static Color TextPrimary { get; private set; } = new Color(0.94f, 0.97f, 1.00f, 1.0f);
+        public static Color TextSecondary { get; private set; } = new Color(0.65f, 0.75f, 0.88f, 1.0f);
+        public static Color TextMuted { get; private set; } = new Color(0.42f, 0.50f, 0.62f, 1.0f);
+
+        // 快捷 Hex 字符串 (用于富文本标签如 <color=#{HexAccentCyan}>)
+        public static string HexAccentCyan { get; private set; } = "00E5FF";
+        public static string HexAccentGreen { get; private set; } = "00FF88";
+        public static string HexAccentAmber { get; private set; } = "FFB800";
+        public static string HexAccentRed { get; private set; } = "FF4757";
+        public static string HexTextSecondary { get; private set; } = "7088A8";
+
+        private static string _appliedThemeId = null;
+        private static bool _eventSubscribed = false;
 
         // 核心 UIStyles
         public static GUIStyle WindowStyle { get; private set; }
@@ -61,6 +72,7 @@ namespace ModularFlightPanel.UI.Settings
         public static GUIStyle SubtitleStyle { get; private set; }
         public static GUIStyle RowSelectedStyle { get; private set; }
         public static GUIStyle RowNormalStyle { get; private set; }
+        public static GUIStyle ResizeGripStyle { get; private set; }
 
         public static Texture2D SolidTex(Color color)
         {
@@ -95,9 +107,65 @@ namespace ModularFlightPanel.UI.Settings
             return tex;
         }
 
-        public static void EnsureInitialized()
+        private static void UpdatePalette(ThemeConfig theme)
         {
-            if (_initialized) return;
+            if (theme == null) return;
+
+            Color fbg = theme.FrameBgColor.ToColor();
+            Color fborder = theme.FrameBorderColor.ToColor();
+            Color accPri = theme.AccentPrimary.ToColor();
+            Color accSec = theme.AccentSecondary.ToColor();
+            Color warn = theme.WarningColor.ToColor();
+            Color dang = theme.DangerColor.ToColor();
+            Color mag = theme.AccentMagenta.ToColor();
+            Color txtPri = theme.TextPrimaryColor.ToColor();
+            Color txtAcc = theme.TextAccentColor.ToColor();
+
+            // 背景与面板：基于主题 FrameBgColor，调整为保证 0.96f~0.98f 的高对比座舱玻璃底
+            WindowBgColor = new Color(Mathf.Clamp01(fbg.r * 0.70f + 0.02f), Mathf.Clamp01(fbg.g * 0.70f + 0.02f), Mathf.Clamp01(fbg.b * 0.70f + 0.02f), 0.97f);
+            HeaderBgColor = new Color(Mathf.Clamp01(fbg.r * 1.10f + 0.04f), Mathf.Clamp01(fbg.g * 1.10f + 0.04f), Mathf.Clamp01(fbg.b * 1.10f + 0.04f), 1.0f);
+            CardBgColor = new Color(Mathf.Clamp01(fbg.r * 1.15f + 0.03f), Mathf.Clamp01(fbg.g * 1.15f + 0.03f), Mathf.Clamp01(fbg.b * 1.15f + 0.03f), 0.92f);
+            CardBorderColor = new Color(fborder.r, fborder.g, fborder.b, Mathf.Clamp01(fborder.a + 0.35f));
+            CardHoverBgColor = new Color(Mathf.Clamp01(CardBgColor.r + 0.04f), Mathf.Clamp01(CardBgColor.g + 0.04f), Mathf.Clamp01(CardBgColor.b + 0.05f), 0.96f);
+            InsetBgColor = new Color(Mathf.Clamp01(fbg.r * 0.50f), Mathf.Clamp01(fbg.g * 0.50f), Mathf.Clamp01(fbg.b * 0.50f), 0.95f);
+            InsetBorderColor = new Color(fborder.r * 0.7f, fborder.g * 0.7f, fborder.b * 0.7f, 0.45f);
+
+            AccentCyan = accSec;
+            AccentGreen = accPri;
+            AccentAmber = warn;
+            AccentRed = dang;
+            AccentMagenta = mag;
+            AccentBlue = new Color(Mathf.Clamp01(accSec.r * 0.8f + 0.1f), Mathf.Clamp01(accSec.g * 0.8f + 0.1f), Mathf.Clamp01(accSec.b * 0.9f + 0.1f), 1.0f);
+
+            TextPrimary = txtPri;
+            TextSecondary = txtAcc;
+            TextMuted = new Color(Mathf.Clamp01(txtAcc.r * 0.65f), Mathf.Clamp01(txtAcc.g * 0.65f), Mathf.Clamp01(txtAcc.b * 0.70f), 0.85f);
+
+            HexAccentCyan = ColorUtility.ToHtmlStringRGB(AccentCyan);
+            HexAccentGreen = ColorUtility.ToHtmlStringRGB(AccentGreen);
+            HexAccentAmber = ColorUtility.ToHtmlStringRGB(AccentAmber);
+            HexAccentRed = ColorUtility.ToHtmlStringRGB(AccentRed);
+            HexTextSecondary = ColorUtility.ToHtmlStringRGB(TextSecondary);
+        }
+
+        public static void EnsureInitialized(bool forceRebuild = false)
+        {
+            if (!_eventSubscribed && ThemeManager.Instance != null)
+            {
+                ThemeManager.Instance.OnThemeChanged += (t) => EnsureInitialized(forceRebuild: true);
+                _eventSubscribed = true;
+            }
+
+            var currentTheme = ThemeManager.Instance?.CurrentTheme;
+            string themeId = currentTheme != null ? currentTheme.ThemeId : "modern_aero";
+
+            if (_initialized && !forceRebuild && string.Equals(_appliedThemeId, themeId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _appliedThemeId = themeId;
+            UpdatePalette(currentTheme);
 
             // 1. 窗口基础样式
             WindowStyle = new GUIStyle(GUI.skin.window)
@@ -105,7 +173,7 @@ namespace ModularFlightPanel.UI.Settings
                 padding = new RectOffset(16, 16, 14, 16),
                 border = new RectOffset(6, 6, 6, 6)
             };
-            Texture2D winTex = BorderedTex(WindowBgColor, new Color(0.00f, 0.88f, 1.00f, 0.45f), 1, 16);
+            Texture2D winTex = BorderedTex(WindowBgColor, new Color(AccentCyan.r, AccentCyan.g, AccentCyan.b, 0.45f), 1, 16);
             WindowStyle.normal.background = winTex;
             WindowStyle.onNormal.background = winTex;
 
@@ -119,7 +187,7 @@ namespace ModularFlightPanel.UI.Settings
             CardStyle.normal.textColor = TextPrimary;
 
             CardHoverStyle = new GUIStyle(CardStyle);
-            CardHoverStyle.normal.background = BorderedTex(CardHoverBgColor, new Color(0.00f, 0.88f, 1.00f, 0.60f), 1, 16);
+            CardHoverStyle.normal.background = BorderedTex(CardHoverBgColor, new Color(AccentCyan.r, AccentCyan.g, AccentCyan.b, 0.60f), 1, 16);
 
             InsetStyle = new GUIStyle(CardStyle)
             {
@@ -136,18 +204,19 @@ namespace ModularFlightPanel.UI.Settings
                 alignment = TextAnchor.MiddleCenter,
                 padding = new RectOffset(14, 14, 7, 7)
             };
-            TabActiveStyle.normal.background = BorderedTex(new Color(0.12f, 0.22f, 0.34f, 1.0f), AccentCyan, 1, 16);
+            Color tabActiveBg = new Color(Mathf.Clamp01(AccentCyan.r * 0.15f + 0.05f), Mathf.Clamp01(AccentCyan.g * 0.15f + 0.05f), Mathf.Clamp01(AccentCyan.b * 0.15f + 0.05f), 0.95f);
+            TabActiveStyle.normal.background = BorderedTex(tabActiveBg, AccentCyan, 1, 16);
             TabActiveStyle.normal.textColor = AccentCyan;
-            TabActiveStyle.hover.background = BorderedTex(new Color(0.16f, 0.28f, 0.42f, 1.0f), AccentCyan, 1, 16);
+            TabActiveStyle.hover.background = BorderedTex(new Color(Mathf.Clamp01(tabActiveBg.r + 0.05f), Mathf.Clamp01(tabActiveBg.g + 0.05f), Mathf.Clamp01(tabActiveBg.b + 0.05f), 1.0f), AccentCyan, 1, 16);
             TabActiveStyle.hover.textColor = Color.white;
 
             TabInactiveStyle = new GUIStyle(TabActiveStyle)
             {
                 fontStyle = FontStyle.Normal
             };
-            TabInactiveStyle.normal.background = BorderedTex(new Color(0.07f, 0.10f, 0.15f, 0.9f), new Color(0.15f, 0.20f, 0.28f, 0.5f), 1, 16);
+            TabInactiveStyle.normal.background = BorderedTex(new Color(WindowBgColor.r * 1.1f, WindowBgColor.g * 1.1f, WindowBgColor.b * 1.1f, 0.9f), CardBorderColor, 1, 16);
             TabInactiveStyle.normal.textColor = TextSecondary;
-            TabInactiveStyle.hover.background = BorderedTex(new Color(0.10f, 0.14f, 0.20f, 1.0f), new Color(0.25f, 0.35f, 0.48f, 0.8f), 1, 16);
+            TabInactiveStyle.hover.background = BorderedTex(CardHoverBgColor, new Color(AccentCyan.r, AccentCyan.g, AccentCyan.b, 0.5f), 1, 16);
             TabInactiveStyle.hover.textColor = TextPrimary;
 
             // 4. 按钮系列
@@ -158,33 +227,37 @@ namespace ModularFlightPanel.UI.Settings
                 alignment = TextAnchor.MiddleCenter,
                 padding = new RectOffset(10, 10, 5, 5)
             };
-            PrimaryButtonStyle.normal.background = BorderedTex(new Color(0.00f, 0.45f, 0.65f, 0.95f), new Color(0.00f, 0.88f, 1.00f, 0.8f), 1, 16);
+            Color priBtnBg = new Color(Mathf.Clamp01(AccentCyan.r * 0.35f), Mathf.Clamp01(AccentCyan.g * 0.35f), Mathf.Clamp01(AccentCyan.b * 0.35f), 0.95f);
+            PrimaryButtonStyle.normal.background = BorderedTex(priBtnBg, new Color(AccentCyan.r, AccentCyan.g, AccentCyan.b, 0.8f), 1, 16);
             PrimaryButtonStyle.normal.textColor = Color.white;
-            PrimaryButtonStyle.hover.background = BorderedTex(new Color(0.00f, 0.60f, 0.85f, 1.0f), new Color(0.30f, 0.95f, 1.00f, 1.0f), 1, 16);
+            PrimaryButtonStyle.hover.background = BorderedTex(new Color(Mathf.Clamp01(priBtnBg.r * 1.3f + 0.05f), Mathf.Clamp01(priBtnBg.g * 1.3f + 0.05f), Mathf.Clamp01(priBtnBg.b * 1.3f + 0.05f), 1.0f), AccentCyan, 1, 16);
             PrimaryButtonStyle.hover.textColor = Color.white;
 
             SecondaryButtonStyle = new GUIStyle(PrimaryButtonStyle);
-            SecondaryButtonStyle.normal.background = BorderedTex(new Color(0.12f, 0.17f, 0.24f, 0.95f), new Color(0.25f, 0.35f, 0.48f, 0.8f), 1, 16);
+            SecondaryButtonStyle.normal.background = BorderedTex(CardBgColor, CardBorderColor, 1, 16);
             SecondaryButtonStyle.normal.textColor = TextPrimary;
-            SecondaryButtonStyle.hover.background = BorderedTex(new Color(0.18f, 0.25f, 0.35f, 1.0f), AccentCyan, 1, 16);
+            SecondaryButtonStyle.hover.background = BorderedTex(CardHoverBgColor, AccentCyan, 1, 16);
             SecondaryButtonStyle.hover.textColor = AccentCyan;
 
             SuccessButtonStyle = new GUIStyle(PrimaryButtonStyle);
-            SuccessButtonStyle.normal.background = BorderedTex(new Color(0.05f, 0.45f, 0.25f, 0.95f), new Color(0.00f, 0.92f, 0.55f, 0.8f), 1, 16);
+            Color sucBtnBg = new Color(Mathf.Clamp01(AccentGreen.r * 0.35f), Mathf.Clamp01(AccentGreen.g * 0.35f), Mathf.Clamp01(AccentGreen.b * 0.35f), 0.95f);
+            SuccessButtonStyle.normal.background = BorderedTex(sucBtnBg, new Color(AccentGreen.r, AccentGreen.g, AccentGreen.b, 0.8f), 1, 16);
             SuccessButtonStyle.normal.textColor = AccentGreen;
-            SuccessButtonStyle.hover.background = BorderedTex(new Color(0.08f, 0.60f, 0.35f, 1.0f), Color.white, 1, 16);
+            SuccessButtonStyle.hover.background = BorderedTex(new Color(Mathf.Clamp01(sucBtnBg.r * 1.3f + 0.05f), Mathf.Clamp01(sucBtnBg.g * 1.3f + 0.05f), Mathf.Clamp01(sucBtnBg.b * 1.3f + 0.05f), 1.0f), Color.white, 1, 16);
             SuccessButtonStyle.hover.textColor = Color.white;
 
             WarningButtonStyle = new GUIStyle(PrimaryButtonStyle);
-            WarningButtonStyle.normal.background = BorderedTex(new Color(0.48f, 0.32f, 0.05f, 0.95f), new Color(1.00f, 0.72f, 0.10f, 0.8f), 1, 16);
+            Color warnBtnBg = new Color(Mathf.Clamp01(AccentAmber.r * 0.35f), Mathf.Clamp01(AccentAmber.g * 0.35f), Mathf.Clamp01(AccentAmber.b * 0.35f), 0.95f);
+            WarningButtonStyle.normal.background = BorderedTex(warnBtnBg, new Color(AccentAmber.r, AccentAmber.g, AccentAmber.b, 0.8f), 1, 16);
             WarningButtonStyle.normal.textColor = AccentAmber;
-            WarningButtonStyle.hover.background = BorderedTex(new Color(0.65f, 0.42f, 0.08f, 1.0f), Color.white, 1, 16);
+            WarningButtonStyle.hover.background = BorderedTex(new Color(Mathf.Clamp01(warnBtnBg.r * 1.3f + 0.05f), Mathf.Clamp01(warnBtnBg.g * 1.3f + 0.05f), Mathf.Clamp01(warnBtnBg.b * 1.3f + 0.05f), 1.0f), Color.white, 1, 16);
             WarningButtonStyle.hover.textColor = Color.white;
 
             DangerButtonStyle = new GUIStyle(PrimaryButtonStyle);
-            DangerButtonStyle.normal.background = BorderedTex(new Color(0.48f, 0.12f, 0.15f, 0.95f), new Color(1.00f, 0.30f, 0.30f, 0.8f), 1, 16);
+            Color dangBtnBg = new Color(Mathf.Clamp01(AccentRed.r * 0.35f), Mathf.Clamp01(AccentRed.g * 0.35f), Mathf.Clamp01(AccentRed.b * 0.35f), 0.95f);
+            DangerButtonStyle.normal.background = BorderedTex(dangBtnBg, new Color(AccentRed.r, AccentRed.g, AccentRed.b, 0.8f), 1, 16);
             DangerButtonStyle.normal.textColor = AccentRed;
-            DangerButtonStyle.hover.background = BorderedTex(new Color(0.65f, 0.18f, 0.22f, 1.0f), Color.white, 1, 16);
+            DangerButtonStyle.hover.background = BorderedTex(new Color(Mathf.Clamp01(dangBtnBg.r * 1.3f + 0.05f), Mathf.Clamp01(dangBtnBg.g * 1.3f + 0.05f), Mathf.Clamp01(dangBtnBg.b * 1.3f + 0.05f), 1.0f), Color.white, 1, 16);
             DangerButtonStyle.hover.textColor = Color.white;
 
             StepperButtonStyle = new GUIStyle(GUI.skin.button)
@@ -193,9 +266,9 @@ namespace ModularFlightPanel.UI.Settings
                 alignment = TextAnchor.MiddleCenter,
                 padding = new RectOffset(4, 4, 3, 3)
             };
-            StepperButtonStyle.normal.background = BorderedTex(new Color(0.13f, 0.18f, 0.25f, 0.9f), new Color(0.22f, 0.30f, 0.42f, 0.7f), 1, 16);
+            StepperButtonStyle.normal.background = BorderedTex(InsetBgColor, InsetBorderColor, 1, 16);
             StepperButtonStyle.normal.textColor = TextPrimary;
-            StepperButtonStyle.hover.background = BorderedTex(new Color(0.18f, 0.26f, 0.36f, 1.0f), AccentCyan, 1, 16);
+            StepperButtonStyle.hover.background = BorderedTex(CardHoverBgColor, AccentCyan, 1, 16);
             StepperButtonStyle.hover.textColor = AccentCyan;
 
             // 5. 搜索框与输入字段
@@ -204,9 +277,9 @@ namespace ModularFlightPanel.UI.Settings
                 fontSize = 11,
                 padding = new RectOffset(8, 8, 5, 5)
             };
-            SearchFieldStyle.normal.background = BorderedTex(new Color(0.05f, 0.07f, 0.10f, 0.95f), new Color(0.20f, 0.28f, 0.40f, 0.8f), 1, 16);
+            SearchFieldStyle.normal.background = BorderedTex(InsetBgColor, InsetBorderColor, 1, 16);
             SearchFieldStyle.normal.textColor = TextPrimary;
-            SearchFieldStyle.focused.background = BorderedTex(new Color(0.08f, 0.12f, 0.18f, 1.0f), AccentCyan, 1, 16);
+            SearchFieldStyle.focused.background = BorderedTex(CardBgColor, AccentCyan, 1, 16);
             SearchFieldStyle.focused.textColor = Color.white;
 
             ValueFieldStyle = new GUIStyle(SearchFieldStyle)
@@ -223,7 +296,8 @@ namespace ModularFlightPanel.UI.Settings
                 alignment = TextAnchor.MiddleCenter,
                 padding = new RectOffset(8, 8, 3, 3)
             };
-            TokenBadgeStyle.normal.background = BorderedTex(new Color(0.00f, 0.28f, 0.42f, 0.85f), new Color(0.00f, 0.88f, 1.00f, 0.5f), 1, 16);
+            Color badgeBg = new Color(Mathf.Clamp01(AccentCyan.r * 0.25f), Mathf.Clamp01(AccentCyan.g * 0.25f), Mathf.Clamp01(AccentCyan.b * 0.25f), 0.85f);
+            TokenBadgeStyle.normal.background = BorderedTex(badgeBg, new Color(AccentCyan.r, AccentCyan.g, AccentCyan.b, 0.5f), 1, 16);
             TokenBadgeStyle.normal.textColor = AccentCyan;
 
             SectionTitleStyle = new GUIStyle(GUI.skin.label)
@@ -259,12 +333,22 @@ namespace ModularFlightPanel.UI.Settings
                 padding = new RectOffset(8, 8, 6, 6),
                 margin = new RectOffset(0, 0, 2, 2)
             };
-            RowNormalStyle.normal.background = BorderedTex(new Color(0.07f, 0.10f, 0.14f, 0.85f), new Color(0.14f, 0.20f, 0.28f, 0.5f), 1, 16);
+            RowNormalStyle.normal.background = BorderedTex(CardBgColor, InsetBorderColor, 1, 16);
             RowNormalStyle.normal.textColor = TextPrimary;
 
             RowSelectedStyle = new GUIStyle(RowNormalStyle);
-            RowSelectedStyle.normal.background = BorderedTex(new Color(0.10f, 0.20f, 0.30f, 0.95f), AccentCyan, 1, 16);
+            RowSelectedStyle.normal.background = BorderedTex(new Color(Mathf.Clamp01(AccentCyan.r * 0.25f), Mathf.Clamp01(AccentCyan.g * 0.25f), Mathf.Clamp01(AccentCyan.b * 0.25f), 0.95f), AccentCyan, 1, 16);
             RowSelectedStyle.normal.textColor = Color.white;
+
+            ResizeGripStyle = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.LowerRight,
+                fontSize = 13,
+                fontStyle = FontStyle.Bold,
+                padding = new RectOffset(0, 4, 0, 4)
+            };
+            ResizeGripStyle.normal.textColor = new Color(AccentCyan.r, AccentCyan.g, AccentCyan.b, 0.65f);
+            ResizeGripStyle.hover.textColor = AccentCyan;
 
             _initialized = true;
         }

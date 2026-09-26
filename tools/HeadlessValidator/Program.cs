@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI;   // MFP-SPEC-006 颜色字面量审计器（直接编译插件源码本体）
+using ModularFlightPanel.Config; // 统一配置解析引擎与数据契约
 
 namespace ModularFlightPanel.HeadlessValidator
 {
@@ -166,6 +167,30 @@ namespace ModularFlightPanel.HeadlessValidator
 
         public static int Main(string[] args)
         {
+            if (args != null && (args.Contains("--audit-legacy") || args.Contains("--audit-modernization")))
+            {
+                bool msbuildMode = args.Contains("--msbuild") || args.Contains("--quiet");
+                if (msbuildMode && Console.IsOutputRedirected)
+                {
+                    try { Console.OutputEncoding = Encoding.Default; } catch { }
+                }
+                else
+                {
+                    try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+                }
+                string root = ResolveRepoRoot();
+                var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(root);
+                if (msbuildMode)
+                {
+                    Console.Write(ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.GenerateMSBuildOutput(modReport));
+                }
+                else
+                {
+                    Console.Write(ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.GenerateTerminalSummary(modReport));
+                }
+                return 0;
+            }
+
             Console.OutputEncoding = Encoding.UTF8;
             PrintBanner();
 
@@ -213,6 +238,10 @@ namespace ModularFlightPanel.HeadlessValidator
                 {
                     return RunI18nAstAudit(repoRoot);
                 }
+                else if (args[i] == "--test-config" || args[i] == "--test-json")
+                {
+                    return ConfigRoundtripTestSuite.Run(repoRoot) == 0 ? 0 : 1;
+                }
             }
 
             int overallErrors = 0;
@@ -221,7 +250,7 @@ namespace ModularFlightPanel.HeadlessValidator
             WidgetLayoutModel layout = null;
             if (!string.IsNullOrEmpty(shareCodeToTest))
             {
-                Console.WriteLine($"\n[1/9] 测试 CLI 传入分享码解码...");
+                Console.WriteLine($"\n[1/10] 测试 CLI 传入分享码解码...");
                 if (TryDecodeShareCode(shareCodeToTest, out layout, out string decodeErr))
                 {
                     PrintSuccess($"成功从分享码还原布局! 包含 {layout.Widgets.Count} 个组件。");
@@ -234,7 +263,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
             else
             {
-                Console.WriteLine($"\n[1/9] 加载航电布局文件: {Path.GetFileName(layoutPath)}");
+                Console.WriteLine($"\n[1/10] 加载航电布局文件 (AvionicsConfigParser): {Path.GetFileName(layoutPath)}");
                 if (!File.Exists(layoutPath))
                 {
                     PrintError($"找不到布局文件: {layoutPath}");
@@ -244,7 +273,13 @@ namespace ModularFlightPanel.HeadlessValidator
                 try
                 {
                     string json = File.ReadAllText(layoutPath);
-                    layout = JsonSerializer.Deserialize<WidgetLayoutModel>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    var pData = AvionicsConfigParser.ParseLayout(json, out string parseErr);
+                    if (pData == null)
+                    {
+                        PrintError($"布局 JSON 解析异常: {parseErr}");
+                        return 1;
+                    }
+                    layout = ToModel(pData);
                     PrintSuccess($"布局载入成功: 共有 {layout.Widgets.Count} 个组件配置, 全局缩放 {layout.GlobalScale:F2}x");
                 }
                 catch (Exception ex)
@@ -254,7 +289,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 }
 
                 // 测试分享码往返序列化
-                Console.WriteLine($"\n[2/9] 验证分享中枢 (LayoutShareHub) GZip+Base64 编解码与无损往返...");
+                Console.WriteLine($"\n[2/10] 验证分享中枢 (LayoutShareHub) GZip+Base64 编解码与无损往返...");
                 string exportedCode = EncodeShareCode(layout);
                 int jsonBytes = Encoding.UTF8.GetByteCount(File.ReadAllText(layoutPath));
                 int codeBytes = Encoding.UTF8.GetByteCount(exportedCode);
@@ -284,7 +319,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 2. 空间布局与 AABB 碰撞检测
-            Console.WriteLine($"\n[3/9] 执行空间几何与视口碰撞检测 (AABB Spatial Collision Engine)...");
+            Console.WriteLine($"\n[3/10] 执行空间几何与视口碰撞检测 (AABB Spatial Collision Engine)...");
             var boundingBoxes = ComputeBoundingBoxes(layout);
             var activeWidgets = boundingBoxes.Values.ToList();
             Console.WriteLine($"  ├─ 激活组件数: {activeWidgets.Count} / {layout.Widgets.Count}");
@@ -324,7 +359,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 3. 通配符 Token 引擎完整性审计
-            Console.WriteLine($"\n[4/9] 遥测通配符语法与 Token 引擎静态审计...");
+            Console.WriteLine($"\n[4/10] 遥测通配符语法与 Token 引擎静态审计...");
             int tokenErrors = AuditTokens(layout);
             if (tokenErrors == 0)
             {
@@ -337,7 +372,7 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 4. 700 帧物理遥测场景仿真高压测试
-            Console.WriteLine($"\n[5/9] 运行物理遥测解耦仿真引擎高压测试 (7 个飞行阶段, 700 Ticks)...");
+            Console.WriteLine($"\n[5/10] 运行物理遥测解耦仿真引擎高压测试 (7 个飞行阶段, 700 Ticks)...");
             int simErrors = RunSimulationStressTest();
             if (simErrors == 0)
             {
@@ -358,12 +393,12 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 6. 全量飞行仪表组件规范合法性校验 (Widget Specification Audit, MFP-SPEC-001..007)
-            Console.WriteLine($"\n[6/9] 全量飞行仪表组件架构与代码规范合法性校验 (Architecture Compliance Audit)...");
+            Console.WriteLine($"\n[6/10] 全量飞行仪表组件架构与代码规范合法性校验 (Architecture Compliance Audit)...");
             int specErrors = ValidateWidgetSpecifications(repoRoot);
             overallErrors += specErrors;
 
             // 7. 审计内核自检：词法器（注释/字符串剥离）+ 规则正则 + I18n AST 语法树自检
-            Console.WriteLine($"\n[7/9] 审计内核自检 (Linter + Spec Rules + I18n AST Self-Test)...");
+            Console.WriteLine($"\n[7/10] 审计内核自检 (Linter + Spec Rules + I18n AST Self-Test)...");
             var linterFailures = CSharpSourceLinter.SelfTest();
             var ruleFailures = WidgetSourceAudit.SelfTest();
             var i18nSelfTestFailures = I18nSyntaxAuditor.SelfTest();
@@ -383,16 +418,21 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             // 8. Unity 无头预览工程镜像一致性（清单 tools/unity_mirror.manifest 即合约）
-            Console.WriteLine($"\n[8/9] Unity 无头预览工程镜像一致性审计 (Mirror Sync Audit)...");
+            Console.WriteLine($"\n[8/10] Unity 无头预览工程镜像一致性审计 (Mirror Sync Audit)...");
             int mirrorErrors = CheckUnityMirror(repoRoot, false);
             overallErrors += mirrorErrors;
 
             // 9. 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)
-            Console.WriteLine($"\n[9/9] 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)...");
+            Console.WriteLine($"\n[9/10] 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)...");
             int i18nErrors = ValidateI18nLocalization(repoRoot);
             overallErrors += i18nErrors;
 
-            // 附加：出厂预设库批量扫描与健壮性验证（不计入 9 项主检查，失败会自行报错）
+            // 10. 全局配置与预设双向导入导出高保真往返测试 (Avionics Config Bidirectional Roundtrip Suite)
+            Console.WriteLine($"\n[10/10] 全局配置与预设双向导入导出高保真往返测试 (Avionics Config Bidirectional Roundtrip Suite)...");
+            int configErrors = ConfigRoundtripTestSuite.Run(repoRoot);
+            overallErrors += configErrors;
+
+            // 附加：出厂预设库空间几何扫描与健壮性验证
             ValidateAllPresets(repoRoot);
 
             // 最终汇报
@@ -475,7 +515,9 @@ namespace ModularFlightPanel.HeadlessValidator
                 Console.WriteLine($"  ├─ 主题与着色管道: 全部组件接入 WidgetStyleManager (0 颜色字面量, 零容忍)");
                 Console.WriteLine($"  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry & OnDestroy 全量 override 并调用 base");
                 Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件声明 [FlightWidget] 特性 (MFP-SPEC-008 自动挂载)");
-                Console.WriteLine($"  └─ 探针与场景调度: 0 组件内场景查询 (Find*ObjectByType / GameObject.Find* / Camera.main / GetRootGameObjects)");
+                Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询 (Find*ObjectByType / GameObject.Find* / Camera.main / GetRootGameObjects)");
+                var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(repoRoot);
+                Console.WriteLine($"  └─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
             }
             else
             {
@@ -1046,7 +1088,7 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "nav.vessel_navball" || widgetId == "nav.vessel_attitude_sphere" || widgetType == "vessel_navball" || widgetType == "vessel_attitude_sphere") return (150f, 178f);
             if (widgetId == "core.heading_arc" || widgetId == "nav.heading_arc" || widgetType == "heading_arc") return (180f, 60f);
             if (widgetId == "core.master_warning" || widgetType == "master_warning" || widgetType == "warning_annunciator" || widgetType == "annunciator" || widgetType == "cws") return (184f, 20f);
-            if (widgetId == "core.bottom_controls") return (184f, 22f);
+            if (widgetId == "core.bottom_controls" || widgetId == "core.ref_rcs_sas" || widgetId == "core.rcs_ref_sas" || widgetType == "bottom_controls" || widgetType == "bottom_bar_controls" || widgetType == "rcs_ref_sas" || widgetType == "ref_rcs_sas") return (184f, 22f);
             if (widgetId == "core.orbital_info") return (320f, 36f);
             if (widgetId == "core.ecam_status") return (380f, 32f);
             if (widgetId == "core.ecam_alert_log" || widgetId == "ecam.alert_log" || widgetId == "custom.ecam_alert_log" || widgetType == "ecam_alert_log" || widgetType == "alert_log" || widgetType == "eicas_messages" || widgetType == "warning_log" || widgetId.Contains("alert_log")) return (280f, 172f);
@@ -1361,7 +1403,8 @@ namespace ModularFlightPanel.HeadlessValidator
 
         public static string EncodeShareCode(WidgetLayoutModel layout)
         {
-            string json = JsonSerializer.Serialize(layout);
+            var data = ToData(layout);
+            string json = AvionicsConfigParser.SerializeLayout(data, false);
             byte[] rawBytes = Encoding.UTF8.GetBytes(json);
 
             using (var ms = new MemoryStream())
@@ -1399,8 +1442,14 @@ namespace ModularFlightPanel.HeadlessValidator
                 using (var reader = new StreamReader(gzip, Encoding.UTF8))
                 {
                     string json = reader.ReadToEnd();
-                    layout = JsonSerializer.Deserialize<WidgetLayoutModel>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    return layout != null;
+                    var pData = AvionicsConfigParser.ParseLayout(json, out error);
+                    if (pData != null && pData.Widgets != null && pData.Widgets.Count > 0)
+                    {
+                        layout = ToModel(pData);
+                        return true;
+                    }
+                    if (string.IsNullOrEmpty(error)) error = "未能解析出小组件配置";
+                    return false;
                 }
             }
             catch (Exception ex)
@@ -1410,13 +1459,88 @@ namespace ModularFlightPanel.HeadlessValidator
             }
         }
 
+        public static WidgetLayoutModel ToModel(WidgetLayoutData data)
+        {
+            if (data == null) return null;
+            var model = new WidgetLayoutModel { GlobalScale = data.GlobalScale };
+            foreach (var w in data.Widgets)
+            {
+                model.Widgets.Add(new WidgetConfigModel
+                {
+                    WidgetId = w.WidgetId,
+                    DisplayName = w.DisplayName,
+                    IsEnabled = w.IsEnabled,
+                    PositionX = w.PositionX,
+                    PositionY = w.PositionY,
+                    Scale = w.Scale,
+                    ScaleX = w.ScaleX,
+                    ScaleY = w.ScaleY,
+                    Rotation = w.Rotation,
+                    CustomTemplate = w.CustomTemplate,
+                    WidgetType = w.WidgetType,
+                    NumericToken = w.NumericToken,
+                    MinValue = w.MinValue,
+                    MaxValue = w.MaxValue,
+                    CautionThreshold = w.CautionThreshold,
+                    WarningThreshold = w.WarningThreshold,
+                    IsSoftLimit = w.IsSoftLimit,
+                    LimitMode = w.LimitMode,
+                    UnitLabel = w.UnitLabel,
+                    StepInterval = w.StepInterval,
+                    IsLeftOrientation = w.IsLeftOrientation,
+                    ValueDeltaThreshold = w.ValueDeltaThreshold,
+                    BadgeNormal = w.BadgeNormal,
+                    BadgeCaution = w.BadgeCaution,
+                    BadgeWarning = w.BadgeWarning,
+                    IsolateCanvas = w.IsolateCanvas,
+                    UpdateInterval = w.UpdateInterval,
+                    CustomHz = w.CustomHz,
+                    RenderScale = w.RenderScale
+                });
+            }
+            return model;
+        }
+
+        public static WidgetLayoutData ToData(WidgetLayoutModel model)
+        {
+            if (model == null) return null;
+            var data = new WidgetLayoutData(model.GlobalScale);
+            foreach (var w in model.Widgets)
+            {
+                data.Widgets.Add(new WidgetConfig(w.WidgetId, w.DisplayName, w.PositionX, w.PositionY, w.Scale, w.CustomTemplate, w.Rotation, w.ScaleX, w.ScaleY)
+                {
+                    IsEnabled = w.IsEnabled,
+                    WidgetType = w.WidgetType,
+                    NumericToken = w.NumericToken,
+                    MinValue = w.MinValue,
+                    MaxValue = w.MaxValue,
+                    CautionThreshold = w.CautionThreshold,
+                    WarningThreshold = w.WarningThreshold,
+                    IsSoftLimit = w.IsSoftLimit,
+                    LimitMode = w.LimitMode,
+                    UnitLabel = w.UnitLabel,
+                    StepInterval = w.StepInterval,
+                    IsLeftOrientation = w.IsLeftOrientation,
+                    ValueDeltaThreshold = (float)w.ValueDeltaThreshold,
+                    BadgeNormal = w.BadgeNormal,
+                    BadgeCaution = w.BadgeCaution,
+                    BadgeWarning = w.BadgeWarning,
+                    IsolateCanvas = w.IsolateCanvas,
+                    UpdateInterval = w.UpdateInterval,
+                    CustomHz = w.CustomHz,
+                    RenderScale = w.RenderScale
+                });
+            }
+            return data;
+        }
+
         // ==========================================
         // 5. 预设库扫描验证
         // ==========================================
         private static void ValidateAllPresets(string repoRoot)
         {
             string presetsDir = Path.Combine(repoRoot, "GameData", "ModularFlightPanel", "PluginData", "Presets");
-            Console.WriteLine($"\n[附] 检查预设库目录: {presetsDir}");
+            Console.WriteLine($"\n[附] 检查预设库目录空间几何: {presetsDir}");
             if (!Directory.Exists(presetsDir))
             {
                 Directory.CreateDirectory(presetsDir);
@@ -1430,13 +1554,19 @@ namespace ModularFlightPanel.HeadlessValidator
                 return;
             }
 
-            Console.WriteLine($"  ├─ 发现 {presetFiles.Length} 个本地预设文件:");
+            Console.WriteLine($"  ├─ 扫描 {presetFiles.Length} 个本地预设文件空间碰撞:");
             foreach (var f in presetFiles)
             {
                 try
                 {
                     string json = File.ReadAllText(f);
-                    var pLayout = JsonSerializer.Deserialize<WidgetLayoutModel>(json);
+                    var pData = AvionicsConfigParser.ParseLayout(json, out string parseErr);
+                    if (pData == null)
+                    {
+                        PrintError($"预设文件损坏: {Path.GetFileName(f)} - {parseErr}");
+                        continue;
+                    }
+                    var pLayout = ToModel(pData);
                     var boxes = ComputeBoundingBoxes(pLayout);
                     var collisions = DetectCollisions(boxes.Values.ToList());
                     collisions.RemoveAll(c => IsExemptOverlap(c.A.WidgetId, c.B.WidgetId) || c.OverlapRatio <= 0.15f);

@@ -48,7 +48,12 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("sas_dial", "sas_compass", "sas", Category = WidgetCategory.Controls, DisplayName = "环形 SAS 模式选择罗盘", Description = "10 向全功能快速 SAS 模式选择罗盘，带飞船实时滚转与级间剪影。", DefaultWidgetId = "core.sas_dial", DefaultX = 0f, DefaultY = -100f, IsSingleton = true, ExactIds = new[] { "core.sas_dial" })]
     public class SASDialWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(96f, 116f);
+        protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget StatusBadge = TextWidget.Badge("SAS: OFF");
 
         private class SASButtonData
         {
@@ -777,6 +782,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             _hasInitializedState = false;
             _lastStatusText = null;
 

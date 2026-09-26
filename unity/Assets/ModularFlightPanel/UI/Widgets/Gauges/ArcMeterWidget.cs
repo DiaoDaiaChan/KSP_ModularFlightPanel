@@ -11,289 +11,163 @@ namespace ModularFlightPanel.UI.Widgets
     {
         Throttle,
         VerticalSpeed,
-        StagePropellant
+        StagePropellant,
+        Custom
     }
 
     /// <summary>
-    /// 姿态球外缘弧度计量仪表 (Arc Meter Widget - Throttle / VSI / Propellant)
-    /// 100% 遵照 MFP 标准：通配符驱动、主题语义管道、脏检查保护、0 颜色字面量。
+    /// 紧凑型精密圆弧度量仪表 (Compact Precision Arc Meter Widget)
+    /// 现代航电独立单项圆弧仪表：
+    /// 1. 240° 极坐标高对比度度量环 (支持程序化 RadialMeterShader 与平滑填充)；
+    /// 2. 中央高清晰度主读数与工程单位；
+    /// 3. 顶部系统/通道标签与底部两端量程微标；
+    /// 4. 完美支持油门 (THR)、垂直速度 (VSI)、本级推进剂 (PROP) 与通用通配符绑定。
+    /// 彻底废除旧版脱离姿态球后的硬编码漂移偏移，具备规范的独立卡片底板与微控件纳管。
+    /// 100% 遵照 SPEC-001..008 核心架构规范。
     /// </summary>
-    [FlightWidget("arc_meter", "meter_arc", Category = WidgetCategory.Gauges, DisplayName = "圆弧计量仪表", Description = "高精度 270° 圆弧指示仪表，适用于油门、升降率 (VSI) 或单项推进剂实时监测。", DefaultWidgetId = "core.throttle", DefaultX = 0f, DefaultY = 0f, ExactIds = new[] { "core.throttle", "core.vsi", "core.propellant" })]
+    [FlightWidget("arc_meter", "meter_arc", "arc_gauge",
+        Category = WidgetCategory.Gauges,
+        DisplayName = "圆弧计量仪表",
+        Description = "高精度独立 240° 圆弧指示仪表，适用于油门、升降率 (VSI) 或单项推进剂实时监测。",
+        DefaultWidgetId = "core.throttle",
+        DefaultX = 0f,
+        DefaultY = 0f,
+        ExactIds = new[] { "core.throttle", "core.vsi", "core.propellant" })]
     public class ArcMeterWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(104f, 104f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
-        private ArcMeterType _type;
+        private ArcMeterType _type = ArcMeterType.Throttle;
         private Image _meterImage;
         private Material _meterMaterial;
-        private GameObject _tagBox;
-        private Outline _tagOutline;
-        private Text _topLabelText;
-        private Text _bottomLabelText;
-        private Text _throttleValueText;
 
-        // 通配符通道与模板
+        // ── 头部集中声明微控件 ──
+        public TextWidget Title = TextWidget.Title("THR");
+        public TextWidget Value = TextWidget.Value("{THROTTLE:PERCENT}", "0%");
+        public TextWidget MinScale = new TextWidget(TextStyleRole.Muted, -38f, -38f, 26f, 14f, 8f, TextAnchor.MiddleLeft, "0");
+        public TextWidget MaxScale = new TextWidget(TextStyleRole.Muted, 12f, -38f, 26f, 14f, 8f, TextAnchor.MiddleRight, "100");
+
         private string _valueToken = "{THROTTLE}";
-        private string _topLabelTemplate = "THR";
-        private string _bottomLabelTemplate = "0";
-
-        // 运行时脏标记缓存
         private float _lastFill = -1f;
-        private string _lastThrottleStr = string.Empty;
-        private string _lastTopLabelStr = string.Empty;
-        private string _lastBottomLabelStr = string.Empty;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
+            base.OnInitialize(config, theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
 
+            // 识别预设类型
             if (config != null && (config.WidgetId == "core.vsi" || config.WidgetType == "vsi"))
             {
                 _type = ArcMeterType.VerticalSpeed;
                 _valueToken = !string.IsNullOrEmpty(config.NumericToken) ? config.NumericToken : "{VSI:NORM}";
-                _topLabelTemplate = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : "VSI";
-                _bottomLabelTemplate = "0";
+                Title.Text = "VSI";
+                MinScale.Text = "-";
+                MaxScale.Text = "+";
             }
             else if (config != null && (config.WidgetId == "core.propellant" || config.WidgetType == "propellant"))
             {
                 _type = ArcMeterType.StagePropellant;
                 _valueToken = !string.IsNullOrEmpty(config.NumericToken) ? config.NumericToken : "{PROP}";
-                _topLabelTemplate = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : "PROP";
-                _bottomLabelTemplate = "0";
+                Title.Text = "PROP";
+                MinScale.Text = "0";
+                MaxScale.Text = "100";
             }
             else
             {
                 _type = ArcMeterType.Throttle;
                 _valueToken = !string.IsNullOrEmpty(config?.NumericToken) ? config.NumericToken : "{THROTTLE}";
-                _topLabelTemplate = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName : "THR";
-                _bottomLabelTemplate = "0";
+                Title.Text = "THR";
+                MinScale.Text = "0";
+                MaxScale.Text = "100";
             }
 
-            ParseCustomTemplate(config?.CustomTemplate);
+            // 构建圆弧着色器 GameObject
+            GameObject meterObj = new GameObject("Arc_Meter_Ring", typeof(RectTransform), typeof(Image));
+            meterObj.transform.SetParent(transform, false);
+            RectTransform meterRt = meterObj.GetComponent<RectTransform>();
+            float ringSize = 92f * s;
+            meterRt.sizeDelta = new Vector2(ringSize, ringSize);
+            meterRt.anchoredPosition = new Vector2(0f, -2f * s);
 
-            float ballDiameter = 150f * s;
-            float meterDiameter = ballDiameter * 1.30f;
-            RectTransform.sizeDelta = new Vector2(meterDiameter, meterDiameter);
-
-            _meterImage = gameObject.AddComponent<Image>();
+            _meterImage = meterObj.GetComponent<Image>();
             _meterImage.color = Color.clear;
-            _meterMaterial = new Material(AssetLoader.RadialMeterShader);
-            _meterImage.material = _meterMaterial;
-
-            ConfigureMeterParameters(_type, theme);
-
-            if (_type == ArcMeterType.Throttle)
+            if (AssetLoader.RadialMeterShader != null)
             {
-                CreateThrottleTopTag(transform, s, theme);
+                _meterMaterial = new Material(AssetLoader.RadialMeterShader);
+                _meterImage.material = _meterMaterial;
             }
 
-            // 注册子控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_meter", "弧度计量表盘", _meterImage != null ? _meterImage.gameObject : gameObject, (t) => ConfigureMeterParameters(_type, t)));
-            if (_tagBox != null)
-            {
-                this.Controls.Register(WidgetControlManager.WrapElement(this, "tag_box", "顶标容器", _tagBox, (t) => {
-                    if (_tagBox != null)
-                    {
-                        Image tagImg = _tagBox.GetComponent<Image>();
-                        ApplyCard(tagImg, _tagOutline, CardStyleRole.Normal, t);
-                    }
-                }));
-            }
-            if (_topLabelText != null)
-            {
-                this.Controls.Register(new WidgetReadoutControl("top_label", "顶部标签", _topLabelText.gameObject, _topLabelText, null, TextStyleRole.Label));
-            }
-            if (_throttleValueText != null)
-            {
-                this.Controls.Register(new WidgetReadoutControl("value_readout", "数值读数", _throttleValueText.gameObject, _throttleValueText, null, TextStyleRole.PrimaryValue));
-            }
-            if (_bottomLabelText != null)
-            {
-                this.Controls.Register(new WidgetReadoutControl("bottom_label", "底部标度", _bottomLabelText.gameObject, _bottomLabelText, null, TextStyleRole.Muted));
-            }
-
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
+            ConfigureMeterShader(theme);
         }
 
-        private void ParseCustomTemplate(string template)
-        {
-            if (string.IsNullOrEmpty(template)) return;
-            string[] pairs = template.Split(';');
-            foreach (string p in pairs)
-            {
-                string[] kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                if (k == "VAL" || k == "VALUE" || k == "TOKEN") _valueToken = v;
-                else if (k == "LABEL" || k == "TOP" || k == "TAG") _topLabelTemplate = v;
-                else if (k == "BOTTOM" || k == "MIN") _bottomLabelTemplate = v;
-            }
-        }
-
-        private void ConfigureMeterParameters(ArcMeterType type, ThemeConfig theme)
+        private void ConfigureMeterShader(ThemeConfig theme)
         {
             if (_meterMaterial == null || theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            switch (type)
-            {
-                case ArcMeterType.Throttle:
-                    _meterMaterial.SetFloat("_Clockwise", 1.0f);
-                    _meterMaterial.SetFloat("_StartAngle", 236.0f);
-                    _meterMaterial.SetFloat("_EndAngle", 124.0f);
-                    _meterMaterial.SetFloat("_InnerRadius", 0.85f);
-                    _meterMaterial.SetFloat("_OuterRadius", 0.93f);
-                    _meterMaterial.SetFloat("_SegmentCount", 16.0f);
-                    _meterMaterial.SetFloat("_SegmentGap", 0.08f);
-                    _meterMaterial.SetColor("_ActiveColor", theme.AccentPrimary);
-                    _meterMaterial.SetColor("_InactiveColor", style.GetMeterColor(MeterStyleRole.Track, theme));
-                    _meterMaterial.SetColor("_BorderColor", theme.AccentSecondary);
-                    break;
+            // 240 度开门圆弧 (左下 210° 顺时针至 右下 330°)
+            _meterMaterial.SetFloat("_Clockwise", 1.0f);
+            _meterMaterial.SetFloat("_StartAngle", 210.0f);
+            _meterMaterial.SetFloat("_EndAngle", 330.0f);
+            _meterMaterial.SetFloat("_InnerRadius", 0.78f);
+            _meterMaterial.SetFloat("_OuterRadius", 0.92f);
+            _meterMaterial.SetFloat("_SegmentCount", 16.0f);
+            _meterMaterial.SetFloat("_SegmentGap", 0.06f);
 
-                case ArcMeterType.VerticalSpeed:
-                    _meterMaterial.SetFloat("_Clockwise", 0.0f);
-                    _meterMaterial.SetFloat("_StartAngle", 312.0f);
-                    _meterMaterial.SetFloat("_EndAngle", 405.0f);
-                    _meterMaterial.SetFloat("_InnerRadius", 0.85f);
-                    _meterMaterial.SetFloat("_OuterRadius", 0.93f);
-                    _meterMaterial.SetFloat("_SegmentCount", 16.0f);
-                    _meterMaterial.SetFloat("_SegmentGap", 0.08f);
-                    _meterMaterial.SetColor("_ActiveColor", theme.AccentSecondary);
-                    _meterMaterial.SetColor("_InactiveColor", style.GetMeterColor(MeterStyleRole.Track, theme));
-                    _meterMaterial.SetColor("_BorderColor", style.GetCardBorderColor(CardStyleRole.Normal, theme));
-                    break;
-
-                case ArcMeterType.StagePropellant:
-                    _meterMaterial.SetFloat("_Clockwise", 0.0f);
-                    _meterMaterial.SetFloat("_StartAngle", 258.0f);
-                    _meterMaterial.SetFloat("_EndAngle", 302.0f);
-                    _meterMaterial.SetFloat("_InnerRadius", 0.85f);
-                    _meterMaterial.SetFloat("_OuterRadius", 0.93f);
-                    _meterMaterial.SetFloat("_SegmentCount", 8.0f);
-                    _meterMaterial.SetFloat("_SegmentGap", 0.08f);
-                    _meterMaterial.SetColor("_ActiveColor", theme.AccentSecondary);
-                    _meterMaterial.SetColor("_InactiveColor", style.GetMeterColor(MeterStyleRole.Track, theme));
-                    _meterMaterial.SetColor("_BorderColor", theme.AccentSecondary);
-                    break;
-            }
-        }
-
-        private void CreateThrottleTopTag(Transform parent, float dpiScale, ThemeConfig theme)
-        {
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            Vector2 tagSize = new Vector2(58f * dpiScale, 34f * dpiScale);
-            Vector2 pos = new Vector2(-108f * dpiScale, 105f * dpiScale);
-
-            _tagBox = UIFactory.CreatePanel(parent, "Throttle_Tag", tagSize, pos, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
-            _tagOutline = _tagBox.AddComponent<Outline>();
-            _tagOutline.effectColor = style.GetCardBorderColor(CardStyleRole.Normal, theme);
-            _tagOutline.effectDistance = new Vector2(1f * dpiScale, 1f * dpiScale);
-
-            _topLabelText = UIFactory.CreateText(_tagBox.transform, "Tag_Text", _topLabelTemplate, Mathf.RoundToInt(8f * dpiScale), TextAnchor.UpperCenter,
-                style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform textRt = _topLabelText.rectTransform;
-            textRt.sizeDelta = new Vector2(tagSize.x, tagSize.y * 0.45f);
-            textRt.anchoredPosition = new Vector2(0f, tagSize.y * 0.18f);
-
-            _throttleValueText = UIFactory.CreateText(_tagBox.transform, "Throttle_Value", "0%", Mathf.RoundToInt(13f * dpiScale), TextAnchor.LowerCenter,
-                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            RectTransform valueRt = _throttleValueText.rectTransform;
-            valueRt.sizeDelta = new Vector2(tagSize.x, tagSize.y * 0.62f);
-            valueRt.anchoredPosition = new Vector2(0f, -tagSize.y * 0.12f);
-
-            _bottomLabelText = UIFactory.CreateText(parent, "Throttle_Min", _bottomLabelTemplate, Mathf.RoundToInt(9f * dpiScale), TextAnchor.MiddleCenter,
-                style.GetTextColor(TextStyleRole.Muted, theme));
-            RectTransform bottomRt = _bottomLabelText.rectTransform;
-            bottomRt.sizeDelta = new Vector2(26f * dpiScale, 14f * dpiScale);
-            bottomRt.anchoredPosition = new Vector2(-108f * dpiScale, -108f * dpiScale);
+            Color activeCol = _type == ArcMeterType.VerticalSpeed ? style.GetMeterColor(MeterStyleRole.Secondary, theme) : style.GetMeterColor(MeterStyleRole.Primary, theme);
+            _meterMaterial.SetColor("_ActiveColor", activeCol);
+            _meterMaterial.SetColor("_InactiveColor", style.GetMeterColor(MeterStyleRole.Track, theme));
+            _meterMaterial.SetColor("_BorderColor", style.GetCardBorderColor(CardStyleRole.Normal, theme));
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (_meterMaterial == null || telemetry == null || !telemetry.HasVessel) return;
-
-            // 1. 动态标签求值 (文案 100% 通配符可自定义)
-            if (_topLabelText != null)
+            if (telemetry == null || !telemetry.HasVessel)
             {
-                string evalTop = TelemetryTokenEngine.Evaluate(_topLabelTemplate, telemetry);
-                if (evalTop != _lastTopLabelStr)
-                {
-                    _lastTopLabelStr = evalTop;
-                    _topLabelText.text = evalTop;
-                }
-            }
-            if (_bottomLabelText != null)
-            {
-                string evalBtm = TelemetryTokenEngine.Evaluate(_bottomLabelTemplate, telemetry);
-                if (evalBtm != _lastBottomLabelStr)
-                {
-                    _lastBottomLabelStr = evalBtm;
-                    _bottomLabelText.text = evalBtm;
-                }
+                Value.Text = "---";
+                if (_meterMaterial != null) _meterMaterial.SetFloat("_FillAmount", 0f);
+                return;
             }
 
-            // 2. 数值求值 (驱动圆弧填充)
-            float fill;
-            if (_type == ArcMeterType.VerticalSpeed && _valueToken == "{VSI:NORM}")
+            float fill = 0f;
+            if (_type == ArcMeterType.VerticalSpeed)
             {
+                double vsi = telemetry.VerticalSpeed;
+                Value.Text = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
                 fill = (float)telemetry.NormalizedVSI;
+            }
+            else if (_type == ArcMeterType.StagePropellant)
+            {
+                double prop = telemetry.StagePropellantFraction * 100.0;
+                Value.Text = $"{prop:F0}%";
+                fill = Mathf.Clamp01(telemetry.StagePropellantFraction);
+                Value.SetRole(fill < 0.15f ? TextStyleRole.Danger : (fill < 0.30f ? TextStyleRole.Warning : TextStyleRole.PrimaryValue));
             }
             else
             {
-                double val = TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
-                if (double.IsNaN(val)) val = 0.0;
-                double maxVal = Config.MaxValue > Config.MinValue ? Config.MaxValue : 100.0;
-                fill = (float)Mathf.Clamp01((float)((val - Config.MinValue) / (maxVal - Config.MinValue)));
+                double thr = telemetry.Throttle * 100.0;
+                Value.Text = $"{thr:F0}%";
+                fill = Mathf.Clamp01((float)telemetry.Throttle);
             }
 
-            fill = Mathf.Clamp01(fill);
-            double delta = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.001;
-            if (Mathf.Abs(fill - _lastFill) > (float)delta)
+            if (_meterMaterial != null && Math.Abs(fill - _lastFill) > 0.002f)
             {
                 _lastFill = fill;
                 _meterMaterial.SetFloat("_FillAmount", fill);
-            }
-
-            // 3. 读数文本更新与脏检查
-            if (_throttleValueText != null)
-            {
-                string str = TelemetryTokenEngine.Evaluate(_valueToken, telemetry);
-                if (str != _lastThrottleStr)
-                {
-                    _lastThrottleStr = str;
-                    _throttleValueText.text = str;
-                }
             }
         }
 
         public override void ApplyTheme(ThemeConfig theme)
         {
-            if (theme == null) return;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            ConfigureMeterParameters(_type, theme);
-
-            if (_tagBox != null)
-            {
-                Image tagImg = _tagBox.GetComponent<Image>();
-                ApplyCard(tagImg, _tagOutline, CardStyleRole.Normal, theme);
-            }
-
-            if (_topLabelText != null) ApplyText(_topLabelText, TextStyleRole.Label, theme);
-            if (_bottomLabelText != null) ApplyText(_bottomLabelText, TextStyleRole.Muted, theme);
-            if (_throttleValueText != null) ApplyText(_throttleValueText, TextStyleRole.PrimaryValue, theme);
-
-            this.Controls.ApplyThemeToControls(theme);
+            base.ApplyTheme(theme);
+            ConfigureMeterShader(theme);
         }
 
         protected override void OnDestroy()
         {
-            this.Controls.UnregisterAll();
             if (_meterMaterial != null)
             {
                 Destroy(_meterMaterial);

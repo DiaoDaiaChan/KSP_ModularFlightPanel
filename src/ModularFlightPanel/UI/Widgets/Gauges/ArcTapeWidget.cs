@@ -28,7 +28,13 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
     [FlightWidget("arc_tape", "arc_speed_tape", "arc_altitude_tape", "arc_alt_tape", "curved_tape", "curved_speed_tape", "curved_altitude_tape", "curved_alt_tape", Category = WidgetCategory.Gauges, DisplayName = "HUD 弧形滚动标尺带", Description = "次世代 HUD / 玻璃座舱弧形标尺带，支持可调曲率、半径与垂直升降率/动压指示。", DefaultWidgetId = "custom.arc_speed_tape", DefaultX = -235f, DefaultY = 0f, ExactIds = new[] { "custom.arc_speed_tape", "core.arc_speed_tape", "custom.arc_altitude_tape", "core.arc_altitude_tape" })]
     public class ArcTapeWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(198f, 346f);
+        protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget ModeTag = TextWidget.Title("SPD");
+        public TextWidget CenterValue = TextWidget.Value("{SPD}");
 
         private const int TICK_POOL_SIZE = 28;
         private const int ARC_SEGMENT_COUNT = 24;
@@ -683,6 +689,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 

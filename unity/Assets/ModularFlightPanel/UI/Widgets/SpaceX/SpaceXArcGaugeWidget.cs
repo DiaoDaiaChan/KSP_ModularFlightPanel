@@ -21,7 +21,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     [FlightWidget("spacex_arc", "spacex_gauge", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 环形遥测仪表", Description = "SpaceX 龙飞船高精度同心圆弧表盘，带发光步进游标与动态数字标定。", DefaultWidgetId = "spacex.speed", DefaultX = -240f, DefaultY = 0f, ExactIds = new[] { "spacex.speed", "spacex.altitude" })]
     public class SpaceXArcGaugeWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(110f, 110f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("SPEED");
+        public TextWidget Value = TextWidget.Value("{SPD}");
 
         // UI 视图节点
         private Image _bgImage;
@@ -86,9 +92,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             RectTransform.sizeDelta = size;
 
             // 2. 外部半透卡片底衬 (轻质深色玻璃，符合 SpaceX 航电风格)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+                _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             EnsureSharedRingSprite();
 
@@ -176,6 +183,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);

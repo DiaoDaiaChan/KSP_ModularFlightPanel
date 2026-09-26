@@ -29,7 +29,13 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("bar_gauge", "bar", "avionics_bar", Category = WidgetCategory.Gauges, DisplayName = "垂直柱状计量表", Description = "高刷新线性竖条计量标尺，适用于节流阀、过载或推进剂余量。", DefaultWidgetId = "gauge.bar", DefaultX = 0f, DefaultY = 0f)]
     public class AvionicsBarGaugeWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(24f, 240f);
+        protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget TopTitle = TextWidget.Title("THR");
+        public TextWidget BottomTag = TextWidget.Badge("IDLE");
 
         private BarGaugeKind _kind;
 
@@ -809,6 +815,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
 

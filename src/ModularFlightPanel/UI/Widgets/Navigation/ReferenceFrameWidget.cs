@@ -19,7 +19,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     [FlightWidget("reference_frame", "ref_frame", "frame_indicator", "nav_frame", Category = WidgetCategory.Navigation, DisplayName = "REF FRAME 导航参考系指示卡", Description = "极简权威导航参考系指示卡：矢量图标与权威参考系名称。支持单击循环切换与右键打开 Principia 窗口。", DefaultWidgetId = "nav.reference_frame", DefaultX = -300f, DefaultY = 200f, IsSingleton = true, ExactIds = new[] { "nav.reference_frame", "nav.ref_frame", "core.reference_frame" })]
     public class ReferenceFrameWidget : BaseFlightWidget, IPointerClickHandler
     {
+        public override Vector2 BaseSize => new Vector2(100f, 32f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget FrameTitle = TextWidget.Title("SURFACE");
 
         // UI 视图节点
         private Image _bgImage;
@@ -66,12 +71,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _spacing = 6f * s;
             _iconBoxSize = 26f * s;
 
-            // 2. 底板卡片与边框 (0 颜色字面量，统一由 ApplyCard 注入语义角色)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
+            // 2. 底板卡片与边框 (由基类 AutoCreateCardFrame 统一托管)
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
 
             ParseCustomTemplate(config?.CustomTemplate);
 
@@ -102,17 +104,34 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             rawRt.anchoredPosition = Vector2.zero;
 
             // 4. 右侧权威参考系名称 (左对齐，紧随图标，自适应宽度)
-            _frameTitleText = UIFactory.CreateText(transform, "Frame_Title", "SURFACE", Mathf.RoundToInt(11f * s),
-                TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            _frameTitleText.fontStyle = FontStyle.Bold;
-            _frameTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            _frameTitleText.verticalOverflow = VerticalWrapMode.Truncate;
+            if (FrameTitle != null && FrameTitle.TextComponent != null)
+            {
+                FrameTitle.Text = "SURFACE";
+                FrameTitle.SetRole(TextStyleRole.PrimaryValue);
+                _frameTitleText = FrameTitle.TextComponent;
+                _frameTitleText.fontStyle = FontStyle.Bold;
+                _frameTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
+                _frameTitleText.verticalOverflow = VerticalWrapMode.Truncate;
+                _titleRt = _frameTitleText.GetComponent<RectTransform>();
+                _titleRt.anchorMin = new Vector2(0f, 0.5f);
+                _titleRt.anchorMax = new Vector2(0f, 0.5f);
+                _titleRt.pivot = new Vector2(0f, 0.5f);
+                _titleRt.anchoredPosition = new Vector2(_padLeft + _iconBoxSize + _spacing, 0f);
+            }
+            else
+            {
+                _frameTitleText = UIFactory.CreateText(transform, "Frame_Title", "SURFACE", Mathf.RoundToInt(11f * s),
+                    TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                _frameTitleText.fontStyle = FontStyle.Bold;
+                _frameTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;
+                _frameTitleText.verticalOverflow = VerticalWrapMode.Truncate;
 
-            _titleRt = _frameTitleText.GetComponent<RectTransform>();
-            _titleRt.anchorMin = new Vector2(0f, 0.5f);
-            _titleRt.anchorMax = new Vector2(0f, 0.5f);
-            _titleRt.pivot = new Vector2(0f, 0.5f);
-            _titleRt.anchoredPosition = new Vector2(_padLeft + _iconBoxSize + _spacing, 0f);
+                _titleRt = _frameTitleText.GetComponent<RectTransform>();
+                _titleRt.anchorMin = new Vector2(0f, 0.5f);
+                _titleRt.anchorMax = new Vector2(0f, 0.5f);
+                _titleRt.pivot = new Vector2(0f, 0.5f);
+                _titleRt.anchoredPosition = new Vector2(_padLeft + _iconBoxSize + _spacing, 0f);
+            }
 
             // 立即计算初始自适应宽度，消除右侧空白
             AdjustCardWidth("SURFACE");
@@ -188,11 +207,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
 
-            ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
             ApplyCard(_iconBoxBg, _iconBoxOutline, CardStyleRole.SubtleSlot, theme);
-            ApplyText(_frameTitleText, TextStyleRole.PrimaryValue, theme);
+            if (FrameTitle != null) FrameTitle.SetRole(TextStyleRole.PrimaryValue);
+            else ApplyText(_frameTitleText, TextStyleRole.PrimaryValue, theme);
 
             UpdateCategoryVisuals(_lastCategory, theme);
             AdjustCardWidth(_lastTitle);

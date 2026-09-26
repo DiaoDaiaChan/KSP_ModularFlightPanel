@@ -7,52 +7,6 @@ using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.Config
 {
-    [Serializable]
-    public class DockButtonRule
-    {
-        public string Key = "";
-        public string DefaultName = "";
-        public string CustomLabel = "";
-        public bool IsVisible = true;
-        public bool IsFavorite = false;
-
-        public string ButtonKey { get => Key; set => Key = value; }
-        public string DisplayName { get => string.IsNullOrEmpty(CustomLabel) ? DefaultName : CustomLabel; set => CustomLabel = value; }
-    }
-
-    [Serializable]
-    public class ThemeSettingsData
-    {
-        public string SelectedThemeId = "modern_aero";
-        public string SelectedLanguage = "auto"; // "auto", "zh-CN", "en-US"
-        public int RenderMode = 1; // 0 = Texture, 1 = Procedural
-        public bool HideStockNavball = true;
-        public bool HideStockAltimeter = false;
-        public bool HideStockBottomLeft = false;
-        public bool HideStockTimeWarp = false;
-        public bool HideStockCommNet = false;
-        public bool HideStockToolbar = false;
-        public int ToolbarStyleMode = 1; // 0 = Stock, 1 = Reskin, 2 = ModernWidget
-        public bool MasterBypass = false;
-        public bool ShowPerformanceBadge = false;
-
-        // 自适应渲染分辨率与超采样倍率设置 (Smart Resolution & Supersampling)
-        public bool AutoAdaptResolution = true;
-        public float GlobalRenderScaleMultiplier = 1.0f;
-
-        // 收纳坞按钮自定义过滤与别名配置
-        public List<DockButtonRule> DockRules = new List<DockButtonRule>();
-        public bool DockShowHiddenDrawer = false;
-        public int DockOrientation = 0; // 0 = 纵向双列, 1 = 横向双行, 2 = 横向单行
-
-        // 常用 MOD 独立快捷面板设置
-        public bool DockEnableFavoritePanel = true;
-        public int DockFavoriteOrientation = 1; // 0 = 纵向单列, 1 = 横向单行, 2 = 横向双行
-        public bool DockKeepFavoritesInMain = false;
-        public float DockFavoritePosX = 0f;
-        public float DockFavoritePosY = -380f;
-    }
-
     public class ThemeManager
     {
         private static ThemeManager _instance;
@@ -74,6 +28,12 @@ namespace ModularFlightPanel.Config
         public bool DockKeepFavoritesInMain { get; set; } = false;
         public float DockFavoritePosX { get; set; } = 0f;
         public float DockFavoritePosY { get; set; } = -380f;
+
+        public float SettingsWindowX { get; set; } = -1f;
+        public float SettingsWindowY { get; set; } = -1f;
+        public float SettingsWindowWidth { get; set; } = 1040f;
+        public float SettingsWindowHeight { get; set; } = 650f;
+        public bool SettingsWindowMaximized { get; set; } = false;
 
         public DockButtonRule GetOrCreateDockRule(string key, string defaultName)
         {
@@ -209,9 +169,14 @@ namespace ModularFlightPanel.Config
                     DockFavoriteOrientation = DockFavoriteOrientation,
                     DockKeepFavoritesInMain = DockKeepFavoritesInMain,
                     DockFavoritePosX = DockFavoritePosX,
-                    DockFavoritePosY = DockFavoritePosY
+                    DockFavoritePosY = DockFavoritePosY,
+                    SettingsWindowX = SettingsWindowX,
+                    SettingsWindowY = SettingsWindowY,
+                    SettingsWindowWidth = SettingsWindowWidth,
+                    SettingsWindowHeight = SettingsWindowHeight,
+                    SettingsWindowMaximized = SettingsWindowMaximized
                 };
-                string json = JsonUtility.ToJson(data, true);
+                string json = AvionicsConfigParser.SerializeThemeSettings(data, true);
                 File.WriteAllText(SettingsFilePath, json);
             }
             catch (Exception ex)
@@ -231,7 +196,7 @@ namespace ModularFlightPanel.Config
             try
             {
                 string json = File.ReadAllText(SettingsFilePath);
-                var data = JsonUtility.FromJson<ThemeSettingsData>(json);
+                var data = AvionicsConfigParser.ParseThemeSettings(json, out string err);
                 if (data != null)
                 {
                     if (!string.IsNullOrEmpty(data.SelectedThemeId))
@@ -261,6 +226,11 @@ namespace ModularFlightPanel.Config
                     DockKeepFavoritesInMain = data.DockKeepFavoritesInMain;
                     DockFavoritePosX = data.DockFavoritePosX;
                     DockFavoritePosY = data.DockFavoritePosY;
+                    SettingsWindowX = data.SettingsWindowX;
+                    SettingsWindowY = data.SettingsWindowY;
+                    SettingsWindowWidth = data.SettingsWindowWidth > 0f ? data.SettingsWindowWidth : 1040f;
+                    SettingsWindowHeight = data.SettingsWindowHeight > 0f ? data.SettingsWindowHeight : 650f;
+                    SettingsWindowMaximized = data.SettingsWindowMaximized;
 
                     if (WidgetRenderManager.Instance != null)
                     {

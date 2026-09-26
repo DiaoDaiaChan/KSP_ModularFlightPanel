@@ -12,15 +12,28 @@ namespace ModularFlightPanel.UI.Settings
     /// 核心架构升级：
     /// 1. 结构化分类与瞬时搜索检索 (Structured Categories & Instant Search)。
     /// 2. 彻底解耦硬编码，基于 WidgetRegistry 全自动反射发现 (Auto-Discovery) 动态呈现全量组件。
-    /// 3. 保留通用仪表 6 大参数化生成器 (ECAM Dial, Speed/Alt Tapes, Curved HUD Tapes, Custom Cards)。
-    /// 4. 智能放置与自动聚焦装配 (Smart Placement & Auto-Focus Workflow)：添加后瞬间跳转至装配台聚焦调校！
-    /// 5. 全量接入 MFPGuiSkin 现代黑晶航电卡片设计系统 2.0。
+    /// 3. 图文并茂航电卡片设计：自动映射真实渲染切片，支持缩略图预览、大图切换与居中高清弹窗放大。
+    /// 4. 实机无头渲染联动 (In-Game Live Bake)：支持一键在游戏内离屏烘焙全量组件真实快照。
+    /// 5. 保留通用仪表 6 大参数化生成器 (ECAM Dial, Speed/Alt Tapes, Curved HUD Tapes, Custom Cards)。
+    /// 6. 智能放置与自动聚焦装配 (Smart Placement & Auto-Focus Workflow)：添加后瞬间跳转至装配台聚焦调校！
+    /// 7. 全量接入 MFPGuiSkin 现代黑晶航电卡片设计系统 2.0。
     /// </summary>
     public static class TabLibrary
     {
         private static Vector2 _scrollPos = Vector2.zero;
         private static string _searchQuery = "";
         private static int _categoryIndex = 0;
+
+        // 缩略图视图控制状态
+        private static bool _showPreviews = true;
+        private static bool _largePreviewMode = false;
+
+        // 高清大图模态弹窗状态
+        private static Texture2D _zoomedTexture = null;
+        private static string _zoomedTitle = "";
+        private static string _zoomedSubtitle = "";
+        private static string _zoomedDesc = "";
+        private static WidgetDescriptor _zoomedDescObj = null;
 
         private static string GetCategoryName(int index)
         {
@@ -44,7 +57,7 @@ namespace ModularFlightPanel.UI.Settings
         {
             MFPGuiSkin.EnsureInitialized();
 
-            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
+            GUILayout.BeginVertical();
 
             // 1. 顶部搜索栏与分类选项卡
             MFPGuiSkin.BeginCard();
@@ -54,6 +67,7 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.Space(4f);
 
+            // 分类选项卡按钮条
             GUILayout.BeginHorizontal();
             for (int i = 0; i < 6; i++)
             {
@@ -65,13 +79,58 @@ namespace ModularFlightPanel.UI.Settings
                 }
             }
             GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 辅助控制栏：预览开关、尺寸切换与实机烘焙
+            GUILayout.BeginHorizontal();
+
+            // 预览图显隐切换
+            string previewToggleText = _showPreviews
+                ? I18n.Tr("LIB_TOGGLE_PREVIEW_ON", "🖼️ 预览: 开")
+                : I18n.Tr("LIB_TOGGLE_PREVIEW_OFF", "🖼️ 预览: 关");
+            GUIStyle prevBtnStyle = _showPreviews ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
+            if (GUILayout.Button(previewToggleText, prevBtnStyle, GUILayout.Width(105f), GUILayout.Height(22f)))
+            {
+                _showPreviews = !_showPreviews;
+            }
+
+            // 大图 / 标清模式切换 (仅在开启预览时有效)
+            if (_showPreviews)
+            {
+                string sizeToggleText = _largePreviewMode
+                    ? I18n.Tr("LIB_PREVIEW_LARGE", "🔍 大图")
+                    : I18n.Tr("LIB_PREVIEW_STANDARD", "🔍 标清");
+                if (GUILayout.Button(sizeToggleText, MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(75f), GUILayout.Height(22f)))
+                {
+                    _largePreviewMode = !_largePreviewMode;
+                }
+            }
+
+            // 游戏内一键实机烘焙按钮
+            string bakeBtnText = I18n.Tr("LIB_BTN_BAKE_ALL", "📸 实机烘焙快照");
+            if (GUILayout.Button(bakeBtnText, MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(130f), GUILayout.Height(22f)))
+            {
+                ShowToast(I18n.Tr("LIB_TOAST_BAKING", "正在实机烘焙全量组件快照..."));
+                int bakedCount = WidgetLiveBaker.BakeAllWidgets();
+                ShowToast(I18n.TrFormat("LIB_TOAST_BAKED_FMT", "✔ 实机烘焙完成！已渲染并保存 {0} 个组件快照", bakedCount));
+            }
+
+            GUILayout.FlexibleSpace();
+
+            // 统计匹配组件总数
+            int matchCount = CountMatchingWidgets();
+            GUILayout.Label($"<color=#7088A8><size=11>{I18n.TrFormat("LIB_MATCH_COUNT_FMT", "共匹配 {0} 个组件", matchCount)}</size></color>", GUILayout.Height(22f));
+
+            GUILayout.EndHorizontal();
+
             MFPGuiSkin.EndCard();
 
             GUILayout.Space(4f);
 
-            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight - 120f));
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(Mathf.Max(120f, SettingsGUI.ContentHeight - 145f)));
 
-            // Toast 提示 (置于滚动视图内部，杜绝浮动撑大固定外框)
+            // Toast 提示
             MFPGuiSkin.DrawToast(ref _toastMsg, ref _toastTimer);
 
             // 2. 通用仪表生成器与标尺套件 (Gauges & Tapes Generators)
@@ -128,6 +187,27 @@ namespace ModularFlightPanel.UI.Settings
 
             GUILayout.EndScrollView();
             GUILayout.EndVertical();
+
+            // 7. 高清大图居中模态预览弹窗
+            DrawZoomModal();
+        }
+
+        private static int CountMatchingWidgets()
+        {
+            var descriptors = WidgetRegistry.AllDescriptors;
+            int count = 0;
+            for (int i = 0; i < descriptors.Count; i++)
+            {
+                var desc = descriptors[i];
+                if (_categoryIndex != 0 && (int)desc.Category != _categoryIndex) continue;
+                string title = desc.GetLocalizedDisplayName();
+                string descText = desc.GetLocalizedDescription();
+                if (FilterMatch(title, descText, desc.TypeName, desc.DefaultWidgetId))
+                {
+                    count++;
+                }
+            }
+            return count;
         }
 
         private static void DrawSectionTitle(string title)
@@ -176,25 +256,103 @@ namespace ModularFlightPanel.UI.Settings
             }
         }
 
+        private static void DrawThumbnailBox(Texture2D tex, string title, string subtitle, string descText, WidgetDescriptor descObj = null)
+        {
+            float thumbW = _largePreviewMode ? 128f : 84f;
+            float thumbH = _largePreviewMode ? 84f : 56f;
+
+            Rect boxRect = GUILayoutUtility.GetRect(thumbW, thumbH, GUILayout.Width(thumbW), GUILayout.Height(thumbH));
+
+            // 绘制深色内凹卡片背景底框
+            GUI.Box(boxRect, GUIContent.none, MFPGuiSkin.InsetStyle);
+
+            // 居中自适应绘制缩略图
+            if (tex != null)
+            {
+                float pad = 3f;
+                float availW = thumbW - pad * 2f;
+                float availH = thumbH - pad * 2f;
+                float aspect = (float)tex.width / Mathf.Max(1, tex.height);
+
+                float drawW = availW;
+                float drawH = drawW / aspect;
+                if (drawH > availH)
+                {
+                    drawH = availH;
+                    drawW = drawH * aspect;
+                }
+
+                Rect imgRect = new Rect(boxRect.x + pad + (availW - drawW) * 0.5f, boxRect.y + pad + (availH - drawH) * 0.5f, drawW, drawH);
+                GUI.DrawTexture(imgRect, tex, ScaleMode.ScaleToFit);
+            }
+
+            // 悬停交互与高光边缘
+            Event evt = Event.current;
+            bool isHover = boxRect.Contains(evt.mousePosition);
+            if (isHover)
+            {
+                Color prevCol = GUI.color;
+                GUI.color = new Color(0.00f, 0.89f, 1.00f, 0.65f);
+                GUI.Box(boxRect, GUIContent.none, MFPGuiSkin.CardStyle);
+                GUI.color = prevCol;
+
+                // 底部微型半透明提示
+                Rect hintRect = new Rect(boxRect.x, boxRect.yMax - 14f, boxRect.width, 14f);
+                GUI.Box(hintRect, GUIContent.none, MFPGuiSkin.HeaderStyle);
+                GUI.Label(hintRect, $"<color=#00E5FF><size=9>🔍 {I18n.Tr("LIB_PREVIEW_HINT", "点击放大")}</size></color>");
+
+                if (evt.type == EventType.MouseDown && evt.button == 0)
+                {
+                    _zoomedTexture = tex;
+                    _zoomedTitle = title;
+                    _zoomedSubtitle = subtitle;
+                    _zoomedDesc = descText;
+                    _zoomedDescObj = descObj;
+                    evt.Use();
+                }
+            }
+        }
+
         private static void DrawDescriptorItem(WidgetDescriptor desc, string title, string descText)
         {
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
 
+            // 左侧：视觉缩略图
+            if (_showPreviews)
+            {
+                Texture2D previewTex = WidgetPreviewLoader.GetPreviewTexture(desc);
+                DrawThumbnailBox(previewTex, title, desc.TypeName, descText, desc);
+                GUILayout.Space(8f);
+            }
+
+            // 右侧：标题、元数据、控制按钮与功能说明
+            GUILayout.BeginVertical();
+
+            GUILayout.BeginHorizontal();
+
             string colorHex = GetCategoryColorHex(desc.Category);
             GUILayout.Label($"<color={colorHex}><b>{title}</b></color> <color=#7088A8>[{desc.TypeName}]</color>", GUILayout.ExpandWidth(true));
+
+            // 单例 / 多实例徽章
+            if (desc.IsSingleton)
+            {
+                MFPGuiSkin.DrawBadge(I18n.Tr("LIB_BADGE_SINGLETON", "单例组件"), Color.white, new Color(0.12f, 0.22f, 0.35f, 0.9f));
+            }
+            else
+            {
+                MFPGuiSkin.DrawBadge(I18n.Tr("LIB_BADGE_MULTI", "多实例"), Color.white, new Color(0.08f, 0.26f, 0.22f, 0.9f));
+            }
 
             // 检查当前布局中是否已激活该组件
             var layout = WidgetLayoutManager.Instance?.CurrentLayout;
             WidgetConfig activeCfg = null;
             if (layout != null && layout.Widgets != null)
             {
-                // 1. 优先按 DefaultWidgetId 查找
                 if (!string.IsNullOrEmpty(desc.DefaultWidgetId))
                 {
                     activeCfg = layout.Widgets.Find(w => string.Equals(w.WidgetId, desc.DefaultWidgetId, StringComparison.OrdinalIgnoreCase));
                 }
-                // 2. 若未找到且是单例，按 WidgetType 查找
                 if (activeCfg == null && desc.IsSingleton && !string.IsNullOrEmpty(desc.TypeName))
                 {
                     activeCfg = layout.Widgets.Find(w => string.Equals(w.WidgetType, desc.TypeName, StringComparison.OrdinalIgnoreCase));
@@ -205,7 +363,7 @@ namespace ModularFlightPanel.UI.Settings
 
             if (isAdded)
             {
-                if (GUILayout.Button(I18n.Tr("LIB_RUNNING_HIDE", "● 运行中 (点击隐藏)"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
+                if (GUILayout.Button(I18n.Tr("LIB_RUNNING_HIDE", "● 运行中 (点击隐藏)"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(135f), GUILayout.Height(24f)))
                 {
                     activeCfg.IsEnabled = false;
                     FlightHUDManager.Instance?.RebuildHUD();
@@ -215,12 +373,12 @@ namespace ModularFlightPanel.UI.Settings
             else
             {
                 string btnText = desc.IsSingleton
-                    ? I18n.Tr("LIB_ENABLE_CORE", "+ 开启此核心组件")
+                    ? I18n.Tr("LIB_ENABLE_CORE", "+ 开启核心组件")
                     : I18n.Tr("LIB_ADD_TO_PANEL", "+ 添加到面板");
 
                 GUIStyle btnStyle = desc.IsSingleton ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SuccessButtonStyle;
 
-                if (GUILayout.Button(btnText, btnStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
+                if (GUILayout.Button(btnText, btnStyle, GUILayout.Width(135f), GUILayout.Height(24f)))
                 {
                     if (activeCfg != null)
                     {
@@ -228,7 +386,6 @@ namespace ModularFlightPanel.UI.Settings
                     }
                     else
                     {
-                        // 若不是单例且已存在同 ID，生成递增 ID
                         string newId = desc.DefaultWidgetId;
                         if (!desc.IsSingleton && layout != null && layout.Widgets != null)
                         {
@@ -254,10 +411,21 @@ namespace ModularFlightPanel.UI.Settings
             }
             GUILayout.EndHorizontal();
 
+            // 功能描述
             if (!string.IsNullOrEmpty(descText))
             {
                 GUILayout.Label($"<color=#8899AA><size=11>{descText}</size></color>");
             }
+
+            // 规格尺寸与默认位置辅助胶囊
+            GUILayout.BeginHorizontal();
+            string sizeInfo = $"{desc.DefaultWidth:F0}×{desc.DefaultHeight:F0}px";
+            GUILayout.Label($"<color=#506888><size=10>📐 {sizeInfo} | ID: {desc.DefaultWidgetId ?? desc.TypeName}</size></color>");
+            GUILayout.EndHorizontal();
+
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
         }
 
@@ -280,6 +448,16 @@ namespace ModularFlightPanel.UI.Settings
 
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
+
+            if (_showPreviews)
+            {
+                Texture2D previewTex = WidgetPreviewLoader.GetPreviewTexture("isolated_gauge_throttle.png", "ecam_dial", "throttle");
+                DrawThumbnailBox(previewTex, title, token, desc);
+                GUILayout.Space(8f);
+            }
+
+            GUILayout.BeginVertical();
+            GUILayout.BeginHorizontal();
             GUILayout.Label($"<color=#00FF88><b>{title}</b></color> <color=#88AACC>[{token}]</color>", GUILayout.ExpandWidth(true));
             string limitTag = isSoft ? I18n.Tr("LIB_SOFT_LIMIT", "软上限爆表") : I18n.Tr("LIB_HARD_LIMIT", "硬限幅");
             MFPGuiSkin.DrawBadge(limitTag, isSoft ? MFPGuiSkin.AccentCyan : MFPGuiSkin.AccentAmber, new Color(0.04f, 0.12f, 0.20f, 0.9f));
@@ -295,6 +473,9 @@ namespace ModularFlightPanel.UI.Settings
 
             string rangeStr = I18n.TrFormat("LIB_RANGE_FMT", " (量程: {0:F0}~{1:F0}{2})", min, max, unit);
             GUILayout.Label($"<color=#8899AA><size=11>{desc}{rangeStr}</size></color>");
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
         }
 
@@ -303,6 +484,17 @@ namespace ModularFlightPanel.UI.Settings
             if (!FilterMatch(title, desc)) return;
 
             MFPGuiSkin.BeginCard();
+            GUILayout.BeginHorizontal();
+
+            if (_showPreviews)
+            {
+                string texKey = isLeft ? "isolated_tape_speed.png" : "isolated_tape_altitude.png";
+                Texture2D previewTex = WidgetPreviewLoader.GetPreviewTexture(texKey, "tape");
+                DrawThumbnailBox(previewTex, title, token, desc);
+                GUILayout.Space(8f);
+            }
+
+            GUILayout.BeginVertical();
             GUILayout.BeginHorizontal();
             GUILayout.Label($"<color=#00E5FF><b>{title}</b></color> <color=#88AACC>[{token}]</color>", GUILayout.ExpandWidth(true));
             MFPGuiSkin.DrawBadge(isLeft ? I18n.Tr("LIB_LEFT_TAPE", "左侧标尺") : I18n.Tr("LIB_RIGHT_TAPE", "右侧标尺"), Color.white, new Color(0.00f, 0.35f, 0.50f, 0.9f));
@@ -317,6 +509,9 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
 
             GUILayout.Label($"<color=#8899AA><size=11>{desc}</size></color>");
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
         }
 
@@ -325,6 +520,17 @@ namespace ModularFlightPanel.UI.Settings
             if (!FilterMatch(title, desc)) return;
 
             MFPGuiSkin.BeginCard();
+            GUILayout.BeginHorizontal();
+
+            if (_showPreviews)
+            {
+                string texKey = isLeft ? "isolated_custom_arc_speed_tape.png" : "isolated_custom_arc_altitude_tape.png";
+                Texture2D previewTex = WidgetPreviewLoader.GetPreviewTexture(texKey, "arc_tape");
+                DrawThumbnailBox(previewTex, title, token, desc);
+                GUILayout.Space(8f);
+            }
+
+            GUILayout.BeginVertical();
             GUILayout.BeginHorizontal();
             GUILayout.Label($"<color=#00E5FF><b>{title}</b></color> <color=#88AACC>[{token}]</color>", GUILayout.ExpandWidth(true));
             MFPGuiSkin.DrawBadge(I18n.Tr("LIB_ARC_TAPE", "弧形标尺"), Color.white, new Color(0.00f, 0.40f, 0.60f, 0.9f));
@@ -341,6 +547,9 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
 
             GUILayout.Label($"<color=#8899AA><size=11>{desc}</size></color>");
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
         }
 
@@ -349,6 +558,16 @@ namespace ModularFlightPanel.UI.Settings
             if (!FilterMatch(title, desc)) return;
 
             MFPGuiSkin.BeginCard();
+            GUILayout.BeginHorizontal();
+
+            if (_showPreviews)
+            {
+                Texture2D previewTex = WidgetPreviewLoader.GetPreviewTexture("isolated_custom_telemetry_card.png", "card");
+                DrawThumbnailBox(previewTex, title, template, desc);
+                GUILayout.Space(8f);
+            }
+
+            GUILayout.BeginVertical();
             GUILayout.BeginHorizontal();
             GUILayout.Label($"<color=#FFAA00><b>{title}</b></color>", GUILayout.ExpandWidth(true));
             MFPGuiSkin.DrawBadge(I18n.Tr("LIB_DYNAMIC_CARD", "动态卡片"), Color.white, new Color(0.45f, 0.30f, 0.05f, 0.9f));
@@ -364,12 +583,130 @@ namespace ModularFlightPanel.UI.Settings
 
             string tplStr = I18n.TrFormat("LIB_TEMPLATE_LABEL", "模板: {0}", template);
             GUILayout.Label($"<color=#00FF88><size=10>{tplStr}</size></color>");
+            GUILayout.EndVertical();
+
+            GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
+        }
+
+        /// <summary>
+        /// 居中高清大图模态预览弹窗
+        /// </summary>
+        private static void DrawZoomModal()
+        {
+            if (_zoomedTexture == null) return;
+
+            Event evt = Event.current;
+            if (evt.type == EventType.KeyDown && evt.keyCode == KeyCode.Escape)
+            {
+                _zoomedTexture = null;
+                evt.Use();
+                return;
+            }
+
+            // 1. 全屏半透明黑色遮罩
+            Rect screenRect = new Rect(0, 0, Screen.width, Screen.height);
+            Color prevColor = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.65f);
+            GUI.DrawTexture(screenRect, Texture2D.whiteTexture);
+            GUI.color = prevColor;
+
+            // 点击遮罩空白区域关闭弹窗
+            if (evt.type == EventType.MouseDown && evt.button == 0 && !new Rect((Screen.width - 540f) * 0.5f, (Screen.height - 460f) * 0.5f, 540f, 460f).Contains(evt.mousePosition))
+            {
+                _zoomedTexture = null;
+                evt.Use();
+                return;
+            }
+
+            // 2. 居中模态视窗 (540x460)
+            float modalW = 540f;
+            float modalH = 460f;
+            float modalX = (Screen.width - modalW) * 0.5f;
+            float modalY = (Screen.height - modalH) * 0.5f;
+            Rect modalRect = new Rect(modalX, modalY, modalW, modalH);
+
+            GUI.Box(modalRect, GUIContent.none, MFPGuiSkin.WindowStyle);
+
+            GUILayout.BeginArea(new Rect(modalX + 16f, modalY + 14f, modalW - 32f, modalH - 28f));
+
+            // 弹窗顶栏
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b><size=15><color=#00E5FF>{_zoomedTitle}</color></size></b> <color=#7088A8>[{_zoomedSubtitle}]</color>", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button(I18n.Tr("LIB_MODAL_CLOSE", "✕ 关闭"), MFPGuiSkin.DangerButtonStyle, GUILayout.Width(75f), GUILayout.Height(24f)))
+            {
+                _zoomedTexture = null;
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(8f);
+
+            // 高清画面渲染区域 (Fit)
+            float previewAreaW = modalW - 32f;
+            float previewAreaH = 280f;
+            Rect imgBoxRect = GUILayoutUtility.GetRect(previewAreaW, previewAreaH);
+            GUI.Box(imgBoxRect, GUIContent.none, MFPGuiSkin.InsetStyle);
+
+            if (_zoomedTexture != null)
+            {
+                float aspect = (float)_zoomedTexture.width / Mathf.Max(1, _zoomedTexture.height);
+                float drawW = previewAreaW - 8f;
+                float drawH = drawW / aspect;
+                if (drawH > previewAreaH - 8f)
+                {
+                    drawH = previewAreaH - 8f;
+                    drawW = drawH * aspect;
+                }
+                Rect imgRect = new Rect(imgBoxRect.x + (previewAreaW - drawW) * 0.5f, imgBoxRect.y + (previewAreaH - drawH) * 0.5f, drawW, drawH);
+                GUI.DrawTexture(imgRect, _zoomedTexture, ScaleMode.ScaleToFit);
+            }
+
+            GUILayout.Space(8f);
+
+            // 说明与底栏快捷添加
+            GUILayout.BeginHorizontal();
+            GUILayout.BeginVertical(GUILayout.ExpandWidth(true));
+            if (!string.IsNullOrEmpty(_zoomedDesc))
+            {
+                GUILayout.Label($"<color=#A0B8D0><size=11>{_zoomedDesc}</size></color>");
+            }
+            GUILayout.EndVertical();
+
+            if (_zoomedDescObj != null)
+            {
+                if (GUILayout.Button(I18n.Tr("LIB_ADD_TO_PANEL", "+ 添加到面板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(130f), GUILayout.Height(30f)))
+                {
+                    var layout = WidgetLayoutManager.Instance?.CurrentLayout;
+                    string newId = _zoomedDescObj.DefaultWidgetId;
+                    if (!_zoomedDescObj.IsSingleton && layout != null && layout.Widgets != null)
+                    {
+                        int count = 1;
+                        while (layout.Widgets.Exists(w => string.Equals(w.WidgetId, newId, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            newId = $"{_zoomedDescObj.TypeName}_{count++}";
+                        }
+                    }
+
+                    WidgetConfig activeCfg = _zoomedDescObj.CreateConfig(newId);
+                    if (!_zoomedDescObj.IsSingleton)
+                    {
+                        activeCfg.PositionX = GetSmartSpawnPosition().x;
+                        activeCfg.PositionY = GetSmartSpawnPosition().y;
+                    }
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(activeCfg);
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    OnWidgetAdded(activeCfg.WidgetId, _zoomedTitle);
+                    _zoomedTexture = null;
+                }
+            }
+
+            GUILayout.EndHorizontal();
+
+            GUILayout.EndArea();
         }
 
         private static Vector2 GetSmartSpawnPosition()
         {
-            // 基于级进偏移计算智能生成位置，绝不再使用混乱的随机数
             _spawnCounter++;
             float offsetX = ((_spawnCounter % 5) - 2) * 45f;
             float offsetY = ((_spawnCounter % 3) - 1) * 35f;
@@ -380,7 +717,7 @@ namespace ModularFlightPanel.UI.Settings
         {
             WidgetLayoutManager.Instance.SaveLayout();
             TabAssembler.SetSelectedWidget(widgetId);
-            SettingsGUI.Instance?.SwitchTab(1); // 自动无缝切换到装配台，开启极速调校心流！
+            SettingsGUI.Instance?.SwitchTab(1);
             ShowToast(I18n.TrFormat("LIB_TOAST_SPAWNED", "✔ 已生成并聚焦「{0}」！", title));
         }
 

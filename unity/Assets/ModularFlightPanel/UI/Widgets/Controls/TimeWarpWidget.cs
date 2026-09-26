@@ -20,7 +20,11 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("time_warp", "timewarp", "warp_control", Category = WidgetCategory.Controls, DisplayName = "平滑时间加速控制器", Description = "物理/轨道时间加速等级指示器与一键平滑倍率切换条。", DefaultWidgetId = "core.time_warp", DefaultX = 0f, DefaultY = 210f, IsSingleton = true, ExactIds = new[] { "core.time_warp", "core.timewarp" })]
     public class TimeWarpWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(236f, 42f);
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        // 声明式微控件
+        public TextWidget ClockDisplay = TextWidget.Title("T+ 0y, 0d, 00:00:00");
 
         private Image _panelBg;
         private Outline _panelOutline;

@@ -31,7 +31,7 @@ namespace ModularFlightPanel.UI.Settings
         {
             MFPGuiSkin.EnsureInitialized();
 
-            GUILayout.BeginVertical(GUILayout.Height(SettingsGUI.ContentHeight));
+            GUILayout.BeginVertical();
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, GUILayout.Height(SettingsGUI.ContentHeight));
 
             // 1. Toast 状态通知

@@ -28,7 +28,13 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("b747_eicas", "boeing_eicas", "eicas", Category = WidgetCategory.Systems, DisplayName = "B747 EICAS 主发动机与机组告警显示", Description = "经典波音 747 四发主发动机 CRT：EPR/N1/EGT 四发柱状表、数字框显、TAT/推力模式与起落架状态。", DefaultWidgetId = "custom.b747_eicas", DefaultX = -440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "custom.b747_eicas", "core.b747_eicas" })]
     public class B747EicasWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(260f, 275f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget TatTitle = TextWidget.Title("TAT +15 c");
+        public TextWidget ThrustMode = TextWidget.Badge("TO");
 
         // 基础外框与背景
         private Image _bgImage;
@@ -126,12 +132,12 @@ namespace ModularFlightPanel.UI.Widgets
             ParseCustomTemplate(config);
 
             // 1. 底板与边框 (CRT 质感)
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+                _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
-            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _bgOutline.effectColor, s);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgImage != null ? _bgImage.color : Color.clear, _bgOutline != null ? _bgOutline.effectColor : Color.clear, s);
 
             // 2. 顶端状态栏
             _tatText = UIFactory.CreateText(transform, "TAT_Text", "TAT +15 c", Mathf.RoundToInt(9f * s),
@@ -435,6 +441,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);

@@ -18,7 +18,12 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("nd_navigation", "nd", "navigation_display", Category = WidgetCategory.Navigation, DisplayName = "AERO ND 综合水平态势导航屏", Description = "飞机航电综合水平态势显示器 (ND)，包含罗盘弧、测距环、飞机微标与航点航路。", DefaultWidgetId = "custom.nd_navigation", DefaultX = -440f, DefaultY = 25f, IsSingleton = true, ExactIds = new[] { "custom.nd_navigation", "core.nd_arc", "core.nd_navigation" })]
     public class NDNavigationWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(280f, 260f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("AERO ND");
 
         private const float ND_ARC_RADIUS = 108f;
         private const float ND_ARC_FOV = 48f; // 可见罗盘视口半角范围 (±48°)
@@ -92,19 +97,17 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            Vector2 panelSize = new Vector2(280f * s, 260f * s);
+            Vector2 panelSize = BaseSize * s;
             RectTransform.sizeDelta = panelSize;
             _aircraftCenterPos = new Vector2(0f, -panelSize.y * 0.5f + 48f * s);
 
             ParseCustomTemplate(config);
 
-            // 1. 半透明暗色玻璃卡片底板
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = Color.clear;
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectDistance = new Vector2(1.5f * s, 1.5f * s);
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _outline.effectColor, s);
+            // 1. 半透明暗色玻璃卡片底板 (由基类 AutoCreateCardFrame 托管)
+            _bgImage = CardBackground;
+            _outline = CardOutline;
+            if (_outline != null) _outline.effectDistance = new Vector2(1.5f * s, 1.5f * s);
+            UIFactory.ApplyCockpitChrome(gameObject, _bgImage != null ? _bgImage.color : Color.clear, _outline != null ? _outline.effectColor : Color.clear, s);
 
             // 2. 顶部航电状态角标
             BuildAvionicsHeader(panelSize, s, theme);
@@ -579,9 +582,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
             ApplyText(_gsTasText, TextStyleRole.SecondaryValue, theme);
             ApplyText(_topHeadingText, TextStyleRole.PrimaryValue, theme);
             ApplyText(_procedureText, TextStyleRole.Label, theme);

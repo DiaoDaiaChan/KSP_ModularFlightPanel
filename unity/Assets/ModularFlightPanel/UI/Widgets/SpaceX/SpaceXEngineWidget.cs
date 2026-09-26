@@ -20,7 +20,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     [FlightWidget("spacex_engines", "dragon_engines", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 引擎状态阵列", Description = "SpaceX 猎鹰 9 发动机多孔圆环/星舰猛禽集群点火状态阵列图。", DefaultWidgetId = "spacex.engines", DefaultX = 360f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "spacex.engines" })]
     public class SpaceXEngineWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(96f, 96f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        // 声明式微控件
+        public TextWidget Title = TextWidget.Title("ENGINES");
+        public TextWidget Status = TextWidget.Value("CUTOFF");
 
         // UI 视图节点
         private Image _bgImage;
@@ -90,9 +96,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float diameter = 96f * s;
             RectTransform.sizeDelta = new Vector2(diameter, diameter);
 
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgOutline = gameObject.AddComponent<Outline>();
-            _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _bgImage = CardBackground;
+            _bgOutline = CardOutline;
+            if (_bgOutline != null)
+                _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             EnsureSharedBezelTexture();
 
@@ -266,6 +273,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);

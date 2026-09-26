@@ -14,14 +14,15 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("electrical", "elec", "power_grid", Category = WidgetCategory.Systems, DisplayName = "ELEC 电力分配与电网系统", Description = "蓄电池电压、DC ESS 总线负荷、太阳能帆板与即时净充放电率 (EC/s)。", DefaultWidgetId = "custom.electrical", DefaultX = -440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "custom.electrical", "custom.elec", "core.electrical" })]
     public class ElectricalSystemWidget : BaseFlightWidget
     {
+        public override Vector2 BaseSize => new Vector2(280f, 155f);
+        protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        private Image _bgImage;
-        private Outline _outline;
+        // 声明式微控件头部与状态徽标
+        public TextWidget Title = TextWidget.Title("ELEC");
+        public TextWidget StatusBadge = TextWidget.Badge("● LIVE");
 
-        private Text _titleText;
         private Text _subTitleText;
-        private Text _statusText;
 
         // 电源节点 UI 元素
         private Text _bat1ValText;
@@ -40,34 +41,14 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
-            Vector2 panelSize = new Vector2(280f * CurrentDpiScale, 155f * CurrentDpiScale);
-            RectTransform.sizeDelta = panelSize;
-
-            _bgImage = gameObject.AddComponent<Image>();
-            _bgImage.color = theme.FrameBgColor;
-
-            _outline = gameObject.AddComponent<Outline>();
-            _outline.effectColor = theme.FrameBorderColor;
-            _outline.effectDistance = new Vector2(1.5f * CurrentDpiScale, 1.5f * CurrentDpiScale);
-            UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _outline.effectColor, CurrentDpiScale);
-
             float s = CurrentDpiScale;
+            Vector2 panelSize = BaseSize * s;
 
-            // 1. 顶部 Header
-            _titleText = UIFactory.CreateText(transform, "Title", "ELEC", Mathf.RoundToInt(13f * s), TextAnchor.MiddleLeft, theme.TextPrimaryColor);
-            RectTransform titRt = _titleText.GetComponent<RectTransform>();
-            titRt.sizeDelta = new Vector2(50f * s, 18f * s);
-            titRt.anchoredPosition = new Vector2(-100f * s, 62f * s);
-
+            // 1. 顶部 Header (Title & StatusBadge 已由基类微控件 DSL 自动构建)
             _subTitleText = UIFactory.CreateText(transform, "SubTitle", "POWER DISTRIBUTION", Mathf.RoundToInt(8f * s), TextAnchor.MiddleLeft, theme.AccentSecondary);
             RectTransform subRt = _subTitleText.GetComponent<RectTransform>();
             subRt.sizeDelta = new Vector2(120f * s, 16f * s);
             subRt.anchoredPosition = new Vector2(-15f * s, 62f * s);
-
-            _statusText = UIFactory.CreateText(transform, "Status", "● LIVE", Mathf.RoundToInt(9f * s), TextAnchor.MiddleRight, theme.AccentPrimary);
-            RectTransform statRt = _statusText.GetComponent<RectTransform>();
-            statRt.sizeDelta = new Vector2(60f * s, 16f * s);
-            statRt.anchoredPosition = new Vector2(100f * s, 62f * s);
 
             // 分割横线
             UIFactory.CreatePanel(transform, "Div1", new Vector2(panelSize.x - 16f * s, 1f * s), new Vector2(0f, 50f * s), theme.FrameBorderColor);
@@ -97,17 +78,10 @@ namespace ModularFlightPanel.UI.Widgets
             tipRt.sizeDelta = new Vector2(panelSize.x - 20f * s, 12f * s);
             tipRt.anchoredPosition = new Vector2(0f, -64f * s);
 
-            // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
-            this.Controls.Register(new WidgetHeaderControl("header", "标题栏", _titleText != null ? _titleText.gameObject : null, _titleText, _statusText));
+            // 注册节点微控件至标准化管理器
             this.Controls.Register(new WidgetReadoutControl("battery_nodes", "蓄电池组", _bat1ValText != null ? _bat1ValText.gameObject : null, _bat1ValText, _bat2ValText, TextStyleRole.PrimaryValue));
             this.Controls.Register(new WidgetReadoutControl("dc_bus", "直流总线母线", _dcBusValText != null ? _dcBusValText.gameObject : null, _dcBusValText, _dcBusSubText, TextStyleRole.PrimaryValue));
             this.Controls.Register(new WidgetReadoutControl("generation_load", "发电与负载监控", _genValText != null ? _genValText.gameObject : null, _genValText, _loadValText, TextStyleRole.PrimaryValue));
-
-            this.Controls.BindConfigToControls(config);
-            this.Controls.ApplyThemeToControls(theme);
-
-            ApplyTheme(theme);
         }
 
         private void CreateNodeBox(Transform parent, string name, Vector2 size, Vector2 pos, string nodeTitle,
@@ -266,19 +240,13 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             if (theme == null) return;
+            base.ApplyTheme(theme);
 
-            ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
-            if (_titleText != null)
-            {
-                _titleText.text = GetTemplateChannel("TITLE", "ELEC");
-                ApplyText(_titleText, TextStyleRole.PrimaryValue, theme);
-            }
             if (_subTitleText != null)
             {
                 _subTitleText.text = GetTemplateChannel("SUBTITLE", "POWER DISTRIBUTION");
                 ApplyText(_subTitleText, TextStyleRole.Label, theme);
             }
-            if (_statusText != null) ApplyText(_statusText, TextStyleRole.Accent, theme);
 
             if (_bat1ValText != null) ApplyText(_bat1ValText, TextStyleRole.PrimaryValue, theme);
             if (_bat1SubText != null) ApplyText(_bat1SubText, TextStyleRole.Label, theme);

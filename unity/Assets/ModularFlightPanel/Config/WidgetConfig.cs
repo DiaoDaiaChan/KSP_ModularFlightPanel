@@ -1,6 +1,4 @@
 using System;
-using UnityEngine;
-using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.Config
 {
@@ -8,7 +6,7 @@ namespace ModularFlightPanel.Config
     public class WidgetConfig
     {
         public string WidgetId = "unnamed_widget";
-        public string DisplayName = I18n.Tr("WIDGET_DEFAULT_NAME", "未命名组件");
+        public string DisplayName = "未命名组件";
         public bool IsEnabled = true;
         public float PositionX = 0f;
         public float PositionY = 0f;

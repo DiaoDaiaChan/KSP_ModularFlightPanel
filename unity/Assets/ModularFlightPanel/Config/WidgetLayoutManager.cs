@@ -6,13 +6,6 @@ using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.Config
 {
-    [Serializable]
-    public class WidgetLayoutData
-    {
-        public float GlobalScale = 1.25f;
-        public List<WidgetConfig> Widgets = new List<WidgetConfig>();
-    }
-
     public class WidgetLayoutManager
     {
         private static WidgetLayoutManager _instance;
@@ -45,12 +38,12 @@ namespace ModularFlightPanel.Config
                 try
                 {
                     string json = File.ReadAllText(ConfigPath);
-                    CurrentLayout = JsonUtility.FromJson<WidgetLayoutData>(json);
+                    CurrentLayout = AvionicsConfigParser.ParseLayout(json, out _);
                     if (CurrentLayout != null && CurrentLayout.Widgets != null && CurrentLayout.Widgets.Count > 0)
                     {
                         EnsureValidDrawOrders();
                         MigrateToUnifiedPfdLayout();
-                        MFPLogger.Info(MFPLogger.CatUI, $"Successfully loaded layout with {CurrentLayout.Widgets.Count} widgets.");
+                        MFPLogger.Info(MFPLogger.CatUI, $"Successfully loaded layout with {CurrentLayout.Widgets.Count} widgets via AvionicsConfigParser.");
                         return;
                     }
                     MFPLogger.Warn(MFPLogger.CatUI, "layout.json existed but contained 0 widgets. Attempting recovery from backup...");
@@ -67,7 +60,7 @@ namespace ModularFlightPanel.Config
                 try
                 {
                     string backupJson = File.ReadAllText(BackupPath);
-                    var backup = JsonUtility.FromJson<WidgetLayoutData>(backupJson);
+                    var backup = AvionicsConfigParser.ParseLayout(backupJson, out _);
                     if (backup != null && backup.Widgets != null && backup.Widgets.Count > 0)
                     {
                         CurrentLayout = backup;
@@ -171,7 +164,7 @@ namespace ModularFlightPanel.Config
 
                 // 2. 原子写入模式 (Atomic Write via .tmp)：防止并发冲突或 KSP 崩溃导致生成 0 字节损坏文件
                 string tmpPath = ConfigPath + ".tmp";
-                string json = JsonUtility.ToJson(CurrentLayout, true);
+                string json = AvionicsConfigParser.SerializeLayout(CurrentLayout, true);
                 File.WriteAllText(tmpPath, json);
 
                 if (File.Exists(ConfigPath)) File.Delete(ConfigPath);
@@ -203,7 +196,7 @@ namespace ModularFlightPanel.Config
             {
                 string dir = Path.GetDirectoryName(ConfigPath);
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                string json = JsonUtility.ToJson(CurrentLayout, true);
+                string json = AvionicsConfigParser.SerializeLayout(CurrentLayout, true);
                 File.WriteAllText(BackupPath, json);
                 return true;
             }
@@ -249,7 +242,7 @@ namespace ModularFlightPanel.Config
             try
             {
                 string json = File.ReadAllText(ConfigPath);
-                var loaded = JsonUtility.FromJson<WidgetLayoutData>(json);
+                var loaded = AvionicsConfigParser.ParseLayout(json, out _);
                 if (loaded != null && loaded.Widgets != null && loaded.Widgets.Count > 0)
                 {
                     CurrentLayout = loaded;
@@ -272,7 +265,7 @@ namespace ModularFlightPanel.Config
             try
             {
                 string json = File.ReadAllText(BackupPath);
-                var loaded = JsonUtility.FromJson<WidgetLayoutData>(json);
+                var loaded = AvionicsConfigParser.ParseLayout(json, out _);
                 if (loaded != null && loaded.Widgets != null && loaded.Widgets.Count > 0)
                 {
                     CurrentLayout = loaded;
@@ -316,7 +309,7 @@ namespace ModularFlightPanel.Config
             try
             {
                 string path = GetVesselConfigPath(vesselName);
-                string json = JsonUtility.ToJson(CurrentLayout, true);
+                string json = AvionicsConfigParser.SerializeLayout(CurrentLayout, true);
                 File.WriteAllText(path, json);
                 return true;
             }
@@ -334,7 +327,7 @@ namespace ModularFlightPanel.Config
             {
                 string path = GetVesselConfigPath(vesselName);
                 string json = File.ReadAllText(path);
-                var loaded = JsonUtility.FromJson<WidgetLayoutData>(json);
+                var loaded = AvionicsConfigParser.ParseLayout(json, out _);
                 if (loaded != null && loaded.Widgets != null && loaded.Widgets.Count > 0)
                 {
                     CurrentLayout = loaded;
