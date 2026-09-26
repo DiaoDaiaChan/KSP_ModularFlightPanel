@@ -406,6 +406,28 @@ namespace ModularFlightPanel.UI
                     }
                 }
             }
+
+            // 递归保障：自动扫描组件根节点下所有原生 Image，确保底层 2D GPU 程序化渲染管线全自动继承生效
+            Image[] images = GetComponentsInChildren<Image>(true);
+            if (images != null)
+            {
+                Material activePanelMat = WidgetStyleManager.Instance?.GetUiMaterial(isText: false);
+                if (activePanelMat != null)
+                {
+                    for (int i = 0; i < images.Length; i++)
+                    {
+                        Image img = images[i];
+                        if (img == null) continue;
+                        if (img.material == null || img.material.shader == null ||
+                            img.material.shader.name == "UI/Default" ||
+                            img.material.shader.name.StartsWith("ModularFlightPanel/GlassCockpit") ||
+                            img.material.shader.name.StartsWith("ModularFlightPanel/AvionicsProcedural"))
+                        {
+                            img.material = activePanelMat;
+                        }
+                    }
+                }
+            }
         }
 
         private void AutoBuildDslControls(ThemeConfig theme)
