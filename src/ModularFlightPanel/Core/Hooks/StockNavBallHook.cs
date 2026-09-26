@@ -29,6 +29,10 @@ namespace ModularFlightPanel.Core
             NavBallHookService.HideStockTimeWarpAction = HideStockTimeWarp;
             NavBallHookService.HideStockCommNetAction = HideStockCommNet;
             NavBallHookService.RestoreAllStockUIAction = RestoreAllStockUI;
+            NavBallHookService.SetStockNavballCleanAction = SetStockNavballClean;
+            NavBallHookService.SyncStockNavballAction = SyncStockNavballToWidget;
+            NavBallHookService.ResetStockNavballAction = ResetStockNavballTransform;
+            NavBallHookService.IsCleanStockNavballActiveFunc = () => StockUIHider.IsCleanStockNavballActive;
             StockStageIconService.Provider = new StockStageIconHook();
             StockStageActionService.Provider = new StockStageActionHook();
         }
@@ -495,6 +499,7 @@ namespace ModularFlightPanel.Core
         }
 
         private static bool _hasSavedStockNavballTransform = false;
+        private static Vector3 _origStockNavballPosition;
         private static Vector2 _origStockNavballAnchoredPos;
         private static Vector3 _origStockNavballScale = Vector3.one;
         private static Vector2 _origStockNavballAnchorMin;
@@ -532,6 +537,7 @@ namespace ModularFlightPanel.Core
             if (!_hasSavedStockNavballTransform)
             {
                 _hasSavedStockNavballTransform = true;
+                _origStockNavballPosition = targetRt.position;
                 _origStockNavballAnchoredPos = targetRt.anchoredPosition;
                 _origStockNavballScale = targetRt.localScale;
                 _origStockNavballAnchorMin = targetRt.anchorMin;
@@ -543,15 +549,14 @@ namespace ModularFlightPanel.Core
             Camera widgetCam = widgetCanvas != null && widgetCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? widgetCanvas.worldCamera : null;
             Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(widgetCam, widgetRt.position);
 
+            Canvas targetCanvas = targetRt.GetComponentInParent<Canvas>();
+            Camera targetCam = targetCanvas != null && targetCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? targetCanvas.worldCamera : null;
+
+            targetRt.pivot = new Vector2(0.5f, 0.5f);
             RectTransform parentRt = targetRt.parent as RectTransform;
-            if (parentRt != null)
+            if (parentRt != null && RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRt, screenPoint, targetCam, out Vector2 localPoint))
             {
-                Canvas targetCanvas = targetRt.GetComponentInParent<Canvas>();
-                Camera targetCam = targetCanvas != null && targetCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? targetCanvas.worldCamera : null;
-                if (RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRt, screenPoint, targetCam, out Vector2 localPoint))
-                {
-                    targetRt.anchoredPosition = localPoint;
-                }
+                targetRt.localPosition = new Vector3(localPoint.x, localPoint.y, targetRt.localPosition.z);
             }
             else
             {
@@ -571,6 +576,7 @@ namespace ModularFlightPanel.Core
             var targetRt = GetStockNavballPanelTransform();
             if (targetRt != null)
             {
+                targetRt.position = _origStockNavballPosition;
                 targetRt.anchorMin = _origStockNavballAnchorMin;
                 targetRt.anchorMax = _origStockNavballAnchorMax;
                 targetRt.pivot = _origStockNavballPivot;

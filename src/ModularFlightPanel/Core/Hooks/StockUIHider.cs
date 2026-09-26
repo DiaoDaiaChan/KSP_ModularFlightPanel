@@ -488,7 +488,33 @@ namespace ModularFlightPanel.Core
 
             try
             {
+                if (!clean)
+                {
+                    var nb = StockNavBallHook.StockInstance;
+                    if (nb.sideGaugeGee != null) nb.sideGaugeGee.gameObject.SetActive(true);
+                    if (nb.sideGaugeThrottle != null) nb.sideGaugeThrottle.gameObject.SetActive(true);
+                    for (int i = 0; i < _cachedNavballActionButtons.Count; i++)
+                    {
+                        if (_cachedNavballActionButtons[i] != null) _cachedNavballActionButtons[i].gameObject.SetActive(true);
+                    }
+                    if (_cachedSASDisplay != null) _cachedSASDisplay.gameObject.SetActive(true);
+                    if (_cachedRCSDisplay != null) _cachedRCSDisplay.gameObject.SetActive(true);
+                    if (_cachedLightDisplay != null) _cachedLightDisplay.gameObject.SetActive(true);
+
+                    if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+                    {
+                        var graphics = FlightUIModeController.Instance.navBall.GetComponentsInChildren<Graphic>(true);
+                        for (int i = 0; i < graphics.Length; i++)
+                        {
+                            if (graphics[i] != null && !graphics[i].enabled) graphics[i].enabled = true;
+                        }
+                    }
+                    return;
+                }
+
                 // 1. 确保子画布对 NavBall 处于开启状态，确保渲染能够正常进行
+                HideStockNavballCompletely(false);
+
                 if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
                 {
                     ApplyStealthCanvasIsolation(FlightUIModeController.Instance.navBall.gameObject, false);
@@ -498,45 +524,65 @@ namespace ModularFlightPanel.Core
                     ApplyStealthCanvasIsolation(StockNavBallHook.StockInstance.gameObject, false);
                 }
 
-                // 2. 确保 3D 姿态球及姿态矢量指示器 MeshRenderer 全量开启
-                if (!_isNavballCached)
+                // 2. 确保官方折叠托盘处于展开态
+                if (NavBallToggle.Instance != null && NavBallToggle.Instance.panel != null)
                 {
-                    HideStockNavballCompletely(false);
+                    var panel = NavBallToggle.Instance.panel;
+                    if (panel.collapsed)
+                    {
+                        panel.ExpandImmediate();
+                    }
                 }
+
+                // 3. 确保 3D 姿态球及姿态矢量指示器 MeshRenderer 全量开启
                 for (int i = 0; i < _cachedAllStockRenderers.Count; i++)
                 {
                     var r = _cachedAllStockRenderers[i];
                     if (r != null && !r.enabled) r.enabled = true;
                 }
-
-                // 3. 干净模式：隐藏侧边加速度 G 表与油门表 (sideGaugeGee, sideGaugeThrottle)
-                var nb = StockNavBallHook.StockInstance;
-                if (nb.sideGaugeGee != null && nb.sideGaugeGee.gameObject.activeSelf == clean)
+                if (StockNavBallHook.StockInstance != null)
                 {
-                    nb.sideGaugeGee.gameObject.SetActive(!clean);
-                }
-                if (nb.sideGaugeThrottle != null && nb.sideGaugeThrottle.gameObject.activeSelf == clean)
-                {
-                    nb.sideGaugeThrottle.gameObject.SetActive(!clean);
+                    if (!StockNavBallHook.StockInstance.enabled)
+                        StockNavBallHook.StockInstance.enabled = true;
+                    if (StockNavBallHook.StockInstance.navBall != null)
+                    {
+                        var renderers = StockNavBallHook.StockInstance.navBall.GetComponentsInChildren<Renderer>(true);
+                        for (int i = 0; i < renderers.Length; i++)
+                        {
+                            if (renderers[i] != null && !renderers[i].enabled)
+                                renderers[i].enabled = true;
+                        }
+                    }
                 }
 
-                // 4. 隐藏外围 SAS/RCS 指示牌与动作按钮
+                // 4. 干净模式：隐藏侧边加速度 G 表与油门表 (sideGaugeGee, sideGaugeThrottle)
+                var stockNb = StockNavBallHook.StockInstance;
+                if (stockNb.sideGaugeGee != null && stockNb.sideGaugeGee.gameObject.activeSelf)
+                {
+                    stockNb.sideGaugeGee.gameObject.SetActive(false);
+                }
+                if (stockNb.sideGaugeThrottle != null && stockNb.sideGaugeThrottle.gameObject.activeSelf)
+                {
+                    stockNb.sideGaugeThrottle.gameObject.SetActive(false);
+                }
+
+                // 5. 隐藏外围 SAS/RCS 指示牌与动作按钮
                 for (int i = 0; i < _cachedNavballActionButtons.Count; i++)
                 {
                     var btn = _cachedNavballActionButtons[i];
-                    if (btn != null && btn.gameObject.activeSelf == clean)
+                    if (btn != null && btn.gameObject.activeSelf)
                     {
-                        btn.gameObject.SetActive(!clean);
+                        btn.gameObject.SetActive(false);
                     }
                 }
-                if (_cachedSASDisplay != null && _cachedSASDisplay.gameObject.activeSelf == clean)
-                    _cachedSASDisplay.gameObject.SetActive(!clean);
-                if (_cachedRCSDisplay != null && _cachedRCSDisplay.gameObject.activeSelf == clean)
-                    _cachedRCSDisplay.gameObject.SetActive(!clean);
-                if (_cachedLightDisplay != null && _cachedLightDisplay.gameObject.activeSelf == clean)
-                    _cachedLightDisplay.gameObject.SetActive(!clean);
+                if (_cachedSASDisplay != null && _cachedSASDisplay.gameObject.activeSelf)
+                    _cachedSASDisplay.gameObject.SetActive(false);
+                if (_cachedRCSDisplay != null && _cachedRCSDisplay.gameObject.activeSelf)
+                    _cachedRCSDisplay.gameObject.SetActive(false);
+                if (_cachedLightDisplay != null && _cachedLightDisplay.gameObject.activeSelf)
+                    _cachedLightDisplay.gameObject.SetActive(false);
 
-                // 5. 隐藏原生外框与装饰性托盘背景图片 (只保留干净的导航球与十字刻度)
+                // 6. 隐藏原生外框与装饰性托盘背景图片 (保护 navball、ball、reticle、cross、marker 等核心图元)
                 if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
                 {
                     var graphics = FlightUIModeController.Instance.navBall.GetComponentsInChildren<Graphic>(true);
@@ -545,11 +591,13 @@ namespace ModularFlightPanel.Core
                         var g = graphics[i];
                         if (g == null) continue;
                         string nameLower = g.name.ToLowerInvariant();
-                        if (nameLower.Contains("frame") || nameLower.Contains("bezel") || nameLower.Contains("panel") || nameLower.Contains("bracket") || nameLower.Contains("bg"))
+                        if (nameLower.Contains("navball") || nameLower.Contains("ball") || nameLower.Contains("reticle") || nameLower.Contains("cross") || nameLower.Contains("marker") || nameLower.Contains("heading") || nameLower.Contains("text"))
+                            continue;
+                        if (nameLower.Contains("frame") || nameLower.Contains("bezel") || nameLower.Contains("bracket") || nameLower.Contains("backing") || nameLower.Contains("trim"))
                         {
-                            if (g.enabled == clean)
+                            if (g.enabled)
                             {
-                                g.enabled = !clean;
+                                g.enabled = false;
                             }
                         }
                     }

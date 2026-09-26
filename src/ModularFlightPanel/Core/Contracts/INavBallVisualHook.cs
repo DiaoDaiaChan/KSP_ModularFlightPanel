@@ -34,6 +34,10 @@ namespace ModularFlightPanel.Core
         public static Action ReskinStockToolbarAction { get; set; }
         public static Action RestoreStockToolbarAction { get; set; }
         public static Action RestoreAllStockUIAction { get; set; }
+        public static Action<bool> SetStockNavballCleanAction { get; set; }
+        public static Action<RectTransform, float> SyncStockNavballAction { get; set; }
+        public static Action ResetStockNavballAction { get; set; }
+        public static Func<bool> IsCleanStockNavballActiveFunc { get; set; }
         public delegate bool MarkerDirectionFallbackDelegate(string markerKey, out Vector3 dir, out bool isVisible);
         public static MarkerDirectionFallbackDelegate MarkerDirectionFallback { get; set; }
     }

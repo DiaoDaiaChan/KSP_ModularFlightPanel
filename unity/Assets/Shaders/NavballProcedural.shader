@@ -609,31 +609,11 @@ Shader "ModularFlightPanel/NavballProcedural"
             ZWrite Off
 
             CGPROGRAM
-            #pragma vertex vertBake
+            #pragma vertex vert_img
             #pragma fragment fragBake
             #pragma target 3.0
 
-            struct appdata_bake
-            {
-                float4 vertex : POSITION;
-                float2 uv : TEXCOORD0;
-            };
-
-            struct v2f_bake
-            {
-                float4 pos : SV_POSITION;
-                float2 uv : TEXCOORD0;
-            };
-
-            v2f_bake vertBake(appdata_bake v)
-            {
-                v2f_bake o;
-                o.pos = UnityObjectToClipPos(v.vertex);
-                o.uv = v.uv;
-                return o;
-            }
-
-            fixed4 fragBake(v2f_bake i) : SV_Target
+            fixed4 fragBake(v2f_img i) : SV_Target
             {
                 // 等距柱状逆投影：uv.x -> 经度 (-PI..PI), uv.y -> 纬度 (-PI/2..PI/2)
                 float lon = (i.uv.x - 0.5) * 6.28318530718;
