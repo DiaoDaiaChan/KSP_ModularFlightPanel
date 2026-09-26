@@ -113,9 +113,8 @@ namespace ModularFlightPanel.UI.Widgets
         private int _lastScreenHeight = -1;
         private float _lastDetailScale = -1f;
 
-        // ── 十字准星与过载抖动 ──
-        private Vector2 _crosshairVelocity = Vector2.zero;
-        private Vector2 _crosshairOffset = Vector2.zero;
+        // ── 坡度角刻度与金属表圈 ──
+        private readonly List<Image> _bankAngleTicks = new List<Image>();
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -166,7 +165,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 3. 瞄准标与金属圆环包边
             CreateCrosshair(transform, CurrentDpiScale, theme);
 
-            // 极细航电金属质感圆环外圈
+            // 极细航电金属质感圆环外圈与滚转坡度刻度弧 (Bank Angle Roll Scale)
             GameObject bezelObj = UIFactory.CreatePanel(transform, "Sphere_Bezel_Ring",
                 new Vector2(ballDiameter + 2f * CurrentDpiScale, ballDiameter + 2f * CurrentDpiScale),
                 Vector2.zero, Color.clear);
@@ -175,6 +174,7 @@ namespace ModularFlightPanel.UI.Widgets
             bezelOutline.effectColor = WidgetStyleManager.Weighted(border, LineWeight.Strong);
             bezelOutline.effectDistance = new Vector2(1.2f * CurrentDpiScale, 1.2f * CurrentDpiScale);
             _bezelRing = bezelObj;
+            CreateBankAngleScale(bezelObj.transform, ballDiameter * 0.5f, CurrentDpiScale, theme);
 
             if (showHeadingBox)
             {
@@ -237,6 +237,39 @@ namespace ModularFlightPanel.UI.Widgets
             _reticleImage.sprite = NavballMarkerFactory.GetReticleSprite();
             _reticleImage.color = WidgetStyleManager.NeutralOpaque;
             _reticleImage.raycastTarget = false;
+        }
+
+        private void CreateBankAngleScale(Transform parent, float radius, float s, ThemeConfig theme)
+        {
+            _bankAngleTicks.Clear();
+            // 坡度角定义：0° (顶部基准), ±10°, ±20°, ±30° (标准转弯), ±45° (大坡度), ±60° (极限坡度)
+            float[] angles = new float[] { 0f, 10f, -10f, 20f, -20f, 30f, -30f, 45f, -45f, 60f, -60f };
+            float r = radius + 2.5f * s; // 紧贴金属外表圈外缘
+
+            foreach (float deg in angles)
+            {
+                bool isZero = Mathf.Abs(deg) < 0.1f;
+                bool isMajor = Mathf.Abs(Mathf.Abs(deg) - 30f) < 0.1f || isZero;
+                bool isWarn = Mathf.Abs(deg) >= 44f;
+
+                float tickLen = isZero ? (6.5f * s) : (isMajor ? 6f * s : (isWarn ? 5f * s : 3.5f * s));
+                float tickWidth = isZero ? (2.2f * s) : (isMajor ? 1.8f * s : 1.2f * s);
+
+                GameObject tickObj = new GameObject($"BankTick_{deg:F0}", typeof(RectTransform), typeof(Image));
+                tickObj.transform.SetParent(parent, false);
+                RectTransform rt = tickObj.GetComponent<RectTransform>();
+                rt.sizeDelta = new Vector2(tickWidth, tickLen);
+
+                float rad = deg * Mathf.Deg2Rad;
+                float dist = r + tickLen * 0.5f;
+                rt.anchoredPosition = new Vector2(Mathf.Sin(rad) * dist, Mathf.Cos(rad) * dist);
+                rt.localRotation = Quaternion.Euler(0f, 0f, -deg);
+
+                Image img = tickObj.GetComponent<Image>();
+                img.raycastTarget = false;
+                img.color = isWarn ? theme.WarningColor : (isZero ? theme.HorizonLineColor : theme.GridColor);
+                _bankAngleTicks.Add(img);
+            }
         }
 
         private void CreateHeadingBox(Transform parent, float dpiScale, ThemeConfig theme)
@@ -583,17 +616,10 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateReticleDynamics()
         {
             if (_crosshair == null) return;
-            IFlightTelemetry telem = FlightTelemetryContext.Current;
-            if (telem == null) return;
-
-            float gY = (float)telem.GForce;
-            Vector2 targetOffset = new Vector2(0f, Mathf.Clamp((gY - 1.0f) * 1.5f * CurrentDpiScale, -12f * CurrentDpiScale, 12f * CurrentDpiScale));
-            _crosshairOffset = Vector2.SmoothDamp(_crosshairOffset, targetOffset, ref _crosshairVelocity, 0.08f);
-
             RectTransform rt = _crosshair.GetComponent<RectTransform>();
-            if (rt != null)
+            if (rt != null && rt.anchoredPosition != Vector2.zero)
             {
-                rt.anchoredPosition = _crosshairOffset;
+                rt.anchoredPosition = Vector2.zero;
             }
         }
 
@@ -619,10 +645,10 @@ namespace ModularFlightPanel.UI.Widgets
                     Color bSkyZ = theme.SkyColor;
                     return new NavballFramePalette
                     {
-                        SkyZenith = bGndN,
-                        SkyHorizon = bGndH,
-                        GroundHorizon = bSkyH,
-                        GroundNadir = bSkyZ,
+                        SkyZenith = bSkyZ,
+                        SkyHorizon = bSkyH,
+                        GroundHorizon = bGndH,
+                        GroundNadir = bGndN,
                         Equator = theme.HorizonLineColor,
                         PitchLadder = theme.GridColor,
                         HeadingLine = theme.AccentSecondary,
@@ -631,7 +657,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 case "ORBIT":
                 case "ORBITAL":
-                    return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
+                    return WidgetStyleManager.Instance.GetNavballFramePalette(theme.AccentPrimary, theme);
                 case "SURFACE":
                 default:
                     Color skyZ = theme.SkyColor;
@@ -712,7 +738,9 @@ namespace ModularFlightPanel.UI.Widgets
                 case "LAGRANGE":
                 case "BARYCENTRIC": return 2f;
                 case "TARGET": return 3f;
-                case "BODY_DIRECTION": return 4f;
+                case "ORBIT":
+                case "ORBITAL": return 4f;
+                case "BODY_DIRECTION":
                 case "BODY_SURFACE":
                 case "BODY_FIXED": return 5f;
                 default: return 0f;
@@ -929,6 +957,21 @@ namespace ModularFlightPanel.UI.Widgets
                 _reticleImage.color = WidgetStyleManager.NeutralOpaque;
             }
 
+            if (_bezelRing != null)
+            {
+                Outline bo = _bezelRing.GetComponent<Outline>();
+                if (bo != null) bo.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Strong);
+            }
+
+            for (int i = 0; i < _bankAngleTicks.Count; i++)
+            {
+                Image img = _bankAngleTicks[i];
+                if (img == null) continue;
+                bool isWarn = i >= _bankAngleTicks.Count - 4;
+                bool isZero = i == 0;
+                img.color = isWarn ? theme.WarningColor : (isZero ? theme.HorizonLineColor : theme.GridColor);
+            }
+
             this.Controls.ApplyThemeToControls(theme);
         }
 
@@ -953,6 +996,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             this.Controls.UnregisterAll();
             _markerImages.Clear();
+            _bankAngleTicks.Clear();
             if (NavBallHookService.IsCleanStockNavballActiveFunc?.Invoke() ?? false)
             {
                 NavBallHookService.ResetStockNavballAction?.Invoke();

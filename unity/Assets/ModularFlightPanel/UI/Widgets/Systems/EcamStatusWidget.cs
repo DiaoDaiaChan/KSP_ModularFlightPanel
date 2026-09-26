@@ -51,9 +51,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel)
             {
-                MainState.Text = "NO VESSEL SIGNAL";
+                MainState.Text = I18n.Tr("STATE_NO_VESSEL_SIGNAL", "NO VESSEL SIGNAL");
                 MainState.SetRole(TextStyleRole.Muted);
-                PhaseBadge.Text = "STANDBY";
+                PhaseBadge.Text = I18n.Tr("PHASE_STANDBY", "STANDBY");
                 PhaseBadge.SetRole(TextStyleRole.Muted);
                 NavContext.Text = "---";
                 StatusAccentBar.FillAmount = 0f;
@@ -63,9 +63,9 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 紧急触地/近地防撞拉起告警 (最高优先级)
             if (telemetry.IsTouchdownAlert)
             {
-                MainState.Text = "TERRAIN  /  PULL UP";
+                MainState.Text = I18n.Tr("ALERT_TERRAIN_PULLUP", "TERRAIN  /  PULL UP");
                 MainState.SetRole(TextStyleRole.Danger);
-                PhaseBadge.Text = "CRITICAL";
+                PhaseBadge.Text = I18n.Tr("PHASE_CRITICAL", "CRITICAL");
                 PhaseBadge.SetRole(TextStyleRole.Danger);
                 StatusAccentBar.FillAmount = 1.0f;
                 return;
@@ -84,7 +84,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                MainState.Text = isRcs ? "MANUAL FLIGHT (RCS)" : "MANUAL FLIGHT";
+                MainState.Text = isRcs ? I18n.Tr("STATE_MANUAL_RCS", "MANUAL FLIGHT (RCS)") : I18n.Tr("STATE_MANUAL", "MANUAL FLIGHT");
                 MainState.SetRole(TextStyleRole.PrimaryValue);
                 StatusAccentBar.FillAmount = 0.4f;
             }
@@ -117,37 +117,37 @@ namespace ModularFlightPanel.UI.Widgets
             // 状态机推演
             if (ralt < 15.0 && spd < 1.0)
             {
-                PhaseBadge.Text = "PRE-LAUNCH";
+                PhaseBadge.Text = I18n.Tr("PHASE_PRELAUNCH", "PRE-LAUNCH");
                 PhaseBadge.SetRole(TextStyleRole.SecondaryValue);
             }
             else if (hasAtm && ralt < atmDepth && vsi > 5.0 && pe < 0.0)
             {
-                PhaseBadge.Text = "ASCENT 爬升";
+                PhaseBadge.Text = I18n.Tr("PHASE_ASCENT", "ASCENT 爬升");
                 PhaseBadge.SetRole(TextStyleRole.PrimaryValue);
             }
             else if (hasAtm && ralt < atmDepth && vsi < -10.0 && spd > 1200.0)
             {
-                PhaseBadge.Text = "RE-ENTRY 再入";
+                PhaseBadge.Text = I18n.Tr("PHASE_REENTRY", "RE-ENTRY 再入");
                 PhaseBadge.SetRole(TextStyleRole.Warning);
             }
             else if (ecc >= 1.0)
             {
-                PhaseBadge.Text = "ESCAPE 逃逸";
+                PhaseBadge.Text = I18n.Tr("PHASE_ESCAPE", "ESCAPE 逃逸");
                 PhaseBadge.SetRole(TextStyleRole.Danger);
             }
             else if (pe > (hasAtm ? atmDepth : 0.0))
             {
-                PhaseBadge.Text = "ORBIT 轨道巡航";
+                PhaseBadge.Text = I18n.Tr("PHASE_ORBIT", "ORBIT 轨道巡航");
                 PhaseBadge.SetRole(TextStyleRole.Accent);
             }
             else if (vsi < -2.0 && ralt < 2000.0)
             {
-                PhaseBadge.Text = "LANDING 进近着陆";
+                PhaseBadge.Text = I18n.Tr("PHASE_LANDING", "LANDING 进近着陆");
                 PhaseBadge.SetRole(TextStyleRole.Warning);
             }
             else
             {
-                PhaseBadge.Text = "SUBORBITAL 亚轨道";
+                PhaseBadge.Text = I18n.Tr("PHASE_SUBORBIT", "SUBORBITAL 亚轨道");
                 PhaseBadge.SetRole(TextStyleRole.SecondaryValue);
             }
         }

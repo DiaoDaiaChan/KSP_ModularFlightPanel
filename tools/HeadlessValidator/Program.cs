@@ -422,8 +422,8 @@ namespace ModularFlightPanel.HeadlessValidator
             int mirrorErrors = CheckUnityMirror(repoRoot, false);
             overallErrors += mirrorErrors;
 
-            // 9. 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)
-            Console.WriteLine($"\n[9/10] 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)...");
+            // 9. 全局国际化多语言词典一致性与源码 AST 审计 (I18n Localization Parity & AST Source Audit)
+            Console.WriteLine($"\n[9/10] 全局国际化多语言词典一致性与源码 AST 审计 (I18n Parity & AST Source Audit)...");
             int i18nErrors = ValidateI18nLocalization(repoRoot);
             overallErrors += i18nErrors;
 
@@ -890,6 +890,32 @@ namespace ModularFlightPanel.HeadlessValidator
                 foreach (var kvp in metadata)
                 {
                     Console.WriteLine($"  ├─ [{kvp.Key}] {kvp.Value.display} ({kvp.Value.native}) - {parsedDicts[kvp.Key].Count} 词条");
+                }
+
+                // 5. C# 源码语法树 AST 国际化深度审计 (I18n Roslyn AST Source Audit)
+                string srcDir = Path.Combine(repoRoot, "src", "ModularFlightPanel");
+                var validKeys = new HashSet<string>(zhKeys.Keys, StringComparer.OrdinalIgnoreCase);
+                var astReport = I18nSyntaxAuditor.AuditDirectory(srcDir, validKeys);
+                Console.WriteLine($"  ├─ 源码语法树 AST 扫描: {astReport.ScannedFilesCount} 个源码文件 / {astReport.ScannedAstNodesCount} 个语法节点");
+                if (astReport.HardcodedChineseCount > 0 || astReport.MissingKeyCount > 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"  ▲ [I18n 源码硬编码预警] 发现 {astReport.HardcodedChineseCount} 处源码硬编码中文, {astReport.MissingKeyCount} 处未登记词典键名 (可运行 --i18n-ast 查看明细)");
+                    Console.ResetColor();
+
+                    var topOffenders = astReport.Issues
+                        .Where(i => i.IssueType == I18nIssueType.HardcodedChinese)
+                        .GroupBy(i => Path.GetFileName(i.FilePath))
+                        .OrderByDescending(g => g.Count())
+                        .Take(3);
+                    foreach (var g in topOffenders)
+                    {
+                        Console.WriteLine($"     • {g.Key}: 包含 {g.Count()} 处未国际化硬编码中文");
+                    }
+                }
+                else
+                {
+                    PrintSuccess("  ✔ 全源码 100% 国际化合规: 0 处硬编码中文, 0 处缺失键名");
                 }
             }
             else

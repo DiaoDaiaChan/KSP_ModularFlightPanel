@@ -302,10 +302,10 @@ namespace ModularFlightPanel.UI.Widgets
             SetRect(_fTaVal.rectTransform, 0f, -6f * s, badgeW - 12f * s, 12f * s);
 
             // 纳管至基类标准管理器
-            this.Controls.Wrap("compact_view", "精简模式视图", _compactRoot, null);
-            this.Controls.Wrap("full_view", "完整全息模式视图", _fullRoot, null);
+            this.Controls.Wrap("compact_view", I18n.Tr("ORBIT_VIEW_COMPACT", "精简模式视图"), _compactRoot, null);
+            this.Controls.Wrap("full_view", I18n.Tr("ORBIT_VIEW_FULL", "完整全息模式视图"), _fullRoot, null);
             if (_globeRoot != null)
-                this.Controls.Register(new WidgetGraphicViewportControl("orbit_globe", "3D轨道球视口", _globeRoot, _globeRawImage));
+                this.Controls.Register(new WidgetGraphicViewportControl("orbit_globe", I18n.Tr("ORBIT_VIEW_GLOBE", "3D轨道球视口"), _globeRoot, _globeRawImage));
 
             ApplyReadoutColors(theme);   // 读数先着色 (与划线同色)
             CacheThemeColors(theme);
@@ -355,7 +355,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_modeBtnLabel != null)
             {
-                _modeBtnLabel.text = _isFullMode ? "TEXT" : "3D SPHERE";
+                _modeBtnLabel.text = _isFullMode ? I18n.Tr("ORBIT_BTN_COMPACT", "TEXT") : I18n.Tr("ORBIT_BTN_3D", "3D SPHERE");
             }
 
             // 更新按钮坐标 (始终停靠在右上角)
@@ -507,7 +507,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel)
             {
-                OrbitBadge.Text = "NO VESSEL";
+                OrbitBadge.Text = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
                 OrbitBadge.SetRole(TextStyleRole.Muted);
                 return;
             }
@@ -606,7 +606,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                Title.Text = "ORBIT ELEMENTS";
+                Title.Text = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
             }
 
             // 3. 轨道能量状态胶囊 (Principia 描述优先)
@@ -651,27 +651,27 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (ecc >= 1.0)
             {
-                OrbitBadge.Text = "ESCAPE 逃逸";
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE 逃逸");
                 OrbitBadge.SetRole(TextStyleRole.Danger);
             }
             else if (pe < 0.0)
             {
-                OrbitBadge.Text = "BALLISTIC 弹道";
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC 弹道");
                 OrbitBadge.SetRole(TextStyleRole.Danger);
             }
             else if (pe < safeAlt)
             {
-                OrbitBadge.Text = "SUBORBIT 亚轨道";
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBIT 亚轨道");
                 OrbitBadge.SetRole(TextStyleRole.Warning);
             }
             else if (ecc < 0.015)
             {
-                OrbitBadge.Text = "CIRCULAR 圆轨";
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR 圆轨");
                 OrbitBadge.SetRole(TextStyleRole.Accent);
             }
             else
             {
-                OrbitBadge.Text = "ELLIPTIC 椭圆轨";
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC 椭圆轨");
                 OrbitBadge.SetRole(TextStyleRole.PrimaryValue);
             }
         }
@@ -680,7 +680,7 @@ namespace ModularFlightPanel.UI.Widgets
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
             SetTextIfChanged(_apVal, FormatDistanceMetric(ap));
-            SetTextIfChanged(_peVal, pe < -100000.0 ? "IMPACT" : FormatDistanceMetric(pe));
+            SetTextIfChanged(_peVal, pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatDistanceMetric(pe));
             SetTextIfChanged(_tApPeReadout, $"T-AP {FormatTimeCompact(tAp)}  PE {FormatTimeCompact(tPe)}");
 
             SetTextIfChanged(_smaVal, FormatDistanceMetric(sma));
@@ -688,7 +688,7 @@ namespace ModularFlightPanel.UI.Widgets
             SetTextIfChanged(_incVal, $"{inc:F1}°");
             if (_incDirVal != null)
             {
-                _incDirVal.text = inc > 90.0 ? "RET" : "PRO";
+                _incDirVal.text = inc > 90.0 ? I18n.Tr("ORBIT_DIR_RET", "RET") : I18n.Tr("ORBIT_DIR_PRO", "PRO");
                 _incDirVal.color = inc > 90.0 ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Warning, null) : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, null);
             }
 
