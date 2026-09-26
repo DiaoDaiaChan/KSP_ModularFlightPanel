@@ -49,6 +49,7 @@ namespace ModularFlightPanel.UI
         public WidgetRefreshTier Tier;
         public WidgetLifecycleState State;
         public float LastUpdateTime;
+        public int PhaseOffset;
 
         public float CustomInterval
         {
@@ -66,6 +67,7 @@ namespace ModularFlightPanel.UI
             Tier = tier;
             State = WidgetLifecycleState.Active;
             LastUpdateTime = -10f;
+            PhaseOffset = 0;
         }
     }
 
@@ -139,7 +141,11 @@ namespace ModularFlightPanel.UI
                 return;
             }
 
-            var reg = new WidgetRegistration(widget, tier);
+            var reg = new WidgetRegistration(widget, tier)
+            {
+                PhaseOffset = _registrations.Count,
+                LastUpdateTime = -10f - (_registrations.Count % 8) * 0.003f
+            };
             _registrations.Add(reg);
             _widgetLookup[widget] = reg;
         }
@@ -389,8 +395,9 @@ namespace ModularFlightPanel.UI
 
         /// <summary>
         /// 判定指定阶梯当前帧是否允许刷新（直接供 LateUpdate 离屏相机或特定调度复用，确保全链路节流对齐）
+        /// 支持相位交错 (Phase Interleaving) 调度，杜绝同阶梯所有组件集中在同一帧触发造成的帧时间尖峰
         /// </summary>
-        public bool ShouldUpdateTier(WidgetRefreshTier tier, float unscaledTime, ref float lastUpdateTime, float customInterval = 0f)
+        public bool ShouldUpdateTier(WidgetRefreshTier tier, float unscaledTime, ref float lastUpdateTime, float customInterval = 0f, int phaseOffset = 0)
         {
             // 0. Critical 级核心航电组件 (姿态球等) 强制 100% 满帧直通游戏 FPS，杜绝任何阶梯节流
             if (tier == WidgetRefreshTier.Critical)
@@ -420,11 +427,11 @@ namespace ModularFlightPanel.UI
                     case GlobalRefreshProfile.EcoPowerSaver:
                         switch (tier)
                         {
-                            case WidgetRefreshTier.Critical: allowed = (Time.frameCount % 2 == 0); break; // 1:2 降频 (如 60fps 时 30Hz)
-                            case WidgetRefreshTier.Standard: allowed = (Time.frameCount % 4 == 0); break; // 1:4 降频 (如 60fps 时 15Hz)
-                            case WidgetRefreshTier.Relaxed:  allowed = (Time.frameCount % 12 == 0); break; // 1:12 降频 (如 60fps 时 5Hz)
-                            case WidgetRefreshTier.UltraLow: allowed = (Time.frameCount % 30 == 0); break; // 1:30 降频 (如 60fps 时 2Hz)
-                            default: allowed = (Time.frameCount % 4 == 0); break;
+                            case WidgetRefreshTier.Critical: allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break; // 1:2 降频 (如 60fps 时 30Hz)
+                            case WidgetRefreshTier.Standard: allowed = ((Time.frameCount + phaseOffset) % 4 == 0); break; // 1:4 降频 (如 60fps 时 15Hz)
+                            case WidgetRefreshTier.Relaxed:  allowed = ((Time.frameCount + phaseOffset) % 12 == 0); break; // 1:12 降频 (如 60fps 时 5Hz)
+                            case WidgetRefreshTier.UltraLow: allowed = ((Time.frameCount + phaseOffset) % 30 == 0); break; // 1:30 降频 (如 60fps 时 2Hz)
+                            default: allowed = ((Time.frameCount + phaseOffset) % 4 == 0); break;
                         }
                         break;
 
@@ -432,11 +439,11 @@ namespace ModularFlightPanel.UI
                     default:
                         switch (tier)
                         {
-                            case WidgetRefreshTier.Critical: allowed = true; break;                       // 1:1 满帧垂直同步 (如 60/120/144Hz)
-                            case WidgetRefreshTier.Standard: allowed = (Time.frameCount % 2 == 0); break; // 1:2 垂直同步 (如 60fps 时 30Hz)
-                            case WidgetRefreshTier.Relaxed:  allowed = (Time.frameCount % 6 == 0); break; // 1:6 垂直同步 (如 60fps 时 10Hz)
-                            case WidgetRefreshTier.UltraLow: allowed = (Time.frameCount % 30 == 0); break;// 1:30 垂直同步 (约 2Hz)
-                            default: allowed = (Time.frameCount % 2 == 0); break;
+                            case WidgetRefreshTier.Critical: allowed = true; break;                                       // 1:1 满帧垂直同步 (如 60/120/144Hz)
+                            case WidgetRefreshTier.Standard: allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break; // 1:2 垂直同步 (如 60fps 时 30Hz)
+                            case WidgetRefreshTier.Relaxed:  allowed = ((Time.frameCount + phaseOffset) % 6 == 0); break; // 1:6 垂直同步 (如 60fps 时 10Hz)
+                            case WidgetRefreshTier.UltraLow: allowed = ((Time.frameCount + phaseOffset) % 30 == 0); break;// 1:30 垂直同步 (约 2Hz)
+                            default: allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break;
                         }
                         break;
                 }
@@ -474,7 +481,7 @@ namespace ModularFlightPanel.UI
         /// </summary>
         private bool ShouldUpdateWidget(WidgetRegistration reg, float unscaledTime)
         {
-            return ShouldUpdateTier(reg.Tier, unscaledTime, ref reg.LastUpdateTime, reg.CustomInterval);
+            return ShouldUpdateTier(reg.Tier, unscaledTime, ref reg.LastUpdateTime, reg.CustomInterval, reg.PhaseOffset);
         }
 
         /// <summary>

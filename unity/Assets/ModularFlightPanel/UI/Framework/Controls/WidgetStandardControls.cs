@@ -185,18 +185,18 @@ namespace ModularFlightPanel.UI.Framework
             if (ValueText != null && val != _lastRawValue)
             {
                 _lastRawValue = val;
-                ValueText.text = UIFactory.FormatTabular(val ?? Fallback);
+                BaseFlightWidget.SetTextIfChanged(ValueText, UIFactory.FormatTabular(val ?? Fallback));
             }
             if (unit != null && UnitLabel != null && unit != _lastUnit)
             {
                 _lastUnit = unit;
-                UnitLabel.text = unit;
+                BaseFlightWidget.SetTextIfChanged(UnitLabel, unit);
             }
         }
 
         public void SetFormattedValue(double val, string format = "F1", string unit = null)
         {
-            string str = double.IsNaN(val) ? Fallback : val.ToString(format);
+            string str = double.IsNaN(val) ? Fallback : CacheManager.Instance.FastDouble(Id ?? "readout", val, format, 0.05);
             SetValue(str, unit);
         }
 
@@ -207,7 +207,7 @@ namespace ModularFlightPanel.UI.Framework
             if (TitleLabel != null && Title != _lastTitle)
             {
                 _lastTitle = Title;
-                TitleLabel.text = Title;
+                BaseFlightWidget.SetTextIfChanged(TitleLabel, Title);
             }
 
             if (ValueText != null && !string.IsNullOrEmpty(Token))
@@ -217,14 +217,14 @@ namespace ModularFlightPanel.UI.Framework
                 if (eval != _lastRawValue)
                 {
                     _lastRawValue = eval;
-                    ValueText.text = UIFactory.FormatTabular(eval);
+                    BaseFlightWidget.SetTextIfChanged(ValueText, UIFactory.FormatTabular(eval));
                 }
             }
 
             if (UnitLabel != null && Unit != _lastUnit)
             {
                 _lastUnit = Unit;
-                UnitLabel.text = Unit;
+                BaseFlightWidget.SetTextIfChanged(UnitLabel, Unit);
             }
         }
 

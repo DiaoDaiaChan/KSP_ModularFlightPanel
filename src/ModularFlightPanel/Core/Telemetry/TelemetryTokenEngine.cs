@@ -19,6 +19,7 @@ namespace ModularFlightPanel.Core
         {
             public string Tag;
             public string SubTag;
+            public Func<IFlightTelemetry, string, double> Evaluator;
         }
 
         private static readonly object _numericCacheLock = new object();
@@ -50,6 +51,10 @@ namespace ModularFlightPanel.Core
                     if (!string.IsNullOrEmpty(aliases[i])) _numericEvaluators[aliases[i]] = evaluator;
                 }
             }
+            lock (_numericCacheLock)
+            {
+                _numericTokenCache.Clear();
+            }
         }
 
         /// <summary>
@@ -66,36 +71,44 @@ namespace ModularFlightPanel.Core
                     if (!string.IsNullOrEmpty(aliases[i])) _stringEvaluators[aliases[i]] = evaluator;
                 }
             }
+            lock (_templateCacheLock)
+            {
+                _compiledTemplateCache.Clear();
+            }
         }
 
         private static ParsedNumericToken GetOrParseNumericToken(string token)
         {
+            if (_numericTokenCache.TryGetValue(token, out var cached))
+            {
+                return cached;
+            }
+
             lock (_numericCacheLock)
             {
-                if (_numericTokenCache.TryGetValue(token, out var cached))
+                if (_numericTokenCache.TryGetValue(token, out cached))
                 {
                     return cached;
                 }
-            }
 
-            string clean = token.Trim().Trim('{', '}');
-            string[] parts = clean.Split(':');
-            string tag = parts[0].ToUpperInvariant();
-            string subTag = string.Empty;
-            if (parts.Length > 2)
-                subTag = parts[1].ToUpperInvariant() + ":" + parts[2].ToUpperInvariant();
-            else if (parts.Length > 1)
-                subTag = parts[1].ToUpperInvariant();
+                string clean = token.Trim().Trim('{', '}');
+                string[] parts = clean.Split(':');
+                string tag = parts[0].ToUpperInvariant();
+                string subTag = string.Empty;
+                if (parts.Length > 2)
+                    subTag = parts[1].ToUpperInvariant() + ":" + parts[2].ToUpperInvariant();
+                else if (parts.Length > 1)
+                    subTag = parts[1].ToUpperInvariant();
 
-            var parsed = new ParsedNumericToken { Tag = tag, SubTag = subTag };
-            lock (_numericCacheLock)
-            {
+                _numericEvaluators.TryGetValue(tag, out var evaluator);
+
+                var parsed = new ParsedNumericToken { Tag = tag, SubTag = subTag, Evaluator = evaluator };
                 if (_numericTokenCache.Count < 512)
                 {
                     _numericTokenCache[token] = parsed;
                 }
+                return parsed;
             }
-            return parsed;
         }
 
         /// <summary>
@@ -108,6 +121,11 @@ namespace ModularFlightPanel.Core
             if (!telemetry.HasVessel) return double.NaN;
 
             var parsed = GetOrParseNumericToken(token);
+            if (parsed.Evaluator != null)
+            {
+                return parsed.Evaluator(telemetry, parsed.SubTag);
+            }
+
             string tag = parsed.Tag;
             string subTag = parsed.SubTag;
 
@@ -133,6 +151,7 @@ namespace ModularFlightPanel.Core
             public string Tag;
             public string SubTag;
             public string Format;
+            public Func<IFlightTelemetry, string, string, string> Evaluator;
         }
 
         private class CompiledTemplate
@@ -200,12 +219,15 @@ namespace ModularFlightPanel.Core
                     }
                 }
 
+                _stringEvaluators.TryGetValue(tag, out var ev);
+
                 segments.Add(new TemplateSegment
                 {
                     IsToken = true,
                     Tag = tag,
                     SubTag = subTag,
-                    Format = format
+                    Format = format,
+                    Evaluator = ev
                 });
 
                 lastIndex = m.Index + m.Length;
@@ -227,22 +249,30 @@ namespace ModularFlightPanel.Core
         {
             if (string.IsNullOrEmpty(template) || telemetry == null) return template ?? string.Empty;
 
-            CompiledTemplate compiled;
-            lock (_templateCacheLock)
+            if (!_compiledTemplateCache.TryGetValue(template, out var compiled))
             {
-                if (!_compiledTemplateCache.TryGetValue(template, out compiled))
+                lock (_templateCacheLock)
                 {
-                    compiled = CompileTemplate(template);
-                    if (_compiledTemplateCache.Count < 512)
+                    if (!_compiledTemplateCache.TryGetValue(template, out compiled))
                     {
-                        _compiledTemplateCache[template] = compiled;
+                        compiled = CompileTemplate(template);
+                        if (_compiledTemplateCache.Count < 512)
+                        {
+                            _compiledTemplateCache[template] = compiled;
+                        }
                     }
                 }
             }
 
-            if (compiled.Segments.Length == 1 && !compiled.Segments[0].IsToken)
+            if (compiled.Segments.Length == 1)
             {
-                return compiled.Segments[0].StaticText;
+                ref var seg = ref compiled.Segments[0];
+                if (!seg.IsToken) return seg.StaticText;
+                if (seg.Evaluator != null)
+                {
+                    return seg.Evaluator(telemetry, seg.SubTag, seg.Format);
+                }
+                return ResolveToken(seg.Tag, seg.SubTag, seg.Format, telemetry);
             }
 
             if (_evalSb == null) _evalSb = new StringBuilder(128);
@@ -254,6 +284,10 @@ namespace ModularFlightPanel.Core
                 if (!seg.IsToken)
                 {
                     _evalSb.Append(seg.StaticText);
+                }
+                else if (seg.Evaluator != null)
+                {
+                    _evalSb.Append(seg.Evaluator(telemetry, seg.SubTag, seg.Format));
                 }
                 else
                 {
@@ -316,7 +350,10 @@ namespace ModularFlightPanel.Core
                 {
                     if (string.IsNullOrEmpty(fmt) || fmt == "F1" || fmt == "N0")
                     {
-                        return CacheManager.Instance.FastDoubleWithAffix("tok_spd_" + sub, spd, modePrefix, unit, fmt ?? "F1", 0.05);
+                        string spdSlot = sub == "SURF" ? "tok_spd_SURF" :
+                                         sub == "OBT"  ? "tok_spd_OBT" :
+                                         sub == "TGT"  ? "tok_spd_TGT" : "tok_spd_";
+                        return CacheManager.Instance.FastDoubleWithAffix(spdSlot, spd, modePrefix, unit, fmt ?? "F1", 0.05);
                     }
                 }
                 return modePrefix + FormatNumber(spd, fmt, "F1", "tok_spd_cust") + unit;
@@ -678,7 +715,7 @@ namespace ModularFlightPanel.Core
 
             if (string.IsNullOrEmpty(format)) format = defaultFmt;
 
-            if (fastSlot != null && (format == "F0" || format == "N0"))
+            if (fastSlot != null)
             {
                 return CacheManager.Instance.FastDouble(fastSlot, val, format, 0.05);
             }

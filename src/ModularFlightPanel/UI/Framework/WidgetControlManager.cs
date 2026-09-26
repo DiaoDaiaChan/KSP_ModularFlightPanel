@@ -31,6 +31,7 @@ namespace ModularFlightPanel.UI.Framework
             {
                 list.Add(control);
             }
+            widget.Controls?.AddDirectControl(control);
         }
 
         public static IReadOnlyList<IWidgetControl> GetControls(BaseFlightWidget widget)
@@ -322,23 +323,65 @@ namespace ModularFlightPanel.UI.Framework
 
     /// <summary>
     /// 挂载在每个小组件上的微控件容器适配器，提供流式链式与声明式微控件生命周期访问
+    /// 优化：通过实例级直接列表驱动 UpdateControls 与 Get，消除高频静态全局字典哈希查询
     /// </summary>
     public class WidgetControlContainer
     {
         private readonly BaseFlightWidget _owner;
+        private readonly List<IWidgetControl> _directList = new List<IWidgetControl>();
 
         public WidgetControlContainer(BaseFlightWidget owner)
         {
             _owner = owner;
         }
 
-        public void Register(IWidgetControl control) => WidgetControlManager.Register(_owner, control);
+        internal void AddDirectControl(IWidgetControl control)
+        {
+            if (control != null && !_directList.Contains(control))
+            {
+                _directList.Add(control);
+            }
+        }
+
+        public void Register(IWidgetControl control)
+        {
+            AddDirectControl(control);
+            WidgetControlManager.Register(_owner, control);
+        }
+
         public void ApplyThemeToControls(ThemeConfig theme) => WidgetControlManager.ApplyThemeToControls(_owner, theme);
         public void BindConfigToControls(WidgetConfig config) => WidgetControlManager.BindConfigToControls(_owner, config);
-        public void UpdateControls(IFlightTelemetry telemetry) => WidgetControlManager.UpdateControls(_owner, telemetry);
-        public void UnregisterAll() => WidgetControlManager.UnregisterAll(_owner);
-        public IReadOnlyList<IWidgetControl> All => WidgetControlManager.GetControls(_owner);
-        public T Get<T>(string id) where T : class, IWidgetControl => WidgetControlManager.GetControl<T>(_owner, id);
+
+        public void UpdateControls(IFlightTelemetry telemetry)
+        {
+            if (telemetry == null) return;
+            int count = _directList.Count;
+            for (int i = 0; i < count; i++)
+            {
+                _directList[i].UpdateTelemetry(telemetry);
+            }
+        }
+
+        public void UnregisterAll()
+        {
+            _directList.Clear();
+            WidgetControlManager.UnregisterAll(_owner);
+        }
+
+        public IReadOnlyList<IWidgetControl> All => _directList.Count > 0 ? _directList : WidgetControlManager.GetControls(_owner);
+
+        public T Get<T>(string id) where T : class, IWidgetControl
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            for (int i = 0; i < _directList.Count; i++)
+            {
+                if (_directList[i] is T typed && string.Equals(_directList[i].Id, id, StringComparison.OrdinalIgnoreCase))
+                {
+                    return typed;
+                }
+            }
+            return WidgetControlManager.GetControl<T>(_owner, id);
+        }
 
         public WidgetGenericSubElementControl Wrap(string id, string displayName, GameObject rootGo, Action<ThemeConfig> onApplyTheme = null, Action<IFlightTelemetry> onUpdateTelemetry = null)
             => WidgetControlManager.WrapElement(_owner, id, displayName, rootGo, onApplyTheme, onUpdateTelemetry);

@@ -167,7 +167,7 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public static string FormatTabular(string text)
         {
-            if (string.IsNullOrEmpty(text)) return text;
+            if (string.IsNullOrEmpty(text) || text.IndexOf('-') < 0) return text;
             // 规范化减号为数学负号 (U+2212)，在航电排版中与等宽阿拉伯数字宽度严格一致
             return text.Replace('-', '−');
         }

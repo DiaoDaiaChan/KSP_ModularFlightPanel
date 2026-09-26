@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.Core;
 
 namespace ModularFlightPanel.UI
 {
@@ -91,13 +92,13 @@ namespace ModularFlightPanel.UI
             if (valueText != _lastRawValue && ValueText != null)
             {
                 _lastRawValue = valueText;
-                ValueText.text = UIFactory.FormatTabular(valueText);
+                BaseFlightWidget.SetTextIfChanged(ValueText, UIFactory.FormatTabular(valueText));
             }
 
             if (unit != null && unit != _lastUnit && UnitLabel != null)
             {
                 _lastUnit = unit;
-                UnitLabel.text = unit;
+                BaseFlightWidget.SetTextIfChanged(UnitLabel, unit);
             }
         }
 
@@ -109,7 +110,8 @@ namespace ModularFlightPanel.UI
             }
             else
             {
-                SetValue(val.ToString(format), unit);
+                string str = CacheManager.Instance.FastDouble(gameObject.name + "_val", val, format, 0.05);
+                SetValue(str, unit);
             }
         }
 

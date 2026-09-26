@@ -40,6 +40,7 @@ namespace ModularFlightPanel.Core
         private static RCSDisplay _cachedRCSDisplay;
         private static LightDisplay _cachedLightDisplay;
         private static NavBallBurnVector _cachedBurnVector;
+        private static bool _burnVectorSearched = false;
 
         // ── 高度计 (Altimeter) 缓存 ──
         private static bool _isAltimeterCached = false;
@@ -72,6 +73,7 @@ namespace ModularFlightPanel.Core
             _cachedRCSDisplay = null;
             _cachedLightDisplay = null;
             _cachedBurnVector = null;
+            _burnVectorSearched = false;
             _isNavballCached = false;
 
             _cachedAltimeterRenderers = null;
@@ -514,6 +516,7 @@ namespace ModularFlightPanel.Core
         /// </summary>
         public static void SetStockNavballClean(bool clean)
         {
+            if (_isCleanStockNavballActive == clean && clean) return;
             _isCleanStockNavballActive = clean;
             if (StockNavBallHook.StockInstance == null) return;
 
@@ -662,8 +665,9 @@ namespace ModularFlightPanel.Core
                 }
 
                 // ── 1. NavBallBurnVector 机动节点感知动态化 ──
-                if (_cachedBurnVector == null && StockNavBallHook.StockInstance != null)
+                if (!_burnVectorSearched && StockNavBallHook.StockInstance != null)
                 {
+                    _burnVectorSearched = true;
                     _cachedBurnVector = StockNavBallHook.StockInstance.GetComponentInChildren<NavBallBurnVector>(true);
                 }
 

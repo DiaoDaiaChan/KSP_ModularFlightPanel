@@ -155,6 +155,14 @@ namespace ModularFlightPanel.UI
             WidgetRenderManager.Instance.RegisterWidget(this, RefreshTier);
             IsManagedByRenderManager = true;
 
+            // 检查派生类是否重写了 Update()。若未重写，则关闭自身 MonoBehaviour.enabled，
+            // 避免 Unity 引擎每帧对 40+ 个组件无谓调用 Update() 消息（由 WidgetRenderManager 统一调度）
+            var updateMethod = GetType().GetMethod("Update", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            if (updateMethod == null || updateMethod.DeclaringType == typeof(BaseFlightWidget))
+            {
+                this.enabled = false;
+            }
+
             // 监听全局语言切换通知
             I18nManager.OnLanguageChanged += HandleLanguageChanged;
 
@@ -613,6 +621,7 @@ namespace ModularFlightPanel.UI
         public static bool SetTextIfChanged(Text textComponent, string newText)
         {
             if (textComponent == null || newText == null) return false;
+            if (object.ReferenceEquals(textComponent.text, newText)) return false;
             if (string.Equals(textComponent.text, newText, StringComparison.Ordinal)) return false;
             textComponent.text = newText;
             return true;

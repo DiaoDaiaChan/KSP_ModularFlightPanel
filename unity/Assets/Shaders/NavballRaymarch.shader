@@ -596,8 +596,9 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     float head = atan2(p.x, -p.z);
                     if (head < 0.0) head += 6.28318530718;
 
-                    float u = head * 0.159154943;          // [0, 2PI] -> [0, 1]
-                    float v = pitch * 0.318309886 + 0.5;   // [-PI/2, PI/2] -> [0, 1]
+                    // 原版 KSP 姿态球贴图坐标系校正：对齐地平线半球(天顶天底)与真航向
+                    float u = frac(0.5 - head * 0.159154943);
+                    float v = clamp(0.5 - pitch * 0.318309886, 0.001, 0.999);
 
                     float2 stockUV = float2(u, v) * _MainTex_ST.xy + _MainTex_ST.zw;
 
