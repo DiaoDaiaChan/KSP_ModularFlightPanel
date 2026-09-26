@@ -43,10 +43,11 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 rtResolution = WidgetRenderManager.Instance.CalculateOptimalResolution(
                     new Vector2(ballDiameter, ballDiameter),
                     Config != null ? Config.Scale : 1.0f,
-                    Config != null ? Config.RenderScale : 1.0f);
+                    Config != null ? Config.RenderScale : 1.0f,
+                    minRes: 512);
             }
 
-            _renderTexture = new RenderTexture(rtResolution, rtResolution, 16, RenderTextureFormat.ARGB32)
+            _renderTexture = new RenderTexture(rtResolution, rtResolution, 0, RenderTextureFormat.ARGB32)
             {
                 antiAliasing = 1,
                 anisoLevel = 4,
@@ -75,6 +76,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _ballCamera.allowHDR = false;
             _ballCamera.allowMSAA = false;
             _ballCamera.depthTextureMode = DepthTextureMode.None;
+            _ballCamera.eventMask = 0;
+            _ballCamera.renderingPath = RenderingPath.Forward;
 
             // 3D 单位球体
             _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -152,7 +155,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _renderTexture.Release();
             Destroy(_renderTexture);
 
-            _renderTexture = new RenderTexture(newRes, newRes, 16, RenderTextureFormat.ARGB32)
+            _renderTexture = new RenderTexture(newRes, newRes, 0, RenderTextureFormat.ARGB32)
             {
                 antiAliasing = 1,
                 anisoLevel = 4,
