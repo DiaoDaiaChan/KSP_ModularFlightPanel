@@ -14,8 +14,14 @@ namespace ModularFlightPanel.Config
 
     public enum NavballRenderMode
     {
-        Texture = 0,    // 贴图模式 (使用官方/TextureReplacer原版素材 + 增强高动态 Shader)
-        Procedural = 1  // 程序化生成模式 (现代航电超清无极矢量解算)
+        StockTexture = 0,       // 0: 原版贴图 (使用官方/TextureReplacer原版素材 + 增强高动态着色器)
+        ProceduralVector = 1,   // 1: 真 3D 矢量绘制 (纯数学矢量直出，超清视网膜级最高画质)
+        ProceduralBake = 2,     // 2: 程序化转贴图 (动态烘焙 2D 贴图，极低片元开销)
+        StockDirect = 3,        // 3: 原版导航球 (直接使用原版 3D 导航球，隐藏周围杂乱 UI 并接入编辑模式拖拽缩放)
+
+        // 兼容别名
+        Texture = 0,
+        Procedural = 1
     }
 
     public enum UiShaderStyle

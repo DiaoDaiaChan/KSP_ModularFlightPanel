@@ -28,7 +28,7 @@ namespace ModularFlightPanel.Config
     {
         public string SelectedThemeId = "modern_aero";
         public string SelectedLanguage = "auto"; // "auto", "zh-CN", "en-US"
-        public int RenderMode = 1; // 0 = Texture, 1 = Procedural
+        public int RenderMode = 1; // 0 = StockTexture, 1 = ProceduralVector, 2 = ProceduralBake, 3 = StockDirect
         public bool HideStockNavball = true;
         public bool HideStockAltimeter = false;
         public bool HideStockBottomLeft = false;

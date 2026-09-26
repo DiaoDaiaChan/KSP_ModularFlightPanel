@@ -628,10 +628,69 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.BeginCard();
             MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_QUALITY", "🎯 姿态球生成模式与视网膜超采样"));
 
-            // 1. 生成模式说明 (已固化为纯矢量程序化解算管线)
+            // 1. 姿态球渲染模式选择器 (4 模式全量选择器)
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b>{I18n.Tr("THM_NAVBALL_MODE_LABEL", "渲染模式选择:")}</b>", GUILayout.Width(110f));
+
+            var curMode = ThemeManager.Instance.GlobalRenderMode;
+
+            // 0: 原版贴图 (Stock Texture)
+            bool isStockTex = (curMode == NavballRenderMode.StockTexture);
+            string stockTexLabel = isStockTex ? I18n.Tr("THM_MODE_STOCK_TEX_ON", "● 原版贴图") : I18n.Tr("THM_MODE_STOCK_TEX_OFF", "○ 原版贴图");
+            if (GUILayout.Button(stockTexLabel, isStockTex ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
+            {
+                ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.StockTexture;
+                ThemeManager.Instance.SaveSettings();
+            }
+
+            // 2: 程序化转贴图 (Procedural Bake)
+            bool isProcBake = (curMode == NavballRenderMode.ProceduralBake);
+            string procBakeLabel = isProcBake ? I18n.Tr("THM_MODE_PROC_BAKE_ON", "● 程序化转贴图") : I18n.Tr("THM_MODE_PROC_BAKE_OFF", "○ 程序化转贴图");
+            if (GUILayout.Button(procBakeLabel, isProcBake ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
+            {
+                ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.ProceduralBake;
+                ThemeManager.Instance.SaveSettings();
+            }
+
+            // 1: 真 3D 绘制 (Procedural Vector)
+            bool isProcVec = (curMode == NavballRenderMode.ProceduralVector);
+            string procVecLabel = isProcVec ? I18n.Tr("THM_MODE_PROC_VEC_ON", "● 真 3D 绘制") : I18n.Tr("THM_MODE_PROC_VEC_OFF", "○ 真 3D 绘制");
+            if (GUILayout.Button(procVecLabel, isProcVec ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
+            {
+                ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.ProceduralVector;
+                ThemeManager.Instance.SaveSettings();
+            }
+
+            // 3: 原版导航球 (Stock Direct)
+            bool isStockDirect = (curMode == NavballRenderMode.StockDirect);
+            string stockDirectLabel = isStockDirect ? I18n.Tr("THM_MODE_STOCK_DIRECT_ON", "● 原版导航球") : I18n.Tr("THM_MODE_STOCK_DIRECT_OFF", "○ 原版导航球");
+            if (GUILayout.Button(stockDirectLabel, isStockDirect ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
+            {
+                ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.StockDirect;
+                ThemeManager.Instance.SaveSettings();
+            }
+
+            GUILayout.EndHorizontal();
+
+            // 模式特性与架构说明视窗
             MFPGuiSkin.BeginInset();
-            GUILayout.Label($"<color=#00E5FF><b>{I18n.Tr("THM_NAVBALL_ENGINE", "姿态球渲染引擎:")}</b></color> <color=#00FF88>{I18n.Tr("THM_PROC_ENGINE", "全量矢量程序化解算")}</color>");
-            GUILayout.Label($"<color=#7088A8><size=11>{I18n.Tr("THM_ENGINE_DESC", "• 彻底脱离原版 2D 贴图依赖，消除极点 UV 挤压畸变，实现无极视网膜矢量精度。")}</size></color>");
+            string modeDesc = "";
+            switch (curMode)
+            {
+                case NavballRenderMode.StockTexture:
+                    modeDesc = I18n.Tr("THM_MODE_STOCK_TEX_DESC", "• 采用 KSP 原版 / TextureReplacer 材质贴图与增强高动态着色器，100% 还原官方经典质感。");
+                    break;
+                case NavballRenderMode.ProceduralBake:
+                    modeDesc = I18n.Tr("THM_MODE_PROC_BAKE_DESC", "• 实时矢量计算动态展开烘焙为 2D 贴图，极低片元着色开销，兼具矢量美观与超低 GPU 负载。");
+                    break;
+                case NavballRenderMode.ProceduralVector:
+                    modeDesc = I18n.Tr("THM_MODE_PROC_VEC_DESC", "• 纯数学 SDF 几何矢量直出，超清视网膜级最高画质，全字号/刻度边缘平滑无畸变，提供极致视效。");
+                    break;
+                case NavballRenderMode.StockDirect:
+                    modeDesc = I18n.Tr("THM_MODE_STOCK_DIRECT_DESC", "• 直接调用官方 3D 导航球，剔除侧边仪表与装饰杂物仅保留纯净姿态球；无缝接入 MFP 编辑模式，支持拖拽与 8 向拉动手柄放大缩小。");
+                    break;
+            }
+            GUILayout.Label($"<color=#00E5FF><b>{I18n.Tr("THM_MODE_INFO", "当前特性:")}</b></color> <color=#7088A8><size=11>{modeDesc}</size></color>");
             MFPGuiSkin.EndInset();
 
             GUILayout.Space(4f);

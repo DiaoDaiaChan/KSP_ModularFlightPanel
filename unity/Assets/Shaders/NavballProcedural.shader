@@ -69,19 +69,8 @@ Shader "ModularFlightPanel/NavballProcedural"
         Cull Back
         Blend SrcAlpha OneMinusSrcAlpha
 
-        // =========================================================================================
-        // Pass 0: 3D 旋转球面渲染通道 (3D Rotating Sphere Shading)
-        // 姿态旋转时仅执行单次硬件纹理采样 + 极轻量 Limb Darkening / Rim Glow / Specular 反光
-        // =========================================================================================
-        Pass
-        {
-            Name "NavballSphere3D"
-
-            CGPROGRAM
-            #pragma vertex vert
-            #pragma fragment frag
-            #pragma target 3.0
-            #include "UnityCG.cginc"
+        CGINCLUDE
+        #include "UnityCG.cginc"
 
             struct appdata
             {
@@ -284,11 +273,11 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float pitchGlyphEnabled = 0.0;
                 float pitchLabelGap = 0.0;
 
-                if (absPitch >= 14.0 && absPitch <= 76.0)
+                if (absPitch >= 12.0 && absPitch <= 78.0)
                 {
                     pitchGlyphEnabled = polarLadderFade * smoothstep(0.12, 0.42, NdotV) * smoothstep(0.08, 0.34, _DetailScale) * markerClearance;
 
-                    if (absHOffset < 4.8 && absLabelOffset < 3.0)
+                    if (absHOffset < 6.8 && absLabelOffset < 3.8)
                     {
                         float pitchTens = floor(pitchLabelLevel / 10.0);
                         float pitchOnes = fmod(pitchLabelLevel, 10.0);
@@ -316,7 +305,7 @@ Shader "ModularFlightPanel/NavballProcedural"
 
                 // 15° 主横杠 (横跨 ±10.0°，两端带有垂直指示末梢)
                 float majorLadder15 = 0.0;
-                if (absHOffset <= 10.5 && pitchLabelLevel >= 14.0 && pitchLabelLevel <= 76.0 && absLabelOffset < 2.0)
+                if (absHOffset <= 12.0 && pitchLabelLevel >= 12.0 && pitchLabelLevel <= 78.0 && absLabelOffset < 2.5)
                 {
                     float barPitchAA = max(fwidth(absLabelOffset) * 1.4, 0.04);
                     float barHAA = max(fwidth(absHOffset) * 1.4, 0.08);
@@ -450,14 +439,14 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float headingTextEnabled = 0.0;
                 float headingGlyphAA = 0.15;
 
-                if (absPitch < 7.5 && abs(pitchDeg - 3.8) < 3.2)
+                if (absPitch < 8.5 && abs(pitchDeg - 3.8) < 4.2)
                 {
                     float headingCenter = floor(headDeg / 30.0 + 0.5) * 30.0;
                     float headingOffset = headDeg - headingCenter;
                     if (headingOffset > 180.0) headingOffset -= 360.0;
                     if (headingOffset < -180.0) headingOffset += 360.0;
 
-                    if (abs(headingOffset) < 7.5)
+                    if (abs(headingOffset) < 9.5)
                     {
                         float headingNumber = fmod(headingCenter + 360.0, 360.0);
                         float headingHundreds = floor(headingNumber / 100.0);
@@ -521,6 +510,20 @@ Shader "ModularFlightPanel/NavballProcedural"
 
                 return col;
             }
+        ENDCG
+
+        // =========================================================================================
+        // Pass 0: 3D 旋转球面渲染通道 (3D Rotating Sphere Shading)
+        // 专用于 ProceduralVector (真3D绘制) 模式：纯数学矢量片元直接直出，包含光照/高光/边缘微光
+        // =========================================================================================
+        Pass
+        {
+            Name "NavballSphere3D"
+
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma target 3.0
 
             v2f vert(appdata v)
             {
@@ -590,6 +593,60 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float edgeAA = max(fwidth(NdotV) * 1.5, 0.005);
                 col.a = saturate(NdotV / edgeAA);
                 return col;
+            }
+            ENDCG
+        }
+
+        // =========================================================================================
+        // Pass 1: 等距柱状 2D 贴图展开烘焙通道 (Equirectangular 2D Texture Bake Pass)
+        // 专用于 ProceduralBake (程序化转贴图) 模式：仅在材质脏时 Blit 一次烘焙为贴图，之后直接贴图采样
+        // =========================================================================================
+        Pass
+        {
+            Name "NavballEquirectangularBake"
+            ZTest Always
+            Cull Off
+            ZWrite Off
+
+            CGPROGRAM
+            #pragma vertex vertBake
+            #pragma fragment fragBake
+            #pragma target 3.0
+
+            struct appdata_bake
+            {
+                float4 vertex : POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            struct v2f_bake
+            {
+                float4 pos : SV_POSITION;
+                float2 uv : TEXCOORD0;
+            };
+
+            v2f_bake vertBake(appdata_bake v)
+            {
+                v2f_bake o;
+                o.pos = UnityObjectToClipPos(v.vertex);
+                o.uv = v.uv;
+                return o;
+            }
+
+            fixed4 fragBake(v2f_bake i) : SV_Target
+            {
+                // 等距柱状逆投影：uv.x -> 经度 (-PI..PI), uv.y -> 纬度 (-PI/2..PI/2)
+                float lon = (i.uv.x - 0.5) * 6.28318530718;
+                float lat = (i.uv.y - 0.5) * 3.14159265359;
+                float cosLat = cos(lat);
+                float3 p = float3(-sin(lon) * cosLat, sin(lat), cos(lon) * cosLat);
+                float pitchDeg = lat * 57.2957795;
+                float headDeg = fmod(lon * 57.2957795 + 360.0, 360.0);
+                float absY = abs(p.y);
+                float absPitch = abs(pitchDeg);
+
+                fixed4 col = EvaluateNavballSurface(p, pitchDeg, headDeg, absPitch, absY, 1.0, 1.0);
+                return fixed4(col.rgb, 1.0);
             }
             ENDCG
         }

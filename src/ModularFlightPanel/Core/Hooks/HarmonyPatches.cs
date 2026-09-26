@@ -139,10 +139,19 @@ namespace ModularFlightPanel.Core
             MFPProfiler.BeginSample(ProfilerSection.Hooks);
             try
             {
-                if (force || HarmonyPatches.IsStockNavballHidden != _prevNavballHidden)
+                bool isStockDirect = ThemeManager.Instance != null && ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.StockDirect;
+                bool shouldHideNavball = HarmonyPatches.IsStockNavballHidden && !isStockDirect;
+                if (force || shouldHideNavball != _prevNavballHidden)
                 {
-                    _prevNavballHidden = HarmonyPatches.IsStockNavballHidden;
-                    StockNavBallHook.HideStockNavballCompletely(_prevNavballHidden);
+                    _prevNavballHidden = shouldHideNavball;
+                    if (isStockDirect)
+                    {
+                        StockNavBallHook.SetStockNavballClean(true);
+                    }
+                    else
+                    {
+                        StockNavBallHook.HideStockNavballCompletely(_prevNavballHidden);
+                    }
                 }
                 if (force || HarmonyPatches.IsStockAltimeterHidden != _prevAltimeterHidden)
                 {

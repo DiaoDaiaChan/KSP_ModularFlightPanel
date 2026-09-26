@@ -42,7 +42,7 @@ namespace ModularFlightPanel.UI.Widgets
             OnClick = () => FlightTelemetryContext.Current?.ToggleRCS()
         };
 
-        public ReferenceFrameButtonWidget Ref = new ReferenceFrameButtonWidget(x: 0f, y: 0f, w: 92f, h: 18f, font: 8f, iconSize: 14f)
+        public ReferenceFrameButtonWidget Ref = new ReferenceFrameButtonWidget(x: 0f, y: 0f, w: 92f, h: 18f, font: 8f, iconSize: 15f)
         {
             OnClick = () => CycleReferenceFrame(),
             OnRightClick = () => TogglePrincipiaWindow()

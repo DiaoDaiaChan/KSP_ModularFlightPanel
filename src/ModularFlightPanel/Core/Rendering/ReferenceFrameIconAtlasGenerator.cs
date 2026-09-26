@@ -184,6 +184,7 @@ namespace ModularFlightPanel.Core.Rendering
 
             var rast = new Rasterizer(pixels, originX, originY, TileSize, AtlasWidth, AtlasHeight);
             drawer(rast);
+            rast.Flush();
         }
 
         #region Vector Icon Drawers
@@ -197,20 +198,20 @@ namespace ModularFlightPanel.Core.Rendering
             int ox = 64, oy = 50;
 
             // 1. 垂直天顶主极轴 (+Z 轴，北天极恒星基准)
-            r.DrawArrow(ox, oy, ox, 116, 18f, 26f, 1.0f, 7.5f);
+            r.DrawArrow(ox, oy, ox, 116, 20f, 26f, 1.0f, 8.5f);
 
             // 2. 斜右下主坐标轴 (+X 轴，春分点基准)
-            r.DrawArrow(ox, oy, 112, 20, 18f, 26f, 1.0f, 7.0f);
+            r.DrawArrow(ox, oy, 114, 18, 20f, 26f, 1.0f, 8.0f);
 
             // 3. 斜左下正交坐标轴 (+Y 轴，空间正交补全)
-            r.DrawArrow(ox, oy, 16, 20, 18f, 26f, 1.0f, 7.0f);
+            r.DrawArrow(ox, oy, 14, 18, 20f, 26f, 1.0f, 8.0f);
 
             // 4. 坐标原点质心高亮实心球核
-            r.FillCircle(ox, oy, 8.5f, 1.0f);
+            r.FillCircle(ox, oy, 9.5f, 1.0f);
 
             // 5. 左上与右上象限空间不动恒星 (Fixed Sidereal Stars)
-            r.DrawStar(24, 96, 10, 1.0f);
-            r.DrawStar(104, 96, 10, 1.0f);
+            r.DrawStar(24, 96, 12, 1.0f);
+            r.DrawStar(104, 96, 12, 1.0f);
         }
 
         // =========================================================================
@@ -220,23 +221,23 @@ namespace ModularFlightPanel.Core.Rendering
         {
             int cx = 64, cy = 64;
 
-            // 1. 中心行星自转球体轮廓与赤道经纬线 (纯实心高反差线框，剔除低透明底色以防发虚)
-            r.DrawCircle(cx, cy, 34, 1.0f, 6.5f);
+            // 1. 中心行星自转球体轮廓与赤道经纬线
+            r.DrawCircle(cx, cy, 34, 1.0f, 7.5f);
 
             // 南北贯通自转极轴
-            r.DrawLine(cx, 16, cx, 112, 1.0f, 5.0f);
+            r.DrawLine(cx, 16, cx, 112, 1.0f, 6.5f);
 
             // 赤道与主经线
-            r.DrawLine(cx - 31, cy, cx + 31, cy, 1.0f, 6.0f);
-            r.DrawEllipse(cx, cy, 14, 34, 0.90f, 5.0f);
+            r.DrawLine(cx - 31, cy, cx + 31, cy, 1.0f, 7.5f);
+            r.DrawEllipse(cx, cy, 14, 34, 0.90f, 6.0f);
 
             // 2. 环绕行星的粗自转动量弧与大箭头 (Spin Rotation Ring & Arrow ω)
-            r.DrawArc(cx, cy, 48, -25f, 185f, 1.0f, 7.5f);
+            r.DrawArc(cx, cy, 48, -25f, 185f, 1.0f, 8.5f);
             // 自转箭头
             float headRad = -25f * Mathf.Deg2Rad;
             float ax = cx + Mathf.Cos(headRad) * 48f;
             float ay = cy + Mathf.Sin(headRad) * 48f;
-            r.DrawArrow(ax - 12, ay - 6, ax + 8, ay + 6, 17f, 28f, 1.0f, 6.5f);
+            r.DrawArrow(ax - 12, ay - 6, ax + 8, ay + 6, 18f, 28f, 1.0f, 7.5f);
         }
 
         // =========================================================================
@@ -246,19 +247,19 @@ namespace ModularFlightPanel.Core.Rendering
         {
             // 1. 引力焦点中心主天体 (Focus Body at left focal point)
             int focusX = 42, focusY = 64;
-            r.FillCircle(focusX, focusY, 17, 1.0f);
-            r.DrawCircle(focusX, focusY, 23, 0.65f, 3.5f);
+            r.FillCircle(focusX, focusY, 18, 1.0f);
+            r.DrawCircle(focusX, focusY, 24, 0.65f, 4.5f);
 
             // 2. 粗开普勒闭合椭圆轨道 (Keplerian Orbit Ring)
             int orbCenterX = 62, orbCenterY = 64;
-            r.DrawEllipse(orbCenterX, orbCenterY, 50, 28, 1.0f, 6.5f);
+            r.DrawEllipse(orbCenterX, orbCenterY, 50, 28, 1.0f, 8.0f);
 
             // 3. 轨道航天器节点与切向顺向速度箭头 (Spacecraft Node & Prograde Vector)
             int scX = 68, scY = 92;
-            r.FillDiamond(scX, scY, 8.5f, 1.0f);
+            r.FillDiamond(scX, scY, 10f, 1.0f);
 
             // 切向速度前向箭头
-            r.DrawArrow(scX + 6, scY, 114, scY, 16f, 26f, 1.0f, 6.0f);
+            r.DrawArrow(scX + 6, scY, 116, scY, 18f, 28f, 1.0f, 7.5f);
         }
 
         // =========================================================================
@@ -270,25 +271,25 @@ namespace ModularFlightPanel.Core.Rendering
             int m2X = 94, m2Y = 64; // Secondary Body (M2)
 
             // 1. 基线坐标轴与双天体 (Connecting Axis & Masses M1, M2)
-            r.DrawLine(12, 64, 116, 64, 0.60f, 3.5f);
+            r.DrawLine(12, 64, 116, 64, 0.65f, 4.5f);
 
             // 2. 洛希瓣等势面哑铃双叶轮廓 (Roche Lobe Equipotential Curves)
-            r.DrawDumbbellContour(m1X, m1Y, m2X, m2Y, 1.0f, 5.5f);
+            r.DrawDumbbellContour(m1X, m1Y, m2X, m2Y, 1.0f, 7.0f);
 
             // 3. 主次双天体高光实心球核
-            r.FillCircle(m1X, m1Y, 17, 1.0f);
-            r.FillCircle(m2X, m2Y, 11, 1.0f);
+            r.FillCircle(m1X, m1Y, 18, 1.0f);
+            r.FillCircle(m2X, m2Y, 12, 1.0f);
 
             // 4. 平动点：L1 (两体质心平衡点), L4 (+60°), L5 (-60°)
-            r.FillDiamond(65, 64, 6.5f, 1.0f);
-            r.FillDiamond(65, 106, 6.5f, 1.0f);
-            r.FillDiamond(65, 22, 6.5f, 1.0f);
+            r.FillDiamond(65, 64, 7.5f, 1.0f);
+            r.FillDiamond(65, 106, 7.5f, 1.0f);
+            r.FillDiamond(65, 22, 7.5f, 1.0f);
 
             // 5. 等边三角形稳定性导引粗虚线
-            r.DrawDashedLine(m1X, m1Y, 65, 106, 5, 4, 0.60f, 3.0f);
-            r.DrawDashedLine(m2X, m2Y, 65, 106, 5, 4, 0.60f, 3.0f);
-            r.DrawDashedLine(m1X, m1Y, 65, 22, 5, 4, 0.60f, 3.0f);
-            r.DrawDashedLine(m2X, m2Y, 65, 22, 5, 4, 0.60f, 3.0f);
+            r.DrawDashedLine(m1X, m1Y, 65, 106, 5, 4, 0.65f, 4.0f);
+            r.DrawDashedLine(m2X, m2Y, 65, 106, 5, 4, 0.65f, 4.0f);
+            r.DrawDashedLine(m1X, m1Y, 65, 22, 5, 4, 0.65f, 4.0f);
+            r.DrawDashedLine(m2X, m2Y, 65, 22, 5, 4, 0.65f, 4.0f);
         }
 
         // =========================================================================
@@ -299,19 +300,19 @@ namespace ModularFlightPanel.Core.Rendering
             int cx = 64, cy = 64;
 
             // 1. 粗瞄准标度主环 (Tactical Targeting Reticle)
-            r.DrawCircle(cx, cy, 38, 1.0f, 6.5f);
+            r.DrawCircle(cx, cy, 38, 1.0f, 8.0f);
 
             // 2. 上下左右四向穿透雷达测距刻度线 (Four Quadrant Ticks)
-            r.DrawLine(cx, 96, cx, 118, 1.0f, 6.5f);
-            r.DrawLine(cx, 10, cx, 32, 1.0f, 6.5f);
-            r.DrawLine(10, cy, 32, cy, 1.0f, 6.5f);
-            r.DrawLine(96, cy, 118, cy, 1.0f, 6.5f);
+            r.DrawLine(cx, 96, cx, 118, 1.0f, 8.0f);
+            r.DrawLine(cx, 10, cx, 32, 1.0f, 8.0f);
+            r.DrawLine(10, cy, 32, cy, 1.0f, 8.0f);
+            r.DrawLine(96, cy, 118, cy, 1.0f, 8.0f);
 
             // 3. 核心对接对中实心菱形 (Docking Target Center)
-            r.FillDiamond(cx, cy, 8.5f, 1.0f);
+            r.FillDiamond(cx, cy, 9.5f, 1.0f);
 
             // 4. 相对交会视线导引箭头 (Relative Approach Vector)
-            r.DrawArrow(26, 26, 52, 52, 15f, 28f, 1.0f, 6.0f);
+            r.DrawArrow(26, 26, 52, 52, 16f, 28f, 1.0f, 7.5f);
         }
 
         // =========================================================================
@@ -323,22 +324,22 @@ namespace ModularFlightPanel.Core.Rendering
             int groundY = 38;
 
             // 1. 坚实的大地水平基线 (Earth Surface Baseline)
-            r.DrawLine(12, groundY, 116, groundY, 1.0f, 7.5f);
+            r.DrawLine(12, groundY, 116, groundY, 1.0f, 9.0f);
 
             // 2. 地下地质斜向阴影标线 (Subsurface Ground Hatch)
             for (int hx = 26; hx <= 102; hx += 18)
             {
-                r.DrawLine(hx, groundY - 4, hx - 10, groundY - 18, 0.80f, 4.5f);
+                r.DrawLine(hx, groundY - 4, hx - 10, groundY - 18, 0.85f, 5.5f);
             }
 
             // 3. 地表发射台/测站实心底座 (Launch Pad Station Base)
             r.FillTriangle(48, groundY, 80, groundY, 64, groundY + 14, 1.0f);
 
             // 4. 局部铅垂天顶粗箭头 (+Up / Zenith Vector)
-            r.DrawArrow(cx, groundY + 10, cx, 116, 18f, 26f, 1.0f, 7.5f);
+            r.DrawArrow(cx, groundY + 10, cx, 116, 20f, 26f, 1.0f, 8.5f);
 
             // 5. 局部地平切向水平速度粗箭头 (+Horizon Vector)
-            r.DrawArrow(cx + 6, groundY + 18, 110, groundY + 18, 17f, 26f, 1.0f, 6.5f);
+            r.DrawArrow(cx + 6, groundY + 18, 110, groundY + 18, 18f, 26f, 1.0f, 7.5f);
         }
 
         // =========================================================================
@@ -349,15 +350,15 @@ namespace ModularFlightPanel.Core.Rendering
             int cx = 64, cy = 64;
 
             // 中心天体实心核与外环
-            r.FillCircle(cx, cy, 18, 1.0f);
-            r.DrawCircle(cx, cy, 24, 0.40f, 3.0f);
+            r.FillCircle(cx, cy, 19, 1.0f);
+            r.DrawCircle(cx, cy, 25, 0.45f, 4.0f);
 
             // 定向射线与指向箭头
-            r.DrawArrow(cx, cy, cx + 46, cy - 34, 16f, 26f, 1.0f, 6.0f);
-            r.DrawDashedLine(cx - 34, cy + 26, cx, cy, 5, 4, 0.6f, 3.0f);
+            r.DrawArrow(cx, cy, cx + 46, cy - 34, 18f, 26f, 1.0f, 7.5f);
+            r.DrawDashedLine(cx - 34, cy + 26, cx, cy, 5, 4, 0.65f, 4.0f);
 
             // 目标天体实心核
-            r.FillCircle(cx + 46, cy - 34, 9, 1.0f);
+            r.FillCircle(cx + 46, cy - 34, 10, 1.0f);
         }
 
         #endregion
@@ -365,78 +366,129 @@ namespace ModularFlightPanel.Core.Rendering
         #region Procedural Rasterizer Engine
 
         /// <summary>
-        /// 纯 C# 抗锯齿与数学图元像素光栅化器
+        /// 4x 超采样抗锯齿 (4x SSAA) 与单次解析几何光栅化内核
+        /// 先在 512x512 高清缓冲区上进行单次包围盒解析距离场绘制（采用 Mathf.Max 彻底消除多次步进过饱和），
+        /// 随后通过 4x4 区域盒状滤波 (Area Box Filtering) 均值降采样至 128x128 图集切片，输出丝滑无阶梯边缘。
         /// </summary>
         private class Rasterizer
         {
-            private readonly Color[] _pixels;
+            public const int SsaaScale = 4;
+            private const int HiSize = TileSize * SsaaScale; // 128 * 4 = 512
+            private static readonly float[] _sharedHiBuffer = new float[HiSize * HiSize];
+
+            private readonly Color[] _atlasPixels;
             private readonly int _ox, _oy, _size, _atlasW, _atlasH;
 
             public Rasterizer(Color[] pixels, int ox, int oy, int size, int atlasW, int atlasH)
             {
-                _pixels = pixels;
+                _atlasPixels = pixels;
                 _ox = ox;
                 _oy = oy;
                 _size = size;
                 _atlasW = atlasW;
                 _atlasH = atlasH;
+                Array.Clear(_sharedHiBuffer, 0, _sharedHiBuffer.Length);
             }
 
-            public void SetPixel(int x, int y, float alpha)
+            public void Flush()
             {
-                if (x < 0 || x >= _size || y < 0 || y >= _size) return;
-                int gx = _ox + x;
-                int gy = _oy + y;
-                if (gx < 0 || gx >= _atlasW || gy < 0 || gy >= _atlasH) return;
+                Color baseColor = WidgetStyleManager.NeutralOpaque;
+                float invSamples = 1.0f / (SsaaScale * SsaaScale);
 
-                int idx = gy * _atlasW + gx;
-                float currentA = _pixels[idx].a;
-                float newA = Mathf.Clamp01(currentA + alpha);
-                Color c = WidgetStyleManager.NeutralOpaque;
-                _pixels[idx] = new Color(c.r, c.g, c.b, newA);
+                for (int ty = 0; ty < _size; ty++)
+                {
+                    int gy = _oy + ty;
+                    if (gy < 0 || gy >= _atlasH) continue;
+                    int rowBase = gy * _atlasW;
+                    int hiRowStart = ty * SsaaScale;
+
+                    for (int tx = 0; tx < _size; tx++)
+                    {
+                        int gx = _ox + tx;
+                        if (gx < 0 || gx >= _atlasW) continue;
+
+                        float sumAlpha = 0f;
+                        int hiColStart = tx * SsaaScale;
+
+                        for (int sy = 0; sy < SsaaScale; sy++)
+                        {
+                            int hiY = hiRowStart + sy;
+                            int hiOffset = hiY * HiSize + hiColStart;
+                            sumAlpha += _sharedHiBuffer[hiOffset]
+                                      + _sharedHiBuffer[hiOffset + 1]
+                                      + _sharedHiBuffer[hiOffset + 2]
+                                      + _sharedHiBuffer[hiOffset + 3];
+                        }
+
+                        float finalAlpha = Mathf.Clamp01(sumAlpha * invSamples);
+                        if (finalAlpha > 0.001f)
+                        {
+                            _atlasPixels[rowBase + gx] = new Color(baseColor.r, baseColor.g, baseColor.b, finalAlpha);
+                        }
+                    }
+                }
+            }
+
+            private void SetSubPixel(int hx, int hy, float alpha)
+            {
+                if (hx < 0 || hx >= HiSize || hy < 0 || hy >= HiSize) return;
+                int idx = hy * HiSize + hx;
+                if (alpha > _sharedHiBuffer[idx])
+                {
+                    _sharedHiBuffer[idx] = alpha;
+                }
             }
 
             public void DrawLine(float x0, float y0, float x1, float y1, float alpha, float width = 1.0f)
             {
-                float dx = x1 - x0;
-                float dy = y1 - y0;
-                float len = Mathf.Sqrt(dx * dx + dy * dy);
-                if (len < 0.001f) { SetPixel(Mathf.RoundToInt(x0), Mathf.RoundToInt(y0), alpha); return; }
+                float hx0 = x0 * SsaaScale;
+                float hy0 = y0 * SsaaScale;
+                float hx1 = x1 * SsaaScale;
+                float hy1 = y1 * SsaaScale;
+                float hw = (width * SsaaScale) * 0.5f;
 
-                float step = 0.5f;
-                int count = Mathf.CeilToInt(len / step);
-                float halfW = width * 0.5f;
+                float minX = Mathf.Min(hx0, hx1) - hw - 2f;
+                float maxX = Mathf.Max(hx0, hx1) + hw + 2f;
+                float minY = Mathf.Min(hy0, hy1) - hw - 2f;
+                float maxY = Mathf.Max(hy0, hy1) + hw + 2f;
 
-                for (int i = 0; i <= count; i++)
+                int iMinX = Mathf.Clamp(Mathf.FloorToInt(minX), 0, HiSize - 1);
+                int iMaxX = Mathf.Clamp(Mathf.CeilToInt(maxX), 0, HiSize - 1);
+                int iMinY = Mathf.Clamp(Mathf.FloorToInt(minY), 0, HiSize - 1);
+                int iMaxY = Mathf.Clamp(Mathf.CeilToInt(maxY), 0, HiSize - 1);
+
+                float dx = hx1 - hx0;
+                float dy = hy1 - hy0;
+                float lenSq = dx * dx + dy * dy;
+
+                for (int y = iMinY; y <= iMaxY; y++)
                 {
-                    float t = (float)i / count;
-                    float px = Mathf.Lerp(x0, x1, t);
-                    float py = Mathf.Lerp(y0, y1, t);
-
-                    if (width <= 1.2f)
+                    float py = y + 0.5f;
+                    for (int x = iMinX; x <= iMaxX; x++)
                     {
-                        int ix = Mathf.RoundToInt(px);
-                        int iy = Mathf.RoundToInt(py);
-                        SetPixel(ix, iy, alpha);
-                    }
-                    else
-                    {
-                        int minX = Mathf.FloorToInt(px - halfW);
-                        int maxX = Mathf.CeilToInt(px + halfW);
-                        int minY = Mathf.FloorToInt(py - halfW);
-                        int maxY = Mathf.CeilToInt(py + halfW);
-
-                        for (int y = minY; y <= maxY; y++)
+                        float px = x + 0.5f;
+                        float dist;
+                        if (lenSq < 0.0001f)
                         {
-                            for (int x = minX; x <= maxX; x++)
-                            {
-                                float dist = DistanceToSegment(x, y, x0, y0, x1, y1);
-                                if (dist <= halfW + 0.5f)
-                                {
-                                    float a = Mathf.Clamp01((halfW + 0.5f - dist) * 1.5f) * alpha;
-                                    SetPixel(x, y, a);
-                                }
-                            }
+                            float ex = px - hx0;
+                            float ey = py - hy0;
+                            dist = Mathf.Sqrt(ex * ex + ey * ey);
+                        }
+                        else
+                        {
+                            float t = Mathf.Clamp01(((px - hx0) * dx + (py - hy0) * dy) / lenSq);
+                            float projX = hx0 + t * dx;
+                            float projY = hy0 + t * dy;
+                            float ex = px - projX;
+                            float ey = py - projY;
+                            dist = Mathf.Sqrt(ex * ex + ey * ey);
+                        }
+
+                        float delta = dist - hw;
+                        if (delta <= 0.5f)
+                        {
+                            float cov = Mathf.Clamp01(0.5f - delta) * alpha;
+                            SetSubPixel(x, y, cov);
                         }
                     }
                 }
@@ -467,83 +519,90 @@ namespace ModularFlightPanel.Core.Rendering
                 }
             }
 
-            public void DrawCircle(int cx, int cy, float radius, float alpha, float width = 1.2f)
+            public void DrawCircle(float cx, float cy, float radius, float alpha, float width = 1.2f)
             {
-                float halfW = width * 0.5f;
-                int minX = Mathf.FloorToInt(cx - radius - halfW - 1);
-                int maxX = Mathf.CeilToInt(cx + radius + halfW + 1);
-                int minY = Mathf.FloorToInt(cy - radius - halfW - 1);
-                int maxY = Mathf.CeilToInt(cy + radius + halfW + 1);
+                float hcx = cx * SsaaScale;
+                float hcy = cy * SsaaScale;
+                float hr = radius * SsaaScale;
+                float hw = (width * SsaaScale) * 0.5f;
 
-                for (int y = minY; y <= maxY; y++)
+                int iMinX = Mathf.Clamp(Mathf.FloorToInt(hcx - hr - hw - 2f), 0, HiSize - 1);
+                int iMaxX = Mathf.Clamp(Mathf.CeilToInt(hcx + hr + hw + 2f), 0, HiSize - 1);
+                int iMinY = Mathf.Clamp(Mathf.FloorToInt(hcy - hr - hw - 2f), 0, HiSize - 1);
+                int iMaxY = Mathf.Clamp(Mathf.CeilToInt(hcy + hr + hw + 2f), 0, HiSize - 1);
+
+                for (int y = iMinY; y <= iMaxY; y++)
                 {
-                    for (int x = minX; x <= maxX; x++)
+                    float py = y + 0.5f;
+                    float dy = py - hcy;
+                    for (int x = iMinX; x <= iMaxX; x++)
                     {
-                        float d = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-                        float delta = Mathf.Abs(d - radius);
-                        if (delta <= halfW + 0.5f)
+                        float px = x + 0.5f;
+                        float dx = px - hcx;
+                        float d = Mathf.Sqrt(dx * dx + dy * dy);
+                        float delta = Mathf.Abs(d - hr) - hw;
+                        if (delta <= 0.5f)
                         {
-                            float a = Mathf.Clamp01((halfW + 0.5f - delta) * 1.5f) * alpha;
-                            SetPixel(x, y, a);
+                            float cov = Mathf.Clamp01(0.5f - delta) * alpha;
+                            SetSubPixel(x, y, cov);
                         }
                     }
                 }
             }
 
-            public void FillCircle(int cx, int cy, float radius, float alpha)
+            public void FillCircle(float cx, float cy, float radius, float alpha)
             {
-                int minX = Mathf.FloorToInt(cx - radius - 1);
-                int maxX = Mathf.CeilToInt(cx + radius + 1);
-                int minY = Mathf.FloorToInt(cy - radius - 1);
-                int maxY = Mathf.CeilToInt(cy + radius + 1);
+                float hcx = cx * SsaaScale;
+                float hcy = cy * SsaaScale;
+                float hr = radius * SsaaScale;
 
-                for (int y = minY; y <= maxY; y++)
+                int iMinX = Mathf.Clamp(Mathf.FloorToInt(hcx - hr - 2f), 0, HiSize - 1);
+                int iMaxX = Mathf.Clamp(Mathf.CeilToInt(hcx + hr + 2f), 0, HiSize - 1);
+                int iMinY = Mathf.Clamp(Mathf.FloorToInt(hcy - hr - 2f), 0, HiSize - 1);
+                int iMaxY = Mathf.Clamp(Mathf.CeilToInt(hcy + hr + 2f), 0, HiSize - 1);
+
+                for (int y = iMinY; y <= iMaxY; y++)
                 {
-                    for (int x = minX; x <= maxX; x++)
+                    float py = y + 0.5f;
+                    float dy = py - hcy;
+                    for (int x = iMinX; x <= iMaxX; x++)
                     {
-                        float d = Mathf.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-                        if (d <= radius + 0.5f)
+                        float px = x + 0.5f;
+                        float dx = px - hcx;
+                        float d = Mathf.Sqrt(dx * dx + dy * dy);
+                        float delta = d - hr;
+                        if (delta <= 0.5f)
                         {
-                            float a = Mathf.Clamp01((radius + 0.5f - d) * 1.5f) * alpha;
-                            SetPixel(x, y, a);
+                            float cov = Mathf.Clamp01(0.5f - delta) * alpha;
+                            SetSubPixel(x, y, cov);
                         }
                     }
                 }
             }
 
-            public void DrawArc(int cx, int cy, float radius, float startDeg, float endDeg, float alpha, float width = 1.4f)
+            public void DrawArc(float cx, float cy, float radius, float startDeg, float endDeg, float alpha, float width = 1.4f)
             {
-                float step = 2.0f;
-                float halfW = width * 0.5f;
-                for (float deg = startDeg; deg <= endDeg; deg += step)
+                float span = endDeg - startDeg;
+                int count = Mathf.Max(16, Mathf.CeilToInt(Mathf.Abs(span) / 2.5f));
+                float prevX = cx + Mathf.Cos(startDeg * Mathf.Deg2Rad) * radius;
+                float prevY = cy + Mathf.Sin(startDeg * Mathf.Deg2Rad) * radius;
+
+                for (int i = 1; i <= count; i++)
                 {
+                    float t = (float)i / count;
+                    float deg = Mathf.Lerp(startDeg, endDeg, t);
                     float rad = deg * Mathf.Deg2Rad;
-                    float px = cx + Mathf.Cos(rad) * radius;
-                    float py = cy + Mathf.Sin(rad) * radius;
-
-                    int minX = Mathf.FloorToInt(px - halfW);
-                    int maxX = Mathf.CeilToInt(px + halfW);
-                    int minY = Mathf.FloorToInt(py - halfW);
-                    int maxY = Mathf.CeilToInt(py + halfW);
-
-                    for (int y = minY; y <= maxY; y++)
-                    {
-                        for (int x = minX; x <= maxX; x++)
-                        {
-                            float d = Mathf.Sqrt((x - px) * (x - px) + (y - py) * (y - py));
-                            if (d <= halfW + 0.5f)
-                            {
-                                SetPixel(x, y, Mathf.Clamp01((halfW + 0.5f - d) * 1.5f) * alpha);
-                            }
-                        }
-                    }
+                    float curX = cx + Mathf.Cos(rad) * radius;
+                    float curY = cy + Mathf.Sin(rad) * radius;
+                    DrawLine(prevX, prevY, curX, curY, alpha, width);
+                    prevX = curX;
+                    prevY = curY;
                 }
             }
 
-            public void DrawEllipse(int cx, int cy, float rx, float ry, float alpha, float width = 1.2f)
+            public void DrawEllipse(float cx, float cy, float rx, float ry, float alpha, float width = 1.2f)
             {
-                float perimeter = 2f * Mathf.PI * Mathf.Sqrt((rx * rx + ry * ry) * 0.5f);
-                int steps = Mathf.Max(64, Mathf.CeilToInt(perimeter * 1.5f));
+                int steps = 96;
                 float prevX = cx + rx;
                 float prevY = cy;
 
@@ -581,88 +640,90 @@ namespace ModularFlightPanel.Core.Rendering
 
             public void FillTriangle(float x0, float y0, float x1, float y1, float x2, float y2, float alpha)
             {
-                int minX = Mathf.FloorToInt(Mathf.Min(x0, Mathf.Min(x1, x2)) - 1);
-                int maxX = Mathf.CeilToInt(Mathf.Max(x0, Mathf.Max(x1, x2)) + 1);
-                int minY = Mathf.FloorToInt(Mathf.Min(y0, Mathf.Min(y1, y2)) - 1);
-                int maxY = Mathf.CeilToInt(Mathf.Max(y0, Mathf.Max(y1, y2)) + 1);
+                float hx0 = x0 * SsaaScale;
+                float hy0 = y0 * SsaaScale;
+                float hx1 = x1 * SsaaScale;
+                float hy1 = y1 * SsaaScale;
+                float hx2 = x2 * SsaaScale;
+                float hy2 = y2 * SsaaScale;
 
-                float denom = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
-                if (Mathf.Abs(denom) < 0.0001f) return;
+                int iMinX = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(hx0, Mathf.Min(hx1, hx2)) - 2f), 0, HiSize - 1);
+                int iMaxX = Mathf.Clamp(Mathf.CeilToInt(Mathf.Max(hx0, Mathf.Max(hx1, hx2)) + 2f), 0, HiSize - 1);
+                int iMinY = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(hy0, Mathf.Min(hy1, hy2)) - 2f), 0, HiSize - 1);
+                int iMaxY = Mathf.Clamp(Mathf.CeilToInt(Mathf.Max(hy0, Mathf.Max(hy1, hy2)) + 2f), 0, HiSize - 1);
 
-                for (int y = minY; y <= maxY; y++)
+                float cross = (hx1 - hx0) * (hy2 - hy0) - (hy1 - hy0) * (hx2 - hx0);
+                if (Mathf.Abs(cross) < 0.001f) return;
+                float sign = cross > 0 ? 1f : -1f;
+
+                float len0 = Mathf.Sqrt((hx1 - hx0) * (hx1 - hx0) + (hy1 - hy0) * (hy1 - hy0));
+                float len1 = Mathf.Sqrt((hx2 - hx1) * (hx2 - hx1) + (hy2 - hy1) * (hy2 - hy1));
+                float len2 = Mathf.Sqrt((hx0 - hx2) * (hx0 - hx2) + (hy0 - hy2) * (hy0 - hy2));
+                if (len0 < 0.001f || len1 < 0.001f || len2 < 0.001f) return;
+
+                for (int y = iMinY; y <= iMaxY; y++)
                 {
-                    for (int x = minX; x <= maxX; x++)
+                    float py = y + 0.5f;
+                    for (int x = iMinX; x <= iMaxX; x++)
                     {
-                        float w0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / denom;
-                        float w1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / denom;
-                        float w2 = 1.0f - w0 - w1;
-                        if (w0 >= -0.02f && w1 >= -0.02f && w2 >= -0.02f)
+                        float px = x + 0.5f;
+
+                        float d0 = ((hx1 - hx0) * (py - hy0) - (hy1 - hy0) * (px - hx0)) / len0 * sign;
+                        float d1 = ((hx2 - hx1) * (py - hy1) - (hy2 - hy1) * (px - hx1)) / len1 * sign;
+                        float d2 = ((hx0 - hx2) * (py - hy2) - (hy0 - hy2) * (px - hx2)) / len2 * sign;
+
+                        float minD = Mathf.Min(d0, Mathf.Min(d1, d2));
+                        float delta = -minD;
+                        if (delta <= 0.5f)
                         {
-                            SetPixel(x, y, alpha);
+                            float cov = Mathf.Clamp01(0.5f - delta) * alpha;
+                            SetSubPixel(x, y, cov);
                         }
                     }
                 }
             }
 
-            public void FillDiamond(int cx, int cy, float size, float alpha)
+            public void FillDiamond(float cx, float cy, float size, float alpha)
             {
-                int minX = Mathf.FloorToInt(cx - size - 1);
-                int maxX = Mathf.CeilToInt(cx + size + 1);
-                int minY = Mathf.FloorToInt(cy - size - 1);
-                int maxY = Mathf.CeilToInt(cy + size + 1);
+                float hcx = cx * SsaaScale;
+                float hcy = cy * SsaaScale;
+                float hs = size * SsaaScale;
 
-                for (int y = minY; y <= maxY; y++)
+                int iMinX = Mathf.Clamp(Mathf.FloorToInt(hcx - hs - 2f), 0, HiSize - 1);
+                int iMaxX = Mathf.Clamp(Mathf.CeilToInt(hcx + hs + 2f), 0, HiSize - 1);
+                int iMinY = Mathf.Clamp(Mathf.FloorToInt(hcy - hs - 2f), 0, HiSize - 1);
+                int iMaxY = Mathf.Clamp(Mathf.CeilToInt(hcy + hs + 2f), 0, HiSize - 1);
+
+                const float invSqrt2 = 0.70710678f;
+
+                for (int y = iMinY; y <= iMaxY; y++)
                 {
-                    for (int x = minX; x <= maxX; x++)
+                    float py = y + 0.5f;
+                    float dy = Mathf.Abs(py - hcy);
+                    for (int x = iMinX; x <= iMaxX; x++)
                     {
-                        float manhattan = Mathf.Abs(x - cx) + Mathf.Abs(y - cy);
-                        if (manhattan <= size + 0.5f)
+                        float px = x + 0.5f;
+                        float dx = Mathf.Abs(px - hcx);
+                        float delta = (dx + dy - hs) * invSqrt2;
+                        if (delta <= 0.5f)
                         {
-                            float a = Mathf.Clamp01((size + 0.5f - manhattan) * 1.5f) * alpha;
-                            SetPixel(x, y, a);
+                            float cov = Mathf.Clamp01(0.5f - delta) * alpha;
+                            SetSubPixel(x, y, cov);
                         }
                     }
                 }
             }
 
-            public void DrawArrowHead(float tipX, float tipY, float headLen, float headAngleDeg, float alpha, float width = 2.0f)
+            public void DrawStar(float cx, float cy, float r, float alpha)
             {
-                float a1 = Mathf.PI - headAngleDeg * Mathf.Deg2Rad;
-                float a2 = Mathf.PI + headAngleDeg * Mathf.Deg2Rad;
-                float hx1 = tipX + Mathf.Cos(a1) * headLen;
-                float hy1 = tipY + Mathf.Sin(a1) * headLen;
-                float hx2 = tipX + Mathf.Cos(a2) * headLen;
-                float hy2 = tipY + Mathf.Sin(a2) * headLen;
-                FillTriangle(tipX, tipY, hx1, hy1, hx2, hy2, alpha);
-                DrawLine(tipX, tipY, hx1, hy1, alpha, width);
-                DrawLine(tipX, tipY, hx2, hy2, alpha, width);
-                DrawLine(hx1, hy1, hx2, hy2, alpha, width);
+                FillCircle(cx, cy, 4.0f, alpha);
+                DrawLine(cx - r, cy, cx + r, cy, alpha, 4.0f);
+                DrawLine(cx, cy - r, cx, cy + r, alpha, 4.0f);
             }
 
-            public void DrawCrosshair(int cx, int cy, int size, float alpha, float width = 1.2f)
+            public void DrawDumbbellContour(float m1X, float m1Y, float m2X, float m2Y, float alpha, float width = 5.0f)
             {
-                DrawLine(cx - size, cy, cx + size, cy, alpha, width);
-                DrawLine(cx, cy - size, cx, cy + size, alpha, width);
-            }
-
-            public void DrawDiamond(int cx, int cy, int size, float alpha, float width = 1.2f)
-            {
-                DrawLine(cx, cy - size, cx + size, cy, alpha, width);
-                DrawLine(cx + size, cy, cx, cy + size, alpha, width);
-                DrawLine(cx, cy + size, cx - size, cy, alpha, width);
-                DrawLine(cx - size, cy, cx, cy - size, alpha, width);
-            }
-
-            public void DrawStar(int cx, int cy, int r, float alpha)
-            {
-                FillCircle(cx, cy, 3.5f, alpha);
-                DrawLine(cx - r, cy, cx + r, cy, alpha, 3.5f);
-                DrawLine(cx, cy - r, cx, cy + r, alpha, 3.5f);
-            }
-
-            public void DrawDumbbellContour(int m1X, int m1Y, int m2X, int m2Y, float alpha, float width = 5.0f)
-            {
-                int steps = 120;
+                int steps = 140;
                 float prevX = 0, prevY = 0;
                 for (int i = 0; i <= steps; i++)
                 {
@@ -696,109 +757,6 @@ namespace ModularFlightPanel.Core.Rendering
                     prevX = px;
                     prevY = py;
                 }
-            }
-
-            public void DrawGlyph(int cx, int cy, char c, float alpha)
-            {
-                // 简洁高反差 3x5 点阵微文字体
-                int x0 = cx - 1;
-                int y0 = cy - 2;
-
-                switch (char.ToUpperInvariant(c))
-                {
-                    case 'X':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0 + 1, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case 'Y':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0 + 1, y0 + 1, alpha);
-                        SetPixel(x0 + 1, y0 + 2, alpha);
-                        break;
-                    case 'Z':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0 + 1, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 1, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case 'V':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0 + 1, y0 + 2, alpha);
-                        break;
-                    case 'R':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case 'N':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 1, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case '1':
-                        SetPixel(x0 + 1, y0, alpha);
-                        SetPixel(x0 + 1, y0 + 1, alpha);
-                        SetPixel(x0 + 1, y0 + 2, alpha);
-                        break;
-                    case '2':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 1, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case '3':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0 + 1, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 1, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case '4':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 1, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case '5':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 1, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 1, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case 'T':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0 + 1, y0 + 1, alpha);
-                        SetPixel(x0 + 1, y0 + 2, alpha);
-                        break;
-                    case 'P':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha);
-                        break;
-                    case 'A':
-                        SetPixel(x0 + 1, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 1, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case 'W':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 2, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 1, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 2, y0 + 2, alpha);
-                        break;
-                    case 'D':
-                        SetPixel(x0, y0, alpha); SetPixel(x0 + 1, y0, alpha);
-                        SetPixel(x0, y0 + 1, alpha); SetPixel(x0 + 2, y0 + 1, alpha);
-                        SetPixel(x0, y0 + 2, alpha); SetPixel(x0 + 1, y0 + 2, alpha);
-                        break;
-                }
-            }
-
-            private static float DistanceToSegment(float px, float py, float x0, float y0, float x1, float y1)
-            {
-                float dx = x1 - x0;
-                float dy = y1 - y0;
-                float l2 = dx * dx + dy * dy;
-                if (l2 < 0.0001f) return Mathf.Sqrt((px - x0) * (px - x0) + (py - y0) * (py - y0));
-                float t = Mathf.Clamp01(((px - x0) * dx + (py - y0) * dy) / l2);
-                float projX = x0 + t * dx;
-                float projY = y0 + t * dy;
-                return Mathf.Sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
             }
         }
 

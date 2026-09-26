@@ -526,7 +526,7 @@ namespace ModularFlightPanel.UI.Framework
         public float Width { get; set; }
         public float Height { get; set; }
         public float FontSize { get; set; } = 8f;
-        public float IconSize { get; set; } = 14f;
+        public float IconSize { get; set; } = 15f;
 
         public Button ButtonComponent { get; private set; }
         public Image BackgroundComponent { get; private set; }
@@ -550,7 +550,7 @@ namespace ModularFlightPanel.UI.Framework
         private string _tooltipDesc;
         private string _tooltipKey;
 
-        public ReferenceFrameButtonWidget(float x = 0f, float y = 0f, float w = 92f, float h = 18f, float font = 8f, float iconSize = 14f)
+        public ReferenceFrameButtonWidget(float x = 0f, float y = 0f, float w = 92f, float h = 18f, float font = 8f, float iconSize = 15f)
             : base("ref_frame_ctrl", "Reference Frame Button", WidgetControlCategory.ActionButton, null)
         {
             X = x;

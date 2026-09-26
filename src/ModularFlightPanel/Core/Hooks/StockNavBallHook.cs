@@ -493,6 +493,97 @@ namespace ModularFlightPanel.Core
         {
             StockUIHider.HideStockNavballCompletely(hide);
         }
+
+        private static bool _hasSavedStockNavballTransform = false;
+        private static Vector2 _origStockNavballAnchoredPos;
+        private static Vector3 _origStockNavballScale = Vector3.one;
+        private static Vector2 _origStockNavballAnchorMin;
+        private static Vector2 _origStockNavballAnchorMax;
+        private static Vector2 _origStockNavballPivot;
+
+        public static RectTransform GetStockNavballPanelTransform()
+        {
+            if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+            {
+                if (FlightUIModeController.Instance.navBall.panelTransform != null)
+                    return FlightUIModeController.Instance.navBall.panelTransform;
+                var rt = FlightUIModeController.Instance.navBall.GetComponent<RectTransform>();
+                if (rt != null) return rt;
+            }
+            if (StockInstance != null)
+            {
+                var rt = StockInstance.GetComponent<RectTransform>();
+                if (rt != null) return rt;
+                if (StockInstance.transform.parent != null)
+                    return StockInstance.transform.parent.GetComponent<RectTransform>();
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 将原版导航球实时对齐至 MFP 编辑模式/运行时小组件位置与拉伸缩放比例 (即刻响应编辑拖拽与手柄缩放)
+        /// </summary>
+        public static void SyncStockNavballToWidget(RectTransform widgetRt, float widgetScale)
+        {
+            if (widgetRt == null || StockInstance == null) return;
+            var targetRt = GetStockNavballPanelTransform();
+            if (targetRt == null) return;
+
+            if (!_hasSavedStockNavballTransform)
+            {
+                _hasSavedStockNavballTransform = true;
+                _origStockNavballAnchoredPos = targetRt.anchoredPosition;
+                _origStockNavballScale = targetRt.localScale;
+                _origStockNavballAnchorMin = targetRt.anchorMin;
+                _origStockNavballAnchorMax = targetRt.anchorMax;
+                _origStockNavballPivot = targetRt.pivot;
+            }
+
+            Canvas widgetCanvas = widgetRt.GetComponentInParent<Canvas>();
+            Camera widgetCam = widgetCanvas != null && widgetCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? widgetCanvas.worldCamera : null;
+            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(widgetCam, widgetRt.position);
+
+            RectTransform parentRt = targetRt.parent as RectTransform;
+            if (parentRt != null)
+            {
+                Canvas targetCanvas = targetRt.GetComponentInParent<Canvas>();
+                Camera targetCam = targetCanvas != null && targetCanvas.renderMode != RenderMode.ScreenSpaceOverlay ? targetCanvas.worldCamera : null;
+                if (RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRt, screenPoint, targetCam, out Vector2 localPoint))
+                {
+                    targetRt.anchoredPosition = localPoint;
+                }
+            }
+            else
+            {
+                targetRt.position = widgetRt.position;
+            }
+
+            float globalScale = WidgetLayoutManager.Instance != null && WidgetLayoutManager.Instance.CurrentLayout != null
+                ? WidgetLayoutManager.Instance.CurrentLayout.GlobalScale
+                : 1.0f;
+            float finalScale = widgetScale * globalScale;
+            targetRt.localScale = Vector3.one * Mathf.Max(0.2f, finalScale);
+        }
+
+        public static void ResetStockNavballTransform()
+        {
+            if (!_hasSavedStockNavballTransform) return;
+            var targetRt = GetStockNavballPanelTransform();
+            if (targetRt != null)
+            {
+                targetRt.anchorMin = _origStockNavballAnchorMin;
+                targetRt.anchorMax = _origStockNavballAnchorMax;
+                targetRt.pivot = _origStockNavballPivot;
+                targetRt.anchoredPosition = _origStockNavballAnchoredPos;
+                targetRt.localScale = _origStockNavballScale;
+            }
+            _hasSavedStockNavballTransform = false;
+        }
+
+        public static void SetStockNavballClean(bool clean)
+        {
+            StockUIHider.SetStockNavballClean(clean);
+        }
     }
 
     /// <summary>

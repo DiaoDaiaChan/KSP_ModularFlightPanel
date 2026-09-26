@@ -643,7 +643,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             if (_sphereObject != null)
             {
-                bool isProcedural = ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.Procedural;
+                bool isProcedural = ThemeManager.Instance.GlobalRenderMode != NavballRenderMode.StockTexture;
                 if (hasHook)
                 {
                     Quaternion camRot = hook.CameraRotation;

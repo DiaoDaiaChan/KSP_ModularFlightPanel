@@ -475,6 +475,92 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        private static bool _isCleanStockNavballActive = false;
+        public static bool IsCleanStockNavballActive => _isCleanStockNavballActive;
+
+        /// <summary>
+        /// 纯净原生导航球模式：激活 3D 姿态球与矢量，剥离侧面油门/G表/SAS按钮/装饰底框，保持极简悬浮
+        /// </summary>
+        public static void SetStockNavballClean(bool clean)
+        {
+            _isCleanStockNavballActive = clean;
+            if (StockNavBallHook.StockInstance == null) return;
+
+            try
+            {
+                // 1. 确保子画布对 NavBall 处于开启状态，确保渲染能够正常进行
+                if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+                {
+                    ApplyStealthCanvasIsolation(FlightUIModeController.Instance.navBall.gameObject, false);
+                }
+                if (StockNavBallHook.StockInstance != null)
+                {
+                    ApplyStealthCanvasIsolation(StockNavBallHook.StockInstance.gameObject, false);
+                }
+
+                // 2. 确保 3D 姿态球及姿态矢量指示器 MeshRenderer 全量开启
+                if (!_isNavballCached)
+                {
+                    HideStockNavballCompletely(false);
+                }
+                for (int i = 0; i < _cachedAllStockRenderers.Count; i++)
+                {
+                    var r = _cachedAllStockRenderers[i];
+                    if (r != null && !r.enabled) r.enabled = true;
+                }
+
+                // 3. 干净模式：隐藏侧边加速度 G 表与油门表 (sideGaugeGee, sideGaugeThrottle)
+                var nb = StockNavBallHook.StockInstance;
+                if (nb.sideGaugeGee != null && nb.sideGaugeGee.gameObject.activeSelf == clean)
+                {
+                    nb.sideGaugeGee.gameObject.SetActive(!clean);
+                }
+                if (nb.sideGaugeThrottle != null && nb.sideGaugeThrottle.gameObject.activeSelf == clean)
+                {
+                    nb.sideGaugeThrottle.gameObject.SetActive(!clean);
+                }
+
+                // 4. 隐藏外围 SAS/RCS 指示牌与动作按钮
+                for (int i = 0; i < _cachedNavballActionButtons.Count; i++)
+                {
+                    var btn = _cachedNavballActionButtons[i];
+                    if (btn != null && btn.gameObject.activeSelf == clean)
+                    {
+                        btn.gameObject.SetActive(!clean);
+                    }
+                }
+                if (_cachedSASDisplay != null && _cachedSASDisplay.gameObject.activeSelf == clean)
+                    _cachedSASDisplay.gameObject.SetActive(!clean);
+                if (_cachedRCSDisplay != null && _cachedRCSDisplay.gameObject.activeSelf == clean)
+                    _cachedRCSDisplay.gameObject.SetActive(!clean);
+                if (_cachedLightDisplay != null && _cachedLightDisplay.gameObject.activeSelf == clean)
+                    _cachedLightDisplay.gameObject.SetActive(!clean);
+
+                // 5. 隐藏原生外框与装饰性托盘背景图片 (只保留干净的导航球与十字刻度)
+                if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+                {
+                    var graphics = FlightUIModeController.Instance.navBall.GetComponentsInChildren<Graphic>(true);
+                    for (int i = 0; i < graphics.Length; i++)
+                    {
+                        var g = graphics[i];
+                        if (g == null) continue;
+                        string nameLower = g.name.ToLowerInvariant();
+                        if (nameLower.Contains("frame") || nameLower.Contains("bezel") || nameLower.Contains("panel") || nameLower.Contains("bracket") || nameLower.Contains("bg"))
+                        {
+                            if (g.enabled == clean)
+                            {
+                                g.enabled = !clean;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ModularFlightPanel] SetStockNavballClean warning: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// 动态按需保活定时节流循环 (Dynamic On-Demand Hook Tick)
         /// 由 FlightHUDManager 每帧驱动，执行状态感知休眠与按需唤醒
@@ -483,7 +569,7 @@ namespace ModularFlightPanel.Core
         {
             try
             {
-                bool isNavballHidden = ThemeManager.IsStockNavballHidden;
+                bool isNavballHidden = ThemeManager.IsStockNavballHidden && !_isCleanStockNavballActive;
                 if (!isNavballHidden)
                 {
                     // 若原版 UI 处于显示状态，全部组件强制保持激活
