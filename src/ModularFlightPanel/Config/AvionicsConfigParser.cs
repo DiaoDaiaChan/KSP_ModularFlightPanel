@@ -698,6 +698,7 @@ namespace ModularFlightPanel.Config
                 data.ToolbarStyleMode = root.GetInt("ToolbarStyleMode", 1);
                 data.MasterBypass = root.GetBool("MasterBypass", false);
                 data.ShowPerformanceBadge = root.GetBool("ShowPerformanceBadge", false);
+                data.EnableGpu2DUIAcceleration = root.GetBool("EnableGpu2DUIAcceleration", true);
                 data.AutoAdaptResolution = root.GetBool("AutoAdaptResolution", true);
                 data.GlobalRenderScaleMultiplier = root.GetFloat("GlobalRenderScaleMultiplier", 1.0f);
 
@@ -765,6 +766,7 @@ namespace ModularFlightPanel.Config
             root.Add("ToolbarStyleMode", data.ToolbarStyleMode);
             root.Add("MasterBypass", data.MasterBypass);
             root.Add("ShowPerformanceBadge", data.ShowPerformanceBadge);
+            root.Add("EnableGpu2DUIAcceleration", data.EnableGpu2DUIAcceleration);
             root.Add("AutoAdaptResolution", data.AutoAdaptResolution);
             root.Add("GlobalRenderScaleMultiplier", data.GlobalRenderScaleMultiplier);
 

@@ -38,6 +38,7 @@ namespace ModularFlightPanel.Config
         public int ToolbarStyleMode = 1; // 0 = Stock, 1 = Reskin, 2 = ModernWidget
         public bool MasterBypass = false;
         public bool ShowPerformanceBadge = false;
+        public bool EnableGpu2DUIAcceleration = true; // 开启 2D 仪表 GPU 单 Quad 程序化渲染加速
 
         // 自适应渲染分辨率与超采样倍率设置 (Smart Resolution & Supersampling)
         public bool AutoAdaptResolution = true;

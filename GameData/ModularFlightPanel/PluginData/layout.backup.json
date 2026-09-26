@@ -4,7 +4,7 @@
     {
       "WidgetId": "core.navball",
       "DisplayName": "姿态球 (Navball)",
-      "IsEnabled": false,
+      "IsEnabled": true,
       "PositionX": 0.0,
       "PositionY": 0.0,
       "Scale": 1.0,
@@ -480,9 +480,9 @@
     {
       "WidgetId": "core.bottom_controls",
       "DisplayName": "RCS与SAS底控台",
-      "IsEnabled": true,
+      "IsEnabled": false,
       "PositionX": 0.0,
-      "PositionY": 0.0,
+      "PositionY": -88.0,
       "Scale": 1.0,
       "ScaleX": 1.0,
       "ScaleY": 1.0,

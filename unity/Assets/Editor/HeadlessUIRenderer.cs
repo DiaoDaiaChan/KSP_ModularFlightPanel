@@ -230,7 +230,12 @@ namespace ModularFlightPanel.Editor
                 if ((cmdArgs[i] == "-renderMode" || cmdArgs[i] == "--renderMode") && i + 1 < cmdArgs.Length)
                 {
                     string rm = cmdArgs[i + 1].Trim().ToLowerInvariant();
-                    ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.Procedural;
+                    if (rm.Contains("tex") || rm == "0")
+                        ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.StockTexture;
+                    else if (rm.Contains("direct") || rm == "2")
+                        ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.StockDirect;
+                    else
+                        ThemeManager.Instance.GlobalRenderMode = NavballRenderMode.ProceduralVector;
                 }
                 if ((cmdArgs[i] == "-frame" || cmdArgs[i] == "--frame") && i + 1 < cmdArgs.Length)
                 {

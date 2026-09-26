@@ -44,11 +44,45 @@ namespace ModularFlightPanel.Core
 #if KSP_RUNTIME
             try
             {
+                if (TelemetryHub.Instance != null && TelemetryHub.Instance.IsSimulationMode)
+                {
+                    TelemetryHub.Instance.SimulationEngine.InsertSimulatedStage(stageIndex);
+                    return;
+                }
+
                 if (KSP.UI.Screens.StageManager.Instance != null)
                 {
+                    var mgr = KSP.UI.Screens.StageManager.Instance;
                     int target = Mathf.Max(0, stageIndex);
-                    KSP.UI.Screens.StageManager.Instance.AddStageAt(target);
-                    KSP.UI.Screens.StageManager.Instance.SortIcons(false);
+
+                    // 优先调用现有分级组原生 AddStageAfter (完全保证原版逻辑一致)
+                    var stages = mgr.Stages;
+                    KSP.UI.Screens.StageGroup sourceGroup = null;
+                    if (stages != null)
+                    {
+                        for (int i = 0; i < stages.Count; i++)
+                        {
+                            var grp = stages[i];
+                            if (grp != null && grp.inverseStageIndex == target - 1)
+                            {
+                                sourceGroup = grp;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (sourceGroup != null)
+                    {
+                        sourceGroup.AddStageAfter();
+                    }
+                    else
+                    {
+                        mgr.IncrementCurrentStage();
+                        mgr.AddStageAt(target);
+                        mgr.SetManualStageOffset(target);
+                        KSP.UI.Screens.StageManager.SetSeparationIndices();
+                        GameEvents.StageManager.OnGUIStageAdded.Fire(target);
+                    }
                     Debug.Log($"[ModularFlightPanel] Inserted new stage at index {target}");
                 }
             }
@@ -64,6 +98,12 @@ namespace ModularFlightPanel.Core
 #if KSP_RUNTIME
             try
             {
+                if (TelemetryHub.Instance != null && TelemetryHub.Instance.IsSimulationMode)
+                {
+                    TelemetryHub.Instance.SimulationEngine.DeleteSimulatedStage(stageIndex);
+                    return;
+                }
+
                 if (KSP.UI.Screens.StageManager.Instance != null)
                 {
                     var mgr = KSP.UI.Screens.StageManager.Instance;
@@ -73,12 +113,15 @@ namespace ModularFlightPanel.Core
                         for (int i = 0; i < stages.Count; i++)
                         {
                             var grp = stages[i];
-                            int stgIdx = (grp != null && grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
-                            if (grp != null && (stgIdx == stageIndex || grp.defaultStage == stageIndex))
+                            if (grp == null) continue;
+                            int stgIdx = (grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
+                            if (stgIdx == stageIndex || grp.defaultStage == stageIndex)
                             {
-                                mgr.DeleteStage(grp, true);
-                                mgr.SortIcons(false);
-                                mgr.UpdateStageGroups(false);
+                                mgr.DecrementCurrentStage();
+                                mgr.DeleteStage(grp, mgr.Visible);
+                                mgr.SetManualStageOffset(stgIdx);
+                                KSP.UI.Screens.StageManager.SetSeparationIndices();
+                                GameEvents.StageManager.OnGUIStageRemoved.Fire(stgIdx);
                                 Debug.Log($"[ModularFlightPanel] Deleted stage S{stageIndex:00}");
                                 return;
                             }

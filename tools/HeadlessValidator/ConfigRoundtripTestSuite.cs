@@ -421,6 +421,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 ToolbarStyleMode = 2,
                 MasterBypass = false,
                 ShowPerformanceBadge = true,
+                EnableGpu2DUIAcceleration = true,
                 AutoAdaptResolution = true,
                 GlobalRenderScaleMultiplier = 1.25f,
                 DockShowHiddenDrawer = true,
@@ -712,6 +713,7 @@ namespace ModularFlightPanel.HeadlessValidator
             if (a.ToolbarStyleMode != b.ToolbarStyleMode) { PrintError($"[{context}] ToolbarStyleMode: {a.ToolbarStyleMode} vs {b.ToolbarStyleMode}"); diffs++; }
             if (a.MasterBypass != b.MasterBypass) { PrintError($"[{context}] MasterBypass: {a.MasterBypass} vs {b.MasterBypass}"); diffs++; }
             if (a.ShowPerformanceBadge != b.ShowPerformanceBadge) { PrintError($"[{context}] ShowPerformanceBadge: {a.ShowPerformanceBadge} vs {b.ShowPerformanceBadge}"); diffs++; }
+            if (a.EnableGpu2DUIAcceleration != b.EnableGpu2DUIAcceleration) { PrintError($"[{context}] EnableGpu2DUIAcceleration: {a.EnableGpu2DUIAcceleration} vs {b.EnableGpu2DUIAcceleration}"); diffs++; }
             if (a.AutoAdaptResolution != b.AutoAdaptResolution) { PrintError($"[{context}] AutoAdaptResolution: {a.AutoAdaptResolution} vs {b.AutoAdaptResolution}"); diffs++; }
             if (Math.Abs(a.GlobalRenderScaleMultiplier - b.GlobalRenderScaleMultiplier) > FloatEpsilon) { PrintError($"[{context}] GlobalRenderScaleMultiplier: {a.GlobalRenderScaleMultiplier} vs {b.GlobalRenderScaleMultiplier}"); diffs++; }
             if (a.DockShowHiddenDrawer != b.DockShowHiddenDrawer) { PrintError($"[{context}] DockShowHiddenDrawer: {a.DockShowHiddenDrawer} vs {b.DockShowHiddenDrawer}"); diffs++; }

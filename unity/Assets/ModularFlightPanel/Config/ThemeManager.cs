@@ -19,6 +19,7 @@ namespace ModularFlightPanel.Config
         public static bool IsStockCommNetHidden { get; set; } = false;
         public static bool IsStockToolbarHidden { get; set; } = false;
         public int ToolbarStyleMode { get; set; } = 1;
+        public bool EnableGpu2DUIAcceleration { get; set; } = true;
         public List<DockButtonRule> DockRules { get; set; } = new List<DockButtonRule>();
         public bool DockShowHiddenDrawer { get; set; } = false;
         public int DockOrientation { get; set; } = 0;
@@ -159,6 +160,7 @@ namespace ModularFlightPanel.Config
                     ToolbarStyleMode = ToolbarStyleMode,
                     MasterBypass = MasterBypass,
                     ShowPerformanceBadge = ShowPerformanceBadge,
+                    EnableGpu2DUIAcceleration = EnableGpu2DUIAcceleration,
                     AutoAdaptResolution = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.AutoAdaptResolution : true,
                     GlobalRenderScaleMultiplier = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalRenderScaleMultiplier : 1.0f,
                     DockRules = DockRules != null ? new List<DockButtonRule>(DockRules) : new List<DockButtonRule>(),
@@ -218,6 +220,7 @@ namespace ModularFlightPanel.Config
                     ToolbarStyleMode = data.ToolbarStyleMode;
                     MasterBypass = data.MasterBypass;
                     ShowPerformanceBadge = data.ShowPerformanceBadge;
+                    EnableGpu2DUIAcceleration = data.EnableGpu2DUIAcceleration;
                     if (data.DockRules != null) DockRules = data.DockRules;
                     DockShowHiddenDrawer = data.DockShowHiddenDrawer;
                     DockOrientation = data.DockOrientation;

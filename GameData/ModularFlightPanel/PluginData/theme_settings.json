@@ -1,81 +1,87 @@
 {
-    "SelectedThemeId": "modern_aero",
-    "SelectedLanguage": "zh-CN",
-    "RenderMode": 1,
-    "HideStockNavball": true,
-    "HideStockAltimeter": false,
-    "HideStockBottomLeft": false,
-    "HideStockTimeWarp": false,
-    "HideStockCommNet": false,
-    "HideStockToolbar": false,
-    "ToolbarStyleMode": 2,
-    "MasterBypass": false,
-    "ShowPerformanceBadge": false,
-    "AutoAdaptResolution": true,
-    "GlobalRenderScaleMultiplier": 1.0,
-    "DockRules": [
-        {
-            "Key": "MOCK_RES",
-            "DefaultName": "RES",
-            "CustomLabel": "资源",
-            "IsVisible": true,
-            "IsFavorite": false
-        },
-        {
-            "Key": "MOCK_COMM",
-            "DefaultName": "COMM",
-            "CustomLabel": "",
-            "IsVisible": false,
-            "IsFavorite": false
-        },
-        {
-            "Key": "MOCK_TIME",
-            "DefaultName": "TIME",
-            "CustomLabel": "时钟",
-            "IsVisible": true,
-            "IsFavorite": false
-        },
-        {
-            "Key": "MOCK_MJ",
-            "DefaultName": "MJ",
-            "CustomLabel": "智驾",
-            "IsVisible": true,
-            "IsFavorite": false
-        },
-        {
-            "Key": "MOCK_FAR",
-            "DefaultName": "FAR",
-            "CustomLabel": "",
-            "IsVisible": false,
-            "IsFavorite": false
-        },
-        {
-            "Key": "MOCK_RA",
-            "DefaultName": "RA",
-            "CustomLabel": "",
-            "IsVisible": false,
-            "IsFavorite": false
-        },
-        {
-            "Key": "MOCK_ALARM",
-            "DefaultName": "ALARM",
-            "CustomLabel": "警报",
-            "IsVisible": true,
-            "IsFavorite": false
-        },
-        {
-            "Key": "MOCK_MFP",
-            "DefaultName": "MFP",
-            "CustomLabel": "面板",
-            "IsVisible": true,
-            "IsFavorite": false
-        }
-    ],
-    "DockShowHiddenDrawer": true,
-    "DockOrientation": 0,
-    "DockEnableFavoritePanel": true,
-    "DockFavoriteOrientation": 1,
-    "DockKeepFavoritesInMain": false,
-    "DockFavoritePosX": 0.0,
-    "DockFavoritePosY": -380.0
+  "SelectedThemeId": "modern_aero",
+  "SelectedLanguage": "zh-CN",
+  "RenderMode": 1,
+  "HideStockNavball": true,
+  "HideStockAltimeter": false,
+  "HideStockBottomLeft": false,
+  "HideStockTimeWarp": false,
+  "HideStockCommNet": false,
+  "HideStockToolbar": false,
+  "ToolbarStyleMode": 2,
+  "MasterBypass": false,
+  "ShowPerformanceBadge": false,
+  "EnableGpu2DUIAcceleration": true,
+  "AutoAdaptResolution": true,
+  "GlobalRenderScaleMultiplier": 1.0,
+  "DockRules": [
+    {
+      "Key": "MOCK_RES",
+      "DefaultName": "RES",
+      "CustomLabel": "资源",
+      "IsVisible": true,
+      "IsFavorite": false
+    },
+    {
+      "Key": "MOCK_COMM",
+      "DefaultName": "COMM",
+      "CustomLabel": "",
+      "IsVisible": false,
+      "IsFavorite": false
+    },
+    {
+      "Key": "MOCK_TIME",
+      "DefaultName": "TIME",
+      "CustomLabel": "时钟",
+      "IsVisible": true,
+      "IsFavorite": false
+    },
+    {
+      "Key": "MOCK_MJ",
+      "DefaultName": "MJ",
+      "CustomLabel": "智驾",
+      "IsVisible": true,
+      "IsFavorite": false
+    },
+    {
+      "Key": "MOCK_FAR",
+      "DefaultName": "FAR",
+      "CustomLabel": "",
+      "IsVisible": false,
+      "IsFavorite": false
+    },
+    {
+      "Key": "MOCK_RA",
+      "DefaultName": "RA",
+      "CustomLabel": "",
+      "IsVisible": false,
+      "IsFavorite": false
+    },
+    {
+      "Key": "MOCK_ALARM",
+      "DefaultName": "ALARM",
+      "CustomLabel": "警报",
+      "IsVisible": true,
+      "IsFavorite": false
+    },
+    {
+      "Key": "MOCK_MFP",
+      "DefaultName": "MFP",
+      "CustomLabel": "面板",
+      "IsVisible": true,
+      "IsFavorite": false
+    }
+  ],
+  "DockShowHiddenDrawer": true,
+  "DockOrientation": 0,
+  "DockEnableFavoritePanel": true,
+  "DockFavoriteOrientation": 1,
+  "DockKeepFavoritesInMain": false,
+  "DockFavoritePosX": 0.0,
+  "DockFavoritePosY": -380.0,
+  "SettingsWindowX": -1.0,
+  "SettingsWindowY": -1.0,
+  "SettingsWindowWidth": 1040.0,
+  "SettingsWindowHeight": 740.0,
+  "SettingsWindowMaximized": false
 }
