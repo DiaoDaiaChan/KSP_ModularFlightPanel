@@ -164,7 +164,7 @@ namespace ModularFlightPanel.UI.Framework
                 new Vector2(0f, -actualSize.y * 0.5f), style.GetLineColor(LineWeight.Faint, theme));
             Image divImg = divGo.GetComponent<Image>();
 
-            var ctrl = new WidgetHeaderControl(parent, id, "标题栏", headerGo, titleTxt, subTxt, badgeTxt, divImg, title, subtitle, badge);
+            var ctrl = new WidgetHeaderControl(parent, id, I18n.Tr("CTL_HEADER_BAR", "标题栏"), headerGo, titleTxt, subTxt, badgeTxt, divImg, title, subtitle, badge);
             Register(parent, ctrl);
             return ctrl;
         }

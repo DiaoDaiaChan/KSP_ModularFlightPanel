@@ -137,7 +137,7 @@ namespace ModularFlightPanel.UI
                 CardOutline.effectDistance = new Vector2(1f * CurrentDpiScale, 1f * CurrentDpiScale);
                 WidgetStyleManager.Instance.ApplyCardFrame(CardBackground, CardOutline, CardRole, theme);
 
-                this.Controls.Wrap("card_frame", "卡片底板", gameObject, t =>
+                this.Controls.Wrap("card_frame", I18n.Tr("CTL_CARD_FRAME", "卡片底板"), gameObject, t =>
                 {
                     WidgetStyleManager.Instance.ApplyCardFrame(CardBackground, CardOutline, CardRole, t);
                 });

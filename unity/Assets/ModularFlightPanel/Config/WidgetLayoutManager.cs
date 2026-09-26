@@ -408,14 +408,14 @@ namespace ModularFlightPanel.Config
         {
             GetLayoutFileInfo(out bool exists, out long size, out string lastWrite);
             if (!exists) return I18n.Tr("CFG_LAYOUT_NOT_EXISTS_MEM", "不存在 (使用内存默认)");
-            return I18n.TrFormat("CFG_FILE_SIZE_MODIFIED_FMT", "大小: {0:F1} KB | 修改: {1}", size / 1024f, lastWrite);
+            return I18n.TrFormat("CFG_FILE_SIZE_MODIFIED_FMT", size / 1024f, lastWrite);
         }
 
         public string GetBackupFileInfo()
         {
             GetBackupFileInfo(out bool exists, out long size, out string lastWrite);
             if (!exists) return I18n.Tr("CFG_LAYOUT_NO_BACKUP_COPY", "无备份副本");
-            return I18n.TrFormat("CFG_FILE_SIZE_MODIFIED_FMT", "大小: {0:F1} KB | 修改: {1}", size / 1024f, lastWrite);
+            return I18n.TrFormat("CFG_FILE_SIZE_MODIFIED_FMT", size / 1024f, lastWrite);
         }
 
         public void ResetToDefault()

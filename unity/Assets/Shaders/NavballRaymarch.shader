@@ -319,7 +319,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     // 地面微细等高线/板块微纹理
                     float groundRings = abs(frac(p.y * 12.0) - 0.5);
-                    float ringAA = max(fwidth(p.y) * 6.0, 0.04);
+                    float ringAA = clamp(fwidth(p.y) * 1.5, 0.001, 0.10);
                     float groundGrid = (1.0 - smoothstep(0.04, 0.04 + ringAA, groundRings)) * 0.10 * smoothstep(0.1, 0.5, _DetailScale);
                     col.rgb = lerp(col.rgb, _GroundHorizonColor.rgb, groundGrid);
 
@@ -328,7 +328,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     {
                         float rollSpeed = _Time.y * (6.0 + _GroundHazardAlert * 8.0);
                         float stripe = sin((p.x * 16.0 + p.y * 24.0 + p.z * 16.0) + rollSpeed);
-                        float stripeAA = max(fwidth(stripe) * 1.5, 0.06);
+                        float stripeAA = clamp(fwidth(stripe) * 0.75, 0.001, 0.15);
                         float isStripe = smoothstep(-stripeAA, stripeAA, stripe - 0.10) * _GroundHazardAlert;
                         fixed3 hazardCol = fixed3(1.0, 0.78, 0.08); // 琥珀黄警戒色
                         col.rgb = lerp(col.rgb, hazardCol, isStripe * 0.65);
@@ -345,7 +345,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     float cardMod90 = abs(fmod(headDeg + 45.0, 90.0) - 45.0);
                     if (cardMod90 < 4.2 && absPitch < 1.4)
                     {
-                        float wingAA = max(fwidth(absPitch) * 1.4, 0.04);
+                        float wingAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.15);
                         float wingMask = (1.0 - smoothstep(0.24 - wingAA, 0.24 + wingAA, absPitch)) *
                                          smoothstep(1.5, 3.8, cardMod90);
                         frameDetail += wingMask * 0.65;
@@ -457,7 +457,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 col.rgb = lerp(float3(baseLuma, baseLuma, baseLuma), col.rgb, 0.84);
 
                 // 2. 复合光学地平线系统 (Multi-Layer Optical Horizon)
-                float eqAA = max(fwidth(p.y) * 1.5, 0.002);
+                float eqAA = clamp(fwidth(p.y) * 0.75, 0.0003, 0.012);
                 float isCoreEquator = 1.0 - smoothstep(_EquatorWidth * 0.80 - eqAA, _EquatorWidth * 0.80 + eqAA, absY);
                 float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.2 - eqAA, _EquatorWidth * 2.2 + eqAA, absY)) * 0.35;
                 float combinedEquator = max(isCoreEquator, isHaloEquator);
@@ -523,8 +523,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float majorLadder15 = 0.0;
                 if (absHOffset <= 12.0 && pitchLabelLevel >= 12.0 && pitchLabelLevel <= 78.0 && absLabelOffset < 2.5)
                 {
-                    float barPitchAA = max(fwidth(absLabelOffset) * 1.4, 0.04);
-                    float barHAA = max(fwidth(absHOffset) * 1.4, 0.08);
+                    float barPitchAA = clamp(fwidth(absLabelOffset) * 0.75, 0.001, 0.15);
+                    float barHAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
                     float isMajorBar15 = (1.0 - smoothstep(0.30 - barPitchAA, 0.30 + barPitchAA, absLabelOffset)) *
                                          smoothstep(4.8 - barHAA, 4.8 + barHAA, absHOffset) *
                                          (1.0 - smoothstep(10.0 - barHAA, 10.0 + barHAA, absHOffset));
@@ -549,7 +549,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (pitchDeg < 0.0)
                     {
                         float dashVal = fmod(absHOffset - 4.8, 2.2);
-                        float dashAA = max(fwidth(dashVal) * 1.5, 0.08);
+                        float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.15);
                         float dashMask = 1.0 - smoothstep(1.15 - dashAA, 1.15 + dashAA, dashVal);
                         majorLadder15 *= dashMask;
                     }
@@ -564,13 +564,13 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     bool isPure10 = (fmod(pLevel10, 30.0) > 4.0) && (fmod(pLevel10, 15.0) > 4.0);
                     if (isPure10 && pMod10 < 0.6)
                     {
-                        float tick10AA = max(fwidth(pMod10) * 1.3, 0.04);
-                        float tick10HAA = max(fwidth(absHOffset) * 1.3, 0.08);
+                        float tick10AA = clamp(fwidth(pMod10) * 0.75, 0.001, 0.15);
+                        float tick10HAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
                         isTick10 = (1.0 - smoothstep(0.26 - tick10AA, 0.26 + tick10AA, pMod10)) * (1.0 - smoothstep(5.5 - tick10HAA, 5.5 + tick10HAA, absHOffset)) * 0.72 * smoothstep(0.0, 0.32, _DetailScale);
                         if (pitchDeg < 0.0)
                         {
                             float dash10 = fmod(absHOffset, 2.0);
-                            float dash10AA = max(fwidth(dash10) * 1.4, 0.08);
+                            float dash10AA = clamp(fwidth(dash10) * 0.75, 0.001, 0.15);
                             isTick10 *= (1.0 - smoothstep(1.10 - dash10AA, 1.10 + dash10AA, dash10));
                         }
                     }
@@ -585,13 +585,13 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     bool isPure5 = (fmod(pLevel5, 10.0) > 2.0);
                     if (isPure5 && pMod5 < 0.5)
                     {
-                        float tick5AA = max(fwidth(pMod5) * 1.3, 0.04);
-                        float tick5HAA = max(fwidth(absHOffset) * 1.3, 0.08);
+                        float tick5AA = clamp(fwidth(pMod5) * 0.75, 0.001, 0.15);
+                        float tick5HAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
                         isTick5 = (1.0 - smoothstep(0.20 - tick5AA, 0.20 + tick5AA, pMod5)) * (1.0 - smoothstep(3.2 - tick5HAA, 3.2 + tick5HAA, absHOffset)) * 0.50 * smoothstep(0.22, 0.62, _DetailScale);
                         if (pitchDeg < 0.0)
                         {
                             float dash5 = fmod(absHOffset, 1.6);
-                            float dash5AA = max(fwidth(dash5) * 1.4, 0.08);
+                            float dash5AA = clamp(fwidth(dash5) * 0.75, 0.001, 0.15);
                             isTick5 *= (1.0 - smoothstep(0.85 - dash5AA, 0.85 + dash5AA, dash5));
                         }
                     }
@@ -607,8 +607,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     bool isPure25 = (fmod(pLevel25, 5.0) > 1.0);
                     if (isPure25 && pMod25 < 0.4)
                     {
-                        float tick25AA = max(fwidth(pMod25) * 1.2, 0.035);
-                        float tick25HAA = max(fwidth(absHOffset) * 1.2, 0.06);
+                        float tick25AA = clamp(fwidth(pMod25) * 0.75, 0.001, 0.15);
+                        float tick25HAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
                         float isTick25 = (1.0 - smoothstep(0.18 - tick25AA, 0.18 + tick25AA, pMod25)) * (1.0 - smoothstep(2.0 - tick25HAA, 2.0 + tick25HAA, absHOffset)) * 0.65;
                         combinedLadder = max(combinedLadder, isTick25 * _VernierScaleDetail * smoothstep(0.35, 0.75, _DetailScale));
                     }
@@ -620,9 +620,9 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float headMod90 = abs(fmod(headDeg + 405.0, 90.0) - 45.0);
                 if (absHOffset <= 1.0 || headMod90 <= 1.0)
                 {
-                    float m30AA = max(fwidth(absHOffset) * 1.3, 0.05);
+                    float m30AA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
                     float isMeridian30 = (1.0 - smoothstep(0.24 - m30AA, 0.24 + m30AA, absHOffset)) * 0.38;
-                    float m90AA = max(fwidth(headMod90) * 1.3, 0.05);
+                    float m90AA = clamp(fwidth(headMod90) * 0.75, 0.001, 0.15);
                     float isMeridian90 = (1.0 - smoothstep(0.34 - m90AA, 0.34 + m90AA, headMod90)) * 0.65;
                     float isMeridian = max(isMeridian30, isMeridian90) * polarLadderFade;
 
@@ -635,19 +635,19 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 5. 赤道航向刻度线 (Equator Minor Ticks)
                 if (absPitch < 1.8)
                 {
-                    float m30AA = max(fwidth(absHOffset) * 1.3, 0.05);
-                    float eqPitchAA = max(fwidth(absPitch) * 1.3, 0.05);
+                    float m30AA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
+                    float eqPitchAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.15);
                     float eqPitchMask30 = 1.0 - smoothstep(1.7 - eqPitchAA, 1.7 + eqPitchAA, absPitch);
                     float eqPitchMask10 = 1.0 - smoothstep(1.0 - eqPitchAA, 1.0 + eqPitchAA, absPitch);
                     float eqTick30 = (1.0 - smoothstep(0.32 - m30AA, 0.32 + m30AA, absHOffset)) * 0.90 * eqPitchMask30;
                     float eq10Mod = abs(pitchHeadingOffset - round(pitchHeadingOffset / 10.0) * 10.0);
-                    float eq10AA = max(fwidth(eq10Mod) * 1.3, 0.05);
+                    float eq10AA = clamp(fwidth(eq10Mod) * 0.75, 0.001, 0.15);
                     float eqTick10 = (1.0 - smoothstep(0.24 - eq10AA, 0.24 + eq10AA, eq10Mod)) * 0.60 * eqPitchMask10;
                     col = lerp(col, _EquatorColor, saturate(max(eqTick30, eqTick10)));
                 }
 
                 // 6. 高精度七段数码管排版渲染 (俯仰数字 + 赤道航向数字)
-                float glyphAA = clamp(max(fwidth(pitchHeadingOffset), fwidth(pitchLabelOffset)), 0.08, 0.32);
+                float glyphAA = clamp(max(fwidth(pitchHeadingOffset * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.001, 0.18);
                 float pitchTextOutline = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance - 0.45)) * pitchGlyphEnabled;
                 float pitchTextFill = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance)) * pitchGlyphEnabled;
 
@@ -686,7 +686,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                                 min(DigitDistance(rotHeadOffset, headingTens),
                                     DigitDistance(rotHeadOffset - float2(3.8, 0.0), headingOnes)));
                         }
-                        headingGlyphAA = clamp(max(fwidth(headingOffset), fwidth(pitchDeg)), 0.08, 0.32);
+                        headingGlyphAA = clamp(max(fwidth(headingOffset * tangentAspect), fwidth(pitchDeg)) * 0.75, 0.001, 0.18);
                     }
                 }
 
@@ -704,7 +704,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 if (absY > 0.955)
                 {
                     float poleR = sqrt(p.x * p.x + p.z * p.z);
-                    float poleAA = max(fwidth(poleR) * 1.4, 0.0025);
+                    float poleAA = clamp(fwidth(poleR) * 0.75, 0.0004, 0.015);
 
                     // 主十字与对角十字标
                     float armX = (abs(p.x) < 0.0028 && abs(p.z) < 0.082) ? 1.0 : 0.0;
@@ -747,7 +747,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float r = sqrt(r2);
 
                 // 2. 硬件导数亚像素完美抗锯齿边缘 (Subpixel Silhouette AA)
-                float edgeAA = max(fwidth(r) * 1.5, 0.004);
+                float edgeAA = clamp(fwidth(r) * 0.75, 0.0004, 0.015);
                 float circleAlpha = saturate((1.0 - r) / edgeAA);
                 if (circleAlpha <= 0.0) discard;
 
@@ -822,10 +822,10 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (_TrendStrength > 0.01)
                     {
                         float3 futureP = normalize(RotateByQuaternion(p, float4(-_TrendRotation.x, -_TrendRotation.y, -_TrendRotation.z, _TrendRotation.w)));
-                        float trendAA = max(fwidth(futureP.y) * 2.2, 0.008);
+                        float trendAA = clamp(fwidth(futureP.y) * 0.75, 0.0005, 0.015);
                         float futureHorizon = 1.0 - smoothstep(0.0032, 0.0032 + trendAA, abs(futureP.y));
                         float dashVal = frac(headDeg / 20.0);
-                        float dashAA = max(fwidth(dashVal) * 1.5, 0.04);
+                        float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.08);
                         float trendDash = smoothstep(0.24 - dashAA, 0.24 + dashAA, dashVal);
 
                         // 前瞻导轨两端指向切向指示端 (Lead Horizon Wingtips)

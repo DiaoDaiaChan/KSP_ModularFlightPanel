@@ -402,6 +402,13 @@ namespace ModularFlightPanel.UI.Widgets
             UpdateProceduralDetailScale();
         }
 
+        protected override void OnScaleChanged(float targetScale, float relativeRatio)
+        {
+            base.OnScaleChanged(targetScale, relativeRatio);
+            _lastDetailScale = -1f;
+            UpdateProceduralDetailScale();
+        }
+
         protected override void LateUpdate()
         {
             base.LateUpdate();
@@ -411,6 +418,7 @@ namespace ModularFlightPanel.UI.Widgets
             SyncAttitudeAndVisuals();
             SyncMarkers();
             UpdateReticleDynamics();
+            UpdateProceduralDetailScale();
         }
 
         private void UpdateProceduralDetailScale()
@@ -425,6 +433,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             _lastScreenWidth = sw;
             _lastScreenHeight = sh;
+            transform.hasChanged = false;
 
             Canvas canvas = _displayImage.canvas;
             Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
@@ -435,7 +444,7 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 bottomRight = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[3]);
             float displayPixels = Mathf.Max(Vector2.Distance(bottomLeft, topLeft), Vector2.Distance(bottomLeft, bottomRight));
             float detailScale = Mathf.InverseLerp(88f, 240f, displayPixels);
-            if (Mathf.Abs(detailScale - _lastDetailScale) > 0.015f)
+            if (Mathf.Abs(detailScale - _lastDetailScale) > 0.01f)
             {
                 _lastDetailScale = detailScale;
                 _sphereMaterial.SetFloat(_PropDetailScale, detailScale);

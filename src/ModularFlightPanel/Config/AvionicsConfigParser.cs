@@ -519,7 +519,7 @@ namespace ModularFlightPanel.Config
             error = string.Empty;
             if (string.IsNullOrWhiteSpace(json))
             {
-                error = "输入 JSON 内容为空";
+                error = "Input JSON is empty";
                 return null;
             }
 
@@ -528,13 +528,13 @@ namespace ModularFlightPanel.Config
                 var root = JsonNode.Parse(json)?.AsObject();
                 if (root == null)
                 {
-                    error = "JSON 根节点必须是一个对象 ({ ... })";
+                    error = "JSON root node must be an object ({ ... })";
                     return null;
                 }
 
                 if (!root.ContainsKey("Widgets"))
                 {
-                    error = "JSON 缺少 'Widgets' 小组件列表节点";
+                    error = "JSON missing 'Widgets' array";
                     return null;
                 }
 
@@ -595,7 +595,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                error = $"解析布局 JSON 异常: {ex.Message}";
+                error = $"Layout JSON parse exception: {ex.Message}";
                 return null;
             }
         }
@@ -672,7 +672,7 @@ namespace ModularFlightPanel.Config
             error = string.Empty;
             if (string.IsNullOrWhiteSpace(json))
             {
-                error = "输入主题设置 JSON 为空";
+                error = "Input theme settings JSON is empty";
                 return null;
             }
 
@@ -681,7 +681,7 @@ namespace ModularFlightPanel.Config
                 var root = JsonNode.Parse(json)?.AsObject();
                 if (root == null)
                 {
-                    error = "JSON 根节点必须是一个对象 ({ ... })";
+                    error = "JSON root node must be an object ({ ... })";
                     return null;
                 }
 
@@ -741,7 +741,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                error = $"解析主题偏好 JSON 异常: {ex.Message}";
+                error = $"Theme preferences JSON parse exception: {ex.Message}";
                 return null;
             }
         }

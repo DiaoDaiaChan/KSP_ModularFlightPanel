@@ -138,7 +138,7 @@ namespace ModularFlightPanel.UI
             ApplyState(step.BeforeStates);
             _redoStack.Add(step);
 
-            MFPToastBridge.Show(I18n.TrFormat("HIST_TOAST_UNDO_FMT", "↶ 撤销: {0}", step.Description));
+            MFPToastBridge.Show(I18n.TrFormat("HIST_TOAST_UNDO_FMT", step.Description));
             OnHistoryChanged?.Invoke();
             return true;
         }
@@ -157,7 +157,7 @@ namespace ModularFlightPanel.UI
             ApplyState(step.AfterStates);
             _undoStack.Add(step);
 
-            MFPToastBridge.Show(I18n.TrFormat("HIST_TOAST_REDO_FMT", "↷ 重做: {0}", step.Description));
+            MFPToastBridge.Show(I18n.TrFormat("HIST_TOAST_REDO_FMT", step.Description));
             OnHistoryChanged?.Invoke();
             return true;
         }

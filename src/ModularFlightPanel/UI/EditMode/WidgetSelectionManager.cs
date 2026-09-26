@@ -362,7 +362,7 @@ namespace ModularFlightPanel.UI
         {
             var list = SelectedWidgets.ToList();
             if (list.Count == 0) return;
-            WidgetEditHistory.RecordInstantAction(I18n.TrFormat("HIST_HIDE_WIDGETS_FMT", "隐藏 {0} 个组件", list.Count), () =>
+            WidgetEditHistory.RecordInstantAction(I18n.TrFormat("HIST_HIDE_WIDGETS_FMT", list.Count), () =>
             {
                 foreach (var w in list)
                 {

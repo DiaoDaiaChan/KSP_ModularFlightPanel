@@ -337,7 +337,7 @@ namespace ModularFlightPanel.UI
             {
                 Category = cat,
                 DisplayName = widgetType.Name,
-                Description = $"动态发现组件: {widgetType.FullName}",
+                Description = I18n.TrFormat("WIDGET_DISCOVERED_DESC", widgetType.FullName),
                 DefaultWidgetId = typeName,
                 DefaultX = 0f,
                 DefaultY = 0f

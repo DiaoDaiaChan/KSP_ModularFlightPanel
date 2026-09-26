@@ -338,8 +338,8 @@ namespace ModularFlightPanel.UI
             widget.DragHandler?.UpdateSelectionAppearance();
 
             string toastText = locked
-                ? I18n.TrFormat("TOAST_LAYER_LOCKED_FMT", "🔒 已锁定图层: {0}", widget.DisplayName)
-                : I18n.TrFormat("TOAST_LAYER_UNLOCKED_FMT", "🔓 已解锁图层: {0}", widget.DisplayName);
+                ? I18n.TrFormat("TOAST_LAYER_LOCKED_FMT", widget.DisplayName)
+                : I18n.TrFormat("TOAST_LAYER_UNLOCKED_FMT", widget.DisplayName);
             MFPToastBridge.Show(toastText);
 
             WidgetLayoutManager.Instance?.SaveLayout();

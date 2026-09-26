@@ -131,7 +131,7 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.BeginCard();
 
             // 1. 标题与搜索框
-            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_HEADER_NAV", "组件导航 (WIDGETS)"), I18n.TrFormat("ASM_TOTAL_COUNT", "共 {0} 项", widgets.Count));
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_HEADER_NAV", "组件导航 (WIDGETS)"), I18n.TrFormat("ASM_TOTAL_COUNT", widgets.Count));
             MFPGuiSkin.DrawSearchBar(ref _widgetSearchQuery, I18n.Tr("ASM_SEARCH_WIDGET", "筛选组件名称/ID..."));
 
             GUILayout.Space(4f);
@@ -353,7 +353,7 @@ namespace ModularFlightPanel.UI.Settings
 
             // 缩放比例
             GUILayout.BeginHorizontal();
-            GUILayout.Label(I18n.TrFormat("ASM_SCALE_LABEL", "缩放比例: <b>{0:F2}x</b>", w.Scale), GUILayout.Width(95f));
+            GUILayout.Label(I18n.TrFormat("ASM_SCALE_LABEL", w.Scale), GUILayout.Width(95f));
             float sVal = GUILayout.HorizontalSlider(w.Scale, 0.3f, 3.0f, GUILayout.Width(140f));
             if (Math.Abs(sVal - w.Scale) > 0.01f) { w.Scale = Mathf.Round(sVal * 20f) / 20f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("0.8x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(40f))) { w.Scale = 0.8f; ApplyTransformRuntime(w); }
@@ -364,7 +364,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(12f);
 
             // 旋转角
-            GUILayout.Label(I18n.TrFormat("ASM_ROTATION_LABEL", "旋转角: <b>{0:F0}°</b>", w.Rotation), GUILayout.Width(80f));
+            GUILayout.Label(I18n.TrFormat("ASM_ROTATION_LABEL", w.Rotation), GUILayout.Width(80f));
             float rVal = GUILayout.HorizontalSlider(w.Rotation, 0f, 360f, GUILayout.Width(120f));
             if (Math.Abs(rVal - w.Rotation) > 0.5f) { w.Rotation = Mathf.Round(rVal / 5f) * 5f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("0°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(30f))) { w.Rotation = 0f; ApplyTransformRuntime(w); }
@@ -377,7 +377,7 @@ namespace ModularFlightPanel.UI.Settings
             // 非对称纵横比拉伸 (细长 / 矮胖调节)
             GUILayout.BeginHorizontal();
             float effX = w.EffectiveScaleX;
-            GUILayout.Label(I18n.TrFormat("ASM_SCALE_X_LABEL", "宽度 X: <b>{0:F2}x</b>", effX), GUILayout.Width(95f));
+            GUILayout.Label(I18n.TrFormat("ASM_SCALE_X_LABEL", effX), GUILayout.Width(95f));
             float sxVal = GUILayout.HorizontalSlider(effX, 0.3f, 3.0f, GUILayout.Width(140f));
             if (Math.Abs(sxVal - effX) > 0.01f) { w.ScaleX = Mathf.Round(sxVal * 20f) / 20f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("0.7x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleX = 0.7f; ApplyTransformRuntime(w); }
@@ -387,7 +387,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(12f);
 
             float effY = w.EffectiveScaleY;
-            GUILayout.Label(I18n.TrFormat("ASM_SCALE_Y_LABEL", "高度 Y: <b>{0:F2}x</b>", effY), GUILayout.Width(80f));
+            GUILayout.Label(I18n.TrFormat("ASM_SCALE_Y_LABEL", effY), GUILayout.Width(80f));
             float syVal = GUILayout.HorizontalSlider(effY, 0.3f, 3.0f, GUILayout.Width(120f));
             if (Math.Abs(syVal - effY) > 0.01f) { w.ScaleY = Mathf.Round(syVal * 20f) / 20f; ApplyTransformRuntime(w); }
             if (GUILayout.Button("0.7x", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(36f))) { w.ScaleY = 0.7f; ApplyTransformRuntime(w); }
@@ -401,7 +401,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.BeginHorizontal();
             int curLayer = w.DrawOrder + 1;
             int totalLayers = WidgetLayerManager.TotalLayers;
-            GUILayout.Label(I18n.TrFormat("ASM_LAYER_LABEL", "渲染图层: <b>#{0}/{1}</b>", curLayer, totalLayers), GUILayout.Width(130f));
+            GUILayout.Label(I18n.TrFormat("ASM_LAYER_LABEL", curLayer, totalLayers), GUILayout.Width(130f));
             if (GUILayout.Button(I18n.Tr("LAYER_BTN_BOTTOM", "⤓ 置底"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f))) { WidgetLayerManager.SendToBack(w); }
             if (GUILayout.Button(I18n.Tr("LAYER_BTN_DOWN", "▼ 降层"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f))) { WidgetLayerManager.SendBackward(w); }
             if (GUILayout.Button(I18n.Tr("LAYER_BTN_UP", "▲ 升层"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f))) { WidgetLayerManager.BringForward(w); }
@@ -560,7 +560,7 @@ namespace ModularFlightPanel.UI.Settings
                 }
                 catch (Exception ex)
                 {
-                    _cachedEvaluation = I18n.TrFormat("ASM_TPL_SYNTAX_ERR", "[语法错误]: {0}", ex.Message);
+                    _cachedEvaluation = I18n.TrFormat("ASM_TPL_SYNTAX_ERR", ex.Message);
                 }
             }
 
@@ -585,7 +585,7 @@ namespace ModularFlightPanel.UI.Settings
             UpdateCatalogFilter();
 
             MFPGuiSkin.BeginCard();
-            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CATALOG_TITLE", "📖 遥测字典速查"), I18n.TrFormat("ASM_CATALOG_MATCHED", "匹配 {0} 项", _filteredParams.Count));
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CATALOG_TITLE", "📖 遥测字典速查"), I18n.TrFormat("ASM_CATALOG_MATCHED", _filteredParams.Count));
 
             // 搜索框
             MFPGuiSkin.DrawSearchBar(ref _catalogSearchQuery, I18n.Tr("ASM_CATALOG_SEARCH", "搜索遥测参数 / 通配符..."));
@@ -634,7 +634,7 @@ namespace ModularFlightPanel.UI.Settings
             GUI.enabled = true;
 
             GUILayout.FlexibleSpace();
-            GUILayout.Label(I18n.TrFormat("ASM_PAGE_INDICATOR", "第 {0} / {1} 页", _catalogPage + 1, totalPages));
+            GUILayout.Label(I18n.TrFormat("ASM_PAGE_INDICATOR", _catalogPage + 1, totalPages));
             GUILayout.FlexibleSpace();
 
             GUI.enabled = _catalogPage < totalPages - 1;
@@ -706,7 +706,7 @@ namespace ModularFlightPanel.UI.Settings
 
                     CommitPendingSaves();
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast(I18n.TrFormat("ASM_TOAST_BOUND", "已绑定「{0}」至仪表！", p.DisplayName));
+                    ShowToast(I18n.TrFormat("ASM_TOAST_BOUND", p.DisplayName));
                 }
             }
             else if (curWidget.WidgetId.StartsWith("custom.") || curWidget.WidgetType == "custom")
@@ -717,7 +717,7 @@ namespace ModularFlightPanel.UI.Settings
                     curWidget.CustomTemplate = (curWidget.CustomTemplate ?? "") + prefix + $"{p.DisplayName}: {p.Token}";
                     CommitPendingSaves();
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast(I18n.TrFormat("ASM_TOAST_INSERTED", "已插入「{0}」到模板！", p.DisplayName));
+                    ShowToast(I18n.TrFormat("ASM_TOAST_INSERTED", p.DisplayName));
                 }
             }
             else
@@ -725,7 +725,7 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button(I18n.Tr("ASM_BTN_COPY", "📋 复制"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(60f), GUILayout.Height(22f)))
                 {
                     GUIUtility.systemCopyBuffer = p.Token;
-                    ShowToast(I18n.TrFormat("ASM_TOAST_COPIED", "已复制 {0}", p.Token));
+                    ShowToast(I18n.TrFormat("ASM_TOAST_COPIED", p.Token));
                 }
             }
 

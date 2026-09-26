@@ -158,8 +158,8 @@ namespace ModularFlightPanel.HeadlessValidator
                 return true;
             }
 
-            // 跳过 15 大外部模组探针与遥测静态参数字典 (736+ 参数已在 PROBE_TELEMETRY_API_CATALOG 统管)
-            if (norm.Contains("/Core/Probes/") || norm.EndsWith("TelemetryCatalog.cs", StringComparison.OrdinalIgnoreCase))
+            // 跳过 15 大外部模组探针与遥测静态参数字典 (736+ 参数已在 PROBE_TELEMETRY_API_CATALOG 统管) 以及底层程序化纹理烘焙器
+            if (norm.Contains("/Core/Probes/") || norm.EndsWith("TelemetryCatalog.cs", StringComparison.OrdinalIgnoreCase) || norm.Contains("/Core/Rendering/"))
             {
                 return true;
             }

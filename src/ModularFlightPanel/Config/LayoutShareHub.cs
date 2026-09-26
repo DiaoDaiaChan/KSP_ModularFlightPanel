@@ -98,12 +98,12 @@ namespace ModularFlightPanel.Config
                         {
                             return true;
                         }
-                        error = I18n.TrFormat("ERR_FILE_NO_WIDGETS", "文件「{0}」存在但未包含有效组件配置 ({1})", Path.GetFileName(targetPath), error);
+                        error = I18n.TrFormat("ERR_FILE_NO_WIDGETS", Path.GetFileName(targetPath));
                         return false;
                     }
                     catch (Exception ex)
                     {
-                        error = I18n.TrFormat("ERR_READ_CONFIG_FAIL", "读取配置文件失败: {0}", ex.Message);
+                        error = I18n.TrFormat("ERR_READ_CONFIG_FAIL", ex.Message);
                         return false;
                     }
                 }
@@ -124,7 +124,7 @@ namespace ModularFlightPanel.Config
                 }
                 catch (Exception ex)
                 {
-                    error = I18n.TrFormat("ERR_JSON_PARSE_FAIL", "JSON 解析失败: {0}", ex.Message);
+                    error = I18n.TrFormat("ERR_JSON_PARSE_FAIL", ex.Message);
                     return false;
                 }
             }
@@ -160,7 +160,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                error = I18n.TrFormat("ERR_DECODE_FAIL", "解码失败: {0}", ex.Message);
+                error = I18n.TrFormat("ERR_DECODE_FAIL", ex.Message);
                 return false;
             }
         }
@@ -239,7 +239,7 @@ namespace ModularFlightPanel.Config
                         {
                             Id = presetName,
                             Name = presetName,
-                            Description = I18n.TrFormat("PRESET_DESC_LOCAL", "用户本地预设 ({0})", fileName),
+                            Description = I18n.TrFormat("PRESET_DESC_LOCAL", fileName),
                             IsBuiltIn = false,
                             FilePath = file
                         });
@@ -470,7 +470,7 @@ namespace ModularFlightPanel.Config
             }
             catch (Exception ex)
             {
-                error = I18n.TrFormat("ERR_THEME_DECODE_FAIL", "解码失败: {0}", ex.Message);
+                error = I18n.TrFormat("ERR_THEME_DECODE_FAIL", ex.Message);
                 return false;
             }
         }

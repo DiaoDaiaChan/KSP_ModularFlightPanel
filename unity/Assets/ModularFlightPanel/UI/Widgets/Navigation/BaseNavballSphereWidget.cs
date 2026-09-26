@@ -49,8 +49,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _renderTexture = new RenderTexture(rtResolution, rtResolution, 0, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 1,
-                anisoLevel = 4,
+                antiAliasing = 4,
+                anisoLevel = 8,
                 useMipMap = false,
                 autoGenerateMips = false,
                 filterMode = FilterMode.Bilinear
@@ -74,7 +74,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _ballCamera.enabled = false;
             _ballCamera.useOcclusionCulling = false;
             _ballCamera.allowHDR = false;
-            _ballCamera.allowMSAA = false;
+            _ballCamera.allowMSAA = true;
             _ballCamera.depthTextureMode = DepthTextureMode.None;
             _ballCamera.eventMask = 0;
             _ballCamera.renderingPath = RenderingPath.Forward;
@@ -157,8 +157,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _renderTexture = new RenderTexture(newRes, newRes, 0, RenderTextureFormat.ARGB32)
             {
-                antiAliasing = 1,
-                anisoLevel = 4,
+                antiAliasing = 4,
+                anisoLevel = 8,
                 useMipMap = false,
                 autoGenerateMips = false,
                 filterMode = FilterMode.Bilinear

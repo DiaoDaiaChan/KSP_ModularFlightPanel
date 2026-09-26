@@ -113,14 +113,14 @@ namespace ModularFlightPanel.UI.Settings
             {
                 ShowToast(I18n.Tr("LIB_TOAST_BAKING", "正在实机烘焙全量组件快照..."));
                 int bakedCount = WidgetLiveBaker.BakeAllWidgets();
-                ShowToast(I18n.TrFormat("LIB_TOAST_BAKED_FMT", "✔ 实机烘焙完成！已渲染并保存 {0} 个组件快照", bakedCount));
+                ShowToast(I18n.TrFormat("LIB_TOAST_BAKED_FMT", bakedCount));
             }
 
             GUILayout.FlexibleSpace();
 
             // 统计匹配组件总数
             int matchCount = CountMatchingWidgets();
-            GUILayout.Label($"<color=#7088A8><size=11>{I18n.TrFormat("LIB_MATCH_COUNT_FMT", "共匹配 {0} 个组件", matchCount)}</size></color>", GUILayout.Height(22f));
+            GUILayout.Label($"<color=#7088A8><size=11>{I18n.TrFormat("LIB_MATCH_COUNT_FMT", matchCount)}</size></color>", GUILayout.Height(22f));
 
             GUILayout.EndHorizontal();
 
@@ -367,7 +367,7 @@ namespace ModularFlightPanel.UI.Settings
                 {
                     activeCfg.IsEnabled = false;
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast(I18n.TrFormat("LIB_TOAST_HIDDEN", "已隐藏「{0}」！", title));
+                    ShowToast(I18n.TrFormat("LIB_TOAST_HIDDEN", title));
                 }
             }
             else
@@ -471,7 +471,7 @@ namespace ModularFlightPanel.UI.Settings
             }
             GUILayout.EndHorizontal();
 
-            string rangeStr = I18n.TrFormat("LIB_RANGE_FMT", " (量程: {0:F0}~{1:F0}{2})", min, max, unit);
+            string rangeStr = I18n.TrFormat("LIB_RANGE_FMT", min, max, unit);
             GUILayout.Label($"<color=#8899AA><size=11>{desc}{rangeStr}</size></color>");
             GUILayout.EndVertical();
 
@@ -581,7 +581,7 @@ namespace ModularFlightPanel.UI.Settings
             }
             GUILayout.EndHorizontal();
 
-            string tplStr = I18n.TrFormat("LIB_TEMPLATE_LABEL", "模板: {0}", template);
+            string tplStr = I18n.TrFormat("LIB_TEMPLATE_LABEL", template);
             GUILayout.Label($"<color=#00FF88><size=10>{tplStr}</size></color>");
             GUILayout.EndVertical();
 
@@ -718,7 +718,7 @@ namespace ModularFlightPanel.UI.Settings
             WidgetLayoutManager.Instance.SaveLayout();
             TabAssembler.SetSelectedWidget(widgetId);
             SettingsGUI.Instance?.SwitchTab(1);
-            ShowToast(I18n.TrFormat("LIB_TOAST_SPAWNED", "✔ 已生成并聚焦「{0}」！", title));
+            ShowToast(I18n.TrFormat("LIB_TOAST_SPAWNED", title));
         }
 
         private static void ShowToast(string msg)

@@ -299,7 +299,7 @@ namespace ModularFlightPanel.UI
                 string scaleStr = Math.Abs(sx - sy) < 0.001f ? $"{sx:F2}x" : $"{sx:F2}x,{sy:F2}y";
                 int layerNum = WidgetLayerManager.GetLayerNumber(target);
                 int totalLayers = WidgetLayerManager.TotalLayers;
-                string lockBadge = isLocked ? " <color=#FFB703>🔒 [已锁定]</color>" : "";
+                string lockBadge = isLocked ? I18n.Tr("GIZMO_LOCKED_TAG", " <color=#FFB703>🔒 [已锁定]</color>") : "";
                 _infoText.text = $"<b>{target.DisplayName}</b>{lockBadge} | <color=#38BDF8>#{layerNum}/{totalLayers}</color> | X:{center.x:F0} Y:{center.y:F0} | {scaleStr} {rot:F0}°";
 
                 if (_boxOutline != null)
@@ -320,7 +320,7 @@ namespace ModularFlightPanel.UI
             else
             {
                 _gizmoBoxRt.localEulerAngles = Vector3.zero;
-                _infoText.text = $"<b>{I18n.TrFormat("GIZMO_GROUP_COUNT_FMT", "多选群组 ({0} 项)", sel.Count)}</b> | X:{center.x:F0} Y:{center.y:F0} | W:{w_total:F0} H:{h_total:F0}";
+                _infoText.text = $"<b>{I18n.TrFormat("GIZMO_GROUP_COUNT_FMT", sel.Count)}</b> | X:{center.x:F0} Y:{center.y:F0} | W:{w_total:F0} H:{h_total:F0}";
                 if (_boxOutline != null) _boxOutline.effectColor = _cyanCol;
                 SetHandlesActive(true, true);
             }

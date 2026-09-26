@@ -6,7 +6,7 @@ namespace ModularFlightPanel.Config
     public class WidgetConfig
     {
         public string WidgetId = "unnamed_widget";
-        public string DisplayName = "未命名组件";
+        public string DisplayName = "Unnamed Widget";
         public bool IsEnabled = true;
         public float PositionX = 0f;
         public float PositionY = 0f;

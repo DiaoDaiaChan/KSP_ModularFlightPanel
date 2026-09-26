@@ -117,7 +117,7 @@ namespace ModularFlightPanel.UI
                 _editOutline.effectDistance = new Vector2(1.2f, 1.2f);
             }
 
-            _editTitleText = UIFactory.CreateText(_editOverlay.transform, "Title", I18n.TrFormat("DRAG_TITLE_FMT", "[拖拽] {0}", _ownerWidget.DisplayName), 10, TextAnchor.MiddleCenter, Color.white);
+            _editTitleText = UIFactory.CreateText(_editOverlay.transform, "Title", I18n.TrFormat("DRAG_TITLE_FMT", _ownerWidget.DisplayName), 10, TextAnchor.MiddleCenter, Color.white);
             RectTransform trt = _editTitleText.GetComponent<RectTransform>();
             trt.anchorMin = new Vector2(0.5f, 1f);
             trt.anchorMax = new Vector2(0.5f, 1f);
@@ -253,7 +253,7 @@ namespace ModularFlightPanel.UI
             // 锁定图层拦截：禁止画布直接拖拽，引导用户按 L 或在图层面板解锁
             if (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked)
             {
-                MFPToastBridge.Show(I18n.TrFormat("TOAST_LOCKED_HINT_FMT", "🔒 图层 [{0}] 已锁定 (按 L 打开图层面板可解锁)", _ownerWidget.DisplayName));
+                MFPToastBridge.Show(I18n.TrFormat("TOAST_LOCKED_HINT_FMT", _ownerWidget.DisplayName));
                 return;
             }
 
@@ -261,7 +261,7 @@ namespace ModularFlightPanel.UI
             if (eventData.clickCount == 2)
             {
                 UIWidget.OnRequestOpenWorkbench?.Invoke();
-                MFPToastBridge.Show(I18n.TrFormat("DRAG_TOAST_INSPECT_FMT", "🛠️ 正在装配台检视: {0}", _ownerWidget.DisplayName));
+                MFPToastBridge.Show(I18n.TrFormat("DRAG_TOAST_INSPECT_FMT", _ownerWidget.DisplayName));
                 return;
             }
 
@@ -380,7 +380,7 @@ namespace ModularFlightPanel.UI
 
             if (_isDragging)
             {
-                WidgetEditHistory.CommitAction(I18n.TrFormat("DRAG_HIST_MOVE_FMT", "移动 {0}", _ownerWidget.DisplayName));
+                WidgetEditHistory.CommitAction(I18n.TrFormat("DRAG_HIST_MOVE_FMT", _ownerWidget.DisplayName));
                 _isDragging = false;
             }
 

@@ -279,7 +279,7 @@ namespace ModularFlightPanel.UI.Settings
                 {
                     WidgetLayoutManager.Instance.DuplicateWidget(w.WidgetId);
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast(I18n.TrFormat("MGR_TOAST_COPIED", "已创建「{0}」副本！", w.DisplayName));
+                    ShowToast(I18n.TrFormat("MGR_TOAST_COPIED", w.DisplayName));
                 }
 
                 // 7. 删除
@@ -287,7 +287,7 @@ namespace ModularFlightPanel.UI.Settings
                 {
                     WidgetLayoutManager.Instance.RemoveWidget(w.WidgetId);
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast(I18n.TrFormat("MGR_TOAST_REMOVED", "已移除「{0}」！", w.DisplayName));
+                    ShowToast(I18n.TrFormat("MGR_TOAST_REMOVED", w.DisplayName));
                 }
             }
 
