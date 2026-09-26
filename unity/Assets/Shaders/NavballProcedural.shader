@@ -544,7 +544,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float NdotV = saturate(dot(normal, viewDir));
 
                 float pitchDeg = asin(clamp(p.y, -1.0, 1.0)) * 57.2957795;
-                float headDeg = atan2(p.x, -p.z) * 57.2957795;
+                float headDeg = atan2(-p.x, p.z) * 57.2957795;
                 if (headDeg < 0.0) headDeg += 360.0;
 
                 float absY = abs(p.y);
