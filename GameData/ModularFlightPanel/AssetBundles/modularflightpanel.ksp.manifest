@@ -1,9 +1,9 @@
 ManifestFileVersion: 0
-CRC: 2267151701
+CRC: 482691034
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: de9ab2c22801343b8bb1868af91e6af5
+    Hash: 2f42aeac2bf37ab794df39db4d0e11ed
   TypeTreeHash:
     serializedVersion: 2
     Hash: 55d48f4ad9c3b13330b9eb5ee5686477
@@ -26,4 +26,5 @@ Assets:
 - Assets/Shaders/NavballProcedural.shader
 - Assets/Shaders/NavballModern.shader
 - Assets/Shaders/CrispAvionicsText.shader
+- Assets/Shaders/NavballRaymarch.shader
 Dependencies: []

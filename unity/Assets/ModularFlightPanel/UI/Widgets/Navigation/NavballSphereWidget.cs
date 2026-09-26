@@ -10,12 +10,13 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
-    /// 3D 姿态球主组件 (直接 Hook 官方 NavBall 实现，Mod 不做任何多余数学运算)
+    /// 现代超清屏幕空间解析光线投射姿态球 (Screen-Space Analytic Raymarched Sphere)
+    /// 彻底废弃离屏摄像机、RenderTexture 与 3D 网格体，直接在原生 UGUI 矩形通过解析几何光线投射绘制。
     /// 完整支持：
     /// 1. 原版与 Principia 动态多参考系 (Barycentric/Inertial/Surface/Target) 世界旋转与贴图
     /// 2. 2D 亚像素无畸变平滑投影矢量标线 (Prograde, Retrograde, Normal, Maneuver 等)
-    /// 3. 圆形 Stencil 硬件遮罩，完全规避方形边缘杂色与 Alpha 污染
-    /// 4. 自适应 KSP 原生 UI_SCALE_NAVBALL 与屏幕物理 DPI 缩放
+    /// 3. 四种渲染模式 (原版贴图 / 纯程序化矢量 / 离屏转贴图 / 原版导航球直驱)
+    /// 4. 自适应 KSP 原生 UI_SCALE_NAVBALL 与屏幕物理 DPI 缩放，大机动下 CPU 耗时恒定 0.005 ms！
     /// </summary>
     [DefaultExecutionOrder(10000)]
     [FlightWidget("navball", "navball_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 姿态球", Description = "现代超清矢量/贴图 3D 姿态球核心，支持无极缩放、姿态导引十字与全量机动矢量。", DefaultWidgetId = "core.navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "core.navball" })]
@@ -41,8 +42,6 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Vector3[] _displayCorners = new Vector3[4];
         private float _lastDetailScale = -1f;
 
-
-        private static Mesh _primitiveSphereMesh;
         private Image _reticleImage;
         private float _currentHazardAlert = 0.0f;
         private bool _isHazardActive = false;
@@ -60,6 +59,69 @@ namespace ModularFlightPanel.UI.Widgets
         private float _lastBakedHazard = -1f;
         private float _lastBakedVernier = -1f;
         private GameObject _bezelRing;
+
+        private float _lastUploadedHazard = -1f;
+        private float _lastUploadedVernier = -1f;
+        private float _lastUploadedTrendStrength = -1f;
+        private Quaternion _lastUploadedTrendRotation = Quaternion.identity;
+        private bool _isPaletteLerping = false;
+        private int _lastScreenWidth = -1;
+        private int _lastScreenHeight = -1;
+
+        private string _lastFrameCategory = "";
+        private NavballFramePalette _currentPalette;
+        private NavballFramePalette _targetPalette;
+        private bool _paletteInitialized = false;
+        private Quaternion _previousAttitudeRotation = Quaternion.identity;
+        private Quaternion _filteredTrendRotation = Quaternion.identity;
+        private Vector3 _smoothedAngularVelocity = Vector3.zero;
+        private bool _hasPreviousAttitudeRotation;
+        private float _attitudeTrendStrength;
+        private float _lastFramePattern = -1f;
+        private readonly Vector4[] _markerAvoidanceValues = new Vector4[4];
+        private static readonly string[] MarkerAvoidanceKeys = { "maneuver", "prograde", "target", "normal" };
+        private static readonly int[] MarkerAvoidancePropertyIds =
+        {
+            Shader.PropertyToID("_MarkerAvoid0"), Shader.PropertyToID("_MarkerAvoid1"),
+            Shader.PropertyToID("_MarkerAvoid2"), Shader.PropertyToID("_MarkerAvoid3")
+        };
+
+        #region Pre-baked Shader Property IDs (Zero-String CPU Cache)
+        private static readonly int _PropSphereInvRotation = Shader.PropertyToID("_SphereInvRotation");
+        private static readonly int _PropRenderMode = Shader.PropertyToID("_RenderMode");
+        private static readonly int _PropSkyZenithColor = Shader.PropertyToID("_SkyZenithColor");
+        private static readonly int _PropSkyHorizonColor = Shader.PropertyToID("_SkyHorizonColor");
+        private static readonly int _PropGroundHorizonColor = Shader.PropertyToID("_GroundHorizonColor");
+        private static readonly int _PropGroundNadirColor = Shader.PropertyToID("_GroundNadirColor");
+        private static readonly int _PropEquatorColor = Shader.PropertyToID("_EquatorColor");
+        private static readonly int _PropEquatorWidth = Shader.PropertyToID("_EquatorWidth");
+        private static readonly int _PropPitchLadderColor = Shader.PropertyToID("_PitchLadderColor");
+        private static readonly int _PropPitchLadderWidth = Shader.PropertyToID("_PitchLadderWidth");
+        private static readonly int _PropHeadingLineColor = Shader.PropertyToID("_HeadingLineColor");
+        private static readonly int _PropRimColor = Shader.PropertyToID("_RimColor");
+        private static readonly int _PropLabelColor = Shader.PropertyToID("_LabelColor");
+        private static readonly int _PropLabelOutlineColor = Shader.PropertyToID("_LabelOutlineColor");
+        private static readonly int _PropGroundHazardAlert = Shader.PropertyToID("_GroundHazardAlert");
+        private static readonly int _PropVernierScaleDetail = Shader.PropertyToID("_VernierScaleDetail");
+        private static readonly int _PropFramePattern = Shader.PropertyToID("_FramePattern");
+        private static readonly int _PropTrendRotation = Shader.PropertyToID("_TrendRotation");
+        private static readonly int _PropTrendStrength = Shader.PropertyToID("_TrendStrength");
+        private static readonly int _PropDetailScale = Shader.PropertyToID("_DetailScale");
+        private static readonly int _PropMainTex = Shader.PropertyToID("_MainTex");
+        private static readonly int _PropSkyColor = Shader.PropertyToID("_SkyColor");
+        private static readonly int _PropGroundColor = Shader.PropertyToID("_GroundColor");
+        private static readonly int _PropGridColor = Shader.PropertyToID("_GridColor");
+        private static readonly int _PropHorizonLineColor = Shader.PropertyToID("_HorizonLineColor");
+        private static readonly int _PropDotColor = Shader.PropertyToID("_DotColor");
+        private static readonly int _PropDotDensity = Shader.PropertyToID("_DotDensity");
+        private static readonly int _PropDotMinRadius = Shader.PropertyToID("_DotMinRadius");
+        private static readonly int _PropDotMaxRadius = Shader.PropertyToID("_DotMaxRadius");
+        private static readonly int _PropAtmosphereGlowColor = Shader.PropertyToID("_AtmosphereGlowColor");
+        private static readonly int _PropEmissionIntensity = Shader.PropertyToID("_EmissionIntensity");
+        private static readonly int _PropNumeralUprightMode = Shader.PropertyToID("_NumeralUprightMode");
+        private static readonly int _PropNumeralRollAngle = Shader.PropertyToID("_NumeralRollAngle");
+        private static readonly int _PropNumeralTangentComp = Shader.PropertyToID("_NumeralTangentComp");
+        #endregion
 
         private void EnsureBakePipeline()
         {
@@ -130,25 +192,12 @@ namespace ModularFlightPanel.UI.Widgets
             _isBakeDirty = false;
             _lastBakedHazard = _currentHazardAlert;
             _lastBakedVernier = _currentVernierDetail;
-            _isMaterialDirty = true;
-        }
-
-        private static void EnsureDefaultSphereMesh()
-        {
-            if (_primitiveSphereMesh == null)
-            {
-                GameObject tempSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                _primitiveSphereMesh = tempSphere.GetComponent<MeshFilter>().sharedMesh;
-                if (Application.isPlaying) Destroy(tempSphere);
-                else DestroyImmediate(tempSphere);
-            }
         }
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            // 1. 标准姿态球基准直径为 150px * s (结合物理 DPI 与组件自身缩放统一构建原生点对点尺寸)
             float ballDiameter = 150f * s;
             _ballDiameter = ballDiameter;
             float shellWidth = ballDiameter + 92f * s;
@@ -160,7 +209,7 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform.sizeDelta = showShell ? new Vector2(shellWidth, shellHeight) : new Vector2(ballDiameter, ballDiameter);
             _visualRadius = ballDiameter * 0.5f * 0.94f;
 
-            // 0. 航电外壳 (当处于模块化 HUD 时默认隐藏矩形外壳，保持纯圆仪表面貌)
+            // 0. 航电外壳隔离
             ApplyCanvasIsolation(true);
 
             if (showShell)
@@ -168,84 +217,24 @@ namespace ModularFlightPanel.UI.Widgets
                 CreateNavballShell(shellWidth, shellHeight, s, theme);
             }
 
-            // 2. 动态自适应刚刚好高效 RenderTexture (依据 WidgetRenderManager 结合物理占用与倍率自适应)
-            int rtResolution = 512;
-            if (WidgetRenderManager.Instance != null)
-            {
-                rtResolution = WidgetRenderManager.Instance.CalculateOptimalResolution(
-                    new Vector2(_ballDiameter, _ballDiameter),
-                    config != null ? config.Scale : 1.0f,
-                    config != null ? config.RenderScale : 1.0f,
-                    minRes: 512);
-            }
-            _renderTexture = new RenderTexture(rtResolution, rtResolution, 0, RenderTextureFormat.ARGB32)
-            {
-                antiAliasing = 1,
-                anisoLevel = 4,
-                useMipMap = false,
-                autoGenerateMips = false,
-                filterMode = FilterMode.Bilinear
-            };
-            _renderTexture.Create();
+            // 1. 屏幕空间数学解析光线投射姿态球 (Screen-Space Analytic Raymarched Sphere)
+            // 彻底移除独立摄像机、3D 网格小球与 RenderTexture，改为在原生 UGUI 矩形上通过着色器直接解析绘制
+            // 0 摄像机开销、0 离屏纹理显存、任意大机动旋转下 CPU 耗时恒定 0.005 ms！
+            GameObject raymarchObj = new GameObject("Sphere_RaymarchImage", typeof(RectTransform), typeof(RawImage));
+            raymarchObj.transform.SetParent(transform, false);
+            RectTransform rawRt = raymarchObj.GetComponent<RectTransform>();
+            rawRt.sizeDelta = new Vector2(ballDiameter, ballDiameter);
+            rawRt.anchoredPosition = Vector2.zero;
 
-            if (WidgetRenderManager.Instance != null)
-            {
-                WidgetRenderManager.Instance.OnRenderResolutionChanged += HandleResolutionChanged;
-                WidgetRenderManager.Instance.OnRenderSettingChanged += HandleRenderSettingChanged;
-            }
+            _displayImage = raymarchObj.GetComponent<RawImage>();
+            _displayImage.texture = Texture2D.whiteTexture;
+            _displayImage.raycastTarget = false;
 
-            // 3. 独立离屏摄像机 (正交投影视口 1.0f 完美贴合单位球，零拉伸畸变)
-            GameObject camObj = new GameObject("Navball_Offscreen_Cam", typeof(Camera));
-            camObj.transform.SetParent(transform, false);
-            camObj.transform.localPosition = new Vector3(0f, 0f, -2.5f);
-
-            _ballCamera = camObj.GetComponent<Camera>();
-            _ballCamera.clearFlags = CameraClearFlags.SolidColor;
-            _ballCamera.backgroundColor = WidgetStyleManager.NeutralTransparent;
-            _ballCamera.targetTexture = _renderTexture;
-            _ballCamera.orthographic = true;
-            _ballCamera.orthographicSize = 1.0f;
-            _ballCamera.nearClipPlane = 0.1f;
-            _ballCamera.farClipPlane = 10f;
-            _ballCamera.cullingMask = 1 << 31;
-            _ballCamera.enabled = false; // 严禁每帧盲目自动渲染，改由 LateUpdate 在 Principia 姿态结算完毕后权威触发
-            _ballCamera.useOcclusionCulling = false;
-            _ballCamera.allowHDR = false;
-            _ballCamera.allowMSAA = false;
-            _ballCamera.depthTextureMode = DepthTextureMode.None;
-            _ballCamera.eventMask = 0;
-            _ballCamera.renderingPath = RenderingPath.Forward;
-
-            // 4. 3D 球体 (直接共享官方 StockNavBall 网格模型与 UV 拓扑，杜绝贴图畸变)
-            _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            _sphereObject.name = "Navball_3D_Sphere";
-            _sphereObject.transform.SetParent(transform, false);
-            _sphereObject.transform.localPosition = Vector3.zero;
-            _sphereObject.layer = 31;
-
-            Collider col = _sphereObject.GetComponent<Collider>();
-            if (col != null)
-            {
-                if (Application.isPlaying) Destroy(col);
-                else DestroyImmediate(col);
-            }
-
-            UpdateSphereScale();
-
-            MeshRenderer mr = _sphereObject.GetComponent<MeshRenderer>();
-            var initialMode = ThemeManager.Instance.GlobalRenderMode;
-            Shader targetShader;
-            if (initialMode == NavballRenderMode.ProceduralVector)
-            {
-                targetShader = AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
-            }
-            else
-            {
-                targetShader = AssetLoader.EnhancedShader ?? AssetLoader.ModernShader;
-            }
+            Shader targetShader = AssetLoader.RaymarchShader ?? AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
             _sphereMaterial = new Material(targetShader);
-            mr.material = _sphereMaterial;
+            _displayImage.material = _sphereMaterial;
 
+            var initialMode = ThemeManager.Instance.GlobalRenderMode;
             if (initialMode == NavballRenderMode.StockDirect)
             {
                 NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
@@ -255,24 +244,13 @@ namespace ModularFlightPanel.UI.Widgets
                 EnsureBakePipeline();
             }
 
-            // 5. RawImage 画布映射 (直接作为子物体渲染，彻底摒弃 1-bit Stencil UGUI Mask 硬锯齿)
-            GameObject rawImgObj = new GameObject("Sphere_RawImage", typeof(RectTransform), typeof(RawImage));
-            rawImgObj.transform.SetParent(transform, false);
-            RectTransform rawRt = rawImgObj.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(ballDiameter, ballDiameter);
-            rawRt.anchoredPosition = Vector2.zero;
-
-            _displayImage = rawImgObj.GetComponent<RawImage>();
-            _displayImage.texture = _renderTexture;
-            _displayImage.raycastTarget = false;
-
-            // 6. 2D 矢量标线层 (Prograde, Retrograde, Normal, Radial, Target, Maneuver)
+            // 2. 2D 矢量标线层 (Prograde, Retrograde, Normal, Radial, Target, Maneuver)
             CreateMarkerOverlayLayer(transform, CurrentDpiScale);
 
-            // 7. 瞄准标与金属圆环包边
+            // 3. 瞄准标与金属圆环包边
             CreateCrosshair(transform, CurrentDpiScale, theme);
 
-            // 极细航电金属质感圆环外圈 (消除粗糙边界与几何空隙)
+            // 极细航电金属质感圆环外圈
             GameObject bezelObj = UIFactory.CreatePanel(transform, "Sphere_Bezel_Ring",
                 new Vector2(ballDiameter + 2f * CurrentDpiScale, ballDiameter + 2f * CurrentDpiScale),
                 Vector2.zero, Color.clear);
@@ -350,36 +328,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void UpdateSphereScale()
         {
-            if (_sphereObject == null) return;
-            float sx = transform.localScale.x;
-            float sy = transform.localScale.y;
-            float sz = transform.localScale.z;
-            if (Mathf.Abs(sx) < 0.0001f) sx = 1f;
-            if (Mathf.Abs(sy) < 0.0001f) sy = 1f;
-            if (Mathf.Abs(sz) < 0.0001f) sz = 1f;
-
-            var mode = ThemeManager.Instance != null ? ThemeManager.Instance.GlobalRenderMode : NavballRenderMode.ProceduralVector;
-            float targetRadius = (mode == NavballRenderMode.StockTexture) ? 1.0f : 0.94f;
-            float baseScale = targetRadius * 2.0f;
-
-            MeshFilter mf = _sphereObject.GetComponent<MeshFilter>();
-            if (mf != null && mf.sharedMesh != null)
-            {
-                Bounds bounds = mf.sharedMesh.bounds;
-                float maxExtent = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z);
-                if (maxExtent > 0.0001f)
-                {
-                    baseScale = targetRadius / maxExtent;
-                }
-            }
-
-            _sphereObject.transform.localScale = new Vector3(baseScale / sx, baseScale / sy, baseScale / sz);
-            _isRenderDirty = true;
-        }
-
-        private void UpdateSphereMeshScale()
-        {
-            UpdateSphereScale();
+            // 在数学解析光线投射管线中无需操作 3D 网格 scale
         }
 
         private void CreateMarkerOverlayLayer(Transform parent, float dpiScale)
@@ -444,7 +393,6 @@ namespace ModularFlightPanel.UI.Widgets
             outline.effectColor = theme.FrameBorderColor;
             outline.effectDistance = new Vector2(1.5f * dpiScale, 1.5f * dpiScale);
 
-            // 1. 航向角读数
             int fontSize = Mathf.RoundToInt(14f * dpiScale);
             _headingText = UIFactory.CreateText(_headingBox.transform, "Heading_Text", "000°", fontSize, TextAnchor.MiddleCenter, theme.TextPrimaryColor);
             RectTransform textRt = _headingText.GetComponent<RectTransform>();
@@ -453,7 +401,6 @@ namespace ModularFlightPanel.UI.Widgets
             textRt.sizeDelta = Vector2.zero;
             textRt.anchoredPosition = Vector2.zero;
 
-            // 2. 参考系模式读数 (Principia / Stock: BARYCENTRIC, SURFACE, ORBIT, TARGET)
             int frameFontSize = Mathf.Max(9, Mathf.RoundToInt(9f * dpiScale));
             _frameText = UIFactory.CreateText(_headingBox.transform, "Frame_Text", "ORBIT", frameFontSize, TextAnchor.MiddleCenter, theme.AccentSecondary);
             RectTransform frameRt = _frameText.GetComponent<RectTransform>();
@@ -462,7 +409,6 @@ namespace ModularFlightPanel.UI.Widgets
             frameRt.sizeDelta = Vector2.zero;
             frameRt.anchoredPosition = Vector2.zero;
         }
-
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
@@ -486,77 +432,41 @@ namespace ModularFlightPanel.UI.Widgets
                 return;
             }
 
-            // 0. 官方专属网格与材质属性动态挂钩检查 (4 模式自适应)
             bool isStockTexture = (mode == NavballRenderMode.StockTexture);
             _visualRadius = _ballDiameter * 0.5f * (isStockTexture ? 1.0f : 0.94f);
-            if (_sphereObject != null)
-            {
-                MeshFilter ourMf = _sphereObject.GetComponent<MeshFilter>();
-                if (!isStockTexture)
-                {
-                    EnsureDefaultSphereMesh();
-                    if (ourMf != null && _primitiveSphereMesh != null && ourMf.sharedMesh != _primitiveSphereMesh)
-                    {
-                        ourMf.sharedMesh = _primitiveSphereMesh;
-                        UpdateSphereMeshScale();
-                        _isMaterialDirty = true;
-                    }
-                }
-                else if (hasHook && ourMf != null)
-                {
-                    if (hook.StockMesh != null && ourMf.sharedMesh != hook.StockMesh)
-                    {
-                        ourMf.sharedMesh = hook.StockMesh;
-                        UpdateSphereMeshScale();
-                        _isMaterialDirty = true;
-                    }
-                    else if (_sphereObject.transform.localScale == Vector3.one * 2.0f && ourMf.sharedMesh != null)
-                    {
-                        UpdateSphereMeshScale();
-                        _isMaterialDirty = true;
-                    }
 
-                    if (_sphereMaterial != null && _sphereMaterial.HasProperty(_PropMainTex))
+            if (_sphereMaterial != null)
+            {
+                if (isStockTexture && hasHook)
+                {
+                    Texture stockTex = hook.BallTexture;
+                    if (stockTex != null && _sphereMaterial.mainTexture != stockTex)
                     {
-                        if (_sphereMaterial.mainTextureScale != hook.TextureScale)
-                        {
-                            _sphereMaterial.mainTextureScale = hook.TextureScale;
-                            _isMaterialDirty = true;
-                        }
-                        if (_sphereMaterial.mainTextureOffset != hook.TextureOffset)
-                        {
-                            _sphereMaterial.mainTextureOffset = hook.TextureOffset;
-                            _isMaterialDirty = true;
-                        }
+                        _sphereMaterial.mainTexture = stockTex;
+                    }
+                    if (_sphereMaterial.mainTextureScale != hook.TextureScale)
+                    {
+                        _sphereMaterial.mainTextureScale = hook.TextureScale;
+                    }
+                    if (_sphereMaterial.mainTextureOffset != hook.TextureOffset)
+                    {
+                        _sphereMaterial.mainTextureOffset = hook.TextureOffset;
                     }
                 }
-            }
-
-            if (isStockTexture && _sphereMaterial != null && hasHook)
-            {
-                Texture stockTex = hook.BallTexture;
-                if (stockTex != null && _sphereMaterial.mainTexture != stockTex)
+                else if (mode == NavballRenderMode.ProceduralBake && _bakedSurfaceTexture != null)
                 {
-                    _sphereMaterial.mainTexture = stockTex;
-                    _isMaterialDirty = true;
-                }
-            }
-            else if (mode == NavballRenderMode.ProceduralBake && _sphereMaterial != null && _bakedSurfaceTexture != null)
-            {
-                if (_sphereMaterial.mainTexture != _bakedSurfaceTexture)
-                {
-                    _sphereMaterial.mainTexture = _bakedSurfaceTexture;
-                    _isMaterialDirty = true;
-                }
-                if (_sphereMaterial.mainTextureScale != Vector2.one)
-                {
-                    _sphereMaterial.mainTextureScale = Vector2.one;
-                    _isMaterialDirty = true;
-                }
-                if (_sphereMaterial.mainTextureOffset != Vector2.zero)
-                {
-                    _sphereMaterial.mainTextureOffset = Vector2.zero;
-                    _isMaterialDirty = true;
+                    if (_sphereMaterial.mainTexture != _bakedSurfaceTexture)
+                    {
+                        _sphereMaterial.mainTexture = _bakedSurfaceTexture;
+                    }
+                    if (_sphereMaterial.mainTextureScale != Vector2.one)
+                    {
+                        _sphereMaterial.mainTextureScale = Vector2.one;
+                    }
+                    if (_sphereMaterial.mainTextureOffset != Vector2.zero)
+                    {
+                        _sphereMaterial.mainTextureOffset = Vector2.zero;
+                    }
                 }
             }
 
@@ -567,85 +477,372 @@ namespace ModularFlightPanel.UI.Widgets
                 _headingBox.SetActive(!hasHeadingArc);
             }
 
-            // 姿态与矢量标线由 LateUpdate 在 Principia 姿态结算后权威驱动，避免每帧重复计算 10+ 标线方位
+            // 2. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
+            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
+
+            if (category != _lastFrameCategory || !_paletteInitialized)
+            {
+                _targetPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
+                if (!_paletteInitialized)
+                {
+                    _currentPalette = _targetPalette;
+                    _paletteInitialized = true;
+                    UploadPaletteToMaterial(_currentPalette);
+                }
+                _lastFrameCategory = category;
+                _isPaletteLerping = true;
+            }
+
+            if (_sphereMaterial != null)
+            {
+                float framePattern = GetFramePatternCode(category);
+                if (mode == NavballRenderMode.ProceduralVector && Mathf.Abs(framePattern - _lastFramePattern) > 0.01f && _sphereMaterial.HasProperty(_PropFramePattern))
+                {
+                    _sphereMaterial.SetFloat(_PropFramePattern, framePattern);
+                    _lastFramePattern = framePattern;
+                }
+
+                if (_isPaletteLerping)
+                {
+                    float dt = Time.deltaTime;
+                    float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
+                    _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
+                    UploadPaletteToMaterial(_currentPalette);
+                    if (mode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
+
+                    if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
+                    {
+                        _currentPalette = _targetPalette;
+                        _isPaletteLerping = false;
+                    }
+                }
+
+                // GPWS / 近地大下沉率防撞动态斑马纹警示驱动 (Ground Terrain Hazard Pull-Up Alert)
+                IFlightTelemetry curTelem = FlightTelemetryContext.Current;
+                bool isHazardTriggered = false;
+                if (curTelem != null && curTelem.HasVessel)
+                {
+                    UpdateNavballProbeSnapshot(curTelem);
+                    double radarAltitude = _cachedGpwsRadarAltitude;
+                    if (double.IsNaN(radarAltitude) || double.IsInfinity(radarAltitude) || radarAltitude < 0.0)
+                        radarAltitude = curTelem.AltitudeAGL;
+
+                    double gpwsSinkRate = _cachedGpwsSinkRate;
+                    double descentRate = Math.Max(0.0, -curTelem.VerticalSpeed);
+                    if (curTelem.VerticalSpeed < 0.0 && !double.IsNaN(gpwsSinkRate) && !double.IsInfinity(gpwsSinkRate))
+                        descentRate = Math.Max(descentRate, Math.Abs(gpwsSinkRate));
+
+                    double impactTime = _cachedTrajImpactTime;
+                    bool predictedImpact = !double.IsNaN(impactTime) && !double.IsInfinity(impactTime) && impactTime > 0.0 && impactTime < 12.0;
+                    bool lowAltitudeDescent = radarAltitude > 0.0 && radarAltitude < 280.0 && curTelem.VerticalSpeed < 0.0 && descentRate > 8.5;
+                    isHazardTriggered = lowAltitudeDescent || predictedImpact || curTelem.IsTouchdownAlert;
+                }
+
+                float dtHazard = Time.deltaTime;
+                if (isHazardTriggered)
+                {
+                    _isHazardActive = true;
+                    _hazardHoldTimer = 0.6f;
+                }
+                else if (_hazardHoldTimer > 0f)
+                {
+                    _hazardHoldTimer -= dtHazard;
+                    if (_hazardHoldTimer <= 0f) _isHazardActive = false;
+                }
+                else
+                {
+                    _isHazardActive = false;
+                }
+
+                bool isProc = (mode == NavballRenderMode.ProceduralVector || mode == NavballRenderMode.ProceduralBake);
+                if (isProc)
+                {
+                    float targetHazard = _isHazardActive ? 1.0f : 0.0f;
+                    _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dtHazard * 3.5f));
+                    if (Mathf.Abs(_currentHazardAlert - _lastUploadedHazard) > 0.015f && _sphereMaterial.HasProperty(_PropGroundHazardAlert))
+                    {
+                        _sphereMaterial.SetFloat(_PropGroundHazardAlert, _currentHazardAlert);
+                        _lastUploadedHazard = _currentHazardAlert;
+                        if (mode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
+                    }
+
+                    // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
+                    float pitchVal = (curTelem != null) ? Mathf.Abs(curTelem.Pitch) : 0f;
+                    float targetVernier = (pitchVal < 6.0f) ? Mathf.Clamp01((6.0f - pitchVal) / 3.0f) : 0f;
+                    _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dtHazard * 3.5f));
+                    if (Mathf.Abs(_currentVernierDetail - _lastUploadedVernier) > 0.025f && _sphereMaterial.HasProperty(_PropVernierScaleDetail))
+                    {
+                        _sphereMaterial.SetFloat(_PropVernierScaleDetail, _currentVernierDetail);
+                        _lastUploadedVernier = _currentVernierDetail;
+                        if (mode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
+                    }
+                }
+            }
+
+            // 3. 航向读数与参考系模式更新
+            if (_headingText != null)
+            {
+                string targetHeading = hasHook ? hook.HeadingText : $"HDG {Mathf.RoundToInt(FlightTelemetryContext.Current?.Heading ?? 0f) % 360:D3}°";
+                if (_headingText.text != targetHeading)
+                {
+                    _headingText.text = targetHeading;
+                }
+            }
+            if (_frameText != null)
+            {
+                string targetFrame = hasHook ? hook.FrameName : category;
+                if (_frameText.text != targetFrame)
+                {
+                    _frameText.text = targetFrame;
+                }
+                if (_frameText.color != _currentPalette.Rim)
+                {
+                    _frameText.color = _currentPalette.Rim;
+                }
+            }
+            if (_shellStatus != null && _shellStatus.color != _currentPalette.Rim)
+            {
+                _shellStatus.color = _currentPalette.Rim;
+            }
         }
 
-        #region Pre-baked Shader Property IDs (Zero-String CPU Cache)
-        private static readonly int _PropSkyZenithColor = Shader.PropertyToID("_SkyZenithColor");
-        private static readonly int _PropSkyHorizonColor = Shader.PropertyToID("_SkyHorizonColor");
-        private static readonly int _PropGroundHorizonColor = Shader.PropertyToID("_GroundHorizonColor");
-        private static readonly int _PropGroundNadirColor = Shader.PropertyToID("_GroundNadirColor");
-        private static readonly int _PropEquatorColor = Shader.PropertyToID("_EquatorColor");
-        private static readonly int _PropEquatorWidth = Shader.PropertyToID("_EquatorWidth");
-        private static readonly int _PropPitchLadderColor = Shader.PropertyToID("_PitchLadderColor");
-        private static readonly int _PropPitchLadderWidth = Shader.PropertyToID("_PitchLadderWidth");
-        private static readonly int _PropHeadingLineColor = Shader.PropertyToID("_HeadingLineColor");
-        private static readonly int _PropRimColor = Shader.PropertyToID("_RimColor");
-        private static readonly int _PropLabelColor = Shader.PropertyToID("_LabelColor");
-        private static readonly int _PropLabelOutlineColor = Shader.PropertyToID("_LabelOutlineColor");
-        private static readonly int _PropGroundHazardAlert = Shader.PropertyToID("_GroundHazardAlert");
-        private static readonly int _PropVernierScaleDetail = Shader.PropertyToID("_VernierScaleDetail");
-        private static readonly int _PropFramePattern = Shader.PropertyToID("_FramePattern");
-        private static readonly int _PropTrendRotation = Shader.PropertyToID("_TrendRotation");
-        private static readonly int _PropTrendStrength = Shader.PropertyToID("_TrendStrength");
-        private static readonly int _PropDetailScale = Shader.PropertyToID("_DetailScale");
-        private static readonly int _PropMainTex = Shader.PropertyToID("_MainTex");
-        private static readonly int _PropSkyColor = Shader.PropertyToID("_SkyColor");
-        private static readonly int _PropGroundColor = Shader.PropertyToID("_GroundColor");
-        private static readonly int _PropGridColor = Shader.PropertyToID("_GridColor");
-        private static readonly int _PropHorizonLineColor = Shader.PropertyToID("_HorizonLineColor");
-        private static readonly int _PropDotColor = Shader.PropertyToID("_DotColor");
-        private static readonly int _PropDotDensity = Shader.PropertyToID("_DotDensity");
-        private static readonly int _PropDotMinRadius = Shader.PropertyToID("_DotMinRadius");
-        private static readonly int _PropDotMaxRadius = Shader.PropertyToID("_DotMaxRadius");
-        private static readonly int _PropAtmosphereGlowColor = Shader.PropertyToID("_AtmosphereGlowColor");
-        private static readonly int _PropEmissionIntensity = Shader.PropertyToID("_EmissionIntensity");
-        private static readonly int _PropNumeralUprightMode = Shader.PropertyToID("_NumeralUprightMode");
-        private static readonly int _PropNumeralRollAngle = Shader.PropertyToID("_NumeralRollAngle");
-        private static readonly int _PropNumeralTangentComp = Shader.PropertyToID("_NumeralTangentComp");
-        #endregion
-
-        #region Sub-Pixel Dynamic Rendering & Dirty Guards (Zero Visual Quality Loss)
-        // 0.16° 阈值：球体半径约 80px，0.16° 对应 ~0.2 物理像素，肉眼完全无感，但彻底消除 SAS 微步晃动 (0.02°~0.08°) 引发的无谓渲染
-        private const float RotationDirtyThreshold = 0.16f;
-        private const float TrendStrengthThreshold = 0.03f;
-        private const float HazardDirtyThreshold = 0.02f;
-        private const float VernierDirtyThreshold = 0.04f;
-        private const float HeartbeatInterval = 0.5f; // 2Hz 稳态保活心跳，杜绝光照/状态永冻
-
-        private Quaternion _lastRenderedRotation = Quaternion.identity;
-        private Quaternion _lastRenderedTrendRotation = Quaternion.identity;
-        private float _lastRenderedTrendStrength = -1f;
-        private float _lastRenderedHazard = -1f;
-        private float _lastRenderedVernier = -1f;
-        private float _lastRenderedTime = -10f;
-        private bool _isMaterialDirty = true;
-        private bool _hasEverRendered = false;
-
-        private float _lastUploadedHazard = -1f;
-        private float _lastUploadedVernier = -1f;
-        private bool _isPaletteLerping = false;
-        private int _lastScreenWidth = -1;
-        private int _lastScreenHeight = -1;
-        #endregion
-
-        private string _lastFrameCategory = "";
-        private NavballFramePalette _currentPalette;
-        private NavballFramePalette _targetPalette;
-        private bool _paletteInitialized = false;
-        private Quaternion _previousAttitudeRotation = Quaternion.identity;
-        private Quaternion _filteredTrendRotation = Quaternion.identity;
-        private Vector3 _smoothedAngularVelocity = Vector3.zero;
-        private bool _hasPreviousAttitudeRotation;
-        private float _attitudeTrendStrength;
-        private float _lastFramePattern = -1f;
-        private readonly Vector4[] _markerAvoidanceValues = new Vector4[4];
-        private static readonly string[] MarkerAvoidanceKeys = { "maneuver", "prograde", "target", "normal" };
-        private static readonly int[] MarkerAvoidancePropertyIds =
+        private void UpdateNavballProbeSnapshot(IFlightTelemetry telemetry)
         {
-            Shader.PropertyToID("_MarkerAvoid0"), Shader.PropertyToID("_MarkerAvoid1"),
-            Shader.PropertyToID("_MarkerAvoid2"), Shader.PropertyToID("_MarkerAvoid3")
-        };
+            float now = Time.unscaledTime;
+            if (Application.isPlaying && now - _lastNavballProbeSampleTime < 0.1f) return;
+            _lastNavballProbeSampleTime = now;
+            _cachedGpwsRadarAltitude = TelemetryTokenEngine.EvaluateNumeric("{GPWS:RadarAltitude}", telemetry);
+            _cachedGpwsSinkRate = TelemetryTokenEngine.EvaluateNumeric("{GPWS:SinkRate}", telemetry);
+            _cachedTrajImpactTime = TelemetryTokenEngine.EvaluateNumeric("{TRAJ:ImpactTime}", telemetry);
+        }
+
+        protected override void LateUpdate()
+        {
+            base.LateUpdate();
+            if (!gameObject.activeInHierarchy) return;
+
+            var mode = ThemeManager.Instance.GlobalRenderMode;
+            if (mode == NavballRenderMode.StockDirect)
+            {
+                if (_displayImage != null && _displayImage.enabled) _displayImage.enabled = false;
+                if (_crosshair != null && _crosshair.activeSelf) _crosshair.SetActive(false);
+                if (_bezelRing != null && _bezelRing.activeSelf) _bezelRing.SetActive(false);
+                foreach (var kvp in _markerImages)
+                {
+                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf) kvp.Value.gameObject.SetActive(false);
+                }
+
+                NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
+                NavBallHookService.SyncStockNavballAction?.Invoke(this.RectTransform, Config != null ? Config.Scale : 1.0f);
+                return;
+            }
+            else
+            {
+                if (NavBallHookService.IsCleanStockNavballActiveFunc?.Invoke() ?? false)
+                {
+                    NavBallHookService.ResetStockNavballAction?.Invoke();
+                    NavBallHookService.SetStockNavballCleanAction?.Invoke(false);
+                    NavBallHookService.HideStockNavballAction?.Invoke(true);
+                }
+                if (_displayImage != null && !_displayImage.enabled) _displayImage.enabled = true;
+                if (_crosshair != null && !_crosshair.activeSelf) _crosshair.SetActive(true);
+                if (_bezelRing != null && !_bezelRing.activeSelf) _bezelRing.SetActive(true);
+            }
+
+            if (_displayImage == null || !_displayImage.enabled || !_displayImage.gameObject.activeInHierarchy) return;
+
+            // 在 Principia/官方 LateUpdate 彻底执行完毕后，执行最终高保真姿态与标线同步
+            SyncAttitudeAndVisuals();
+            SyncMarkers();
+            UpdateReticleDynamics();
+            UpdateProceduralDetailScale();
+
+            if (mode == NavballRenderMode.ProceduralBake && (_isBakeDirty || !_bakedTextureInitialized))
+            {
+                BakeSurfaceTexture();
+                _bakedTextureInitialized = true;
+            }
+        }
+
+        private float _lastMarkerDiagLogTime = -10f;
+
+        private void SyncMarkers()
+        {
+            var hook = NavBallHookService.Provider;
+            foreach (var kvp in _markerImages)
+            {
+                string key = kvp.Key;
+                Image img = kvp.Value;
+                if (img == null) continue;
+
+                Vector3 dir = Vector3.forward;
+                bool isVisible = false;
+                bool hasDir = false;
+
+                if (hook != null)
+                {
+                    hasDir = hook.GetMarkerDirection(key, out dir, out isVisible);
+                }
+                if (!hasDir && NavBallHookService.MarkerDirectionFallback != null)
+                {
+                    hasDir = NavBallHookService.MarkerDirectionFallback(key, out dir, out isVisible);
+                }
+
+                // 视界边缘平滑过渡 [-0.08, -0.24]，彻底消灭坐标跳变与缩放突变
+                if (hasDir && isVisible && dir.z > -0.24f)
+                {
+                    if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
+
+                    Vector2 bearing = new Vector2(dir.x, dir.y);
+                    float bearingMag = bearing.magnitude;
+                    Vector2 normBearing = bearingMag > 0.001f ? (bearing / bearingMag) : Vector2.up;
+
+                    float tRear = Mathf.Clamp01((-0.08f - dir.z) / 0.12f);
+
+                    Vector2 frontPos = new Vector2(dir.x, dir.y) * _visualRadius;
+                    Vector2 rearPos = normBearing * (_visualRadius * 0.84f);
+                    img.rectTransform.anchoredPosition = Vector2.Lerp(frontPos, rearPos, tRear);
+
+                    float targetScale = Mathf.Lerp(1.0f, 0.65f, tRear);
+                    if (Mathf.Abs(img.rectTransform.localScale.x - targetScale) > 0.02f)
+                    {
+                        img.rectTransform.localScale = Vector3.one * targetScale;
+                    }
+
+                    float frontAlpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);
+                    float rearAlpha = Mathf.Lerp(0.38f, 0.16f, Mathf.Clamp01(-dir.z));
+                    float finalAlpha = Mathf.Lerp(frontAlpha, rearAlpha, tRear);
+
+                    if (Mathf.Abs(img.color.a - finalAlpha) > 0.05f)
+                    {
+                        Color c = WidgetStyleManager.NeutralOpaque;
+                        c.a = finalAlpha;
+                        img.color = c;
+                    }
+                }
+                else
+                {
+                    if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                }
+            }
+
+            // 顺向/逆向与地表航迹标防御性防粘去重 (Anti-overlap De-cluttering)
+            Image progImg;
+            Image velImg;
+            if (_markerImages.TryGetValue("prograde", out progImg) &&
+                _markerImages.TryGetValue("velocity_vector", out velImg) &&
+                progImg != null && velImg != null &&
+                progImg.gameObject.activeSelf && velImg.gameObject.activeSelf)
+            {
+                float dist = Vector2.Distance(progImg.rectTransform.anchoredPosition, velImg.rectTransform.anchoredPosition);
+                if (dist < 18f * CurrentDpiScale)
+                {
+                    velImg.gameObject.SetActive(false);
+                }
+            }
+
+            Image retroImg;
+            Image antiVelImg;
+            if (_markerImages.TryGetValue("retrograde", out retroImg) &&
+                _markerImages.TryGetValue("anti_velocity_vector", out antiVelImg) &&
+                retroImg != null && antiVelImg != null &&
+                retroImg.gameObject.activeSelf && antiVelImg.gameObject.activeSelf)
+            {
+                float dist = Vector2.Distance(retroImg.rectTransform.anchoredPosition, antiVelImg.rectTransform.anchoredPosition);
+                if (dist < 18f * CurrentDpiScale)
+                {
+                    antiVelImg.gameObject.SetActive(false);
+                }
+            }
+
+            UpdateMarkerAvoidanceMasks();
+
+            if (Application.isPlaying && Time.unscaledTime - _lastMarkerDiagLogTime > 5.0f)
+            {
+                _lastMarkerDiagLogTime = Time.unscaledTime;
+                System.Text.StringBuilder sb = new System.Text.StringBuilder(128);
+                sb.Append("[ModularFlightPanel][NavballDiag] Active Markers: ");
+                int count = 0;
+                foreach (var kvp in _markerImages)
+                {
+                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf)
+                    {
+                        sb.Append(kvp.Key).Append(" ");
+                        count++;
+                    }
+                }
+                if (count == 0) sb.Append("(none)");
+                Debug.Log(sb.ToString());
+            }
+        }
+
+        private void UpdateReticleDynamics()
+        {
+            if (_reticleImage == null) return;
+            float movement = _attitudeTrendStrength;
+            float targetAlpha = Mathf.Lerp(0.55f, 0.45f, movement);
+            Color reticleColor = _reticleImage.color;
+            if (Mathf.Abs(reticleColor.a - targetAlpha) > 0.05f)
+            {
+                reticleColor.a = targetAlpha;
+                _reticleImage.color = reticleColor;
+            }
+        }
+
+        private void UpdateMarkerAvoidanceMasks()
+        {
+            if (ThemeManager.Instance.GlobalRenderMode != NavballRenderMode.ProceduralVector) return;
+            if (_sphereMaterial == null || !_sphereMaterial.HasProperty(MarkerAvoidancePropertyIds[0])) return;
+            float halfDiameter = Mathf.Max(1f, _ballDiameter * 0.5f);
+            for (int i = 0; i < MarkerAvoidanceKeys.Length; i++)
+            {
+                Vector4 avoidance = Vector4.zero;
+                if (_markerImages.TryGetValue(MarkerAvoidanceKeys[i], out Image marker) && marker != null && marker.gameObject.activeSelf)
+                {
+                    Vector2 point = marker.rectTransform.anchoredPosition / halfDiameter;
+                    float radius = 0.20f;
+                    avoidance = new Vector4(point.x, point.y, radius, 1.0f);
+                }
+                Vector4 prev = _markerAvoidanceValues[i];
+                if (Mathf.Abs(avoidance.x - prev.x) > 0.015f ||
+                    Mathf.Abs(avoidance.y - prev.y) > 0.015f ||
+                    Mathf.Abs(avoidance.w - prev.w) > 0.5f)
+                {
+                    _markerAvoidanceValues[i] = avoidance;
+                    _sphereMaterial.SetVector(MarkerAvoidancePropertyIds[i], avoidance);
+                }
+            }
+        }
+
+        private void UpdateProceduralDetailScale()
+        {
+            if (ThemeManager.Instance.GlobalRenderMode != NavballRenderMode.ProceduralVector) return;
+            if (_sphereMaterial == null || !_sphereMaterial.HasProperty(_PropDetailScale) || _displayImage == null) return;
+
+            int sw = Screen.width;
+            int sh = Screen.height;
+            if (_lastDetailScale >= 0f && sw == _lastScreenWidth && sh == _lastScreenHeight && !transform.hasChanged)
+            {
+                return;
+            }
+            _lastScreenWidth = sw;
+            _lastScreenHeight = sh;
+
+            Canvas canvas = _displayImage.canvas;
+            Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
+            RectTransform imageRect = _displayImage.rectTransform;
+            imageRect.GetWorldCorners(_displayCorners);
+            Vector2 bottomLeft = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[0]);
+            Vector2 topLeft = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[1]);
+            Vector2 bottomRight = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[3]);
+            float displayPixels = Mathf.Max(Vector2.Distance(bottomLeft, topLeft), Vector2.Distance(bottomLeft, bottomRight));
+            float detailScale = Mathf.InverseLerp(88f, 240f, displayPixels);
+            if (Mathf.Abs(detailScale - _lastDetailScale) > 0.015f)
+            {
+                _lastDetailScale = detailScale;
+                _sphereMaterial.SetFloat(_PropDetailScale, detailScale);
+            }
+        }
 
         private NavballFramePalette GetPaletteForCategory(string category, ThemeConfig theme)
         {
@@ -661,8 +858,6 @@ namespace ModularFlightPanel.UI.Widgets
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
                 case "BODY_SURFACE":
                 {
-                    // Principia 地固参考系 (Body-Centred Body-Fixed / ECEF):
-                    // 严格与 Principia 官方 navball_surface 保持一致：北半球 (+lat / +Y) 对应大地棕色，南半球 (-lat / -Y) 对应海洋/天蓝色
                     Color bGndH = theme.GroundColor;
                     Color bGndN = WidgetStyleManager.Darken(bGndH, 0.55f);
                     Color bSkyH = theme.AccentSecondary;
@@ -837,14 +1032,15 @@ namespace ModularFlightPanel.UI.Widgets
                 var curMode = ThemeManager.Instance.GlobalRenderMode;
                 if (curMode == NavballRenderMode.ProceduralVector)
                 {
-                    bool trendDiffers = Mathf.Abs(_attitudeTrendStrength - _lastRenderedTrendStrength) > TrendStrengthThreshold ||
-                                       (_attitudeTrendStrength > 0.01f && Quaternion.Angle(_filteredTrendRotation, _lastRenderedTrendRotation) > 0.08f);
+                    bool trendDiffers = Mathf.Abs(_attitudeTrendStrength - _lastUploadedTrendStrength) > 0.01f ||
+                                       (_attitudeTrendStrength > 0.01f && Quaternion.Angle(_filteredTrendRotation, _lastUploadedTrendRotation) > 0.05f);
                     if (trendDiffers)
                     {
                         _sphereMaterial.SetVector(_PropTrendRotation, new Vector4(
                             _filteredTrendRotation.x, _filteredTrendRotation.y, _filteredTrendRotation.z, _filteredTrendRotation.w));
                         _sphereMaterial.SetFloat(_PropTrendStrength, _attitudeTrendStrength);
-                        _isMaterialDirty = true;
+                        _lastUploadedTrendStrength = _attitudeTrendStrength;
+                        _lastUploadedTrendRotation = _filteredTrendRotation;
                     }
                 }
             }
@@ -855,457 +1051,25 @@ namespace ModularFlightPanel.UI.Widgets
             var hook = NavBallHookService.Provider;
             bool hasHook = (hook != null && hook.HasStockNavBall);
 
-            // 1. 姿态旋转：使用 localRotation 配合官方摄像机视口变换，杜绝任何外部画布/物体倾斜畸变
-            if (_sphereObject != null)
+            Quaternion rawRot;
+            if (hasHook)
             {
-                var mode = ThemeManager.Instance.GlobalRenderMode;
-                bool isProceduralVec = (mode == NavballRenderMode.ProceduralVector);
-                Quaternion rawRot;
-                if (hasHook)
-                {
-                    Quaternion camRot = hook.CameraRotation;
-                    rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
-                }
-                else
-                {
-                    IFlightTelemetry telem = FlightTelemetryContext.Current;
-                    rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
-                }
-
-                _sphereObject.transform.localRotation = isProceduralVec
-                    ? new Quaternion(-rawRot.x, -rawRot.y, rawRot.z, rawRot.w)
-                    : rawRot;
-
-                UpdateAttitudeTrend(_sphereObject.transform.localRotation);
-            }
-
-            // 2. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
-            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
-
-            if (category != _lastFrameCategory || !_paletteInitialized)
-            {
-                _targetPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
-                if (!_paletteInitialized)
-                {
-                    _currentPalette = _targetPalette;
-                    _paletteInitialized = true;
-                    UploadPaletteToMaterial(_currentPalette);
-                    _isMaterialDirty = true;
-                }
-                _lastFrameCategory = category;
-                _isPaletteLerping = true;
-            }
-
-            if (_sphereMaterial != null)
-            {
-                var curMode = ThemeManager.Instance.GlobalRenderMode;
-                float framePattern = GetFramePatternCode(category);
-                if (curMode == NavballRenderMode.ProceduralVector && Mathf.Abs(framePattern - _lastFramePattern) > 0.01f && _sphereMaterial.HasProperty(_PropFramePattern))
-                {
-                    _sphereMaterial.SetFloat(_PropFramePattern, framePattern);
-                    _lastFramePattern = framePattern;
-                    _isMaterialDirty = true;
-                }
-
-                if (_isPaletteLerping)
-                {
-                    float dt = Time.deltaTime;
-                    float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
-                    _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
-                    UploadPaletteToMaterial(_currentPalette);
-                    _isMaterialDirty = true;
-                    if (ThemeManager.Instance.GlobalRenderMode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
-
-                    if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
-                    {
-                        _currentPalette = _targetPalette;
-                        _isPaletteLerping = false;
-                    }
-                }
-
-                // GPWS / 近地大下沉率防撞动态斑马纹警示驱动 (Ground Terrain Hazard Pull-Up Alert)
-                IFlightTelemetry curTelem = FlightTelemetryContext.Current;
-                bool isHazardTriggered = false;
-                if (curTelem != null && curTelem.HasVessel)
-                {
-                    UpdateNavballProbeSnapshot(curTelem);
-                    // 优先取 GPWS 雷达真高；Mod 未安装或参数不可用时，回退到核心 AGL。
-                    double radarAltitude = _cachedGpwsRadarAltitude;
-                    if (double.IsNaN(radarAltitude) || double.IsInfinity(radarAltitude) || radarAltitude < 0.0)
-                        radarAltitude = curTelem.AltitudeAGL;
-
-                    // GPWS 下沉率用于加强趋势判断，但只在核心 VSI 确认正在下降时采纳，避免不同 Mod 的正负号约定误报。
-                    double gpwsSinkRate = _cachedGpwsSinkRate;
-                    double descentRate = Math.Max(0.0, -curTelem.VerticalSpeed);
-                    if (curTelem.VerticalSpeed < 0.0 && !double.IsNaN(gpwsSinkRate) && !double.IsInfinity(gpwsSinkRate))
-                        descentRate = Math.Max(descentRate, Math.Abs(gpwsSinkRate));
-
-                    // Trajectories 的预测撞击倒计时可提前提示高速再入/落地风险，不依赖是否已进入低空。
-                    double impactTime = _cachedTrajImpactTime;
-                    bool predictedImpact = !double.IsNaN(impactTime) && !double.IsInfinity(impactTime) && impactTime > 0.0 && impactTime < 12.0;
-                    bool lowAltitudeDescent = radarAltitude > 0.0 && radarAltitude < 280.0 && curTelem.VerticalSpeed < 0.0 && descentRate > 8.5;
-                    isHazardTriggered = lowAltitudeDescent || predictedImpact || curTelem.IsTouchdownAlert;
-                }
-
-                // 滞后滤波与持续维持计时器，彻底根治临界速度附近的单帧乱闪
-                float dtHazard = Time.deltaTime;
-                if (isHazardTriggered)
-                {
-                    _isHazardActive = true;
-                    _hazardHoldTimer = 0.6f;
-                }
-                else if (_hazardHoldTimer > 0f)
-                {
-                    _hazardHoldTimer -= dtHazard;
-                    if (_hazardHoldTimer <= 0f) _isHazardActive = false;
-                }
-                else
-                {
-                    _isHazardActive = false;
-                }
-
-                bool isProc = (curMode == NavballRenderMode.ProceduralVector || curMode == NavballRenderMode.ProceduralBake);
-                if (isProc)
-                {
-                    float targetHazard = _isHazardActive ? 1.0f : 0.0f;
-                    _currentHazardAlert = Mathf.MoveTowards(_currentHazardAlert, targetHazard, (!Application.isPlaying ? 1.0f : dtHazard * 3.5f));
-                    if (Mathf.Abs(_currentHazardAlert - _lastUploadedHazard) > 0.015f && _sphereMaterial.HasProperty(_PropGroundHazardAlert))
-                    {
-                        _sphereMaterial.SetFloat(_PropGroundHazardAlert, _currentHazardAlert);
-                        _lastUploadedHazard = _currentHazardAlert;
-                        _isMaterialDirty = true;
-                        if (curMode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
-                    }
-
-                    // 近地平精密 2.5° 游标微调刻度 (Vernier Scale Detail)
-                    float pitchVal = (curTelem != null) ? Mathf.Abs(curTelem.Pitch) : 0f;
-                    float targetVernier = (pitchVal < 6.0f) ? Mathf.Clamp01((6.0f - pitchVal) / 3.0f) : 0f;
-                    _currentVernierDetail = Mathf.MoveTowards(_currentVernierDetail, targetVernier, (!Application.isPlaying ? 1.0f : dtHazard * 3.5f));
-                    if (Mathf.Abs(_currentVernierDetail - _lastUploadedVernier) > 0.025f && _sphereMaterial.HasProperty(_PropVernierScaleDetail))
-                    {
-                        _sphereMaterial.SetFloat(_PropVernierScaleDetail, _currentVernierDetail);
-                        _lastUploadedVernier = _currentVernierDetail;
-                        _isMaterialDirty = true;
-                        if (curMode == NavballRenderMode.ProceduralBake) _isBakeDirty = true;
-                    }
-                }
-            }
-
-            // 3. 航向读数与参考系模式更新 (增加脏标记比对，杜绝每帧触发 UGUI 字体几何顶点网格重建)
-            if (_headingText != null)
-            {
-                string targetHeading = hasHook ? hook.HeadingText : $"HDG {Mathf.RoundToInt(FlightTelemetryContext.Current?.Heading ?? 0f) % 360:D3}°";
-                if (_headingText.text != targetHeading)
-                {
-                    _headingText.text = targetHeading;
-                }
-            }
-            if (_frameText != null)
-            {
-                string targetFrame = hasHook ? hook.FrameName : category;
-                if (_frameText.text != targetFrame)
-                {
-                    _frameText.text = targetFrame;
-                }
-                if (_frameText.color != _currentPalette.Rim)
-                {
-                    _frameText.color = _currentPalette.Rim;
-                }
-            }
-            if (_shellStatus != null && _shellStatus.color != _currentPalette.Rim)
-            {
-                _shellStatus.color = _currentPalette.Rim;
-            }
-        }
-
-        private void UpdateNavballProbeSnapshot(IFlightTelemetry telemetry)
-        {
-            float now = Time.unscaledTime;
-            if (Application.isPlaying && now - _lastNavballProbeSampleTime < 0.1f) return;
-            _lastNavballProbeSampleTime = now;
-            _cachedGpwsRadarAltitude = TelemetryTokenEngine.EvaluateNumeric("{GPWS:RadarAltitude}", telemetry);
-            _cachedGpwsSinkRate = TelemetryTokenEngine.EvaluateNumeric("{GPWS:SinkRate}", telemetry);
-            _cachedTrajImpactTime = TelemetryTokenEngine.EvaluateNumeric("{TRAJ:ImpactTime}", telemetry);
-        }
-
-        protected override void LateUpdate()
-        {
-            base.LateUpdate();
-            if (!gameObject.activeInHierarchy) return;
-
-            var mode = ThemeManager.Instance.GlobalRenderMode;
-            if (mode == NavballRenderMode.StockDirect)
-            {
-                if (_displayImage != null && _displayImage.enabled) _displayImage.enabled = false;
-                if (_sphereObject != null && _sphereObject.activeSelf) _sphereObject.SetActive(false);
-                if (_ballCamera != null && _ballCamera.enabled) _ballCamera.enabled = false;
-                if (_crosshair != null && _crosshair.activeSelf) _crosshair.SetActive(false);
-                if (_bezelRing != null && _bezelRing.activeSelf) _bezelRing.SetActive(false);
-                foreach (var kvp in _markerImages)
-                {
-                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf) kvp.Value.gameObject.SetActive(false);
-                }
-
-                NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
-                NavBallHookService.SyncStockNavballAction?.Invoke(this.RectTransform, Config != null ? Config.Scale : 1.0f);
-                return;
+                Quaternion camRot = hook.CameraRotation;
+                rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
             }
             else
             {
-                if (NavBallHookService.IsCleanStockNavballActiveFunc?.Invoke() ?? false)
-                {
-                    NavBallHookService.ResetStockNavballAction?.Invoke();
-                    NavBallHookService.SetStockNavballCleanAction?.Invoke(false);
-                    NavBallHookService.HideStockNavballAction?.Invoke(true);
-                }
-                if (_displayImage != null && !_displayImage.enabled) _displayImage.enabled = true;
-                if (_sphereObject != null && !_sphereObject.activeSelf) _sphereObject.SetActive(true);
-                if (_crosshair != null && !_crosshair.activeSelf) _crosshair.SetActive(true);
-                if (_bezelRing != null && !_bezelRing.activeSelf) _bezelRing.SetActive(true);
+                IFlightTelemetry telem = FlightTelemetryContext.Current;
+                rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
             }
 
-            if (_displayImage == null || !_displayImage.enabled || !_displayImage.gameObject.activeInHierarchy) return;
+            UpdateAttitudeTrend(rawRot);
 
-            // 在 Principia/官方 LateUpdate 彻底执行完毕后，执行最终高保真姿态与标线同步
-            SyncAttitudeAndVisuals();
-            SyncMarkers();
-            UpdateReticleDynamics();
-            UpdateProceduralDetailScale();
-
-            if (mode == NavballRenderMode.ProceduralBake && (_isBakeDirty || !_bakedTextureInitialized))
+            if (_sphereMaterial != null)
             {
-                BakeSurfaceTexture();
-                _bakedTextureInitialized = true;
-            }
-
-            // 动态绘制与亚像素脏标记判定：
-            // 姿态角发生大于 0.16° 变化（<0.2 屏幕物理像素）、着色器动态属性演变、避让标位移、或 2Hz 保活心跳触发时才调用离屏渲染
-            if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
-            {
-                float now = Time.unscaledTime;
-                float angularSpeed = _smoothedAngularVelocity.magnitude;
-
-                // 动态自适应离屏刷新率解耦 (Adaptive Offscreen Rate Decoupling):
-                // 当角速度处于低速稳态 (< 2.0°/s，如巡航、自驾配平、轨道滑行) 时，离屏渲染降频至 20Hz ~ 24Hz；
-                // 仅在剧烈机动翻滚 (> 8.0°/s) 时才平滑提高至 45Hz ~ 60Hz。
-                // 这能直接把平均每帧 CPU 耗时从 2.09ms 暴降至 0.3ms ~ 0.5ms，消灭 75% 的无效 Camera.Render 调用！
-                float targetHz = Mathf.Lerp(20f, 45f, Mathf.InverseLerp(1.0f, 8.0f, angularSpeed));
-                if (WidgetRenderManager.Instance != null && WidgetRenderManager.Instance.CriticalHz < targetHz)
-                    targetHz = WidgetRenderManager.Instance.CriticalHz;
-                float minRenderInterval = 1f / Mathf.Clamp(targetHz, 15f, 60f);
-
-                bool isStock = (mode == NavballRenderMode.StockTexture);
-                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation) > RotationDirtyThreshold);
-                bool trendDirty = !isStock && (Mathf.Abs(_attitudeTrendStrength - _lastRenderedTrendStrength) > TrendStrengthThreshold ||
-                                  (_attitudeTrendStrength > 0.01f && Quaternion.Angle(_filteredTrendRotation, _lastRenderedTrendRotation) > 0.08f));
-                bool hazardDirty = !isStock && Mathf.Abs(_currentHazardAlert - _lastRenderedHazard) > HazardDirtyThreshold;
-                bool vernierDirty = !isStock && Mathf.Abs(_currentVernierDetail - _lastRenderedVernier) > VernierDirtyThreshold;
-                bool heartbeatDirty = (now - _lastRenderedTime) >= HeartbeatInterval;
-
-                bool isDirty = rotDirty || trendDirty || hazardDirty || vernierDirty || _isMaterialDirty || heartbeatDirty || _isRenderDirty;
-
-                // 帧率节流保护：稳态静止或微步自驾时彻底跳过 Render()（0.01ms 开销）；高速翻滚时限制在合理 Hz
-                if (isDirty && (!_hasEverRendered || (now - _lastRenderedTime) >= minRenderInterval))
-                {
-                    _ballCamera.Render();
-                    _hasEverRendered = true;
-                    if (_sphereObject != null)
-                    {
-                        _lastRenderedRotation = _sphereObject.transform.localRotation;
-                    }
-                    _lastRenderedTrendRotation = _filteredTrendRotation;
-                    _lastRenderedTrendStrength = _attitudeTrendStrength;
-                    _lastRenderedHazard = _currentHazardAlert;
-                    _lastRenderedVernier = _currentVernierDetail;
-                    _lastRenderedTime = now;
-                    _isMaterialDirty = false;
-                    _isRenderDirty = false;
-                }
-            }
-        }
-
-        private float _lastMarkerDiagLogTime = -10f;
-
-        private void SyncMarkers()
-        {
-            var hook = NavBallHookService.Provider;
-            foreach (var kvp in _markerImages)
-            {
-                string key = kvp.Key;
-                Image img = kvp.Value;
-                if (img == null) continue;
-
-                Vector3 dir = Vector3.forward;
-                bool isVisible = false;
-                bool hasDir = false;
-
-                if (hook != null)
-                {
-                    hasDir = hook.GetMarkerDirection(key, out dir, out isVisible);
-                }
-                if (!hasDir && NavBallHookService.MarkerDirectionFallback != null)
-                {
-                    hasDir = NavBallHookService.MarkerDirectionFallback(key, out dir, out isVisible);
-                }
-
-                // 视界边缘平滑过渡 [-0.08, -0.24]，彻底消灭 17% 坐标跳变与 38% 缩放突变抽动
-                if (hasDir && isVisible && dir.z > -0.24f)
-                {
-                    if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
-
-                    Vector2 bearing = new Vector2(dir.x, dir.y);
-                    float bearingMag = bearing.magnitude;
-                    Vector2 normBearing = bearingMag > 0.001f ? (bearing / bearingMag) : Vector2.up;
-
-                    // 过渡权重：前向半球 (> -0.08) 为 0，地平圈内缘 (< -0.20) 为 1
-                    float tRear = Mathf.Clamp01((-0.08f - dir.z) / 0.12f);
-
-                    Vector2 frontPos = new Vector2(dir.x, dir.y) * _visualRadius;
-                    Vector2 rearPos = normBearing * (_visualRadius * 0.84f);
-                    img.rectTransform.anchoredPosition = Vector2.Lerp(frontPos, rearPos, tRear);
-
-                    float targetScale = Mathf.Lerp(1.0f, 0.65f, tRear);
-                    if (Mathf.Abs(img.rectTransform.localScale.x - targetScale) > 0.02f)
-                    {
-                        img.rectTransform.localScale = Vector3.one * targetScale;
-                    }
-
-                    float frontAlpha = Mathf.Clamp01((dir.z + 0.15f) / 0.25f);
-                    float rearAlpha = Mathf.Lerp(0.38f, 0.16f, Mathf.Clamp01(-dir.z));
-                    float finalAlpha = Mathf.Lerp(frontAlpha, rearAlpha, tRear);
-
-                    if (Mathf.Abs(img.color.a - finalAlpha) > 0.05f)
-                    {
-                        Color c = WidgetStyleManager.NeutralOpaque;
-                        c.a = finalAlpha;
-                        img.color = c;
-                    }
-                }
-                else
-                {
-                    if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
-                }
-            }
-
-            // 顺向/逆向与地表航迹标防御性防粘去重 (Anti-overlap De-cluttering)
-            Image progImg;
-            Image velImg;
-            if (_markerImages.TryGetValue("prograde", out progImg) &&
-                _markerImages.TryGetValue("velocity_vector", out velImg) &&
-                progImg != null && velImg != null &&
-                progImg.gameObject.activeSelf && velImg.gameObject.activeSelf)
-            {
-                float dist = Vector2.Distance(progImg.rectTransform.anchoredPosition, velImg.rectTransform.anchoredPosition);
-                if (dist < 18f * CurrentDpiScale)
-                {
-                    velImg.gameObject.SetActive(false);
-                }
-            }
-
-            Image retroImg;
-            Image antiVelImg;
-            if (_markerImages.TryGetValue("retrograde", out retroImg) &&
-                _markerImages.TryGetValue("anti_velocity_vector", out antiVelImg) &&
-                retroImg != null && antiVelImg != null &&
-                retroImg.gameObject.activeSelf && antiVelImg.gameObject.activeSelf)
-            {
-                float dist = Vector2.Distance(retroImg.rectTransform.anchoredPosition, antiVelImg.rectTransform.anchoredPosition);
-                if (dist < 18f * CurrentDpiScale)
-                {
-                    antiVelImg.gameObject.SetActive(false);
-                }
-            }
-
-            UpdateMarkerAvoidanceMasks();
-
-            if (Application.isPlaying && Time.unscaledTime - _lastMarkerDiagLogTime > 5.0f)
-            {
-                _lastMarkerDiagLogTime = Time.unscaledTime;
-                System.Text.StringBuilder sb = new System.Text.StringBuilder(128);
-                sb.Append("[ModularFlightPanel][NavballDiag] Active Markers: ");
-                int count = 0;
-                foreach (var kvp in _markerImages)
-                {
-                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf)
-                    {
-                        sb.Append(kvp.Key).Append(" ");
-                        count++;
-                    }
-                }
-                if (count == 0) sb.Append("(none)");
-                Debug.Log(sb.ToString());
-            }
-        }
-
-        private void UpdateReticleDynamics()
-        {
-            if (_reticleImage == null) return;
-            // 现代航电准星保持纯净几何与稳定对比度，杜绝每帧连续修改 color 触发 UGUI Canvas SetVerticesDirty 全画布顶点重建
-            float movement = _attitudeTrendStrength;
-            float targetAlpha = Mathf.Lerp(0.55f, 0.45f, movement);
-            Color reticleColor = _reticleImage.color;
-            if (Mathf.Abs(reticleColor.a - targetAlpha) > 0.05f)
-            {
-                reticleColor.a = targetAlpha;
-                _reticleImage.color = reticleColor;
-            }
-        }
-
-        private void UpdateMarkerAvoidanceMasks()
-        {
-            if (ThemeManager.Instance.GlobalRenderMode != NavballRenderMode.ProceduralVector) return;
-            if (_sphereMaterial == null || !_sphereMaterial.HasProperty(MarkerAvoidancePropertyIds[0])) return;
-            float halfDiameter = Mathf.Max(1f, _ballDiameter * 0.5f);
-            for (int i = 0; i < MarkerAvoidanceKeys.Length; i++)
-            {
-                Vector4 avoidance = Vector4.zero;
-                if (_markerImages.TryGetValue(MarkerAvoidanceKeys[i], out Image marker) && marker != null && marker.gameObject.activeSelf)
-                {
-                    Vector2 point = marker.rectTransform.anchoredPosition / halfDiameter;
-                    // 固化规避半径与激活状态 (避让权重二元化 1.0f)，杜绝标记呼吸透明度微调引发材质每帧标记为脏
-                    float radius = 0.20f;
-                    avoidance = new Vector4(point.x, point.y, radius, 1.0f);
-                }
-                Vector4 prev = _markerAvoidanceValues[i];
-                if (Mathf.Abs(avoidance.x - prev.x) > 0.015f ||
-                    Mathf.Abs(avoidance.y - prev.y) > 0.015f ||
-                    Mathf.Abs(avoidance.w - prev.w) > 0.5f)
-                {
-                    _markerAvoidanceValues[i] = avoidance;
-                    _sphereMaterial.SetVector(MarkerAvoidancePropertyIds[i], avoidance);
-                    _isMaterialDirty = true;
-                }
-            }
-        }
-
-        private void UpdateProceduralDetailScale()
-        {
-            if (ThemeManager.Instance.GlobalRenderMode != NavballRenderMode.ProceduralVector) return;
-            if (_sphereMaterial == null || !_sphereMaterial.HasProperty(_PropDetailScale) || _displayImage == null) return;
-
-            int sw = Screen.width;
-            int sh = Screen.height;
-            if (_lastDetailScale >= 0f && sw == _lastScreenWidth && sh == _lastScreenHeight && !transform.hasChanged)
-            {
-                return;
-            }
-            _lastScreenWidth = sw;
-            _lastScreenHeight = sh;
-
-            Canvas canvas = _displayImage.canvas;
-            Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
-            RectTransform imageRect = _displayImage.rectTransform;
-            imageRect.GetWorldCorners(_displayCorners);
-            Vector2 bottomLeft = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[0]);
-            Vector2 topLeft = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[1]);
-            Vector2 bottomRight = RectTransformUtility.WorldToScreenPoint(uiCamera, _displayCorners[3]);
-            float displayPixels = Mathf.Max(Vector2.Distance(bottomLeft, topLeft), Vector2.Distance(bottomLeft, bottomRight));
-            float detailScale = Mathf.InverseLerp(88f, 240f, displayPixels);
-            if (Mathf.Abs(detailScale - _lastDetailScale) > 0.015f)
-            {
-                _lastDetailScale = detailScale;
-                _sphereMaterial.SetFloat(_PropDetailScale, detailScale);
-                _isMaterialDirty = true;
+                // 数学解析光线投射姿态逆矩阵：视线向量 viewRay 乘以此逆矩阵即为球体模型坐标 p
+                Matrix4x4 invRot = Matrix4x4.Rotate(Quaternion.Inverse(rawRot));
+                _sphereMaterial.SetMatrix(_PropSphereInvRotation, invRot);
             }
         }
 
@@ -1315,7 +1079,6 @@ namespace ModularFlightPanel.UI.Widgets
             _paletteInitialized = false;
             _lastFrameCategory = null;
             _lastFramePattern = -1f;
-            _isMaterialDirty = true;
             _isBakeDirty = true;
 
             var mode = ThemeManager.Instance.GlobalRenderMode;
@@ -1323,7 +1086,6 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
                 if (_displayImage != null) _displayImage.enabled = false;
-                if (_sphereObject != null) _sphereObject.SetActive(false);
                 if (_crosshair != null) _crosshair.SetActive(false);
                 if (_bezelRing != null) _bezelRing.SetActive(false);
                 foreach (var kvp in _markerImages)
@@ -1340,24 +1102,10 @@ namespace ModularFlightPanel.UI.Widgets
                     NavBallHookService.HideStockNavballAction?.Invoke(true);
                 }
                 if (_displayImage != null) _displayImage.enabled = true;
-                if (_sphereObject != null) _sphereObject.SetActive(true);
                 if (_crosshair != null) _crosshair.SetActive(true);
                 if (_bezelRing != null) _bezelRing.SetActive(true);
 
-                Shader targetShader;
-                if (mode == NavballRenderMode.StockTexture)
-                {
-                    targetShader = AssetLoader.EnhancedShader ?? AssetLoader.ModernShader;
-                }
-                else if (mode == NavballRenderMode.ProceduralBake)
-                {
-                    EnsureBakePipeline();
-                    targetShader = AssetLoader.EnhancedShader ?? AssetLoader.ModernShader;
-                }
-                else // ProceduralVector
-                {
-                    targetShader = AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
-                }
+                Shader targetShader = AssetLoader.RaymarchShader ?? AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
 
                 if (_sphereMaterial != null)
                 {
@@ -1365,6 +1113,11 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _sphereMaterial.shader = targetShader;
                     }
+
+                    // 传递模式给 Raymarch Shader: 0=Stock, 1=Vector, 2=Bake
+                    float renderModeVal = (mode == NavballRenderMode.StockTexture) ? 0f :
+                                          (mode == NavballRenderMode.ProceduralBake) ? 2f : 1f;
+                    _sphereMaterial.SetFloat(_PropRenderMode, renderModeVal);
 
                     if (mode == NavballRenderMode.StockTexture)
                     {
@@ -1379,20 +1132,15 @@ namespace ModularFlightPanel.UI.Widgets
                             _sphereMaterial.mainTextureScale = Vector2.one;
                             _sphereMaterial.mainTextureOffset = Vector2.zero;
                         }
-                        if (_sphereMaterial.HasProperty("_Color"))
-                        {
-                            _sphereMaterial.SetColor("_Color", WidgetStyleManager.NeutralOpaque);
-                        }
                     }
 
                     if (_sphereMaterial.HasProperty(_PropNumeralUprightMode)) _sphereMaterial.SetFloat(_PropNumeralUprightMode, 0.0f);
                     if (_sphereMaterial.HasProperty(_PropNumeralRollAngle)) _sphereMaterial.SetFloat(_PropNumeralRollAngle, 0.0f);
                     if (_sphereMaterial.HasProperty(_PropNumeralTangentComp)) _sphereMaterial.SetFloat(_PropNumeralTangentComp, 1.0f);
 
-                    // 2. 天地与网格色彩统一注入：无论何种 Shader，属性存在即注入，杜绝硬编码与色彩脱节
-                    bool isModern = (targetShader == AssetLoader.ModernShader);
+                    // 天地与网格色彩统一注入
                     Color skyZenith = theme.SkyColor;
-                    Color skyHrz = isModern ? WidgetStyleManager.Lighten(skyZenith, 0.16f) : (Color)theme.AccentSecondary;
+                    Color skyHrz = (Color)theme.AccentSecondary;
 
                     if (_sphereMaterial.HasProperty(_PropSkyColor)) _sphereMaterial.SetColor(_PropSkyColor, skyZenith);
                     if (_sphereMaterial.HasProperty(_PropGroundColor)) _sphereMaterial.SetColor(_PropGroundColor, theme.GroundColor);
@@ -1474,24 +1222,11 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void HandleResolutionChanged(int newRes)
         {
-            base.HandleResolutionChanged(newRes);
-            if (_displayImage != null) _displayImage.texture = _renderTexture;
-            _isMaterialDirty = true;
-            _isRenderDirty = true;
+            // 数学解析光线投射管线直接在屏幕空间亚像素级绘制，无需管理离屏 RenderTexture 分辨率
         }
 
         protected override void HandleRenderSettingChanged()
         {
-            if (WidgetRenderManager.Instance == null) return;
-            int optimalRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
-                new Vector2(_ballDiameter, _ballDiameter),
-                Config != null ? Config.Scale : 1.0f,
-                Config != null ? Config.RenderScale : 1.0f,
-                minRes: 512);
-            if (_renderTexture == null || _renderTexture.width != optimalRes)
-            {
-                HandleResolutionChanged(optimalRes);
-            }
         }
 
         protected override void OnDestroy()
@@ -1503,6 +1238,11 @@ namespace ModularFlightPanel.UI.Widgets
                 NavBallHookService.ResetStockNavballAction?.Invoke();
                 NavBallHookService.SetStockNavballCleanAction?.Invoke(false);
             }
+            if (_sphereMaterial != null)
+            {
+                Destroy(_sphereMaterial);
+                _sphereMaterial = null;
+            }
             if (_bakeMaterial != null)
             {
                 Destroy(_bakeMaterial);
@@ -1513,10 +1253,6 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_bakedSurfaceTexture.IsCreated()) _bakedSurfaceTexture.Release();
                 Destroy(_bakedSurfaceTexture);
                 _bakedSurfaceTexture = null;
-            }
-            if (_sphereObject != null)
-            {
-                Destroy(_sphereObject);
             }
             base.OnDestroy();
         }

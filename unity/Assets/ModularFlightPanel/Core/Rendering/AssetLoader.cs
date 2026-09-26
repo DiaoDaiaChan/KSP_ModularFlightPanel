@@ -22,6 +22,7 @@ namespace ModularFlightPanel.Core
         public static Shader Vessel3DShader { get; private set; }
         public static Shader MinimalistAttitudeShader { get; private set; }
         public static Shader CrispAvionicsTextShader { get; private set; }
+        public static Shader RaymarchShader { get; private set; }
 
         public static void LoadBundle()
         {
@@ -30,6 +31,7 @@ namespace ModularFlightPanel.Core
 
 #if UNITY_EDITOR
             // 在 Unity 编辑器与无头渲染环境下，优先加载当前工程源码着色器，保证修改即时热生效
+            RaymarchShader = Shader.Find("ModularFlightPanel/NavballRaymarch");
             ProceduralShader = Shader.Find("ModularFlightPanel/NavballProcedural");
             EnhancedShader = Shader.Find("ModularFlightPanel/NavballEnhanced");
             HalftoneShader = Shader.Find("ModularFlightPanel/NavballHalftone");
@@ -69,6 +71,7 @@ namespace ModularFlightPanel.Core
                         PhosphorHoloShader = _bundle.LoadAsset<Shader>("Assets/Shaders/PhosphorHoloUI.shader");
                         DigitalSegmentShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DigitalSegmentUI.shader");
                         CrispAvionicsTextShader = _bundle.LoadAsset<Shader>("Assets/Shaders/CrispAvionicsText.shader");
+                        RaymarchShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NavballRaymarch.shader");
                         MFPLogger.Info(MFPLogger.CatRender, "Successfully loaded custom shaders from AssetBundle!");
                     }
                 }
@@ -83,6 +86,7 @@ namespace ModularFlightPanel.Core
             }
 
             // Fallbacks
+            if (RaymarchShader == null) RaymarchShader = Shader.Find("ModularFlightPanel/NavballRaymarch") ?? Shader.Find("UI/Default");
             if (EnhancedShader == null) EnhancedShader = Shader.Find("ModularFlightPanel/NavballEnhanced") ?? Shader.Find("Unlit/Texture");
             if (ProceduralShader == null) ProceduralShader = Shader.Find("ModularFlightPanel/NavballProcedural") ?? Shader.Find("Unlit/Texture");
             if (HalftoneShader == null) HalftoneShader = Shader.Find("ModularFlightPanel/NavballHalftone") ?? Shader.Find("Unlit/Texture");
