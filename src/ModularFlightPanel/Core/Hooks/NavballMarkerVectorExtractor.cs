@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using KSP.UI.Screens.Flight;
+using ModularFlightPanel.Config;
 using ModularFlightPanel.Core.Probes;
 
 namespace ModularFlightPanel.Core
@@ -43,7 +44,9 @@ namespace ModularFlightPanel.Core
             }
 
             // 1. 优先读取游戏内原生/Principia 正在驱动的 Marker Transform 数据
-            if (StockNavBallHook.HasStockNavBall && StockNavBallHook.StockInstance != null)
+            // 若原生姿态球处于隐藏态且无 Principia，原生 Update 已跳过，直接转入高精度数学解算
+            bool shouldReadTransform = PrincipiaProbe.IsAvailable || !ThemeManager.IsStockNavballHidden || StockUIHider.IsCleanStockNavballActive;
+            if (shouldReadTransform && StockNavBallHook.HasStockNavBall && StockNavBallHook.StockInstance != null)
             {
                 Transform marker = GetMarkerTransformByKey(markerKey);
                 if (marker != null && marker.gameObject.activeSelf)

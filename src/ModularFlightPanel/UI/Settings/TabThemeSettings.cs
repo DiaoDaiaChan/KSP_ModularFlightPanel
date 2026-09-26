@@ -66,6 +66,13 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(6f);
 
             // =========================================================================
+            // 模块 3.5: 底层渲染管线 (Low-Level Rendering Pipeline)
+            // =========================================================================
+            DrawRenderPipelineCard();
+
+            GUILayout.Space(6f);
+
+            // =========================================================================
             // 模块 4: 性能探针诊断与全局主干旁路 (Profiler & Master Bypass)
             // =========================================================================
             DrawPerformanceAndSpecCard();
@@ -670,10 +677,10 @@ namespace ModularFlightPanel.UI.Settings
             switch (curMode)
             {
                 case NavballRenderMode.StockTexture:
-                    modeDesc = I18n.Tr("THM_MODE_STOCK_TEX_DESC", "• 采用 KSP 原版 / TextureReplacer 材质贴图与屏幕空间解析光线投射着色器，100% 还原官方质感，零摄像机开销。");
+                    modeDesc = I18n.Tr("THM_MODE_STOCK_TEX_DESC", "• 采用 KSP 原版 / TextureReplacer 材质贴图与 3D 网格渲染，100% 还原官方质感，零姿态畸变。");
                     break;
                 case NavballRenderMode.ProceduralVector:
-                    modeDesc = I18n.Tr("THM_MODE_PROC_VEC_DESC", "• 纯数学 SDF 几何矢量屏幕空间解析直出，超清视网膜级最高画质，全字号/刻度边缘平滑无畸变，提供极致视效与超低 CPU 耗时。");
+                    modeDesc = I18n.Tr("THM_MODE_PROC_VEC_DESC", "• 纯数学 SDF 几何矢量 3D 曲面直出，超清视网膜级最高画质，全字号/刻度边缘平滑无畸变，提供极致视效与超低 CPU 耗时。");
                     break;
                 case NavballRenderMode.StockDirect:
                     modeDesc = I18n.Tr("THM_MODE_STOCK_DIRECT_DESC", "• 直接调用官方 3D 导航球，剔除侧边仪表与装饰杂物仅保留纯净姿态球；无缝接入 MFP 编辑模式，支持拖拽与 8 向拉动手柄放大缩小。");
@@ -724,6 +731,58 @@ namespace ModularFlightPanel.UI.Settings
                 GUILayout.Label(texDiag);
                 MFPGuiSkin.EndInset();
             }
+
+            MFPGuiSkin.EndCard();
+        }
+
+        #endregion
+
+        #region Module 3.5: Low-Level Render Pipeline
+
+        private static void DrawRenderPipelineCard()
+        {
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader(I18n.Tr("THM_HEADER_PIPELINE", "🚀 底层航电渲染管线 (Low-Level Rendering Pipeline)"));
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b>{I18n.Tr("THM_PIPELINE_MODE_LABEL", "渲染管线模式:")}</b>", GUILayout.Width(110f));
+
+            bool isGpu = ThemeManager.Instance != null && ThemeManager.Instance.EnableGpu2DUIAcceleration;
+
+            // 1: 现代 2D GPU 程序化管线
+            string gpuLabel = isGpu ? I18n.Tr("THM_PIPELINE_GPU_ON", "● 现代 GPU 单 Quad 程序化管线") : I18n.Tr("THM_PIPELINE_GPU_OFF", "○ 现代 GPU 单 Quad 程序化管线");
+            if (GUILayout.Button(gpuLabel, isGpu ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
+            {
+                if (ThemeManager.Instance != null && !isGpu)
+                {
+                    ThemeManager.Instance.EnableGpu2DUIAcceleration = true;
+                    ThemeManager.Instance.SaveSettings();
+                    WidgetStyleManager.Instance?.ClearMaterialCache();
+                    ThemeManager.Instance.SetTheme(ThemeManager.Instance.CurrentTheme);
+                }
+            }
+
+            // 0: 经典 UGUI 网格兼容管线
+            string uguiLabel = !isGpu ? I18n.Tr("THM_PIPELINE_UGUI_ON", "● 经典 UGUI 网格兼容管线") : I18n.Tr("THM_PIPELINE_UGUI_OFF", "○ 经典 UGUI 网格兼容管线");
+            if (GUILayout.Button(uguiLabel, !isGpu ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(26f)))
+            {
+                if (ThemeManager.Instance != null && isGpu)
+                {
+                    ThemeManager.Instance.EnableGpu2DUIAcceleration = false;
+                    ThemeManager.Instance.SaveSettings();
+                    WidgetStyleManager.Instance?.ClearMaterialCache();
+                    ThemeManager.Instance.SetTheme(ThemeManager.Instance.CurrentTheme);
+                }
+            }
+
+            GUILayout.EndHorizontal();
+
+            MFPGuiSkin.BeginInset();
+            string desc = isGpu
+                ? I18n.Tr("THM_PIPELINE_GPU_DESC", "• [现代 GPU 单 Quad 程序化管线] 启用底层着色器加速，背景卡片面板与仪表图元由片元着色器纯数学求值，零额外 Mesh 顶点与画布重绘开销，性能极致通透。")
+                : I18n.Tr("THM_PIPELINE_UGUI_DESC", "• [经典 UGUI 网格兼容管线] 使用标准 Unity UGUI 原生图像与网格渲染，提供最广泛的老旧显卡与传统模式兼容性。");
+            GUILayout.Label(desc, MFPGuiSkin.MutedLabelStyle);
+            MFPGuiSkin.EndInset();
 
             MFPGuiSkin.EndCard();
         }

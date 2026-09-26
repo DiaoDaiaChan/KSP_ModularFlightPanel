@@ -400,7 +400,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             ApplyText(_deltaVText, TextStyleRole.PrimaryValue, theme);
             if (_heroDivider != null)
             {
-                _heroDivider.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Light);
+                _heroDivider.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Medium);
             }
             ApplyText(_vectorSubtitleText, TextStyleRole.SecondaryValue, theme);
 

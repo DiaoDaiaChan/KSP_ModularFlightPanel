@@ -44,6 +44,7 @@ namespace ModularFlightPanel.Core
         // ── 高度计 (Altimeter) 缓存 ──
         private static bool _isAltimeterCached = false;
         private static Renderer[] _cachedAltimeterRenderers;
+        private static readonly List<ActionGroupToggleButton> _cachedAltimeterActionButtons = new List<ActionGroupToggleButton>(16);
         private static AltimeterSliderButtons _cachedAltimeterSlider;
         private static VerticalSpeedGauge _cachedVsiGauge;
         private static LinearAtmosphereGauge _cachedAtmoGauge;
@@ -74,6 +75,7 @@ namespace ModularFlightPanel.Core
             _isNavballCached = false;
 
             _cachedAltimeterRenderers = null;
+            _cachedAltimeterActionButtons.Clear();
             _cachedAltimeterSlider = null;
             _cachedVsiGauge = null;
             _cachedAtmoGauge = null;
@@ -99,6 +101,14 @@ namespace ModularFlightPanel.Core
             HideStockBottomLeft(false);
             HideStockTimeWarp(false);
             HideStockCommNet(false);
+            if (SpeedDisplay.Instance != null && !SpeedDisplay.Instance.enabled)
+            {
+                SpeedDisplay.Instance.enabled = true;
+            }
+            if (StockNavBallHook.StockInstance != null && !StockNavBallHook.StockInstance.enabled)
+            {
+                StockNavBallHook.StockInstance.enabled = true;
+            }
             NavBallHookService.RestoreStockToolbarAction?.Invoke();
         }
 
@@ -201,6 +211,10 @@ namespace ModularFlightPanel.Core
                         _cachedVsiGauge = frameGo.GetComponentInChildren<VerticalSpeedGauge>(true);
                         _cachedAtmoGauge = frameGo.GetComponentInChildren<LinearAtmosphereGauge>(true);
                         _cachedAltTumbler = frameGo.GetComponentInChildren<AltitudeTumbler>(true);
+
+                        _cachedAltimeterActionButtons.Clear();
+                        var altiBtns = frameGo.GetComponentsInChildren<ActionGroupToggleButton>(true);
+                        if (altiBtns != null) _cachedAltimeterActionButtons.AddRange(altiBtns);
                     }
 
                     // 休眠/唤醒无外部消费者的高频 UI 脚本 (0 CPU 轮询)
@@ -212,6 +226,13 @@ namespace ModularFlightPanel.Core
                         _cachedAtmoGauge.enabled = !hide;
                     if (_cachedAltTumbler != null && _cachedAltTumbler.enabled == hide)
                         _cachedAltTumbler.enabled = !hide;
+
+                    for (int i = 0; i < _cachedAltimeterActionButtons.Count; i++)
+                    {
+                        var btn = _cachedAltimeterActionButtons[i];
+                        if (btn != null && btn.enabled == hide)
+                            btn.enabled = !hide;
+                    }
 
                     if (_cachedAltimeterRenderers != null)
                     {
@@ -415,6 +436,16 @@ namespace ModularFlightPanel.Core
                             {
                                 if (fuimR[i] != null && !_cachedAllStockRenderers.Contains(fuimR[i]))
                                     _cachedAllStockRenderers.Add(fuimR[i]);
+                            }
+                        }
+
+                        var frameBtns = FlightUIModeController.Instance.navBall.GetComponentsInChildren<ActionGroupToggleButton>(true);
+                        if (frameBtns != null)
+                        {
+                            for (int i = 0; i < frameBtns.Length; i++)
+                            {
+                                if (frameBtns[i] != null && !_cachedNavballActionButtons.Contains(frameBtns[i]))
+                                    _cachedNavballActionButtons.Add(frameBtns[i]);
                             }
                         }
                     }
@@ -651,28 +682,16 @@ namespace ModularFlightPanel.Core
                     }
                 }
 
-                // ── 2. SpeedDisplay 动态退化与按需唤醒 ──
-                if (SpeedDisplay.Instance != null)
+                // ── 2. SpeedDisplay 隐藏态休眠 (彻底杜绝 0.05ms 字符重绘与 StringBuilder 开销) ──
+                if (SpeedDisplay.Instance != null && SpeedDisplay.Instance.enabled)
                 {
-                    // 原版无 Principia 时直接使用底层遥测，SpeedDisplay 完全休眠；
-                    // 仅在 Principia 存在且有组件正在读取速度/参考系时唤醒
-                    bool needSpeedDisplay = ModularFlightPanel.Core.Probes.PrincipiaProbe.IsAvailable && StockNavBallHook.HasActiveSpeedConsumer;
-                    if (SpeedDisplay.Instance.enabled != needSpeedDisplay)
-                    {
-                        SpeedDisplay.Instance.enabled = needSpeedDisplay;
-                    }
+                    SpeedDisplay.Instance.enabled = false;
                 }
 
-                // ── 3. NavBall 姿态球核心消费者感知动态化 ──
+                // ── 3. NavBall 超轻量级物理万向节状态同步 (彻底省去 0.09ms 材质实例化与 UGUI 循环) ──
                 if (StockNavBallHook.StockInstance != null)
                 {
-                    // Principia 存在时维持常驻兼容；
-                    // 原生环境下，仅在有组件订阅姿态旋转时保活，无组件时休眠 0.092ms 的姿态矩阵解算
-                    bool needNavball = ModularFlightPanel.Core.Probes.PrincipiaProbe.IsAvailable || StockNavBallHook.HasActiveAttitudeConsumer;
-                    if (StockNavBallHook.StockInstance.enabled != needNavball)
-                    {
-                        StockNavBallHook.StockInstance.enabled = needNavball;
-                    }
+                    StockNavBallHook.UpdateStockNavballGymbalsLightweight(StockNavBallHook.StockInstance);
                 }
             }
             catch (Exception ex)
