@@ -70,7 +70,6 @@ namespace ModularFlightPanel.UI.Settings
         public static GUIStyle ValueFieldStyle { get; private set; }
         public static GUIStyle SectionTitleStyle { get; private set; }
         public static GUIStyle SubtitleStyle { get; private set; }
-        public static GUIStyle MutedLabelStyle => SubtitleStyle;
         public static GUIStyle RowSelectedStyle { get; private set; }
         public static GUIStyle RowNormalStyle { get; private set; }
         public static GUIStyle ResizeGripStyle { get; private set; }

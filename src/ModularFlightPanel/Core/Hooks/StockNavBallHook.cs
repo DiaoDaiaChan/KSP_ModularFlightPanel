@@ -495,6 +495,24 @@ namespace ModularFlightPanel.Core
                 }
             }
 
+            string frameName = GetReferenceFrameName();
+            if (!string.IsNullOrEmpty(frameName))
+            {
+                string fn = frameName.ToLowerInvariant();
+                if (fn.Contains("barycentric") || fn.Contains("lagrange") || fn.Contains("pulsating") || fn.Contains("l1") || fn.Contains("l2") || fn.Contains("l点") || fn.Contains("拉格朗日"))
+                    return "LAGRANGE";
+                if (fn.Contains("inertial") || fn.Contains("non_rotating") || fn.Contains("惯性") || fn.Contains("不旋转"))
+                    return "INERTIAL";
+                if (fn.Contains("orbit") || fn.Contains("body_direction") || fn.Contains("parent_direction") || fn.Contains("轨道"))
+                    return "ORBIT";
+                if (fn.Contains("target") || fn.Contains("dock") || fn.Contains("目标"))
+                    return "TARGET";
+                if (fn.Contains("body_fixed") || fn.Contains("body_surface") || fn.Contains("rotating") || fn.Contains("fixed") || fn.Contains("体固") || fn.Contains("地固"))
+                    return "BODY_FIXED";
+                if (fn.Contains("surface") || fn.Contains("ground") || fn.Contains("地表"))
+                    return "SURFACE";
+            }
+
             Texture tex = GetTexture();
             if (tex != null)
             {

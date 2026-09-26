@@ -121,13 +121,8 @@ namespace ModularFlightPanel.Core
 
             if (!shouldHideNavball) return true;
 
-            // 官方原生 NavBall.Update 包含 10 次 GetComponent<MeshRenderer>().materials[0] 堆内存分配、
-            // TextMeshPro 字符生成与大量 UGUI 状态轮询 (约 0.09ms CPU 耗时)。
-            // 在隐藏态下直接跳过原生 Update，改由超轻量纳秒级解算器驱动万向节与四元数，
-            // 确保底层 attitudeGymbal 与 relativeGymbal 100% 保持权威物理状态，
-            // 完美兼顾 Principia 多参考系切换与小组件 Hook。
             StockNavBallHook.UpdateStockNavballGymbalsLightweight(__instance);
-            return false;
+            return true;
         }
 
         [HarmonyPostfix]

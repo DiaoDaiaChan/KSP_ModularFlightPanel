@@ -781,7 +781,7 @@ namespace ModularFlightPanel.UI.Settings
             string desc = isGpu
                 ? I18n.Tr("THM_PIPELINE_GPU_DESC", "• [现代 GPU 单 Quad 程序化管线] 启用底层着色器加速，背景卡片面板与仪表图元由片元着色器纯数学求值，零额外 Mesh 顶点与画布重绘开销，性能极致通透。")
                 : I18n.Tr("THM_PIPELINE_UGUI_DESC", "• [经典 UGUI 网格兼容管线] 使用标准 Unity UGUI 原生图像与网格渲染，提供最广泛的老旧显卡与传统模式兼容性。");
-            GUILayout.Label(desc, MFPGuiSkin.MutedLabelStyle);
+            GUILayout.Label(desc, MFPGuiSkin.SubtitleStyle);
             MFPGuiSkin.EndInset();
 
             MFPGuiSkin.EndCard();

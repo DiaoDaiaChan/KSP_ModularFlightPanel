@@ -877,9 +877,7 @@ namespace ModularFlightPanel.UI.Widgets
                     rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
                 }
 
-                _sphereObject.transform.localRotation = isProceduralVec
-                    ? new Quaternion(-rawRot.x, -rawRot.y, rawRot.z, rawRot.w)
-                    : rawRot;
+                _sphereObject.transform.localRotation = rawRot;
 
                 UpdateAttitudeTrend(_sphereObject.transform.localRotation);
             }

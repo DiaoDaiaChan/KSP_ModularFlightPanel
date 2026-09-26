@@ -648,17 +648,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     Quaternion camRot = hook.CameraRotation;
                     Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
-                    _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(-rawRot.x, -rawRot.y, rawRot.z, rawRot.w)
-                        : rawRot;
+                    _sphereObject.transform.localRotation = rawRot;
                 }
                 else
                 {
                     IFlightTelemetry telem = FlightTelemetryContext.Current;
                     Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
-                    _sphereObject.transform.localRotation = isProcedural
-                        ? new Quaternion(-rawRot.x, -rawRot.y, rawRot.z, rawRot.w)
-                        : rawRot;
+                    _sphereObject.transform.localRotation = rawRot;
                 }
             }
 
