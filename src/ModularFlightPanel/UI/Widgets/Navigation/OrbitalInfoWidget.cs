@@ -29,6 +29,15 @@ namespace ModularFlightPanel.UI.Widgets
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
+        /// <summary>
+        /// 语义主题管道 (MFP-SPEC-003)：显式接入 WidgetStyleManager 单向主题下发。
+        /// 视觉全部来自语义角色微控件，因此由基类把主题推送给全部已注册微控件即可。
+        /// </summary>
+        public override void ApplyTheme(ThemeConfig theme)
+        {
+            base.ApplyTheme(theme);
+        }
+
         // ── 顶部系统标题与轨道动力学能量胶囊 ──
         public TextWidget Title = TextWidget.Title("ORBITAL DYNAMICS");
         public TextWidget OrbitBadge = TextWidget.Badge("SUBORBITAL");

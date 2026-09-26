@@ -214,6 +214,63 @@ namespace ModularFlightPanel.Core
             {
                 instance.navBall.rotation = relativeGymbal;
             }
+
+            // 原版姿态球隐藏时，同步轻量驱动原生 Marker Transform (纯数学矢量，跳过官方 8 次 MeshRenderer.materials 堆分配与 UGUI 循环)
+            float unitScale = instance.VectorUnitScale;
+            if (unitScale < 0.001f) unitScale = 1.0f;
+
+            // 1. 速度矢量 (Prograde / Retrograde)
+            Vector3 dispVel = Vector3.zero;
+            switch (FlightGlobals.speedDisplayMode)
+            {
+                case FlightGlobals.SpeedDisplayModes.Orbit:
+                    dispVel = (Vector3)FlightGlobals.ship_obtVelocity;
+                    break;
+                case FlightGlobals.SpeedDisplayModes.Surface:
+                    dispVel = (Vector3)FlightGlobals.ship_srfVelocity;
+                    break;
+                case FlightGlobals.SpeedDisplayModes.Target:
+                    dispVel = (Vector3)FlightGlobals.ship_tgtVelocity;
+                    break;
+            }
+
+            if (dispVel.sqrMagnitude > 0.0001f)
+            {
+                Vector3 velDir = dispVel.normalized;
+                Vector3 localPrograde = attitudeGymbal * (velDir * unitScale);
+                if (instance.progradeVector != null) instance.progradeVector.localPosition = localPrograde;
+                if (instance.retrogradeVector != null) instance.retrogradeVector.localPosition = -localPrograde;
+            }
+
+            // 2. 轨道法向与径向 (Normal / AntiNormal / RadialIn / RadialOut)
+            Vessel v = FlightGlobals.ActiveVessel;
+            if (v != null && v.orbit != null && v.mainBody != null)
+            {
+                Vector3 wCoM = v.CurrentCoM;
+                Vector3 cbPos = (Vector3)v.mainBody.position;
+                Vector3 obtVel = (Vector3)v.orbit.GetVel();
+                if (obtVel.sqrMagnitude > 0.0001f)
+                {
+                    Vector3 rad = Vector3.ProjectOnPlane((wCoM - cbPos).normalized, obtVel).normalized;
+                    Vector3 norm = Vector3.Cross(rad, obtVel.normalized);
+
+                    Vector3 localNorm = attitudeGymbal * (norm * unitScale);
+                    Vector3 localRad = attitudeGymbal * (rad * unitScale);
+
+                    if (instance.antiNormalVector != null) instance.antiNormalVector.localPosition = localNorm;
+                    if (instance.normalVector != null) instance.normalVector.localPosition = -localNorm;
+                    if (instance.radialOutVector != null) instance.radialOutVector.localPosition = localRad;
+                    if (instance.radialInVector != null) instance.radialInVector.localPosition = -localRad;
+                }
+            }
+
+            // 3. 目标航向标 (Target / AntiTarget Waypoint)
+            if (FlightGlobals.fetch != null && FlightGlobals.fetch.vesselTargetDirection.sqrMagnitude > 0.0001f)
+            {
+                Vector3 localTgt = attitudeGymbal * (FlightGlobals.fetch.vesselTargetDirection * unitScale);
+                if (instance.progradeWaypoint != null) instance.progradeWaypoint.localPosition = localTgt;
+                if (instance.retrogradeWaypoint != null) instance.retrogradeWaypoint.localPosition = -localTgt;
+            }
         }
 
         /// <summary>

@@ -121,9 +121,9 @@ namespace ModularFlightPanel.Core
 
             if (!shouldHideNavball) return true;
 
-            // 姿态球处于隐身态：确保底层 attitudeGymbal 与 relativeGymbal 100% 保持权威物理状态
+            // 姿态球处于隐身态：纯数学纳秒级轻量驱动万向节与标记 Transform，跳过官方 Update (彻底消除 0.09ms CPU 耗时与 8 次堆材质分配)
             StockNavBallHook.UpdateStockNavballGymbalsLightweight(__instance);
-            return true;
+            return false;
         }
 
         [HarmonyPostfix]

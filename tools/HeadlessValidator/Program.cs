@@ -397,24 +397,24 @@ namespace ModularFlightPanel.HeadlessValidator
             int specErrors = ValidateWidgetSpecifications(repoRoot);
             overallErrors += specErrors;
 
-            // 7. 审计内核自检：词法器（注释/字符串剥离）+ 规则正则 + I18n AST 语法树自检
-            Console.WriteLine($"\n[7/10] 审计内核自检 (Linter + Spec Rules + I18n AST Self-Test)...");
-            var linterFailures = CSharpSourceLinter.SelfTest();
+            // 7. 审计内核自检：继承图规则 + 颜色字面量计数器 + I18n AST 语法树自检
+            Console.WriteLine($"\n[7/10] 审计内核自检 (Spec Rules + Color Ledger + I18n AST Self-Test)...");
             var ruleFailures = WidgetSourceAudit.SelfTest();
+            var colorFailures = WidgetColorLiteralAudit.SelfTest();
             var i18nSelfTestFailures = I18nSyntaxAuditor.SelfTest();
-            if (linterFailures.Count == 0 && ruleFailures.Count == 0 && i18nSelfTestFailures.Count == 0)
+            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0)
             {
-                // 用例条数由内核回传真实计数：写死数字（曾经是"14 条 / 5 条"）必然随代码漂移成假信息。
-                PrintSuccess($"审计内核自检通过: 词法器 {CSharpSourceLinter.LastSelfTestCaseCount} 条边界用例"
-                           + $" + 规则自检 {WidgetSourceAudit.LastSelfTestCaseCount} 条对照用例"
+                // 用例条数由内核回传真实计数：写死数字必然随代码漂移成假信息。
+                PrintSuccess($"审计内核自检通过: 规则自检 {WidgetSourceAudit.LastSelfTestCaseCount} 条对照用例"
+                           + $" + 颜色字面量 {WidgetColorLiteralAudit.LastSelfTestCaseCount} 条边界用例"
                            + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条用例 全部符合预期。");
             }
             else
             {
-                foreach (var failure in linterFailures) PrintError($"词法器自检失败: {failure}");
                 foreach (var failure in ruleFailures) PrintError($"规则自检失败: {failure}");
+                foreach (var failure in colorFailures) PrintError($"颜色字面量自检失败: {failure}");
                 foreach (var failure in i18nSelfTestFailures) PrintError($"I18n 语法树自检失败: {failure}");
-                overallErrors += linterFailures.Count + ruleFailures.Count + i18nSelfTestFailures.Count;
+                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count;
             }
 
             // 8. Unity 无头预览工程镜像一致性（清单 tools/unity_mirror.manifest 即合约）
@@ -455,48 +455,44 @@ namespace ModularFlightPanel.HeadlessValidator
 
         /// <summary>
         /// MFP-SPEC-001..008 组件规范审计。
-        /// 规则实现、正则、颜色基线、"哪些文件算组件"的发现逻辑全部来自插件本体
-        /// (src/ModularFlightPanel/UI/WidgetSourceAudit.cs + WidgetColorLiteralAudit.cs)，
+        /// 规则实现、判定数据表、颜色基线、"哪些类算组件"的发现逻辑全部来自插件本体
+        /// (src/ModularFlightPanel/UI/Auditing/WidgetSourceAudit.cs + WidgetSpecRules.cs + WidgetColorLiteralAudit.cs)，
         /// 本方法只负责取值、打印与计数 —— 不复制任何规则，因此不存在副本漂移。
         ///
         /// 【护栏】这里绝不允许"扫不到就跳过"：
         /// 空集与真绿在报告上完全同形（0 个组件 / 0 处违规 / 完全合规），
         /// 历史上 repoRoot 定位失败或组件被挪出扫描范围时，门禁会打印 ALL CHECKS PASSED 并返回 0。
-        /// 现在仓库根不可用、读取失败、扫描量低于冻结下限一律按 ERROR 计入总数。
+        /// 现在发现层返回结构化状态：源码根不可解析 / 源码目录缺失 / 读取失败 / 未发现组件 一律按 ERROR 计入总数；
+        /// 组件作用域由继承闭包按内容判定，不存在"移动目录即脱离审计"的盲区。
         /// </summary>
         private static int ValidateWidgetSpecifications(string repoRoot)
         {
-            var diagnostics = new List<string>();
-            var componentFiles = WidgetSourceAudit.DiscoverComponentFiles(repoRoot, diagnostics);
+            var discovery = WidgetSourceAudit.Discover(repoRoot);
 
             int errors = 0;
 
-            string floorFailure = WidgetSourceAudit.CheckDiscoveryFloor(repoRoot, componentFiles.Count);
-            if (floorFailure != null)
+            if (!discovery.CanAuditSource)
             {
-                PrintError($"组件规范审计【发现层未通过】: {floorFailure}");
+                PrintError($"组件规范审计【发现层未通过】: {discovery.Detail} (状态 {discovery.Status})");
                 errors++;
             }
 
-            for (int i = 0; i < diagnostics.Count; i++)
+            for (int i = 0; i < discovery.ReadErrors.Count; i++)
             {
-                PrintError($"组件规范审计【读取诊断】: {diagnostics[i]}");
+                PrintError($"组件规范审计【读取诊断】: {discovery.ReadErrors[i]}");
                 errors++;
             }
 
-            if (componentFiles.Count == 0)
+            if (!discovery.CanAuditSource)
             {
-                Console.WriteLine($"  └─ 审计统计: ERROR {errors} / WARNING 0 (未扫描到任何组件，源码级规则完全未执行)");
+                Console.WriteLine($"  └─ 审计统计: ERROR {errors} / WARNING 0 (未取得可审计的组件源码，源码级规则完全未执行)");
                 return errors;
             }
 
-            string widgetsDir = Path.Combine(repoRoot, "src", "ModularFlightPanel", "UI", "Widgets");
-            int inWidgets = Directory.Exists(widgetsDir) ? Directory.GetFiles(widgetsDir, "*.cs", SearchOption.AllDirectories).Length : 0;
+            Console.WriteLine($"  ├─ 扫描范围: src/ModularFlightPanel 全量源码 {discovery.Sources.Count} 个文件 → 组件类 {discovery.WidgetClassCount} 个 (作用域文件 {discovery.ScopedFileCount} 个)");
+            Console.WriteLine($"  ├─ 作用域判定: 继承契约根 {WidgetSpecRules.ContractRootType} 的闭合后代 (内容驱动，组件文件移动目录不会脱离审计)");
 
-            Console.WriteLine($"  ├─ 扫描范围: UI/Widgets ({inWidgets} 个) + UI 其余目录组件类 ({componentFiles.Count - inWidgets} 个) = {componentFiles.Count} 个组件");
-            Console.WriteLine($"  ├─ 冻结下限: {WidgetSourceAudit.ExpectedComponentFloor} 个组件 (低于即判门禁失效，防止空集假绿)");
-
-            var report = WidgetSourceAudit.Scan(componentFiles);
+            var report = WidgetSourceAudit.Scan(discovery);
             errors += report.ErrorCount;
 
             for (int i = 0; i < report.Violations.Count; i++)
@@ -509,14 +505,14 @@ namespace ModularFlightPanel.HeadlessValidator
 
             if (errors == 0)
             {
-                PrintSuccess($"规范合规审计 100% 通过 ({componentFiles.Count}/{componentFiles.Count} 组件完全合规):");
-                Console.WriteLine($"  ├─ 继承契约: 全部组件统一继承 BaseFlightWidget (类级 + 继承闭包判定)");
-                Console.WriteLine($"  ├─ 刷新率阶梯: 全部组件显式重写 RefreshTier 且取值合法 (形状 + 取值双校验)");
-                Console.WriteLine($"  ├─ 主题与着色管道: 全部组件接入 WidgetStyleManager (0 颜色字面量, 零容忍)");
-                Console.WriteLine($"  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry & OnDestroy 全量 override 并调用 base");
-                Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件声明 [FlightWidget] 特性 (MFP-SPEC-008 自动挂载)");
-                Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询 (Find*ObjectByType / GameObject.Find* / Camera.main / GetRootGameObjects)");
-                var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(repoRoot);
+                PrintSuccess($"规范合规审计 100% 通过 ({report.WidgetsScanned} 个组件类完全合规):");
+                Console.WriteLine($"  ├─ 继承契约: 全部组件统一继承 {WidgetSpecRules.ContractRootType}（含『声明元数据却未继承』的反向不变量）");
+                Console.WriteLine($"  ├─ 刷新率阶梯: 全部组件显式重写 RefreshTier 且取值来自 {WidgetSpecRules.TierEnumType} 枚举本身（取值集合从源码派生）");
+                Console.WriteLine($"  ├─ 主题与着色管道: 全部组件提供 ApplyTheme({WidgetSpecRules.ThemeParameterType}) 且 0 颜色字面量（零容忍）");
+                Console.WriteLine($"  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry 且 OnDestroy 全量 override 并调用 base");
+                Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件沿继承链声明 [{WidgetSpecRules.MetadataAttribute}] 特性 (MFP-SPEC-008 自动挂载)");
+                Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询（黑名单表 {WidgetSpecRules.SceneQueryApis.Length} 条：Find*ByType / GameObject.Find* / Camera.main·current·allCameras·GetAllCameras / GetRootGameObjects）");
+                var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
                 Console.WriteLine($"  └─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
             }
             else
@@ -1033,7 +1029,7 @@ namespace ModularFlightPanel.HeadlessValidator
             {
                 string fileName = Path.GetFileName(file);
                 int count = WidgetColorLiteralAudit.CountOccurrences(File.ReadAllText(file));
-                int allowed = WidgetColorLiteralAudit.GetAllowedLines(fileName);
+                int allowed = WidgetColorLiteralAudit.GetAllowedOccurrences(fileName);
                 total += count;
                 string flag = count > allowed ? "  <== 超出基线!" : (count < allowed ? "  <== 已低于基线，可下调" : string.Empty);
                 Console.WriteLine($"            {{ \"{fileName}\", {count} }},{flag}");

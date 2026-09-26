@@ -32,6 +32,7 @@ namespace ModularFlightPanel.UI.Widgets
         DefaultWidgetId = "core.throttle",
         DefaultX = 0f,
         DefaultY = 0f,
+        HighFrequency = true,
         ExactIds = new[] { "core.throttle", "core.vsi", "core.propellant" })]
     public class ArcMeterWidget : BaseFlightWidget
     {

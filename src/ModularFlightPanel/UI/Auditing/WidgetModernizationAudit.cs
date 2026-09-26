@@ -90,66 +90,35 @@ namespace ModularFlightPanel.UI.Auditing
         };
 
         /// <summary>
-        /// 执行全量组件现代化合规性扫描
+        /// 执行全量组件现代化合规性扫描（复用 WidgetSourceAudit 的组件继承图，与文件所在目录无关）
         /// </summary>
         public static WidgetModernizationReport Scan(string repoRoot)
         {
-            var report = new WidgetModernizationReport();
             if (string.IsNullOrEmpty(repoRoot) || !Directory.Exists(repoRoot))
             {
-                repoRoot = ResolveRepositoryRoot();
+                repoRoot = WidgetSourceAudit.ResolveRepositoryRoot();
             }
+            return Scan(WidgetSourceAudit.Discover(repoRoot));
+        }
 
-            string widgetsDir = Path.Combine(repoRoot, "src", "ModularFlightPanel", "UI", "Widgets");
-            if (!Directory.Exists(widgetsDir)) return report;
+        /// <summary>
+        /// 基于发现层结果扫描：作用域 = 继承图里的具体组件类
+        /// （旧实现只按 UI/Widgets 目录 + 直接基类名 + 每文件首个匹配类来取样，会静默漏掉别名类与跨目录组件）
+        /// </summary>
+        public static WidgetModernizationReport Scan(WidgetDiscoveryResult discovery)
+        {
+            var report = new WidgetModernizationReport();
+            if (discovery == null || !discovery.CanAuditSource || discovery.Graph == null) return report;
 
-            string[] csFiles = Directory.GetFiles(widgetsDir, "*.cs", SearchOption.AllDirectories);
-
-            for (int i = 0; i < csFiles.Length; i++)
+            var graph = discovery.Graph;
+            foreach (var node in graph.ContractClasses)
             {
-                string filePath = csFiles[i];
-                string fileName = Path.GetFileName(filePath);
+                if (node.IsAbstract) continue;   // 抽象基类不直接出货，不计入现代化进度
 
-                // 排除抽象基类与规范模板自身
-                if (fileName.Equals("BaseNavballSphereWidget.cs", StringComparison.OrdinalIgnoreCase) ||
-                    fileName.Equals("StandardFlightWidgetTemplate.cs", StringComparison.OrdinalIgnoreCase) ||
-                    fileName.Equals("WidgetDslControls.cs", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                string rawText;
-                try
-                {
-                    rawText = File.ReadAllText(filePath);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                CompilationUnitSyntax root = RoslynAstHelper.ParseRoot(rawText);
-
-                // 寻找派生自 BaseFlightWidget / BaseAvionicsWidget / BaseNavballSphereWidget 的类
-                var classDecls = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
-                ClassDeclarationSyntax widgetClass = null;
-
-                foreach (var cd in classDecls)
-                {
-                    var baseTypes = RoslynAstHelper.GetBaseTypeNames(cd);
-                    if (baseTypes.Contains("BaseFlightWidget") ||
-                        baseTypes.Contains("BaseAvionicsWidget") ||
-                        baseTypes.Contains("BaseNavballSphereWidget"))
-                    {
-                        widgetClass = cd;
-                        break;
-                    }
-                }
-
-                if (widgetClass == null) continue;
-
-                string widgetName = widgetClass.Identifier.Text;
-                var baseTypeNames = RoslynAstHelper.GetBaseTypeNames(widgetClass);
+                ClassDeclarationSyntax widgetClass = node.Decl;
+                string widgetName = node.Name;
+                string fileName = node.FileName;
+                string filePath = node.FilePath;
 
                 var item = new WidgetModernizationItem
                 {
@@ -158,8 +127,8 @@ namespace ModularFlightPanel.UI.Auditing
                     FilePath = filePath
                 };
 
-                bool isCore3D = baseTypeNames.Contains("BaseNavballSphereWidget") ||
-                                widgetName.Contains("NavballSphereWidget");
+                // Core3D：由继承链结构判定（旧实现按"类名里是否含 NavballSphereWidget"猜测）
+                bool isCore3D = node.AnyInChain(n => string.Equals(n.Name, WidgetSpecRules.Core3DBaseType, StringComparison.Ordinal));
 
                 // ── 语法树 AST 深度特征检测 ──
                 // 1. BaseSize 属性重写检测
@@ -208,20 +177,10 @@ namespace ModularFlightPanel.UI.Auditing
                     widgetClass.Members.OfType<FieldDeclarationSyntax>()
                     .Any(f => f.Declaration.Variables.Any(v => v.Identifier.Text == "_texPixels"));
 
-                // 6. 刷新率阶梯滥用侦测 (非姿态类组件虚标 Critical 满帧，违反 SPEC-002)
-                var tierProp = widgetClass.Members.OfType<PropertyDeclarationSyntax>()
-                    .FirstOrDefault(p => p.Identifier.Text == "RefreshTier");
-                bool isCritical = tierProp != null && tierProp.ToString().Contains("Critical");
-
-                bool isAttitudeWidget = isCore3D ||
-                    widgetName.Contains("Attitude") ||
-                    widgetName.Contains("Navball") ||
-                    widgetName.Contains("HeadingArc") ||
-                    widgetName.Contains("StageControl") ||
-                    widgetName.Contains("DockingReticle") ||
-                    widgetName.Contains("ArcMeter");
-
-                bool abusesCriticalTier = isCritical && !isAttitudeWidget;
+                // 6. 刷新率阶梯滥用侦测：生效取值 + 声明式满帧依据与 SPEC-002 复用同一份判定
+                //    （旧实现自带一份类名名单，与 SPEC-002 的文件名名单各说各话，两处都可能漂移）
+                bool isCritical = graph.EffectiveTierMembers(node).Contains(WidgetSpecRules.FullFrameTierMember);
+                bool abusesCriticalTier = isCritical && !WidgetClassGraph.IsHighFrequencyDeclared(node);
 
                 // ── 综合现代化架构分类判定 ──
                 if (isCore3D)
@@ -336,21 +295,6 @@ namespace ModularFlightPanel.UI.Auditing
 
             sb.AppendLine("=======================================================================");
             return sb.ToString();
-        }
-
-        private static string ResolveRepositoryRoot()
-        {
-            string dir = Directory.GetCurrentDirectory();
-            while (!string.IsNullOrEmpty(dir))
-            {
-                if (File.Exists(Path.Combine(dir, "KSP_naviball.sln")) ||
-                    Directory.Exists(Path.Combine(dir, "GameData", "ModularFlightPanel")))
-                {
-                    return dir;
-                }
-                dir = Path.GetDirectoryName(dir);
-            }
-            return Directory.GetCurrentDirectory();
         }
     }
 }

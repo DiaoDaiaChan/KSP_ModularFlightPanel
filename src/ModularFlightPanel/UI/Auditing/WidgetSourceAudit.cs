@@ -26,6 +26,7 @@ namespace ModularFlightPanel.UI
         public bool IsContractRoot;               // 契约根自身（BaseFlightWidget）
         public bool IsWidgetContractClass;        // 契约真后代（直接或间接派生自契约根）
         public bool IsObsoleteShim;               // 继承链上出现 [Obsolete] 的向后兼容垫片
+        internal bool? DescendantCache;           // 契约归属判定缓存（链断裂时需沿已解析基类回溯）
 
         public bool HasMetadataAttribute;         // 声明了 [FlightWidget]
         public bool DeclaresHighFrequency;        // [FlightWidget(..., HighFrequency = true)]
@@ -67,6 +68,9 @@ namespace ModularFlightPanel.UI
 
         /// <summary>审计作用域文件：声明了作用域内组件的源文件（按内容判定，与目录位置无关）</summary>
         public readonly HashSet<string> ScopedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>作用域文件名集合（仅文件名，用于计数展示）</summary>
+        public readonly HashSet<string> ScopedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static WidgetClassGraph Build(IList<WidgetSourceFile> files)
         {
@@ -140,7 +144,11 @@ namespace ModularFlightPanel.UI
                 WidgetClassNode node = graph.All[i];
                 if (!node.IsWidgetContractClass || node.IsObsoleteShim) continue;
                 graph.ContractClasses.Add(node);
-                if (!string.IsNullOrEmpty(node.FileName)) graph.ScopedFiles.Add(node.FileName);
+                if (!string.IsNullOrEmpty(node.FileName))
+                {
+                    graph.ScopedFiles.Add(node.FileName);
+                    graph.ScopedFileNames.Add(node.FileName);
+                }
                 if (!string.IsNullOrEmpty(node.FilePath)) graph.ScopedFiles.Add(node.FilePath);
             }
 
@@ -190,23 +198,41 @@ namespace ModularFlightPanel.UI
     internal static class WidgetClassNodeExtensions
     {
         /// <summary>
-        /// 契约真后代判定：优先沿已解析的继承链回溯；链断裂（基类未在扫描集合内）时回退到直接基类名匹配，
-        /// 使合成自检与"只扫描局部文件"的场景同样成立。
+        /// 契约真后代判定：优先沿已解析的继承链回溯；链断裂（基类未在扫描集合内）时回退到基类名匹配，
+        /// 并沿"已解析到的基类"继续向上递归，使"只扫描局部文件"的合成场景同样成立。
         /// </summary>
         public static bool IsDescendantOfContractRoot(this WidgetClassNode node)
         {
             if (node == null) return false;
+            if (node.DescendantCache.HasValue) return node.DescendantCache.Value;
+
+            node.DescendantCache = false;   // 防环护栏：循环继承按非组件处理
+            bool result = false;
+
             foreach (var n in node.SelfAndAncestors())
             {
-                if (n != node && n.IsContractRoot) return true;
+                if (n != node && n.IsContractRoot) { result = true; break; }
             }
-            for (int i = 0; i < node.BaseNames.Count; i++)
+
+            if (!result)
             {
-                if (string.Equals(node.BaseNames[i], WidgetSpecRules.ContractRootType, StringComparison.Ordinal)) return true;
+                for (int i = 0; i < node.BaseNames.Count; i++)
+                {
+                    if (string.Equals(node.BaseNames[i], WidgetSpecRules.ContractRootType, StringComparison.Ordinal))
+                    {
+                        result = true;
+                        break;
+                    }
+                }
             }
-            WidgetClassNode directBase = node.Base;
-            if (directBase != null && directBase.IsContractRoot) return true;
-            return false;
+
+            if (!result && node.Base != null && node.Base != node)
+            {
+                result = IsDescendantOfContractRoot(node.Base);
+            }
+
+            node.DescendantCache = result;
+            return result;
         }
     }
 
@@ -244,7 +270,7 @@ namespace ModularFlightPanel.UI
         public bool IsEnvironmentDegradation => Status == WidgetDiscoveryStatus.RepositoryRootUnresolved;
 
         public int WidgetClassCount => Graph?.ContractClasses.Count ?? 0;
-        public int ScopedFileCount => Graph?.ScopedFiles.Count(k => k.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        public int ScopedFileCount => Graph?.ScopedFileNames.Count ?? 0;
     }
 
     /// <summary>
@@ -363,8 +389,8 @@ namespace ModularFlightPanel.UI
         {
             var report = new WidgetSourceAuditReport { WidgetsScanned = graph.ContractClasses.Count };
 
-            // ── 判定依据自检：阶梯枚举必须能从源码派生，否则取值校验会退化为"全部非法" ──
-            if (graph.TierMembers.Count == 0)
+            // ── 判定依据自检：存在组件时，阶梯枚举必须能从源码派生，否则取值校验会退化为"全部非法" ──
+            if (graph.ContractClasses.Count > 0 && graph.TierMembers.Count == 0)
             {
                 report.Violations.Add(new WidgetSourceViolation
                 {
@@ -412,10 +438,10 @@ namespace ModularFlightPanel.UI
             ScanTierContract(node, graph, report);
 
             // ── SPEC-003 语义主题管道（签名 + 缺失）──
-            ScanThemeContract(node, graph, report);
+            ScanThemeContract(node, report);
 
             // ── SPEC-004 遥测契约（签名 + 缺失）──
-            ScanTelemetryContract(node, graph, report);
+            ScanTelemetryContract(node, report);
 
             // ── SPEC-005 安全生命周期（仅约束组件类，Unity 助手类的消息式 OnDestroy 不在契约内）──
             ScanLifecycle(node, report);
@@ -488,7 +514,7 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        private static void ScanThemeContract(WidgetClassNode node, WidgetClassGraph graph, WidgetSourceAuditReport report)
+        private static void ScanThemeContract(WidgetClassNode node, WidgetSourceAuditReport report)
         {
             if (node.ThemeMethod != null && !RoslynAstHelper.IsPublicOverrideWithSingleParam(node.ThemeMethod, WidgetSpecRules.ThemeParameterType))
             {
@@ -497,18 +523,17 @@ namespace ModularFlightPanel.UI
                     + WidgetSpecRules.ThemeMethod + "(" + WidgetSpecRules.ThemeParameterType + " theme)）");
             }
 
+            // 缺失判定只看"链上有没有声明"；签名是否合规由上面的逐声明校验负责，避免同一个问题报两条
             bool declaredAnywhere = WidgetClassGraph.FindDeclarer(node, n => n.ThemeMethod != null) != null;
-            bool validOwner = WidgetClassGraph.FindDeclarer(node,
-                n => RoslynAstHelper.IsPublicOverrideWithSingleParam(n.ThemeMethod, WidgetSpecRules.ThemeParameterType)) != null;
 
-            if (!declaredAnywhere || !validOwner)
+            if (!declaredAnywhere)
             {
                 Add(report, node.FileName, WidgetSpecRules.SemanticTheming, "ERROR", RoslynAstHelper.GetLine(node.Decl),
                     "未重写 " + WidgetSpecRules.ThemeMethod + "(" + WidgetSpecRules.ThemeParameterType + ") 语义主题着色方法（本类或继承链上的组件类必须提供合规实现）");
             }
         }
 
-        private static void ScanTelemetryContract(WidgetClassNode node, WidgetClassGraph graph, WidgetSourceAuditReport report)
+        private static void ScanTelemetryContract(WidgetClassNode node, WidgetSourceAuditReport report)
         {
             if (node.TelemetryMethod != null && !RoslynAstHelper.IsPublicOverrideWithSingleParam(node.TelemetryMethod, WidgetSpecRules.TelemetryParameterType))
             {
@@ -518,10 +543,8 @@ namespace ModularFlightPanel.UI
             }
 
             bool declaredAnywhere = WidgetClassGraph.FindDeclarer(node, n => n.TelemetryMethod != null) != null;
-            bool validOwner = WidgetClassGraph.FindDeclarer(node,
-                n => RoslynAstHelper.IsPublicOverrideWithSingleParam(n.TelemetryMethod, WidgetSpecRules.TelemetryParameterType)) != null;
 
-            if (!declaredAnywhere || !validOwner)
+            if (!declaredAnywhere)
             {
                 Add(report, node.FileName, WidgetSpecRules.TelemetryContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
                     "未重写 " + WidgetSpecRules.TelemetryMethod + "(" + WidgetSpecRules.TelemetryParameterType + ") 遥测驱动接口（本类或继承链上的组件类必须提供合规实现）");
@@ -732,8 +755,8 @@ namespace ModularFlightPanel.UI
             var tierCast = Scan(new[] { MakeFile("TierCast.cs", compliant.Replace("=> WidgetRefreshTier.Standard", "=> (WidgetRefreshTier)999")) });
             check(tierCast.CountByRule(WidgetSpecRules.RefreshTier) == 1, "SPEC-002 强转伪造阶梯未拦下");
 
-            var tierComment = Scan(new[] { MakeFile("TierComment.cs", compliant.Replace("=> WidgetRefreshTier.Standard", "=> WidgetRefreshTier.None /* Standard */")) });
-            check(tierComment.CountByRule(WidgetSpecRules.RefreshTier) == 1, "SPEC-002 注释伪造取值未拦下");
+            var tierComment = Scan(new[] { MakeFile("TierComment.cs", compliant.Replace("=> WidgetRefreshTier.Standard", "=> WidgetRefreshTier.Legacy /* Standard */")) });
+            check(tierComment.CountByRule(WidgetSpecRules.RefreshTier) == 1, "SPEC-002 注释伪造取值未拦下（注释里的阶梯名不得充当取值）");
 
             var tierIndirect = Scan(new[] { MakeFile("TierIndirect.cs", compliant.Replace("=> WidgetRefreshTier.Standard", "=> _cachedTier")) });
             check(tierIndirect.CountByRule(WidgetSpecRules.RefreshTier) == 1, "SPEC-002 字段间接回填未拦下");
@@ -816,7 +839,7 @@ namespace ModularFlightPanel.UI
             check(shimReport.ErrorCount == 0, "兼容垫片类（继承链 [Obsolete]）应豁免重新实现契约 -> " + Describe(shimReport));
 
             // ── 12. 判定依据自检：阶梯枚举缺失必须显式报内核错误 ──
-            string noEnum = compliant.Replace("    enum WidgetRefreshTier { Critical, Standard, Relaxed, UltraLow }\n", string.Empty);
+            string noEnum = compliant.Replace(SyntheticTierEnumLine, string.Empty);
             var noEnumReport = Scan(new[] { MakeFile("NoEnum.cs", noEnum) });
             check(noEnumReport.Violations.Any(v => v.FileName == WidgetSpecRules.KernelReportName), "阶梯枚举缺失时未上报内核错误");
 
@@ -840,13 +863,16 @@ namespace ModularFlightPanel.UI
         private static WidgetSourceFile MakeFile(string name, string text) =>
             new WidgetSourceFile { Name = name, Path = name, Text = text };
 
+        /// <summary>合成源里的阶梯枚举声明行（自检用例需要按整行移除，故单独声明）</summary>
+        private const string SyntheticTierEnumLine = "    enum WidgetRefreshTier { Critical, Standard, Relaxed, UltraLow }\n";
+
         /// <summary>合成组件：自带阶梯枚举声明，便于验证"取值集合从源码派生"的判定链路</summary>
         private static string BuildSyntheticWidget(string extra)
         {
             return "using System;\n"
                  + "namespace N\n"
                  + "{\n"
-                 + "    enum WidgetRefreshTier { Critical, Standard, Relaxed, UltraLow, None }\n"
+                 + SyntheticTierEnumLine
                  + "    [FlightWidget(\"fake_widget\")]\n"
                  + "    public class FakeWidget : BaseFlightWidget\n"
                  + "    {\n"

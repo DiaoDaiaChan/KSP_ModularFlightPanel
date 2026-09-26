@@ -20,7 +20,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 3. 原版导航球 (StockDirect): 直接调用官方 3D 导航球并剔除外围杂项
     /// </summary>
     [DefaultExecutionOrder(10000)]
-    [FlightWidget("navball", "navball_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 姿态球", Description = "现代超清矢量/贴图 3D 姿态球核心，支持无极缩放、姿态导引十字与全量机动矢量。", DefaultWidgetId = "core.navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "core.navball" })]
+    [FlightWidget("navball", "navball_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 姿态球", Description = "现代超清矢量/贴图 3D 姿态球核心，支持无极缩放、姿态导引十字与全量机动矢量。", DefaultWidgetId = "core.navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.navball" })]
     public class NavballSphereWidget : BaseNavballSphereWidget, IPointerClickHandler
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;

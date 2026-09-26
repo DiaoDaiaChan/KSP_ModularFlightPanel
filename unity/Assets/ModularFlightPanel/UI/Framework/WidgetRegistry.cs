@@ -45,6 +45,12 @@ namespace ModularFlightPanel.UI
         public string[] ExactIds { get; set; }
         public bool IsSingleton { get; set; } = false;
 
+        /// <summary>
+        /// 声明式满帧标记：该组件属于高速姿态/操纵类，允许使用 RefreshTier.Critical (60Hz 满帧)。
+        /// 这是 MFP-SPEC-002 判定"满帧阶梯是否合法"的唯一依据——审计不再按组件名字/文件名猜测。
+        /// </summary>
+        public bool HighFrequency { get; set; } = false;
+
         public FlightWidgetAttribute(string typeName, params string[] aliases)
         {
             TypeName = typeName;

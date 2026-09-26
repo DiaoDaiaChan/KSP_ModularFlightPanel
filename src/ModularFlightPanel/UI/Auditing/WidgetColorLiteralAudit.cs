@@ -242,29 +242,47 @@ namespace ModularFlightPanel.UI
             }
 
             /// <summary>
-            /// 操作数是否由字面量/构造直接产生颜色值。
-            /// 纯变量转换（如 (Color)theme.PrimaryColor）不属于颜色字面量，不计数。
+            /// 操作数是否由"代码里的颜色字面量"产生，只认结构形状：
+            ///   · 数值字面量直转（(Color32)0xFFFFFF）
+            ///   · 向量构造直转（(Color)new Vector4(1,0,0,1)）
+            ///   · 上述两者的括号 / 强转 / 一元 / 三元包装
+            /// 由语义 API（如 WidgetStyleManager.WithAlpha）或变量计算出的颜色不是字面量，不计数；
+            /// 内层若已是 Color/Color32 构造则交给 VisitObjectCreationExpression 计数，避免同一处数两次。
             /// </summary>
             private static bool ProducesColorFromLiteral(ExpressionSyntax expression)
             {
                 if (expression == null) return false;
 
-                foreach (var node in expression.DescendantNodesAndSelf())
+                if (expression is LiteralExpressionSyntax literal)
                 {
-                    if (node is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.NumericLiteralExpression))
-                    {
-                        return true;
-                    }
-                    if (node is ObjectCreationExpressionSyntax creation)
-                    {
-                        string created = RoslynAstHelper.GetSimpleTypeName(creation.Type);
-                        if (created == "Color" || created == "Color32" ||
-                            created == "Vector2" || created == "Vector3" || created == "Vector4")
-                        {
-                            return true;
-                        }
-                    }
+                    return literal.IsKind(SyntaxKind.NumericLiteralExpression);
                 }
+                if (expression is ObjectCreationExpressionSyntax creation)
+                {
+                    string created = RoslynAstHelper.GetSimpleTypeName(creation.Type);
+                    return created == "Vector2" || created == "Vector3" || created == "Vector4";
+                }
+                if (expression is ParenthesizedExpressionSyntax parenthesized)
+                {
+                    return ProducesColorFromLiteral(parenthesized.Expression);
+                }
+                if (expression is CastExpressionSyntax cast)
+                {
+                    return ProducesColorFromLiteral(cast.Expression);
+                }
+                if (expression is PrefixUnaryExpressionSyntax unary)
+                {
+                    return ProducesColorFromLiteral(unary.Operand);
+                }
+                if (expression is BinaryExpressionSyntax binary)
+                {
+                    return ProducesColorFromLiteral(binary.Left) || ProducesColorFromLiteral(binary.Right);
+                }
+                if (expression is ConditionalExpressionSyntax conditional)
+                {
+                    return ProducesColorFromLiteral(conditional.WhenTrue) || ProducesColorFromLiteral(conditional.WhenFalse);
+                }
+
                 return false;
             }
 
@@ -345,6 +363,8 @@ namespace ModularFlightPanel.UI
             expectCount("var c = (Color32)0xFFFFFF;\n", 1);
             expectCount("var c = (Color)(new Color32(255,0,0,255));\n", 1);
             expectCount("var c = (Color)v4;\n", 0);
+            expectCount("var c = (Color32)WidgetStyleManager.WithAlpha(aCol, 0.28f);\n", 0);
+            expectCount("var c = (Color)theme.FrameBorderColor;\n", 0);
 
             var ratchetFailures = ValidateRatchet();
             for (int i = 0; i < ratchetFailures.Count; i++)

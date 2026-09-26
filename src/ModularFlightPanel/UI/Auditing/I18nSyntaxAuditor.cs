@@ -333,54 +333,84 @@ namespace ModularFlightPanel.HeadlessValidator
                 }
             }
 
-            private static bool IsInsideI18nCall(SyntaxNode node, out bool isKeyArg, out bool isFallbackArg)
+            /// <summary>
+            /// 判定字符串是否落在 I18n 查表调用的豁免槽位（键名 / 兜底文案）。
+            /// 旧实现只看"祖先里有没有 I18n 调用"，于是 I18n.TrFormat("K", 1, "中文参数") 的格式化实参也被放过；
+            /// 现在按实参槽位精确判定：TrFormat 只豁免第 0 槽（键名）。
+            /// </summary>
+            private static bool IsExemptI18nSlot(SyntaxNode node)
             {
-                isKeyArg = false;
-                isFallbackArg = false;
-
                 foreach (var ancestor in node.Ancestors())
                 {
-                    if (ancestor is ArgumentSyntax arg && arg.Parent is ArgumentListSyntax argList && argList.Parent is InvocationExpressionSyntax inv)
-                    {
-                        string expr = inv.Expression.ToString();
-                        if (expr == "I18n.Tr" || expr == "I18n.TrFormat" || expr == "I18n.GetWidgetName" ||
-                            expr == "I18nManager.Tr" || expr == "I18nManager.TrFormat" || expr == "I18nManager.GetWidgetName")
-                        {
-                            int idx = argList.Arguments.IndexOf(arg);
-                            if (idx == 0) isKeyArg = true;
-                            if (idx == 1) isFallbackArg = true;
-                            return true;
-                        }
-                    }
-                }
+                    if (!(ancestor is ArgumentSyntax arg)) continue;
+                    if (!(arg.Parent is ArgumentListSyntax argList)) continue;
+                    if (!(argList.Parent is InvocationExpressionSyntax inv)) continue;
 
+                    string expr = inv.Expression.ToString();
+                    int index = argList.Arguments.IndexOf(arg);
+
+                    if (expr == "I18n.Tr" || expr == "I18nManager.Tr" ||
+                        expr == "I18n.GetWidgetName" || expr == "I18nManager.GetWidgetName")
+                    {
+                        // Tr(key, fallback) / GetWidgetName(widgetId, defaultDisplayName)：前两个槽位都是查表输入
+                        return index <= 1;
+                    }
+                    if (expr == "I18n.TrFormat" || expr == "I18nManager.TrFormat")
+                    {
+                        // TrFormat(key, params args)：仅键名槽位豁免，格式化实参必须本地化
+                        return index == 0;
+                    }
+
+                    // 最近的外层实参不属于 I18n 查表调用 → 不在豁免之列
+                    return false;
+                }
                 return false;
             }
 
+            /// <summary>
+            /// 字符串组装包装（视为透明，继续向外层寻找真正的宿主调用）。
+            /// </summary>
+            private static readonly HashSet<string> StringAssemblyPassThroughCalls = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "string.Format", "string.Concat", "string.Join",
+                "String.Format", "String.Concat", "String.Join",
+                "System.String.Format", "System.String.Concat"
+            };
+
+            /// <summary>
+            /// 判定字符串是否属于日志 / 诊断 / 异常文案。
+            /// 判定口径是"最近的外层调用"：旧实现只要祖先链上出现过日志调用就整段豁免，
+            /// 于是 MFPLogger.Info(Other("中文")) 这类嵌套调用里的未本地化中文被静默放过。
+            /// </summary>
             private static bool IsInsideLogOrDiagnostic(SyntaxNode node)
             {
                 foreach (var ancestor in node.Ancestors())
                 {
-                    if (ancestor is InvocationExpressionSyntax inv)
-                    {
-                        string expr = inv.Expression.ToString();
-                        if (expr.StartsWith("MFPLogger.", StringComparison.Ordinal) ||
-                            expr.StartsWith("Debug.", StringComparison.Ordinal) ||
-                            expr.StartsWith("Console.", StringComparison.Ordinal) ||
-                            expr.StartsWith("KSPLog.", StringComparison.Ordinal) ||
-                            expr == "print")
-                        {
-                            return true;
-                        }
-                    }
-
                     if (ancestor is ObjectCreationExpressionSyntax oce)
                     {
                         string typeName = oce.Type.ToString();
                         if (typeName.EndsWith("Exception", StringComparison.Ordinal)) return true;
                     }
+
+                    if (!(ancestor is InvocationExpressionSyntax inv)) continue;
+
+                    string expr = inv.Expression.ToString();
+                    if (IsLogOrDiagnosticCall(expr)) return true;
+                    if (StringAssemblyPassThroughCalls.Contains(expr)) continue;
+
+                    // 最近的外层调用不是日志/诊断且不是字符串组装包装 → 不豁免
+                    return false;
                 }
                 return false;
+            }
+
+            private static bool IsLogOrDiagnosticCall(string expr)
+            {
+                return expr.StartsWith("MFPLogger.", StringComparison.Ordinal)
+                    || expr.StartsWith("Debug.", StringComparison.Ordinal)
+                    || expr.StartsWith("Console.", StringComparison.Ordinal)
+                    || expr.StartsWith("KSPLog.", StringComparison.Ordinal)
+                    || expr == "print";
             }
 
             private static bool IsInsideEngineResourceOrPathCall(SyntaxNode node)
@@ -565,6 +595,33 @@ namespace ModularFlightPanel.HeadlessValidator
             if (rep6.HardcodedChineseCount != 1)
             {
                 failures.Add($"[用例 6 失败] 插值字符串中的硬编码中文应检出 1 处，实际 {rep6.HardcodedChineseCount}");
+            }
+
+            // 用例 7: I18n 查表调用的"非键名槽位"不是豁免区（TrFormat 的格式化实参出现中文必须报）
+            cases++;
+            string case7 = "class C { void M() { var x = I18n.TrFormat(\"TEST_KEY_HELLO\", 1, \"中文参数\"); } }";
+            var rep7 = AuditSnippet(case7, validKeys);
+            if (rep7.HardcodedChineseCount != 1)
+            {
+                failures.Add($"[用例 7 失败] TrFormat 格式化实参中的硬编码中文应检出 1 处，实际 {rep7.HardcodedChineseCount}");
+            }
+
+            // 用例 8: 嵌套在日志调用里但宿主调用不是日志 → 不豁免
+            cases++;
+            string case8 = "class C { void M() { MFPLogger.Info(Other(\"中文\")); } }";
+            var rep8 = AuditSnippet(case8, validKeys);
+            if (rep8.HardcodedChineseCount != 1)
+            {
+                failures.Add($"[用例 8 失败] 日志调用内嵌套的其它调用中的中文应检出 1 处，实际 {rep8.HardcodedChineseCount}");
+            }
+
+            // 用例 9: 直接作为日志实参的中文仍然豁免（诊断文案不受影响）
+            cases++;
+            string case9 = "class C { void M() { MFPLogger.Info(\"中文日志\"); Debug.Log(string.Format(\"中文 {0}\", 1)); } }";
+            var rep9 = AuditSnippet(case9, validKeys);
+            if (rep9.HardcodedChineseCount != 0)
+            {
+                failures.Add($"[用例 9 失败] 日志直接实参与 string.Format 组装应当豁免，实际 {rep9.HardcodedChineseCount}");
             }
 
             LastSelfTestCaseCount = cases;

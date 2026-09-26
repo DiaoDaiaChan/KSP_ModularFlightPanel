@@ -21,7 +21,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 6. 动态长宽比自适应 (IAdaptiveSizeWidget)：支持非等比缩放，自动重排并自适应拉伸三轴标尺与遥测卡片；
     /// 7. 严格落实 0 颜色字面量 (MFP-SPEC-006)、零场景查询 (MFP-SPEC-007) 与 Critical (60Hz) 阶梯高保真刷新。
     /// </summary>
-    [FlightWidget("stage_control", "staging_ctrl", Category = WidgetCategory.Controls, DisplayName = "操纵量指示与分级锁控制台", Description = "Pitch/Roll/Yaw 实时舵量标尺与分级安全锁定 (Alt+L) 防误触操作台。", DefaultWidgetId = "core.stage_control", DefaultX = -360f, DefaultY = -180f, IsSingleton = true, ExactIds = new[] { "core.stage_control" })]
+    [FlightWidget("stage_control", "staging_ctrl", Category = WidgetCategory.Controls, DisplayName = "操纵量指示与分级锁控制台", Description = "Pitch/Roll/Yaw 实时舵量标尺与分级安全锁定 (Alt+L) 防误触操作台。", DefaultWidgetId = "core.stage_control", DefaultX = -360f, DefaultY = -180f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.stage_control" })]
     public class StageControlWidget : BaseFlightWidget, IAdaptiveSizeWidget
     {
         public override Vector2 BaseSize => new Vector2(DefaultPanelWidth, DefaultPanelHeight);

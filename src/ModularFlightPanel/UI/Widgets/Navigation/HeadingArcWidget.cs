@@ -16,7 +16,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 顶部气泡框 (Speech-bubble) 权威数显标牌以及翡翠绿反T型基准游标。
     /// 严格继承 BaseFlightWidget，所有视觉样式与数值全生命周期数据驱动。
     /// </summary>
-    [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 120f, IsSingleton = true, ExactIds = new[] { "core.heading_arc" })]
+    [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 120f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.heading_arc" })]
     public class HeadingArcWidget : BaseFlightWidget
     {
         public override Vector2 BaseSize => new Vector2(202f, 78f);

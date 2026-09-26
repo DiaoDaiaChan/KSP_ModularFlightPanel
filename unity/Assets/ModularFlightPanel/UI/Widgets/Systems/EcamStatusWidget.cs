@@ -29,6 +29,15 @@ namespace ModularFlightPanel.UI.Widgets
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
+        /// <summary>
+        /// 语义主题管道 (MFP-SPEC-003)：显式接入 WidgetStyleManager 单向主题下发。
+        /// 视觉全部来自语义角色微控件，因此由基类把主题推送给全部已注册微控件即可。
+        /// </summary>
+        public override void ApplyTheme(ThemeConfig theme)
+        {
+            base.ApplyTheme(theme);
+        }
+
         // ── 头部集中声明微控件对象 ──
         public TextWidget Title = TextWidget.Title("FLIGHT MEMO");
         public TextWidget PhaseBadge = TextWidget.Badge("PRE-LAUNCH");

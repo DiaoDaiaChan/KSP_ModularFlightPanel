@@ -18,7 +18,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     ///   - RefreshTier 为 Critical 60Hz 保证姿态响应极致平滑
     ///   - 零硬编码与零颜色字面量 (MFP-SPEC-006)
     /// </summary>
-    [FlightWidget("spacex_attitude", "dragon_attitude", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 载人龙飞船姿态指示器", Description = "SpaceX 极简黑白双轴陀螺姿态仪，显示俯仰、滚转与偏航微步。", DefaultWidgetId = "spacex.attitude", DefaultX = -360f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "spacex.attitude" })]
+    [FlightWidget("spacex_attitude", "dragon_attitude", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 载人龙飞船姿态指示器", Description = "SpaceX 极简黑白双轴陀螺姿态仪，显示俯仰、滚转与偏航微步。", DefaultWidgetId = "spacex.attitude", DefaultX = -360f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "spacex.attitude" })]
     public class SpaceXAttitudeWidget : BaseFlightWidget
     {
         public override Vector2 BaseSize => new Vector2(96f, 96f);

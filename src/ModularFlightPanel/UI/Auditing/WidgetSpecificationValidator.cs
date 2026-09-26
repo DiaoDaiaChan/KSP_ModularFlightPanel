@@ -159,7 +159,7 @@ namespace ModularFlightPanel.UI
         public const string Rule_NoSceneQueriesInUpdate = WidgetSpecRules.NoSceneQueries;
 
         /// <summary>
-        /// 审计内核自检（与 tools/HeadlessValidator [7/8] 同步调用纯 C# 词法器与规则正反用例）
+        /// 审计内核自检（与 tools/HeadlessValidator [7/10] 同步调用规则与颜色计数器的正反用例）
         /// </summary>
         public static List<string> RunSelfTest()
         {
@@ -167,8 +167,8 @@ namespace ModularFlightPanel.UI
 #if !KSP_RUNTIME
             try
             {
-                failures.AddRange(CSharpSourceLinter.SelfTest());
                 failures.AddRange(WidgetSourceAudit.SelfTest());
+                failures.AddRange(WidgetColorLiteralAudit.SelfTest());
             }
             catch (Exception ex)
             {
@@ -186,10 +186,10 @@ namespace ModularFlightPanel.UI
 #if !KSP_RUNTIME
             var report = ValidateAllWidgets(WidgetSourceAudit.ResolveRepositoryRoot());
 
-            // 运行审计内核自检，杜绝规则与词法清洗器静默失效。
-            // 计数用内核回传的真实用例数，不再写死 16（写死数字必然随用例增删漂移成假信息）。
+            // 运行审计内核自检，杜绝规则与判定数据静默失效。
+            // 计数用内核回传的真实用例数（写死数字必然随用例增删漂移成假信息）。
             var selfTestFailures = RunSelfTest();
-            report.TotalChecksPerformed += CSharpSourceLinter.LastSelfTestCaseCount + WidgetSourceAudit.LastSelfTestCaseCount;
+            report.TotalChecksPerformed += WidgetSourceAudit.LastSelfTestCaseCount + WidgetColorLiteralAudit.LastSelfTestCaseCount;
             foreach (var failure in selfTestFailures)
             {
                 report.Violations.Add(new WidgetViolation
@@ -265,48 +265,42 @@ namespace ModularFlightPanel.UI
                 repositoryRoot = WidgetSourceAudit.ResolveRepositoryRoot();
             }
 
-            var discoveryDiagnostics = new List<string>();
-            var componentFiles = WidgetSourceAudit.DiscoverComponentFiles(repositoryRoot, discoveryDiagnostics);
-            report.SourceWidgetsAudited = componentFiles.Count;
+            var discovery = WidgetSourceAudit.Discover(repositoryRoot);
+            report.SourceWidgetsAudited = discovery.WidgetClassCount;
 
-            // 发现层护栏：绝不"扫不到就跳过"。
-            // 发布版插件（只有 DLL、仓库源码不在旁边）必然拿不到仓库根 —— 这时必须显式标记
-            // "源码级审计未执行"，而不是让汇总照样打印"全量 100% 合规"（那就是把没测汇报成测过）。
-            // 注意这里是 WARNING 而不是 ERROR：发布环境降级属预期行为，不该阻断游戏内使用；
-            // 无头 CI（Program.cs [6/9]）对同一条件判 ERROR，因为 CI 环境本就应该拿得到仓库根。
-            string floorFailure = WidgetSourceAudit.CheckDiscoveryFloor(repositoryRoot, componentFiles.Count);
-            if (floorFailure != null)
+            // 发现层护栏：绝不"扫不到就跳过"，也绝不把"没测"汇报成"测过且全过"。
+            // · 发布环境（只有 DLL、源码不在旁边）属可预期降级 → WARNING，并显式标记源码级审计未执行；
+            // · 其余状态（源码目录缺失 / 文件读取失败 / 扫不到任何组件）一律 ERROR：
+            //   这些不是"环境没有源码"，而是审计本身没跑对，必须让门禁停下来。
+            if (!discovery.CanAuditSource)
             {
                 report.SourceAuditExecuted = false;
                 report.Violations.Add(new WidgetViolation
                 {
-                    WidgetName = "DiscoveryFloor",
+                    WidgetName = "DiscoveryScope",
                     RuleCode = Rule_Inheritance,
-                    Severity = "WARNING",
-                    Description = "源码级规范审计未执行: " + floorFailure,
+                    Severity = discovery.IsEnvironmentDegradation ? "WARNING" : "ERROR",
+                    Description = "源码级规范审计未执行: " + discovery.Detail + "（发现层状态: " + discovery.Status + "）",
                     Location = repositoryRoot ?? "(repoRoot = null)"
                 });
+
+                for (int i = 0; i < discovery.ReadErrors.Count; i++)
+                {
+                    report.Violations.Add(new WidgetViolation
+                    {
+                        WidgetName = "DiscoveryRead",
+                        RuleCode = Rule_Inheritance,
+                        Severity = "ERROR",
+                        Description = discovery.ReadErrors[i],
+                        Location = repositoryRoot ?? "(repoRoot = null)"
+                    });
+                }
             }
             else
             {
                 report.SourceAuditExecuted = true;
-            }
 
-            for (int i = 0; i < discoveryDiagnostics.Count; i++)
-            {
-                report.Violations.Add(new WidgetViolation
-                {
-                    WidgetName = "DiscoveryRead",
-                    RuleCode = Rule_Inheritance,
-                    Severity = "ERROR",
-                    Description = discoveryDiagnostics[i],
-                    Location = repositoryRoot ?? "(repoRoot = null)"
-                });
-            }
-
-            if (componentFiles.Count > 0)
-            {
-                var sourceReport = WidgetSourceAudit.Scan(componentFiles);
+                var sourceReport = WidgetSourceAudit.Scan(discovery);
                 report.TotalChecksPerformed += sourceReport.WidgetsScanned * WidgetSpecRules.RuleCount;
 
                 foreach (var v in sourceReport.Violations)
@@ -332,20 +326,8 @@ namespace ModularFlightPanel.UI
         {
             string name = type.Name;
 
-            // 规则 1: 必须继承 BaseFlightWidget 并实现 OnInitialize(WidgetConfig, ThemeConfig)
-            report.TotalChecksPerformed++;
-            if (!typeof(BaseFlightWidget).IsAssignableFrom(type))
-            {
-                report.Violations.Add(new WidgetViolation
-                {
-                    WidgetName = name,
-                    RuleCode = Rule_Inheritance,
-                    Severity = "ERROR",
-                    Description = "组件未继承 BaseFlightWidget 统一基类",
-                    Location = type.FullName
-                });
-            }
-
+            // 规则 1: 必须重写 OnInitialize(WidgetConfig, ThemeConfig) 装配方法
+            // （继承关系由类型集合本身保证，并由源码级 SPEC-001 反向不变量兜住"声明了元数据却没继承"的情形）
             report.TotalChecksPerformed++;
             var initMethod = type.GetMethod("OnInitialize", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(WidgetConfig), typeof(ThemeConfig) }, null);
             if (initMethod == null || initMethod.DeclaringType == typeof(BaseFlightWidget))
