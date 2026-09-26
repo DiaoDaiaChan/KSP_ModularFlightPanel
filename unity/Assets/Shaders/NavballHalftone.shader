@@ -112,9 +112,10 @@ Shader "ModularFlightPanel/NavballHalftone"
                 baseColor = lerp(baseColor, _GridColor, isGrid * 0.6);
 
                 // 半色调网点阴影 (Screen-Space Halftone Dither)
-                // 基于屏幕坐标生成周期性网格
+                // 基于屏幕坐标生成高密度半色调网格 (_DotDensity 表示全球跨度点数密度)
                 float2 screenUV = i.screenPos.xy / max(i.screenPos.w, 0.0001) * _ScreenParams.xy;
-                float2 cellUV = frac(screenUV / max(_DotDensity, 1.0)) - 0.5;
+                float dotCellSize = max(240.0 / max(_DotDensity, 10.0), 3.5);
+                float2 cellUV = frac(screenUV / dotCellSize) - 0.5;
                 float distToCenter = length(cellUV);
 
                 // 阴影强度根据观察角度与表面法线夹角渐变 (Fresnel + NdotV)

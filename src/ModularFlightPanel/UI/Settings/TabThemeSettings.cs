@@ -248,12 +248,12 @@ namespace ModularFlightPanel.UI.Settings
                 // 点阵间距
                 GUILayout.BeginHorizontal();
                 GUILayout.Label($"<b>{I18n.Tr("THM_DOT_SPACING", "点阵网格间距:")}</b> <color=#00E5FF>{current.UiDotSpacing:F1} px</color>", GUILayout.Width(200f));
-                float[] spacingPresets = { 2.4f, 3.2f, 4.0f, 5.0f };
+                float[] spacingPresets = { 0.9f, 1.3f, 1.8f, 2.5f };
                 string[] spacingLabels = {
-                    I18n.Tr("THM_DOT_TIGHT", "2.4px 极密"),
-                    I18n.Tr("THM_DOT_REC", "3.2px 推荐"),
-                    I18n.Tr("THM_DOT_MED", "4.0px 均衡"),
-                    I18n.Tr("THM_DOT_COARSE", "5.0px 粗粒")
+                    I18n.Tr("THM_DOT_RETINA", "0.9px 视网膜"),
+                    I18n.Tr("THM_DOT_REC", "1.3px 极密 (推荐)"),
+                    I18n.Tr("THM_DOT_MED", "1.8px 经典"),
+                    I18n.Tr("THM_DOT_COARSE", "2.5px 粗粒")
                 };
                 for (int spIdx = 0; spIdx < spacingPresets.Length; spIdx++)
                 {
@@ -677,10 +677,10 @@ namespace ModularFlightPanel.UI.Settings
             switch (curMode)
             {
                 case NavballRenderMode.StockTexture:
-                    modeDesc = I18n.Tr("THM_MODE_STOCK_TEX_DESC", "• 采用 KSP 原版 / TextureReplacer 材质贴图与 3D 网格渲染，100% 还原官方质感，零姿态畸变。");
+                    modeDesc = I18n.Tr("THM_MODE_STOCK_TEX_DESC", "• 采用 KSP 原版 / TextureReplacer 材质贴图，经单四边形 GPU 光线投射与硬件双线性采样实时映射，100% 还原官方质感，零摄像机与 3D 网格开销。");
                     break;
                 case NavballRenderMode.ProceduralVector:
-                    modeDesc = I18n.Tr("THM_MODE_PROC_VEC_DESC", "• 纯数学 SDF 几何矢量 3D 曲面直出，超清视网膜级最高画质，全字号/刻度边缘平滑无畸变，提供极致视效与超低 CPU 耗时。");
+                    modeDesc = I18n.Tr("THM_MODE_PROC_VEC_DESC", "• 单四边形 GPU 光线步进纯数学矢量直出，超清视网膜级画质，全字号/刻度边缘平滑无畸变，零摄像机与 3D 网格开销。");
                     break;
                 case NavballRenderMode.StockDirect:
                     modeDesc = I18n.Tr("THM_MODE_STOCK_DIRECT_DESC", "• 直接调用官方 3D 导航球，剔除侧边仪表与装饰杂物仅保留纯净姿态球；无缝接入 MFP 编辑模式，支持拖拽与 8 向拉动手柄放大缩小。");

@@ -85,6 +85,13 @@ namespace ModularFlightPanel.Core
         double Periapsis { get; }
         double TimeToAp { get; }
         double TimeToPe { get; }
+        double SemiMajorAxis { get; }
+        double Eccentricity { get; }
+        double Inclination { get; }
+        double LongitudeOfAscendingNode { get; }
+        double ArgumentOfPeriapsis { get; }
+        double TrueAnomaly { get; }
+        double OrbitalPeriod { get; }
         bool HasManeuverNode { get; }
         double ManeuverDeltaV { get; }
         double ManeuverTotalDeltaV { get; }

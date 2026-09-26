@@ -727,9 +727,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.DangerColor, theme);
                 case "BODY_DIRECTION":
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
-                case "ORBIT":
-                    return WidgetStyleManager.Instance.GetNavballFramePalette(theme.AccentPrimary, theme);
                 case "BODY_SURFACE":
+                case "BODY_FIXED":
                 {
                     // Principia 地固参考系 (Body-Centred Body-Fixed / ECEF):
                     // 严格与 Principia 官方 navball_surface 保持一致：北半球 (+lat / +Y) 对应大地棕色，南半球 (-lat / -Y) 对应海洋与天蓝色
@@ -749,6 +748,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                         Rim = WidgetStyleManager.WithAlpha(theme.RimGlowColor, 0.70f)
                     };
                 }
+                case "ORBIT":
+                case "ORBITAL":
+                    return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
                 case "SURFACE":
                 default:
                     Color skyZ = WidgetStyleManager.WithAlpha(theme.SkyColor, 0.40f);

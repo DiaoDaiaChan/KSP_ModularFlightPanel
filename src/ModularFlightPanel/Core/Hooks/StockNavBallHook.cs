@@ -490,7 +490,8 @@ namespace ModularFlightPanel.Core
                         return "LAGRANGE";
                     if (pType.IndexOf("PARENT_DIRECTION", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         pType.IndexOf("BODY_CENTRED", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        pType.IndexOf("ORBIT", StringComparison.OrdinalIgnoreCase) >= 0)
+                        pType.IndexOf("ORBIT", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        pType.IndexOf("ECLIPTIC", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "ORBIT";
                 }
             }
@@ -503,7 +504,7 @@ namespace ModularFlightPanel.Core
                     return "LAGRANGE";
                 if (fn.Contains("inertial") || fn.Contains("non_rotating") || fn.Contains("惯性") || fn.Contains("不旋转"))
                     return "INERTIAL";
-                if (fn.Contains("orbit") || fn.Contains("body_direction") || fn.Contains("parent_direction") || fn.Contains("轨道"))
+                if (fn.Contains("orbit") || fn.Contains("body_direction") || fn.Contains("parent_direction") || fn.Contains("轨道") || fn.Contains("黄道") || fn.Contains("ecliptic"))
                     return "ORBIT";
                 if (fn.Contains("target") || fn.Contains("dock") || fn.Contains("目标"))
                     return "TARGET";
@@ -527,7 +528,7 @@ namespace ModularFlightPanel.Core
                     if (tName.IndexOf("inertial", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "INERTIAL");
                     if (tName.IndexOf("barycentric", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "LAGRANGE");
                     if (tName.IndexOf("target", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "TARGET");
-                    if (tName.IndexOf("body_direction", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "ORBIT");
+                    if (tName.IndexOf("body_direction", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("ecliptic", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "ORBIT");
                     if (tName.IndexOf("navball_surface", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "BODY_FIXED");
                     if (tName.IndexOf("surface", StringComparison.OrdinalIgnoreCase) >= 0 || tName.IndexOf("navball", StringComparison.OrdinalIgnoreCase) >= 0) return CacheAndReturn(tex, "SURFACE");
                 }

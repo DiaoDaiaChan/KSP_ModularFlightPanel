@@ -5,13 +5,13 @@ Shader "ModularFlightPanel/DotMatrixUI"
         [PerRendererData] _MainTex ("Sprite / Font Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
 
-        _DotSpacing ("Dot Spacing (Canvas Units)", Float) = 3.0
-        _DotRadius ("Dot Fill Radius (0.1 - 0.5)", Range(0.1, 0.5)) = 0.40
+        _DotSpacing ("Dot Spacing (Canvas Units)", Float) = 1.3
+        _DotRadius ("Dot Fill Radius (0.1 - 0.5)", Range(0.1, 0.5)) = 0.44
         _DotSmoothness ("Dot Edge Softness", Range(0.01, 0.3)) = 0.10
-        _UnlitDotColor ("Unlit Ghost Dot Color", Color) = (0.03, 0.07, 0.04, 0.12)
+        _UnlitDotColor ("Unlit Ghost Dot Color", Color) = (0.03, 0.07, 0.04, 0.08)
         _LitDotColor ("Lit Dot Base Tint", Color) = (1.0, 1.0, 1.0, 1.0)
-        _GlowStrength ("Phosphor Glow Halo", Range(0.0, 1.0)) = 0.40
-        _ScanlineStrength ("Scanline Contrast", Range(0.0, 0.5)) = 0.08
+        _GlowStrength ("Phosphor Glow Halo", Range(0.0, 1.0)) = 0.35
+        _ScanlineStrength ("Scanline Contrast", Range(0.0, 0.5)) = 0.04
 
         // UGUI Stencil Mask Support
         _StencilComp ("Stencil Comparison", Float) = 8
@@ -104,7 +104,7 @@ Shader "ModularFlightPanel/DotMatrixUI"
 
             fixed4 frag(v2f IN) : SV_Target
             {
-                // 1. 采样 UGUI 动态字体 Atlas 或精灵
+                // 1. 采样 UGUI 动态字体 Atlas 或精灵 Alpha
                 half4 texCol = (tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd);
                 float sourceAlpha = texCol.a;
 
@@ -113,33 +113,34 @@ Shader "ModularFlightPanel/DotMatrixUI"
                     discard;
                 }
 
-                // 2. 本地 Canvas 坐标系解算 (彻底根除屏幕绝对空间导致的“纱窗游走”Bug)
-                float spacing = max(_DotSpacing, 1.8);
+                // 2. 本地 Canvas 坐标系解算点阵格栅 (Micro-LED Aperture Grille)
+                float spacing = max(_DotSpacing, 0.75);
                 float2 dotCoord = IN.worldPosition.xy / spacing;
                 float2 cellFrac = frac(dotCoord);
                 float distToCenter = length(cellFrac - 0.5);
 
                 // 3. Micro-LED 圆孔形态与透镜高光 (SDF Calculation)
                 float dotShape = 1.0 - smoothstep(_DotRadius - _DotSmoothness, _DotRadius, distToCenter);
-                float glowHalo = exp(-distToCenter * 4.5) * _GlowStrength;
+                float glowHalo = exp(-distToCenter * 4.0) * _GlowStrength;
 
-                // 4. 与点阵行对齐的微扫描线 (Anti-Aliased Grid Scanlines)
-                float scan = 1.0 - (sin(cellFrac.y * 3.14159) * 0.5) * _ScanlineStrength;
+                // 4. 航电级高清晰度保真调制 (Avionics Legibility Guarantee):
+                // 基础笔画保留至少 80% 亮度底衬，点孔中心激发到 125% 激发态，
+                // 绝不斩断细小笔画与中文复杂字形，同时呈现鲜明物理 Micro-LED 点阵质感！
+                float ledFactor = lerp(0.80, 1.25, dotShape) + glowHalo * 0.20;
 
-                // 5. 航电级笔画保真算法 (Critical Legibility Guarantee):
-                // 在点孔中心激发 1.45 倍 Micro-LED 白炽过载核；
-                // 在孔洞之间保留 55% 基础笔画覆盖，确保 8px~10px 微型文字笔画绝不被吃掉断裂！
-                float ledIntensity = lerp(0.55, 1.45, dotShape) + glowHalo * 0.35;
-                float finalAlpha = sourceAlpha * saturate(dotShape * 0.65 + 0.45 + glowHalo * 0.25);
+                // 5. 与点阵行对齐的微弱光栅纹理
+                float scan = 1.0 - (sin(cellFrac.y * 3.14159) * 0.5) * min(_ScanlineStrength, 0.08);
 
-                // 点阵中心白炽核 (White-Hot Core)
-                fixed4 baseCol = texCol * IN.color * _LitDotColor;
-                fixed3 hotColor = lerp(baseCol.rgb, fixed3(1.0, 1.0, 1.0), dotShape * 0.40);
-                fixed3 finalRgb = hotColor * ledIntensity * scan;
+                // 6. 纯正语义色彩还原：以 IN.color 为基准，避免字体纹理 RGB 污染
+                fixed3 textRgb = IN.color.rgb * _LitDotColor.rgb;
+                // 点阵中心白炽过载核 (仅在字模致密区微泛白)
+                float hotCore = dotShape * saturate((sourceAlpha - 0.4) * 2.0) * 0.25;
+                fixed3 finalRgb = lerp(textRgb, fixed3(1.0, 1.0, 1.0), hotCore) * ledFactor * scan;
 
-                fixed4 finalCol = fixed4(finalRgb, finalAlpha * baseCol.a);
+                float finalAlpha = sourceAlpha * IN.color.a;
+                fixed4 finalCol = fixed4(finalRgb, finalAlpha);
 
-                // 6. UGUI 视口裁切支持
+                // 7. UGUI 视口裁切支持
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

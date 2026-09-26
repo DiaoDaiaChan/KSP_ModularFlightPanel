@@ -177,7 +177,7 @@ namespace ModularFlightPanel.Config
         public AvionicsFontStyle FontStyle = AvionicsFontStyle.ModernSmooth;
 
         // UI 专属着色器参数 (点阵、全息、数码管、玻璃)
-        public float UiDotSpacing = 3.2f;
+        public float UiDotSpacing = 1.3f;
         public float UiScanlineStrength = 0.10f;
         public float UiGlowStrength = 0.40f;
         public ColorHex UiGhostColor = ColorHex.FromColor(new Color(0.04f, 0.08f, 0.05f, 0.22f));
@@ -347,6 +347,7 @@ namespace ModularFlightPanel.Config
                 ThemeId = "apollo_1969",
                 DisplayName = I18n.Tr("THEME_APOLLO_1969", "阿波罗 1969 AGC 复古"),
                 Style = NavballStyleType.Apollo_1969,
+                UiStyle = UiShaderStyle.Digital_Segment,
                 FontStyle = AvionicsFontStyle.RetroPixel,
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
@@ -381,7 +382,7 @@ namespace ModularFlightPanel.Config
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
-                UiDotSpacing = 3.2f,
+                UiDotSpacing = 1.3f,
                 UiGlowStrength = 0.45f,
                 UiScanlineStrength = 0.12f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.02f, 0.08f, 0.03f, 0.25f)),
@@ -478,7 +479,7 @@ namespace ModularFlightPanel.Config
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
-                UiDotSpacing = 3.2f,
+                UiDotSpacing = 1.3f,
                 UiGlowStrength = 0.50f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.12f, 0.02f, 0.10f, 0.25f)),
@@ -546,7 +547,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.45f,
                 EnableScanlines = true,
-                UiDotSpacing = 3.2f,
+                UiDotSpacing = 1.3f,
                 UiGlowStrength = 0.52f,
                 UiScanlineStrength = 0.15f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.12f, 0.09f, 0.02f, 0.25f)),
@@ -616,7 +617,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.03f,
                 DotMaxRadius = 0.48f,
                 EnableScanlines = true,
-                UiDotSpacing = 3.2f,
+                UiDotSpacing = 1.3f,
                 UiGlowStrength = 0.42f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.01f, 0.06f, 0.06f, 0.25f)),
@@ -654,7 +655,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.46f,
                 EnableScanlines = true,
-                UiDotSpacing = 3.2f,
+                UiDotSpacing = 1.3f,
                 UiGlowStrength = 0.48f,
                 UiScanlineStrength = 0.15f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.01f, 0.08f, 0.03f, 0.25f)),
@@ -692,7 +693,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.45f,
                 EnableScanlines = true,
-                UiDotSpacing = 3.2f,
+                UiDotSpacing = 1.3f,
                 UiGlowStrength = 0.50f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.08f, 0.02f, 0.10f, 0.25f)),

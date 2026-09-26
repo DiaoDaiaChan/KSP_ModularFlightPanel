@@ -48,7 +48,7 @@ namespace ModularFlightPanel.Editor
                         string n = _texture.name.ToLowerInvariant();
                         if (n.Contains("barycentric") || n.Contains("lagrange") || n.Contains("pulsating") || n.Contains("l1") || n.Contains("l2") || n.Contains("l点") || n.Contains("拉格朗日")) return "LAGRANGE";
                         if (n.Contains("inertial") || n.Contains("non_rotating") || n.Contains("惯性") || n.Contains("不旋转")) return "INERTIAL";
-                        if (n.Contains("orbit") || n.Contains("body_direction") || n.Contains("parent_direction") || n.Contains("轨道")) return "ORBIT";
+                        if (n.Contains("orbit") || n.Contains("body_direction") || n.Contains("parent_direction") || n.Contains("轨道") || n.Contains("黄道") || n.Contains("ecliptic")) return "ORBIT";
                         if (n.Contains("target") || n.Contains("dock") || n.Contains("目标")) return "TARGET";
                         if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("rotating") || n.Contains("fixed") || n.Contains("体固") || n.Contains("地固")) return "BODY_FIXED";
                         if (n.Contains("surface") || n.Contains("ground") || n.Contains("地表")) return "SURFACE";
@@ -505,6 +505,15 @@ namespace ModularFlightPanel.Editor
                         forceM2 = true;
                         loop = true;
                     }
+                    else if (cleanTargetId.EndsWith(".3d", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_3d", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith(".full", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (cleanTargetId.EndsWith(".full", StringComparison.OrdinalIgnoreCase))
+                            cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 5);
+                        else
+                            cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 3);
+                        forceM2 = true; // 复用为 force3D 标志位
+                        loop = true;
+                    }
                     else if (cleanTargetId.EndsWith(".sts", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_sts", StringComparison.OrdinalIgnoreCase))
                     {
                         cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
@@ -548,6 +557,11 @@ namespace ModularFlightPanel.Editor
                         else if (triggerMeco) mww.TriggerBanner(MasterWarningWidget.BannerEventType.MECO, true);
                         else if (triggerDeorb) mww.TriggerBanner(MasterWarningWidget.BannerEventType.Deorbit, true);
                         else if (triggerEsc) mww.TriggerBanner(MasterWarningWidget.BannerEventType.Escape, true);
+                    }
+                    if (ew is ModularFlightPanel.UI.Widgets.OrbitalElementsWidget oew && forceM2)
+                    {
+                        var toggleM = oew.GetType().GetMethod("OnModeToggle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                        if (toggleM != null) toggleM.Invoke(oew, null);
                     }
                 }
             }
@@ -1217,6 +1231,15 @@ namespace ModularFlightPanel.Editor
                         StepInterval = 100f,
                         IsLeftOrientation = false,
                         UnitLabel = "m",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "nav.orbital_elements" || id == "orbital_elements" || id == "orbit_elements" || id == "orbital_3d")
+                {
+                    cfg = new WidgetConfig("nav.orbital_elements", "ORBITAL ELEMENTS 轨道六根数面板", x, y, 1.0f)
+                    {
+                        WidgetType = "orbital_elements",
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);

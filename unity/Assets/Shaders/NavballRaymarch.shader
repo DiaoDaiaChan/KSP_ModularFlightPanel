@@ -4,6 +4,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
     {
         [PerRendererData] _MainTex ("Navball Texture", 2D) = "white" {}
         _RenderMode ("Render Mode (0=Stock, 1=Vector, 2=Bake)", Float) = 0.0
+        _SphereInvRotation ("Sphere Inverse Rotation", Vector) = (0, 0, 0, 1)
 
         // 现代玻璃座舱配色与渐变 (Aero Glass Cockpit Palette)
         _SkyZenithColor ("Sky Zenith", Color) = (0.04, 0.16, 0.36, 1.0)
@@ -120,7 +121,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
             float4 _MainTex_ST;
             float4 _MainTex_TexelSize;
             float _RenderMode;
-            float4x4 _SphereInvRotation;
+            float4 _SphereInvRotation;
 
             fixed4 _SkyZenithColor;
             fixed4 _SkyHorizonColor;
@@ -575,11 +576,11 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 3. 逆向求解正交视线与单位球相交：正面球体深度 Z
                 float z = sqrt(max(0.0, 1.0 - r2));
 
-                // 视线空间正面单位球面朝向观察者向量：X 右，Y 上，Z 深入屏幕 (-z)
-                float3 viewRay = float3(coord.x, coord.y, -z);
+                // 视线空间正面单位球面朝向观察者向量：X 取反匹配球体外观向右偏航，Y 上，Z 面向观察者 (+z)
+                float3 viewRay = float3(-coord.x, coord.y, z);
 
-                // 4. 将视线空间坐标乘以姿态逆旋转矩阵，瞬间求得球体本地三维坐标 p！
-                float3 p = mul((float3x3)_SphereInvRotation, viewRay);
+                // 4. 将视线空间坐标通过姿态逆旋转四元数变换，求得球体模型本地三维坐标 p！
+                float3 p = RotateByQuaternion(viewRay, _SphereInvRotation);
                 p = normalize(p);
 
                 // 在正交相机投影下，视线法线点积 NdotV 恒等于几何深度 z
@@ -587,7 +588,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                 fixed4 col;
 
-                // 5. 模式选择分发 (0 = StockTexture 原版贴图采样, 1 = ProceduralVector 纯程序化数学矢量, 2 = ProceduralBake 烘焙贴图采样)
+                // 5. 模式选择分发 (0 = StockTexture 原版贴图采样, 1 = ProceduralVector 纯程序化数学矢量)
                 if (_RenderMode < 0.5)
                 {
                     // StockTexture: 球面坐标转标准等距柱状 UV
@@ -619,24 +620,6 @@ Shader "ModularFlightPanel/NavballRaymarch"
                                       tex2Dgrad(_MainTex, stockUV + float2(0, texel.y), ddx_uv, ddy_uv) +
                                       tex2Dgrad(_MainTex, stockUV - float2(0, texel.y), ddx_uv, ddy_uv)) * 0.25;
                     col = saturate(baseCol + (baseCol - blurCol) * 0.70);
-                }
-                else if (_RenderMode > 1.5)
-                {
-                    // ProceduralBake: 采样离屏烘焙纹理
-                    float pitch = asin(clamp(p.y, -1.0, 1.0));
-                    float head = atan2(p.x, -p.z);
-                    if (head < 0.0) head += 6.28318530718;
-
-                    float u = head * 0.159154943;
-                    float v = pitch * 0.318309886 + 0.5;
-
-                    float2 bakeUV = float2(u, v);
-                    float2 ddx_uv = ddx(bakeUV);
-                    float2 ddy_uv = ddy(bakeUV);
-                    if (abs(ddx_uv.x) > 0.4) ddx_uv.x = 0.0;
-                    if (abs(ddy_uv.x) > 0.4) ddy_uv.x = 0.0;
-
-                    col = tex2Dgrad(_MainTex, bakeUV, ddx_uv, ddy_uv);
                 }
                 else
                 {

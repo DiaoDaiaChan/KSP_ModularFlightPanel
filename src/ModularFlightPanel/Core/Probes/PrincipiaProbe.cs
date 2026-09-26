@@ -469,6 +469,16 @@ namespace ModularFlightPanel.Core.Probes
                 }
                 return double.NaN;
             }, "Principia 轨道摄动分析 (OrbitAnalyser)", "预估再入大气层世界时 (UT)", new[] { "REENTRYTIME" });
+
+            // 开普勒高精度摄动要素提取 (优先供航电六根数面板联动)
+            Traverser.RegisterCustom("SMA", typeof(double), () => ExtractDoubleFromElements("semi_major_axis", "semimajor_axis", "a"), "Principia 轨道要素", "轨道半长轴 (米)", new[] { "SEMIMAJORAXIS", "A" });
+            Traverser.RegisterCustom("ECC", typeof(double), () => ExtractDoubleFromElements("eccentricity", "e"), "Principia 轨道要素", "轨道离心率", new[] { "ECCENTRICITY", "E" });
+            Traverser.RegisterCustom("INC", typeof(double), () => ExtractDoubleFromElements("inclination", "i"), "Principia 轨道要素", "轨道倾角 (度)", new[] { "INCLINATION", "I" });
+            Traverser.RegisterCustom("LAN", typeof(double), () => ExtractDoubleFromElements("longitude_of_ascending_node", "lan", "raan", "Ω"), "Principia 轨道要素", "升交点赤经 (度)", new[] { "LONGITUDEOFASCENDINGNODE", "RAAN" });
+            Traverser.RegisterCustom("LPE", typeof(double), () => ExtractDoubleFromElements("argument_of_periapsis", "argument_of_perigee", "aop", "lpe", "ω"), "Principia 轨道要素", "近拱点辐角 (度)", new[] { "ARGUMENTOFPERIAPSIS", "AOP" });
+            Traverser.RegisterCustom("TRA", typeof(double), () => ExtractDoubleFromElements("true_anomaly", "ta", "tra", "ν"), "Principia 轨道要素", "真近点角 (度)", new[] { "TRUEANOMALY", "TA" });
+            Traverser.RegisterCustom("APA", typeof(double), () => ExtractDoubleFromElements("apoapsis_distance", "apoapsis_altitude", "apoapsis", "apa"), "Principia 轨道要素", "远拱点高度 (米)", new[] { "APOAPSIS", "AP" });
+            Traverser.RegisterCustom("PEA", typeof(double), () => ExtractDoubleFromElements("periapsis_distance", "periapsis_altitude", "periapsis", "pea"), "Principia 轨道要素", "近拱点高度 (米)", new[] { "PERIAPSIS", "PE" });
         }
 
         private static object _cachedAdapterInstance;
@@ -745,6 +755,60 @@ namespace ModularFlightPanel.Core.Probes
             }
             catch { }
             return null;
+        }
+
+        private static double ExtractDoubleFromElements(params string[] candidateNames)
+        {
+            object el = GetAnalysisElements();
+            if (el == null) return double.NaN;
+
+            double val = TryGetFieldOrPropertyDouble(el, candidateNames);
+            if (!double.IsNaN(val)) return val;
+
+            FieldInfo[] fields = el.GetType().GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            for (int i = 0; i < fields.Length; i++)
+            {
+                Type ft = fields[i].FieldType;
+                if (!ft.IsPrimitive && ft != typeof(string) && ft != typeof(decimal))
+                {
+                    object subObj = fields[i].GetValue(el);
+                    if (subObj != null)
+                    {
+                        val = TryGetFieldOrPropertyDouble(subObj, candidateNames);
+                        if (!double.IsNaN(val)) return val;
+                    }
+                }
+            }
+            return double.NaN;
+        }
+
+        private static double TryGetFieldOrPropertyDouble(object target, string[] candidateNames)
+        {
+            if (target == null) return double.NaN;
+            Type t = target.GetType();
+            for (int i = 0; i < candidateNames.Length; i++)
+            {
+                string name = candidateNames[i];
+                FieldInfo fi = t.GetField(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (fi != null)
+                {
+                    object fv = fi.GetValue(target);
+                    if (fv != null)
+                    {
+                        try { return Convert.ToDouble(fv); } catch { }
+                    }
+                }
+                PropertyInfo pi = t.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (pi != null)
+                {
+                    object pv = pi.GetValue(target, null);
+                    if (pv != null)
+                    {
+                        try { return Convert.ToDouble(pv); } catch { }
+                    }
+                }
+            }
+            return double.NaN;
         }
 
         public static double ResolveNumeric(string subTag, string modifier = null)

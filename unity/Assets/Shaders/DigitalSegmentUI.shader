@@ -98,7 +98,7 @@ Shader "ModularFlightPanel/DigitalSegmentUI"
 
             fixed4 frag(v2f IN) : SV_Target
             {
-                // 1. 采样字模纹理
+                // 1. 采样字模纹理 Alpha
                 half4 fontSample = tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd;
                 float litAlpha = fontSample.a;
 
@@ -108,20 +108,28 @@ Shader "ModularFlightPanel/DigitalSegmentUI"
                     discard;
                 }
 
-                // 2. 真实数码管段微刻槽与物理缝隙阴影 (Micro-Segment Grooves)
-                float groove = 1.0 - (sin(IN.worldPosition.y * 1.5708) * 0.5 + 0.5) * _SegmentGrooveContrast;
+                // 2. 语义色彩智能门控 (Semantic Color Preservation):
+                // 若顶点颜色饱和度高 (如红色警报、黄色注意、绿色状态)，100% 忠实保留原始语义色！
+                // 仅当顶点为中性白光时，才投射数码管经典琥珀/数码原色 (_SegmentLitColor)
+                float maxC = max(max(IN.color.r, IN.color.g), IN.color.b);
+                float minC = min(min(IN.color.r, IN.color.g), IN.color.b);
+                float saturation = maxC - minC;
+                fixed3 baseColor = (saturation > 0.15) ? IN.color.rgb : (IN.color.rgb * _SegmentLitColor.rgb);
 
-                // 3. 核心白炽发光核 (Overdrive Hot Core)
-                float coreWeight = pow(litAlpha, 2.2);
-                fixed3 baseColor = _SegmentLitColor.rgb * IN.color.rgb;
-                fixed3 hotColor = lerp(baseColor, _CoreHotColor.rgb, coreWeight * 0.80);
+                // 3. 数码管物理微缝隙与分段纹理 (Segment Micro-Grooves)
+                // 周期设为 8 像素平滑滤波，微刻槽深度受控 (最大 6%)，绝不破坏文字笔画
+                float groove = 1.0 - (sin(IN.worldPosition.y * 0.7854) * 0.5 + 0.5) * min(_SegmentGrooveContrast, 0.06);
+
+                // 4. 核心白炽发光核 (Filament Overdrive Core - 25% 饱和微过载)
+                float coreWeight = saturate(pow(litAlpha, 3.0) * 0.25);
+                fixed3 hotColor = lerp(baseColor, _CoreHotColor.rgb, coreWeight);
                 fixed3 finalRgb = hotColor * groove;
 
-                // 4. 外发光辉光与 UGUI 透明度合成
-                float finalAlpha = saturate(litAlpha * (1.0 + _GlowStrength * 0.35)) * IN.color.a;
+                // 5. 边缘抗锯齿与辉光融合 (Crisp Filament Halo)
+                float finalAlpha = saturate(pow(litAlpha, 0.90) * (1.0 + _GlowStrength * 0.20)) * IN.color.a;
                 fixed4 finalCol = fixed4(finalRgb, finalAlpha);
 
-                // 5. UGUI 视口裁切保护
+                // 6. UGUI 视口裁切保护
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

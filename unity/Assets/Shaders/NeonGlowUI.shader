@@ -110,39 +110,24 @@ Shader "ModularFlightPanel/NeonGlowUI"
                     discard;
                 }
 
-                // 2. 图元受控微色散 (Texel-Constrained Sub-Pixel Dispersion - 100% 杜绝字体图集溢出)
-                float2 shift = float2(_ChromaticShift * _MainTex_TexelSize.x * 0.75, 0.0);
-                float alphaR = (tex2D(_MainTex, IN.texcoord + shift) + _TextureSampleAdd).a;
-                float alphaB = (tex2D(_MainTex, IN.texcoord - shift) + _TextureSampleAdd).a;
+                // 2. 霓虹放电管物理层级 (Neon Discharge Tube Model):
+                // 核心管体 (Core Tube, alpha > 0.5): 纯粹鲜艳的主基色 (IN.color.rgb)；
+                // 边缘气辉 (Fringe Glow, alpha <= 0.5): 向副霓虹辉光 (_NeonGlowColor.rgb) 平滑过渡，形成标志性赛博霓虹双色轮廓！
+                fixed3 primaryNeon = IN.color.rgb;
+                fixed3 fringeNeon = _NeonGlowColor.rgb;
 
-                // 严格以中心主字模 Alpha 进行钳制门控，绝不拾取隔壁字符
-                alphaR = min(alphaR, alpha * 1.35);
-                alphaB = min(alphaB, alpha * 1.35);
+                float fringeFactor = 1.0 - smoothstep(0.15, 0.65, alpha);
+                fixed3 tubeColor = lerp(primaryNeon, fringeNeon, fringeFactor * 0.70);
 
-                // 3. 赛博虹 / 霓虹双色空间渐变 (Cyan -> Magenta Cyberpunk Gradient)
-                float gradientFactor = sin(IN.worldPosition.x * 0.018 + IN.worldPosition.y * 0.008) * 0.5 + 0.5;
-                fixed3 neonBase = lerp(IN.color.rgb, _NeonGlowColor.rgb, gradientFactor);
+                // 3. 核心白炽等离子放电 (White-Hot Plasma Discharge - 25% 饱和微过载)
+                float coreWeight = saturate(pow(alpha, 3.0) * 0.25);
+                fixed3 finalRgb = lerp(tubeColor, _CoreHotColor.rgb, coreWeight);
 
-                // 4. 核心白炽过载激化 (White-Hot Overdrive Core)
-                float coreWeight = pow(alpha, 2.2);
-                fixed3 coreColor = lerp(neonBase, _CoreHotColor.rgb, coreWeight * 0.85);
-
-                // 5. 色散三色重构
-                fixed3 finalRgb = fixed3(
-                    coreColor.r * lerp(1.0, alphaR / max(alpha, 0.001), 0.25),
-                    coreColor.g,
-                    coreColor.b * lerp(1.0, alphaB / max(alpha, 0.001), 0.25)
-                );
-
-                // 6. 本地微扫描线调制 (Canvas-Local Scanlines)
-                float scan = 1.0 - (sin(IN.worldPosition.y * 1.5708) * 0.5 + 0.5) * _ScanlineStrength;
-                finalRgb *= scan;
-
-                // 7. 外发光光晕叠加与 UGUI 透明度合成
-                float finalAlpha = saturate(alpha * (1.0 + _GlowStrength * 0.35)) * IN.color.a;
+                // 4. 外发光光晕叠加与透明度合成 (Crisp Neon Halo)
+                float finalAlpha = saturate(pow(alpha, 0.85) * (1.0 + _GlowStrength * 0.25)) * IN.color.a;
                 fixed4 finalCol = fixed4(finalRgb, finalAlpha);
 
-                // 8. UGUI 视口裁切保护
+                // 5. UGUI 视口裁切保护
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

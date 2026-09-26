@@ -14,6 +14,13 @@ namespace ModularFlightPanel.Core
         private double _periapsis = 0.0;
         private double _timeToAp = 0.0;
         private double _timeToPe = 0.0;
+        private double _semiMajorAxis = 0.0;
+        private double _eccentricity = 0.0;
+        private double _inclination = 0.0;
+        private double _lan = 0.0;
+        private double _aop = 0.0;
+        private double _trueAnomaly = 0.0;
+        private double _orbitalPeriod = 0.0;
 
         public double Apoapsis
         {
@@ -55,6 +62,76 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        public double SemiMajorAxis
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.SemiMajorAxis;
+                EnsureOrbitUpdated();
+                return _semiMajorAxis;
+            }
+        }
+
+        public double Eccentricity
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.Eccentricity;
+                EnsureOrbitUpdated();
+                return _eccentricity;
+            }
+        }
+
+        public double Inclination
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.Inclination;
+                EnsureOrbitUpdated();
+                return _inclination;
+            }
+        }
+
+        public double LongitudeOfAscendingNode
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.LongitudeOfAscendingNode;
+                EnsureOrbitUpdated();
+                return _lan;
+            }
+        }
+
+        public double ArgumentOfPeriapsis
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.ArgumentOfPeriapsis;
+                EnsureOrbitUpdated();
+                return _aop;
+            }
+        }
+
+        public double TrueAnomaly
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.TrueAnomaly;
+                EnsureOrbitUpdated();
+                return _trueAnomaly;
+            }
+        }
+
+        public double OrbitalPeriod
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.OrbitalPeriod;
+                EnsureOrbitUpdated();
+                return _orbitalPeriod;
+            }
+        }
+
         private void EnsureOrbitUpdated()
         {
             if (_orbitFrame == Time.frameCount) return;
@@ -72,6 +149,14 @@ namespace ModularFlightPanel.Core
                 _periapsis = double.IsNaN(orbit.PeA) ? 0.0 : orbit.PeA;
                 _timeToAp = double.IsNaN(orbit.timeToAp) ? 0.0 : orbit.timeToAp;
                 _timeToPe = double.IsNaN(orbit.timeToPe) ? 0.0 : orbit.timeToPe;
+                _semiMajorAxis = double.IsNaN(orbit.semiMajorAxis) ? 0.0 : orbit.semiMajorAxis;
+                _eccentricity = double.IsNaN(orbit.eccentricity) ? 0.0 : orbit.eccentricity;
+                _inclination = double.IsNaN(orbit.inclination) ? 0.0 : orbit.inclination;
+                _lan = double.IsNaN(orbit.LAN) ? 0.0 : (orbit.LAN % 360.0 + 360.0) % 360.0;
+                _aop = double.IsNaN(orbit.argumentOfPeriapsis) ? 0.0 : (orbit.argumentOfPeriapsis % 360.0 + 360.0) % 360.0;
+                double traDeg = double.IsNaN(orbit.trueAnomaly) ? 0.0 : (orbit.trueAnomaly * Mathf.Rad2Deg);
+                _trueAnomaly = (traDeg % 360.0 + 360.0) % 360.0;
+                _orbitalPeriod = double.IsNaN(orbit.period) ? 0.0 : orbit.period;
             }
         }
 

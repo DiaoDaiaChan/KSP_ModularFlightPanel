@@ -306,12 +306,7 @@ namespace ModularFlightPanel.UI.Framework
             var style = WidgetStyleManager.Instance;
             if (TrackImage != null)
             {
-                TrackImage.material = style.GetUiMaterial(isText: false);
                 TrackImage.color = style.GetMeterColor(MeterStyleRole.Track, theme);
-            }
-            if (FillImage != null)
-            {
-                FillImage.material = style.GetUiMaterial(isText: false);
             }
             UpdateBarColor(theme);
         }

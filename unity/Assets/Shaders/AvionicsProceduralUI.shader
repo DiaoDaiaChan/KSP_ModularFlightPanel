@@ -282,9 +282,13 @@ Shader "ModularFlightPanel/AvionicsProceduralUI"
             }
 
             // 模式 3: 精密航空玻璃背板与沉降槽 (Precision Glass & Inset)
-            fixed4 RenderPrecisionGlass(float2 uv)
+            fixed4 RenderPrecisionGlass(float2 uv, fixed4 vcol)
             {
-                fixed4 col = _GlassBgColor;
+                fixed4 tex = tex2D(_MainTex, uv);
+                fixed4 col = tex * vcol;
+                if (col.a < 0.001) col = _GlassBgColor;
+                else col = lerp(_GlassBgColor, col, saturate(vcol.a * 1.5));
+
                 float chamfer = clamp(_AvionicsParams.x, 0.0, 0.2);
                 float borderW = clamp(_AvionicsParams.y, 0.005, 0.08);
 
@@ -313,19 +317,19 @@ Shader "ModularFlightPanel/AvionicsProceduralUI"
 
                 if (_PrimitiveMode < 0.5)
                 {
-                    col = RenderLinearTape(i.uv);
+                    col = RenderLinearTape(i.uv) * i.color;
                 }
                 else if (_PrimitiveMode < 1.5)
                 {
-                    col = RenderRadialArc(i.uv);
+                    col = RenderRadialArc(i.uv) * i.color;
                 }
                 else if (_PrimitiveMode < 2.5)
                 {
-                    col = RenderSegmentedBar(i.uv);
+                    col = RenderSegmentedBar(i.uv) * i.color;
                 }
                 else
                 {
-                    col = RenderPrecisionGlass(i.uv);
+                    col = RenderPrecisionGlass(i.uv, i.color);
                 }
 
                 // UGUI 裁剪矩形与复合 Alpha
@@ -333,7 +337,6 @@ Shader "ModularFlightPanel/AvionicsProceduralUI"
                 col.a *= UnityGet2DClipping(i.worldPosition.xy, _ClipRect);
                 #endif
 
-                col.a *= i.color.a;
                 return col;
             }
             ENDCG

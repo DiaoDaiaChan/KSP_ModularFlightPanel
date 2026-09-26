@@ -408,7 +408,7 @@ namespace ModularFlightPanel.Config
                     break;
                 case UiShaderStyle.Modern_Glass:
                 default:
-                    s = isText ? null : AssetLoader.GlassCockpitShader;
+                    s = isText ? AssetLoader.CrispAvionicsTextShader : AssetLoader.GlassCockpitShader;
                     break;
             }
 
@@ -417,11 +417,14 @@ namespace ModularFlightPanel.Config
             mat = new Material(s);
             if (mat.HasProperty("_DotSpacing")) mat.SetFloat("_DotSpacing", theme.UiDotSpacing);
             if (mat.HasProperty("_GlowStrength")) mat.SetFloat("_GlowStrength", theme.UiGlowStrength);
+            if (mat.HasProperty("_BloomStrength")) mat.SetFloat("_BloomStrength", theme.UiGlowStrength);
             if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", theme.UiScanlineStrength);
+            if (mat.HasProperty("_ScanlineDepth")) mat.SetFloat("_ScanlineDepth", theme.UiScanlineStrength);
             if (mat.HasProperty("_UnlitDotColor")) mat.SetColor("_UnlitDotColor", theme.UiGhostColor);
             if (mat.HasProperty("_PhosphorColor")) mat.SetColor("_PhosphorColor", theme.AccentPrimary);
             if (mat.HasProperty("_LitDotColor")) mat.SetColor("_LitDotColor", Color.white);
             if (mat.HasProperty("_SegmentLitColor")) mat.SetColor("_SegmentLitColor", theme.AccentPrimary);
+            if (mat.HasProperty("_NeonGlowColor")) mat.SetColor("_NeonGlowColor", theme.AccentSecondary);
 
             _cachedUiMaterials[key] = mat;
             return mat;

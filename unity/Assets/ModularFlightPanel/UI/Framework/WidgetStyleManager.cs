@@ -177,41 +177,39 @@ namespace ModularFlightPanel.UI
             if (theme == null) return null;
 
             bool gpu2D = ThemeManager.Instance == null || ThemeManager.Instance.EnableGpu2DUIAcceleration;
-            string key = $"{theme.ThemeId}_{(int)theme.UiStyle}_{(isText ? "txt" : (gpu2D ? "panel_gpu" : "panel_legacy"))}";
+            if (!gpu2D)
+            {
+                // 经典 UGUI 兼容模式：使用 Unity 默认 UGUI 网格材质 (null)
+                return null;
+            }
+
+            string key = $"{theme.ThemeId}_{(int)theme.UiStyle}_{(isText ? "txt" : "panel")}";
             if (_materialCache.TryGetValue(key, out Material mat) && mat != null)
             {
                 return mat;
             }
 
             Shader s = null;
-            if (!isText && gpu2D && AssetLoader.AvionicsProceduralShader != null)
+            switch (theme.UiStyle)
             {
-                // 全局底层 2D GPU 程序化渲染管线：使用统一多图元航电着色器 (Mode 3: PrecisionGlass)
-                s = AssetLoader.AvionicsProceduralShader;
-            }
-            else
-            {
-                switch (theme.UiStyle)
-                {
-                    case UiShaderStyle.Dot_Matrix:
-                        // 物理点阵主题：文字与数值使用物理点阵，卡片面板使用座舱黑晶玻璃，防止大面积圆孔穿透
-                        s = isText ? AssetLoader.DotMatrixShader : AssetLoader.GlassCockpitShader;
-                        break;
-                    case UiShaderStyle.Phosphor_HUD:
-                        // 全息磷光主题：文字与标度使用高动态磷光扫描线着色器，背景卡片面板使用座舱黑晶玻璃着色器，防止大面积白热过载
-                        s = isText ? AssetLoader.PhosphorHoloShader : AssetLoader.GlassCockpitShader;
-                        break;
-                    case UiShaderStyle.Digital_Segment:
-                        s = isText ? AssetLoader.DigitalSegmentShader : AssetLoader.GlassCockpitShader;
-                        break;
-                    case UiShaderStyle.Cyber_Neon:
-                        s = isText ? AssetLoader.NeonGlowShader : AssetLoader.GlassCockpitShader;
-                        break;
-                    case UiShaderStyle.Modern_Glass:
-                    default:
-                        s = isText ? AssetLoader.CrispAvionicsTextShader : AssetLoader.GlassCockpitShader;
-                        break;
-                }
+                case UiShaderStyle.Dot_Matrix:
+                    // 物理点阵主题：文字与数值使用物理点阵，卡片面板使用座舱黑晶玻璃，防止大面积圆孔穿透
+                    s = isText ? AssetLoader.DotMatrixShader : AssetLoader.GlassCockpitShader;
+                    break;
+                case UiShaderStyle.Phosphor_HUD:
+                    // 全息磷光主题：文字与标度使用高动态磷光扫描线着色器，背景卡片面板使用座舱黑晶玻璃着色器，防止大面积白热过载
+                    s = isText ? AssetLoader.PhosphorHoloShader : AssetLoader.GlassCockpitShader;
+                    break;
+                case UiShaderStyle.Digital_Segment:
+                    s = isText ? AssetLoader.DigitalSegmentShader : AssetLoader.GlassCockpitShader;
+                    break;
+                case UiShaderStyle.Cyber_Neon:
+                    s = isText ? AssetLoader.NeonGlowShader : AssetLoader.GlassCockpitShader;
+                    break;
+                case UiShaderStyle.Modern_Glass:
+                default:
+                    s = isText ? AssetLoader.CrispAvionicsTextShader : AssetLoader.GlassCockpitShader;
+                    break;
             }
 
             if (s == null)
@@ -220,17 +218,6 @@ namespace ModularFlightPanel.UI
             }
 
             mat = new Material(s);
-            if (s == AssetLoader.AvionicsProceduralShader)
-            {
-                mat.SetFloat("_PrimitiveMode", 3.0f); // PrecisionGlass
-                mat.SetColor("_GlassBgColor", theme.FrameBgColor);
-                mat.SetColor("_RailColor", theme.FrameBorderColor);
-                mat.SetColor("_AccentColor", theme.AccentPrimary);
-                mat.SetColor("_WarningColor", GetTextColor(TextStyleRole.Warning, theme));
-                mat.SetColor("_DangerColor", GetTextColor(TextStyleRole.Danger, theme));
-                mat.SetVector("_AvionicsParams", new Vector4(theme.UiGlassChamfer, theme.UiGlassBorderWidth, 0f, theme.UiGlassGradientStrength));
-            }
-            else
             {
                 if (mat.HasProperty("_DotSpacing")) mat.SetFloat("_DotSpacing", theme.UiDotSpacing);
                 if (mat.HasProperty("_GlowStrength")) mat.SetFloat("_GlowStrength", theme.UiGlowStrength);
@@ -385,16 +372,13 @@ namespace ModularFlightPanel.UI
         public void ApplyMeterStyle(Graphic track, Graphic fill, Graphic needle = null, MeterStyleRole role = MeterStyleRole.Primary, ThemeConfig theme = null)
         {
             theme = ResolveTheme(theme);
-            Material panelMat = GetUiMaterial(isText: false);
 
             if (track != null)
             {
-                track.material = panelMat;
                 track.color = GetMeterColor(MeterStyleRole.Track, theme);
             }
             if (fill != null)
             {
-                fill.material = panelMat;
                 fill.color = GetMeterColor(role, theme);
             }
             if (needle != null)

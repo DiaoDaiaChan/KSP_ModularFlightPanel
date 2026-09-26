@@ -101,48 +101,39 @@ Shader "ModularFlightPanel/PhosphorHoloUI"
 
             fixed4 frag(v2f IN) : SV_Target
             {
-                float2 uv = IN.texcoord;
-
-                // 1. 中心主通道采样 (Green Channel)
-                half4 sampleG = tex2D(_MainTex, uv) + _TextureSampleAdd;
+                // 1. 采样字模主通道 Alpha
+                half4 sampleG = tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd;
                 float alphaG = sampleG.a;
 
-                // 严格绝缘：若字模主笔画透明，直接丢弃，绝不允许任何邻近字符污染
+                // 严格绝缘：若字模主笔画透明，直接丢弃
                 if (alphaG < 0.005)
                 {
                     discard;
                 }
 
-                // 2. 贴图像素受控微色散 (Texel-Constrained Dispersion)
-                float2 offset = float2(_Aberration * _MainTex_TexelSize.x * 0.75, 0.0);
-                float alphaR = (tex2D(_MainTex, uv + offset) + _TextureSampleAdd).a;
-                float alphaB = (tex2D(_MainTex, uv - offset) + _TextureSampleAdd).a;
+                // 2. 语义色彩智能门控 (Semantic Color Preservation):
+                // 若顶点颜色饱和度高 (如红色危险、黄色注意、绿色就绪、青色数值)，100% 忠实保留语义警示色！
+                // 仅当顶点为纯中性白光时，才投射主题全息磷光基色 (_PhosphorColor)
+                float maxC = max(max(IN.color.r, IN.color.g), IN.color.b);
+                float minC = min(min(IN.color.r, IN.color.g), IN.color.b);
+                float saturation = maxC - minC;
+                fixed3 baseColor = (saturation > 0.15) ? IN.color.rgb : (IN.color.rgb * _PhosphorColor.rgb);
 
-                // 严格以主字模 Alpha 进行钳制门控，杜绝越界拾取邻近字符
-                alphaR = min(alphaR, alphaG * 1.35);
-                alphaB = min(alphaB, alphaG * 1.35);
+                // 3. 阴极射线电子束高能过载核 (Electron Beam Overdrive Core)
+                // 仅在字模最核心区域产生 22% 炽热过载微提亮，绝不冲淡色彩或导致字形模糊泛白
+                float coreWeight = saturate(pow(alphaG, 3.2) * 0.22);
+                fixed3 finalRgb = lerp(baseColor, _CoreHotColor.rgb, coreWeight);
 
-                // 3. 电子束高能过载白热核 (Beam Overdrive White-Hot Core)
-                float coreWeight = pow(alphaG, 2.2);
-                fixed3 tint = _PhosphorColor.rgb * IN.color.rgb;
-                fixed3 baseColor = lerp(tint, _CoreHotColor.rgb, coreWeight * 0.85);
-
-                // 4. 边缘微色散重组
-                fixed3 finalRgb = fixed3(
-                    baseColor.r * lerp(1.0, alphaR / max(alphaG, 0.001), 0.25),
-                    baseColor.g,
-                    baseColor.b * lerp(1.0, alphaB / max(alphaG, 0.001), 0.25)
-                );
-
-                // 5. 本地 Canvas 空间平滑微扫描线 (Canvas-Local Anti-Aliased Scanlines)
-                float scan = 1.0 - (sin(IN.worldPosition.y * 1.5708) * 0.5 + 0.5) * _ScanlineDepth;
+                // 4. 平滑准直器微扫描线 (Anti-Aliased CRT Collimator Scanlines)
+                // 采用 6 像素平滑周期与受控深度 (最大 6%)，彻底杜绝 4px 高频切断文字横折笔画
+                float scan = 1.0 - (sin(IN.worldPosition.y * 1.0472) * 0.5 + 0.5) * min(_ScanlineDepth, 0.06);
                 finalRgb *= scan;
 
-                // 6. 磷光光子辉光与透明度合成
-                float totalAlpha = saturate(alphaG * (1.0 + _BloomStrength * 0.35)) * IN.color.a;
-                fixed4 finalCol = fixed4(finalRgb, totalAlpha);
+                // 5. 磷光光子辉光与伽马清晰度强化 (Phosphor Halo & Gamma Crisp)
+                float crispAlpha = saturate(pow(alphaG, 0.85) * (1.0 + _BloomStrength * 0.20)) * IN.color.a;
+                fixed4 finalCol = fixed4(finalRgb, crispAlpha);
 
-                // 7. UGUI 视口裁切保护
+                // 6. UGUI 视口裁切保护
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

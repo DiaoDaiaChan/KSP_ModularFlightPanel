@@ -80,6 +80,13 @@ namespace ModularFlightPanel.Core
         public double Periapsis { get; private set; } = -600000.0;
         public double TimeToAp { get; private set; } = 0.0;
         public double TimeToPe { get; private set; } = 0.0;
+        public double SemiMajorAxis { get; private set; } = 600074.0;
+        public double Eccentricity { get; private set; } = 0.0;
+        public double Inclination { get; private set; } = 0.0;
+        public double LongitudeOfAscendingNode { get; private set; } = 0.0;
+        public double ArgumentOfPeriapsis { get; private set; } = 0.0;
+        public double TrueAnomaly { get; private set; } = 0.0;
+        public double OrbitalPeriod { get; private set; } = 0.0;
 
         // 机动节点
         public bool HasManeuverNode { get; private set; } = false;
@@ -581,6 +588,13 @@ namespace ModularFlightPanel.Core
                     Periapsis = 118500.0;
                     TimeToAp = 1450.0;
                     TimeToPe = 320.0;
+                    SemiMajorAxis = 721250.0;
+                    Eccentricity = 0.0038;
+                    Inclination = 28.5;
+                    LongitudeOfAscendingNode = 45.2;
+                    ArgumentOfPeriapsis = 120.0;
+                    TrueAnomaly = 65.0;
+                    OrbitalPeriod = 3280.0;
                     Pitch = 0f;
                     Heading = 90f;
                     ElectricCharge = 398.0;
