@@ -725,6 +725,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.AccentMagenta, theme);
                 case "TARGET":
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.DangerColor, theme);
+                case "ORBIT":
+                case "ORBITAL":
                 case "BODY_DIRECTION":
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
                 case "BODY_SURFACE":
@@ -748,9 +750,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                         Rim = WidgetStyleManager.WithAlpha(theme.RimGlowColor, 0.70f)
                     };
                 }
-                case "ORBIT":
-                case "ORBITAL":
-                    return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
                 case "SURFACE":
                 default:
                     Color skyZ = WidgetStyleManager.WithAlpha(theme.SkyColor, 0.40f);

@@ -534,19 +534,36 @@ namespace ModularFlightPanel.Core
                     return "TARGET";
                 }
 
+                switch (PrincipiaProbe.CurrentFrameCategory)
+                {
+                    case PrincipiaProbe.ReferenceFrameCategory.Target:
+                        return "TARGET";
+                    case PrincipiaProbe.ReferenceFrameCategory.Inertial:
+                        return "INERTIAL";
+                    case PrincipiaProbe.ReferenceFrameCategory.Lagrange:
+                        return "LAGRANGE";
+                    case PrincipiaProbe.ReferenceFrameCategory.Orbital:
+                        return "ORBIT";
+                    case PrincipiaProbe.ReferenceFrameCategory.Surface:
+                        return "BODY_FIXED";
+                }
+
                 string pType = PrincipiaProbe.FrameTypeString;
                 if (!string.IsNullOrEmpty(pType))
                 {
-                    if (pType.IndexOf("SURFACE", StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (pType.IndexOf("SURFACE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        pType.IndexOf("BODY_FIXED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        pType.IndexOf("ROTATING", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "BODY_FIXED";
                     if (pType.IndexOf("NON_ROTATING", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         pType.IndexOf("INERTIAL", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "INERTIAL";
                     if (pType.IndexOf("BARYCENTRIC", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        pType.IndexOf("PULSATING", StringComparison.OrdinalIgnoreCase) >= 0)
+                        pType.IndexOf("PULSATING", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        pType.IndexOf("LAGRANGE", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "LAGRANGE";
                     if (pType.IndexOf("PARENT_DIRECTION", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        pType.IndexOf("BODY_CENTRED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        pType.IndexOf("BODY_DIRECTION", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         pType.IndexOf("ORBIT", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         pType.IndexOf("ECLIPTIC", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "ORBIT";

@@ -556,10 +556,10 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     {
                         beltCol = fixed4(0.14, 0.18, 0.24, 0.85);
                     }
-                    // Mode 4: ORBIT - 轨道面海军蓝动量流光带 (Orbital Momentum Navy)
+                    // Mode 4: ORBIT - 轨道面钛灰深石墨流光带 (Orbital Titanium Slate: Principia navball_body_direction 规范)
                     else if (_FramePattern > 3.5 && _FramePattern < 4.5)
                     {
-                        beltCol = fixed4(0.08, 0.22, 0.44, 0.90);
+                        beltCol = fixed4(0.24, 0.26, 0.30, 0.90);
                     }
                     // Mode 5: BODY_FIXED - 大地测绘深海钛青带 (Geographic Oceanic Teal)
                     else if (_FramePattern > 4.5)
