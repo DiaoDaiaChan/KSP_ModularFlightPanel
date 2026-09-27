@@ -43,10 +43,14 @@ namespace ModularFlightPanel.Core
                 }
             }
 
-            // 1. 优先读取游戏内原生/Principia 正在驱动的 Marker Transform 数据
-            // 若原生姿态球处于隐藏态且无 Principia，原生 Update 已跳过，直接转入高精度数学解算
-            bool shouldReadTransform = PrincipiaProbe.IsAvailable || !ThemeManager.IsStockNavballHidden || StockUIHider.IsCleanStockNavballActive;
-            if (shouldReadTransform && StockNavBallHook.HasStockNavBall && StockNavBallHook.StockInstance != null)
+            // 1. 直接采用开普勒/轨道/Principia 高精度数学权威解算（0 帧延迟、0 依赖原生 Transform 竞态、与着色器姿态四元数 100% 同源）
+            if (CalculateMarkerDirectionMath(markerKey, out dir, out isVisible))
+            {
+                return true;
+            }
+
+            // 2. 仅对未收录的自定义外置标线尝试从原生 Transform 提取兜底
+            if (StockNavBallHook.HasStockNavBall && StockNavBallHook.StockInstance != null)
             {
                 Transform marker = GetMarkerTransformByKey(markerKey);
                 if (marker != null && marker.gameObject.activeSelf)
@@ -54,31 +58,14 @@ namespace ModularFlightPanel.Core
                     Vector3 localPos = marker.localPosition;
                     if (localPos.sqrMagnitude > 0.0001f)
                     {
-                        Vector3 hudDir = localPos.normalized;
+                        dir = localPos.normalized;
                         isVisible = true;
-                        dir = hudDir;
                         return true;
-                    }
-                }
-                else if (marker != null)
-                {
-                    Transform oppMarker = GetOppositeMarkerTransformByKey(markerKey);
-                    if (oppMarker != null && oppMarker.gameObject.activeSelf)
-                    {
-                        Vector3 oppPos = oppMarker.localPosition;
-                        if (oppPos.sqrMagnitude > 0.0001f)
-                        {
-                            Vector3 hudDir = -oppPos.normalized;
-                            isVisible = true;
-                            dir = hudDir;
-                            return true;
-                        }
                     }
                 }
             }
 
-            // 2. 启用开普勒/轨道数学兜底解算
-            return CalculateMarkerDirectionMath(markerKey, out dir, out isVisible);
+            return false;
         }
 
         public static bool IsMarkerLogicallyActive(string markerKey, Transform marker)
@@ -180,24 +167,36 @@ namespace ModularFlightPanel.Core
                 case "retrograde":
                 {
                     Vector3d vel = Vector3d.zero;
-                    switch (FlightGlobals.speedDisplayMode)
+                    // 若 Principia 处于活动态且有有效 Frenet 切向矢量，优先采信 Principia 绘制参考系
+                    if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out var tang, out _, out _))
                     {
-                        case FlightGlobals.SpeedDisplayModes.Surface:
-                            vel = vessel.srf_velocity;
-                            break;
-                        case FlightGlobals.SpeedDisplayModes.Orbit:
-                            vel = vessel.obt_velocity;
-                            break;
-                        case FlightGlobals.SpeedDisplayModes.Target:
-                            if (FlightGlobals.fetch != null && FlightGlobals.fetch.VesselTarget != null)
-                            {
-                                vel = vessel.obt_velocity - FlightGlobals.fetch.VesselTarget.GetObtVelocity();
-                            }
-                            else
-                            {
+                        if (tang.sqrMagnitude > 0.001)
+                        {
+                            vel = tang;
+                        }
+                    }
+
+                    if (vel.sqrMagnitude <= 0.001)
+                    {
+                        switch (FlightGlobals.speedDisplayMode)
+                        {
+                            case FlightGlobals.SpeedDisplayModes.Surface:
                                 vel = vessel.srf_velocity;
-                            }
-                            break;
+                                break;
+                            case FlightGlobals.SpeedDisplayModes.Orbit:
+                                vel = vessel.obt_velocity;
+                                break;
+                            case FlightGlobals.SpeedDisplayModes.Target:
+                                if (FlightGlobals.fetch != null && FlightGlobals.fetch.VesselTarget != null)
+                                {
+                                    vel = vessel.obt_velocity - FlightGlobals.fetch.VesselTarget.GetObtVelocity();
+                                }
+                                else
+                                {
+                                    vel = vessel.srf_velocity;
+                                }
+                                break;
+                        }
                     }
 
                     if (vel.sqrMagnitude > 0.01)
@@ -253,7 +252,16 @@ namespace ModularFlightPanel.Core
                 case "normal":
                 case "antinormal":
                 {
-                    if (vessel.orbit != null && vessel.mainBody != null)
+                    if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out _, out _, out var pBinorm))
+                    {
+                        if (pBinorm.sqrMagnitude > 0.001)
+                        {
+                            worldVec = (key == "normal") ? (Vector3)pBinorm.normalized : -(Vector3)pBinorm.normalized;
+                            hasValidVector = true;
+                        }
+                    }
+
+                    if (!hasValidVector && vessel.orbit != null && vessel.mainBody != null)
                     {
                         Vector3 wCoM = vessel.CurrentCoM;
                         Vector3 cbPos = vessel.mainBody.position;
@@ -275,7 +283,17 @@ namespace ModularFlightPanel.Core
                 case "radialin":
                 case "radialout":
                 {
-                    if (vessel.orbit != null && vessel.mainBody != null)
+                    if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out _, out var pNorm, out _))
+                    {
+                        if (pNorm.sqrMagnitude > 0.001)
+                        {
+                            // Principia Normal 指向曲率中心即径向内 (Radial In)
+                            worldVec = (key == "radialin") ? (Vector3)pNorm.normalized : -(Vector3)pNorm.normalized;
+                            hasValidVector = true;
+                        }
+                    }
+
+                    if (!hasValidVector && vessel.orbit != null && vessel.mainBody != null)
                     {
                         Vector3 wCoM = vessel.CurrentCoM;
                         Vector3 cbPos = vessel.mainBody.position;
@@ -331,15 +349,24 @@ namespace ModularFlightPanel.Core
                     {
                         if (p * p + n * n + r * r > 0.001)
                         {
-                            if (vessel.orbit != null)
+                            if (PrincipiaProbe.GetVesselFrenetTrihedron(out var tang, out var norm, out var binorm))
+                            {
+                                Vector3d totalVec = tang * p + binorm * n + norm * r;
+                                if (totalVec.sqrMagnitude > 0.001)
+                                {
+                                    worldVec = (Vector3)totalVec.normalized;
+                                    hasValidVector = true;
+                                }
+                            }
+                            else if (vessel.orbit != null)
                             {
                                 Vector3d pos = vessel.orbit.pos;
                                 Vector3d vel = vessel.orbit.vel;
-                                Vector3d norm = Vector3d.Cross(pos, vel);
-                                if (vel.sqrMagnitude > 0.0001 && norm.sqrMagnitude > 0.0001)
+                                Vector3d normV = Vector3d.Cross(pos, vel);
+                                if (vel.sqrMagnitude > 0.0001 && normV.sqrMagnitude > 0.0001)
                                 {
-                                    Vector3d rad = Vector3d.Cross(vel, norm);
-                                    Vector3d totalVec = vel.normalized * p + norm.normalized * n + rad.normalized * r;
+                                    Vector3d rad = Vector3d.Cross(vel, normV);
+                                    Vector3d totalVec = vel.normalized * p + normV.normalized * n + rad.normalized * r;
                                     worldVec = (Vector3)totalVec.normalized;
                                     hasValidVector = true;
                                 }
@@ -353,16 +380,21 @@ namespace ModularFlightPanel.Core
             if (!hasValidVector) return false;
 
             Quaternion attitudeGymbal;
-            if (StockNavBallHook.HasStockNavBall && StockNavBallHook.StockInstance != null)
+            if (vessel.isEVA && !MapView.MapIsEnabled && FlightCamera.fetch != null)
             {
-                attitudeGymbal = StockNavBallHook.StockInstance.attitudeGymbal;
+                attitudeGymbal = Quaternion.Inverse(FlightCamera.fetch.getReferenceFrame() * Quaternion.AngleAxis(FlightCamera.fetch.camHdg * 57.29578f, Vector3.up) * Quaternion.AngleAxis(FlightCamera.fetch.camPitch * 57.29578f, Vector3.right));
             }
             else
             {
                 attitudeGymbal = Quaternion.Euler(90f, 0f, 0f) * Quaternion.Inverse(refTransform.rotation);
             }
 
-            Vector3 screenVec = attitudeGymbal * worldVec;
+            Camera uiCam = StockNavBallHook.GetNavBallCamera();
+            Quaternion camRot = (uiCam != null) ? uiCam.transform.rotation : Quaternion.identity;
+            Vector3 screenVec = (camRot != Quaternion.identity)
+                ? (Quaternion.Inverse(camRot) * (attitudeGymbal * worldVec))
+                : (attitudeGymbal * worldVec);
+
             dir = screenVec.normalized;
             isVisible = true;
             return true;

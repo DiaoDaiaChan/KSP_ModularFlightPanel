@@ -140,12 +140,14 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            // 按需同步 IMGUI 挂载组件状态：只有激活时才启用，非激活时完全杜绝 Unity IMGUI 运行
+            // 按需同步 IMGUI 挂载组件与根画布射线检测状态
             bool isEditMode = WidgetDragHandler.IsEditModeActive && _isUIVisible;
             if (_editModeToolbar != null && _editModeToolbar.enabled != isEditMode)
             {
                 _editModeToolbar.enabled = isEditMode;
             }
+
+            _canvasManager.SetRaycasterEnabled(isEditMode);
 
             bool showProfiler = MFPProfiler.ShowOverlay && _isUIVisible;
             if (_profilerOverlay != null && _profilerOverlay.enabled != showProfiler)
@@ -155,7 +157,8 @@ namespace ModularFlightPanel.UI
 
             MFPProfiler.BeginFrame();
 
-            if (!bypassed)
+            // 视口与界面隐藏态绝对零开销直通 (Zero-Cost Shortcut when UI is hidden or bypassed)
+            if (!bypassed && _isUIVisible)
             {
 #if KSP_RUNTIME
                 ModularFlightPanel.Core.StockNavBallHook.TickDynamicHooks();
@@ -187,7 +190,7 @@ namespace ModularFlightPanel.UI
 
         private void LateUpdate()
         {
-            if (!MFPProfiler.IsMasterBypassed)
+            if (!MFPProfiler.IsMasterBypassed && _isUIVisible)
             {
                 WidgetRenderManager.Instance.MasterLateUpdate();
             }
@@ -214,6 +217,7 @@ namespace ModularFlightPanel.UI
         {
             if (_hudRoot != null)
             {
+                _hudRoot.SetActive(false);
                 if (Application.isPlaying) Destroy(_hudRoot);
                 else DestroyImmediate(_hudRoot);
             }
@@ -223,8 +227,9 @@ namespace ModularFlightPanel.UI
 
             ThemeConfig theme = ThemeManager.Instance.CurrentTheme;
 
-            // 根锚点
+            // 根锚点：装配期间保持 SetActive(false)，彻底防止子节点逐个挂载/调整层级时的逐次 UGUI 重绘
             _hudRoot = new GameObject("HUD_Anchor_Root", typeof(RectTransform));
+            _hudRoot.SetActive(false);
             _hudRoot.transform.SetParent(_canvasManager.CanvasObject.transform, false);
 
             RectTransform rootRt = _hudRoot.GetComponent<RectTransform>();
@@ -232,10 +237,6 @@ namespace ModularFlightPanel.UI
             rootRt.anchorMax = new Vector2(0.5f, 0f);
             rootRt.pivot = new Vector2(0.5f, 0f);
             rootRt.anchoredPosition = new Vector2(0f, 215f * CustomScale);
-            if (!_isUIVisible)
-            {
-                _hudRoot.SetActive(false);
-            }
 
             // 实例化全屏蓝图辅助网格与对称轴 (位于底层)
             GameObject gridObj = new GameObject("CanvasBlueprintGrid", typeof(RectTransform));
@@ -351,6 +352,13 @@ namespace ModularFlightPanel.UI
 
             // 全量统一标准化并同步 UGUI Hierarchy 图层顺序
             WidgetLayerManager.NormalizeAndSyncLayers(recordHistory: false);
+
+            // 全量装配完成，一次性唤醒根节点，将数十次分散的 Canvas 脏标记合并为单次聚合光栅化
+            if (_isUIVisible)
+            {
+                _hudRoot.SetActive(true);
+            }
+            _canvasManager.SetRaycasterEnabled(WidgetDragHandler.IsEditModeActive && _isUIVisible);
         }
 
         public T SpawnWidget<T>(WidgetConfig cfg, ThemeConfig theme) where T : BaseFlightWidget
@@ -477,7 +485,71 @@ namespace ModularFlightPanel.UI
 
         public void RebuildHUD()
         {
+            if (WidgetLayoutManager.Instance != null && WidgetLayoutManager.Instance.CurrentLayout != null)
+            {
+                if (TryInPlaceUpdateLayout(WidgetLayoutManager.Instance.CurrentLayout))
+                {
+                    return;
+                }
+            }
             BuildHUD();
+        }
+
+        /// <summary>
+        /// 智能拓扑比对就地更新 (In-Place Layout Reconcile)
+        /// 当切换载具或重载布局时，若小组件拓扑集合 (WidgetId & WidgetType) 与当前完全一致，
+        /// 仅就地同步 RectTransform 坐标、旋角、图层与数据配置，彻底杜绝单帧内销毁与反射重建 30+ 个 GameObject 的 78ms 性能尖峰！
+        /// </summary>
+        public bool TryInPlaceUpdateLayout(WidgetLayoutData layout)
+        {
+            if (layout == null || layout.Widgets == null || _hudRoot == null || _modularWidgets == null) return false;
+
+            var activeConfigs = layout.Widgets.Where(c => c != null && c.IsEnabled).ToList();
+            if (activeConfigs.Count != _modularWidgets.Count) return false;
+
+            var configMap = new Dictionary<string, WidgetConfig>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < activeConfigs.Count; i++)
+            {
+                var c = activeConfigs[i];
+                if (string.IsNullOrEmpty(c.WidgetId)) return false;
+                configMap[c.WidgetId] = c;
+            }
+
+            for (int i = 0; i < _modularWidgets.Count; i++)
+            {
+                var w = _modularWidgets[i];
+                if (w == null || string.IsNullOrEmpty(w.WidgetId)) return false;
+                if (!configMap.TryGetValue(w.WidgetId, out var cfg)) return false;
+                if (!string.Equals(w.Config?.WidgetType, cfg.WidgetType, StringComparison.OrdinalIgnoreCase)) return false;
+            }
+
+            // 拓扑 100% 吻合：原地毫秒级同步，0 GameObject 分配，0 Canvas 重建风暴
+            for (int i = 0; i < _modularWidgets.Count; i++)
+            {
+                var w = _modularWidgets[i];
+                var cfg = configMap[w.WidgetId];
+                w.Config = cfg;
+
+                if (w.RectTransform != null)
+                {
+                    w.RectTransform.anchoredPosition = new Vector2(cfg.PositionX, cfg.PositionY);
+                    w.RectTransform.localEulerAngles = new Vector3(0f, 0f, cfg.Rotation);
+                }
+
+                if (w.DragHandler != null)
+                {
+                    w.DragHandler.UpdateSelectionAppearance();
+                }
+            }
+
+            RectTransform rootRt = _hudRoot.GetComponent<RectTransform>();
+            if (rootRt != null)
+            {
+                rootRt.anchoredPosition = new Vector2(0f, 215f * CustomScale);
+            }
+
+            WidgetLayerManager.NormalizeAndSyncLayers(recordHistory: false);
+            return true;
         }
 
         private void OnThemeChanged(ThemeConfig newTheme)
@@ -520,6 +592,10 @@ namespace ModularFlightPanel.UI
             bool layoutChanged = WidgetLayoutManager.Instance.OnActiveVesselChanged(v.vesselName);
             if (layoutChanged)
             {
+                if (TryInPlaceUpdateLayout(WidgetLayoutManager.Instance.CurrentLayout))
+                {
+                    return;
+                }
                 RebuildHUD();
             }
         }

@@ -109,6 +109,8 @@ namespace ModularFlightPanel.UI.Widgets
         private float _frameBadgeAnimTimer = 999f;
         private float _rollPointerAlpha = 0f;
         private readonly Dictionary<string, Vector2> _renderedMarkerPositions = new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Vector3> _currentMarkerDirs = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Vector3> _transitionStartMarkerDirs = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
 
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
@@ -399,9 +401,12 @@ namespace ModularFlightPanel.UI.Widgets
             float markerSize = 26f * dpiScale;
             _markerHandlers.Clear();
             _renderedMarkerPositions.Clear();
+            _currentMarkerDirs.Clear();
+            _transitionStartMarkerDirs.Clear();
             foreach (string k in markerKeys)
             {
                 _renderedMarkerPositions[k] = Vector2.zero;
+                _currentMarkerDirs[k] = Vector3.zero;
                 GameObject mObj = new GameObject($"Marker_{k}", typeof(RectTransform), typeof(Image));
                 mObj.transform.SetParent(_markerContainer, false);
                 RectTransform mRt = mObj.GetComponent<RectTransform>();
@@ -609,31 +614,13 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 _frameText.text = frame.Length > 5 ? frame.Substring(0, 5).ToUpperInvariant() : frame.ToUpperInvariant();
 
-                // 参考系角标切变弹跳与高亮脉冲
+                // 参考系角标切变颜色同步
                 ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
-                if (_frameBadgeAnimTimer < 0.40f)
+                if (_frameBadgeAnimTimer >= 0.40f)
                 {
-                    _frameBadgeAnimTimer += Time.unscaledDeltaTime;
-                    float bt = Mathf.Clamp01(_frameBadgeAnimTimer / 0.35f);
-                    float bScale = Mathf.Lerp(1.28f, 1.0f, 1.0f - Mathf.Pow(1.0f - bt, 2.0f));
-                    _frameText.rectTransform.localScale = new Vector3(bScale, bScale, 1.0f);
-                    Color fCol = GetFrameAccentColor(category, curTheme);
-                    fCol.a = Mathf.Lerp(0.5f, 1.0f, bt);
-                    _frameText.color = fCol;
-                }
-                else
-                {
-                    _frameText.rectTransform.localScale = Vector3.one;
                     _frameText.color = GetFrameAccentColor(category, curTheme);
                 }
             }
-
-            // 同步 HUD 导航矢量标 (Prograde / Retrograde / Normal / Target 等)
-            SyncMarkers();
-            UpdateReticleDynamics();
-            UpdateProceduralDetailScale();
-            UpdateRollPointer(telemetry, _currentAttitudeRotation);
-            UpdateSASAndGuidanceVisuals(telemetry);
         }
 
         protected override void OnScaleChanged(float targetScale, float relativeRatio)
@@ -656,6 +643,30 @@ namespace ModularFlightPanel.UI.Widgets
             IFlightTelemetry curTelem = FlightTelemetryContext.Current;
             UpdateRollPointer(curTelem, _currentAttitudeRotation);
             UpdateSASAndGuidanceVisuals(curTelem);
+            UpdateFrameBadgeAnimation();
+        }
+
+        private void UpdateFrameBadgeAnimation()
+        {
+            if (_frameText == null) return;
+            var hook = NavBallHookService.Provider;
+            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
+            ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+
+            if (_frameBadgeAnimTimer < 0.40f)
+            {
+                _frameBadgeAnimTimer += Time.unscaledDeltaTime;
+                float bt = Mathf.Clamp01(_frameBadgeAnimTimer / 0.35f);
+                float bScale = Mathf.Lerp(1.28f, 1.0f, 1.0f - Mathf.Pow(1.0f - bt, 2.0f));
+                _frameText.rectTransform.localScale = new Vector3(bScale, bScale, 1.0f);
+                Color fCol = GetFrameAccentColor(category, curTheme);
+                fCol.a = Mathf.Lerp(0.5f, 1.0f, bt);
+                _frameText.color = fCol;
+            }
+            else
+            {
+                _frameText.rectTransform.localScale = Vector3.one;
+            }
         }
 
         private void UpdateProceduralDetailScale()
@@ -753,6 +764,13 @@ namespace ModularFlightPanel.UI.Widgets
 
                 // 激活参考系角标徽章缩放动画
                 _frameBadgeAnimTimer = 0f;
+
+                // 记录所有当前可见标记物的三维起始矢量，以便进行 3D 球面 Slerp 平滑过渡
+                _transitionStartMarkerDirs.Clear();
+                foreach (var kvp in _currentMarkerDirs)
+                {
+                    _transitionStartMarkerDirs[kvp.Key] = kvp.Value;
+                }
             }
 
             _lastFrameCategory = category;
@@ -902,7 +920,16 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
-                    Vector2 bearing = new Vector2(dir.x, dir.y);
+                    Vector3 currentDir = dir;
+                    if (_isFrameTransitioning && _transitionStartMarkerDirs.TryGetValue(key, out Vector3 startDir) && startDir.sqrMagnitude > 0.001f)
+                    {
+                        float transT = Mathf.Clamp01(_frameTransitionTimer / FrameTransitionDuration);
+                        float eased = 1.0f - Mathf.Pow(1.0f - transT, 3.0f);
+                        currentDir = Vector3.Slerp(startDir, dir, eased).normalized;
+                    }
+                    _currentMarkerDirs[key] = currentDir;
+
+                    Vector2 bearing = new Vector2(currentDir.x, currentDir.y);
                     float bearingMag = bearing.magnitude;
                     Vector2 normBearing = bearingMag > 0.001f ? (bearing / bearingMag) : Vector2.up;
 
@@ -911,9 +938,9 @@ namespace ModularFlightPanel.UI.Widgets
                     float targetScale;
                     float alpha;
 
-                    if (dir.z >= 0.05f)
+                    if (currentDir.z >= 0.05f)
                     {
-                        // 前向半球：完全投影在球体正面
+                        // 前向半球：完全正交投影在球体正面
                         markerPos = bearing * _visualRadius;
                         targetScale = 1.0f;
                         alpha = 1.0f;
@@ -921,13 +948,13 @@ namespace ModularFlightPanel.UI.Widgets
                     else
                     {
                         // 背向半球与超出范围：持续吸附在表圈外围轨道，平滑过渡
-                        float tOff = Mathf.Clamp01((0.05f - dir.z) / 0.20f);
+                        float tOff = Mathf.Clamp01((0.05f - currentDir.z) / 0.20f);
                         Vector2 frontPos = bearing * _visualRadius;
                         Vector2 periphPos = normBearing * peripheryRadius;
                         markerPos = Vector2.Lerp(frontPos, periphPos, tOff);
 
-                        // 根据角距离远近变淡加深：-dir.z 从 0 (地平) 到 1.0 (正后方 180°)
-                        float tDepth = Mathf.Clamp01(-dir.z);
+                        // 根据角距离远近变淡加深：-currentDir.z 从 0 (地平) 到 1.0 (正后方 180°)
+                        float tDepth = Mathf.Clamp01(-currentDir.z);
                         alpha = Mathf.Lerp(0.88f, 0.26f, tDepth);
                         targetScale = Mathf.Lerp(0.90f, 0.58f, tDepth);
                     }
@@ -939,26 +966,16 @@ namespace ModularFlightPanel.UI.Widgets
                         targetScale *= pulse;
                     }
 
-                    // 坐标系切换平滑过渡与轻量呼吸加权
-                    Vector2 renderedPos;
-                    if (!_renderedMarkerPositions.TryGetValue(key, out renderedPos) || renderedPos.sqrMagnitude < 0.001f)
-                    {
-                        renderedPos = markerPos;
-                        _renderedMarkerPositions[key] = markerPos;
-                    }
-                    else
-                    {
-                        float lerpRate = _isFrameTransitioning ? 10.0f : 32.0f;
-                        renderedPos = Vector2.Lerp(renderedPos, markerPos, Mathf.Clamp01(Time.unscaledDeltaTime * lerpRate));
-                        _renderedMarkerPositions[key] = renderedPos;
-                    }
-
-                    if (_isFrameTransitioning && dir.z >= 0.05f)
+                    if (_isFrameTransitioning && currentDir.z >= 0.05f)
                     {
                         float transT = Mathf.Clamp01(_frameTransitionTimer / FrameTransitionDuration);
                         float transPulse = 1.0f + 0.12f * Mathf.Sin(transT * Mathf.PI);
                         targetScale *= transPulse;
                     }
+
+                    // 瞬时精准咬合球体表面，零滞后、零抽搐
+                    Vector2 renderedPos = markerPos;
+                    _renderedMarkerPositions[key] = renderedPos;
 
                     // 光标悬停交互 (Hover Scaling, Highlight & Press Feedback)
                     NavballMarkerClickHandler handler = null;
@@ -987,9 +1004,9 @@ namespace ModularFlightPanel.UI.Widgets
                     img.color = c;
 
                     // 避免球体字号与前方核心航向/机动标重叠遮挡
-                    if (avoidIdx < 4 && dir.z > 0.1f)
+                    if (avoidIdx < 4 && currentDir.z > 0.1f)
                     {
-                        avoidVectors[avoidIdx] = new Vector4(dir.x, dir.y, 0.18f, 1.0f);
+                        avoidVectors[avoidIdx] = new Vector4(currentDir.x, currentDir.y, 0.18f, 1.0f);
                         avoidIdx++;
                     }
                 }
@@ -997,6 +1014,7 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
                     _renderedMarkerPositions[key] = Vector2.zero;
+                    _currentMarkerDirs[key] = Vector3.zero;
                     if (_activeHoveredMarkerKey == key)
                     {
                         _activeHoveredMarkerKey = null;
@@ -1165,7 +1183,14 @@ namespace ModularFlightPanel.UI.Widgets
                         targetPos = targetImg.rectTransform.anchoredPosition;
                     }
 
-                    _sasLockReticleRt.anchoredPosition = Vector2.Lerp(_sasLockReticleRt.anchoredPosition, targetPos, Mathf.Clamp01(dt * 18.0f));
+                    if (Vector2.Distance(_sasLockReticleRt.anchoredPosition, targetPos) < 1.5f)
+                    {
+                        _sasLockReticleRt.anchoredPosition = targetPos;
+                    }
+                    else
+                    {
+                        _sasLockReticleRt.anchoredPosition = Vector2.Lerp(_sasLockReticleRt.anchoredPosition, targetPos, Mathf.Clamp01(dt * 30.0f));
+                    }
 
                     float breath = 1.0f + 0.05f * Mathf.Sin(Time.unscaledTime * 5.0f);
                     _sasLockReticleRt.localScale = new Vector3(breath, breath, 1.0f);
@@ -1809,6 +1834,8 @@ namespace ModularFlightPanel.UI.Widgets
             _markerImages.Clear();
             _markerHandlers.Clear();
             _renderedMarkerPositions.Clear();
+            _currentMarkerDirs.Clear();
+            _transitionStartMarkerDirs.Clear();
             _markerHoverTooltipObj = null;
             _markerHoverTooltipRt = null;
             _markerHoverTooltipBg = null;
