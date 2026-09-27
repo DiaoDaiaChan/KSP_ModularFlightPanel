@@ -510,14 +510,18 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         float primePulse = 0.80 + 0.20 * sin(_Time.y * 2.5);
                         frameDetail += isDualTrack * primePulse;
                     }
-                    // 15° 经纬度网格交点微型大地测量十字标校准星 (+)
-                    float latMod15 = abs(fmod(absPitch, 15.0));
-                    float lonMod15 = abs(fmod(headDeg + 7.5, 15.0) - 7.5);
-                    if (latMod15 < 1.4 && lonMod15 < 1.4 && absPitch > 6.0 && absPitch < 82.0)
+                    // 15° 经纬度网格交点微型大地测量十字标校准星 (+) (限制在 62° 以下，采用球面弧长防高纬极区畸变)
+                    if (absPitch > 6.0 && absPitch < 62.0)
                     {
-                        float crossH = (1.0 - smoothstep(0.18, 0.38, lonMod15)) * (1.0 - smoothstep(0.9, 1.3, latMod15));
-                        float crossV = (1.0 - smoothstep(0.18, 0.38, latMod15)) * (1.0 - smoothstep(0.9, 1.3, lonMod15));
-                        frameDetail += max(crossH, crossV) * 0.55;
+                        float latMod15 = abs(fmod(absPitch, 15.0));
+                        float lonDeg15 = abs(fmod(headDeg + 7.5, 15.0) - 7.5);
+                        float lonArc15 = lonDeg15 * cos(radians(absPitch));
+                        if (latMod15 < 1.4 && lonArc15 < 1.4)
+                        {
+                            float crossH = (1.0 - smoothstep(0.18, 0.38, lonArc15)) * (1.0 - smoothstep(0.9, 1.3, latMod15));
+                            float crossV = (1.0 - smoothstep(0.18, 0.38, latMod15)) * (1.0 - smoothstep(0.9, 1.3, lonArc15));
+                            frameDetail += max(crossH, crossV) * 0.55;
+                        }
                     }
                 }
 
@@ -536,19 +540,42 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 col = lerp(col, _EquatorColor, saturate(combinedEquator * _EquatorColor.a));
 
                 // 极点渐隐防聚集保护 (Polar Ring-Bunching Protection)
-                float polarLadderFade = 1.0 - smoothstep(68.0, 78.0, absPitch);
+                // 75° 梯级中心位于 75.0°，渐隐区调整至 78.0°~83.0°，确保 75° 梯级 100% 清晰呈现，且在 85° 极标前干净隐退
+                float polarLadderFade = 1.0 - smoothstep(78.0, 83.0, absPitch);
 
                 // 3. 俯仰梯级计算
                 float pitchHeadingCenter = floor(headDeg / 30.0 + 0.5) * 30.0;
                 float pitchHeadingOffset = headDeg - pitchHeadingCenter;
                 if (pitchHeadingOffset > 180.0) pitchHeadingOffset -= 360.0;
                 if (pitchHeadingOffset < -180.0) pitchHeadingOffset += 360.0;
-                float absHOffset = abs(pitchHeadingOffset);
 
                 float pitchLabelLevel = round(absPitch / 15.0) * 15.0;
                 float pitchLabelCenter = (pitchDeg < 0.0 ? -pitchLabelLevel : pitchLabelLevel);
                 float pitchLabelOffset = pitchDeg - pitchLabelCenter;
                 float absLabelOffset = abs(pitchLabelOffset);
+
+                // 梯级与数字航向自适应疏化 (Polar Ladder & Label Decimation):
+                // 彻底解决高纬度极区经线收敛导致 12 组梯级与数字挤爆重叠的 Bug:
+                // - 低纬 (pitchLabelLevel <= 45°): 每 30° 梯级 (12 组)
+                // - 中高纬 (pitchLabelLevel == 60°): 每 60° 梯级 (6 组: 0°, 60°, 120°, 180°, 240°, 300°)
+                // - 极区 (pitchLabelLevel >= 75°): 每 90° 梯级 (4 组基本主轴: 0°, 90°, 180°, 270°)
+                float normHCenter = fmod(pitchHeadingCenter + 360.0, 360.0);
+                bool isHeadingActiveForPitch = true;
+                if (pitchLabelLevel >= 70.0)
+                {
+                    isHeadingActiveForPitch = (fmod(normHCenter + 1.0, 90.0) < 2.0);
+                }
+                else if (pitchLabelLevel >= 55.0)
+                {
+                    isHeadingActiveForPitch = (fmod(normHCenter + 1.0, 60.0) < 2.0);
+                }
+
+                // 球面度规反畸变投影展开 (Spherical Metric Tangent Projection):
+                // 球面上纬圈微元弧长 ds_x = cos(pitch) * d(lambda)。通过 cos(pitchLabelLevel) 归一化经度差，
+                // 使梯级与数码管在任意纬度 (0°~75°) 的物理长宽比与字形尺寸恒等于 1:1，杜绝 75° 处长宽压缩 4 倍的拉丝现象！
+                float cosPitchLevel = max(cos(radians(pitchLabelLevel)), 0.08);
+                float pitchHeadingArc = pitchHeadingOffset * cosPitchLevel;
+                float absHArc = abs(pitchHeadingArc);
 
                 // 动态字形滚转正向对齐与切向反畸变展开
                 float tangentAspect = lerp(1.0, clamp(1.0 / max(NdotV, 0.58), 1.0, 1.28), _NumeralTangentComp);
@@ -556,27 +583,27 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float cosNR = cos(numRoll);
                 float sinNR = sin(numRoll);
 
-                // 包围盒裁剪：俯仰数字仅在 ±4.8° 经度范围内且属于 15°~75° 梯级才执行 SDF 计算
+                // 包围盒裁剪：俯仰数字在各参考系中均基于真实球面弧度包围盒与疏密过滤裁剪
                 float pitchGlyphDistance = 100.0;
                 float pitchGlyphEnabled = 0.0;
                 float pitchLabelGap = 0.0;
 
-                if (absPitch >= 12.0 && absPitch <= 78.0)
+                if (absPitch >= 12.0 && absPitch <= 82.0 && isHeadingActiveForPitch)
                 {
                     pitchGlyphEnabled = polarLadderFade * smoothstep(0.12, 0.42, NdotV) * smoothstep(0.08, 0.34, _DetailScale) * markerClearance;
 
-                    if (absHOffset < 6.8 && absLabelOffset < 3.8)
+                    if (absHArc < 5.2 && absLabelOffset < 3.8)
                     {
                         float pitchTens = floor(pitchLabelLevel / 10.0);
                         float pitchOnes = fmod(pitchLabelLevel, 10.0);
 
-                        float2 pitchCenterOffset = float2(pitchHeadingOffset * signH * tangentAspect, pitchLabelOffset);
+                        float2 pitchCenterOffset = float2(pitchHeadingArc * signH * tangentAspect, pitchLabelOffset);
                         float2 rotPitchOffset = float2(
                             pitchCenterOffset.x * cosNR - pitchCenterOffset.y * sinNR,
                             pitchCenterOffset.x * sinNR + pitchCenterOffset.y * cosNR
                         );
 
-                        float pitchRadialSq = pitchHeadingOffset * pitchHeadingOffset + pitchLabelOffset * pitchLabelOffset;
+                        float pitchRadialSq = pitchHeadingArc * pitchHeadingArc + pitchLabelOffset * pitchLabelOffset;
                         pitchLabelGap = (pitchRadialSq < 26.0) ? pitchGlyphEnabled : 0.0;
 
                         pitchGlyphDistance = min(
@@ -591,28 +618,28 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     }
                 }
 
-                // 15° 主横杠 (横跨 ±10.0°，两端带有垂直指示末梢)
+                // 15° 主横杠 (横跨 ±9.0° arc，两端带有垂直指示末梢，恒定球面弧长)
                 float majorLadder15 = 0.0;
-                if (absHOffset <= 12.0 && pitchLabelLevel >= 12.0 && pitchLabelLevel <= 78.0 && absLabelOffset < 2.5)
+                if (isHeadingActiveForPitch && absHArc <= 10.5 && pitchLabelLevel >= 12.0 && pitchLabelLevel <= 78.0 && absLabelOffset < 2.5)
                 {
                     float barPitchAA = clamp(fwidth(absLabelOffset) * 0.75, 0.001, 0.15);
-                    float barHAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
+                    float barHAA = clamp(fwidth(absHArc) * 0.75, 0.001, 0.15);
                     float isMajorBar15 = (1.0 - smoothstep(0.30 - barPitchAA, 0.30 + barPitchAA, absLabelOffset)) *
-                                         smoothstep(4.8 - barHAA, 4.8 + barHAA, absHOffset) *
-                                         (1.0 - smoothstep(10.0 - barHAA, 10.0 + barHAA, absHOffset));
+                                         smoothstep(4.0 - barHAA, 4.0 + barHAA, absHArc) *
+                                         (1.0 - smoothstep(9.0 - barHAA, 9.0 + barHAA, absHArc));
 
                     float isTip15 = 0.0;
-                    if (absHOffset >= 9.0 && absHOffset < 10.2)
+                    if (absHArc >= 8.2 && absHArc < 9.2)
                     {
-                        float tipHMask = smoothstep(9.2 - barHAA, 9.2 + barHAA, absHOffset) * (1.0 - smoothstep(10.0 - barHAA, 10.0 + barHAA, absHOffset));
+                        float tipHMask = smoothstep(8.3 - barHAA, 8.3 + barHAA, absHArc) * (1.0 - smoothstep(9.0 - barHAA, 9.0 + barHAA, absHArc));
                         if (pitchDeg > 0.0)
                         {
-                            float tipVMask = (1.0 - smoothstep(0.0 - barPitchAA, 0.0 + barPitchAA, pitchLabelOffset)) * smoothstep(-1.6 - barPitchAA, -1.6 + barPitchAA, pitchLabelOffset);
+                            float tipVMask = (1.0 - smoothstep(0.0 - barPitchAA, 0.0 + barPitchAA, pitchLabelOffset)) * smoothstep(-1.5 - barPitchAA, -1.5 + barPitchAA, pitchLabelOffset);
                             isTip15 = tipHMask * tipVMask;
                         }
                         else
                         {
-                            float tipVMask = smoothstep(0.0 - barPitchAA, 0.0 + barPitchAA, pitchLabelOffset) * (1.0 - smoothstep(1.6 - barPitchAA, 1.6 + barPitchAA, pitchLabelOffset));
+                            float tipVMask = smoothstep(0.0 - barPitchAA, 0.0 + barPitchAA, pitchLabelOffset) * (1.0 - smoothstep(1.5 - barPitchAA, 1.5 + barPitchAA, pitchLabelOffset));
                             isTip15 = tipHMask * tipVMask;
                         }
                     }
@@ -620,16 +647,17 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     if (pitchDeg < 0.0)
                     {
-                        float dashVal = fmod(absHOffset - 4.8, 2.2);
+                        float dashVal = fmod(absHArc - 4.0, 2.0);
                         float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.15);
-                        float dashMask = 1.0 - smoothstep(1.15 - dashAA, 1.15 + dashAA, dashVal);
+                        float dashMask = 1.0 - smoothstep(1.05 - dashAA, 1.05 + dashAA, dashVal);
                         majorLadder15 *= dashMask;
                     }
                 }
 
-                // 中间 10° 梯级中杠 (横跨 ±5.5°)
+                // 中间 10° 梯级中杠 (横跨 ±4.8° arc，在 72° 以下显示并受航向疏密过滤)
+                float tickHArc = abs(pitchHeadingOffset) * max(cos(radians(absPitch)), 0.08);
                 float isTick10 = 0.0;
-                if (absHOffset <= 6.0 && absPitch > 4.0 && absPitch < 80.0)
+                if (isHeadingActiveForPitch && tickHArc <= 5.5 && absPitch > 4.0 && absPitch < 72.0)
                 {
                     float pMod10 = abs(pitchDeg - round(pitchDeg / 10.0) * 10.0);
                     float pLevel10 = round(absPitch / 10.0) * 10.0;
@@ -637,20 +665,22 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (isPure10 && pMod10 < 0.6)
                     {
                         float tick10AA = clamp(fwidth(pMod10) * 0.75, 0.001, 0.15);
-                        float tick10HAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
-                        isTick10 = (1.0 - smoothstep(0.26 - tick10AA, 0.26 + tick10AA, pMod10)) * (1.0 - smoothstep(5.5 - tick10HAA, 5.5 + tick10HAA, absHOffset)) * 0.72 * smoothstep(0.0, 0.32, _DetailScale);
+                        float tick10HAA = clamp(fwidth(tickHArc) * 0.75, 0.001, 0.15);
+                        isTick10 = (1.0 - smoothstep(0.26 - tick10AA, 0.26 + tick10AA, pMod10)) * 
+                                   (1.0 - smoothstep(4.8 - tick10HAA, 4.8 + tick10HAA, tickHArc)) * 
+                                   0.72 * smoothstep(0.0, 0.32, _DetailScale);
                         if (pitchDeg < 0.0)
                         {
-                            float dash10 = fmod(absHOffset, 2.0);
+                            float dash10 = fmod(tickHArc, 1.8);
                             float dash10AA = clamp(fwidth(dash10) * 0.75, 0.001, 0.15);
-                            isTick10 *= (1.0 - smoothstep(1.10 - dash10AA, 1.10 + dash10AA, dash10));
+                            isTick10 *= (1.0 - smoothstep(0.95 - dash10AA, 0.95 + dash10AA, dash10));
                         }
                     }
                 }
 
-                // 中间 5° 梯级短杠 (横跨 ±3.2°)
+                // 中间 5° 梯级短杠 (横跨 ±2.8° arc，在 72° 以下显示并受航向疏密过滤)
                 float isTick5 = 0.0;
-                if (absHOffset <= 3.8 && absPitch > 2.0 && absPitch < 80.0)
+                if (isHeadingActiveForPitch && tickHArc <= 3.4 && absPitch > 2.0 && absPitch < 72.0)
                 {
                     float pMod5 = abs(pitchDeg - round(pitchDeg / 5.0) * 5.0);
                     float pLevel5 = round(absPitch / 5.0) * 5.0;
@@ -658,13 +688,15 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (isPure5 && pMod5 < 0.5)
                     {
                         float tick5AA = clamp(fwidth(pMod5) * 0.75, 0.001, 0.15);
-                        float tick5HAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
-                        isTick5 = (1.0 - smoothstep(0.20 - tick5AA, 0.20 + tick5AA, pMod5)) * (1.0 - smoothstep(3.2 - tick5HAA, 3.2 + tick5HAA, absHOffset)) * 0.50 * smoothstep(0.22, 0.62, _DetailScale);
+                        float tick5HAA = clamp(fwidth(tickHArc) * 0.75, 0.001, 0.15);
+                        isTick5 = (1.0 - smoothstep(0.20 - tick5AA, 0.20 + tick5AA, pMod5)) * 
+                                  (1.0 - smoothstep(2.8 - tick5HAA, 2.8 + tick5HAA, tickHArc)) * 
+                                  0.50 * smoothstep(0.22, 0.62, _DetailScale);
                         if (pitchDeg < 0.0)
                         {
-                            float dash5 = fmod(absHOffset, 1.6);
+                            float dash5 = fmod(tickHArc, 1.5);
                             float dash5AA = clamp(fwidth(dash5) * 0.75, 0.001, 0.15);
-                            isTick5 *= (1.0 - smoothstep(0.85 - dash5AA, 0.85 + dash5AA, dash5));
+                            isTick5 *= (1.0 - smoothstep(0.80 - dash5AA, 0.80 + dash5AA, dash5));
                         }
                     }
                 }
@@ -672,7 +704,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float combinedLadder = max(majorLadder15, max(isTick10, isTick5)) * polarLadderFade;
 
                 // 2.5° 游标微调刻度 (Vernier Scale)
-                if (_VernierScaleDetail > 0.01 && absPitch < 8.0 && absHOffset <= 2.5)
+                if (_VernierScaleDetail > 0.01 && absPitch < 8.0 && tickHArc <= 2.5)
                 {
                     float pMod25 = abs(pitchDeg - round(pitchDeg / 2.5) * 2.5);
                     float pLevel25 = round(absPitch / 2.5) * 2.5;
@@ -680,25 +712,29 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (isPure25 && pMod25 < 0.4)
                     {
                         float tick25AA = clamp(fwidth(pMod25) * 0.75, 0.001, 0.15);
-                        float tick25HAA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
-                        float isTick25 = (1.0 - smoothstep(0.18 - tick25AA, 0.18 + tick25AA, pMod25)) * (1.0 - smoothstep(2.0 - tick25HAA, 2.0 + tick25HAA, absHOffset)) * 0.65;
+                        float tick25HAA = clamp(fwidth(tickHArc) * 0.75, 0.001, 0.15);
+                        float isTick25 = (1.0 - smoothstep(0.18 - tick25AA, 0.18 + tick25AA, pMod25)) * (1.0 - smoothstep(2.0 - tick25HAA, 2.0 + tick25HAA, tickHArc)) * 0.65;
                         combinedLadder = max(combinedLadder, isTick25 * _VernierScaleDetail * smoothstep(0.35, 0.75, _DetailScale));
                     }
                 }
 
                 col = lerp(col, _PitchLadderColor, saturate(combinedLadder * _PitchLadderColor.a * 0.92));
 
-                // 4. 经度子午线：每 30° 一道经线，90° 主方向加亮
+                // 4. 经度子午线：次要 30° 经线在 65° 平滑隐退，4 大主方向经线 (0°, 90°, 180°, 270°) 延伸与极标正交翼咬合
                 float headMod90 = abs(fmod(headDeg + 405.0, 90.0) - 45.0);
+                float minorMeridianFade = 1.0 - smoothstep(58.0, 68.0, absPitch);
+                float cardinalMeridianFade = polarLadderFade;
+
+                float absHOffset = abs(pitchHeadingOffset);
                 if (absHOffset <= 1.0 || headMod90 <= 1.0)
                 {
                     float m30AA = clamp(fwidth(absHOffset) * 0.75, 0.001, 0.15);
-                    float isMeridian30 = (1.0 - smoothstep(0.24 - m30AA, 0.24 + m30AA, absHOffset)) * 0.38;
+                    float isMeridian30 = (1.0 - smoothstep(0.24 - m30AA, 0.24 + m30AA, absHOffset)) * 0.38 * minorMeridianFade;
                     float m90AA = clamp(fwidth(headMod90) * 0.75, 0.001, 0.15);
-                    float isMeridian90 = (1.0 - smoothstep(0.34 - m90AA, 0.34 + m90AA, headMod90)) * 0.65;
-                    float isMeridian = max(isMeridian30, isMeridian90) * polarLadderFade;
+                    float isMeridian90 = (1.0 - smoothstep(0.34 - m90AA, 0.34 + m90AA, headMod90)) * 0.65 * cardinalMeridianFade;
+                    float isMeridian = max(isMeridian30, isMeridian90);
 
-                    float headingRadialSq = pitchHeadingOffset * pitchHeadingOffset + (pitchDeg - 3.8) * (pitchDeg - 3.8);
+                    float headingRadialSq = (pitchHeadingArc) * (pitchHeadingArc) + (pitchDeg - 3.8) * (pitchDeg - 3.8);
                     float headingNumberMask = (headingRadialSq < 42.0) ? (1.0 - smoothstep(5.5, 7.5, absPitch)) : 0.0;
                     isMeridian *= (1.0 - max(pitchLabelGap, headingNumberMask));
                     col = lerp(col, _HeadingLineColor, saturate(isMeridian * _HeadingLineColor.a));
@@ -719,7 +755,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 }
 
                 // 6. 高精度七段数码管排版渲染 (俯仰数字 + 赤道航向数字)
-                float glyphAA = clamp(max(fwidth(pitchHeadingOffset * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.001, 0.18);
+                float glyphAA = clamp(max(fwidth(pitchHeadingArc * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.001, 0.18);
                 float pitchTextOutline = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance - 0.45)) * pitchGlyphEnabled;
                 float pitchTextFill = (1.0 - smoothstep(-glyphAA, glyphAA, pitchGlyphDistance)) * pitchGlyphEnabled;
 
@@ -814,7 +850,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 col.rgb = lerp(col.rgb, labelCol.rgb, saturate(textFill * labelCol.a));
 
                 // 7. 天顶与天底专属高精矢量极标 (Zenith & Nadir Precision Icons)
-                if (absY > 0.955)
+                if (absY > 0.985)
                 {
                     float poleR = sqrt(p.x * p.x + p.z * p.z);
                     float poleAA = clamp(fwidth(poleR) * 0.75, 0.0004, 0.015);
