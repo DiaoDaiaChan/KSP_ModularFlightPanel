@@ -45,6 +45,15 @@ namespace ModularFlightPanel.UI.Auditing
         public bool UsesImperativeUiFactory { get; set; }
         public List<string> MissingModernFeatures { get; } = new List<string>();
 
+        // ── 航电代码质量与反模式治理指标 (Code Reuse & Anti-Pattern Metrics) ──
+        public bool HasRedundantTemplateParser { get; set; }
+        public List<string> RedundantFormattingMethods { get; } = new List<string>();
+        public int RedundantDirtyTrackingFields { get; set; }
+        public bool UsesStandardizedChannels { get; set; }
+        public bool UsesStandardizedFormatting { get; set; }
+        public bool UsesSetTextIfChanged { get; set; }
+        public List<string> StandardizationSuggestions { get; } = new List<string>();
+
         public string GetMissingSummary()
         {
             if (MissingModernFeatures.Count == 0) return "Standardized (已符合现代微控件架构规范)";
@@ -66,6 +75,12 @@ namespace ModularFlightPanel.UI.Auditing
             ? ((float)(ModernCount + Core3DCount) / TotalCount) * 100f
             : 0f;
 
+        // ── 代码治理宏观指标 ──
+        public int RedundantTemplateParserCount => Items.Count(i => i.HasRedundantTemplateParser);
+        public int RedundantFormattingMethodCount => Items.Count(i => i.RedundantFormattingMethods.Count > 0);
+        public int StandardizedChannelAdoptionCount => Items.Count(i => i.UsesStandardizedChannels);
+        public int StandardizedFormattingAdoptionCount => Items.Count(i => i.UsesStandardizedFormatting);
+
         public List<WidgetModernizationItem> Items { get; } = new List<WidgetModernizationItem>();
 
         public IEnumerable<WidgetModernizationItem> LegacyWidgets =>
@@ -76,6 +91,9 @@ namespace ModularFlightPanel.UI.Auditing
 
         public IEnumerable<WidgetModernizationItem> Core3DWidgets =>
             Items.Where(i => i.Status == WidgetModernizationStatus.Core3D);
+
+        public IEnumerable<WidgetModernizationItem> WidgetsWithAntiPatterns =>
+            Items.Where(i => i.HasRedundantTemplateParser || i.RedundantFormattingMethods.Count > 0 || i.RedundantDirtyTrackingFields > 3);
     }
 
     /// <summary>
@@ -226,6 +244,84 @@ namespace ModularFlightPanel.UI.Auditing
                         item.MissingModernFeatures.Add("Missing AutoCreateCardFrame");
                     }
                 }
+                // 7. 私有模板解析器反模式检测 (ParseCustomTemplate / CustomTemplate.Split)
+                bool hasRedundantParser = widgetClass.Members.OfType<MethodDeclarationSyntax>()
+                    .Any(m => string.Equals(m.Identifier.Text, WidgetSpecRules.BannedTemplateParserMethod, StringComparison.Ordinal));
+                bool hasSplitCustomTemplate = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Any(inv =>
+                    {
+                        string expr = inv.Expression.ToString();
+                        return expr.EndsWith(".Split", StringComparison.Ordinal) &&
+                               inv.ToString().Contains("CustomTemplate");
+                    });
+                item.HasRedundantTemplateParser = hasRedundantParser || hasSplitCustomTemplate;
+                if (item.HasRedundantTemplateParser)
+                {
+                    item.StandardizationSuggestions.Add("Contains private ParseCustomTemplate (migrate to BaseFlightWidget.GetTemplateChannel)");
+                }
+
+                // 8. 私有时序/度量格式化方法反模式检测
+                foreach (var method in widgetClass.Members.OfType<MethodDeclarationSyntax>())
+                {
+                    string mName = method.Identifier.Text;
+                    for (int f = 0; f < WidgetSpecRules.BannedFormattingMethods.Length; f++)
+                    {
+                        if (string.Equals(mName, WidgetSpecRules.BannedFormattingMethods[f], StringComparison.Ordinal))
+                        {
+                            item.RedundantFormattingMethods.Add(mName);
+                            item.StandardizationSuggestions.Add($"Contains private {mName} (migrate to AvionicsFormatting / BaseFlightWidget)");
+                            break;
+                        }
+                    }
+                }
+
+                // 9. 冗余手工脏标记字段统计 (_last*Text, _last*Val, _last*Str)
+                int dirtyFields = 0;
+                foreach (var field in widgetClass.Members.OfType<FieldDeclarationSyntax>())
+                {
+                    foreach (var v in field.Declaration.Variables)
+                    {
+                        string vName = v.Identifier.Text;
+                        if (vName.StartsWith("_last", StringComparison.OrdinalIgnoreCase) &&
+                            (vName.EndsWith("Text", StringComparison.OrdinalIgnoreCase) ||
+                             vName.EndsWith("Str", StringComparison.OrdinalIgnoreCase) ||
+                             vName.EndsWith("Val", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            dirtyFields++;
+                        }
+                    }
+                }
+                item.RedundantDirtyTrackingFields = dirtyFields;
+                if (dirtyFields > 3)
+                {
+                    item.StandardizationSuggestions.Add($"Declares {dirtyFields} manual dirty-tracking fields (recommend SetTextIfChanged or micro-controls)");
+                }
+
+                // 10. 标准化 API 调用深度检测
+                var allInvocations = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
+                item.UsesStandardizedChannels = allInvocations.Any(inv =>
+                {
+                    string expr = inv.Expression.ToString();
+                    for (int c = 0; c < WidgetSpecRules.StandardTemplateChannelApis.Length; c++)
+                    {
+                        if (expr.EndsWith(WidgetSpecRules.StandardTemplateChannelApis[c], StringComparison.Ordinal)) return true;
+                    }
+                    return false;
+                });
+
+                item.UsesStandardizedFormatting = allInvocations.Any(inv =>
+                {
+                    string expr = inv.Expression.ToString();
+                    if (expr.StartsWith(WidgetSpecRules.StandardFormattingClass + ".", StringComparison.Ordinal)) return true;
+                    for (int f = 0; f < WidgetSpecRules.StandardFormattingApis.Length; f++)
+                    {
+                        if (expr.EndsWith(WidgetSpecRules.StandardFormattingApis[f], StringComparison.Ordinal)) return true;
+                    }
+                    return false;
+                });
+
+                item.UsesSetTextIfChanged = allInvocations.Any(inv =>
+                    inv.Expression.ToString().EndsWith(WidgetSpecRules.SetTextIfChangedApi, StringComparison.Ordinal));
 
                 report.Items.Add(item);
             }
@@ -290,6 +386,26 @@ namespace ModularFlightPanel.UI.Auditing
                 {
                     var item = legacyItems[i];
                     sb.AppendLine($"  ├─ [{i + 1:D2}] {item.FileName,-28} => {item.GetMissingSummary()}");
+                }
+            }
+
+            sb.AppendLine("-----------------------------------------------------------------------");
+            sb.AppendLine("    航电代码精简与标准化治理质量雷达 (Cleanliness & Anti-Pattern Radar)");
+            sb.AppendLine("-----------------------------------------------------------------------");
+            sb.AppendLine($"标准通道提取率:               {report.StandardizedChannelAdoptionCount}/{report.TotalCount} 个组件已接入 GetTemplateChannel 系列");
+            sb.AppendLine($"零私有模板解析达成率:         {(report.TotalCount - report.RedundantTemplateParserCount)}/{report.TotalCount} 个组件已消除私有 ParseCustomTemplate");
+            sb.AppendLine($"统一格式化套件复用率:         {(report.TotalCount - report.RedundantFormattingMethodCount)}/{report.TotalCount} 个组件已接入 AvionicsFormatting");
+            sb.AppendLine($"手工脏标记字段全面纳管率:     {report.Items.Count(i => i.RedundantDirtyTrackingFields <= 3)}/{report.TotalCount} 个组件已消除字段级脏标记膨胀");
+
+            var antiPatternItems = report.WidgetsWithAntiPatterns.ToList();
+            if (antiPatternItems.Count > 0)
+            {
+                sb.AppendLine("-----------------------------------------------------------------------");
+                sb.AppendLine($"▲ 待治理高频重复代码组件清单 ({antiPatternItems.Count} 个):");
+                for (int i = 0; i < antiPatternItems.Count; i++)
+                {
+                    var item = antiPatternItems[i];
+                    sb.AppendLine($"  ├─ [{i + 1:D2}] {item.FileName,-28} => {string.Join("; ", item.StandardizationSuggestions)}");
                 }
             }
 

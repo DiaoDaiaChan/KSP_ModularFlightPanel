@@ -173,6 +173,60 @@ namespace ModularFlightPanel.UI
 
         public const string CpuRasterizerApiSuffix = ".SetPixels32";
         public const string CpuRasterizerPixelField = "_texPixels";
+
+        // ==========================================================================================
+        // 航电代码质量与反模式规则：单点声明高频样板代码与推荐 API 规范
+        // ==========================================================================================
+
+        /// <summary>
+        /// 禁止的私有通配符通道解析器方法名（反模式：应统一调用基类 GetTemplateChannel 系列方法）
+        /// </summary>
+        public const string BannedTemplateParserMethod = "ParseCustomTemplate";
+
+        /// <summary>
+        /// 禁止的私有时间/时序/度量格式化方法名（反模式：应统一调用 AvionicsFormatting 或基类 FormatDuration 等方法）
+        /// </summary>
+        public static readonly string[] BannedFormattingMethods =
+        {
+            "FormatDuration",
+            "FormatDurationCompact",
+            "FormatTimeCompact",
+            "FormatSeconds",
+            "FormatDistanceMetric",
+            "FormatDistanceKm"
+        };
+
+        /// <summary>
+        /// 推荐的标准化基类通道检索 API 集合
+        /// </summary>
+        public static readonly string[] StandardTemplateChannelApis =
+        {
+            "GetTemplateChannel",
+            "GetTemplateChannelDouble",
+            "GetTemplateChannelFloat",
+            "GetTemplateChannelInt",
+            "GetTemplateChannelBool"
+        };
+
+        /// <summary>
+        /// 推荐的统一格式化套件类名与方法名
+        /// </summary>
+        public const string StandardFormattingClass = "AvionicsFormatting";
+        public static readonly string[] StandardFormattingApis =
+        {
+            "FormatDuration",
+            "FormatDurationCompact",
+            "FormatCountdown",
+            "FormatMetricDistance",
+            "FormatMetricSpeed"
+        };
+
+        /// <summary>
+        /// 推荐的统一防抖与阈值评估 API
+        /// </summary>
+        public const string SetTextIfChangedApi = "SetTextIfChanged";
+        public const string SetImageFillIfChangedApi = "SetImageFillIfChanged";
+        public const string EvaluateThresholdRoleApi = "EvaluateThresholdRole";
     }
 
     /// <summary>源码级规则违规记录（插件与无头验证器共用的统一 DTO）</summary>
