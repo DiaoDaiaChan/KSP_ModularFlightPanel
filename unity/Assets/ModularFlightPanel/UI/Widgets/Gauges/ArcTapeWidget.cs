@@ -1282,6 +1282,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
     /// <summary>
     /// 兼容性别名类：保证历史反射与反序列化 100% 稳定向后兼容
     /// </summary>
+    [Obsolete("Use ArcTapeWidget with custom.arc_speed_tape instead.")]
     public class ArcSpeedTapeWidget : ArcTapeWidget
     {
     }
@@ -1289,6 +1290,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
     /// <summary>
     /// 兼容性别名类：弧形高度带专属别名
     /// </summary>
+    [Obsolete("Use ArcTapeWidget with custom.arc_altitude_tape instead.")]
     public class ArcAltitudeTapeWidget : ArcTapeWidget
     {
     }
