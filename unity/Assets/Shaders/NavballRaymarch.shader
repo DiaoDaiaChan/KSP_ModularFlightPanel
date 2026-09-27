@@ -293,7 +293,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
             }
 
             // 核心程序化曲面求值函数 (共享于实时备用通道与离屏烘焙通道)
-            fixed4 EvaluateNavballSurface(float3 p, float pitchDeg, float headDeg, float absPitch, float absY, float NdotV, float markerClearance)
+            fixed4 EvaluateNavballSurface(float3 p, float pitchDeg, float headDeg, float absPitch, float absY, float NdotV, float markerClearance, float signH)
             {
                 // 1. 天空与地面平滑梯度 (Aero Horizon Gradient)
                 fixed4 col;
@@ -498,7 +498,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         float pitchTens = floor(pitchLabelLevel / 10.0);
                         float pitchOnes = fmod(pitchLabelLevel, 10.0);
 
-                        float2 pitchCenterOffset = float2(pitchHeadingOffset * tangentAspect, pitchLabelOffset);
+                        float2 pitchCenterOffset = float2(pitchHeadingOffset * signH * tangentAspect, pitchLabelOffset);
                         float2 rotPitchOffset = float2(
                             pitchCenterOffset.x * cosNR - pitchCenterOffset.y * sinNR,
                             pitchCenterOffset.x * sinNR + pitchCenterOffset.y * cosNR
@@ -669,7 +669,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         float headingTens = floor(fmod(headingNumber, 100.0) / 10.0);
                         float headingOnes = fmod(headingNumber, 10.0);
 
-                        float2 headCenterOffset = float2(headingOffset * tangentAspect, pitchDeg - 3.8);
+                        float2 headCenterOffset = float2(headingOffset * signH * tangentAspect, pitchDeg - 3.8);
                         float2 rotHeadOffset = float2(
                             headCenterOffset.x * cosNR - headCenterOffset.y * sinNR,
                             headCenterOffset.x * sinNR + headCenterOffset.y * cosNR
@@ -803,10 +803,31 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 else
                 {
                     // ProceduralVector: 纯数学解析矢量求值 (极致锐利、任意分辨率无损)
-                    float pitchDeg = asin(clamp(p.y, -1.0, 1.0)) * 57.2957795;
-                    float headDeg = atan2(p.x, p.z) * 57.2957795;
+                    float3 procP = p;
+                    float signH = 1.0;
+
+                    // Mode 5: BODY_FIXED / BODY_SURFACE (Principia 地心体固/地表参考系)
+                    // 在 Principia 中，BodySurfaceFrameField 结合 Rotate[compass, Pi] 导致导航球朝向在视线法向反转 180°。
+                    // 恢复真实的本地地表朝向：X 与 Y 轴均反转，使天顶 (+pitch) 朝上，真北 (000°) 居中时东向 (045°/090°) 位于屏幕右侧。
+                    if (_FramePattern > 4.5)
+                    {
+                        procP.x = -procP.x;
+                        procP.y = -procP.y;
+                    }
+                    // Mode 1: INERTIAL (Principia 地心惯性参考系)
+                    // 在天球赤道天球坐标系中，天球北极 (+Dec) 朝上，赤经 (RA) 沿天球东向增加。
+                    // 在视口投影下，天球东向位于屏幕左侧 (春分点 0h 居中时，3h/045° 位于屏幕左侧，21h/315° 位于屏幕右侧)。
+                    // 反转 X 使经度沿屏幕左侧递增，且 signH = -1.0 确保字符排版与 SDF 字形从左至右正常阅读无镜像。
+                    else if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                    {
+                        procP.x = -procP.x;
+                        signH = -1.0;
+                    }
+
+                    float pitchDeg = asin(clamp(procP.y, -1.0, 1.0)) * 57.2957795;
+                    float headDeg = atan2(procP.x, procP.z) * 57.2957795;
                     if (headDeg < 0.0) headDeg += 360.0;
-                    float absY = abs(p.y);
+                    float absY = abs(procP.y);
                     float absPitch = abs(pitchDeg);
                     float markerClearance = 1.0;
                     if (_MarkerAvoid0.w > 0.01 || _MarkerAvoid1.w > 0.01 || _MarkerAvoid2.w > 0.01 || _MarkerAvoid3.w > 0.01)
@@ -816,12 +837,12 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
                     }
 
-                    col = EvaluateNavballSurface(p, pitchDeg, headDeg, absPitch, absY, NdotV, markerClearance);
+                    col = EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, NdotV, markerClearance, signH);
 
                     // 姿态趋势预测动态前瞻导轨 (Flight Path Lead Horizon)
                     if (_TrendStrength > 0.01)
                     {
-                        float3 futureP = normalize(RotateByQuaternion(p, float4(-_TrendRotation.x, -_TrendRotation.y, -_TrendRotation.z, _TrendRotation.w)));
+                        float3 futureP = normalize(RotateByQuaternion(procP, float4(-_TrendRotation.x, -_TrendRotation.y, -_TrendRotation.z, _TrendRotation.w)));
                         float trendAA = clamp(fwidth(futureP.y) * 0.75, 0.0005, 0.015);
                         float futureHorizon = 1.0 - smoothstep(0.0032, 0.0032 + trendAA, abs(futureP.y));
                         float dashVal = frac(headDeg / 20.0);

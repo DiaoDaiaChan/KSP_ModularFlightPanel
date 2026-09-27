@@ -243,7 +243,7 @@ Shader "ModularFlightPanel/NavballProcedural"
             }
 
             // 核心程序化曲面求值函数 (共享于实时备用通道与离屏烘焙通道)
-            fixed4 EvaluateNavballSurface(float3 p, float pitchDeg, float headDeg, float absPitch, float absY, float NdotV, float markerClearance)
+            fixed4 EvaluateNavballSurface(float3 p, float pitchDeg, float headDeg, float absPitch, float absY, float NdotV, float markerClearance, float signH)
             {
                 // 1. 天空与地面平滑梯度 (Aero Horizon Gradient)
                 fixed4 col;
@@ -448,7 +448,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                         float pitchTens = floor(pitchLabelLevel / 10.0);
                         float pitchOnes = fmod(pitchLabelLevel, 10.0);
 
-                        float2 pitchCenterOffset = float2(pitchHeadingOffset * tangentAspect, pitchLabelOffset);
+                        float2 pitchCenterOffset = float2(pitchHeadingOffset * signH * tangentAspect, pitchLabelOffset);
                         float2 rotPitchOffset = float2(
                             pitchCenterOffset.x * cosNR - pitchCenterOffset.y * sinNR,
                             pitchCenterOffset.x * sinNR + pitchCenterOffset.y * cosNR
@@ -619,7 +619,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                         float headingTens = floor(fmod(headingNumber, 100.0) / 10.0);
                         float headingOnes = fmod(headingNumber, 10.0);
 
-                        float2 headCenterOffset = float2(headingOffset * tangentAspect, pitchDeg - 3.8);
+                        float2 headCenterOffset = float2(headingOffset * signH * tangentAspect, pitchDeg - 3.8);
                         float2 rotHeadOffset = float2(
                             headCenterOffset.x * cosNR - headCenterOffset.y * sinNR,
                             headCenterOffset.x * sinNR + headCenterOffset.y * cosNR
@@ -721,11 +721,27 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float3 viewDir = normalize(_WorldSpaceCameraPos.xyz - i.worldPos);
                 float NdotV = saturate(dot(normal, viewDir));
 
-                float pitchDeg = asin(clamp(p.y, -1.0, 1.0)) * 57.2957795;
-                float headDeg = atan2(p.x, p.z) * 57.2957795;
+                float3 procP = p;
+                float signH = 1.0;
+
+                // Mode 5: BODY_FIXED / BODY_SURFACE (Principia 地心体固/地表参考系)
+                if (_FramePattern > 4.5)
+                {
+                    procP.x = -procP.x;
+                    procP.y = -procP.y;
+                }
+                // Mode 1: INERTIAL (Principia 地心惯性参考系)
+                else if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                {
+                    procP.x = -procP.x;
+                    signH = -1.0;
+                }
+
+                float pitchDeg = asin(clamp(procP.y, -1.0, 1.0)) * 57.2957795;
+                float headDeg = atan2(procP.x, procP.z) * 57.2957795;
                 if (headDeg < 0.0) headDeg += 360.0;
 
-                float absY = abs(p.y);
+                float absY = abs(procP.y);
                 float absPitch = abs(pitchDeg);
 
                 float markerClearance = 1.0;
@@ -736,12 +752,12 @@ Shader "ModularFlightPanel/NavballProcedural"
                     markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
                 }
 
-                fixed4 col = EvaluateNavballSurface(p, pitchDeg, headDeg, absPitch, absY, NdotV, markerClearance);
+                fixed4 col = EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, NdotV, markerClearance, signH);
 
                 // 姿态趋势预测动态地平线
                 if (_TrendStrength > 0.01)
                 {
-                    float3 futureP = normalize(RotateByQuaternion(p, float4(-_TrendRotation.xyz, _TrendRotation.w)));
+                    float3 futureP = normalize(RotateByQuaternion(procP, float4(-_TrendRotation.xyz, _TrendRotation.w)));
                     float trendAA = clamp(fwidth(futureP.y) * 0.75, 0.0005, 0.015);
                     float futureHorizon = 1.0 - smoothstep(0.003, 0.003 + trendAA, abs(futureP.y));
                     float dashVal = frac(headDeg / 24.0);
@@ -803,7 +819,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float absY = abs(p.y);
                 float absPitch = abs(pitchDeg);
 
-                fixed4 col = EvaluateNavballSurface(p, pitchDeg, headDeg, absPitch, absY, 1.0, 1.0);
+                fixed4 col = EvaluateNavballSurface(p, pitchDeg, headDeg, absPitch, absY, 1.0, 1.0, 1.0);
                 return fixed4(col.rgb, 1.0);
             }
             ENDCG
