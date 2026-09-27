@@ -271,10 +271,17 @@ namespace ModularFlightPanel.UI
                     continue;
                 }
 
-                BaseFlightWidget widget = WidgetRegistry.Spawn(cfg, theme, _hudRoot.transform, _canvasManager.Canvas, CustomScale);
-                if (widget != null)
+                try
                 {
-                    _modularWidgets.Add(widget);
+                    BaseFlightWidget widget = WidgetRegistry.Spawn(cfg, theme, _hudRoot.transform, _canvasManager.Canvas, CustomScale);
+                    if (widget != null)
+                    {
+                        _modularWidgets.Add(widget);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[ModularFlightPanel] Failed to spawn widget '{cfg.WidgetId}': {ex}");
                 }
             }
 

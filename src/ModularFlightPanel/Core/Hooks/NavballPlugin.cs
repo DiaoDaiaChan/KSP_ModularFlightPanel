@@ -44,9 +44,16 @@ namespace ModularFlightPanel.Core
 
             // 5. 挂载 UGUI 表现层
             _hud = gameObject.AddComponent<FlightHUDManager>();
-            _hud.Initialize();
+            try
+            {
+                _hud.Initialize();
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager initialization error: {ex}");
+            }
 
-            // 6. 挂载设置面板
+            // 6. 挂载设置面板 (保障即便 HUD 异常，Alt+N 设置面板仍 100% 可呼出)
             _settings = gameObject.AddComponent<SettingsGUI>();
 
             // 7. 挂载原版工具栏应用按钮 (ApplicationLauncher)

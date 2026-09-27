@@ -231,22 +231,29 @@ namespace ModularFlightPanel.UI.Widgets
                 _collapseBtnText = btn.GetComponentInChildren<Text>();
             }
 
+            RectTransform collapseRt = _collapseBtn != null ? (_collapseBtn.image != null ? _collapseBtn.image.rectTransform : _collapseBtn.GetComponent<RectTransform>()) : null;
             if (orient == 0)
             {
                 float headerH = 22f * s;
-                _collapseBtn.image.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-                _collapseBtn.image.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-                _collapseBtn.image.rectTransform.sizeDelta = new Vector2(initialSize.x - 8f * s, headerH);
-                _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(0f, initialSize.y * 0.5f - (headerH * 0.5f + 4f * s));
+                if (collapseRt != null)
+                {
+                    collapseRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    collapseRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    collapseRt.sizeDelta = new Vector2(initialSize.x - 8f * s, headerH);
+                    collapseRt.anchoredPosition = new Vector2(0f, initialSize.y * 0.5f - (headerH * 0.5f + 4f * s));
+                }
                 if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "»" : "« DOCK";
             }
             else
             {
                 float btnW = 22f * s;
-                _collapseBtn.image.rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
-                _collapseBtn.image.rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
-                _collapseBtn.image.rectTransform.sizeDelta = new Vector2(btnW, initialSize.y - 8f * s);
-                _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-initialSize.x * 0.5f + (btnW * 0.5f + 4f * s), 0f);
+                if (collapseRt != null)
+                {
+                    collapseRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    collapseRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    collapseRt.sizeDelta = new Vector2(btnW, initialSize.y - 8f * s);
+                    collapseRt.anchoredPosition = new Vector2(-initialSize.x * 0.5f + (btnW * 0.5f + 4f * s), 0f);
+                }
                 if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "»" : "«";
             }
 

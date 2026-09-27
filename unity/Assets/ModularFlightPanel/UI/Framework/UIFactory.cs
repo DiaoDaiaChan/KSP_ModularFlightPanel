@@ -221,6 +221,7 @@ namespace ModularFlightPanel.UI
             textRt.offsetMax = new Vector2(-2f, 0f);
 
             Image img = go.GetComponent<Image>();
+            btn.targetGraphic = img;
             Outline outline = go.GetComponent<Outline>();
 
             var feedback = go.AddComponent<AvionicsButtonFeedback>();
