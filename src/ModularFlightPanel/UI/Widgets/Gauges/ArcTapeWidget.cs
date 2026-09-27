@@ -519,7 +519,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             Button btn = _modeTagObj.AddComponent<Button>();
             btn.onClick.AddListener(OnCenterBoxClicked);
 
-            _modeTagText = UIFactory.CreateText(_modeTagObj.transform, "Mode_Text", _isSpeedTape ? "SURF" : "ALT", Mathf.RoundToInt(8.5f * s),
+            _modeTagText = UIFactory.CreateText(_modeTagObj.transform, "Mode_Text", _isSpeedTape ? I18n.Tr("WIDGET_GAUGE_SURF", "表面") : "ALT", Mathf.RoundToInt(8.5f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Cardinal, theme));
             _modeTagText.resizeTextForBestFit = true;
             _modeTagText.resizeTextMinSize = Mathf.RoundToInt(6f * s);

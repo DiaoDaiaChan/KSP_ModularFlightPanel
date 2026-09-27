@@ -25,8 +25,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget Title = TextWidget.Title("ENGINES");
-        public TextWidget Status = TextWidget.Value("CUTOFF");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SPX_ENGINES", "发动机"));
+        public TextWidget Status = TextWidget.Value(I18n.Tr("WIDGET_SPX_CUTOFF", "关机"));
 
         // UI 视图节点
         private Image _bgImage;
@@ -67,9 +67,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            _titleCustom = GetTemplateChannel("TITLE", "ENGINES");
-            _cutoffLabel = GetTemplateChannel("CUTOFF_LABEL", "MECO / CUTOFF");
-            _activeTemplate = GetTemplateChannel("ACTIVE_TEMPLATE", "{0} / {1} ACTIVE");
+            _titleCustom = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SPX_ENGINES", "发动机"));
+            _cutoffLabel = GetTemplateChannel("CUTOFF_LABEL", I18n.Tr("WIDGET_SPX_MECO_CUTOFF", "主发关机 / 关机"));
+            _activeTemplate = GetTemplateChannel("ACTIVE_TEMPLATE", I18n.Tr("WIDGET_SPX_ACTIVE_TEMPLATE", "{0} / {1} 台运行"));
 
             // 1. 组件包围盒 (基准 96x96 逻辑像素圆形表盘，与姿态球完全一致)
             float diameter = 96f * s;
@@ -110,7 +110,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             contRt.anchoredPosition = Vector2.zero;
 
             // 5. 底部状态读数 (如 "5 / 6 ACTIVE" 或 "SECO")
-            _statusText = UIFactory.CreateText(transform, "Status_Text", "-- / -- ACTIVE", Mathf.RoundToInt(7f * s), TextAnchor.LowerCenter,
+            _statusText = UIFactory.CreateText(transform, "Status_Text", I18n.Tr("WIDGET_SPX_ACTIVE_IDLE", "-- / -- 运行中"), Mathf.RoundToInt(7f * s), TextAnchor.LowerCenter,
                 style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _statusText.fontStyle = FontStyle.Bold;
             RectTransform statRt = _statusText.rectTransform;

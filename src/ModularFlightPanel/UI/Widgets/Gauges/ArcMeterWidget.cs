@@ -72,7 +72,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _type = ArcMeterType.StagePropellant;
                 _valueToken = !string.IsNullOrEmpty(config.NumericToken) ? config.NumericToken : "{PROP}";
-                Title.Text = "PROP";
+                Title.Text = I18n.Tr("WIDGET_GAUGE_PROP", "推进剂");
                 MinScale.Text = "0";
                 MaxScale.Text = "100";
             }

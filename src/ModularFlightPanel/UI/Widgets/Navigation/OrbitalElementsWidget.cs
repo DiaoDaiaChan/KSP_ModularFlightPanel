@@ -50,7 +50,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => _isFullMode ? FullSize : CompactSize;
 
         // ── DSL 声明式微控件 (基类全自动构建与主题纳管) ──
-        public TextWidget Title = TextWidget.Title("ORBIT ELEMENTS");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("ORBIT_TITLE", "轨道要素"));
         public TextWidget OrbitBadge = TextWidget.Badge("---");
 
         // ── 模式状态 ──
@@ -152,7 +152,7 @@ namespace ModularFlightPanel.UI.Widgets
             _modeBtnOutline.effectDistance = new Vector2(0.8f * s, 0.8f * s);
             _modeBtnOutline.effectColor = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.6f);
 
-            _modeBtnLabel = UIFactory.CreateText(btnGo.transform, "Label", "3D SPHERE",
+            _modeBtnLabel = UIFactory.CreateText(btnGo.transform, "Label", I18n.Tr("ORBIT_BTN_3D", "3D 空间球"),
                 Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
             RectTransform btnLblRt = _modeBtnLabel.rectTransform;
             btnLblRt.anchorMin = Vector2.zero; btnLblRt.anchorMax = Vector2.one;
@@ -187,7 +187,7 @@ namespace ModularFlightPanel.UI.Widgets
             CreateLabelValPair(leftSlot.transform, "PE", -42f * s, -1f * s, 32f * s, 14f * s,
                 22f * s, -1f * s, 76f * s, 14f * s, "PE", "---", fsLbl, fsVal, labelCol, primCol, out _, out _peVal);
 
-            _tApPeReadout = UIFactory.CreateText(leftSlot.transform, "T_ApPe", "T-AP --:--  PE --:--",
+            _tApPeReadout = UIFactory.CreateText(leftSlot.transform, "T_ApPe", I18n.Tr("WIDGET_NAV_T_AP_PE_PLACEHOLDER", "T-AP --:--  PE --:--"),
                 fsSmall, TextAnchor.MiddleCenter, secCol);
             SetRect(_tApPeReadout.rectTransform, 0f, -17f * s, 122f * s, 13f * s);
 
@@ -202,7 +202,7 @@ namespace ModularFlightPanel.UI.Widgets
             CreateLabelValPair(rightSlot.transform, "INC", -42f * s, -17f * s, 32f * s, 14f * s,
                 10f * s, -17f * s, 50f * s, 14f * s, "INC", "0.0°", fsLbl, fsVal, labelCol, primCol, out _, out _incVal);
 
-            _incDirVal = UIFactory.CreateText(rightSlot.transform, "INC_DIR", "PRO", fsSmall, TextAnchor.MiddleRight, unitCol);
+            _incDirVal = UIFactory.CreateText(rightSlot.transform, "INC_DIR", I18n.Tr("ORBIT_DIR_PRO", "顺行"), fsSmall, TextAnchor.MiddleRight, unitCol);
             SetRect(_incDirVal.rectTransform, 48f * s, -17f * s, 24f * s, 13f * s);
 
             // 底部横槽：开普勒空间三姿态角 + 周期 (w: 270, h: 22, pos: 0, -38)
@@ -260,7 +260,7 @@ namespace ModularFlightPanel.UI.Widgets
             SetRect(_fApVal.rectTransform, 0f, 7f * s, badgeW - 12f * s, 12f * s);
             _fPeVal = UIFactory.CreateText(bTopL.transform, "F_PE", "PE ---", fsSmall, TextAnchor.MiddleLeft, primCol);
             SetRect(_fPeVal.rectTransform, 0f, -4f * s, badgeW - 12f * s, 12f * s);
-            _fTimeVal = UIFactory.CreateText(bTopL.transform, "F_TIME", "T-AP --:--", Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleLeft, secCol);
+            _fTimeVal = UIFactory.CreateText(bTopL.transform, "F_TIME", I18n.Tr("WIDGET_NAV_T_AP_PLACEHOLDER", "T-AP --:--"), Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleLeft, secCol);
             SetRect(_fTimeVal.rectTransform, 0f, -14f * s, badgeW - 12f * s, 10f * s);
 
             // [右上角] 轨道尺度与周期
@@ -270,7 +270,7 @@ namespace ModularFlightPanel.UI.Widgets
             SetRect(_fSmaVal.rectTransform, 0f, 7f * s, badgeW - 12f * s, 12f * s);
             _fEccVal = UIFactory.CreateText(bTopR.transform, "F_ECC", "e 0.000", fsSmall, TextAnchor.MiddleRight, secCol);
             SetRect(_fEccVal.rectTransform, 0f, -4f * s, badgeW - 12f * s, 12f * s);
-            _fPeriodVal = UIFactory.CreateText(bTopR.transform, "F_PER", "P --:--", Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleRight, unitCol);
+            _fPeriodVal = UIFactory.CreateText(bTopR.transform, "F_PER", I18n.Tr("WIDGET_NAV_PERIOD_PLACEHOLDER", "P --:--"), Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleRight, unitCol);
             SetRect(_fPeriodVal.rectTransform, 0f, -14f * s, badgeW - 12f * s, 10f * s);
 
             // [左下角] 赤道参考面要素
@@ -284,7 +284,7 @@ namespace ModularFlightPanel.UI.Widgets
             // [右下角] 空间倾角与当前真近点角
             GameObject bBotR = CreateAvionicsSlot(_fullRoot.transform, "Badge_BotRight",
                 new Vector2(badgeW, badgeHBot), new Vector2(cornerX, cornerBottomY), slotBg, slotBorder, s);
-            _fIncVal = UIFactory.CreateText(bBotR.transform, "F_INC", "i 0.0°", fsSmall, TextAnchor.MiddleRight, secCol);
+            _fIncVal = UIFactory.CreateText(bBotR.transform, "F_INC", I18n.Tr("WIDGET_NAV_INC_PLACEHOLDER", "i 0.0°"), fsSmall, TextAnchor.MiddleRight, secCol);
             SetRect(_fIncVal.rectTransform, 0f, 4f * s, badgeW - 12f * s, 12f * s);
             _fTaVal = UIFactory.CreateText(bBotR.transform, "F_TA", "ν 0.0°", fsSmall, TextAnchor.MiddleRight, primCol);
             SetRect(_fTaVal.rectTransform, 0f, -6f * s, badgeW - 12f * s, 12f * s);

@@ -27,7 +27,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         // 声明式微控件
         public TextWidget NorthMark = TextWidget.Title("N");
-        public TextWidget AttitudeText = TextWidget.Value("P +0° R +0°");
+        public TextWidget AttitudeText = TextWidget.Value(I18n.Tr("WIDGET_SPX_ATTITUDE_PLACEHOLDER", "俯仰 +0° 滚转 +0°"));
 
         // UI 视图节点
         private Image _bgImage;
@@ -64,7 +64,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
             _northLabel = GetTemplateChannel("NORTH", "N");
-            _attitudeFormat = GetTemplateChannel("FORMAT", "P {0:+0;-0;0}° R {1:+0;-0;0}°");
+            _attitudeFormat = GetTemplateChannel("FORMAT", I18n.Tr("WIDGET_SPX_ATTITUDE_FORMAT", "俯仰 {0:+0;-0;0}° 滚转 {1:+0;-0;0}°"));
 
             // 1. 组件包围盒 (基准 96x96 逻辑像素圆形表盘)
             float diameter = 96f * s;

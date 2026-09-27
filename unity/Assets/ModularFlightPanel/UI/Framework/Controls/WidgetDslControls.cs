@@ -615,7 +615,7 @@ namespace ModularFlightPanel.UI.Framework
             float rightPad = 3f * dpiScale;
             float textW = sz.x - leftPad - rightPad;
 
-            LabelComponent = UIFactory.CreateText(ButtonComponent.transform, "Text", "SURFACE", fontSz, TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            LabelComponent = UIFactory.CreateText(ButtonComponent.transform, "Text", I18n.Tr("WIDGET_FW_SURFACE", "表面"), fontSz, TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             LabelComponent.fontStyle = FontStyle.Bold;
             LabelComponent.horizontalOverflow = HorizontalWrapMode.Overflow;
             LabelComponent.verticalOverflow = VerticalWrapMode.Truncate;

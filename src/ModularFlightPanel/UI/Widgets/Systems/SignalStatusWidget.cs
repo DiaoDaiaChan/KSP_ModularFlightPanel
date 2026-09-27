@@ -30,7 +30,7 @@ namespace ModularFlightPanel.UI.Widgets
         public Vector2 MaxBaseSize => new Vector2(460f, 260f);
 
         // 声明式微控件 (顶栏语义标题)
-        public TextWidget Title = TextWidget.Title("COMMNET");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
 
         // 顶栏 (Header)
         private GameObject _headerRoot;
@@ -91,7 +91,7 @@ namespace ModularFlightPanel.UI.Widgets
             hdrRt.sizeDelta = new Vector2(baseW - 14f * s, 18f * s);
             hdrRt.anchoredPosition = new Vector2(0f, -2f * s);
 
-            string defTitle = GetTemplateChannel("TITLE", "COMMNET");
+            string defTitle = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
             Title.Text = defTitle;
 
             // 右侧一体化控制权徽章药丸
@@ -99,7 +99,7 @@ namespace ModularFlightPanel.UI.Widgets
             GameObject ctrlBg = UIFactory.CreatePanel(_headerRoot.transform, "CtrlBadge", ctrlSize,
                 new Vector2((baseW - 14f * s) * 0.5f - ctrlSize.x * 0.5f, 0f), WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success));
             _ctrlBadgeBg = ctrlBg.GetComponent<Image>();
-            _ctrlBadgeText = UIFactory.CreateText(ctrlBg.transform, "Text", "● FULL CONTROL",
+            _ctrlBadgeText = UIFactory.CreateText(ctrlBg.transform, "Text", "● " + I18n.Tr("WIDGET_SIG_FULL_CONTROL", "满格控制"),
                 Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
             _ctrlBadgeText.fontStyle = FontStyle.Bold;
             _ctrlBadgeText.GetComponent<RectTransform>().sizeDelta = ctrlSize;
@@ -118,7 +118,7 @@ namespace ModularFlightPanel.UI.Widgets
             // ==========================================
             // 2. 核心遥测读数 (测控站、速率、射频柱)
             // ==========================================
-            _targetNameText = UIFactory.CreateText(transform, "TargetName", "US - CAPE CANAVERAL",
+            _targetNameText = UIFactory.CreateText(transform, "TargetName", I18n.Tr("WIDGET_SIG_CAPE_CANAVERAL", "美国 · 卡纳维拉尔角"),
                 Mathf.Max(8, Mathf.RoundToInt(9.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _targetNameText.fontStyle = FontStyle.Bold;
             RectTransform tnRt = _targetNameText.GetComponent<RectTransform>();
@@ -126,7 +126,7 @@ namespace ModularFlightPanel.UI.Widgets
             tnRt.anchorMax = new Vector2(0.5f, 1f);
             tnRt.pivot = new Vector2(0f, 1f);
 
-            _routeTypeText = UIFactory.CreateText(transform, "RouteType", "DIRECT LINK · HOME DSN",
+            _routeTypeText = UIFactory.CreateText(transform, "RouteType", I18n.Tr("WIDGET_SIG_DIRECT_HOME_DSN", "直连 · 深空网主站"),
                 Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, theme));
             RectTransform rtRt = _routeTypeText.GetComponent<RectTransform>();
             rtRt.anchorMin = new Vector2(0.5f, 1f);
@@ -141,7 +141,7 @@ namespace ModularFlightPanel.UI.Widgets
             drRt.anchorMax = new Vector2(0.5f, 1f);
             drRt.pivot = new Vector2(1f, 1f);
 
-            _txText = UIFactory.CreateText(transform, "TxIndicator", "▲TX",
+            _txText = UIFactory.CreateText(transform, "TxIndicator", "▲" + I18n.Tr("WIDGET_SIG_TX", "发射"),
                 Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
             _txText.fontStyle = FontStyle.Bold;
             RectTransform txRt = _txText.GetComponent<RectTransform>();
@@ -149,7 +149,7 @@ namespace ModularFlightPanel.UI.Widgets
             txRt.anchorMax = new Vector2(0.5f, 1f);
             txRt.pivot = new Vector2(0.5f, 0.5f);
 
-            _rxText = UIFactory.CreateText(transform, "RxIndicator", "▼RX",
+            _rxText = UIFactory.CreateText(transform, "RxIndicator", "▼" + I18n.Tr("WIDGET_SIG_RX", "接收"),
                 Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Cardinal, theme));
             _rxText.fontStyle = FontStyle.Bold;
             RectTransform rxRt = _rxText.GetComponent<RectTransform>();
@@ -172,7 +172,7 @@ namespace ModularFlightPanel.UI.Widgets
             // ==========================================
             // 3. 硬件摘要 (单行极简条) 与 展开清单
             // ==========================================
-            _hardwareSummaryText = UIFactory.CreateText(transform, "HwSummary", "● COMMUNOTRON 16 (1/3 ACTIVE)",
+            _hardwareSummaryText = UIFactory.CreateText(transform, "HwSummary", "● " + I18n.Tr("WIDGET_SIG_COMMUNOTRON", "通信模块 16 (1/3 活动)"),
                 Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform hwRt = _hardwareSummaryText.GetComponent<RectTransform>();
             hwRt.anchorMin = new Vector2(0.5f, 1f);
@@ -216,7 +216,7 @@ namespace ModularFlightPanel.UI.Widgets
             dRt.sizeDelta = new Vector2(10f * s, 14f * s);
             dRt.anchoredPosition = new Vector2(6f * s, 0f);
 
-            row.NameText = UIFactory.CreateText(row.Root.transform, "Name", "ANTENNA",
+            row.NameText = UIFactory.CreateText(row.Root.transform, "Name", I18n.Tr("WIDGET_SIG_ANTENNA", "天线"),
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             RectTransform nRt = row.NameText.GetComponent<RectTransform>();
             nRt.anchorMin = new Vector2(0f, 0.5f);
@@ -224,7 +224,7 @@ namespace ModularFlightPanel.UI.Widgets
             nRt.pivot = new Vector2(0f, 0.5f);
             nRt.anchoredPosition = new Vector2(14f * s, 0f);
 
-            row.StatusText = UIFactory.CreateText(row.Root.transform, "Status", "LINKED",
+            row.StatusText = UIFactory.CreateText(row.Root.transform, "Status", I18n.Tr("WIDGET_SIG_LINKED", "已链接"),
                 Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.Accent, theme));
             row.StatusText.fontStyle = FontStyle.Bold;
             RectTransform sRt = row.StatusText.GetComponent<RectTransform>();
@@ -610,8 +610,8 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else if (i == 0)
                 {
-                    SetTextIfChanged(row.NameText, "INTERNAL POD ANTENNA");
-                    SetTextIfChanged(row.StatusText, isConnected ? "LINKED" : "OFFLINE");
+                    SetTextIfChanged(row.NameText, I18n.Tr("WIDGET_SIG_INTERNAL_POD_ANTENNA", "内置舱段天线"));
+                    SetTextIfChanged(row.StatusText, isConnected ? I18n.Tr("WIDGET_SIG_LINKED", "已链接") : I18n.Tr("WIDGET_SIG_OFFLINE", "离线"));
                     ApplyText(row.StatusText, isConnected ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                     ApplyText(row.DotText, isConnected ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                 }

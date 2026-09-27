@@ -87,7 +87,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件
-        public TextWidget Title = TextWidget.Title("STAGE ΔV");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_DV_TITLE", "级 ΔV"));
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -144,7 +144,7 @@ namespace ModularFlightPanel.UI.Widgets
             float topY = panelSize.y * 0.5f - 16f * s;
 
             // 标题 (左对齐)
-            _titleText = UIFactory.CreateText(parent, "StageDvTitle", "STAGE ΔV", Mathf.RoundToInt(11f * s),
+            _titleText = UIFactory.CreateText(parent, "StageDvTitle", I18n.Tr("WIDGET_DV_TITLE", "级 ΔV"), Mathf.RoundToInt(11f * s),
                 TextAnchor.MiddleLeft, textPrimary);
             _titleText.fontStyle = FontStyle.Bold;
             RectTransform titleRt = _titleText.GetComponent<RectTransform>();
@@ -163,7 +163,7 @@ namespace ModularFlightPanel.UI.Widgets
             srcRt.pivot = new Vector2(0f, 0.5f);
             srcRt.anchoredPosition = new Vector2(-halfW + 10f * s + 70f * s, topY);
 
-            _sourceBadgeText = UIFactory.CreateText(srcObj.transform, "SourceText", "SIM", Mathf.RoundToInt(8f * s),
+            _sourceBadgeText = UIFactory.CreateText(srcObj.transform, "SourceText", I18n.Tr("WIDGET_DV_SIM", "仿真"), Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, primaryAccent);
             _sourceBadgeText.fontStyle = FontStyle.Bold;
             RectTransform srcTextRt = _sourceBadgeText.GetComponent<RectTransform>();
@@ -226,7 +226,7 @@ namespace ModularFlightPanel.UI.Widgets
             UIFactory.CreatePanel(_silhouetteBayObj.transform, "RetBR_V", new Vector2(retW, retLen), new Vector2(bayW * 0.5f - retW * 0.5f, -bayH * 0.5f + retLen * 0.5f), retCol);
 
             // 视窗顶标
-            _silhouetteBayTitle = UIFactory.CreateText(_silhouetteBayObj.transform, "BayTitle", "VEHICLE PROFILE",
+            _silhouetteBayTitle = UIFactory.CreateText(_silhouetteBayObj.transform, "BayTitle", I18n.Tr("WIDGET_DV_VEHICLE_PROFILE", "飞行器剖面"),
                 Mathf.RoundToInt(6.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Weighted(textPrimary, LineWeight.Heavy));
             _silhouetteBayTitle.fontStyle = FontStyle.Bold;
             RectTransform titleRt = _silhouetteBayTitle.GetComponent<RectTransform>();
@@ -270,7 +270,7 @@ namespace ModularFlightPanel.UI.Widgets
             _plumeObj.SetActive(false);
 
             // 视窗底标
-            _silhouetteBayFooter = UIFactory.CreateText(_silhouetteBayObj.transform, "BayFooter", "STAGE 03 / ACTV",
+            _silhouetteBayFooter = UIFactory.CreateText(_silhouetteBayObj.transform, "BayFooter", I18n.Tr("WIDGET_DV_STAGE_ACTV_PLACEHOLDER", "级 03 / 活动"),
                 Mathf.RoundToInt(6.5f * s), TextAnchor.MiddleCenter, primaryAccent);
             _silhouetteBayFooter.fontStyle = FontStyle.Bold;
             RectTransform footRt = _silhouetteBayFooter.GetComponent<RectTransform>();
@@ -442,7 +442,7 @@ namespace ModularFlightPanel.UI.Widgets
                 new Vector2(0f, footY + 11f * s), WidgetStyleManager.Weighted(borderCol, LineWeight.Strong)).GetComponent<Image>();
 
             // 状态摘要行
-            _footerStatusText = UIFactory.CreateText(parent, "FooterStatus", "ACTIVE: S03 | ΔV: 2,350 m/s | ⏱ 00m 52s",
+            _footerStatusText = UIFactory.CreateText(parent, "FooterStatus", I18n.Tr("WIDGET_DV_FOOTER_PLACEHOLDER", "活动: S03 | ΔV: 2,350 m/s | ⏱ 00m 52s"),
                 Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Weighted(textPrimary, LineWeight.Solid));
             RectTransform footRt = _footerStatusText.GetComponent<RectTransform>();
             footRt.anchoredPosition = new Vector2(0f, footY);
@@ -459,9 +459,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel)
             {
-                if (_footerStatusText != null && _footerStatusText.text != "NO TELEMETRY LINK")
+                if (_footerStatusText != null && _footerStatusText.text != I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路"))
                 {
-                    _footerStatusText.text = "NO TELEMETRY LINK";
+                    _footerStatusText.text = I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路");
                     ApplyText(_footerStatusText, TextStyleRole.Warning, _currentTheme);
                 }
                 if (_plumeObj != null) _plumeObj.SetActive(false);

@@ -24,7 +24,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget FrameTitle = TextWidget.Title("SURFACE");
+        public TextWidget FrameTitle = TextWidget.Title(I18n.Tr("WIDGET_NAV_FRAME_SURFACE", "表面"));
 
         // UI 视图节点
         private Image _bgImage;
@@ -106,7 +106,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 4. 右侧权威参考系名称 (左对齐，紧随图标，自适应宽度)
             if (FrameTitle != null && FrameTitle.TextComponent != null)
             {
-                FrameTitle.Text = "SURFACE";
+                FrameTitle.Text = I18n.Tr("WIDGET_NAV_FRAME_SURFACE", "表面");
                 FrameTitle.SetRole(TextStyleRole.PrimaryValue);
                 _frameTitleText = FrameTitle.TextComponent;
                 _frameTitleText.fontStyle = FontStyle.Bold;
@@ -120,7 +120,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
             else
             {
-                _frameTitleText = UIFactory.CreateText(transform, "Frame_Title", "SURFACE", Mathf.RoundToInt(11f * s),
+                _frameTitleText = UIFactory.CreateText(transform, "Frame_Title", I18n.Tr("WIDGET_NAV_FRAME_SURFACE", "表面"), Mathf.RoundToInt(11f * s),
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                 _frameTitleText.fontStyle = FontStyle.Bold;
                 _frameTitleText.horizontalOverflow = HorizontalWrapMode.Overflow;

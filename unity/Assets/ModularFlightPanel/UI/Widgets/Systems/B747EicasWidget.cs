@@ -289,7 +289,7 @@ namespace ModularFlightPanel.UI.Widgets
             gboxRt.pivot = new Vector2(0.5f, 1f);
             gboxRt.anchoredPosition = new Vector2(rightCenterX, -82f * s);
 
-            _gearStatusText = UIFactory.CreateText(gearBoxObj.transform, "Gear_Status", "DOWN", Mathf.RoundToInt(8f * s),
+            _gearStatusText = UIFactory.CreateText(gearBoxObj.transform, "Gear_Status", I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, bugCol);
             RectTransform gsRt = _gearStatusText.rectTransform;
             gsRt.anchorMin = Vector2.zero;
@@ -307,7 +307,7 @@ namespace ModularFlightPanel.UI.Widgets
             glRt.anchoredPosition = new Vector2(rightCenterX, -104f * s);
 
             // 6. 底部系统状态行
-            _ductPressText = UIFactory.CreateText(transform, "Duct_Press", "26  DUCT PRESS  25", Mathf.RoundToInt(8f * s),
+            _ductPressText = UIFactory.CreateText(transform, "Duct_Press", I18n.Tr("WIDGET_EICAS_DUCT_PRESS", "26  管道压力  25"), Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, valCol);
             RectTransform dpRt = _ductPressText.rectTransform;
             dpRt.anchorMin = new Vector2(0f, 0f);
@@ -316,7 +316,7 @@ namespace ModularFlightPanel.UI.Widgets
             dpRt.sizeDelta = new Vector2(-20f * s, 14f * s);
             dpRt.anchoredPosition = new Vector2(0f, 46f * s);
 
-            _cabPressText = UIFactory.CreateText(transform, "Cab_Press", "CAB ALT 100   RATE 0   LDG ALT 2000   AUTO AP 0.0", Mathf.RoundToInt(7f * s),
+            _cabPressText = UIFactory.CreateText(transform, "Cab_Press", I18n.Tr("WIDGET_EICAS_CAB_PRESS", "座舱高度 100   速率 0   着陆高度 2000   自动 AP 0.0"), Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleCenter, labelCol);
             RectTransform cpRt = _cabPressText.rectTransform;
             cpRt.anchorMin = new Vector2(0f, 0f);
@@ -325,7 +325,7 @@ namespace ModularFlightPanel.UI.Widgets
             cpRt.sizeDelta = new Vector2(-20f * s, 14f * s);
             cpRt.anchoredPosition = new Vector2(0f, 30f * s);
 
-            _fuelSummaryText = UIFactory.CreateText(transform, "Fuel_Summary", "TOTAL FUEL 1737 KGS X 1000   TEMP +15c", Mathf.RoundToInt(8f * s),
+            _fuelSummaryText = UIFactory.CreateText(transform, "Fuel_Summary", I18n.Tr("WIDGET_EICAS_FUEL_SUMMARY", "总燃料 1737 千克 X 1000   温度 +15c"), Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, valCol);
             RectTransform fsRt = _fuelSummaryText.rectTransform;
             fsRt.anchorMin = new Vector2(0f, 0f);

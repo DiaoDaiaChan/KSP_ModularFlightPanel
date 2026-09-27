@@ -29,8 +29,8 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget HeaderTitle = TextWidget.Title("MANEUVER NODE");
-        public TextWidget StatusBadge = TextWidget.Badge("STANDBY");
+        public TextWidget HeaderTitle = TextWidget.Title(I18n.Tr("WIDGET_NAV_MANEUVER_NODE", "机动节点"));
+        public TextWidget StatusBadge = TextWidget.Badge(I18n.Tr("PHASE_STANDBY", "待机"));
 
         // UI 层次节点
         private Image _bgImage;
@@ -122,7 +122,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (StatusBadge != null && StatusBadge.TextComponent != null)
             {
-                StatusBadge.Text = "STANDBY";
+                StatusBadge.Text = I18n.Tr("PHASE_STANDBY", "待机");
                 StatusBadge.SetRole(TextStyleRole.SecondaryValue);
                 _statusBadgeText = StatusBadge.TextComponent;
                 RectTransform badgeRt = _statusBadgeText.rectTransform;
@@ -133,7 +133,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", "STANDBY", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight,
+                _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", I18n.Tr("PHASE_STANDBY", "待机"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight,
                     style.GetTextColor(TextStyleRole.SecondaryValue, theme));
                 RectTransform badgeRt = _statusBadgeText.rectTransform;
                 badgeRt.pivot = new Vector2(1f, 0.5f);
@@ -178,7 +178,7 @@ namespace ModularFlightPanel.UI.Widgets
             float colW = (cardSize.x - 20f * s) * 0.5f;
 
             // 左列：T-NODE
-            _tNodeLabel = UIFactory.CreateText(transform, "TNode_Label", "T-NODE", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft,
+            _tNodeLabel = UIFactory.CreateText(transform, "TNode_Label", I18n.Tr("WIDGET_NAV_TNODE", "节点倒计时"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.Label, theme));
             RectTransform tLblRt = _tNodeLabel.rectTransform;
             tLblRt.pivot = new Vector2(0f, 0.5f);
@@ -195,7 +195,7 @@ namespace ModularFlightPanel.UI.Widgets
             tValRt.anchoredPosition = new Vector2(-92f * s, -22f * s);
 
             // 右列：BURN TIME
-            _burnTimeLabel = UIFactory.CreateText(transform, "BurnTime_Label", "BURN TIME", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft,
+            _burnTimeLabel = UIFactory.CreateText(transform, "BurnTime_Label", I18n.Tr("WIDGET_NAV_BURN_TIME", "燃烧时长"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.Label, theme));
             RectTransform bLblRt = _burnTimeLabel.rectTransform;
             bLblRt.pivot = new Vector2(0f, 0.5f);
@@ -212,7 +212,7 @@ namespace ModularFlightPanel.UI.Widgets
             bValRt.anchoredPosition = new Vector2(2f * s, -22f * s);
 
             // 6. 底栏 (提前点火倒计时 + WARP / DEL 动作按键)
-            _burnInText = UIFactory.CreateText(transform, "BurnIn_Text", "BURN IN --:--", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft,
+            _burnInText = UIFactory.CreateText(transform, "BurnIn_Text", I18n.Tr("WIDGET_NAV_BURN_IN_PLACEHOLDER", "点火 --:--"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform biRt = _burnInText.rectTransform;
             biRt.pivot = new Vector2(0f, 0.5f);
@@ -395,11 +395,11 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastTimeToBurn = timeToBurn;
                 if (timeToBurn <= 0.0)
                 {
-                    _burnInText.text = "BURNING!";
+                    _burnInText.text = I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!";
                 }
                 else
                 {
-                    _burnInText.text = "BURN IN " + FormatDuration(timeToBurn);
+                    _burnInText.text = I18n.Tr("WIDGET_NAV_BURN_IN", "点火") + " " + FormatDuration(timeToBurn);
                 }
             }
 
@@ -451,8 +451,8 @@ namespace ModularFlightPanel.UI.Widgets
             _meterFill.rectTransform.sizeDelta = new Vector2(0f, _meterFill.rectTransform.sizeDelta.y);
             _tNodeValueText.text = "--:--";
             _burnTimeValueText.text = "--:--";
-            _burnInText.text = "NO NODE";
-            _statusBadgeText.text = "STANDBY";
+            _burnInText.text = I18n.Tr("WIDGET_NAV_NO_NODE", "无节点");
+            _statusBadgeText.text = I18n.Tr("PHASE_STANDBY", "待机");
             _lastBadgeStr = "STANDBY";
 
             if (_currentCardRole != CardStyleRole.Normal)

@@ -20,8 +20,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget PhaseTitle = TextWidget.Title("ACTIVE PHASE");
-        public TextWidget PhaseValue = TextWidget.Badge("ORBITAL COAST");
+        public TextWidget PhaseTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_ACTIVE_PHASE", "活动段"));
+        public TextWidget PhaseValue = TextWidget.Badge(I18n.Tr("WIDGET_SPX_ORBITAL_COAST", "轨道滑行"));
 
         // UI 视图节点
         private Image _bgImage;
@@ -88,13 +88,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            _phaseLabelStr = GetTemplateChannel("PHASE_LABEL", "ACTIVE PHASE");
-            _timerLabelStr = GetTemplateChannel("TIMER_LABEL", "SPLASHDOWN / MET");
-            _velLabelStr = GetTemplateChannel("VEL_LABEL", "INERTIAL VELOCITY");
-            _altLabelStr = GetTemplateChannel("ALT_LABEL", "ALTITUDE");
-            _apLabelStr = GetTemplateChannel("AP_LABEL", "APOGEE");
-            _peLabelStr = GetTemplateChannel("PE_LABEL", "PERIGEE");
-            _incLabelStr = GetTemplateChannel("INC_LABEL", "INCLINATION");
+            _phaseLabelStr = GetTemplateChannel("PHASE_LABEL", I18n.Tr("WIDGET_SPX_ACTIVE_PHASE", "活动段"));
+            _timerLabelStr = GetTemplateChannel("TIMER_LABEL", I18n.Tr("WIDGET_SPX_SPLASHDOWN_MET", "溅落 / 任务时间"));
+            _velLabelStr = GetTemplateChannel("VEL_LABEL", I18n.Tr("WIDGET_SPX_INERTIAL_VELOCITY", "惯性速度"));
+            _altLabelStr = GetTemplateChannel("ALT_LABEL", I18n.Tr("WIDGET_SPX_ALTITUDE", "高度"));
+            _apLabelStr = GetTemplateChannel("AP_LABEL", I18n.Tr("WIDGET_SPX_APOGEE", "远地点"));
+            _peLabelStr = GetTemplateChannel("PE_LABEL", I18n.Tr("WIDGET_SPX_PERIGEE", "近地点"));
+            _incLabelStr = GetTemplateChannel("INC_LABEL", I18n.Tr("WIDGET_SPX_INCLINATION", "倾角"));
             _velToken = GetTemplateChannel("VEL_TOKEN", null);
             _altToken = GetTemplateChannel("ALT_TOKEN", "{ALT:ASL:DIST}");
             _apToken = GetTemplateChannel("AP_TOKEN", "{AP:DIST}");
@@ -129,7 +129,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             plRt.anchoredPosition = new Vector2(8f * s, -2f * s);
             plRt.sizeDelta = new Vector2(-16f * s, 0f);
 
-            _phaseValue = UIFactory.CreateText(badgeGo.transform, "PhaseValue", "ORBITAL COAST", Mathf.RoundToInt(11f * s), TextAnchor.LowerLeft, style.GetTextColor(TextStyleRole.Accent, theme));
+            _phaseValue = UIFactory.CreateText(badgeGo.transform, "PhaseValue", I18n.Tr("WIDGET_SPX_ORBITAL_COAST", "轨道滑行"), Mathf.RoundToInt(11f * s), TextAnchor.LowerLeft, style.GetTextColor(TextStyleRole.Accent, theme));
             RectTransform pvRt = _phaseValue.rectTransform;
             pvRt.anchorMin = new Vector2(0f, 0f);
             pvRt.anchorMax = new Vector2(1f, 0.65f);

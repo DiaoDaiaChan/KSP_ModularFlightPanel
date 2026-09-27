@@ -128,8 +128,10 @@ namespace ModularFlightPanel.HeadlessValidator
         /// </summary>
         public static bool IsAllAbbreviated(string text)
         {
+            // 词数上限只用于挡住"整句由缩写拼装"的畸形串；多行读数（如 X 0.0m / Y 0.0m / Z 0.0m）
+            // 本身没有可翻译词汇，不该因为换行拆词多而被误判，故上限放宽到 12。
             var tokens = Tokenize(text);
-            if (tokens.Count == 0 || tokens.Count > 8) return false;
+            if (tokens.Count == 0 || tokens.Count > 12) return false;
             for (int i = 0; i < tokens.Count; i++)
             {
                 string token = tokens[i];
@@ -205,98 +207,15 @@ namespace ModularFlightPanel.HeadlessValidator
         /// </summary>
         private static readonly Dictionary<string, int> EnglishBaselineTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            // ── 存量欠账（--i18n-baseline-dump 导出，只降不升；新增文件一律不得进入本表）──
-            { "ArcMeterWidget.cs", 1 },
-            { "ArcTapeWidget.cs", 1 },
-            { "AvionicsBarGaugeWidget.cs", 1 },
-            { "B747EicasWidget.cs", 4 },
-            { "B787EicasWidget.cs", 16 },
-            { "CommSignalWidget.cs", 8 },
-            { "CustomTokenTextWidget.cs", 1 },
-            { "EcamAlertLogWidget.cs", 5 },
-            { "EcamStatusWidget.cs", 2 },
-            { "ElectricalSystemWidget.cs", 5 },
-            { "FavoriteToolbarWidget.cs", 1 },
-            { "LifeSupportWidget.cs", 8 },
-            { "ManeuverNodeWidget.cs", 11 },
-            { "ManeuverTimelineWidget.cs", 6 },
-            { "MasterWarningWidget.cs", 3 },
-            { "NavballSphereWidget.cs", 5 },
-            { "NDNavigationWidget.cs", 2 },
-            { "OrbitalElementsWidget.cs", 7 },
-            { "OrbitalInfoWidget.cs", 2 },
-            { "PerformanceMonitorWidget.cs", 10 },
-            { "ReferenceFrameWidget.cs", 3 },
-            { "Rocket2DWidget.cs", 6 },
-            { "SASDialWidget.cs", 1 },
-            { "SignalStatusWidget.cs", 13 },
-            { "SpaceXArcGaugeWidget.cs", 1 },
-            { "SpaceXAttitudeWidget.cs", 2 },
-            { "SpaceXBottomBarWidget.cs", 5 },
-            { "SpaceXDockingReticleWidget.cs", 8 },
-            { "SpaceXEngineWidget.cs", 6 },
-            { "SpaceXHeaderWidget.cs", 10 },
-            { "SpaceXOverviewWidget.cs", 12 },
-            { "SpaceXTimelineWidget.cs", 3 },
-            { "StageControlWidget.cs", 7 },
-            { "StageDeltaVWidget.cs", 7 },
-            { "StagingSequenceWidget.cs", 6 },
-            { "StandardFlightWidgetTemplate.cs", 1 },
-            { "TabAssembler.cs", 3 },
-            { "TapeGaugeWidget.cs", 1 },
-            { "TimeWarpWidget.cs", 4 },
-            { "UIWidget.cs", 4 },
-            { "VesselAttitudeSphereWidget.cs", 2 },
-            { "WidgetDslControls.cs", 1 },
+            // ── 205 处存量已于本轮全部汉化（接入 I18n.Tr 词典），此表保持为空 = 零容忍 ──
         };
 
         /// <summary>
-        /// 可汉化英文的棘轮上限（冻结值）：基线永远不得高于此表。内容与 EnglishBaselineTable 同步冻结。
+        /// 可汉化英文的棘轮上限（冻结值）：基线永远不得高于此表。此表为空 = 任何文件都不允许登记基线。
         /// </summary>
         private static readonly Dictionary<string, int> EnglishRatchetCeilingTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            { "ArcMeterWidget.cs", 1 },
-            { "ArcTapeWidget.cs", 1 },
-            { "AvionicsBarGaugeWidget.cs", 1 },
-            { "B747EicasWidget.cs", 4 },
-            { "B787EicasWidget.cs", 16 },
-            { "CommSignalWidget.cs", 8 },
-            { "CustomTokenTextWidget.cs", 1 },
-            { "EcamAlertLogWidget.cs", 5 },
-            { "EcamStatusWidget.cs", 2 },
-            { "ElectricalSystemWidget.cs", 5 },
-            { "FavoriteToolbarWidget.cs", 1 },
-            { "LifeSupportWidget.cs", 8 },
-            { "ManeuverNodeWidget.cs", 11 },
-            { "ManeuverTimelineWidget.cs", 6 },
-            { "MasterWarningWidget.cs", 3 },
-            { "NavballSphereWidget.cs", 5 },
-            { "NDNavigationWidget.cs", 2 },
-            { "OrbitalElementsWidget.cs", 7 },
-            { "OrbitalInfoWidget.cs", 2 },
-            { "PerformanceMonitorWidget.cs", 10 },
-            { "ReferenceFrameWidget.cs", 3 },
-            { "Rocket2DWidget.cs", 6 },
-            { "SASDialWidget.cs", 1 },
-            { "SignalStatusWidget.cs", 13 },
-            { "SpaceXArcGaugeWidget.cs", 1 },
-            { "SpaceXAttitudeWidget.cs", 2 },
-            { "SpaceXBottomBarWidget.cs", 5 },
-            { "SpaceXDockingReticleWidget.cs", 8 },
-            { "SpaceXEngineWidget.cs", 6 },
-            { "SpaceXHeaderWidget.cs", 10 },
-            { "SpaceXOverviewWidget.cs", 12 },
-            { "SpaceXTimelineWidget.cs", 3 },
-            { "StageControlWidget.cs", 7 },
-            { "StageDeltaVWidget.cs", 7 },
-            { "StagingSequenceWidget.cs", 6 },
-            { "StandardFlightWidgetTemplate.cs", 1 },
-            { "TabAssembler.cs", 3 },
-            { "TapeGaugeWidget.cs", 1 },
-            { "TimeWarpWidget.cs", 4 },
-            { "UIWidget.cs", 4 },
-            { "VesselAttitudeSphereWidget.cs", 2 },
-            { "WidgetDslControls.cs", 1 },
+            // 结构保留、内容为空：登记新欠账时必须同时写入本表，并由 ValidateEnglishRatchet() 校验。
         };
 
         public static int TotalRegisteredEnglishDebt
@@ -1039,26 +958,19 @@ namespace ModularFlightPanel.HeadlessValidator
     {
         /// <summary>
         /// 未汉化词条棘轮基线：语言文件 -> 允许的未汉化词条数上限（只降不升）。
-        /// 存量 36 条明细（--i18n-baseline-dump 导出）：
-        ///   UI_WORKBENCH_TITLE / UI_LANG_EN / THM_LANG_EN_US /
-        ///   WIDGET_STAGE_CTRL_TITLE / WIDGET_STAGE_STAGE / WIDGET_STAGE_ARMED / WIDGET_STAGE_LOCKED / WIDGET_STAGE_CUTOFF /
-        ///   WIDGET_AXIS_PITCH / WIDGET_AXIS_ROLL / WIDGET_AXIS_YAW / WIDGET_PROP_PROPELLANT /
-        ///   WIDGET_TIMEWARP_WARP / WIDGET_TIMEWARP_PHYS / WIDGET_TIMEWARP_PAUSE / WIDGET_TIMEWARP_RESUME / WIDGET_TIMEWARP_PAUSED /
-        ///   SAS_STATUS_LOCK / SAS_MODE_STABILITY / SAS_MODE_PROGRADE / SAS_MODE_RETROGRADE / SAS_MODE_NORMAL /
-        ///   SAS_MODE_ANTINORMAL / SAS_MODE_RADIAL_IN / SAS_MODE_RADIAL_OUT / SAS_MODE_TARGET / SAS_MODE_MANEUVER /
-        ///   WIDGET_STAGE_HIDE_STOCK / WIDGET_STAGE_SHOW_STOCK /
-        ///   WIDGET_SIGNAL_NONE / WIDGET_SIGNAL_PART / WIDGET_SIGNAL_FULL / WIDGET_SIGNAL_RELAY /
-        ///   WIDGET_SIGNAL_FOOTER / WIDGET_SIGNAL_TITLE / ORBIT_TIME_PLACEHOLDER
+        /// 本轮 36 条存量已全部汉化；仅剩 2 条无语言信息的记法/专名（--i18n-baseline-dump 导出）：
+        ///   WIDGET_SPX_CLOCK_PLACEHOLDER = "T+ 00:00:00"（时钟占位记法）
+        ///   WIDGET_NAV_WP_NAME          = "PP518"（航点呼号专名）
         /// </summary>
         private static readonly Dictionary<string, int> BaselineTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            { "zh-CN.json", 36 },
+            { "zh-CN.json", 2 },
         };
 
         /// <summary>棘轮上限（冻结值）：基线永远不得高于此表</summary>
         private static readonly Dictionary<string, int> RatchetCeilingTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            { "zh-CN.json", 36 },
+            { "zh-CN.json", 2 },
         };
 
         public sealed class UntranslatedEntry

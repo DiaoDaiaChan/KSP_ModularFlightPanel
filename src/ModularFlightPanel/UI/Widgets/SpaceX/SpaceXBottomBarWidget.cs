@@ -21,8 +21,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件
-        public TextWidget PointingTitle = TextWidget.Title("POINTING MODE");
-        public TextWidget PointingMode = TextWidget.Value("PROGRADE");
+        public TextWidget PointingTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_POINTING_MODE", "指向模式"));
+        public TextWidget PointingMode = TextWidget.Value(I18n.Tr("SAS_MODE_PROGRADE", "顺行"));
 
         private Image _bgImage;
         private Outline _outline;
@@ -82,8 +82,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             WidgetStyleManager style = WidgetStyleManager.Instance;
             _rcsLabel = GetTemplateChannel("RCS_LABEL", "RCS");
             _sasLabel = GetTemplateChannel("SAS_LABEL", "SAS");
-            _precLabel = GetTemplateChannel("PREC_LABEL", "FINE");
-            _pointingTitle = GetTemplateChannel("POINTING_TITLE", "POINTING MODE");
+            _precLabel = GetTemplateChannel("PREC_LABEL", I18n.Tr("WIDGET_SPX_FINE", "精细"));
+            _pointingTitle = GetTemplateChannel("POINTING_TITLE", I18n.Tr("WIDGET_SPX_POINTING_MODE", "指向模式"));
             _comm1 = GetTemplateChannel("COMM1", "SPX");
             _comm2 = GetTemplateChannel("COMM2", "TDRS");
             _comm3 = GetTemplateChannel("COMM3", "ISS");
@@ -129,7 +129,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _pointingLabel.rectTransform.anchoredPosition = new Vector2(startX + 45f * s, 7f * s);
             _pointingLabel.rectTransform.sizeDelta = new Vector2(90f * s, 10f * s);
 
-            _pointingValue = UIFactory.CreateText(transform, "PointingValue", "EARTH POINTING", Mathf.RoundToInt(9.5f * s), TextAnchor.LowerLeft, style.GetTextColor(TextStyleRole.Accent, theme));
+            _pointingValue = UIFactory.CreateText(transform, "PointingValue", I18n.Tr("WIDGET_SPX_EARTH_POINTING", "对地指向"), Mathf.RoundToInt(9.5f * s), TextAnchor.LowerLeft, style.GetTextColor(TextStyleRole.Accent, theme));
             _pointingValue.rectTransform.anchoredPosition = new Vector2(startX + 45f * s, -6f * s);
             _pointingValue.rectTransform.sizeDelta = new Vector2(90f * s, 14f * s);
 

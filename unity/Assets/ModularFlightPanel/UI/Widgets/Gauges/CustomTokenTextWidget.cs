@@ -36,7 +36,7 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         // ── 顶部标题与徽章 ──
-        public TextWidget Title = TextWidget.Title("TELEMETRY MATRIX");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵"));
         public TextWidget Badge = TextWidget.Badge("6-CH MON");
 
         // ── 2 列 x 3 行通道矩阵 (左列: 运动学 / 右列: 动力学与力环境) ──

@@ -23,8 +23,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget Clock = TextWidget.Value("T+ 00:00:00");
-        public TextWidget Phase = TextWidget.Unit("STARSHIP FLIGHT TEST");
+        public TextWidget Clock = TextWidget.Value(I18n.Tr("WIDGET_SPX_CLOCK_PLACEHOLDER", "T+ 00:00:00"));
+        public TextWidget Phase = TextWidget.Unit(I18n.Tr("WIDGET_SPX_STARSHIP_FLIGHT_TEST", "星舰飞行试验"));
 
         // UI 视图节点
         private Image _bgImage;
@@ -108,7 +108,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _progressPipImage.raycastTarget = false;
 
             // 6. 中央任务时钟 (Mission Time: T+ 00:08:03)
-            _missionClockText = UIFactory.CreateText(transform, "Mission_Clock", "T+ 00:00:00", Mathf.RoundToInt(24f * s), TextAnchor.MiddleCenter,
+            _missionClockText = UIFactory.CreateText(transform, "Mission_Clock", I18n.Tr("WIDGET_SPX_CLOCK_PLACEHOLDER", "T+ 00:00:00"), Mathf.RoundToInt(24f * s), TextAnchor.MiddleCenter,
                 style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _missionClockText.fontStyle = FontStyle.Bold;
             RectTransform clockRt = _missionClockText.rectTransform;

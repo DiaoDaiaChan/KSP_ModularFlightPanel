@@ -20,8 +20,8 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件头部与状态徽标
-        public TextWidget Title = TextWidget.Title("SYS PERF MONITOR");
-        public TextWidget StatusBadge = TextWidget.Badge("● LIVE");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_PERF_TITLE", "系统性能监视"));
+        public TextWidget StatusBadge = TextWidget.Badge("● " + I18n.Tr("WIDGET_PERF_LIVE", "实时"));
 
         private Image _headerLine;
         private Image _midLine;
@@ -122,7 +122,7 @@ namespace ModularFlightPanel.UI.Widgets
             msRt.sizeDelta = new Vector2(90f * s, 18f * s);
             msRt.anchoredPosition = new Vector2(60f * s, 48f * s);
 
-            _budgetPctText = UIFactory.CreateText(transform, "BudgetPct", "0.0% BUDGET", Mathf.RoundToInt(8f * s),
+            _budgetPctText = UIFactory.CreateText(transform, "BudgetPct", I18n.Tr("WIDGET_PERF_BUDGET_PLACEHOLDER", "0.0% 预算"), Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform budRt = _budgetPctText.GetComponent<RectTransform>();
             budRt.sizeDelta = new Vector2(90f * s, 14f * s);
@@ -146,13 +146,13 @@ namespace ModularFlightPanel.UI.Widgets
             _midLine = mlObj.GetComponent<Image>();
 
             // 4. 内存分配与稳定性
-            _memValText = UIFactory.CreateText(transform, "MemVal", "HEAP: --.- M", Mathf.RoundToInt(8f * s),
+            _memValText = UIFactory.CreateText(transform, "MemVal", I18n.Tr("WIDGET_PERF_HEAP_PLACEHOLDER", "堆内存: --.- M"), Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
             RectTransform memRt = _memValText.GetComponent<RectTransform>();
             memRt.sizeDelta = new Vector2(105f * s, 14f * s);
             memRt.anchoredPosition = new Vector2(-52f * s, -54f * s);
 
-            _healthValText = UIFactory.CreateText(transform, "HealthVal", "GC0: 0 · SPIKE: 0", Mathf.RoundToInt(8f * s),
+            _healthValText = UIFactory.CreateText(transform, "HealthVal", I18n.Tr("WIDGET_PERF_HEALTH_PLACEHOLDER", "GC0: 0 · 峰值: 0"), Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform hltRt = _healthValText.GetComponent<RectTransform>();
             hltRt.sizeDelta = new Vector2(105f * s, 14f * s);
@@ -167,7 +167,7 @@ namespace ModularFlightPanel.UI.Widgets
             _bypassBtn = btnObj.AddComponent<Button>();
             _bypassBtn.onClick.AddListener(OnBypassClicked);
 
-            _bypassBtnLabel = UIFactory.CreateText(btnObj.transform, "BypassLabel", "⏸ BYPASS MFP (ZERO OVERHEAD)",
+            _bypassBtnLabel = UIFactory.CreateText(btnObj.transform, "BypassLabel", "⏸ " + I18n.Tr("WIDGET_PERF_BYPASS_BTN", "旁路 MFP (零开销)"),
                 Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             RectTransform bLblRt = _bypassBtnLabel.GetComponent<RectTransform>();
             bLblRt.anchorMin = Vector2.zero;
@@ -306,9 +306,9 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _lastBypassState = bypassed;
                 ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
-                StatusBadge.Text = bypassed ? "● BYPASS" : "● LIVE";
+                StatusBadge.Text = bypassed ? "● " + I18n.Tr("WIDGET_PERF_BYPASS", "旁路") : "● " + I18n.Tr("WIDGET_PERF_LIVE", "实时");
                 StatusBadge.SetRole(bypassed ? TextStyleRole.Warning : TextStyleRole.Accent);
-                _bypassBtnLabel.text = bypassed ? "▶ RESUME MFP HUD" : "⏸ BYPASS MFP (ZERO OVERHEAD)";
+                _bypassBtnLabel.text = bypassed ? "▶ " + I18n.Tr("WIDGET_PERF_RESUME", "恢复 MFP HUD") : "⏸ " + I18n.Tr("WIDGET_PERF_BYPASS_BTN", "旁路 MFP (零开销)");
                 ApplyButton(_bypassBtn, _bypassBtnBg, _bypassBtnLabel, bypassed ? ButtonVisualRole.Warning : ButtonVisualRole.Normal, false, theme);
             }
 

@@ -399,7 +399,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             topOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Light);
             topOutline.effectDistance = new Vector2(0.8f * s, 0.8f * s);
 
-            _topBadgeText = UIFactory.CreateText(_topBadgeRoot.transform, "Top_Text", "HDG ---° | SURFACE",
+            _topBadgeText = UIFactory.CreateText(_topBadgeRoot.transform, "Top_Text", I18n.Tr("WIDGET_NAV_HDG_SURFACE_PLACEHOLDER", "航向 ---° | 表面"),
                 Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Cardinal, theme));
             RectTransform ttRt = _topBadgeText.GetComponent<RectTransform>();
             ttRt.anchorMin = Vector2.zero;
@@ -415,7 +415,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             btmOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Light);
             btmOutline.effectDistance = new Vector2(0.8f * s, 0.8f * s);
 
-            _bottomBadgeText = UIFactory.CreateText(_bottomBadgeRoot.transform, "Bottom_Text", "P +0° R +0° | SAS",
+            _bottomBadgeText = UIFactory.CreateText(_bottomBadgeRoot.transform, "Bottom_Text", I18n.Tr("WIDGET_NAV_ATTITUDE_PLACEHOLDER", "俯仰 +0° 滚转 +0° | SAS"),
                 Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             RectTransform btRt = _bottomBadgeText.GetComponent<RectTransform>();
             btRt.anchorMin = Vector2.zero;

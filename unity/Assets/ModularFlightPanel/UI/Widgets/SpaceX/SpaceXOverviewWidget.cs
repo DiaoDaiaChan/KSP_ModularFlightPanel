@@ -21,8 +21,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件
-        public TextWidget Title = TextWidget.Title("VEHICLE OVERVIEW / ECLSS");
-        public TextWidget StatusBadge = TextWidget.Badge("NOMINAL");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SPX_VEHICLE_OVERVIEW", "飞行器总览 / ECLSS"));
+        public TextWidget StatusBadge = TextWidget.Badge(I18n.Tr("WIDGET_SPX_NOMINAL", "正常"));
 
         private Image _bgImage;
         private Outline _outline;
@@ -87,15 +87,15 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            _titleCustom = GetTemplateChannel("TITLE", "VEHICLE OVERVIEW / ECLSS");
-            _pressLabelStr = GetTemplateChannel("PRESS_LABEL", "CABIN PRESS");
-            _o2LabelStr = GetTemplateChannel("O2_LABEL", "O2 LEVEL");
-            _tempLabelStr = GetTemplateChannel("TEMP_LABEL", "CABIN TEMP");
-            _pwrLabelStr = GetTemplateChannel("PWR_LABEL", "NET POWER");
-            _airlockLabelStr = GetTemplateChannel("AIRLOCK_LABEL", "AIRLOCK HATCH");
-            _propLabelStr = GetTemplateChannel("PROP_LABEL", "DRACO RCS PROP");
-            _thermalLabelStr = GetTemplateChannel("THERMAL_LABEL", "ACTIVE THERMAL LOOP");
-            _dockLabelStr = GetTemplateChannel("DOCK_LABEL", "DOCKING MECHANISM");
+            _titleCustom = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SPX_VEHICLE_OVERVIEW", "飞行器总览 / ECLSS"));
+            _pressLabelStr = GetTemplateChannel("PRESS_LABEL", I18n.Tr("WIDGET_SPX_CABIN_PRESS", "客舱气压"));
+            _o2LabelStr = GetTemplateChannel("O2_LABEL", I18n.Tr("WIDGET_SPX_O2_LEVEL", "氧分压"));
+            _tempLabelStr = GetTemplateChannel("TEMP_LABEL", I18n.Tr("WIDGET_SPX_CABIN_TEMP", "客舱温度"));
+            _pwrLabelStr = GetTemplateChannel("PWR_LABEL", I18n.Tr("WIDGET_SPX_NET_POWER", "电网功率"));
+            _airlockLabelStr = GetTemplateChannel("AIRLOCK_LABEL", I18n.Tr("WIDGET_SPX_AIRLOCK_HATCH", "气闸舱门"));
+            _propLabelStr = GetTemplateChannel("PROP_LABEL", I18n.Tr("WIDGET_SPX_DRACO_RCS_PROP", "RCS 推进剂"));
+            _thermalLabelStr = GetTemplateChannel("THERMAL_LABEL", I18n.Tr("WIDGET_SPX_ACTIVE_THERMAL_LOOP", "主动热控回路"));
+            _dockLabelStr = GetTemplateChannel("DOCK_LABEL", I18n.Tr("WIDGET_SPX_DOCKING_MECHANISM", "对接机构"));
 
             Vector2 panelSize = new Vector2(240f * s, 180f * s);
             RectTransform.sizeDelta = panelSize;
@@ -110,7 +110,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _titleText.rectTransform.anchoredPosition = new Vector2(-12f * s, panelSize.y * 0.5f - 14f * s);
             _titleText.rectTransform.sizeDelta = new Vector2(140f * s, 16f * s);
 
-            _statusBadge = UIFactory.CreateText(transform, "StatusBadge", "NOMINAL", Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.Accent, theme));
+            _statusBadge = UIFactory.CreateText(transform, "StatusBadge", I18n.Tr("WIDGET_SPX_NOMINAL", "正常"), Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.Accent, theme));
             _statusBadge.rectTransform.anchoredPosition = new Vector2(panelSize.x * 0.5f - 40f * s, panelSize.y * 0.5f - 14f * s);
             _statusBadge.rectTransform.sizeDelta = new Vector2(70f * s, 16f * s);
 

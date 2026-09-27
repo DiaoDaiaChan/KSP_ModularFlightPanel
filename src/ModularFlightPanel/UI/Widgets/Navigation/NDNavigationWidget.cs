@@ -23,7 +23,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget Title = TextWidget.Title("AERO ND");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_NAV_AERO_ND", "航空导航屏"));
 
         private const float ND_ARC_RADIUS = 108f;
         private const float ND_ARC_FOV = 48f; // 可见罗盘视口半角范围 (±48°)
@@ -389,7 +389,7 @@ namespace ModularFlightPanel.UI.Widgets
             wpOl.effectDistance = new Vector2(1.2f * s, 1.2f * s);
 
             // 航点名称
-            _targetWpName = UIFactory.CreateText(_targetWaypointMarker.transform, "Wp_Name", "PP518",
+            _targetWpName = UIFactory.CreateText(_targetWaypointMarker.transform, "Wp_Name", I18n.Tr("WIDGET_NAV_WP_NAME", "PP518"),
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.Accent, theme));
             RectTransform nameRt = _targetWpName.GetComponent<RectTransform>();

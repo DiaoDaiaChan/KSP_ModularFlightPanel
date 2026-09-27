@@ -19,8 +19,8 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件头部与状态徽标
-        public TextWidget Title = TextWidget.Title("LIFE SUPPORT");
-        public TextWidget StatusBadge = TextWidget.Badge("● NOMINAL");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_LIFE_TITLE", "生命维持"));
+        public TextWidget StatusBadge = TextWidget.Badge("● " + I18n.Tr("WIDGET_LIFE_NOMINAL", "正常"));
 
         private Text _subTitleText;
 
@@ -50,7 +50,7 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 panelSize = BaseSize * s;
 
             // 1. 顶部 Header (Title & StatusBadge 已由基类微控件 DSL 自动构建)
-            _subTitleText = UIFactory.CreateText(transform, "SubTitle", "HABITAT & CREW", Mathf.RoundToInt(8f * s), TextAnchor.MiddleLeft, theme.AccentSecondary);
+            _subTitleText = UIFactory.CreateText(transform, "SubTitle", I18n.Tr("WIDGET_LIFE_HABITAT_CREW", "居住舱与乘员"), Mathf.RoundToInt(8f * s), TextAnchor.MiddleLeft, theme.AccentSecondary);
             RectTransform subRt = _subTitleText.GetComponent<RectTransform>();
             subRt.sizeDelta = new Vector2(85f * s, 16f * s);
             subRt.anchoredPosition = new Vector2(25f * s, 64f * s);
@@ -59,7 +59,7 @@ namespace ModularFlightPanel.UI.Widgets
             UIFactory.CreatePanel(transform, "Div1", new Vector2(panelSize.x - 16f * s, 1f * s), new Vector2(0f, 52f * s), theme.FrameBorderColor);
 
             // 2. 乘员与舱压环境摘要行
-            _crewText = UIFactory.CreateText(transform, "Sum_Crew", "CREW 0/0", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, theme.WarningColor);
+            _crewText = UIFactory.CreateText(transform, "Sum_Crew", I18n.Tr("WIDGET_LIFE_CREW_PLACEHOLDER", "乘员 0/0"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, theme.WarningColor);
             RectTransform crewRt = _crewText.GetComponent<RectTransform>();
             crewRt.sizeDelta = new Vector2(75f * s, 14f * s);
             crewRt.anchoredPosition = new Vector2(-85f * s, 40f * s);
@@ -217,17 +217,17 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastStatusBadgeState = badgeState;
                 if (badgeState == 2)
                 {
-                    StatusBadge.Text = "▲ WARNING";
+                    StatusBadge.Text = "▲ " + I18n.Tr("WIDGET_LIFE_WARNING", "警告");
                     StatusBadge.SetRole(TextStyleRole.Danger);
                 }
                 else if (badgeState == 1)
                 {
-                    StatusBadge.Text = "● CAUTION";
+                    StatusBadge.Text = "● " + I18n.Tr("WIDGET_LIFE_CAUTION", "注意");
                     StatusBadge.SetRole(TextStyleRole.Warning);
                 }
                 else
                 {
-                    StatusBadge.Text = "● NOMINAL";
+                    StatusBadge.Text = "● " + I18n.Tr("WIDGET_LIFE_NOMINAL", "正常");
                     StatusBadge.SetRole(TextStyleRole.Accent);
                 }
             }
@@ -265,7 +265,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_subTitleText != null)
             {
-                _subTitleText.text = GetTemplateChannel("SUBTITLE", "HABITAT & CREW");
+                _subTitleText.text = GetTemplateChannel("SUBTITLE", I18n.Tr("WIDGET_LIFE_HABITAT_CREW", "居住舱与乘员"));
                 ApplyText(_subTitleText, TextStyleRole.Label, theme);
             }
             if (_pressureText != null) ApplyText(_pressureText, TextStyleRole.SecondaryValue, theme);

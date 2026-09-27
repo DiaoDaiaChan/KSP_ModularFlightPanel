@@ -905,7 +905,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _rateTagOutline.effectDistance = new Vector2(1f * s, 1f * s);
                 ApplyCard(_rateTagBg, _rateTagOutline, CardStyleRole.Normal, theme);
 
-                _rateTagText = UIFactory.CreateText(_rateTagBox.transform, "Rate_Tag", "dV/dt",
+                _rateTagText = UIFactory.CreateText(_rateTagBox.transform, "Rate_Tag", I18n.Tr("WIDGET_GAUGE_DV_DT", "变化率"),
                     Mathf.Max(5, Mathf.RoundToInt(5.5f * s)), TextAnchor.MiddleCenter,
                     style.GetTextColor(TextStyleRole.Unit, theme));
                 _rateTagText.fontStyle = FontStyle.Bold;

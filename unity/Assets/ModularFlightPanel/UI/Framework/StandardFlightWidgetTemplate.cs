@@ -77,7 +77,7 @@ namespace ModularFlightPanel.UI
         // 基类自动完成泊靠布局、物理 DPI 乘算、UGUI 创建与 Controls 纳管，0 绝对坐标计算！
 
         /// <summary>顶部左侧卡片标题 (自动泊靠 TopLeft)</summary>
-        public TextWidget HeaderTitle = TextWidget.Title("TELEMETRY");
+        public TextWidget HeaderTitle = TextWidget.Title(I18n.Tr("WIDGET_FW_TELEMETRY", "遥测"));
 
         /// <summary>顶部右侧状态徽标 (自动泊靠 TopRight)</summary>
         public TextWidget StatusBadge = TextWidget.Badge("NORM");

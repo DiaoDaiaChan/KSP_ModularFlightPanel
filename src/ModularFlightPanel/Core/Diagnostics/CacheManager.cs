@@ -36,6 +36,10 @@ namespace ModularFlightPanel.Core
         private static readonly string[] _negativeIntStrings;
         private static readonly string[] _percentStrings; // 0% ~ 100%
         private static readonly string[] _degreeStrings;  // 0° ~ 360°
+        private static readonly string[] _hdgStrings;     // HDG 000° ~ HDG 359°
+        private static readonly string[] _obtStrings;     // OBT 000° ~ OBT 359°
+        private static readonly string[] _lonStrings;     // LON 000° ~ LON 359°
+        private static readonly string[] _tgtStrings;     // TGT 000° ~ TGT 359°
 
         static CacheManager()
         {
@@ -65,6 +69,20 @@ namespace ModularFlightPanel.Core
             for (int i = 0; i <= 360; i++)
             {
                 _degreeStrings[i] = i.ToString() + "°";
+            }
+
+            // 5. 预热航向/经度/轨道/目标三位数度数字符串表 (000° ~ 359°)
+            _hdgStrings = new string[360];
+            _obtStrings = new string[360];
+            _lonStrings = new string[360];
+            _tgtStrings = new string[360];
+            for (int i = 0; i < 360; i++)
+            {
+                string num = i.ToString("D3") + "°";
+                _hdgStrings[i] = "HDG " + num;
+                _obtStrings[i] = "OBT " + num;
+                _lonStrings[i] = "LON " + num;
+                _tgtStrings[i] = "TGT " + num;
             }
         }
 
@@ -103,6 +121,42 @@ namespace ModularFlightPanel.Core
         {
             int normalized = (degree % 360 + 360) % 360;
             return _degreeStrings[normalized];
+        }
+
+        /// <summary>
+        /// 零 GC 快速获取航向字符串 ("HDG 000°" ~ "HDG 359°")
+        /// </summary>
+        public static string FastHdg(int degree)
+        {
+            int normalized = (degree % 360 + 360) % 360;
+            return _hdgStrings[normalized];
+        }
+
+        /// <summary>
+        /// 零 GC 快速获取轨道经度字符串 ("OBT 000°" ~ "OBT 359°")
+        /// </summary>
+        public static string FastObt(int degree)
+        {
+            int normalized = (degree % 360 + 360) % 360;
+            return _obtStrings[normalized];
+        }
+
+        /// <summary>
+        /// 零 GC 快速获取地面经度字符串 ("LON 000°" ~ "LON 359°")
+        /// </summary>
+        public static string FastLon(int degree)
+        {
+            int normalized = (degree % 360 + 360) % 360;
+            return _lonStrings[normalized];
+        }
+
+        /// <summary>
+        /// 零 GC 快速获取目标方位字符串 ("TGT 000°" ~ "TGT 359°")
+        /// </summary>
+        public static string FastTgt(int degree)
+        {
+            int normalized = (degree % 360 + 360) % 360;
+            return _tgtStrings[normalized];
         }
 
         #endregion
@@ -301,6 +355,52 @@ namespace ModularFlightPanel.Core
                 _probeStringCache.Clear();
             }
             _probeStringCache[probeKey] = val;
+        }
+
+        #endregion
+
+        #region Navball Kepler & Orbital Frame Snapshot (同帧开普勒与轨道矢量快照)
+
+        /// <summary>
+        /// 导航球与开普勒轨道同帧解算快照
+        /// 消除同一物理/渲染帧内多标线（Normal/AntiNormal/RadialIn/RadialOut 等）重复调用 
+        /// vessel.CurrentCoM（遍历数十上百个零件累加质心）与轨道开普勒方程求解的巨大 CPU 开销。
+        /// </summary>
+        public struct NavballFrameSnapshot
+        {
+            public int Frame;
+            public bool HasOrbit;
+            public bool HasSurface;
+            public Vector3 Prograde;
+            public Vector3 Retrograde;
+            public Vector3 Normal;
+            public Vector3 AntiNormal;
+            public Vector3 RadialIn;
+            public Vector3 RadialOut;
+        }
+
+        private NavballFrameSnapshot _cachedNavballSnapshot;
+
+        /// <summary>
+        /// 尝试从当前帧快照中获取已解算的轨道三联基（零 Part 树遍历、零开普勒重算）
+        /// </summary>
+        public bool TryGetCachedNavballSnapshot(int frame, out NavballFrameSnapshot snapshot)
+        {
+            if (_cachedNavballSnapshot.Frame == frame && _cachedNavballSnapshot.Frame != 0)
+            {
+                snapshot = _cachedNavballSnapshot;
+                return true;
+            }
+            snapshot = default;
+            return false;
+        }
+
+        /// <summary>
+        /// 记录当前帧导航球轨道三联基快照
+        /// </summary>
+        public void SetCachedNavballSnapshot(ref NavballFrameSnapshot snapshot)
+        {
+            _cachedNavballSnapshot = snapshot;
         }
 
         #endregion

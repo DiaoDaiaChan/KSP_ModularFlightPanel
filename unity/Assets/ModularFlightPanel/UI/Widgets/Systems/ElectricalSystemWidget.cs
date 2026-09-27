@@ -19,8 +19,8 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件头部与状态徽标
-        public TextWidget Title = TextWidget.Title("ELEC");
-        public TextWidget StatusBadge = TextWidget.Badge("● LIVE");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_ELEC_TITLE", "电源系统"));
+        public TextWidget StatusBadge = TextWidget.Badge("● " + I18n.Tr("WIDGET_PERF_LIVE", "实时"));
 
         private Text _subTitleText;
 
@@ -45,7 +45,7 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 panelSize = BaseSize * s;
 
             // 1. 顶部 Header (Title & StatusBadge 已由基类微控件 DSL 自动构建)
-            _subTitleText = UIFactory.CreateText(transform, "SubTitle", "POWER DISTRIBUTION", Mathf.RoundToInt(8f * s), TextAnchor.MiddleLeft, theme.AccentSecondary);
+            _subTitleText = UIFactory.CreateText(transform, "SubTitle", I18n.Tr("WIDGET_ELEC_POWER_DIST", "配电"), Mathf.RoundToInt(8f * s), TextAnchor.MiddleLeft, theme.AccentSecondary);
             RectTransform subRt = _subTitleText.GetComponent<RectTransform>();
             subRt.sizeDelta = new Vector2(120f * s, 16f * s);
             subRt.anchoredPosition = new Vector2(-15f * s, 62f * s);
@@ -72,7 +72,7 @@ namespace ModularFlightPanel.UI.Widgets
                 theme.AccentPrimary, out _loadValText, out _loadSubText);
 
             // 底部状态提示微标
-            Text tipText = UIFactory.CreateText(transform, "FooterTip", "28V DC BUS SYSTEM  ·  PRIMARY AVIONICS",
+            Text tipText = UIFactory.CreateText(transform, "FooterTip", I18n.Tr("WIDGET_ELEC_BUS_TIP", "28V 直流母线系统  ·  主航电"),
                 Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, theme.TextAccentColor);
             RectTransform tipRt = tipText.GetComponent<RectTransform>();
             tipRt.sizeDelta = new Vector2(panelSize.x - 20f * s, 12f * s);
@@ -244,7 +244,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_subTitleText != null)
             {
-                _subTitleText.text = GetTemplateChannel("SUBTITLE", "POWER DISTRIBUTION");
+                _subTitleText.text = GetTemplateChannel("SUBTITLE", I18n.Tr("WIDGET_ELEC_POWER_DIST", "配电"));
                 ApplyText(_subTitleText, TextStyleRole.Label, theme);
             }
 

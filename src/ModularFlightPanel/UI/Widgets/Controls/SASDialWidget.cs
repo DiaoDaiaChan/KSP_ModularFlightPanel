@@ -426,7 +426,7 @@ namespace ModularFlightPanel.UI.Widgets
             _statusOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
             int fontSize = Mathf.Max(7, Mathf.RoundToInt(7.5f * s));
-            _statusLabel = UIFactory.CreateText(tagBox.transform, "Text", "SAS: STABILITY", fontSize, TextAnchor.MiddleCenter,
+            _statusLabel = UIFactory.CreateText(tagBox.transform, "Text", "SAS: " + I18n.Tr("SAS_MODE_STABILITY", "稳定"), fontSize, TextAnchor.MiddleCenter,
                 theme.AccentSecondary);
             RectTransform trt = _statusLabel.GetComponent<RectTransform>();
             trt.sizeDelta = tagSize;

@@ -41,8 +41,8 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget Title = TextWidget.Title("ROCKET 2D");
-        public TextWidget StatusBadge = TextWidget.Badge("ARMED");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_ROCKET_TITLE", "火箭 2D"));
+        public TextWidget StatusBadge = TextWidget.Badge(I18n.Tr("WIDGET_ALERT_ARMED", "待发"));
 
         // 单级推进堆叠行 UI 结构
         private class StageRowUI
@@ -263,7 +263,7 @@ namespace ModularFlightPanel.UI.Widgets
             UIFactory.CreatePanel(_silhouetteBayObj.transform, "RetBR_V", new Vector2(retW, retLen), new Vector2(bayW * 0.5f - retW * 0.5f, -bayH * 0.5f + retLen * 0.5f), retCol);
 
             // 视窗顶部标牌
-            _silhouetteBayTitle = UIFactory.CreateText(_silhouetteBayObj.transform, "BayTitle", "PROFILE",
+            _silhouetteBayTitle = UIFactory.CreateText(_silhouetteBayObj.transform, "BayTitle", I18n.Tr("WIDGET_ROCKET_PROFILE", "剖面"),
                 Mathf.RoundToInt(6.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
             _silhouetteBayTitle.fontStyle = FontStyle.Bold;
             RectTransform titleRt = _silhouetteBayTitle.GetComponent<RectTransform>();
@@ -309,7 +309,7 @@ namespace ModularFlightPanel.UI.Widgets
             _plumeObj.SetActive(false);
 
             // 视窗底部标牌
-            _silhouetteBayFooter = UIFactory.CreateText(_silhouetteBayObj.transform, "BayFooter", "S-- · ARMED",
+            _silhouetteBayFooter = UIFactory.CreateText(_silhouetteBayObj.transform, "BayFooter", "S-- · " + I18n.Tr("WIDGET_ALERT_ARMED", "待发"),
                 Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _silhouetteBayFooter.fontStyle = FontStyle.Bold;
             RectTransform footRt = _silhouetteBayFooter.GetComponent<RectTransform>();
@@ -391,7 +391,7 @@ namespace ModularFlightPanel.UI.Widgets
                 badgeTextRt.anchoredPosition = Vector2.zero;
 
                 // 3. 上半行：分级角色/说明 + 单级 ΔV
-                Text roleText = UIFactory.CreateText(rowObj.transform, "RoleText", "PROPULSION", Mathf.RoundToInt(7.5f * s),
+                Text roleText = UIFactory.CreateText(rowObj.transform, "RoleText", I18n.Tr("WIDGET_ROCKET_PROPULSION", "推进系统"), Mathf.RoundToInt(7.5f * s),
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
                 roleText.fontStyle = FontStyle.Bold;
                 RectTransform roleRt = roleText.GetComponent<RectTransform>();
@@ -444,7 +444,7 @@ namespace ModularFlightPanel.UI.Widgets
                 pctRt.anchoredPosition = new Vector2((33f + FuelTrackMaxWidth + 4f) * s, -5.5f * s);
                 pctRt.sizeDelta = new Vector2(24f * s, 11f * s);
 
-                Text metaText = UIFactory.CreateText(rowObj.transform, "MetaText", "00:00 · 0.00 T", Mathf.RoundToInt(7f * s),
+                Text metaText = UIFactory.CreateText(rowObj.transform, "MetaText", I18n.Tr("WIDGET_ROCKET_STAGE_META", "00:00 · 0.00 吨"), Mathf.RoundToInt(7f * s),
                     TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.Label, theme));
                 RectTransform metaRt = metaText.GetComponent<RectTransform>();
                 metaRt.anchorMin = new Vector2(1f, 0.5f);

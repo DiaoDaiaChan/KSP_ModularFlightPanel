@@ -218,7 +218,9 @@ namespace ModularFlightPanel.UI.Auditing
                     // 深度审查 Core3D 内部是否混入了命令式裸 UGUI 或未受管图元
                     int rawImageAllocs = widgetClass.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
                         .Count(obj => obj.Type.ToString().Contains("Image"));
-                    if (item.UsesImperativeUiFactory || rawImageAllocs > 0)
+                    bool usesUiMaterial = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                        .Any(inv => inv.ToString().Contains("GetUiMaterial"));
+                    if (!usesUiMaterial && (item.UsesImperativeUiFactory || rawImageAllocs > 0))
                     {
                         item.HasUnmanagedCore3DUgui = true;
                         item.StandardizationSuggestions.Add($"Core3D 内部混杂未纳管裸 UGUI (UIFactory 调用: {uiFactoryCalls} 处, Image 图元: {rawImageAllocs} 处; 未接入 2D UI Shader 材质管线)");

@@ -37,7 +37,7 @@ namespace ModularFlightPanel.UI.Widgets
         public Vector2 MaxBaseSize => new Vector2(360f, 320f);
 
         // 声明式微控件 (顶栏主标题)
-        public TextWidget Title = TextWidget.Title("STAGE CONTROL", null, 9.5f);
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_STAGE_CTRL_TITLE", "级控制"), null, 9.5f);
 
         // 顶栏安全联动总成
         private GameObject _statusBadgePill;
@@ -182,7 +182,7 @@ namespace ModularFlightPanel.UI.Widgets
             _statusBadgePillBg = _statusBadgePill.GetComponent<Image>();
             _statusBadgePillOutline = _statusBadgePill.GetComponent<Outline>();
 
-            _statusBadgeText = UIFactory.CreateText(_statusBadgePill.transform, "Text", "● ARMED",
+            _statusBadgeText = UIFactory.CreateText(_statusBadgePill.transform, "Text", "● " + I18n.Tr("WIDGET_ALERT_ARMED", "待发"),
                 Mathf.Max(5, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
             _statusBadgeText.fontStyle = FontStyle.Bold;
             _statusBadgeText.rectTransform.sizeDelta = new Vector2(56f * s, 11f * s);
@@ -196,7 +196,7 @@ namespace ModularFlightPanel.UI.Widgets
             _lockBtnOutline.effectDistance = new Vector2(1f * s, 1f * s);
             _lockBtnOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
 
-            _lockBtnText = UIFactory.CreateText(_lockBtn.transform, "Text", "ARMED",
+            _lockBtnText = UIFactory.CreateText(_lockBtn.transform, "Text", I18n.Tr("WIDGET_ALERT_ARMED", "待发"),
                 Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
             _lockBtnText.fontStyle = FontStyle.Bold;
             _lockBtnText.rectTransform.sizeDelta = lockBtnSize;
@@ -212,7 +212,7 @@ namespace ModularFlightPanel.UI.Widgets
             _fireBtnOutline.effectDistance = new Vector2(1f * s, 1f * s);
             _fireBtnOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
 
-            _fireBtnText = UIFactory.CreateText(_fireBtn.transform, "Text", "STAGE ▶",
+            _fireBtnText = UIFactory.CreateText(_fireBtn.transform, "Text", I18n.Tr("WIDGET_STAGE_STAGE", "级 ▶"),
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _fireBtnText.fontStyle = FontStyle.Bold;
             _fireBtnText.rectTransform.sizeDelta = fireBtnSize;
@@ -254,7 +254,7 @@ namespace ModularFlightPanel.UI.Widgets
                 new Vector2(2.5f * s, 28f * s), new Vector2(-16f * s + 1.25f * s, 0f), theme.AccentPrimary);
             _stageAccentBar = barGo.GetComponent<Image>();
 
-            _stageLabelText = UIFactory.CreateText(_stageNumBox.transform, "Label", "STAGE",
+            _stageLabelText = UIFactory.CreateText(_stageNumBox.transform, "Label", I18n.Tr("WIDGET_CTRL_STAGE_LABEL", "级"),
                 Mathf.Max(5, Mathf.RoundToInt(5.5f * s)), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform slRt = _stageLabelText.GetComponent<RectTransform>();
             slRt.sizeDelta = new Vector2(numBoxSize.x - 4f * s, 8f * s);
@@ -755,7 +755,9 @@ namespace ModularFlightPanel.UI.Widgets
             if (isLocked != _lastLockedState)
             {
                 _lastLockedState = isLocked;
-                string lockLabel = isLocked ? "LOCKED" : "ARMED";
+                string lockLabel = isLocked
+                    ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定")
+                    : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
                 SetTextIfChanged(_lockBtnText, lockLabel);
 
                 if (isLocked)
@@ -765,7 +767,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _fireBtnBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
                     ApplyText(_fireBtnText, TextStyleRole.SecondaryValue, theme);
 
-                    SetTextIfChanged(_statusBadgeText, "▲ LOCKED");
+                    SetTextIfChanged(_statusBadgeText, "▲ " + I18n.Tr("WIDGET_STAGE_LOCKED", "锁定"));
                     ApplyText(_statusBadgeText, TextStyleRole.Danger, theme);
                     if (_statusBadgePillBg != null) _statusBadgePillBg.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.15f);
                     if (_statusBadgePillOutline != null) _statusBadgePillOutline.effectColor = WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Ghost);
@@ -777,7 +779,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _fireBtnBg.color = style.GetMeterColor(MeterStyleRole.Warning, theme);
                     ApplyText(_fireBtnText, TextStyleRole.PrimaryValue, theme);
 
-                    SetTextIfChanged(_statusBadgeText, "● ARMED");
+                    SetTextIfChanged(_statusBadgeText, "● " + I18n.Tr("WIDGET_ALERT_ARMED", "待发"));
                     ApplyText(_statusBadgeText, TextStyleRole.Accent, theme);
                     if (_statusBadgePillBg != null) _statusBadgePillBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.15f);
                     if (_statusBadgePillOutline != null) _statusBadgePillOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost);

@@ -39,8 +39,8 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         // ── 头部集中声明微控件对象 ──
-        public TextWidget Title = TextWidget.Title("FLIGHT MEMO");
-        public TextWidget PhaseBadge = TextWidget.Badge("PRE-LAUNCH");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_EICAS_FLIGHT_MEMO", "飞行告警日志"));
+        public TextWidget PhaseBadge = TextWidget.Badge(I18n.Tr("PHASE_PRELAUNCH", "发射前"));
 
         public TextWidget MainState = new TextWidget(TextStyleRole.Accent, -114f, -4f, 160f, 18f, 12f, TextAnchor.MiddleLeft, "SYSTEMS NOMINAL");
         public TextWidget NavContext = new TextWidget(TextStyleRole.SecondaryValue, 50f, -4f, 70f, 18f, 9.5f, TextAnchor.MiddleRight, "SURFACE");

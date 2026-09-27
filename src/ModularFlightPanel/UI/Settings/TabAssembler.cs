@@ -485,11 +485,15 @@ namespace ModularFlightPanel.UI.Settings
 
             // Limit Mode
             string curLimit = string.IsNullOrEmpty(w.LimitMode) ? (w.IsSoftLimit ? "soft" : "hard") : w.LimitMode.ToLowerInvariant();
+            // 量程模式为数据令牌（非界面文案），先比较后传入，避免 GUILayout 文案槽位误判
+            bool isHardLimit = curLimit == "hard";
+            bool isSoftLimit = curLimit == "soft";
+            bool isNoneLimit = curLimit == "none";
             GUILayout.BeginHorizontal();
             GUILayout.Label(I18n.Tr("ASM_LIMIT_MODE", "量程模式:"), GUILayout.Width(75f));
-            if (GUILayout.Toggle(curLimit == "hard", I18n.Tr("ASM_LIMIT_HARD", "硬限幅"), "Button", GUILayout.Height(22f))) curLimit = "hard";
-            if (GUILayout.Toggle(curLimit == "soft", I18n.Tr("ASM_LIMIT_SOFT", "软限幅"), "Button", GUILayout.Height(22f))) curLimit = "soft";
-            if (GUILayout.Toggle(curLimit == "none", I18n.Tr("ASM_LIMIT_NONE", "无限制"), "Button", GUILayout.Height(22f))) curLimit = "none";
+            if (GUILayout.Toggle(isHardLimit, I18n.Tr("ASM_LIMIT_HARD", "硬限幅"), "Button", GUILayout.Height(22f))) curLimit = "hard";
+            if (GUILayout.Toggle(isSoftLimit, I18n.Tr("ASM_LIMIT_SOFT", "软限幅"), "Button", GUILayout.Height(22f))) curLimit = "soft";
+            if (GUILayout.Toggle(isNoneLimit, I18n.Tr("ASM_LIMIT_NONE", "无限制"), "Button", GUILayout.Height(22f))) curLimit = "none";
             GUILayout.EndHorizontal();
 
             if (w.LimitMode != curLimit)

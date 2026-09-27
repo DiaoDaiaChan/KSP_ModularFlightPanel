@@ -46,7 +46,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         public Vector2 MaxBaseSize => new Vector2(360f, 960f);
 
         // 声明式微控件
-        public TextWidget Title = TextWidget.Title("STAGING", null, 8.5f);
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_CTRL_STAGING", "分级序列"), null, 8.5f);
 
         // UI 根与卡片
         private Image _bgImage;
@@ -354,7 +354,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _statusBadgeBtn = statusBtnGo.GetComponent<Button>();
             _statusBadgeBtn.onClick.AddListener(OnStatusLockClicked);
 
-            _statusBadgeText = UIFactory.CreateText(statusBtnGo.transform, "Status_Text", "ARMED", Mathf.RoundToInt(7.5f * s),
+            _statusBadgeText = UIFactory.CreateText(statusBtnGo.transform, "Status_Text", I18n.Tr("WIDGET_ALERT_ARMED", "待发"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _statusBadgeText.fontStyle = FontStyle.Bold;
             _statusBadgeText.rectTransform.sizeDelta = statusRt.sizeDelta;
@@ -369,7 +369,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _stageTriggerBtn = trigBtnGo.GetComponent<Button>();
             _stageTriggerBtn.onClick.AddListener(OnStageTriggerClicked);
 
-            _stageTriggerText = UIFactory.CreateText(trigBtnGo.transform, "Trigger_Text", "SPACE TO STAGE", Mathf.RoundToInt(7f * s),
+            _stageTriggerText = UIFactory.CreateText(trigBtnGo.transform, "Trigger_Text", I18n.Tr("WIDGET_CTRL_SPACE_STAGE", "空格分级"), Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
             _stageTriggerText.rectTransform.sizeDelta = trigRt.sizeDelta;
 
@@ -572,7 +572,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             metaRt.sizeDelta = new Vector2(70f * s, 10f * s);
 
             // 空分级占位提示文本 [EMPTY STAGE]
-            Text emptyTxt = UIFactory.CreateText(root.transform, "Empty_Slot_Text", "[EMPTY STAGE]", Mathf.RoundToInt(7.5f * s),
+            Text emptyTxt = UIFactory.CreateText(root.transform, "Empty_Slot_Text", I18n.Tr("WIDGET_CTRL_EMPTY_STAGE", "[空级]"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
             RectTransform emptyRt = emptyTxt.rectTransform;
             emptyRt.pivot = new Vector2(0f, 0.5f);
@@ -738,7 +738,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _tooltipOutline.effectDistance = new Vector2(1f * s, 1f * s);
             _tooltipOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost);
 
-            _tooltipTitle = UIFactory.CreateText(_tooltipRoot.transform, "Title", "PART INFO", Mathf.RoundToInt(7.5f * s),
+            _tooltipTitle = UIFactory.CreateText(_tooltipRoot.transform, "Title", I18n.Tr("WIDGET_CTRL_PART_INFO", "部件信息"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _tooltipTitle.fontStyle = FontStyle.Bold;
             _tooltipTitle.rectTransform.sizeDelta = new Vector2(128f * s, 12f * s);
@@ -1141,7 +1141,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     {
                         item.EmptySlotText.gameObject.SetActive(true);
                         item.EmptySlotText.rectTransform.anchoredPosition = new Vector2(-halfRowW + 40f * s, topElementsY);
-                        SetTextIfChanged(item.EmptySlotText, "[EMPTY STAGE]");
+                        SetTextIfChanged(item.EmptySlotText, I18n.Tr("WIDGET_CTRL_EMPTY_STAGE", "[空级]"));
                     }
                     item.StageDvText.gameObject.SetActive(false);
                     item.StageMetaText.gameObject.SetActive(false);

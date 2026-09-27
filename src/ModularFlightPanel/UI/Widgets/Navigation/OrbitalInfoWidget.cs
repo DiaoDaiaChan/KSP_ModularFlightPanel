@@ -39,8 +39,8 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         // ── 顶部系统标题与轨道动力学能量胶囊 ──
-        public TextWidget Title = TextWidget.Title("ORBITAL DYNAMICS");
-        public TextWidget OrbitBadge = TextWidget.Badge("SUBORBITAL");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_NAV_ORBITAL_DYNAMICS", "轨道动力学"));
+        public TextWidget OrbitBadge = TextWidget.Badge(I18n.Tr("WIDGET_STATUS_SUBORBITAL", "亚轨道"));
 
         // ── 左列：拱点几何与倒计时 (X = -60f) ──
         public TextWidget ApLabel = new TextWidget(TextStyleRole.Label, -120f, 16f, 26f, 16f, 8.5f, TextAnchor.MiddleLeft, "AP");

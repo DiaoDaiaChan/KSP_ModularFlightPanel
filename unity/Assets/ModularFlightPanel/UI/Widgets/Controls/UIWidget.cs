@@ -28,8 +28,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         protected override bool AutoCreateCardFrame => true;
 
         // 声明式微控件
-        public TextWidget TitleWidget = TextWidget.Title("UI MANAGER");
-        public TextWidget StatusBadgeWidget = TextWidget.Badge("ACTIVE");
+        public TextWidget TitleWidget = TextWidget.Title(I18n.Tr("WIDGET_UIMGR_TITLE", "界面管理"));
+        public TextWidget StatusBadgeWidget = TextWidget.Badge(I18n.Tr("WIDGET_UIMGR_ACTIVE", "活动"));
 
         /// <summary>
         /// 外部委托：请求打开航电设计工作台 (Alt+N)
@@ -114,7 +114,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             headerRt.sizeDelta = new Vector2(0f, 36f * s);
             headerRt.anchoredPosition = Vector2.zero;
 
-            _titleText = UIFactory.CreateText(_headerRoot.transform, "Title", "❖ UI MANAGER", Mathf.RoundToInt(11f * s),
+            _titleText = UIFactory.CreateText(_headerRoot.transform, "Title", "❖ " + I18n.Tr("WIDGET_UIMGR_TITLE", "界面管理"), Mathf.RoundToInt(11f * s),
                 TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Cardinal, _cachedTheme));
             RectTransform titleRt = _titleText.GetComponent<RectTransform>();
             titleRt.anchorMin = new Vector2(0f, 0.5f);
@@ -478,7 +478,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             yrt.anchoredPosition = new Vector2(30f * s, 0f);
 
             // 名称
-            Text nameText = UIFactory.CreateText(rowObj.transform, "Name", "Widget", Mathf.RoundToInt(10f * s),
+            Text nameText = UIFactory.CreateText(rowObj.transform, "Name", I18n.Tr("WIDGET_FALLBACK_NAME", "组件"), Mathf.RoundToInt(10f * s),
                 TextAnchor.MiddleLeft, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Label, _cachedTheme));
             RectTransform nrt = nameText.GetComponent<RectTransform>();
             nrt.anchorMin = new Vector2(0f, 0.5f);

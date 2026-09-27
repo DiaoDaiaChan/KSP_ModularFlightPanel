@@ -24,7 +24,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件
-        public TextWidget ClockDisplay = TextWidget.Title("T+ 0y, 0d, 00:00:00");
+        public TextWidget ClockDisplay = TextWidget.Title(I18n.Tr("WIDGET_TW_CLOCK_PLACEHOLDER", "T+ 0y, 0d, 00:00:00"));
 
         private Image _panelBg;
         private Outline _panelOutline;
@@ -93,7 +93,7 @@ namespace ModularFlightPanel.UI.Widgets
             _modeBtnText.GetComponent<RectTransform>().sizeDelta = modeBtnSize;
 
             // 高对比度数字时钟读数 (T+ 0y, 0d, 02:44:16)
-            _clockText = UIFactory.CreateText(panel.transform, "ClockText", "T+ 0y, 0d, 00:00:00",
+            _clockText = UIFactory.CreateText(panel.transform, "ClockText", I18n.Tr("WIDGET_TW_CLOCK_PLACEHOLDER", "T+ 0y, 0d, 00:00:00"),
                 Mathf.Max(9, Mathf.RoundToInt(10.5f * s)), TextAnchor.MiddleLeft, textPrimary);
             _clockText.fontStyle = FontStyle.Bold;
             RectTransform clockRt = _clockText.GetComponent<RectTransform>();
@@ -105,7 +105,7 @@ namespace ModularFlightPanel.UI.Widgets
             _pauseBtn = UIFactory.CreateButton(panel.transform, "Btn_Pause", pauseBtnSize,
                 new Vector2(panelSize.x * 0.5f - 42f * s, topY), OnTogglePause);
             _pauseBtn.GetComponent<Image>().color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _pauseBtnText = UIFactory.CreateText(_pauseBtn.transform, "Text", "PAUSE",
+            _pauseBtnText = UIFactory.CreateText(_pauseBtn.transform, "Text", I18n.Tr("WIDGET_TIMEWARP_PAUSE", "暂停"),
                 Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _pauseBtnText.GetComponent<RectTransform>().sizeDelta = pauseBtnSize;
 
@@ -128,7 +128,7 @@ namespace ModularFlightPanel.UI.Widgets
             float botY = -10f * s;
 
             // 加速模式标志 (WARP / PHYS)
-            _warpModeText = UIFactory.CreateText(panel.transform, "WarpMode", "WARP",
+            _warpModeText = UIFactory.CreateText(panel.transform, "WarpMode", I18n.Tr("WIDGET_TIMEWARP_WARP", "时间加速"),
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft, secondaryAccent);
             RectTransform wmRt = _warpModeText.GetComponent<RectTransform>();
             wmRt.sizeDelta = new Vector2(28f * s, 16f * s);

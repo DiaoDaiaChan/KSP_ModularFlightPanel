@@ -22,8 +22,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
         // 声明式微控件
-        public TextWidget RangeTitle = TextWidget.Title("RANGE");
-        public TextWidget RateTitle = TextWidget.Title("RATE");
+        public TextWidget RangeTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_RANGE", "距离"));
+        public TextWidget RateTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_RATE", "速率"));
 
         private Image _bgImage;
         private Outline _outline;
@@ -84,11 +84,11 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            _rollLabelText = GetTemplateChannel("ROLL_LABEL", "ROLL");
-            _pitchLabelText = GetTemplateChannel("PITCH_LABEL", "PITCH");
-            _yawLabelText = GetTemplateChannel("YAW_LABEL", "YAW");
-            _rangeLabelText = GetTemplateChannel("RANGE_LABEL", "RANGE");
-            _rateLabelText = GetTemplateChannel("RATE_LABEL", "RATE");
+            _rollLabelText = GetTemplateChannel("ROLL_LABEL", I18n.Tr("WIDGET_SPX_ROLL", "滚转"));
+            _pitchLabelText = GetTemplateChannel("PITCH_LABEL", I18n.Tr("WIDGET_SPX_PITCH", "俯仰"));
+            _yawLabelText = GetTemplateChannel("YAW_LABEL", I18n.Tr("WIDGET_SPX_YAW", "偏航"));
+            _rangeLabelText = GetTemplateChannel("RANGE_LABEL", I18n.Tr("WIDGET_SPX_RANGE", "距离"));
+            _rateLabelText = GetTemplateChannel("RATE_LABEL", I18n.Tr("WIDGET_SPX_RATE", "速率"));
             _rangeToken = GetTemplateChannel("RANGE_TOKEN", "{ALT:AGL:DIST}");
             _rateToken = GetTemplateChannel("RATE_TOKEN", null);
             _xyzTemplate = GetTemplateChannel("XYZ_TEMPLATE", "X {0:F1}m\nY {1:F1}m\nZ {2:F1}m").Replace("\\n", "\n");
@@ -249,7 +249,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _rateValue.rectTransform.sizeDelta = new Vector2(60f * s, 14f * s);
 
             // 左侧上部：XYZ 相对偏移
-            _xyzOffsets = UIFactory.CreateText(transform, "XyzOffsets", "X  0.0m\nY  0.0m\nZ  0.0m", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Muted, theme));
+            _xyzOffsets = UIFactory.CreateText(transform, "XyzOffsets", I18n.Tr("WIDGET_SPX_XYZ_OFFSETS", "X  0.0m\nY  0.0m\nZ  0.0m"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Muted, theme));
             _xyzOffsets.rectTransform.anchoredPosition = new Vector2(-75f * s, 35f * s);
             _xyzOffsets.rectTransform.sizeDelta = new Vector2(50f * s, 36f * s);
         }

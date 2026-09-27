@@ -26,7 +26,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 
         // 声明式微控件
-        public TextWidget Title = TextWidget.Title("SPEED");
+        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SPX_SPEED", "速度"));
         public TextWidget Value = TextWidget.Value("{SPD}");
 
         // UI 视图节点

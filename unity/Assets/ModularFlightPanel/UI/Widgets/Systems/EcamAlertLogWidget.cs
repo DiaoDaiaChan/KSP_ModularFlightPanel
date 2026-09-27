@@ -266,7 +266,7 @@ namespace ModularFlightPanel.UI.Widgets
             _phaseBadgeOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             _phaseBadgeOutline.effectDistance = new Vector2(0.6f * s, 0.6f * s);
 
-            _phaseBadgeText = UIFactory.CreateText(phaseObj.transform, "PhaseText", "ORBIT", Mathf.RoundToInt(7.5f * s),
+            _phaseBadgeText = UIFactory.CreateText(phaseObj.transform, "PhaseText", I18n.Tr("PHASE_ORBIT", "轨道巡航"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Unit, theme));
             _phaseBadgeText.fontStyle = FontStyle.Bold;
             _phaseBadgeText.rectTransform.sizeDelta = new Vector2(44f * s, 16f * s);
@@ -348,13 +348,13 @@ namespace ModularFlightPanel.UI.Widgets
                 badgeOutline.effectColor = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.5f);
                 badgeOutline.effectDistance = new Vector2(0.6f * s, 0.6f * s);
 
-                Text iconText = UIFactory.CreateText(badgeObj.transform, "Icon", "MEMO", Mathf.RoundToInt(7.5f * s),
+                Text iconText = UIFactory.CreateText(badgeObj.transform, "Icon", I18n.Tr("WIDGET_EICAS_MEMO", "备忘"), Mathf.RoundToInt(7.5f * s),
                     TextAnchor.MiddleCenter, theme.AccentPositive);
                 iconText.fontStyle = FontStyle.Bold;
                 iconText.rectTransform.sizeDelta = new Vector2(28f * s, 16f * s);
 
                 // 3. 主标题 (Title)
-                Text titleText = UIFactory.CreateText(rowObj.transform, "Title", "SYSTEM NOMINAL", Mathf.RoundToInt(9.5f * s),
+                Text titleText = UIFactory.CreateText(rowObj.transform, "Title", I18n.Tr("WIDGET_EICAS_SYSTEM_NOMINAL", "系统正常"), Mathf.RoundToInt(9.5f * s),
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                 titleText.fontStyle = FontStyle.Bold;
                 titleText.rectTransform.sizeDelta = new Vector2(116f * s, ROW_HEIGHT * s);
@@ -428,7 +428,7 @@ namespace ModularFlightPanel.UI.Widgets
             _statusText.rectTransform.anchoredPosition = new Vector2((-BASE_WIDTH * 0.5f + 68f) * s, 0f);
 
             // 3. 缓冲日志计数标签 (Buffer Count Tag)
-            _bufferCountText = UIFactory.CreateText(footerObj.transform, "BufCount", "LOG 5/40", Mathf.RoundToInt(7.5f * s),
+            _bufferCountText = UIFactory.CreateText(footerObj.transform, "BufCount", I18n.Tr("WIDGET_EICAS_LOG_COUNT", "日志 5/40"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Unit, theme));
             _bufferCountText.fontStyle = FontStyle.Bold;
             _bufferCountText.rectTransform.sizeDelta = new Vector2(42f * s, FOOTER_HEIGHT * s);
@@ -1189,7 +1189,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_statusText != null) _statusText.color = theme.AccentPrimary;
             if (_statusLedDot != null) _statusLedDot.color = theme.AccentPrimary;
             if (_statusLedHalo != null) _statusLedHalo.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.25f);
-            SetTextIfChanged(_bufferCountText, "PAGE 1/1");
+            SetTextIfChanged(_bufferCountText, I18n.Tr("WIDGET_EICAS_PAGE_COUNT", "页 1/1"));
 
             if (_btnStsBg != null) _btnStsBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.35f);
             if (_btnStsOutline != null) _btnStsOutline.effectColor = theme.AccentPrimary;

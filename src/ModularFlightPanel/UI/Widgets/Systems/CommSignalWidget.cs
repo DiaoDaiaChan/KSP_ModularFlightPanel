@@ -24,7 +24,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式微控件
-        public TextWidget TargetName = TextWidget.Title("COMMNET");
+        public TextWidget TargetName = TextWidget.Title(I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
 
         private Image _panelBg;
         private Outline _panelOutline;
@@ -108,13 +108,13 @@ namespace ModularFlightPanel.UI.Widgets
             GameObject ctrlBg = UIFactory.CreatePanel(_capsuleBar.transform, "CtrlBadge", ctrlSize,
                 new Vector2(-baseSize.x * 0.5f + 46f * s, 0f), WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success));
             _ctrlBadgeBg = ctrlBg.GetComponent<Image>();
-            _ctrlBadgeText = UIFactory.CreateText(ctrlBg.transform, "Text", "FULL",
+            _ctrlBadgeText = UIFactory.CreateText(ctrlBg.transform, "Text", I18n.Tr("WIDGET_SIGNAL_FULL", "满格"),
                 Mathf.Max(7, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleCenter, primaryAccent);
             _ctrlBadgeText.fontStyle = FontStyle.Bold;
             _ctrlBadgeText.GetComponent<RectTransform>().sizeDelta = ctrlSize;
 
             // 主站点/对端名称
-            _targetNameText = UIFactory.CreateText(_capsuleBar.transform, "TargetName", "KSAT - Singapore",
+            _targetNameText = UIFactory.CreateText(_capsuleBar.transform, "TargetName", I18n.Tr("WIDGET_SIG_KSAT_SINGAPORE", "新加坡 KSAT 站"),
                 Mathf.Max(7, Mathf.RoundToInt(8.5f * s)), TextAnchor.MiddleLeft, textPrimary);
             _targetNameText.fontStyle = FontStyle.Bold;
             RectTransform tgtRt = _targetNameText.GetComponent<RectTransform>();
@@ -156,14 +156,14 @@ namespace ModularFlightPanel.UI.Widgets
                 WidgetStyleManager.WithAlpha(WidgetStyleManager.Darken(bgCol, 0.20f), 0.96f), borderCol, 1f * s);
 
             // 标题
-            _matrixTitleText = UIFactory.CreateText(_dropdownPanel.transform, "MatrixTitle", "REALANTENNAS / COMMNET",
+            _matrixTitleText = UIFactory.CreateText(_dropdownPanel.transform, "MatrixTitle", I18n.Tr("WIDGET_SIGNAL_TITLE", "REALANTENNAS / COMMNET"),
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft, secondaryAccent);
             RectTransform mTitRt = _matrixTitleText.GetComponent<RectTransform>();
             mTitRt.sizeDelta = new Vector2(120f * s, 14f * s);
             mTitRt.anchoredPosition = new Vector2(-dropSize.x * 0.5f + 66f * s, dropSize.y * 0.5f - 10f * s);
 
             // 双向信号与速率摘要
-            _matrixSummaryText = UIFactory.CreateText(_dropdownPanel.transform, "MatrixSummary", "Tx/Rx: 90%/90%  15.8 Kbps",
+            _matrixSummaryText = UIFactory.CreateText(_dropdownPanel.transform, "MatrixSummary", I18n.Tr("WIDGET_SIG_TXRX_PLACEHOLDER", "发射/接收: 90%/90%  15.8 Kbps"),
                 Mathf.Max(6, Mathf.RoundToInt(7f * s)), TextAnchor.MiddleRight, textPrimary);
             RectTransform mSumRt = _matrixSummaryText.GetComponent<RectTransform>();
             mSumRt.sizeDelta = new Vector2(110f * s, 14f * s);
@@ -185,7 +185,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 底部脚注
             _matrixFooterText = UIFactory.CreateText(_dropdownPanel.transform, "MatrixFooter",
-                "● 5 ACTIVE LINKS  |  RA MATRIX TELEMETRY",
+                I18n.Tr("WIDGET_SIG_MATRIX_FOOTER_INIT", "● 5 活动链路  |  RA 矩阵遥测"),
                 Mathf.Max(6, Mathf.RoundToInt(6.5f * s)), TextAnchor.MiddleCenter, WidgetStyleManager.Weighted(secondaryAccent, LineWeight.Bold));
             RectTransform footRt = _matrixFooterText.GetComponent<RectTransform>();
             footRt.sizeDelta = new Vector2(dropSize.x, 12f * s);
@@ -319,7 +319,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 主站点名称与综合速率 (CustomTemplate 驱动与 Dirty Cache)
-            string targetFallback = GetTemplateChannel("TARGET_FALLBACK", "COMMNET");
+            string targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
             string tgt = telemetry.DirectLinkTarget;
             string newTgtName = string.IsNullOrEmpty(tgt) ? targetFallback : tgt;
             if (_targetNameText != null && newTgtName != _lastTargetName)
@@ -339,7 +339,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 4. 抽屉矩阵更新
             if (_dropdownPanel != null && _dropdownPanel.activeSelf)
             {
-                string summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", "Tx/Rx: {COMM:TX}/{COMM:RX}  {COMM:RATE}");
+                string summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
                 string newMatrixSummary = TelemetryTokenEngine.Evaluate(summaryTemplate, telemetry);
                 if (_matrixSummaryText != null && newMatrixSummary != _lastMatrixSummary)
                 {

@@ -202,7 +202,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             float rightCX = colW * 0.5f + 10f * s;      // 右栏中心 X
 
             // 左栏小标签: COUNTDOWN
-            _countdownLabel = UIFactory.CreateText(transform, "Countdown_Label", "COUNTDOWN", Mathf.RoundToInt(7f * s), TextAnchor.MiddleRight,
+            _countdownLabel = UIFactory.CreateText(transform, "Countdown_Label", I18n.Tr("WIDGET_NAV_COUNTDOWN", "倒计时"), Mathf.RoundToInt(7f * s), TextAnchor.MiddleRight,
                 style.GetTextColor(TextStyleRole.Label, theme));
             _countdownLabel.fontStyle = FontStyle.Bold;
             RectTransform clRt = _countdownLabel.rectTransform;
@@ -210,7 +210,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             clRt.anchoredPosition = new Vector2(leftCX, labelY);
 
             // 左栏大字读数: T- 05:20
-            _countdownText = UIFactory.CreateText(transform, "Countdown_Readout", "T- --:--", Mathf.RoundToInt(20f * s), TextAnchor.MiddleRight,
+            _countdownText = UIFactory.CreateText(transform, "Countdown_Readout", I18n.Tr("WIDGET_NAV_T_COUNTDOWN_PLACEHOLDER", "T- --:--"), Mathf.RoundToInt(20f * s), TextAnchor.MiddleRight,
                 style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _countdownText.fontStyle = FontStyle.Bold;
             RectTransform cntRt = _countdownText.rectTransform;
@@ -227,7 +227,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _heroDivider.raycastTarget = false;
 
             // 右栏小标签: Δv REMAINING
-            _deltaVLabel = UIFactory.CreateText(transform, "DeltaV_Label", "\u0394v REMAINING", Mathf.RoundToInt(7f * s), TextAnchor.MiddleLeft,
+            _deltaVLabel = UIFactory.CreateText(transform, "DeltaV_Label", I18n.Tr("WIDGET_NAV_DV_REMAINING", "剩余 \u0394v"), Mathf.RoundToInt(7f * s), TextAnchor.MiddleLeft,
                 style.GetTextColor(TextStyleRole.Label, theme));
             _deltaVLabel.fontStyle = FontStyle.Bold;
             RectTransform dlRt = _deltaVLabel.rectTransform;
@@ -245,7 +245,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // ═══════════════════════════════════════════════════════
             // TIER 3 (下层): 单行三轴矢量遥测标牌 (y = -26)
             // ═══════════════════════════════════════════════════════
-            _vectorSubtitleText = UIFactory.CreateText(transform, "Vector_Subtitle", "STANDBY", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter,
+            _vectorSubtitleText = UIFactory.CreateText(transform, "Vector_Subtitle", I18n.Tr("PHASE_STANDBY", "待机"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter,
                 style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _vectorSubtitleText.fontStyle = FontStyle.Bold;
             RectTransform subRt = _vectorSubtitleText.rectTransform;
@@ -604,9 +604,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _lastRadial = double.NaN;
             _lastCachedPipProgress = -1f;
 
-            SetTextIfChanged(_countdownText, "NO NODE");
+            SetTextIfChanged(_countdownText, I18n.Tr("WIDGET_NAV_NO_NODE", "无节点"));
             SetTextIfChanged(_deltaVText, "--- m/s");
-            SetTextIfChanged(_vectorSubtitleText, "AWAITING MANEUVER FLIGHT PLAN");
+            SetTextIfChanged(_vectorSubtitleText, I18n.Tr("WIDGET_NAV_AWAITING_PLAN", "等待机动飞行计划"));
 
             if (_progressPipRt != null)
             {

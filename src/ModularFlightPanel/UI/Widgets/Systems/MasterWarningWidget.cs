@@ -338,7 +338,7 @@ namespace ModularFlightPanel.UI.Widgets
             _cautIcon.rectTransform.anchoredPosition = new Vector2(-size.x * 0.5f + 6f * s, 0f);
 
             // 主标题
-            _cautTitle = UIFactory.CreateText(_cautCell.transform, "Title", "CAUTION", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)),
+            _cautTitle = UIFactory.CreateText(_cautCell.transform, "Title", I18n.Tr("WIDGET_ALERT_CAUTION", "注意"), Mathf.Max(7, Mathf.RoundToInt(7.5f * s)),
                 TextAnchor.MiddleCenter, theme.WarningColor);
             _cautTitle.fontStyle = FontStyle.Bold;
             _cautTitle.rectTransform.sizeDelta = new Vector2(58f * s, size.y);
@@ -376,14 +376,14 @@ namespace ModularFlightPanel.UI.Widgets
             _warnIcon.rectTransform.anchoredPosition = new Vector2(-size.x * 0.5f + 6f * s, 0f);
 
             // 主标题
-            _warnTitle = UIFactory.CreateText(_warnCell.transform, "Title", "WARNING", Mathf.Max(7, Mathf.RoundToInt(7.5f * s)),
+            _warnTitle = UIFactory.CreateText(_warnCell.transform, "Title", I18n.Tr("WIDGET_ALERT_WARNING", "警告"), Mathf.Max(7, Mathf.RoundToInt(7.5f * s)),
                 TextAnchor.MiddleCenter, theme.DangerColor);
             _warnTitle.fontStyle = FontStyle.Bold;
             _warnTitle.rectTransform.sizeDelta = new Vector2(58f * s, size.y);
             _warnTitle.rectTransform.anchoredPosition = Vector2.zero;
 
             // 右侧微型附注
-            _warnSub = UIFactory.CreateText(_warnCell.transform, "Sub", "ARMED", Mathf.Max(6, Mathf.RoundToInt(6f * s)),
+            _warnSub = UIFactory.CreateText(_warnCell.transform, "Sub", I18n.Tr("WIDGET_ALERT_ARMED", "待发"), Mathf.Max(6, Mathf.RoundToInt(6f * s)),
                 TextAnchor.MiddleRight, theme.DangerColor);
             _warnSub.fontStyle = FontStyle.Normal;
             _warnSub.rectTransform.sizeDelta = new Vector2(22f * s, size.y);

@@ -305,9 +305,9 @@ namespace ModularFlightPanel.UI.Widgets
             _egtLabel = UIFactory.CreateText(transform, "Label_EGT", "EGT", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, textAccent);
             _n2Label = UIFactory.CreateText(transform, "Label_N2", "N2", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, textAccent);
             _ffLabel = UIFactory.CreateText(transform, "Label_FF", "FF", Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, textAccent);
-            _oilPLabel = UIFactory.CreateText(transform, "Label_OilP", "OIL\nPRESS", Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
-            _oilTLabel = UIFactory.CreateText(transform, "Label_OilT", "OIL\nTEMP", Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
-            _oilQLabel = UIFactory.CreateText(transform, "Label_OilQ", "OIL QTY", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleCenter, textAccent);
+            _oilPLabel = UIFactory.CreateText(transform, "Label_OilP", I18n.Tr("WIDGET_EICAS_OIL_PRESS", "滑油\n压力"), Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
+            _oilTLabel = UIFactory.CreateText(transform, "Label_OilT", I18n.Tr("WIDGET_EICAS_OIL_TEMP", "滑油\n温度"), Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
+            _oilQLabel = UIFactory.CreateText(transform, "Label_OilQ", I18n.Tr("WIDGET_EICAS_OIL_QTY", "滑油量"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleCenter, textAccent);
             _vibLabel = UIFactory.CreateText(transform, "Label_VIB", "VIB", Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, textAccent);
 
             // 5. 构建 4 发预分配纵列容器
@@ -329,14 +329,14 @@ namespace ModularFlightPanel.UI.Widgets
             _gearBoxOutline = gearBoxObj.GetComponent<Outline>();
             SetTopCenterAnchor(gearBoxObj.GetComponent<RectTransform>(), 0f, -28f * s, 38f * s, 18f * s);
 
-            _gearStatusText = UIFactory.CreateText(gearBoxObj.transform, "Gear_Status", "DOWN", Mathf.RoundToInt(9f * s),
+            _gearStatusText = UIFactory.CreateText(gearBoxObj.transform, "Gear_Status", I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), Mathf.RoundToInt(9f * s),
                 TextAnchor.MiddleCenter, textAccent);
             _gearStatusText.rectTransform.anchorMin = Vector2.zero;
             _gearStatusText.rectTransform.anchorMax = Vector2.one;
             _gearStatusText.rectTransform.sizeDelta = Vector2.zero;
             _gearStatusText.rectTransform.anchoredPosition = Vector2.zero;
 
-            _gearLabelText = UIFactory.CreateText(_rightSystemsRt, "Gear_Label", "GEAR", Mathf.RoundToInt(7.5f * s),
+            _gearLabelText = UIFactory.CreateText(_rightSystemsRt, "Gear_Label", I18n.Tr("WIDGET_EICAS_GEAR", "起落架"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleCenter, textAccent);
             SetTopCenterAnchor(_gearLabelText.rectTransform, 0f, -44f * s, 38f * s, 12f * s);
 
@@ -345,7 +345,7 @@ namespace ModularFlightPanel.UI.Widgets
             float flapsY = -82f * s;
             float flapsH = 42f * s;
 
-            _flapsLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_FLAPS", "F\nL\nA\nP\nS", Mathf.RoundToInt(7f * s),
+            _flapsLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_FLAPS", I18n.Tr("WIDGET_EICAS_FLAPS", "襟\n翼"), Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleCenter, textAccent);
             SetTopCenterAnchor(_flapsLabelText.rectTransform, flapsTrackX - 16f * s, flapsY, 12f * s, flapsH);
 
@@ -380,7 +380,7 @@ namespace ModularFlightPanel.UI.Widgets
                 TextAnchor.MiddleRight, textPrimary);
             SetTopCenterAnchor(_stabNdText.rectTransform, stabTrackX - 12f * s, stabY + stabH * 0.5f - 4f * s, 16f * s, 10f * s);
 
-            _stabNuText = UIFactory.CreateText(_rightSystemsRt, "Stab_NU", "NU", Mathf.RoundToInt(7f * s),
+            _stabNuText = UIFactory.CreateText(_rightSystemsRt, "Stab_NU", I18n.Tr("WIDGET_EICAS_STAB_NU", "抬头"), Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleRight, textPrimary);
             SetTopCenterAnchor(_stabNuText.rectTransform, stabTrackX - 12f * s, stabY - stabH * 0.5f + 4f * s, 16f * s, 10f * s);
 
@@ -405,7 +405,7 @@ namespace ModularFlightPanel.UI.Widgets
             _stabPointerRt.anchorMax = new Vector2(0.5f, 0.5f);
             _stabPointerRt.pivot = new Vector2(0.5f, 0.5f);
 
-            _stabLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_STAB", "S\nT\nA\nB", Mathf.RoundToInt(7.5f * s),
+            _stabLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_STAB", I18n.Tr("WIDGET_EICAS_STAB", "安\n定\n面"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleCenter, textPrimary);
             SetTopCenterAnchor(_stabLabelText.rectTransform, -6f * s, stabY, 12f * s, stabH);
 
@@ -429,7 +429,7 @@ namespace ModularFlightPanel.UI.Widgets
             _rudderPointerRt = rudPtrObj.GetComponent<RectTransform>();
             _rudderPointerImg = rudPtrObj.GetComponent<Image>();
 
-            _rudderLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_Rudder", "RUDDER TRIM", Mathf.RoundToInt(6.5f * s),
+            _rudderLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_Rudder", I18n.Tr("WIDGET_EICAS_RUDDER_TRIM", "方向舵配平"), Mathf.RoundToInt(6.5f * s),
                 TextAnchor.MiddleCenter, textAccent);
             SetTopCenterAnchor(_rudderLabelText.rectTransform, rudderX, -153f * s, 60f * s, 11f * s);
 
@@ -446,19 +446,19 @@ namespace ModularFlightPanel.UI.Widgets
             _cabAltValue = UIFactory.CreateText(_rightSystemsRt, "Val_CabAlt", "6000", Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, textPrimary);
             SetTopCenterAnchor(_cabAltValue.rectTransform, ecsValX, ecsY1, 36f * s, 12f * s);
 
-            _cabRateLabel = UIFactory.CreateText(_rightSystemsRt, "Label_Rate", "RATE", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
+            _cabRateLabel = UIFactory.CreateText(_rightSystemsRt, "Label_Rate", I18n.Tr("WIDGET_EICAS_RATE", "速率"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
             SetTopCenterAnchor(_cabRateLabel.rectTransform, ecsLabelX, ecsY2, 44f * s, 12f * s);
             _cabRateValue = UIFactory.CreateText(_rightSystemsRt, "Val_Rate", "+400", Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, textPrimary);
             SetTopCenterAnchor(_cabRateValue.rectTransform, ecsValX, ecsY2, 36f * s, 12f * s);
 
-            _deltaPLabel = UIFactory.CreateText(_rightSystemsRt, "Label_DeltaP", "\u0394 P", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
+            _deltaPLabel = UIFactory.CreateText(_rightSystemsRt, "Label_DeltaP", I18n.Tr("WIDGET_EICAS_DELTA_P", "压差"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
             SetTopCenterAnchor(_deltaPLabel.rectTransform, ecsLabelX, ecsY3, 44f * s, 12f * s);
             _deltaPValue = UIFactory.CreateText(_rightSystemsRt, "Val_DeltaP", "4.0", Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, textPrimary);
             SetTopCenterAnchor(_deltaPValue.rectTransform, ecsValX, ecsY3, 36f * s, 12f * s);
 
             _ldgAltLabel = UIFactory.CreateText(_rightSystemsRt, "Label_LdgAlt", "LDG ALT", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
             SetTopCenterAnchor(_ldgAltLabel.rectTransform, ecsLabelX, ecsY4, 44f * s, 12f * s);
-            _ldgAltValue = UIFactory.CreateText(_rightSystemsRt, "Val_LdgAlt", "6 AUTO", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleRight, textPrimary);
+            _ldgAltValue = UIFactory.CreateText(_rightSystemsRt, "Val_LdgAlt", "6 " + I18n.Tr("WIDGET_EICAS_AUTO", "自动"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleRight, textPrimary);
             SetTopCenterAnchor(_ldgAltValue.rectTransform, ecsValX + 4f * s, ecsY4, 42f * s, 12f * s);
 
             // 双外流阀 (FWD / AFT)
@@ -494,15 +494,15 @@ namespace ModularFlightPanel.UI.Widgets
             _summaryBoxOutline = sumBoxObj.GetComponent<Outline>();
             SetTopCenterAnchor(sumBoxObj.GetComponent<RectTransform>(), 0f, sumBoxY, sumBoxW, sumBoxH);
 
-            _grossWtLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_GW", "GROSS WT", Mathf.RoundToInt(7f * s),
+            _grossWtLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_GW", I18n.Tr("WIDGET_EICAS_GROSS_WT", "全重"), Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleCenter, textAccent);
             SetTopCenterAnchor(_grossWtLabel.rectTransform, -38f * s, -6f * s, 46f * s, 11f * s);
 
-            _unitsLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_Units", "LBS X\n1000", Mathf.RoundToInt(6.5f * s),
+            _unitsLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_Units", I18n.Tr("WIDGET_EICAS_UNITS_LBS", "磅 ×\n1000"), Mathf.RoundToInt(6.5f * s),
                 TextAnchor.MiddleCenter, textLabel);
             SetTopCenterAnchor(_unitsLabel.rectTransform, 0f, -6f * s, 28f * s, 20f * s);
 
-            _totalFuelLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_TF", "TOTAL FUEL", Mathf.RoundToInt(7f * s),
+            _totalFuelLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_TF", I18n.Tr("WIDGET_EICAS_TOTAL_FUEL", "总燃料"), Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleCenter, textAccent);
             SetTopCenterAnchor(_totalFuelLabel.rectTransform, 38f * s, -6f * s, 46f * s, 11f * s);
 
@@ -535,7 +535,7 @@ namespace ModularFlightPanel.UI.Widgets
                 TextAnchor.MiddleLeft, textAccent);
             SetTopCenterAnchor(_satText.rectTransform, -36f * s, -42f * s, 44f * s, 11f * s);
 
-            _fuelTempText = UIFactory.CreateText(sumBoxObj.transform, "Fuel_Temp_Text", "FUEL TEMP 0", Mathf.RoundToInt(7f * s),
+            _fuelTempText = UIFactory.CreateText(sumBoxObj.transform, "Fuel_Temp_Text", I18n.Tr("WIDGET_EICAS_FUEL_TEMP", "燃油温度") + " 0", Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleRight, textAccent);
             SetTopCenterAnchor(_fuelTempText.rectTransform, 36f * s, -42f * s, 52f * s, 11f * s);
 

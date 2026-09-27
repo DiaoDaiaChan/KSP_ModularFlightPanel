@@ -35,7 +35,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 声明式微控件
         public TextWidget TopTitle = TextWidget.Title("THR");
-        public TextWidget BottomTag = TextWidget.Badge("IDLE");
+        public TextWidget BottomTag = TextWidget.Badge(I18n.Tr("WIDGET_GAUGE_IDLE", "待机"));
 
         private BarGaugeKind _kind;
 
