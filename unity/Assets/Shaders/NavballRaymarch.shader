@@ -532,12 +532,64 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float baseLuma = dot(col.rgb, float3(0.299, 0.587, 0.114));
                 col.rgb = lerp(float3(baseLuma, baseLuma, baseLuma), col.rgb, 0.84);
 
-                // 2. 复合光学地平线系统 (Multi-Layer Optical Horizon)
+                // 2. 复合赤道腰带系统 (Equatorial Belt System: pitch in [-4.8°, +4.8°])
                 float eqAA = clamp(fwidth(p.y) * 0.75, 0.0003, 0.012);
-                float isCoreEquator = 1.0 - smoothstep(_EquatorWidth * 0.80 - eqAA, _EquatorWidth * 0.80 + eqAA, absY);
-                float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.2 - eqAA, _EquatorWidth * 2.2 + eqAA, absY)) * 0.35;
-                float combinedEquator = max(isCoreEquator, isHaloEquator);
-                col = lerp(col, _EquatorColor, saturate(combinedEquator * _EquatorColor.a));
+                float beltPitchAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.15);
+                float beltHalfWidth = 4.8;
+                float inBelt = 1.0 - smoothstep(beltHalfWidth - beltPitchAA, beltHalfWidth + beltPitchAA, absPitch);
+
+                if (inBelt > 0.001)
+                {
+                    fixed4 beltCol;
+                    // Mode 1: INERTIAL - 经典天球赤道天青带 (Celestial Equator Horizon Blue: Principia 规范)
+                    if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                    {
+                        beltCol = fixed4(0.24, 0.44, 0.72, 0.88);
+                    }
+                    // Mode 2: LAGRANGE - 雅可比势能深紫罗兰带 (Lagrangian Violet)
+                    else if (_FramePattern > 1.5 && _FramePattern < 2.5)
+                    {
+                        beltCol = fixed4(0.32, 0.16, 0.48, 0.88);
+                    }
+                    // Mode 3: TARGET - 进近雷达走廊暗铅灰带 (Docking Corridor Slate)
+                    else if (_FramePattern > 2.5 && _FramePattern < 3.5)
+                    {
+                        beltCol = fixed4(0.14, 0.18, 0.24, 0.85);
+                    }
+                    // Mode 4: ORBIT - 轨道面海军蓝动量流光带 (Orbital Momentum Navy)
+                    else if (_FramePattern > 3.5 && _FramePattern < 4.5)
+                    {
+                        beltCol = fixed4(0.08, 0.22, 0.44, 0.90);
+                    }
+                    // Mode 5: BODY_FIXED - 大地测绘深海钛青带 (Geographic Oceanic Teal)
+                    else if (_FramePattern > 4.5)
+                    {
+                        beltCol = fixed4(0.10, 0.28, 0.48, 0.88);
+                    }
+                    // Mode 0: SURFACE - 经典航空深邃海天分界带 (Aero Horizon Ribbon)
+                    else
+                    {
+                        beltCol = fixed4(0.16, 0.36, 0.65, 0.85);
+                    }
+
+                    // 腰带上下边界高反差嵌边白线 (Belt Edge Rims at ±4.8°)
+                    float edgeDist = abs(absPitch - beltHalfWidth);
+                    float isBeltRim = 1.0 - smoothstep(0.24 - beltPitchAA, 0.24 + beltPitchAA, edgeDist);
+
+                    // 中心赤道基准白线 (Core Equator Line at 0°)
+                    float isCoreEquator = 1.0 - smoothstep(_EquatorWidth * 0.80 - eqAA, _EquatorWidth * 0.80 + eqAA, absY);
+                    float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.2 - eqAA, _EquatorWidth * 2.2 + eqAA, absY)) * 0.35;
+                    float combinedEquator = max(isCoreEquator, isHaloEquator);
+
+                    col.rgb = lerp(col.rgb, beltCol.rgb, inBelt * beltCol.a);
+                    col = lerp(col, _EquatorColor, saturate(max(combinedEquator, isBeltRim * 0.75) * _EquatorColor.a));
+                }
+                else
+                {
+                    // 赤道线外晕微弱扩展
+                    float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.2 - eqAA, _EquatorWidth * 2.2 + eqAA, absY)) * 0.35;
+                    col = lerp(col, _EquatorColor, saturate(isHaloEquator * _EquatorColor.a));
+                }
 
                 // 极点渐隐防聚集保护 (Polar Ring-Bunching Protection)
                 // 75° 梯级中心位于 75.0°，渐隐区调整至 78.0°~83.0°，确保 75° 梯级 100% 清晰呈现，且在 85° 极标前干净隐退
@@ -738,6 +790,71 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     float headingNumberMask = (headingRadialSq < 42.0) ? (1.0 - smoothstep(5.5, 7.5, absPitch)) : 0.0;
                     isMeridian *= (1.0 - max(pitchLabelGap, headingNumberMask));
                     col = lerp(col, _HeadingLineColor, saturate(isMeridian * _HeadingLineColor.a));
+                }
+
+                // 4.5. 0° (Prime) 与 180° (Anti) 醒目全周子午分界线 (Red & Green Great Circle Dividers: 对标 Principia 规范)
+                float primeAngle = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
+                float antiAngle  = abs(headDeg - 180.0);
+
+                if (primeAngle < 3.5 || antiAngle < 3.5)
+                {
+                    float cosP = max(cos(radians(absPitch)), 0.06);
+                    float primeArc = primeAngle * cosP;
+                    float antiArc  = antiAngle * cosP;
+
+                    float splitAA = clamp(fwidth(primeArc) * 0.75, 0.001, 0.15);
+                    float isPrimeCore = 1.0 - smoothstep(0.65 - splitAA, 0.65 + splitAA, primeArc);
+                    float isPrimeHalo = (1.0 - smoothstep(1.50 - splitAA, 1.50 + splitAA, primeArc)) * 0.40;
+                    float isPrime = max(isPrimeCore, isPrimeHalo);
+
+                    float isAntiCore  = 1.0 - smoothstep(0.65 - splitAA, 0.65 + splitAA, antiArc);
+                    float isAntiHalo  = (1.0 - smoothstep(1.50 - splitAA, 1.50 + splitAA, antiArc)) * 0.40;
+                    float isAnti = max(isAntiCore, isAntiHalo);
+
+                    // 延伸至极标正交翼无缝咬合 (在 85° 前保持饱满)
+                    float dividerFade = 1.0 - smoothstep(84.0, 87.5, absPitch);
+
+                    fixed3 primeColor;
+                    fixed3 antiColor;
+
+                    // 参考系天文学与航电分色：
+                    // Mode 4: ORBIT - 0° 顺行 Prograde 绿 / 180° 逆行 Retrograde 红
+                    if (_FramePattern > 3.5 && _FramePattern < 4.5)
+                    {
+                        primeColor = fixed3(0.08, 0.98, 0.28); // 顺行鲜绿 (Prograde Green)
+                        antiColor  = fixed3(0.98, 0.16, 0.16); // 逆行鲜红 (Retrograde Red)
+                    }
+                    // Mode 1: INERTIAL - 0h 春分点 红 / 12h 秋分点 绿 (Principia 科学规范)
+                    else if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                    {
+                        primeColor = fixed3(0.96, 0.18, 0.18); // 春分点红 (Vernal Equinox)
+                        antiColor  = fixed3(0.12, 0.90, 0.32); // 秋分点绿 (Autumnal Equinox)
+                    }
+                    // Mode 2: LAGRANGE - 0° 次天体 绿 / 180° 主天体 红
+                    else if (_FramePattern > 1.5 && _FramePattern < 2.5)
+                    {
+                        primeColor = fixed3(0.15, 0.92, 0.40); // 次天体绿 (Secondary II)
+                        antiColor  = fixed3(0.92, 0.20, 0.25); // 主天体红 (Primary I)
+                    }
+                    // Mode 3: TARGET - 0° 进近 绿 / 180° 退行 红
+                    else if (_FramePattern > 2.5 && _FramePattern < 3.5)
+                    {
+                        primeColor = fixed3(0.10, 0.96, 0.32); // 进近通道绿 (Approach In-Sight)
+                        antiColor  = fixed3(0.96, 0.16, 0.16); // 背向撤离红 (Departure Caution)
+                    }
+                    // Mode 0 & Mode 5: SURFACE & BODY_FIXED - 0° (北/本初) 亮红 / 180° (南/日界) 鲜绿
+                    else
+                    {
+                        primeColor = fixed3(0.96, 0.18, 0.18); // 真北/本初子午线红
+                        antiColor  = fixed3(0.12, 0.90, 0.32); // 真南/国际日界线绿
+                    }
+
+                    float headingRadialSq = (pitchHeadingArc) * (pitchHeadingArc) + (pitchDeg - 3.8) * (pitchDeg - 3.8);
+                    float headingNumberMask = (headingRadialSq < 42.0) ? (1.0 - smoothstep(5.5, 7.5, absPitch)) : 0.0;
+                    float dividerMask = (1.0 - max(pitchLabelGap, headingNumberMask)) * dividerFade;
+
+                    col.rgb = lerp(col.rgb, primeColor, saturate(isPrime * dividerMask * 0.95));
+                    col.rgb = lerp(col.rgb, antiColor,  saturate(isAnti  * dividerMask * 0.95));
                 }
 
                 // 5. 赤道航向刻度线 (Equator Minor Ticks)
@@ -988,7 +1105,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     col = EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, NdotV, markerClearance, signH);
 
-                    // 姿态趋势预测动态前瞻导轨 (Flight Path Lead Horizon)
+                    // 姿态趋势预测动态前瞻引导系统 (Pointer-Adjacent Flight Path Lead Trend System)
+                    // 彻底收拢全屏贯穿地平线，仅在中央固定指针机翼两侧 (x in [±0.28, ±0.52]) 呈现紧凑高清晰度前瞻小翼与拉杆向量带
                     if (_TrendStrength > 0.01)
                     {
                         // 修正参考系手性：Mode 5 与 Mode 1 需适配坐标反演
@@ -1002,37 +1120,41 @@ Shader "ModularFlightPanel/NavballRaymarch"
                             qTrend = float4(-qTrend.x, qTrend.y, -qTrend.z, qTrend.w);
                         }
 
-                        float3 futureP = normalize(RotateByQuaternion(procP, float4(-qTrend.xyz, qTrend.w)));
-                        float trendAA = clamp(fwidth(futureP.y) * 0.75, 0.0008, 0.020);
-                        
-                        // 航电级高辨识线宽：0.0075 核心 + 0.016 柔和光晕 (约 1.8~3 像素)
-                        float futureCore = 1.0 - smoothstep(0.0075 - trendAA, 0.0075 + trendAA, abs(futureP.y));
-                        float futureHalo = (1.0 - smoothstep(0.016 - trendAA, 0.016 + trendAA, abs(futureP.y))) * 0.45;
-                        float futureHorizon = max(futureCore, futureHalo);
+                        // 飞机机翼端点在视口空间的基准位置：左机翼端 (-0.32, 0), 右机翼端 (+0.32, 0)
+                        // 经 qTrend 前瞻角速度旋转，计算未来姿态下的视口机翼端点
+                        float3 leftWingV  = float3(-0.32, 0.0, 1.0);
+                        float3 rightWingV = float3( 0.32, 0.0, 1.0);
+                        float3 predLeft   = RotateByQuaternion(leftWingV,  qTrend);
+                        float3 predRight  = RotateByQuaternion(rightWingV, qTrend);
 
-                        // 沿视口弧向高频虚线 (Dash Pattern)
-                        float viewAngle = atan2(coord.x, max(z, 0.001)) * 57.2957795;
-                        float dashVal = frac((viewAngle + 180.0) / 12.0);
-                        float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.12);
-                        float trendDash = smoothstep(0.30 - dashAA, 0.30 + dashAA, dashVal);
-
-                        // 视口空间前瞻导轨翼梢 (View-Space Wingtips) - 无论朝向何方均在视口两侧呈现切向引导翼
-                        float absX = abs(coord.x);
-                        float leadWing = 0.0;
-                        if (absX > 0.40 && absX < 0.65)
+                        // 左右引导翼片元渲染 (严格限制在指针机翼外侧 abs(coord.x) in [0.28, 0.52])
+                        float absCoordX = abs(coord.x);
+                        if (absCoordX > 0.28 && absCoordX < 0.52)
                         {
-                            float wingY = abs(futureP.y);
-                            float wingMask = (1.0 - smoothstep(0.012 - trendAA, 0.012 + trendAA, wingY)) *
-                                             smoothstep(0.40, 0.48, absX) * (1.0 - smoothstep(0.58, 0.65, absX));
-                            leadWing = wingMask * 0.85;
-                        }
+                            float predY = (coord.x > 0.0) ? predRight.y : predLeft.y;
+                            float distToLeadWing = abs(coord.y - predY);
+                            float leadWingAA = clamp(fwidth(distToLeadWing) * 0.75, 0.001, 0.015);
+                            
+                            // 动态前瞻微机翼 (指示未来俯仰与滚转倾角)
+                            float isLeadWingCore = 1.0 - smoothstep(0.0070 - leadWingAA, 0.0070 + leadWingAA, distToLeadWing);
+                            float isLeadWingHalo = (1.0 - smoothstep(0.0150 - leadWingAA, 0.0150 + leadWingAA, distToLeadWing)) * 0.40;
+                            float isLeadWing = max(isLeadWingCore, isLeadWingHalo) * smoothstep(0.28, 0.33, absCoordX) * (1.0 - smoothstep(0.47, 0.52, absCoordX));
+                            
+                            // 趋势拉杆指示垂直连接带 (Trend Tape: 连接当前固定机翼与未来机翼)
+                            float currentY = 0.0;
+                            float minY = min(currentY, predY);
+                            float maxY = max(currentY, predY);
+                            float isTapeH = 1.0 - smoothstep(0.003, 0.010, abs(absCoordX - 0.40));
+                            float isTapeV = (coord.y >= minY - 0.004 && coord.y <= maxY + 0.004) ? 1.0 : 0.0;
+                            float isTrendTape = isTapeH * isTapeV * 0.75;
 
-                        float trendTotal = max(futureHorizon * trendDash, leadWing);
-                        float trendOpacity = trendTotal * _TrendStrength * 0.95;
-                        
-                        // 现代航电高对比荧光青蓝复合光色
-                        fixed3 trendColor = lerp(_HeadingLineColor.rgb, fixed3(0.20, 0.95, 1.0), 0.65);
-                        col.rgb = lerp(col.rgb, trendColor, trendOpacity);
+                            float trendTotal = max(isLeadWing, isTrendTape);
+                            float trendAlpha = trendTotal * _TrendStrength * 0.95;
+
+                            // 现代航电高对比荧光青蓝复合光色
+                            fixed3 trendColor = fixed3(0.15, 0.95, 1.0);
+                            col.rgb = lerp(col.rgb, trendColor, trendAlpha);
+                        }
                     }
                 }
 
