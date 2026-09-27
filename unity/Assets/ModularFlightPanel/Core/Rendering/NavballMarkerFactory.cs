@@ -16,6 +16,10 @@ namespace ModularFlightPanel.Core
         private static Sprite _circleMaskSprite;
         private static Sprite _circleRingSprite;
         private static Sprite _reticleSprite;
+        private static Sprite _rollPointerSprite;
+        private static Sprite _sasLockReticleSprite;
+        private static Sprite _guidanceChevronSprite;
+        private static Sprite _shockwaveSprite;
 
         public static void ClearCache()
         {
@@ -23,6 +27,10 @@ namespace ModularFlightPanel.Core
             _circleMaskSprite = null;
             _circleRingSprite = null;
             _reticleSprite = null;
+            _rollPointerSprite = null;
+            _sasLockReticleSprite = null;
+            _guidanceChevronSprite = null;
+            _shockwaveSprite = null;
         }
 
         public static Sprite GetReticleSprite()
@@ -175,6 +183,237 @@ namespace ModularFlightPanel.Core
             return _circleRingSprite;
         }
 
+        public static Color GetSASModeColor(FlightSASMode mode, ThemeConfig theme)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.Prograde:
+                case FlightSASMode.Retrograde:
+                    return new Color(0.68f, 0.98f, 0.12f, 1.0f);
+                case FlightSASMode.Normal:
+                case FlightSASMode.Antinormal:
+                    return new Color(0.92f, 0.14f, 0.88f, 1.0f);
+                case FlightSASMode.RadialIn:
+                case FlightSASMode.RadialOut:
+                    return new Color(0.10f, 0.91f, 0.83f, 1.0f);
+                case FlightSASMode.Target:
+                case FlightSASMode.AntiTarget:
+                    return theme != null ? (Color)theme.AccentMagenta : new Color(0.95f, 0.15f, 0.75f, 1.0f);
+                case FlightSASMode.Maneuver:
+                    return new Color(0.08f, 0.38f, 1.0f, 1.0f);
+                case FlightSASMode.StabilityAssist:
+                default:
+                    return theme != null ? (Color)theme.WarningColor : new Color(1.0f, 0.65f, 0.05f, 1.0f);
+            }
+        }
+
+        public static Color GetGuidanceFlowColor()
+        {
+            return new Color(0.18f, 0.55f, 1.0f, 1.0f);
+        }
+
+        public static Sprite GetRollPointerSprite()
+        {
+            if (_rollPointerSprite != null) return _rollPointerSprite;
+
+            const int size = 32;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            Color[] pixels = new Color[size * size];
+            float cx = (size - 1) * 0.5f;
+            float cy = (size - 1) * 0.5f;
+
+            // 尖锐航电三角滚转指示指针 (Apex at top (0, 11), base at (0, -7), half-width 6.5px)
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float px = x - cx;
+                    float py = y - cy;
+
+                    float dLeft = SegmentSdf(px, py, 0f, 11f, -6.5f, -7f);
+                    float dRight = SegmentSdf(px, py, 0f, 11f, 6.5f, -7f);
+                    float dBottom = SegmentSdf(px, py, -6.5f, -7f, 6.5f, -7f);
+
+                    bool inside = (py >= -7f) && (py <= 11f) && (Mathf.Abs(px) <= (11f - py) * (6.5f / 18f));
+                    float dEdge = Mathf.Min(dLeft, Mathf.Min(dRight, dBottom));
+                    float dSigned = inside ? -dEdge : dEdge;
+
+                    float aFilled = Mathf.Clamp01(0.5f - dSigned);
+                    float ridge = Mathf.Clamp01(1.0f - Mathf.Abs(px) * 1.5f) * 0.35f;
+
+                    if (aFilled > 0.005f)
+                    {
+                        Color c = Color.white;
+                        c.a = aFilled;
+                        c.r = Mathf.Clamp01(c.r + ridge);
+                        c.g = Mathf.Clamp01(c.g + ridge);
+                        c.b = Mathf.Clamp01(c.b + ridge);
+                        pixels[y * size + x] = c;
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = Color.clear;
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _rollPointerSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+            return _rollPointerSprite;
+        }
+
+        public static Sprite GetSASLockReticleSprite()
+        {
+            if (_sasLockReticleSprite != null) return _sasLockReticleSprite;
+
+            const int size = 64;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            Color[] pixels = new Color[size * size];
+            float cx = (size - 1) * 0.5f;
+            float cy = (size - 1) * 0.5f;
+            const float strokeW = 2.4f;
+            const float cornerR = 19f;
+            const float armLen = 7.5f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float px = Mathf.Abs(x - cx);
+                    float py = Mathf.Abs(y - cy);
+
+                    // 四角高科角括号 [ ]
+                    float dH = SegmentSdf(px, py, cornerR - armLen, cornerR, cornerR, cornerR) - strokeW * 0.5f;
+                    float dV = SegmentSdf(px, py, cornerR, cornerR - armLen, cornerR, cornerR) - strokeW * 0.5f;
+                    float dCorner = Mathf.Min(dH, dV);
+
+                    // 外圈微型 45 度菱形刻度标记
+                    float dist = Mathf.Sqrt(px * px + py * py);
+                    float dRing = Mathf.Abs(dist - 26f) - 1.0f;
+                    float d45 = Mathf.Abs(px - py) / 1.4142f;
+                    float aPip = (dist > 23f && dist < 29f && d45 < 1.8f) ? Mathf.Clamp01(0.5f - dRing) * 0.6f : 0f;
+
+                    float aCorner = Mathf.Clamp01(0.5f - dCorner);
+                    float aTotal = Mathf.Max(aCorner, aPip);
+
+                    if (aTotal > 0.005f)
+                    {
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, aTotal);
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = Color.clear;
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _sasLockReticleSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+            return _sasLockReticleSprite;
+        }
+
+        public static Sprite GetGuidanceChevronSprite()
+        {
+            if (_guidanceChevronSprite != null) return _guidanceChevronSprite;
+
+            const int size = 32;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            Color[] pixels = new Color[size * size];
+            float cx = (size - 1) * 0.5f;
+            float cy = (size - 1) * 0.5f;
+            const float strokeW = 2.4f;
+
+            // 导向流光箭头 Chevron > (顶点指向正上方 +Y，方便通过旋转欧拉角定向)
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float px = x - cx;
+                    float py = y - cy;
+
+                    float dL = SegmentSdf(px, py, 0f, 7f, -6f, -5f) - strokeW * 0.5f;
+                    float dR = SegmentSdf(px, py, 0f, 7f, 6f, -5f) - strokeW * 0.5f;
+                    float dChevron = Mathf.Min(dL, dR);
+
+                    float alpha = Mathf.Clamp01(0.5f - dChevron);
+                    if (alpha > 0.005f)
+                    {
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = Color.clear;
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _guidanceChevronSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+            return _guidanceChevronSprite;
+        }
+
+        public static Sprite GetShockwaveSprite()
+        {
+            if (_shockwaveSprite != null) return _shockwaveSprite;
+
+            const int size = 64;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            Color[] pixels = new Color[size * size];
+            float cx = (size - 1) * 0.5f;
+            float cy = (size - 1) * 0.5f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float px = x - cx;
+                    float py = y - cy;
+                    float dist = Mathf.Sqrt(px * px + py * py);
+
+                    // 扩散光环
+                    float d = Mathf.Abs(dist - 22f);
+                    float alpha = Mathf.Exp(-d * d / 9.0f);
+
+                    if (alpha > 0.005f)
+                    {
+                        pixels[y * size + x] = new Color(1f, 1f, 1f, alpha);
+                    }
+                    else
+                    {
+                        pixels[y * size + x] = Color.clear;
+                    }
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _shockwaveSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+            return _shockwaveSprite;
+        }
+
         private static Sprite GenerateMarkerSprite(string type)
         {
             const int size = 64;
@@ -203,7 +442,7 @@ namespace ModularFlightPanel.Core
             // 原版径向向外/向内色标: 官方经典天青/蓝绿 (Stock Cyan #18E8D4)
             Color colRadial = new Color(0.10f, 0.91f, 0.83f, 1.0f);
             Color colTarget = theme != null ? (Color)theme.AccentMagenta : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Danger, null);
-            Color colManeuver = theme != null ? (Color)theme.AccentMagenta : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Danger, null);
+            Color colManeuver = new Color(0.08f, 0.38f, 1.0f, 1.0f);
 
             for (int y = 0; y < size; y++)
             {
@@ -388,13 +627,38 @@ namespace ModularFlightPanel.Core
 
                         case "maneuver":
                             markerColor = colManeuver;
-                            // 原版机动节点：倒正三角 (顶点向下) + 顶部双翼刻度 + 中心瞄准点
-                            float aTriMan = EquilateralTriangleSdf(px, py + 1f, 16f, strokeW, false);
-                            float aDotMan = Mathf.Clamp01(3.2f - dist);
-                            // 顶部两侧外延横向小翼 (两翼横线)
-                            float aWingManL = (Mathf.Abs(py - 7f) < strokeW * 0.5f && px < -10f && px > -19f) ? 1f : 0f;
-                            float aWingManR = (Mathf.Abs(py - 7f) < strokeW * 0.5f && px > 10f && px < 19f) ? 1f : 0f;
-                            alpha = Mathf.Clamp01(Mathf.Max(aTriMan, Mathf.Max(aDotMan, Mathf.Max(aWingManL, aWingManR))));
+                            // 官方原版机动节点标 (Stock Maneuver Node Icon - 图 2 权威像素级对齐)
+                            // 1. 中心实心定位圆点 (Center Dot, r = 2.5px)
+                            float aManDot = Mathf.Clamp01(0.5f - (dist - 2.5f));
+
+                            // 2. 三组相隔 120° 向外辐射的 "T" 型对称支架 (90° 正上方, 210° 左下方, 330° 右下方)
+                            // 每组支架包含：径向支杆 (Stalk: 4.8px -> 13.5px) + 顶端正交横梁 (Crossbar: 9.6px 长度)
+                            float dProngs = 999f;
+                            float[] manAngles = { 90f * Mathf.Deg2Rad, 210f * Mathf.Deg2Rad, 330f * Mathf.Deg2Rad };
+                            for (int i = 0; i < 3; i++)
+                            {
+                                float cosA = Mathf.Cos(manAngles[i]);
+                                float sinA = Mathf.Sin(manAngles[i]);
+                                float rIn = 4.8f;
+                                float rOut = 13.5f;
+                                float halfBar = 4.8f;
+
+                                // 径向支杆 SDF
+                                float dStalk = SegmentSdf(px, py, cosA * rIn, sinA * rIn, cosA * rOut, sinA * rOut) - (strokeW * 0.5f);
+
+                                // 顶端横梁 SDF
+                                float tipX = cosA * rOut;
+                                float tipY = sinA * rOut;
+                                float barX1 = tipX - sinA * halfBar;
+                                float barY1 = tipY + cosA * halfBar;
+                                float barX2 = tipX + sinA * halfBar;
+                                float barY2 = tipY - cosA * halfBar;
+                                float dBar = SegmentSdf(px, py, barX1, barY1, barX2, barY2) - (strokeW * 0.5f);
+
+                                dProngs = Mathf.Min(dProngs, Mathf.Min(dStalk, dBar));
+                            }
+                            float aProngs = Mathf.Clamp01(0.5f - dProngs);
+                            alpha = Mathf.Clamp01(Mathf.Max(aManDot, aProngs));
                             break;
 
                         default:

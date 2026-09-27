@@ -114,8 +114,23 @@ namespace ModularFlightPanel.UI.Widgets
         private int _lastScreenHeight = -1;
         private float _lastDetailScale = -1f;
 
-        // ── 坡度角刻度与金属表圈 ──
+        // ── 坡度角刻度与滚转指引指针 ──
         private readonly List<Image> _bankAngleTicks = new List<Image>();
+        private RectTransform _bankRollPointerRoot;
+        private Image _bankRollPointerImg;
+
+        // ── SAS 联动指示与点击反馈 ──
+        private RectTransform _sasLockReticleRt;
+        private Image _sasLockReticleImage;
+        private RectTransform _sasRippleRt;
+        private Image _sasRippleImage;
+        private float _rippleTimer = 999f;
+        private Color _sasRippleColor = WidgetStyleManager.NeutralOpaque;
+
+        // ── 机动节点航向流光引导 ──
+        private GameObject _maneuverGuideContainer;
+        private readonly Image[] _guidanceChevrons = new Image[4];
+        private Quaternion _currentAttitudeRotation = Quaternion.identity;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -237,7 +252,10 @@ namespace ModularFlightPanel.UI.Widgets
             _reticleImage = imgObj.GetComponent<Image>();
             _reticleImage.sprite = NavballMarkerFactory.GetReticleSprite();
             _reticleImage.color = WidgetStyleManager.NeutralOpaque;
-            _reticleImage.raycastTarget = false;
+            _reticleImage.raycastTarget = true;
+            var reticleHandler = imgObj.AddComponent<NavballMarkerClickHandler>();
+            reticleHandler.MarkerKey = "reticle";
+            reticleHandler.Widget = this;
         }
 
         private void CreateBankAngleScale(Transform parent, float radius, float s, ThemeConfig theme)
@@ -271,6 +289,23 @@ namespace ModularFlightPanel.UI.Widgets
                 img.color = isWarn ? theme.WarningColor : (isZero ? theme.HorizonLineColor : theme.GridColor);
                 _bankAngleTicks.Add(img);
             }
+
+            // 动态高精度滚转/天顶指引指针 (Roll / Sky Pointer)
+            GameObject pointerRootObj = new GameObject("BankRollPointer_Root", typeof(RectTransform));
+            pointerRootObj.transform.SetParent(parent, false);
+            _bankRollPointerRoot = pointerRootObj.GetComponent<RectTransform>();
+            _bankRollPointerRoot.sizeDelta = Vector2.zero;
+            _bankRollPointerRoot.anchoredPosition = Vector2.zero;
+
+            GameObject needleObj = new GameObject("PointerNeedle", typeof(RectTransform), typeof(Image));
+            needleObj.transform.SetParent(_bankRollPointerRoot, false);
+            RectTransform needleRt = needleObj.GetComponent<RectTransform>();
+            needleRt.sizeDelta = new Vector2(10f * s, 12f * s);
+            needleRt.anchoredPosition = new Vector2(0f, r + 4.5f * s);
+            _bankRollPointerImg = needleObj.GetComponent<Image>();
+            _bankRollPointerImg.sprite = NavballMarkerFactory.GetRollPointerSprite();
+            _bankRollPointerImg.color = theme.HorizonLineColor;
+            _bankRollPointerImg.raycastTarget = false;
         }
 
         private void CreateHeadingBox(Transform parent, float dpiScale, ThemeConfig theme)
@@ -325,11 +360,65 @@ namespace ModularFlightPanel.UI.Widgets
                 Image img = mObj.GetComponent<Image>();
                 img.sprite = NavballMarkerFactory.GetMarkerSprite(k);
                 img.color = WidgetStyleManager.NeutralOpaque;
-                img.raycastTarget = false;
-                mObj.SetActive(false);
+                img.raycastTarget = true;
 
+                var clickHandler = mObj.AddComponent<NavballMarkerClickHandler>();
+                clickHandler.MarkerKey = k;
+                clickHandler.Widget = this;
+
+                mObj.SetActive(false);
                 _markerImages[k] = img;
             }
+
+            // 1. 机动节点航向流光引导箭头容器 (Steering Director Chevron Flow)
+            _maneuverGuideContainer = new GameObject("Maneuver_Guide_Flow", typeof(RectTransform));
+            _maneuverGuideContainer.transform.SetParent(_markerContainer, false);
+            RectTransform flowRt = _maneuverGuideContainer.GetComponent<RectTransform>();
+            flowRt.sizeDelta = Vector2.zero;
+            flowRt.anchoredPosition = Vector2.zero;
+
+            Sprite chevSprite = NavballMarkerFactory.GetGuidanceChevronSprite();
+            for (int i = 0; i < _guidanceChevrons.Length; i++)
+            {
+                GameObject cObj = new GameObject($"GuideChevron_{i}", typeof(RectTransform), typeof(Image));
+                cObj.transform.SetParent(_maneuverGuideContainer.transform, false);
+                RectTransform cRt = cObj.GetComponent<RectTransform>();
+                cRt.sizeDelta = new Vector2(14f * dpiScale, 14f * dpiScale);
+                cRt.anchoredPosition = Vector2.zero;
+
+                Image cImg = cObj.GetComponent<Image>();
+                cImg.sprite = chevSprite;
+                cImg.color = WidgetStyleManager.NeutralOpaque;
+                cImg.raycastTarget = false;
+                _guidanceChevrons[i] = cImg;
+            }
+            _maneuverGuideContainer.SetActive(false);
+
+            // 2. SAS 动态角括号锁定框 (Active SAS Lock Reticle)
+            GameObject reticleObj = new GameObject("Active_SAS_Reticle", typeof(RectTransform), typeof(Image));
+            reticleObj.transform.SetParent(_markerContainer, false);
+            _sasLockReticleRt = reticleObj.GetComponent<RectTransform>();
+            _sasLockReticleRt.sizeDelta = new Vector2(36f * dpiScale, 36f * dpiScale);
+            _sasLockReticleRt.anchoredPosition = Vector2.zero;
+
+            _sasLockReticleImage = reticleObj.GetComponent<Image>();
+            _sasLockReticleImage.sprite = NavballMarkerFactory.GetSASLockReticleSprite();
+            _sasLockReticleImage.color = WidgetStyleManager.NeutralOpaque;
+            _sasLockReticleImage.raycastTarget = false;
+            reticleObj.SetActive(false);
+
+            // 3. 点击冲击波扩散环 (Shockwave Ripple)
+            GameObject rippleObj = new GameObject("SAS_Shockwave_Ripple", typeof(RectTransform), typeof(Image));
+            rippleObj.transform.SetParent(_markerContainer, false);
+            _sasRippleRt = rippleObj.GetComponent<RectTransform>();
+            _sasRippleRt.sizeDelta = new Vector2(48f * dpiScale, 48f * dpiScale);
+            _sasRippleRt.anchoredPosition = Vector2.zero;
+
+            _sasRippleImage = rippleObj.GetComponent<Image>();
+            _sasRippleImage.sprite = NavballMarkerFactory.GetShockwaveSprite();
+            _sasRippleImage.color = WidgetStyleManager.NeutralOpaque;
+            _sasRippleImage.raycastTarget = false;
+            rippleObj.SetActive(false);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -443,6 +532,8 @@ namespace ModularFlightPanel.UI.Widgets
             SyncMarkers();
             UpdateReticleDynamics();
             UpdateProceduralDetailScale();
+            UpdateRollPointer(telemetry, _currentAttitudeRotation);
+            UpdateSASAndGuidanceVisuals(telemetry);
         }
 
         protected override void OnScaleChanged(float targetScale, float relativeRatio)
@@ -462,6 +553,9 @@ namespace ModularFlightPanel.UI.Widgets
             SyncMarkers();
             UpdateReticleDynamics();
             UpdateProceduralDetailScale();
+            IFlightTelemetry curTelem = FlightTelemetryContext.Current;
+            UpdateRollPointer(curTelem, _currentAttitudeRotation);
+            UpdateSASAndGuidanceVisuals(curTelem);
         }
 
         private void UpdateProceduralDetailScale()
@@ -512,6 +606,7 @@ namespace ModularFlightPanel.UI.Widgets
                 rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
             }
 
+            _currentAttitudeRotation = rawRot;
             UpdateAttitudeTrend(rawRot);
 
             if (_sphereMaterial != null)
@@ -619,8 +714,7 @@ namespace ModularFlightPanel.UI.Widgets
                     hasDir = NavBallHookService.MarkerDirectionFallback(key, out dir, out isVisible);
                 }
 
-                // 视界边缘平滑过渡 [-0.08, -0.24]，彻底消灭坐标跳变与缩放突变
-                if (hasDir && isVisible && dir.z > -0.24f)
+                if (hasDir && isVisible)
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
@@ -628,17 +722,42 @@ namespace ModularFlightPanel.UI.Widgets
                     float bearingMag = bearing.magnitude;
                     Vector2 normBearing = bearingMag > 0.001f ? (bearing / bearingMag) : Vector2.up;
 
-                    // 过渡权重：前向半球 (> -0.08) 为 0，地平圈内缘 (< -0.20) 为 1
-                    float tRear = Mathf.Clamp01((-0.08f - dir.z) / 0.12f);
+                    float peripheryRadius = _visualRadius + 7.5f;
+                    Vector2 markerPos;
+                    float targetScale;
+                    float alpha;
 
-                    Vector2 frontPos = new Vector2(dir.x, dir.y) * _visualRadius;
-                    Vector2 rearPos = normBearing * (_visualRadius * 0.84f);
-                    img.rectTransform.anchoredPosition = Vector2.Lerp(frontPos, rearPos, tRear);
+                    if (dir.z >= 0.05f)
+                    {
+                        // 前向半球：完全投影在球体正面
+                        markerPos = bearing * _visualRadius;
+                        targetScale = 1.0f;
+                        alpha = 1.0f;
+                    }
+                    else
+                    {
+                        // 背向半球与超出范围：持续吸附在表圈外围轨道，平滑过渡
+                        float tOff = Mathf.Clamp01((0.05f - dir.z) / 0.20f);
+                        Vector2 frontPos = bearing * _visualRadius;
+                        Vector2 periphPos = normBearing * peripheryRadius;
+                        markerPos = Vector2.Lerp(frontPos, periphPos, tOff);
 
-                    float targetScale = Mathf.Lerp(1.0f, 0.65f, tRear);
+                        // 根据角距离远近变淡加深：-dir.z 从 0 (地平) 到 1.0 (正后方 180°)
+                        float tDepth = Mathf.Clamp01(-dir.z);
+                        alpha = Mathf.Lerp(0.88f, 0.26f, tDepth);
+                        targetScale = Mathf.Lerp(0.90f, 0.58f, tDepth);
+                    }
+
+                    // 机动节点脉冲呼吸特效
+                    if (key == "maneuver")
+                    {
+                        float pulse = 1.0f + 0.08f * Mathf.Sin(Time.unscaledTime * 6f);
+                        targetScale *= pulse;
+                    }
+
+                    img.rectTransform.anchoredPosition = markerPos;
                     img.rectTransform.localScale = new Vector3(targetScale, targetScale, 1.0f);
 
-                    float alpha = (dir.z >= -0.08f) ? 1.0f : Mathf.Lerp(1.0f, 0.40f, tRear);
                     Color c = img.color;
                     c.a = alpha;
                     img.color = c;
@@ -662,6 +781,222 @@ namespace ModularFlightPanel.UI.Widgets
                 _sphereMaterial.SetVector(_PropMarkerAvoid1, avoidVectors[1]);
                 _sphereMaterial.SetVector(_PropMarkerAvoid2, avoidVectors[2]);
                 _sphereMaterial.SetVector(_PropMarkerAvoid3, avoidVectors[3]);
+            }
+        }
+
+        private void UpdateRollPointer(IFlightTelemetry telemetry, Quaternion rawRot)
+        {
+            if (_bankRollPointerRoot == null) return;
+
+            float rollAngle = 0f;
+            if (telemetry != null)
+            {
+                rollAngle = telemetry.Roll;
+            }
+            else
+            {
+                rollAngle = rawRot.eulerAngles.z;
+                if (rollAngle > 180f) rollAngle -= 360f;
+            }
+
+            _bankRollPointerRoot.localRotation = Quaternion.Euler(0f, 0f, -rollAngle);
+
+            if (_bankRollPointerImg != null)
+            {
+                ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
+                bool isExtreme = Mathf.Abs(rollAngle) >= 44f;
+                _bankRollPointerImg.color = isExtreme 
+                    ? (theme != null ? (Color)theme.WarningColor : WidgetStyleManager.NeutralOpaque)
+                    : (theme != null ? (Color)theme.HorizonLineColor : WidgetStyleManager.NeutralOpaque);
+            }
+        }
+
+        private void UpdateSASAndGuidanceVisuals(IFlightTelemetry telemetry)
+        {
+            float dt = Time.unscaledDeltaTime;
+
+            // 1. 点击冲击波扩散动画 (Shockwave Ripple)
+            if (_sasRippleImage != null && _sasRippleImage.gameObject.activeSelf)
+            {
+                _rippleTimer += dt;
+                float t = Mathf.Clamp01(_rippleTimer / 0.45f);
+                if (t >= 1.0f)
+                {
+                    _sasRippleImage.gameObject.SetActive(false);
+                }
+                else
+                {
+                    float s = Mathf.Lerp(0.5f, 2.3f, t);
+                    _sasRippleRt.localScale = new Vector3(s, s, 1.0f);
+                    Color rc = _sasRippleColor;
+                    rc.a = Mathf.Lerp(0.95f, 0.0f, t * t);
+                    _sasRippleImage.color = rc;
+                }
+            }
+
+            // 2. SAS 动态角括号锁定框 (Active SAS Lock Reticle)
+            bool sasActive = telemetry != null && telemetry.IsSASEnabled;
+            FlightSASMode curSASMode = telemetry != null ? telemetry.CurrentSASMode : FlightSASMode.StabilityAssist;
+
+            if (_sasLockReticleRt != null && _sasLockReticleImage != null)
+            {
+                if (sasActive)
+                {
+                    if (!_sasLockReticleRt.gameObject.activeSelf) _sasLockReticleRt.gameObject.SetActive(true);
+
+                    Vector2 targetPos = Vector2.zero;
+                    string targetMarkerKey = GetMarkerKeyForSASMode(curSASMode);
+                    if (!string.IsNullOrEmpty(targetMarkerKey) && _markerImages.TryGetValue(targetMarkerKey, out Image targetImg) && targetImg != null && targetImg.gameObject.activeSelf)
+                    {
+                        targetPos = targetImg.rectTransform.anchoredPosition;
+                    }
+
+                    _sasLockReticleRt.anchoredPosition = Vector2.Lerp(_sasLockReticleRt.anchoredPosition, targetPos, Mathf.Clamp01(dt * 18.0f));
+
+                    float breath = 1.0f + 0.05f * Mathf.Sin(Time.unscaledTime * 5.0f);
+                    _sasLockReticleRt.localScale = new Vector3(breath, breath, 1.0f);
+
+                    ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+                    Color lockCol = NavballMarkerFactory.GetSASModeColor(curSASMode, curTheme);
+                    lockCol.a = 0.92f;
+                    _sasLockReticleImage.color = lockCol;
+                }
+                else
+                {
+                    if (_sasLockReticleRt.gameObject.activeSelf) _sasLockReticleRt.gameObject.SetActive(false);
+                }
+            }
+
+            // 3. 机动节点动态流光导引 (Maneuver Node Steering Director & Pulse Guide)
+            UpdateManeuverGuidance();
+        }
+
+        private void UpdateManeuverGuidance()
+        {
+            if (_maneuverGuideContainer == null) return;
+
+            bool hasManeuver = _markerImages.TryGetValue("maneuver", out Image manImg) && manImg != null && manImg.gameObject.activeSelf;
+            if (!hasManeuver)
+            {
+                if (_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(false);
+                return;
+            }
+
+            Vector2 manPos = manImg.rectTransform.anchoredPosition;
+            float dist = manPos.magnitude;
+
+            if (dist > 8f && dist < _visualRadius * 1.05f)
+            {
+                if (!_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(true);
+
+                float angleDeg = Mathf.Atan2(manPos.y, manPos.x) * Mathf.Rad2Deg - 90f;
+                Quaternion chevronRot = Quaternion.Euler(0f, 0f, angleDeg);
+                Color chevronCol = NavballMarkerFactory.GetGuidanceFlowColor();
+
+                for (int i = 0; i < _guidanceChevrons.Length; i++)
+                {
+                    Image chev = _guidanceChevrons[i];
+                    if (chev == null) continue;
+
+                    float phase = ((Time.unscaledTime * 1.5f + i * 0.25f) % 1.0f);
+                    float t = 0.18f + 0.68f * phase;
+                    chev.rectTransform.anchoredPosition = manPos * t;
+                    chev.rectTransform.localRotation = chevronRot;
+
+                    float alpha = Mathf.Sin(phase * Mathf.PI) * 0.85f;
+                    Color c = chevronCol;
+                    c.a = alpha;
+                    chev.color = c;
+                }
+            }
+            else
+            {
+                if (_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(false);
+            }
+        }
+
+        public void HandleMarkerClick(string markerKey, Vector2 pos)
+        {
+            FlightSASMode? targetMode = GetSASModeForMarker(markerKey);
+            if (targetMode.HasValue)
+            {
+                var telem = FlightTelemetryContext.Current;
+                if (telem != null)
+                {
+                    if (!telem.IsSASEnabled)
+                    {
+                        telem.ToggleSAS();
+                    }
+                    telem.SetSASMode(targetMode.Value);
+                }
+                ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+                TriggerShockwaveRipple(pos, NavballMarkerFactory.GetSASModeColor(targetMode.Value, curTheme));
+            }
+        }
+
+        public void TriggerShockwaveRipple(Vector2 pos, Color col)
+        {
+            if (_sasRippleImage == null) return;
+            _sasRippleRt.anchoredPosition = pos;
+            _sasRippleColor = col;
+            _rippleTimer = 0f;
+            _sasRippleImage.gameObject.SetActive(true);
+            _sasRippleRt.localScale = new Vector3(0.5f, 0.5f, 1f);
+            Color c = col;
+            c.a = 0.95f;
+            _sasRippleImage.color = c;
+        }
+
+        private static string GetMarkerKeyForSASMode(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.Prograde: return "prograde";
+                case FlightSASMode.Retrograde: return "retrograde";
+                case FlightSASMode.Normal: return "normal";
+                case FlightSASMode.Antinormal: return "antinormal";
+                case FlightSASMode.RadialIn: return "radialin";
+                case FlightSASMode.RadialOut: return "radialout";
+                case FlightSASMode.Target: return "target";
+                case FlightSASMode.AntiTarget: return "antitarget";
+                case FlightSASMode.Maneuver: return "maneuver";
+                case FlightSASMode.StabilityAssist:
+                default:
+                    return null;
+            }
+        }
+
+        public static FlightSASMode? GetSASModeForMarker(string markerKey)
+        {
+            switch (markerKey?.ToLowerInvariant())
+            {
+                case "prograde":
+                case "velocity_vector":
+                case "surface_prograde":
+                    return FlightSASMode.Prograde;
+                case "retrograde":
+                case "anti_velocity_vector":
+                case "surface_retrograde":
+                    return FlightSASMode.Retrograde;
+                case "normal":
+                    return FlightSASMode.Normal;
+                case "antinormal":
+                    return FlightSASMode.Antinormal;
+                case "radialin":
+                    return FlightSASMode.RadialIn;
+                case "radialout":
+                    return FlightSASMode.RadialOut;
+                case "target":
+                    return FlightSASMode.Target;
+                case "antitarget":
+                    return FlightSASMode.AntiTarget;
+                case "maneuver":
+                    return FlightSASMode.Maneuver;
+                case "reticle":
+                case "crosshair":
+                    return FlightSASMode.StabilityAssist;
+                default:
+                    return null;
             }
         }
 
@@ -1026,6 +1361,28 @@ namespace ModularFlightPanel.UI.Widgets
                 img.color = isWarn ? theme.WarningColor : (isZero ? theme.HorizonLineColor : theme.GridColor);
             }
 
+            if (_bankRollPointerImg != null)
+            {
+                _bankRollPointerImg.sprite = NavballMarkerFactory.GetRollPointerSprite();
+                _bankRollPointerImg.color = theme.HorizonLineColor;
+            }
+            if (_sasLockReticleImage != null)
+            {
+                _sasLockReticleImage.sprite = NavballMarkerFactory.GetSASLockReticleSprite();
+            }
+            if (_sasRippleImage != null)
+            {
+                _sasRippleImage.sprite = NavballMarkerFactory.GetShockwaveSprite();
+            }
+            if (_guidanceChevrons != null)
+            {
+                Sprite chevSpr = NavballMarkerFactory.GetGuidanceChevronSprite();
+                for (int i = 0; i < _guidanceChevrons.Length; i++)
+                {
+                    if (_guidanceChevrons[i] != null) _guidanceChevrons[i].sprite = chevSpr;
+                }
+            }
+
             this.Controls.ApplyThemeToControls(theme);
         }
 
@@ -1051,6 +1408,13 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.UnregisterAll();
             _markerImages.Clear();
             _bankAngleTicks.Clear();
+            _bankRollPointerRoot = null;
+            _bankRollPointerImg = null;
+            _sasLockReticleRt = null;
+            _sasLockReticleImage = null;
+            _sasRippleRt = null;
+            _sasRippleImage = null;
+            _maneuverGuideContainer = null;
             if (NavBallHookService.IsCleanStockNavballActiveFunc?.Invoke() ?? false)
             {
                 NavBallHookService.ResetStockNavballAction?.Invoke();
@@ -1062,6 +1426,24 @@ namespace ModularFlightPanel.UI.Widgets
                 _sphereMaterial = null;
             }
             base.OnDestroy();
+        }
+    }
+
+    /// <summary>
+    /// 导航标与准星点击事件拦截转发器 (Click-to-SAS 航电操作路由)
+    /// </summary>
+    public class NavballMarkerClickHandler : MonoBehaviour, IPointerClickHandler
+    {
+        public string MarkerKey;
+        public NavballSphereWidget Widget;
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            if (eventData.button == PointerEventData.InputButton.Left && Widget != null)
+            {
+                Widget.HandleMarkerClick(MarkerKey, GetComponent<RectTransform>().anchoredPosition);
+                eventData.Use();
+            }
         }
     }
 }
