@@ -238,6 +238,10 @@ namespace ModularFlightPanel.HeadlessValidator
                 {
                     return RunI18nAstAudit(repoRoot);
                 }
+                else if (args[i] == "--i18n-baseline-dump")
+                {
+                    return DumpI18nBaseline(repoRoot);
+                }
                 else if (args[i] == "--test-config" || args[i] == "--test-json")
                 {
                     return ConfigRoundtripTestSuite.Run(repoRoot) == 0 ? 0 : 1;
@@ -402,19 +406,22 @@ namespace ModularFlightPanel.HeadlessValidator
             var ruleFailures = WidgetSourceAudit.SelfTest();
             var colorFailures = WidgetColorLiteralAudit.SelfTest();
             var i18nSelfTestFailures = I18nSyntaxAuditor.SelfTest();
-            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0)
+            var i18nDictSelfTestFailures = I18nDictionaryValueAudit.SelfTest();
+            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0 && i18nDictSelfTestFailures.Count == 0)
             {
                 // 用例条数由内核回传真实计数：写死数字必然随代码漂移成假信息。
                 PrintSuccess($"审计内核自检通过: 规则自检 {WidgetSourceAudit.LastSelfTestCaseCount} 条对照用例"
                            + $" + 颜色字面量 {WidgetColorLiteralAudit.LastSelfTestCaseCount} 条边界用例"
-                           + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条用例 全部符合预期。");
+                           + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条用例"
+                           + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条用例 全部符合预期。");
             }
             else
             {
                 foreach (var failure in ruleFailures) PrintError($"规则自检失败: {failure}");
                 foreach (var failure in colorFailures) PrintError($"颜色字面量自检失败: {failure}");
                 foreach (var failure in i18nSelfTestFailures) PrintError($"I18n 语法树自检失败: {failure}");
-                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count;
+                foreach (var failure in i18nDictSelfTestFailures) PrintError($"I18n 词典值自检失败: {failure}");
+                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count + i18nDictSelfTestFailures.Count;
             }
 
             // 8. Unity 无头预览工程镜像一致性（清单 tools/unity_mirror.manifest 即合约）
@@ -422,8 +429,8 @@ namespace ModularFlightPanel.HeadlessValidator
             int mirrorErrors = CheckUnityMirror(repoRoot, false);
             overallErrors += mirrorErrors;
 
-            // 9. 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)
-            Console.WriteLine($"\n[9/10] 全局国际化多语言词典一致性审计 (I18n Localization Parity Audit)...");
+            // 9. 全局国际化多语言一致性审计 (I18n Localization Parity & 可汉化英文棘轮审计)
+            Console.WriteLine($"\n[9/10] 全局国际化多语言一致性审计 (I18n Parity + Localizable-English Ratchet Audit)...");
             int i18nErrors = ValidateI18nLocalization(repoRoot);
             overallErrors += i18nErrors;
 
@@ -681,11 +688,14 @@ namespace ModularFlightPanel.HeadlessValidator
         }
 
         /// <summary>
-        /// 全局多语言本地化词典一致性审计 (I18n Localization Parity Audit)
+        /// 全局多语言本地化一致性审计 (I18n Localization Parity Audit)
         /// 1. 验证 GameData/ModularFlightPanel/Localization/ 目录下 zh-CN.json 与 en-US.json 存在且格式合法。
         /// 2. 验证纯 C# 零依赖 I18nJsonParser 解析结果与 System.Text.Json 100% 对齐。
         /// 3. 验证 zh-CN 与 en-US 词条键名 100% 双向对齐（零缺失）。
         /// 4. 验证带格式化占位符的词条 ({0}, {1} 等) 在中英文之间占位符完全匹配，杜绝运行时 FormatException。
+        /// 5. 【可汉化英文·词典层】zh-CN 与 en-US 逐字相同且非权威缩写的"抄写式未汉化"词条，按棘轮基线冻结（只降不升）。
+        /// 6. 【可汉化英文·源码层】UGUI/IMGUI 文案槽位中的英文字面量（UIFactory.CreateText / TextWidget DSL /
+        ///    GetTemplateChannel 兜底 / SetTextIfChanged / GUILayout·GUI / .text 赋值），同样按棘轮基线冻结。
         /// </summary>
         private static int ValidateI18nLocalization(string repoRoot)
         {
@@ -882,6 +892,48 @@ namespace ModularFlightPanel.HeadlessValidator
                 }
             }
 
+            // 5. 主语言词条"抄写式未汉化"审计：zh-CN 与 en-US 逐字相同、且非权威缩写 / 通配符模板。
+            //    这类词条只是把英文原文抄了一遍 —— 键名对齐审计完全看不见（键存在、占位符一致），
+            //    但中文玩家看到的确实是英文。存量欠账按棘轮基线冻结（只降不升），新增即门禁失败。
+            var unlocalizedEntries = I18nDictionaryValueAudit.Scan(zhKeys, parsedDicts["en-US"]);
+            foreach (var failure in I18nDictionaryValueAudit.ValidateBudget(unlocalizedEntries.Count, "zh-CN.json"))
+            {
+                PrintError(failure);
+                errors++;
+            }
+            foreach (var failure in I18nDictionaryValueAudit.ValidateRatchet())
+            {
+                PrintError("I18n 词典棘轮: " + failure);
+                errors++;
+            }
+            Console.WriteLine($"  ├─ 词典未汉化词条: {unlocalizedEntries.Count} 条存量 / 基线 "
+                           + $"{I18nDictionaryValueAudit.GetAllowedOccurrences("zh-CN.json")} 条 (zh-CN 与 en-US 逐字相同且非权威缩写，只降不升)");
+            if (unlocalizedEntries.Count > 0)
+            {
+                var samples = string.Join(" | ", unlocalizedEntries.Take(5).Select(e => $"{e.Key} = \"{e.Value}\""));
+                Console.WriteLine($"  │   样本: {samples}   (全量明细: --i18n-ast)");
+            }
+
+            // 6. 源码"可汉化英文"审计：UGUI / IMGUI 文案槽位里的英文字面量（权威缩写除外），同样按棘轮预算冻结。
+            string i18nSrcDir = Path.Combine(repoRoot, "src", "ModularFlightPanel");
+            var sourceValidKeys = new HashSet<string>(zhKeys.Keys, StringComparer.OrdinalIgnoreCase);
+            var astReport = I18nSyntaxAuditor.AuditDirectory(i18nSrcDir, sourceValidKeys);
+            foreach (var failure in I18nSyntaxAuditor.ValidateEnglishBudget(astReport))
+            {
+                PrintError(failure);
+                errors++;
+            }
+            foreach (var failure in I18nSyntaxAuditor.ValidateEnglishRatchet())
+            {
+                PrintError("I18n 源码棘轮: " + failure);
+                errors++;
+            }
+            Console.WriteLine($"  ├─ 源码可汉化英文文案: {astReport.UntranslatedEnglishCount} 处存量 / 基线 "
+                           + $"{I18nSyntaxAuditor.TotalRegisteredEnglishDebt} 处 (扫描 {astReport.ScannedFilesCount} 个源码文件，只降不升)");
+            if (astReport.HardcodedChineseCount > 0 || astReport.MissingKeyCount > 0)
+            {
+                Console.WriteLine($"  ├─ [存量] 源码硬编码中文 {astReport.HardcodedChineseCount} 处 / 未登记键名 {astReport.MissingKeyCount} 处 (明细: --i18n-ast)");
+            }
 
             if (errors == 0)
             {
@@ -919,38 +971,45 @@ namespace ModularFlightPanel.HeadlessValidator
             Console.WriteLine("==================== [ I18n Roslyn 语法树遗漏排查与全面审计 ] ====================");
             string locDir = Path.Combine(repoRoot, "GameData", "ModularFlightPanel", "Localization");
             string zhPath = Path.Combine(locDir, "zh-CN.json");
-            HashSet<string> validKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string enPath = Path.Combine(locDir, "en-US.json");
 
-            if (File.Exists(zhPath))
+            Dictionary<string, string> zhDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> enDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
             {
-                try
-                {
-                    var dict = I18nJsonParser.Parse(File.ReadAllText(zhPath, Encoding.UTF8), out _, out _, out _);
-                    foreach (var k in dict.Keys) validKeys.Add(k);
-                }
-                catch { }
+                if (File.Exists(zhPath)) zhDict = I18nJsonParser.Parse(File.ReadAllText(zhPath, Encoding.UTF8), out _, out _, out _);
+                if (File.Exists(enPath)) enDict = I18nJsonParser.Parse(File.ReadAllText(enPath, Encoding.UTF8), out _, out _, out _);
             }
+            catch { }
+
+            var validKeys = new HashSet<string>(zhDict.Keys, StringComparer.OrdinalIgnoreCase);
+
+            // ── 1. 词典值层：主语言中"抄写式未汉化"的词条 ──
+            var unlocalizedEntries = I18nDictionaryValueAudit.Scan(zhDict, enDict);
+            Console.WriteLine($"词典主语言: zh-CN (参照 en-US) | 未汉化词条: {unlocalizedEntries.Count} 条"
+                           + $" / 基线 {I18nDictionaryValueAudit.GetAllowedOccurrences("zh-CN.json")} 条\n");
 
             string srcDir = Path.Combine(repoRoot, "src", "ModularFlightPanel");
             var report = I18nSyntaxAuditor.AuditDirectory(srcDir, validKeys);
 
             Console.WriteLine($"扫描源码目录: {srcDir}");
-            Console.WriteLine($"已扫描源码文件: {report.ScannedFilesCount} 个 | 语法树节点: {report.ScannedAstNodesCount} 个\n");
+            Console.WriteLine($"已扫描源码文件: {report.ScannedFilesCount} 个 | 语法树节点: {report.ScannedAstNodesCount} 个");
+            Console.WriteLine($"可汉化英文文案: {report.UntranslatedEnglishCount} 处 / 基线 {I18nSyntaxAuditor.TotalRegisteredEnglishDebt} 处\n");
 
             var byFile = report.Issues.GroupBy(i => i.FilePath).OrderByDescending(g => g.Count()).ToList();
             Console.WriteLine("========== [ 文件硬编码统计分布 (Top 20) ] ==========");
             foreach (var g in byFile.Take(20))
             {
                 int cnCount = g.Count(x => x.IssueType == I18nIssueType.HardcodedChinese);
-                int uiCount = g.Count(x => x.IssueType == I18nIssueType.HardcodedUiCall);
+                int enCount = g.Count(x => x.IssueType == I18nIssueType.UntranslatedEnglish);
                 int missCount = g.Count(x => x.IssueType == I18nIssueType.MissingDictionaryKey);
-                Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, g.Key).PadRight(50)}: 合计 {g.Count(),3} (中文:{cnCount,3} | UI:{uiCount,2} | 缺Key:{missCount,2})");
+                Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, g.Key).PadRight(50)}: 合计 {g.Count(),3} (中文:{cnCount,3} | 英文:{enCount,3} | 缺Key:{missCount,2})");
             }
             Console.WriteLine("====================================================\n");
 
             var chineseIssues = report.Issues.Where(i => i.IssueType == I18nIssueType.HardcodedChinese).ToList();
             var missingKeyIssues = report.Issues.Where(i => i.IssueType == I18nIssueType.MissingDictionaryKey).ToList();
-            var uiCallIssues = report.Issues.Where(i => i.IssueType == I18nIssueType.HardcodedUiCall).ToList();
+            var uiCallIssues = report.Issues.Where(i => i.IssueType == I18nIssueType.UntranslatedEnglish).ToList();
 
             if (chineseIssues.Count > 0)
             {
@@ -984,27 +1043,98 @@ namespace ModularFlightPanel.HeadlessValidator
             if (uiCallIssues.Count > 0)
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine($"[?] 发现 {uiCallIssues.Count} 处原生 UI 方法传参未本地化字面量 (建议优化):");
+                Console.WriteLine($"[?] 发现 {uiCallIssues.Count} 处 UI 文案槽位中的可汉化英文 (权威缩写已豁免):");
                 Console.ResetColor();
                 foreach (var issue in uiCallIssues)
                 {
-                    Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, issue.FilePath)}:L{issue.Line} -> {issue.OffendingText} ({issue.Description})");
+                    Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, issue.FilePath)}:L{issue.Line} -> \"{issue.OffendingText}\" ({issue.Description})");
                 }
                 Console.WriteLine();
             }
 
-            Console.WriteLine("-----------------------------------------------------------------------------------");
-            Console.WriteLine($"审计结果统计: 严重遗漏错误: {report.TotalErrors} | UI待优化项: {uiCallIssues.Count}");
-            if (report.TotalErrors == 0)
+            if (unlocalizedEntries.Count > 0)
             {
-                PrintSuccess("全代码语法树审计通过! 0 处未国际化硬编码中文，所有 I18n 查表键 100% 在词典中登记!");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"[?] 发现 {unlocalizedEntries.Count} 条 zh-CN 与 en-US 逐字相同的未汉化词条 (可直接改为中文译文):");
+                Console.ResetColor();
+                foreach (var entry in unlocalizedEntries)
+                {
+                    Console.WriteLine($"  • \"{entry.Key}\": \"{entry.Value}\",");
+                }
+                Console.WriteLine();
+            }
+
+            int ratchetErrors = 0;
+            foreach (var failure in I18nSyntaxAuditor.ValidateEnglishBudget(report)) { PrintError("源码英文棘轮: " + failure); ratchetErrors++; }
+            foreach (var failure in I18nSyntaxAuditor.ValidateEnglishRatchet()) { PrintError("源码英文棘轮表: " + failure); ratchetErrors++; }
+            foreach (var failure in I18nDictionaryValueAudit.ValidateBudget(unlocalizedEntries.Count, "zh-CN.json")) { PrintError("词典未汉化棘轮: " + failure); ratchetErrors++; }
+            foreach (var failure in I18nDictionaryValueAudit.ValidateRatchet()) { PrintError("词典未汉化棘轮表: " + failure); ratchetErrors++; }
+
+            Console.WriteLine("-----------------------------------------------------------------------------------");
+            Console.WriteLine($"审计结果统计: 中文硬编码/缺键 {report.TotalErrors} 处 | 可汉化英文 {report.UntranslatedEnglishCount} 处 (基线 {I18nSyntaxAuditor.TotalRegisteredEnglishDebt})"
+                           + $" | 词典未汉化 {unlocalizedEntries.Count} 条 (基线 {I18nDictionaryValueAudit.GetAllowedOccurrences("zh-CN.json")}) | 棘轮新增欠账 {ratchetErrors} 处");
+            if (ratchetErrors == 0)
+            {
+                PrintSuccess("I18n 棘轮门禁通过: 未新增可汉化英文文案 / 未汉化词条；存量欠账明细见上方清单。");
                 return 0;
             }
             else
             {
-                PrintError($"检测到 {report.TotalErrors} 处严重遗漏，请根据上述提示添加 I18n.Tr 包装并在词典中补充键值！");
+                PrintError($"检测到 {ratchetErrors} 处新增欠账，请接入 I18n.Tr 词典并补齐中文译文（权威缩写除外）！");
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// 导出当前 I18n 实测值，用于校准英文文案 / 词典未汉化的棘轮基线。
+        /// 用法: dotnet run --project tools/HeadlessValidator -- --i18n-baseline-dump
+        /// 数值口径与门禁完全一致（同一判定入口），禁止手工估算。
+        /// </summary>
+        private static int DumpI18nBaseline(string repoRoot)
+        {
+            string locDir = Path.Combine(repoRoot, "GameData", "ModularFlightPanel", "Localization");
+            string zhPath = Path.Combine(locDir, "zh-CN.json");
+            string enPath = Path.Combine(locDir, "en-US.json");
+            Dictionary<string, string> zhDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> enDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (File.Exists(zhPath)) zhDict = I18nJsonParser.Parse(File.ReadAllText(zhPath, Encoding.UTF8), out _, out _, out _);
+                if (File.Exists(enPath)) enDict = I18nJsonParser.Parse(File.ReadAllText(enPath, Encoding.UTF8), out _, out _, out _);
+            }
+            catch { }
+
+            Console.WriteLine("\n==================== [ I18n 棘轮基线导出 ] ====================");
+
+            // ── 1. 词典未汉化词条（zh-CN 与 en-US 逐字相同且非权威缩写）──
+            var unlocalizedEntries = I18nDictionaryValueAudit.Scan(zhDict, enDict);
+            Console.WriteLine("[I18nDictionaryValueAudit.BaselineTable / RatchetCeilingTable]");
+            Console.WriteLine($"            {{ \"zh-CN.json\", {unlocalizedEntries.Count} }},");
+            foreach (var entry in unlocalizedEntries)
+            {
+                Console.WriteLine($"            //   \"{entry.Key}\": \"{entry.Value}\"");
+            }
+
+            // ── 2. 源码可汉化英文文案（逐文件处数）──
+            string srcDir = Path.Combine(repoRoot, "src", "ModularFlightPanel");
+            var validKeys = new HashSet<string>(zhDict.Keys, StringComparer.OrdinalIgnoreCase);
+            var report = I18nSyntaxAuditor.AuditDirectory(srcDir, validKeys);
+            Console.WriteLine("\n[I18nSyntaxAuditor.EnglishBaselineTable / EnglishRatchetCeilingTable]");
+            var byFile = report.Issues
+                .Where(i => i.IssueType == I18nIssueType.UntranslatedEnglish)
+                .GroupBy(i => Path.GetFileName(i.FilePath), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+            int total = 0;
+            foreach (var group in byFile)
+            {
+                total += group.Count();
+                Console.WriteLine($"            {{ \"{group.Key}\", {group.Count()} }},");
+            }
+
+            Console.WriteLine($"\n实测合计: 源码可汉化英文 {total} 处 / 词典未汉化 {unlocalizedEntries.Count} 条"
+                           + $" (当前登记基线 {I18nSyntaxAuditor.TotalRegisteredEnglishDebt} / {I18nDictionaryValueAudit.TotalRegisteredDebt})");
+            Console.WriteLine("===========================================================================");
+            return 0;
         }
 
         /// <summary>

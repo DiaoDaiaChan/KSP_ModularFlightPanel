@@ -21,9 +21,11 @@ namespace ModularFlightPanel.HeadlessValidator
         HardcodedChinese,
 
         /// <summary>
-        /// UI 渲染方法（如 GUILayout.Button / Label）中直接传入了未国际化的英文字符串字面量
+        /// UI 文案槽位（UIFactory.CreateText / TextWidget DSL / GetTemplateChannel 兜底值 /
+        /// SetTextIfChanged / GUILayout·GUI / .text 赋值 …）中直接传入的可汉化英文字面量。
+        /// 中文主语言下这些文本本应接入词典，只有权威缩写（SAS / RCS / VSI …）才允许保留原文。
         /// </summary>
-        HardcodedUiCall,
+        UntranslatedEnglish,
 
         /// <summary>
         /// 代码中调用了 I18n.Tr("KEY")，但该 KEY 在 zh-CN.json 或 en-US.json 词典中不存在
@@ -59,9 +61,134 @@ namespace ModularFlightPanel.HeadlessValidator
         public int ScannedAstNodesCount { get; set; }
 
         public int HardcodedChineseCount => Issues.Count(i => i.IssueType == I18nIssueType.HardcodedChinese);
-        public int HardcodedUiCallCount => Issues.Count(i => i.IssueType == I18nIssueType.HardcodedUiCall);
+        public int UntranslatedEnglishCount => Issues.Count(i => i.IssueType == I18nIssueType.UntranslatedEnglish);
         public int MissingKeyCount => Issues.Count(i => i.IssueType == I18nIssueType.MissingDictionaryKey);
+
+        /// <summary>"必须修"的严重遗漏（中文硬编码 / 缺失键名）；可汉化英文按棘轮预算单独判定</summary>
         public int TotalErrors => HardcodedChineseCount + MissingKeyCount;
+    }
+
+    /// <summary>
+    /// I18n 判定词库（唯一数据源：源码审计与词典审计共用同一份口径）
+    ///
+    /// 1. AuthoritativeAbbreviations —— 权威缩写白名单：只收"航电界通用原文"的系统代号 / 飞行参数 / 单位，
+    ///    例如 SAS / RCS / VSI / SPD / ALT / HDG / THR / EC / NORM / CAUT。
+    ///    任何整词英文与短语（SEARCHING / STANDBY / POINTING MODE / NO TELEMETRY LINK / STAGE CONTROL …）
+    ///    都不属于权威缩写，必须进入"可汉化"审计范围。
+    ///    确需保留原文时应当登记棘轮基线（可审计的存量），而不是往本表里塞词 —— 塞词会让规则永久失明。
+    ///
+    /// 2. EngineStyleTokens —— Unity 引擎内建 GUIStyle / 控件名（GUILayout.BeginHorizontal("box")），
+    ///    属于引擎内部标识而非界面文案。
+    /// </summary>
+    internal static class I18nLexicon
+    {
+        private static readonly HashSet<string> AuthoritativeAbbreviations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // 飞行控制与航电系统代号
+            "SAS", "RCS", "HUD", "AP", "PREC", "DCK", "DOCK", "TGT", "ECAM", "EICAS", "ND",
+            // 飞行参数与动力装置读数
+            "SPD", "ALT", "VSI", "VERTSPD", "HDG", "THR", "TWR", "MACH", "G", "Q", "PE", "EC", "COMM", "STG",
+            "N1", "N2", "EPR", "EGT", "FF", "RPM", "ENG", "VIB", "REV", "MECO", "TO", "GA", "JETT", "ACC",
+            "TAS", "IAS", "GS", "RA", "WT", "QTY", "PRESS", "TEMP", "SAT", "TAT", "CAB", "LDG", "RDR", "MON", "CH",
+            // 时间 / 机构 / 项目代号
+            "UT", "MET", "MFP", "KSP", "SPX", "TDRS", "ISS", "DSN", "AFT", "FWD", "LO", "HI",
+            // 标准告警与状态代号
+            "NORM", "CAUT", "WARN", "OK", "ERR", "ON", "OFF",
+            // 单位与量纲符号
+            "M", "KM", "S", "MIN", "H", "D", "Y", "KN", "KPA", "ATM", "MS", "HZ", "FPS",
+            "KB", "MB", "GB", "V", "A", "W", "k", "KG", "KGS", "C", "F", "PSI", "BPS", "KBPS", "MBPS", "DV",
+            // 坐标 / 罗盘 / 通道 / 界面缩写
+            "X", "Y", "Z", "R", "B", "N", "E", "UI", "GUI", "ID"
+        };
+
+        /// <summary>数字+短单位后缀的读数记号（"0G" / "8K" / "00x" / "3D" / "+15c"），不是可汉化文案</summary>
+        private static readonly Regex NumericWithUnitRegex = new Regex(@"^\d+[A-Za-z]{1,2}$", RegexOptions.Compiled);
+
+        private static readonly HashSet<string> EngineStyleTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "label", "Button", "box", "textfield", "window", "button", "toggle"
+        };
+
+        private static readonly Regex TokenHoleRegex = new Regex(@"\{[^{}]*\}", RegexOptions.Compiled);
+        private static readonly Regex TokenSplitRegex = new Regex(@"[^A-Za-z0-9]+", RegexOptions.Compiled);
+        private static readonly Regex NumericOnlyRegex = new Regex(@"^[\d\.\,\+\-\%\s\:\/\#\<\>\=]+(px|%|ms|hz|fps|x)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex LeadingDecorationRegex = new Regex(
+            @"^[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]]+", RegexOptions.Compiled);
+        private static readonly Regex TrailingDecorationRegex = new Regex(
+            @"[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]]+$", RegexOptions.Compiled);
+
+        private static List<string> Tokenize(string text) =>
+            TokenSplitRegex.Split(text).Where(t => t.Length > 0).ToList();
+
+        /// <summary>
+        /// 整串拆词后每个词都是"读数记号"：权威缩写（"SAS: OFF" / "RCS/SAS"）、
+        /// 纯数字（"0" / "100"）或数字+短单位（"0G" / "8K" / "00x"）。
+        /// 这样的串没有可翻译的英文词汇，属于读数而非文案。
+        /// </summary>
+        public static bool IsAllAbbreviated(string text)
+        {
+            var tokens = Tokenize(text);
+            if (tokens.Count == 0 || tokens.Count > 8) return false;
+            for (int i = 0; i < tokens.Count; i++)
+            {
+                string token = tokens[i];
+                bool isNumeric = token.All(char.IsDigit);
+                if (isNumeric || NumericWithUnitRegex.IsMatch(token)) continue;
+                if (!AuthoritativeAbbreviations.Contains(token)) return false;
+            }
+            return true;
+        }
+
+        private static bool IsEngineStyleName(string text)
+        {
+            var tokens = Tokenize(text);
+            if (tokens.Count == 0 || tokens.Count > 2) return false;
+            for (int i = 0; i < tokens.Count; i++)
+            {
+                if (!EngineStyleTokens.Contains(tokens[i])) return false;
+            }
+            return true;
+        }
+
+        /// <summary>剥掉首尾装饰符号（▲ ● ○ ▶ « » · 等排版修饰）</summary>
+        public static string TrimDecorations(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            string trimmed = LeadingDecorationRegex.Replace(text.Trim(), string.Empty).Trim();
+            return TrailingDecorationRegex.Replace(trimmed, string.Empty).Trim();
+        }
+
+        /// <summary>
+        /// 文案豁免判定（源码字面量与词典词条共用同一口径）：
+        /// 纯通配符模板（"{SPD}" / "Σ {DV:TOTALTIME}"）/ 无字母 / 纯数字单位 /
+        /// 权威缩写（"SAS" / "RCS/SAS"）/ 引擎内建样式名（"box"）→ 无汉化必要，放行。
+        /// </summary>
+        public static bool IsExemptDisplayText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return true;
+
+            // 通配符模板洞先剔除：剩下若只是分隔符，说明该串是模板而非文案
+            string core = TokenHoleRegex.Replace(text, " ");
+            core = TrimDecorations(core);
+            if (core.Length == 0) return true;
+
+            bool hasLetter = false;
+            for (int i = 0; i < core.Length; i++)
+            {
+                if (char.IsLetter(core[i])) { hasLetter = true; break; }
+            }
+            if (!hasLetter) return true;
+
+            // 拆不出任何 ASCII 字母数字词（只剩 Σ ▲ ⟲ 等非 ASCII 符号）→ 没有英文可汉化
+            if (Tokenize(core).Count == 0) return true;
+
+            if (NumericOnlyRegex.IsMatch(core)) return true;
+            if (IsAllAbbreviated(core)) return true;
+            if (IsEngineStyleName(core)) return true;
+
+            return false;
+        }
     }
 
     /// <summary>
@@ -71,25 +198,182 @@ namespace ModularFlightPanel.HeadlessValidator
     {
         private static readonly Regex ChineseRegex = new Regex(@"[\u4e00-\u9fa5]", RegexOptions.Compiled);
 
-
-
-        private static readonly HashSet<string> ExemptShortTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        /// <summary>
+        /// 可汉化英文的棘轮基线：文件名 -> 允许的"未汉化英文文案"处数上限。
+        /// 中文主语言下这些文案应当汉化；存量欠账按文件冻结，只降不升，新增即门禁失败。
+        /// 数值由 --i18n-baseline-dump 导出后登记，禁止手工估算。
+        /// </summary>
+        private static readonly Dictionary<string, int> EnglishBaselineTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            "SPD", "SPEED", "ALT", "ALTITUDE", "VSI", "VERTSPD", "HDG", "HEADING",
-            "PITCH", "ROLL", "YAW", "THROTTLE", "THR", "AP", "PE", "TWR", "G", "Q",
-            "MACH", "SAS", "RCS", "BODY", "FRAME", "EC", "COMM", "STAGE", "STG", "PROP", "SURFACE", "k",
-            "NORM", "CAUT", "WARN", "OK", "ERR", "ON", "OFF", "X", "Y", "Z", "W",
-            "AUTO", "MANUAL", "LOCK", "FREE", "ARM", "DISARM", "RCS/SAS", "HUD",
-            "GUI", "UI", "ID", "FPS", "HZ", "MS", "KB", "MB", "GB", "V", "A", "W",
-            "KN", "KPA", "ATM", "M/S", "KM", "M", "S", "MIN", "H", "D", "Y",
-            // Unity built-in GUIStyle & control names
-            "label", "Button", "box", "textfield",
-            // Channels, states, & abbreviations
-            "R", "G", "B", "A", "hard", "soft", "none", "UT", "MET", "MFP", "KSP", "PREC", "DCK", "DOCK",
-            "TITLE", "SUBTITLE", "ELEC", "COMMNET", "LINKED", "SEARCHING", "STANDBY", "BURNING!",
-            "LIVE", "BYPASS", "WARNING", "CAUTION", "NOMINAL", "NO NODE", "BURN IN",
-            "RESUME MFP HUD", "BYPASS MFP (ZERO OVERHEAD)", "PRIMARY COMM DISH", "DIRECT · 5.0k POWER", "NO TELEMETRY LINK"
+            // ── 存量欠账（--i18n-baseline-dump 导出，只降不升；新增文件一律不得进入本表）──
+            { "ArcMeterWidget.cs", 1 },
+            { "ArcTapeWidget.cs", 1 },
+            { "AvionicsBarGaugeWidget.cs", 1 },
+            { "B747EicasWidget.cs", 4 },
+            { "B787EicasWidget.cs", 16 },
+            { "CommSignalWidget.cs", 8 },
+            { "CustomTokenTextWidget.cs", 1 },
+            { "EcamAlertLogWidget.cs", 5 },
+            { "EcamStatusWidget.cs", 2 },
+            { "ElectricalSystemWidget.cs", 5 },
+            { "FavoriteToolbarWidget.cs", 1 },
+            { "LifeSupportWidget.cs", 8 },
+            { "ManeuverNodeWidget.cs", 11 },
+            { "ManeuverTimelineWidget.cs", 6 },
+            { "MasterWarningWidget.cs", 3 },
+            { "NavballSphereWidget.cs", 5 },
+            { "NDNavigationWidget.cs", 2 },
+            { "OrbitalElementsWidget.cs", 7 },
+            { "OrbitalInfoWidget.cs", 2 },
+            { "PerformanceMonitorWidget.cs", 10 },
+            { "ReferenceFrameWidget.cs", 3 },
+            { "Rocket2DWidget.cs", 6 },
+            { "SASDialWidget.cs", 1 },
+            { "SignalStatusWidget.cs", 13 },
+            { "SpaceXArcGaugeWidget.cs", 1 },
+            { "SpaceXAttitudeWidget.cs", 2 },
+            { "SpaceXBottomBarWidget.cs", 5 },
+            { "SpaceXDockingReticleWidget.cs", 8 },
+            { "SpaceXEngineWidget.cs", 6 },
+            { "SpaceXHeaderWidget.cs", 10 },
+            { "SpaceXOverviewWidget.cs", 12 },
+            { "SpaceXTimelineWidget.cs", 3 },
+            { "StageControlWidget.cs", 7 },
+            { "StageDeltaVWidget.cs", 7 },
+            { "StagingSequenceWidget.cs", 6 },
+            { "StandardFlightWidgetTemplate.cs", 1 },
+            { "TabAssembler.cs", 3 },
+            { "TapeGaugeWidget.cs", 1 },
+            { "TimeWarpWidget.cs", 4 },
+            { "UIWidget.cs", 4 },
+            { "VesselAttitudeSphereWidget.cs", 2 },
+            { "WidgetDslControls.cs", 1 },
         };
+
+        /// <summary>
+        /// 可汉化英文的棘轮上限（冻结值）：基线永远不得高于此表。内容与 EnglishBaselineTable 同步冻结。
+        /// </summary>
+        private static readonly Dictionary<string, int> EnglishRatchetCeilingTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "ArcMeterWidget.cs", 1 },
+            { "ArcTapeWidget.cs", 1 },
+            { "AvionicsBarGaugeWidget.cs", 1 },
+            { "B747EicasWidget.cs", 4 },
+            { "B787EicasWidget.cs", 16 },
+            { "CommSignalWidget.cs", 8 },
+            { "CustomTokenTextWidget.cs", 1 },
+            { "EcamAlertLogWidget.cs", 5 },
+            { "EcamStatusWidget.cs", 2 },
+            { "ElectricalSystemWidget.cs", 5 },
+            { "FavoriteToolbarWidget.cs", 1 },
+            { "LifeSupportWidget.cs", 8 },
+            { "ManeuverNodeWidget.cs", 11 },
+            { "ManeuverTimelineWidget.cs", 6 },
+            { "MasterWarningWidget.cs", 3 },
+            { "NavballSphereWidget.cs", 5 },
+            { "NDNavigationWidget.cs", 2 },
+            { "OrbitalElementsWidget.cs", 7 },
+            { "OrbitalInfoWidget.cs", 2 },
+            { "PerformanceMonitorWidget.cs", 10 },
+            { "ReferenceFrameWidget.cs", 3 },
+            { "Rocket2DWidget.cs", 6 },
+            { "SASDialWidget.cs", 1 },
+            { "SignalStatusWidget.cs", 13 },
+            { "SpaceXArcGaugeWidget.cs", 1 },
+            { "SpaceXAttitudeWidget.cs", 2 },
+            { "SpaceXBottomBarWidget.cs", 5 },
+            { "SpaceXDockingReticleWidget.cs", 8 },
+            { "SpaceXEngineWidget.cs", 6 },
+            { "SpaceXHeaderWidget.cs", 10 },
+            { "SpaceXOverviewWidget.cs", 12 },
+            { "SpaceXTimelineWidget.cs", 3 },
+            { "StageControlWidget.cs", 7 },
+            { "StageDeltaVWidget.cs", 7 },
+            { "StagingSequenceWidget.cs", 6 },
+            { "StandardFlightWidgetTemplate.cs", 1 },
+            { "TabAssembler.cs", 3 },
+            { "TapeGaugeWidget.cs", 1 },
+            { "TimeWarpWidget.cs", 4 },
+            { "UIWidget.cs", 4 },
+            { "VesselAttitudeSphereWidget.cs", 2 },
+            { "WidgetDslControls.cs", 1 },
+        };
+
+        public static int TotalRegisteredEnglishDebt
+        {
+            get
+            {
+                int total = 0;
+                foreach (var kv in EnglishBaselineTable) total += kv.Value;
+                return total;
+            }
+        }
+
+        /// <summary>该文件允许的可汉化英文处数上限</summary>
+        public static int GetAllowedEnglishOccurrences(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName)) return 0;
+            return EnglishBaselineTable.TryGetValue(fileName, out int allowed) ? allowed : 0;
+        }
+
+        public static bool IsEnglishBaselineRegistered(string fileName) =>
+            !string.IsNullOrEmpty(fileName) && EnglishBaselineTable.ContainsKey(fileName);
+
+        /// <summary>棘轮完整性校验：基线必须登记过冻结上限，且只允许下调</summary>
+        public static List<string> ValidateEnglishRatchet()
+        {
+            var failures = new List<string>();
+
+            foreach (var kv in EnglishBaselineTable)
+            {
+                if (!EnglishRatchetCeilingTable.TryGetValue(kv.Key, out int ceiling))
+                {
+                    failures.Add("英文基线未登记棘轮上限（禁止新增基线文件）: " + kv.Key + " = " + kv.Value
+                               + "；确需登记时必须同时写入 EnglishRatchetCeilingTable 与 EnglishBaselineTable");
+                    continue;
+                }
+                if (kv.Value > ceiling)
+                {
+                    failures.Add("英文基线被上调（棘轮只允许下降）: " + kv.Key + " = " + kv.Value + " 高于冻结上限 " + ceiling);
+                }
+            }
+
+            foreach (var kv in EnglishRatchetCeilingTable)
+            {
+                if (!EnglishBaselineTable.ContainsKey(kv.Key) && kv.Value != 0)
+                {
+                    failures.Add("英文棘轮上限登记了非零值但基线表里没有对应条目: " + kv.Key + " = " + kv.Value);
+                }
+            }
+
+            return failures;
+        }
+
+        /// <summary>
+        /// 棘轮预算判定：逐文件比对"实测未汉化英文处数 vs 基线"。超出即新增欠账 → 门禁失败。
+        /// </summary>
+        public static List<string> ValidateEnglishBudget(I18nAuditReport report)
+        {
+            var failures = new List<string>();
+            if (report == null) return failures;
+
+            var byFile = report.Issues
+                .Where(i => i.IssueType == I18nIssueType.UntranslatedEnglish)
+                .GroupBy(i => Path.GetFileName(i.FilePath), StringComparer.OrdinalIgnoreCase);
+
+            foreach (var group in byFile)
+            {
+                int allowed = GetAllowedEnglishOccurrences(group.Key);
+                int actual = group.Count();
+                if (actual <= allowed) continue;
+
+                var samples = string.Join(" | ", group.Take(3).Select(i => $"L{i.Line} \"{i.OffendingText}\""));
+                failures.Add($"[{group.Key}] 新增未汉化英文文案 {actual - allowed} 处 (实测 {actual} / 基线 {allowed})；"
+                           + "中文主语言下应接入 I18n.Tr 词典，权威缩写除外。样本: " + samples);
+            }
+
+            return failures;
+        }
 
         /// <summary>
         /// 扫描指定目录及其子目录下的所有 C# 源码文件
@@ -235,20 +519,21 @@ namespace ModularFlightPanel.HeadlessValidator
                     return;
                 }
 
-                // 【警告规则 B】直接传入 GUI/GUILayout/UGUI 的原生英文字面量
-                if (IsInsideUiCall(node, out string uiMethodName))
+                // 【警告规则 B】UI 文案槽位中直接传入的可汉化英文（权威缩写 / 通配符模板 / 纯符号除外）
+                if (IsInsideDisplayTextSlot(node, out string channelName))
                 {
-                    if (!IsExemptUiLiteral(text))
+                    if (!I18nLexicon.IsExemptDisplayText(text))
                     {
                         _report.Issues.Add(new I18nIssue
                         {
                             FilePath = _filePath,
                             Line = line,
                             Column = col,
-                            IssueType = I18nIssueType.HardcodedUiCall,
+                            IssueType = I18nIssueType.UntranslatedEnglish,
                             OffendingText = text,
                             CodeSnippet = node.ToString(),
-                            Description = $"UI 渲染方法 ({uiMethodName}) 直接传入未国际化字面量: \"{text}\"，建议使用 I18n.Tr 进行多语言接入。"
+                            Description = $"UI 文案槽位 ({channelName}) 直接传入未汉化英文: \"{text}\"，"
+                                        + "中文主语言下应使用 I18n.Tr(\"KEY\", \"{text}\") 接入词典。"
                         });
                     }
                 }
@@ -382,7 +667,7 @@ namespace ModularFlightPanel.HeadlessValidator
             };
 
             /// <summary>
-            /// 判定字符串是否属于日志 / 诊断 / 异常文案。
+            /// 日志 / 诊断 / 异常文案判定。
             /// 判定口径是"最近的外层调用"：旧实现只要祖先链上出现过日志调用就整段豁免，
             /// 于是 MFPLogger.Info(Other("中文")) 这类嵌套调用里的未本地化中文被静默放过。
             /// </summary>
@@ -478,29 +763,87 @@ namespace ModularFlightPanel.HeadlessValidator
                 return false;
             }
 
-            private static bool IsInsideUiCall(SyntaxNode node, out string uiMethodName)
+            /// <summary>
+            /// UI 显示文案槽位表（唯一数据源）：调用表达式 → 承载"界面文案"的实参下标。
+            /// 这些形参最终会进入 UGUI Text/IMGUI 控件，属于玩家可见文本；同调用里的其它实参
+            /// （对象名 / 键名 / 样式名）不在此列，因此不会误伤 CreateText 的第 1 参对象名。
+            /// </summary>
+            private static readonly Dictionary<string, int[]> DisplayTextSlots = new Dictionary<string, int[]>(StringComparer.Ordinal)
             {
-                uiMethodName = string.Empty;
+                // 现代微控件 DSL
+                { "TextWidget.Title", new[] { 0 } },
+                { "TextWidget.Badge", new[] { 0 } },
+                { "TextWidget.Value", new[] { 0 } },
+                { "TextWidget.Unit", new[] { 0 } },
+                { "new TextWidget", new[] { 0 } },
+                // UGUI 工厂
+                { "UIFactory.CreateText", new[] { 2 } },
+                { "UIFactory.CreateCockpitButton", new[] { 2 } },
+                { "UIFactory.CreateValueBox", new[] { 4, 5, 6 } },
+                { "UIFactory.CreateAnnunciator", new[] { 4 } },
+                { "UIFactory.CreateSegmentedControl", new[] { 4 } },
+                // 结构化通道兜底文案 与 文本写入助手
+                { "GetTemplateChannel", new[] { 1 } },
+                { "SetTextIfChanged", new[] { 1 } },
+            };
+
+            /// <summary>
+            /// 判定字符串是否落在 UI 显示文案槽位（含 .text/.tooltip 赋值与 GUIContent）。
+            /// 判定口径是"最近的外层调用"：内层若是未知调用（数据加工）则不外扩，
+            /// 避免把 DTO / 键名 / 路径当成文案；string.Format 等纯组装包装视为透明继续外扩。
+            /// </summary>
+            private static bool IsInsideDisplayTextSlot(SyntaxNode node, out string channelName)
+            {
+                channelName = string.Empty;
+
                 foreach (var ancestor in node.Ancestors())
                 {
-                    if (ancestor is InvocationExpressionSyntax inv)
+                    if (ancestor is ArgumentSyntax arg && arg.Parent is ArgumentListSyntax argList)
                     {
-                        string expr = inv.Expression.ToString();
-                        if (expr.StartsWith("GUILayout.") || expr.StartsWith("GUI."))
+                        int index = argList.Arguments.IndexOf(arg);
+
+                        if (argList.Parent is InvocationExpressionSyntax inv)
                         {
-                            uiMethodName = expr;
-                            return true;
+                            string expr = inv.Expression.ToString();
+
+                            if (DisplayTextSlots.TryGetValue(expr, out int[] slots))
+                            {
+                                if (Array.IndexOf(slots, index) >= 0)
+                                {
+                                    channelName = expr + " 第" + index + "参";
+                                    return true;
+                                }
+                                return false;   // 落在同一调用的非文案槽位（如对象名 / 键名）
+                            }
+
+                            if (expr.StartsWith("GUILayout.", StringComparison.Ordinal) || expr.StartsWith("GUI.", StringComparison.Ordinal))
+                            {
+                                channelName = expr;
+                                return true;    // IMGUI 调用内的字面量按旧口径整体视为文案
+                            }
+
+                            if (StringAssemblyPassThroughCalls.Contains(expr)) continue;
+
+                            return false;       // 最近的外层调用是未知数据加工 → 不外扩
                         }
+
+                        if (argList.Parent is ObjectCreationExpressionSyntax oce)
+                        {
+                            string typeName = oce.Type.ToString();
+                            if (typeName == "GUIContent") { channelName = "new GUIContent"; return true; }
+                            if (DisplayTextSlots.TryGetValue("new " + typeName, out int[] ctorSlots))
+                            {
+                                if (Array.IndexOf(ctorSlots, index) >= 0) { channelName = "new " + typeName + " 第" + index + "参"; return true; }
+                                return false;
+                            }
+                        }
+                        continue;
                     }
 
-                    if (ancestor is ObjectCreationExpressionSyntax oce)
+                    if (ancestor is ObjectCreationExpressionSyntax guiContent && guiContent.Type.ToString() == "GUIContent")
                     {
-                        string typeName = oce.Type.ToString();
-                        if (typeName == "GUIContent")
-                        {
-                            uiMethodName = "new GUIContent";
-                            return true;
-                        }
+                        channelName = "new GUIContent";
+                        return true;
                     }
 
                     if (ancestor is AssignmentExpressionSyntax assign)
@@ -509,44 +852,12 @@ namespace ModularFlightPanel.HeadlessValidator
                         if (left.EndsWith(".text", StringComparison.OrdinalIgnoreCase) ||
                             left.EndsWith(".tooltip", StringComparison.OrdinalIgnoreCase))
                         {
-                            // 若字面量处于赋值右侧调用的某个方法参数中（如 GetTemplateChannel("KEY", "DEF")），非直接字面量赋值
-                            if (node.Ancestors().TakeWhile(a => a != assign).OfType<InvocationExpressionSyntax>().Any())
-                            {
-                                continue;
-                            }
-
-                            uiMethodName = left;
+                            channelName = left;
                             return true;
                         }
+                        continue;
                     }
                 }
-                return false;
-            }
-
-            private static bool IsExemptUiLiteral(string text)
-            {
-                if (string.IsNullOrWhiteSpace(text)) return true;
-                if (ExemptShortTokens.Contains(text)) return true;
-
-                // 若剥离前导与后置装饰符号（如 ▲, ●, ○, ▶, ⏸, «, », · 等）后命中豁免列表，合法放行
-                string stripped = Regex.Replace(text.Trim(), @"^[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]]+", "").Trim();
-                stripped = Regex.Replace(stripped, @"[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]]+$", "").Trim();
-                if (ExemptShortTokens.Contains(stripped)) return true;
-
-                // 若字符串内完全没有字母（全为标点、符号、数字、空格、Emoji），属于排版修饰，直接放行
-                bool hasLetter = false;
-                for (int i = 0; i < text.Length; i++)
-                {
-                    if (char.IsLetter(text[i]))
-                    {
-                        hasLetter = true;
-                        break;
-                    }
-                }
-                if (!hasLetter) return true;
-
-                // 纯数字或带简单单位如 "100%", "0.0", "12px", "60hz", "100ms", "60fps", "0.8x", "1.0x"
-                if (Regex.IsMatch(text, @"^[\d\.\,\+\-\%\s\:\/\#\<\>\=]+(px|%|ms|hz|fps|x)?$", RegexOptions.IgnoreCase)) return true;
 
                 return false;
             }
@@ -601,13 +912,13 @@ namespace ModularFlightPanel.HeadlessValidator
                 failures.Add($"[用例 4 失败] 期望检出 1 处未定义字典 Key，实际检出 {rep4.MissingKeyCount}");
             }
 
-            // 用例 5: UI 调用中的排版纯符号必须放过
+            // 用例 5: UI 调用中的排版纯符号与权威缩写必须放过
             cases++;
-            string case5 = "class C { void M() { GUILayout.Label(\" - \"); GUILayout.Label(\" | \"); GUILayout.Button(\"X\"); } }";
+            string case5 = "class C { void M() { GUILayout.Label(\" - \"); GUILayout.Label(\" | \"); GUILayout.Button(\"X\"); GUILayout.Label(\"SAS\"); GUILayout.Label(\"RCS/SAS\"); GUILayout.BeginHorizontal(\"box\"); } }";
             var rep5 = AuditSnippet(case5, validKeys);
             if (rep5.Issues.Count != 0)
             {
-                failures.Add($"[用例 5 失败] UI 排版符号应当放过，实际报告了: {rep5.Issues[0]}");
+                failures.Add($"[用例 5 失败] UI 排版符号 / 权威缩写 / 引擎样式名应当放过，实际报告了: {rep5.Issues[0]}");
             }
 
             // 用例 6: 插值字符串里的硬编码中文同样必须检出（旧实现只看 InterpolatedStringText，容易漏）
@@ -646,6 +957,60 @@ namespace ModularFlightPanel.HeadlessValidator
                 failures.Add($"[用例 9 失败] 日志直接实参与 string.Format 组装应当豁免，实际 {rep9.HardcodedChineseCount}");
             }
 
+            // 用例 10: UGUI 文案通道的可汉化英文必须检出（旧实现只认 GUI/GUILayout，整类漏检）
+            cases++;
+            string case10 = "class C { void M() { "
+                          + "UIFactory.CreateText(t, \"PointingValue\", \"EARTH POINTING\", 9, TextAnchor.MiddleLeft, c); "
+                          + "TextWidget.Title(\"POINTING MODE\"); "
+                          + "SetTextIfChanged(_x, \"AWAITING MANEUVER FLIGHT PLAN\"); "
+                          + "var y = GetTemplateChannel(\"SUBTITLE\", \"POWER DISTRIBUTION\"); "
+                          + "_lbl.text = \"FREE MANUAL\"; } }";
+            var rep10 = AuditSnippet(case10, validKeys);
+            if (rep10.UntranslatedEnglishCount != 5)
+            {
+                failures.Add($"[用例 10 失败] 期望检出 5 处可汉化英文，实际检出 {rep10.UntranslatedEnglishCount}");
+            }
+
+            // 用例 11: 通道内的权威缩写 / 纯通配符模板 / 对象名参数不得误报
+            cases++;
+            string case11 = "class C { void M() { "
+                          + "UIFactory.CreateText(t, \"POINTING MODE\", I18n.Tr(\"TEST_KEY_HELLO\", \"x\"), 9, TextAnchor.MiddleLeft, c); "
+                          + "TextWidget.Value(\"{THROTTLE:PERCENT}\", \"0%\"); "
+                          + "var y = GetTemplateChannel(\"TITLE\", \"SPX\"); "
+                          + "SetTextIfChanged(_x, \"NORM\"); "
+                          + "var z = GetTemplateChannel(\"TPL\", \"Σ {DV:TOTALTIME}\"); } }";
+            var rep11 = AuditSnippet(case11, validKeys);
+            if (rep11.UntranslatedEnglishCount != 0)
+            {
+                failures.Add($"[用例 11 失败] 对象名参数 / 通配符模板 / 权威缩写不应误报，实际 {rep11.UntranslatedEnglishCount}: {rep11.Issues.FirstOrDefault()}");
+            }
+
+            // 用例 12: 数据加工调用内的英文字面量不算文案（最近调用为未知方法 → 不外扩）
+            cases++;
+            string case12 = "class C { void M() { string s = Build(\"EARTH POINTING\"); UIFactory.CreateText(t, \"N\", Make(\"FREE MANUAL\"), 9, TextAnchor.MiddleLeft, c); } }";
+            var rep12 = AuditSnippet(case12, validKeys);
+            if (rep12.UntranslatedEnglishCount != 0)
+            {
+                failures.Add($"[用例 12 失败] 未知数据加工调用内的英文不应计为文案，实际 {rep12.UntranslatedEnglishCount}");
+            }
+
+            // 用例 13: 日志 / I18n 兜底槽中的英文不算源码文案（词典层单独审计）
+            cases++;
+            string case13 = "class C { void M() { MFPLogger.Info(\"EARTH POINTING\"); var s = I18n.Tr(\"TEST_KEY_HELLO\", \"POWER DISTRIBUTION\"); } }";
+            var rep13 = AuditSnippet(case13, validKeys);
+            if (rep13.UntranslatedEnglishCount != 0)
+            {
+                failures.Add($"[用例 13 失败] 日志与 I18n 兜底槽中的英文不应计为源码文案，实际 {rep13.UntranslatedEnglishCount}");
+            }
+
+            // 用例 14: 棘轮完整性（基线必须登记冻结上限）
+            cases++;
+            var ratchetFailures = ValidateEnglishRatchet();
+            if (ratchetFailures.Count != 0)
+            {
+                failures.Add("[用例 14 失败] 英文棘轮被破坏: " + ratchetFailures[0]);
+            }
+
             LastSelfTestCaseCount = cases;
             return failures;
         }
@@ -657,6 +1022,192 @@ namespace ModularFlightPanel.HeadlessValidator
             var walker = new I18nAstWalker("snippet.cs", validKeys, report);
             walker.Visit(tree.GetRoot());
             return report;
+        }
+    }
+
+    /// <summary>
+    /// 词典"未汉化词条"审计 (Dictionary Value Localization Audit)
+    ///
+    /// 中文主语言的直接体现是 zh-CN.json：若某词条在 zh-CN 与 en-US 中逐字相同（且非权威缩写、
+    /// 非纯通配符模板），说明该词条只是把英文原文抄了一遍 —— 玩家在中文界面看到的就是英文。
+    /// 这类"抄写式未汉化"在键名对齐审计中完全隐身（键存在、占位符一致），必须单独判定。
+    ///
+    /// 判定口径与源码审计共用 I18nLexicon，避免出现第二份"权威缩写白名单"。
+    /// 存量欠账按棘轮基线冻结，只降不升。
+    /// </summary>
+    public static class I18nDictionaryValueAudit
+    {
+        /// <summary>
+        /// 未汉化词条棘轮基线：语言文件 -> 允许的未汉化词条数上限（只降不升）。
+        /// 存量 36 条明细（--i18n-baseline-dump 导出）：
+        ///   UI_WORKBENCH_TITLE / UI_LANG_EN / THM_LANG_EN_US /
+        ///   WIDGET_STAGE_CTRL_TITLE / WIDGET_STAGE_STAGE / WIDGET_STAGE_ARMED / WIDGET_STAGE_LOCKED / WIDGET_STAGE_CUTOFF /
+        ///   WIDGET_AXIS_PITCH / WIDGET_AXIS_ROLL / WIDGET_AXIS_YAW / WIDGET_PROP_PROPELLANT /
+        ///   WIDGET_TIMEWARP_WARP / WIDGET_TIMEWARP_PHYS / WIDGET_TIMEWARP_PAUSE / WIDGET_TIMEWARP_RESUME / WIDGET_TIMEWARP_PAUSED /
+        ///   SAS_STATUS_LOCK / SAS_MODE_STABILITY / SAS_MODE_PROGRADE / SAS_MODE_RETROGRADE / SAS_MODE_NORMAL /
+        ///   SAS_MODE_ANTINORMAL / SAS_MODE_RADIAL_IN / SAS_MODE_RADIAL_OUT / SAS_MODE_TARGET / SAS_MODE_MANEUVER /
+        ///   WIDGET_STAGE_HIDE_STOCK / WIDGET_STAGE_SHOW_STOCK /
+        ///   WIDGET_SIGNAL_NONE / WIDGET_SIGNAL_PART / WIDGET_SIGNAL_FULL / WIDGET_SIGNAL_RELAY /
+        ///   WIDGET_SIGNAL_FOOTER / WIDGET_SIGNAL_TITLE / ORBIT_TIME_PLACEHOLDER
+        /// </summary>
+        private static readonly Dictionary<string, int> BaselineTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "zh-CN.json", 36 },
+        };
+
+        /// <summary>棘轮上限（冻结值）：基线永远不得高于此表</summary>
+        private static readonly Dictionary<string, int> RatchetCeilingTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "zh-CN.json", 36 },
+        };
+
+        public sealed class UntranslatedEntry
+        {
+            public string Key { get; set; } = string.Empty;
+            public string Value { get; set; } = string.Empty;
+        }
+
+        public static int TotalRegisteredDebt
+        {
+            get
+            {
+                int total = 0;
+                foreach (var kv in BaselineTable) total += kv.Value;
+                return total;
+            }
+        }
+
+        public static int GetAllowedOccurrences(string languageFileName)
+        {
+            if (string.IsNullOrEmpty(languageFileName)) return 0;
+            return BaselineTable.TryGetValue(languageFileName, out int allowed) ? allowed : 0;
+        }
+
+        /// <summary>
+        /// 扫描主语言词典中"与参照语言逐字相同"的词条（权威缩写 / 通配符模板除外）。
+        /// </summary>
+        public static List<UntranslatedEntry> Scan(Dictionary<string, string> primaryDict, Dictionary<string, string> referenceDict)
+        {
+            var result = new List<UntranslatedEntry>();
+            if (primaryDict == null || referenceDict == null) return result;
+
+            foreach (var kv in primaryDict)
+            {
+                // I18nJsonParser 为嵌套词条同时写入 "translations.KEY" 全路径与 "KEY" 短别名，
+                // 全路径是同一条词条的副本；不跳过会让同一词条被数两次，基线直接翻倍。
+                if (kv.Key.Contains('.') && primaryDict.ContainsKey(kv.Key.Substring(kv.Key.LastIndexOf('.') + 1))) continue;
+
+                if (!referenceDict.TryGetValue(kv.Key, out string reference)) continue;
+                if (!string.Equals(kv.Value, reference, StringComparison.Ordinal)) continue;
+                if (I18nLexicon.IsExemptDisplayText(kv.Value)) continue;
+
+                result.Add(new UntranslatedEntry { Key = kv.Key, Value = kv.Value });
+            }
+
+            return result;
+        }
+
+        /// <summary>棘轮预算判定：实测未汉化词条数超出基线 → 门禁失败</summary>
+        public static List<string> ValidateBudget(int actualCount, string languageFileName)
+        {
+            var failures = new List<string>();
+            int allowed = GetAllowedOccurrences(languageFileName);
+            if (actualCount > allowed)
+            {
+                failures.Add($"[{languageFileName}] 新增未汉化词条 {actualCount - allowed} 条 (实测 {actualCount} / 基线 {allowed})；"
+                           + "中文主语言词条必须汉化，权威缩写除外。可运行 --i18n-ast 查看明细。");
+            }
+            return failures;
+        }
+
+        /// <summary>棘轮完整性校验：基线必须登记冻结上限，且只允许下调</summary>
+        public static List<string> ValidateRatchet()
+        {
+            var failures = new List<string>();
+
+            foreach (var kv in BaselineTable)
+            {
+                if (!RatchetCeilingTable.TryGetValue(kv.Key, out int ceiling))
+                {
+                    failures.Add("词典基线未登记棘轮上限（禁止新增基线文件）: " + kv.Key + " = " + kv.Value);
+                    continue;
+                }
+                if (kv.Value > ceiling)
+                {
+                    failures.Add("词典基线被上调（棘轮只允许下降）: " + kv.Key + " = " + kv.Value + " 高于冻结上限 " + ceiling);
+                }
+            }
+
+            foreach (var kv in RatchetCeilingTable)
+            {
+                if (!BaselineTable.ContainsKey(kv.Key) && kv.Value != 0)
+                {
+                    failures.Add("词典棘轮上限登记了非零值但基线表里没有对应条目: " + kv.Key + " = " + kv.Value);
+                }
+            }
+
+            return failures;
+        }
+
+        /// <summary>最近一次 SelfTest 实际执行的用例数</summary>
+        public static int LastSelfTestCaseCount { get; private set; }
+
+        /// <summary>
+        /// 词典值审计的正反用例自检 + 棘轮完整性校验。
+        /// </summary>
+        public static List<string> SelfTest()
+        {
+            var failures = new List<string>();
+            int cases = 0;
+
+            // 用例 1: 抄写式英文（整词）必须检出
+            cases++;
+            var zh = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "A", "POWER DISTRIBUTION" },   // 抄写式英文 → 违规
+                { "translations.A", "POWER DISTRIBUTION" },  // 解析器全路径副本 → 不得重复计数
+                { "B", "SPX" },                  // 权威缩写 → 放行
+                { "C", "SAS: OFF" },             // 缩写组合 → 放行
+                { "D", "电源分配" },              // 已汉化 → 放行
+                { "E", "Σ {DV:TOTALTIME}" },     // 通配符模板 → 放行
+                { "F", "PAGE 1/1" },             // 英文文案 → 违规
+            };
+            var en = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "A", "POWER DISTRIBUTION" },
+                { "translations.A", "POWER DISTRIBUTION" },
+                { "B", "SPX" },
+                { "C", "SAS: OFF" },
+                { "D", "POWER DISTRIBUTION" },
+                { "E", "Σ {DV:TOTALTIME}" },
+                { "F", "PAGE 1/1" },
+            };
+            var hits = Scan(zh, en);
+            if (hits.Count != 2 || hits.All(h => h.Key != "A") || hits.All(h => h.Key != "F"))
+            {
+                failures.Add($"[词典用例 1 失败] 期望检出 A / F 两条未汉化词条（全路径副本不重复计数），实际 {hits.Count} 条: "
+                           + string.Join(",", hits.Select(h => h.Key)));
+            }
+
+            // 用例 2: 参照词典缺失该键时不判定
+            cases++;
+            var hits2 = Scan(new Dictionary<string, string> { { "X", "NO TELEMETRY LINK" } },
+                             new Dictionary<string, string>());
+            if (hits2.Count != 0)
+            {
+                failures.Add("[词典用例 2 失败] 参照词典无该键时不应判定未汉化");
+            }
+
+            // 用例 3: 棘轮完整性
+            cases++;
+            var ratchetFailures = ValidateRatchet();
+            if (ratchetFailures.Count != 0)
+            {
+                failures.Add("[词典用例 3 失败] 棘轮被破坏: " + ratchetFailures[0]);
+            }
+
+            LastSelfTestCaseCount = cases;
+            return failures;
         }
     }
 }
