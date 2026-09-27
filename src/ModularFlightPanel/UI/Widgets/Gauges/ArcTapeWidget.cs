@@ -25,12 +25,12 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
     /// 5. 动态无极工程量纲引擎 (带 15% 滞后死区防抖) 与 Tabular Monospace 等宽定宽制表排版，彻底根除高频数字抖动与闪烁
     /// 6. 严格遵照 MFP-SPEC-001..007 标准化铁律，0 颜色字面量，100% 通配符双通道驱动，零 GC
     /// </summary>
-    [FlightWidget("arc_tape", "arc_speed_tape", "arc_altitude_tape", "arc_alt_tape", "curved_tape", "curved_speed_tape", "curved_altitude_tape", "curved_alt_tape", Category = WidgetCategory.Gauges, DisplayName = "HUD 弧形滚动标尺带", Description = "次世代 HUD / 玻璃座舱弧形标尺带，支持可调曲率、半径与垂直升降率/动压指示。", DefaultWidgetId = "custom.arc_speed_tape", DefaultX = -235f, DefaultY = 0f, ExactIds = new[] { "custom.arc_speed_tape", "core.arc_speed_tape", "custom.arc_altitude_tape", "core.arc_altitude_tape" })]
+    [FlightWidget("arc_tape", "arc_speed_tape", "arc_altitude_tape", "arc_alt_tape", "curved_tape", "curved_speed_tape", "curved_altitude_tape", "curved_alt_tape", Category = WidgetCategory.Gauges, DisplayName = "HUD 弧形滚动标尺带", Description = "次世代 HUD / 玻璃座舱弧形标尺带，支持可调曲率、半径与垂直升降率/动压指示。", DefaultWidgetId = "custom.arc_speed_tape", DefaultX = -235f, DefaultY = 0f, HighFrequency = true, ExactIds = new[] { "custom.arc_speed_tape", "core.arc_speed_tape", "custom.arc_altitude_tape", "core.arc_altitude_tape" })]
     public class ArcTapeWidget : BaseFlightWidget
     {
         public override Vector2 BaseSize => new Vector2(198f, 346f);
         protected override bool AutoCreateCardFrame => false;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
         // 声明式微控件
         public TextWidget ModeTag = TextWidget.Title("SPD");

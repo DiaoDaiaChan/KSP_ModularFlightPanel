@@ -30,7 +30,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
     {
         public override Vector2 BaseSize => new Vector2(198f, 346f);
         protected override bool AutoCreateCardFrame => false;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
         // 声明式微控件
         public TextWidget ModeTag = TextWidget.Title("SPD");

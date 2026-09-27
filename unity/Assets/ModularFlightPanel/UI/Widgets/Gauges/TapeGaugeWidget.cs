@@ -22,7 +22,7 @@ namespace ModularFlightPanel.UI.Widgets
     [FlightWidget("tape", "tape_gauge", "speed_tape", "altitude_tape", Category = WidgetCategory.Gauges, DisplayName = "PFD 垂直动态标尺带", Description = "PFD 风格平滑滚动动态标尺带，支持任意物理数据与步长。", DefaultWidgetId = "tape.speed", DefaultX = -235f, DefaultY = 0f)]
     public class TapeGaugeWidget : BaseFlightWidget, IAdaptiveSizeWidget
     {
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
         public override Vector2 BaseSize => new Vector2(50f, 240f);
         protected override bool AutoCreateCardFrame => false;
 

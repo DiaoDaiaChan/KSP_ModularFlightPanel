@@ -18,8 +18,8 @@ namespace ModularFlightPanel.UI
 
     public enum WidgetRefreshTier
     {
-        Critical = 0, // 60 Hz / 每一帧更新 (3D姿态球, 航向指示弧)
-        Standard = 1, // 30 Hz / 约 33ms 更新 (速度/高度滚带, ECAM表盘, ND导航, SAS罗盘)
+        Critical = 0, // 60 Hz / 每一帧更新 (3D姿态球, 航向指示弧, 速度/高度滚带)
+        Standard = 1, // 30 Hz / 约 33ms 更新 (ECAM表盘, ND导航, SAS罗盘)
         Relaxed  = 2, // 10 Hz / 约 100ms 更新 (电力, 维生, 分级ΔV, 时钟, 工具栏, 轨道数据)
         UltraLow = 3  // 2 Hz  / 约 500ms 更新 (大尺度时间加速或后台低频监视)
     }
