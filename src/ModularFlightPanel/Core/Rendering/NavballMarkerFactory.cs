@@ -16,6 +16,10 @@ namespace ModularFlightPanel.Core
         private static Sprite _circleMaskSprite;
         private static Sprite _circleRingSprite;
         private static Sprite _reticleSprite;
+        private static Sprite _rollPointerSprite;
+        private static Sprite _sasLockReticleSprite;
+        private static Sprite _guidanceChevronSprite;
+        private static Sprite _shockwaveSprite;
 
         public static void ClearCache()
         {
@@ -23,6 +27,10 @@ namespace ModularFlightPanel.Core
             _circleMaskSprite = null;
             _circleRingSprite = null;
             _reticleSprite = null;
+            _rollPointerSprite = null;
+            _sasLockReticleSprite = null;
+            _guidanceChevronSprite = null;
+            _shockwaveSprite = null;
         }
 
         public static Sprite GetReticleSprite()
