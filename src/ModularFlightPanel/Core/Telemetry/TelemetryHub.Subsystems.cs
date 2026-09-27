@@ -429,7 +429,7 @@ namespace ModularFlightPanel.Core
                         {
                             _directLinkTarget = raLinks[0].PeerName;
                         }
-                        _controlLevelStr = !_isConnected ? "NO LINK" : (_commSignal < 0.35 ? "WEAK LINK" : "FULL CONTROL");
+                        _controlLevelStr = !_isConnected ? I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路") : (_commSignal < 0.35 ? I18n.Tr("WIDGET_SIG_CTRL_WEAK_LINK", "弱链路") : I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
                     }
                     else
                     {
@@ -440,10 +440,11 @@ namespace ModularFlightPanel.Core
                             _signalTx = _commSignal;
                             _signalRx = _commSignal;
 
-                            if (!_isConnected) _controlLevelStr = "NO LINK";
-                            else if (v.CurrentControlLevel == Vessel.ControlLevel.NONE) _controlLevelStr = "NO CONTROL";
+                            if (!_isConnected) _controlLevelStr = I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路");
+                            else if (v.CurrentControlLevel == Vessel.ControlLevel.NONE) _controlLevelStr = I18n.Tr("WIDGET_SIG_CTRL_NO_CONTROL", "无控制");
+                            // "PARTIAL" 保持英文：SignalStatusWidget 以 IndexOf("PART") 判定部分控制
                             else if (v.CurrentControlLevel == Vessel.ControlLevel.PARTIAL_UNMANNED || v.CurrentControlLevel == Vessel.ControlLevel.PARTIAL_MANNED) _controlLevelStr = "PARTIAL";
-                            else _controlLevelStr = _commSignal < 0.25 ? "WEAK LINK" : "FULL CONTROL";
+                            else _controlLevelStr = _commSignal < 0.25 ? I18n.Tr("WIDGET_SIG_CTRL_WEAK_LINK", "弱链路") : I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制");
 
                             _cachedStockCommLinks.Clear();
                             if (v.Connection.ControlPath != null && v.Connection.ControlPath.Count > 0)
@@ -467,7 +468,8 @@ namespace ModularFlightPanel.Core
                             }
                             else
                             {
-                                _directLinkTarget = _isConnected ? "KERBIN DSN" : "NONE";
+                                // "NONE" 保持英文：SignalStatusWidget 以 rawTarget != "NONE" 判定哨兵值
+                                _directLinkTarget = _isConnected ? I18n.Tr("WIDGET_SIG_KERBIN_DSN", "坎星深空网") : "NONE";
                                 _dataRateBps = _isConnected ? 100000.0 * _commSignal : 0.0;
                             }
                         }
@@ -527,7 +529,8 @@ namespace ModularFlightPanel.Core
                         else pwrStr = $"{pwr:F0}";
 
                         bool isOperational = true;
-                        string status = _isConnected ? (i == 0 ? "LINKED" : "STANDBY") : "SEARCHING";
+                        // "LINKED"/"STANDBY" 保持英文：SignalStatusWidget 以 == 判定活动天线
+                        string status = _isConnected ? (i == 0 ? "LINKED" : "STANDBY") : I18n.Tr("WIDGET_SIG_SEARCHING", "搜索中");
                         float sig = (float)_commSignal;
 
                         if (t.part != null)
@@ -537,19 +540,19 @@ namespace ModularFlightPanel.Core
                             {
                                 if (dep.deployState == ModuleDeployablePart.DeployState.RETRACTED)
                                 {
-                                    status = "RETRACTED";
+                                    status = I18n.Tr("WIDGET_SIG_RETRACTED", "已收回");
                                     sig = 0f;
                                     isOperational = false;
                                 }
                                 else if (dep.deployState == ModuleDeployablePart.DeployState.EXTENDING ||
                                          dep.deployState == ModuleDeployablePart.DeployState.RETRACTING)
                                 {
-                                    status = "DEPLOYING";
+                                    status = I18n.Tr("WIDGET_SIG_DEPLOYING", "展开中");
                                     sig = 0f;
                                 }
                                 else if (dep.deployState == ModuleDeployablePart.DeployState.BROKEN)
                                 {
-                                    status = "BROKEN";
+                                    status = I18n.Tr("WIDGET_SIG_BROKEN", "损坏");
                                     sig = 0f;
                                     isOperational = false;
                                 }
@@ -567,7 +570,8 @@ namespace ModularFlightPanel.Core
 
             if (_cachedAntennasList.Count == 0)
             {
-                string status = _isConnected ? "LINKED" : "NO LINK";
+                // "LINKED" 保持英文：SignalStatusWidget 以 == 判定活动天线
+                string status = _isConnected ? "LINKED" : I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路");
                 _cachedAntennasList.Add(new AntennaTelemetryInfo("INTERNAL ANTENNA", "INTERNAL", 5000.0, "5.0k", (float)_commSignal, status, true));
             }
             _antennas = _cachedAntennasList;

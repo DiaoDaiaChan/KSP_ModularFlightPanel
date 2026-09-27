@@ -367,32 +367,32 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             string sit = telem.FlightSituation;
-            if (sit == "PRELAUNCH") return "PAD STANDBY / COUNTDOWN";
-            if (sit == "LANDED" || sit == "SPLASHED") return "TOUCHDOWN NOMINAL";
+            if (sit == "PRELAUNCH") return I18n.Tr("WIDGET_SPX_MSG_PAD_STANDBY", "发射台待命 / 倒计时");
+            if (sit == "LANDED" || sit == "SPLASHED") return I18n.Tr("WIDGET_SPX_MSG_TOUCHDOWN_NOMINAL", "触地正常");
 
-            if (telem.IsStageSeparating) return "STAGE SEPARATION OCCURRED";
-            if (telem.IsEngineIgniting) return "IGNITION SEQUENCE START";
+            if (telem.IsStageSeparating) return I18n.Tr("WIDGET_SPX_MSG_STAGE_SEPARATION_OCCURRED", "级间分离完成");
+            if (telem.IsEngineIgniting) return I18n.Tr("WIDGET_SPX_MSG_IGNITION_SEQUENCE_START", "点火程序启动");
 
             double atmDepth = telem.HasAtmosphere ? telem.AtmosphereDepth : 0.0;
 
             if (telem.HasAtmosphere && telem.AltitudeASL < atmDepth)
             {
-                if (telem.VerticalSpeed < -50.0) return "ATMOSPHERIC ENTRY PHASE";
-                if (telem.DynamicPressure > 25.0) return "MAX-Q DYNAMIC PRESSURE";
-                if (telem.VerticalSpeed > 10.0 && telem.CurrentStage >= 2) return "SUPER HEAVY POWERED ASCENT";
+                if (telem.VerticalSpeed < -50.0) return I18n.Tr("WIDGET_SPX_MSG_ATMOSPHERIC_ENTRY", "大气再入段");
+                if (telem.DynamicPressure > 25.0) return I18n.Tr("WIDGET_SPX_MSG_MAXQ", "最大动压");
+                if (telem.VerticalSpeed > 10.0 && telem.CurrentStage >= 2) return I18n.Tr("WIDGET_SPX_MSG_SUPER_HEAVY_ASCENT", "超重助推动力爬升");
             }
 
             if (telem.CurrentStage <= 1 && telem.Throttle > 0.05f)
             {
-                return "STARSHIP SECOND STAGE BURN";
+                return I18n.Tr("WIDGET_SPX_MSG_STARSHIP_SECOND_BURN", "星舰二级点火");
             }
 
             if (telem.Periapsis > atmDepth && telem.Eccentricity < 1.0)
             {
-                return telem.Throttle <= 0.01f ? "ORBITAL INSERTION / COAST" : "ORBITAL MANEUVER BURN";
+                return telem.Throttle <= 0.01f ? I18n.Tr("WIDGET_SPX_MSG_ORBITAL_INSERTION_COAST", "入轨 / 滑行") : I18n.Tr("WIDGET_SPX_MSG_ORBITAL_MANEUVER_BURN", "轨道机动点火");
             }
 
-            return "STARSHIP FLIGHT TEST";
+            return I18n.Tr("WIDGET_SPX_STARSHIP_FLIGHT_TEST", "星舰飞行试验");
         }
 
         private static void EnsureSharedArcTexture()

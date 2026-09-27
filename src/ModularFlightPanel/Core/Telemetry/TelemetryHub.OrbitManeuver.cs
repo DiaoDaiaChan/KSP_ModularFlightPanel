@@ -269,7 +269,7 @@ namespace ModularFlightPanel.Core
         {
             get
             {
-                if (IsSimulationMode) return "SIM";
+                if (IsSimulationMode) return I18n.Tr("WIDGET_DV_SIM", "仿真");
                 EnsureManeuverUpdated();
                 return _maneuverSource;
             }

@@ -480,7 +480,7 @@ namespace ModularFlightPanel.Core
                 if (sub == "RX") return FormatNumber(t.SignalRx * 100.0, fmt, "F0") + "%";
                 if (sub == "RATE") return CommLinkInfo.FormatRate(t.DataRateBps);
                 if (sub == "TARGET" || sub == "PEER") return t.DirectLinkTarget;
-                if (sub == "STATUS") return t.IsConnected ? "CONNECTED" : "NO SIGNAL";
+                if (sub == "STATUS") return t.IsConnected ? I18n.Tr("WIDGET_SIG_CONNECTED", "已连接") : I18n.Tr("WIDGET_SIG_NO_SIGNAL", "无信号");
                 return FormatNumber(t.CommSignal * 100.0, fmt, "F0") + "%";
             }, "COMM");
 
@@ -495,10 +495,10 @@ namespace ModularFlightPanel.Core
 
             RegisterStringToken("WARP", (t, sub, fmt) =>
             {
-                if (sub == "MODE") return t.IsPhysicsWarp ? "PHYSICS" : "REGULAR";
+                if (sub == "MODE") return t.IsPhysicsWarp ? I18n.Tr("WIDGET_TW_MODE_PHYSICS", "物理加速") : I18n.Tr("WIDGET_TW_MODE_REGULAR", "常规");
                 if (sub == "RATE") return $"{t.TimeWarpRate:0.#}x";
                 if (sub == "INDEX") return t.TimeWarpRateIndex.ToString();
-                if (sub == "PAUSE" || sub == "PAUSED") return t.IsGamePaused ? "PAUSED" : "RUNNING";
+                if (sub == "PAUSE" || sub == "PAUSED") return t.IsGamePaused ? I18n.Tr("WIDGET_TIMEWARP_PAUSED", "已暂停") : I18n.Tr("WIDGET_TW_MODE_RUNNING", "运行中");
                 return $"{t.TimeWarpRate:0.#}x";
             }, "TIMEWARP");
 
@@ -550,7 +550,7 @@ namespace ModularFlightPanel.Core
                 if (sub == "TIME" || sub == "TIMETONODE") return (t.ManeuverTimeToNode < 0 ? "T+" : "T-") + FormatTime(Math.Abs(t.ManeuverTimeToNode));
                 if (sub == "BURNTIME" || sub == "DURATION") return FormatTime(Math.Max(0.0, t.ManeuverBurnTime));
                 if (sub == "TIMETOBURN" || sub == "STARTBURN") return (t.ManeuverTimeToBurn < 0 ? "T+" : "T-") + FormatTime(Math.Abs(t.ManeuverTimeToBurn));
-                if (sub == "STATUS") return t.ManeuverTimeToBurn <= 0 ? (t.ManeuverDeltaV <= 0.1 ? "COMPLETE" : "BURNING") : "ARMED";
+                if (sub == "STATUS") return t.ManeuverTimeToBurn <= 0 ? (t.ManeuverDeltaV <= 0.1 ? I18n.Tr("WIDGET_NAV_BURN_COMPLETE", "已完成") : I18n.Tr("WIDGET_NAV_BURNING", "燃烧中")) : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
                 if (sub == "PRO" || sub == "PROGRADE")
                 {
                     string sign = t.ManeuverDeltaVPrograde >= 0.0 ? "+" : "";
@@ -620,8 +620,8 @@ namespace ModularFlightPanel.Core
             RegisterStringToken("CTRL_TRANSY", (t, sub, fmt) => FormatNumber(t.YInput * 100.0, fmt, "+0;-0;0") + "%");
             RegisterStringToken("CTRL_TRANSZ", (t, sub, fmt) => FormatNumber(t.ZInput * 100.0, fmt, "+0;-0;0") + "%");
 
-            RegisterStringToken("STAGE_LOCK", (t, sub, fmt) => t.IsStageLocked ? "LOCKED" : "ARMED");
-            RegisterStringToken("CTRL_MODE", (t, sub, fmt) => t.IsDockingMode ? "DOCKING" : "STAGING");
+            RegisterStringToken("STAGE_LOCK", (t, sub, fmt) => t.IsStageLocked ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"));
+            RegisterStringToken("CTRL_MODE", (t, sub, fmt) => t.IsDockingMode ? I18n.Tr("WIDGET_SIG_CTRL_DOCKING", "对接") : I18n.Tr("WIDGET_SIG_CTRL_STAGING", "分级"));
             RegisterStringToken("CTRL_PREC", (t, sub, fmt) => t.IsPrecisionControl ? "PREC" : "NORM");
             RegisterStringToken("STAGE_PROP_NAME", (t, sub, fmt) => t.StagePropellantName);
 
@@ -643,8 +643,8 @@ namespace ModularFlightPanel.Core
             RegisterStringToken("TGT", (t, sub, fmt) =>
             {
                 if (sub == "NAME") return t.TargetName;
-                if (sub == "HAS" || sub == "LOCKED") return t.HasTarget ? "YES" : "NO";
-                if (sub == "STATUS") return t.HasTarget ? "LOCKED" : "NO TARGET";
+                if (sub == "HAS" || sub == "LOCKED") return t.HasTarget ? I18n.Tr("WIDGET_TOK_YES", "是") : I18n.Tr("WIDGET_TOK_NO", "否");
+                if (sub == "STATUS") return t.HasTarget ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定") : I18n.Tr("WIDGET_NAV_NO_TARGET", "无目标");
                 if (!t.HasTarget && (sub == "DIST" || sub == "RATE" || sub == "X" || sub == "Y" || sub == "Z" || sub == "PITCH" || sub == "ROLL" || sub == "YAW")) return "---";
 
                 if (sub == "DIST" || sub == "DISTANCE")
@@ -731,7 +731,7 @@ namespace ModularFlightPanel.Core
 #if KSP_RUNTIME
                     return StockNavBallHook.GetReferenceFrameCategory();
 #else
-                    return !string.IsNullOrEmpty(t.SpeedModeName) ? t.SpeedModeName : "ORBIT";
+                    return !string.IsNullOrEmpty(t.SpeedModeName) ? t.SpeedModeName : I18n.Tr("WIDGET_TOK_ORBIT", "轨道");
 #endif
                 }
                 if (sub == "CENTER" || sub == "CENTRE" || sub == "ORIGIN")
@@ -744,7 +744,7 @@ namespace ModularFlightPanel.Core
                 {
                     string pPlane = ExternalProbeRegistry.ResolveString("PRINCIPIA", "REFPLANEDESC", "");
                     if (!string.IsNullOrEmpty(pPlane) && pPlane != "---") return pPlane;
-                    return "EQUATORIAL";
+                    return I18n.Tr("WIDGET_NAV_EQUATORIAL", "赤道");
                 }
                 if (sub == "SPD" || sub == "SPEED")
                 {
@@ -760,10 +760,10 @@ namespace ModularFlightPanel.Core
             });
 
             RegisterNumericToken("SEPARATING", (t, sub) => t.IsStageSeparating ? 1.0 : 0.0, "STAGESEP");
-            RegisterStringToken("SEPARATING", (t, sub, fmt) => t.IsStageSeparating ? "SEPARATING" : "NOMINAL", "STAGESEP");
+            RegisterStringToken("SEPARATING", (t, sub, fmt) => t.IsStageSeparating ? I18n.Tr("WIDGET_TOK_SEPARATING", "分离中") : I18n.Tr("WIDGET_TOK_NOMINAL", "正常"), "STAGESEP");
 
             RegisterNumericToken("IGNITING", (t, sub) => t.IsEngineIgniting ? 1.0 : 0.0, "ENGIGNITING");
-            RegisterStringToken("IGNITING", (t, sub, fmt) => t.IsEngineIgniting ? "IGNITING" : "NOMINAL", "ENGIGNITING");
+            RegisterStringToken("IGNITING", (t, sub, fmt) => t.IsEngineIgniting ? I18n.Tr("WIDGET_TOK_IGNITING", "点火中") : I18n.Tr("WIDGET_TOK_NOMINAL", "正常"), "ENGIGNITING");
         }
 
         #endregion

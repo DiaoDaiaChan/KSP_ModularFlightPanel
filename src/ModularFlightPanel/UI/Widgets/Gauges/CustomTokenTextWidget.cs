@@ -81,8 +81,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 自定义标题更新
-            string titleTpl = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : "TELEMETRY MATRIX";
-            Title.Text = EvalToken(titleTpl, telemetry, "TELEMETRY MATRIX");
+            string titleTpl = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵");
+            Title.Text = EvalToken(titleTpl, telemetry, I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵"));
 
             // 检查是否有自定义模板覆盖
             string customTpl = Config?.CustomTemplate;

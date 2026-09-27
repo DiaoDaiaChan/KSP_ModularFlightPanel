@@ -190,7 +190,7 @@ namespace ModularFlightPanel.UI.Settings
                 string badge = w.WidgetType == "tape" ? "PFD" :
                               (w.WidgetType == "ecam_dial" ? "ECAM" :
                               (w.WidgetId.StartsWith("spacex.") ? "SPX" :
-                              (w.WidgetId.StartsWith("custom.") ? "CARD" : "CORE")));
+                              (w.WidgetId.StartsWith("custom.") ? I18n.Tr("WIDGET_UIMGR_CARD", "卡片") : I18n.Tr("WIDGET_UIMGR_CORE", "核心"))));
 
                 string rowText = $"<b>{w.DisplayName}</b>\n<size=9><color=#88AACC>{badge}</color> | <color=#AAAAAA>({w.PositionX:F0}, {w.PositionY:F0})</color></size>";
                 if (GUILayout.Button(rowText, "label", GUILayout.ExpandWidth(true), GUILayout.Height(30f)))

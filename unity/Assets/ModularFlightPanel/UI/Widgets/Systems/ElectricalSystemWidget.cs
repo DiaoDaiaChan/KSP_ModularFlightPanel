@@ -143,7 +143,7 @@ namespace ModularFlightPanel.UI.Widgets
             // BAT 1 & BAT 2
             string bat1Template = GetTemplateChannel("BAT1_VAL", "{VOLT}");
             string b1Val = TelemetryTokenEngine.Evaluate(bat1Template, telemetry);
-            string b1Sub = currentEc > 1.0 ? "ONLINE" : "DEPLETED";
+            string b1Sub = currentEc > 1.0 ? I18n.Tr("WIDGET_ELEC_BATT_ONLINE", "在线") : I18n.Tr("WIDGET_ELEC_BATT_DEPLETED", "耗尽");
             if (b1Val != _lastBat1Val)
             {
                 _lastBat1Val = b1Val;
@@ -187,8 +187,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // POWER SOURCES
-            string gVal = solarActiveCount > 0 ? TelemetryTokenEngine.Evaluate("+{SOLAR}", telemetry) : "NO SOLAR";
-            string gSub = solarActiveCount > 0 ? TelemetryTokenEngine.Evaluate("SOLAR ({SOLAR:ACTIVE} ACTIVE)", telemetry) : "BATTERY ONLY";
+            string gVal = solarActiveCount > 0 ? TelemetryTokenEngine.Evaluate("+{SOLAR}", telemetry) : I18n.Tr("WIDGET_ELEC_NO_SOLAR", "无太阳能");
+            string gSub = solarActiveCount > 0 ? I18n.TrFormat("WIDGET_ELEC_SOLAR_ACTIVE", TelemetryTokenEngine.Evaluate("{SOLAR:ACTIVE}", telemetry)) : I18n.Tr("WIDGET_ELEC_BATTERY_ONLY", "仅电池");
             if (gVal != _lastGenVal)
             {
                 _lastGenVal = gVal;

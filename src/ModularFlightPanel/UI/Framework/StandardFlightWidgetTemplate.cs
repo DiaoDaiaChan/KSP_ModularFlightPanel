@@ -101,7 +101,7 @@ namespace ModularFlightPanel.UI
         // 微控件已由基类全自动构建，OnInitialize 仅在需要设置动态文本或特异化布局时选填重写
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            string titleStr = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName.ToUpperInvariant() : "TELEMETRY";
+            string titleStr = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName.ToUpperInvariant() : I18n.Tr("WIDGET_FW_TELEMETRY", "遥测");
             HeaderTitle.Text = titleStr;
             StatusBadge.Text = GetBadgeText(CardStyleRole.Normal);
             UnitLabel.Text = config?.UnitLabel ?? "";

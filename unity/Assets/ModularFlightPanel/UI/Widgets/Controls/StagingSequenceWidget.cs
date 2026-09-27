@@ -893,7 +893,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (isLocked != _lastStageLocked)
             {
                 _lastStageLocked = isLocked;
-                string statusText = isLocked ? "LOCKED" : "ARMED";
+                string statusText = isLocked ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定") : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
                 SetTextIfChanged(_statusBadgeText, statusText);
                 _statusBadgeText.color = isLocked 
                     ? style.GetTextColor(TextStyleRole.Warning, theme)

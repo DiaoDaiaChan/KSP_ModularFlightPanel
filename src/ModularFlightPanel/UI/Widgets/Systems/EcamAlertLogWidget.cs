@@ -960,17 +960,17 @@ namespace ModularFlightPanel.UI.Widgets
 
         private static string FormatFlightPhase(string sit)
         {
-            if (string.IsNullOrEmpty(sit)) return "CRUISE";
+            if (string.IsNullOrEmpty(sit)) return I18n.Tr("WIDGET_EICAS_PHASE_CRUISE", "巡航");
             string upper = sit.ToUpperInvariant();
-            if (upper.Contains("ORBIT")) return "ORBIT";
-            if (upper.Contains("CRUISE")) return "CRUISE";
-            if (upper.Contains("LAUNCH") || upper.Contains("PRE")) return "PRE-LCH";
-            if (upper.Contains("FLY")) return "FLIGHT";
-            if (upper.Contains("ESC")) return "ESCAPE";
-            if (upper.Contains("LAND")) return "LANDED";
-            if (upper.Contains("SPLASH")) return "SPLASH";
-            if (upper.Contains("SUB")) return "SUB-ORB";
-            if (upper.Contains("DOCK")) return "DOCKED";
+            if (upper.Contains("ORBIT")) return I18n.Tr("WIDGET_EICAS_PHASE_ORBIT", "轨道");
+            if (upper.Contains("CRUISE")) return I18n.Tr("WIDGET_EICAS_PHASE_CRUISE", "巡航");
+            if (upper.Contains("LAUNCH") || upper.Contains("PRE")) return I18n.Tr("WIDGET_EICAS_PHASE_PRELCH", "发射前");
+            if (upper.Contains("FLY")) return I18n.Tr("WIDGET_EICAS_PHASE_FLIGHT", "飞行");
+            if (upper.Contains("ESC")) return I18n.Tr("WIDGET_EICAS_PHASE_ESCAPE", "逃逸");
+            if (upper.Contains("LAND")) return I18n.Tr("WIDGET_EICAS_PHASE_LANDED", "已着陆");
+            if (upper.Contains("SPLASH")) return I18n.Tr("WIDGET_EICAS_PHASE_SPLASH", "溅落");
+            if (upper.Contains("SUB")) return I18n.Tr("WIDGET_EICAS_PHASE_SUBORB", "亚轨道");
+            if (upper.Contains("DOCK")) return I18n.Tr("WIDGET_EICAS_PHASE_DOCKED", "已对接");
             return upper.Length > 6 ? upper.Substring(0, 6) : upper;
         }
 

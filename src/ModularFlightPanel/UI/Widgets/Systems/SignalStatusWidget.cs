@@ -423,7 +423,8 @@ namespace ModularFlightPanel.UI.Widgets
             double signalStrength = Mathf.Clamp01((float)telemetry.CommSignal);
 
             // 1. 顶栏控制权徽章与温和心跳呼吸
-            string ctrlLevel = telemetry.ControlLevelStr ?? (isConnected ? "FULL CONTROL" : "NO LINK");
+            string ctrlLevel = telemetry.ControlLevelStr
+                ?? (isConnected ? I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制") : I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路"));
             bool isPartial = ctrlLevel.IndexOf("PART", StringComparison.OrdinalIgnoreCase) >= 0 || (isConnected && signalStrength < 0.35);
 
             StatusSurfaceRole statusRole = !isConnected ? StatusSurfaceRole.Danger : (isPartial ? StatusSurfaceRole.Caution : StatusSurfaceRole.Success);
@@ -438,11 +439,15 @@ namespace ModularFlightPanel.UI.Widgets
             float currentW = RectTransform != null ? RectTransform.sizeDelta.x : BaseSize.x * CurrentDpiScale;
             if (currentW < 200f * CurrentDpiScale)
             {
-                displayCtrl = !isConnected ? "✕ NO COMM" : (isPartial ? "▲ PART" : "● FULL");
+                displayCtrl = !isConnected
+                    ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_COMM", "无通信")
+                    : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
             }
             else
             {
-                displayCtrl = !isConnected ? "✕ NO LINK" : (isPartial ? "▲ PARTIAL" : "● FULL CTRL");
+                displayCtrl = !isConnected
+                    ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路")
+                    : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
             }
             SetTextIfChanged(_ctrlBadgeText, displayCtrl);
 
@@ -478,16 +483,18 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else
                 {
-                    targetName = "KERBIN DSN DIRECT";
+                    targetName = I18n.Tr("WIDGET_SIG_KERBIN_DSN_DIRECT", "坎星深空网直连");
                 }
 
                 bool isDirect = !hasRealLinks || links[0].IsDirectHome || links.Count == 1;
-                routeDesc = isDirect ? "DIRECT · HOME DSN" : $"RELAY · {links.Count} HOPS";
+                routeDesc = isDirect
+                    ? I18n.Tr("WIDGET_SIG_DIRECT_HOME_DSN", "直连 · 深空网主站")
+                    : I18n.TrFormat("WIDGET_SIG_RELAY_HOPS", links.Count);
             }
             else
             {
-                targetName = "NO STATION LINK";
-                routeDesc = "SEARCHING LINK";
+                targetName = I18n.Tr("WIDGET_SIG_NO_STATION_LINK", "无测控站链路");
+                routeDesc = I18n.Tr("WIDGET_SIG_SEARCHING_LINK", "搜索链路中");
             }
 
             SetTextIfChanged(_targetNameText, targetName);
@@ -563,7 +570,7 @@ namespace ModularFlightPanel.UI.Widgets
             var antennas = telemetry.Antennas;
             int totalAnts = (antennas != null && antennas.Count > 0) ? antennas.Count : (telemetry.AntennaCount > 0 ? telemetry.AntennaCount : 1);
             int activeAnts = 0;
-            string primaryAntName = "INTERNAL ANTENNA";
+            string primaryAntName = I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线");
 
             if (antennas != null && antennas.Count > 0)
             {
@@ -572,7 +579,7 @@ namespace ModularFlightPanel.UI.Widgets
                     if (antennas[a].IsOperational && antennas[a].Status == "LINKED")
                     {
                         activeAnts++;
-                        if (primaryAntName == "INTERNAL ANTENNA")
+                        if (primaryAntName == I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线"))
                         {
                             primaryAntName = CleanAntennaName(antennas[a].Name, a);
                         }
@@ -585,8 +592,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (_hardwareSummaryText != null && _hardwareSummaryText.gameObject.activeSelf)
             {
                 string hwStr = isConnected
-                    ? $"● {primaryAntName} · {activeAnts}/{totalAnts} ACTIVE"
-                    : $"○ NO LINK · {totalAnts} ANTENNA{(totalAnts > 1 ? "S" : "")}";
+                    ? I18n.TrFormat("WIDGET_SIG_HW_SUMMARY", primaryAntName, activeAnts, totalAnts)
+                    : I18n.TrFormat("WIDGET_SIG_HW_NOLINK", totalAnts);
                 SetTextIfChanged(_hardwareSummaryText, hwStr);
             }
 
@@ -600,7 +607,7 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     var ant = antennas[i];
                     SetTextIfChanged(row.NameText, CleanAntennaName(ant.Name, i));
-                    SetTextIfChanged(row.StatusText, ant.Status);
+                    SetTextIfChanged(row.StatusText, LocalizeAntennaStatus(ant.Status));
 
                     TextStyleRole sRole = (ant.Status == "LINKED") ? TextStyleRole.Accent :
                         (ant.Status == "STANDBY" ? TextStyleRole.Cardinal : TextStyleRole.SecondaryValue);
@@ -622,9 +629,30 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        /// <summary>
+        /// 天线状态"显示期"本地化：遥测层保留英文语义值（LINKED / STANDBY … 仍被判定逻辑比较），
+        /// 只在写入 UI 文本时翻译，避免汉化破坏活动天线计数与文本配色判定。
+        /// </summary>
+        private static string LocalizeAntennaStatus(string status)
+        {
+            if (string.IsNullOrEmpty(status)) return status;
+            switch (status.Trim().ToUpperInvariant())
+            {
+                case "LINKED": return I18n.Tr("WIDGET_SIG_LINKED", "已链接");
+                case "STANDBY": return I18n.Tr("WIDGET_SIG_STANDBY", "待机");
+                case "SEARCHING": return I18n.Tr("WIDGET_SIG_SEARCHING", "搜索中");
+                case "RETRACTED": return I18n.Tr("WIDGET_SIG_RETRACTED", "已收回");
+                case "DEPLOYING": return I18n.Tr("WIDGET_SIG_DEPLOYING", "展开中");
+                case "BROKEN": return I18n.Tr("WIDGET_SIG_BROKEN", "损坏");
+                case "OFFLINE": return I18n.Tr("WIDGET_SIG_OFFLINE", "离线");
+                case "NONE": return I18n.Tr("WIDGET_SIGNAL_NONE", "无");
+                default: return status;
+            }
+        }
+
         private static string CleanAntennaName(string rawName, int slotIndex)
         {
-            if (string.IsNullOrEmpty(rawName)) return $"ANTENNA #{slotIndex + 1}";
+            if (string.IsNullOrEmpty(rawName)) return I18n.TrFormat("WIDGET_SIG_ANTENNA_SLOT", slotIndex + 1);
             string s = rawName.Trim();
             if (s.IndexOf("[PROCEDURAL]", StringComparison.OrdinalIgnoreCase) >= 0)
             {

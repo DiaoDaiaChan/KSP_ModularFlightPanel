@@ -287,19 +287,19 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         private static string GetPointingModeDescription(IFlightTelemetry t)
         {
-            if (!t.IsSASEnabled) return "FREE MANUAL";
+            if (!t.IsSASEnabled) return I18n.Tr("WIDGET_SPX_POINT_FREE_MANUAL", "自由手动");
             switch (t.CurrentSASMode)
             {
-                case FlightSASMode.Prograde: return "PROGRADE";
-                case FlightSASMode.Retrograde: return "RETROGRADE";
-                case FlightSASMode.Normal: return "NORMAL";
-                case FlightSASMode.Antinormal: return "ANTINORMAL";
-                case FlightSASMode.RadialIn: return "RADIAL IN";
-                case FlightSASMode.RadialOut: return "RADIAL OUT";
-                case FlightSASMode.Target: return "TARGET LOCK";
-                case FlightSASMode.AntiTarget: return "ANTI-TARGET";
-                case FlightSASMode.Maneuver: return "MANEUVER NODE";
-                default: return "STABILITY HOLD";
+                case FlightSASMode.Prograde: return I18n.Tr("SAS_MODE_PROGRADE", "顺行");
+                case FlightSASMode.Retrograde: return I18n.Tr("SAS_MODE_RETROGRADE", "逆行");
+                case FlightSASMode.Normal: return I18n.Tr("SAS_MODE_NORMAL", "法向");
+                case FlightSASMode.Antinormal: return I18n.Tr("SAS_MODE_ANTINORMAL", "反法向");
+                case FlightSASMode.RadialIn: return I18n.Tr("SAS_MODE_RADIAL_IN", "径向内");
+                case FlightSASMode.RadialOut: return I18n.Tr("SAS_MODE_RADIAL_OUT", "径向外");
+                case FlightSASMode.Target: return I18n.Tr("WIDGET_SPX_POINT_TARGET_LOCK", "目标锁定");
+                case FlightSASMode.AntiTarget: return I18n.Tr("WIDGET_SPX_POINT_ANTI_TARGET", "反目标");
+                case FlightSASMode.Maneuver: return I18n.Tr("WIDGET_NAV_MANEUVER_NODE", "机动节点");
+                default: return I18n.Tr("WIDGET_SPX_POINT_STABILITY", "稳定保持");
             }
         }
 

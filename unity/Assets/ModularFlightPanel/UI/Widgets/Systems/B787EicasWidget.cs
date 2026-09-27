@@ -1400,13 +1400,14 @@ namespace ModularFlightPanel.UI.Widgets
             string evalGear = TelemetryTokenEngine.Evaluate(_gearToken, telemetry);
             if (string.IsNullOrEmpty(evalGear) || evalGear.Contains("{"))
             {
-                evalGear = (telemetry.AltitudeAGL < 80.0 || telemetry.VerticalSpeed < -1.0) ? "DOWN" : "UP";
+                evalGear = (telemetry.AltitudeAGL < 80.0 || telemetry.VerticalSpeed < -1.0) ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
             }
             if (evalGear != _lastGearStr)
             {
                 _lastGearStr = evalGear;
                 if (_gearStatusText != null) _gearStatusText.text = evalGear;
-                if (evalGear.IndexOf("DOWN", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (evalGear.IndexOf("DOWN", StringComparison.OrdinalIgnoreCase) >= 0
+                    || evalGear.IndexOf(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     if (_gearBoxOutline != null) _gearBoxOutline.effectColor = style.GetTextColor(TextStyleRole.Accent, theme);
                     if (_gearStatusText != null) ApplyText(_gearStatusText, TextStyleRole.Accent, theme);

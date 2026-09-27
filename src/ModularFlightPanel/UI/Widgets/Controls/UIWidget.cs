@@ -513,7 +513,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             string badge = w.WidgetType == "tape" ? "PFD" :
                           (w.WidgetType == "ecam_dial" ? "ECAM" :
                           (w.WidgetId.StartsWith("spacex.") ? "SPX" :
-                          (w.WidgetId.StartsWith("custom.") ? "CARD" : "CORE")));
+                          (w.WidgetId.StartsWith("custom.") ? I18n.Tr("WIDGET_UIMGR_CARD", "卡片") : I18n.Tr("WIDGET_UIMGR_CORE", "核心"))));
             SetTextIfChanged(row.TypeBadgeText, badge);
 
             // 更新 LED 颜色

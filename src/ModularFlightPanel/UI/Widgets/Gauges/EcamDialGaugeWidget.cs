@@ -291,7 +291,7 @@ namespace ModularFlightPanel.UI.Widgets
         private string GetLimitModeLabel()
         {
             string mode = GetLimitMode();
-            return mode == "soft" ? "SOFT" : mode == "none" ? "OPEN" : "MAX";
+            return mode == "soft" ? I18n.Tr("WIDGET_GAUGE_LIMIT_SOFT", "软限") : mode == "none" ? I18n.Tr("WIDGET_GAUGE_LIMIT_OPEN", "无限制") : "MAX";
         }
 
         private void ConfigureMeterMaterial(ThemeConfig theme)

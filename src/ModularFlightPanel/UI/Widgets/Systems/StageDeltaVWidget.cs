@@ -581,7 +581,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 4. 左侧 2D 剪影视窗底部状态与发动机羽流
             if (_silhouetteBayFooter != null)
             {
-                string bayFootStr = hasActive ? $"STAGE {activeStageInfo.Stage:D2} / ACTV" : "STAGING ARMED";
+                string bayFootStr = hasActive ? I18n.TrFormat("WIDGET_DV_STAGE_ACTV_FORMAT", activeStageInfo.Stage) : I18n.Tr("WIDGET_DV_STAGING_ARMED", "分级待发");
                 if (bayFootStr != _lastBayFooterText)
                 {
                     _lastBayFooterText = bayFootStr;

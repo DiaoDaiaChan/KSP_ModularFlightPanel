@@ -732,7 +732,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _plumeObj.SetActive(isFiring);
             }
 
-            string bayFootStr = curStage >= 0 ? $"S{curStage:D2} · {(isFiring ? "BURNING" : "ARMED")}" : "SAFED";
+            string bayFootStr = curStage >= 0 ? $"S{curStage:D2} · {(isFiring ? I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"))}" : I18n.Tr("WIDGET_ROCKET_SAFED", "已保险");
             SetTextIfChanged(_silhouetteBayFooter, bayFootStr);
         }
 

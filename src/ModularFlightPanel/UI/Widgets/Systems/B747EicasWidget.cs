@@ -609,7 +609,7 @@ namespace ModularFlightPanel.UI.Widgets
             string evalCas2 = TelemetryTokenEngine.Evaluate(_cas2Template, telemetry);
             if (string.IsNullOrEmpty(evalCas2) || evalCas2.Contains("{"))
             {
-                evalCas2 = telemetry.IsTouchdownAlert ? "TERRAIN PULL UP" : (telemetry.IsSASEnabled ? "SAS ACTIVE" : "STAB TRIM");
+                evalCas2 = telemetry.IsTouchdownAlert ? I18n.Tr("WIDGET_EICAS_CAS_TERRAIN_PULL_UP", "地形拉升") : (telemetry.IsSASEnabled ? I18n.Tr("WIDGET_EICAS_CAS_SAS_ACTIVE", "SAS 接通") : I18n.Tr("WIDGET_EICAS_CAS_STAB_TRIM", "安定面配平"));
             }
             if (evalCas2 != _lastCas2Str)
             {
@@ -627,7 +627,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (string.IsNullOrEmpty(gearStr) || gearStr.Contains("{"))
             {
                 bool isGearDown = telemetry.AltitudeAGL < 600.0 || telemetry.IsTouchdownAlert || telemetry.FlightSituation == "LANDED" || telemetry.FlightSituation == "PRELAUNCH";
-                gearStr = isGearDown ? "DOWN" : "UP";
+                gearStr = isGearDown ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
             }
             if (gearStr != _lastGearStr)
             {
@@ -635,7 +635,9 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_gearStatusText != null)
                 {
                     _gearStatusText.text = gearStr;
-                    bool isDown = gearStr.Equals("DOWN", StringComparison.OrdinalIgnoreCase);
+                    // 文案已汉化（"放下"/"收起"），自定义模板注入的英文令牌 "DOWN" 同样要能命中高亮
+                    bool isDown = gearStr.Equals("DOWN", StringComparison.OrdinalIgnoreCase)
+                               || gearStr.Equals(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase);
                     ApplyText(_gearStatusText, isDown ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                     if (_gearBoxOutline != null)
                     {
