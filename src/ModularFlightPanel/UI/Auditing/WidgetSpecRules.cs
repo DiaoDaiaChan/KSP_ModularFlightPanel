@@ -227,6 +227,12 @@ namespace ModularFlightPanel.UI
         public const string SetTextIfChangedApi = "SetTextIfChanged";
         public const string SetImageFillIfChangedApi = "SetImageFillIfChanged";
         public const string EvaluateThresholdRoleApi = "EvaluateThresholdRole";
+
+        // ==========================================================================================
+        // 航电效能与反模式规则：高频生命周期方法与堆分配/裸 UGUI 逃逸
+        // ==========================================================================================
+        public static readonly string[] HotLoopMethodNames = { "LateUpdate", "Update", "OnUpdateTelemetry", "FixedUpdate" };
+        public static readonly string[] HotLoopUguiProperties = { "anchoredPosition", "localScale", "color" };
     }
 
     /// <summary>源码级规则违规记录（插件与无头验证器共用的统一 DTO）</summary>

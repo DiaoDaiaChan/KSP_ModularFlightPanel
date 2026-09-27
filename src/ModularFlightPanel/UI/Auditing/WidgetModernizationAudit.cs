@@ -52,6 +52,9 @@ namespace ModularFlightPanel.UI.Auditing
         public bool UsesStandardizedChannels { get; set; }
         public bool UsesStandardizedFormatting { get; set; }
         public bool UsesSetTextIfChanged { get; set; }
+        public int HotLoopHeapAllocations { get; set; }
+        public int HotLoopUguiSetters { get; set; }
+        public bool HasUnmanagedCore3DUgui { get; set; }
         public List<string> StandardizationSuggestions { get; } = new List<string>();
 
         public string GetMissingSummary()
@@ -80,6 +83,9 @@ namespace ModularFlightPanel.UI.Auditing
         public int RedundantFormattingMethodCount => Items.Count(i => i.RedundantFormattingMethods.Count > 0);
         public int StandardizedChannelAdoptionCount => Items.Count(i => i.UsesStandardizedChannels);
         public int StandardizedFormattingAdoptionCount => Items.Count(i => i.UsesStandardizedFormatting);
+        public int HotLoopHeapAllocationCount => Items.Count(i => i.HotLoopHeapAllocations > 0);
+        public int UnmanagedCore3DUguiCount => Items.Count(i => i.HasUnmanagedCore3DUgui);
+        public int HotLoopUguiSetterAbuseCount => Items.Count(i => i.HotLoopUguiSetters > 5);
 
         public List<WidgetModernizationItem> Items { get; } = new List<WidgetModernizationItem>();
 
@@ -93,7 +99,12 @@ namespace ModularFlightPanel.UI.Auditing
             Items.Where(i => i.Status == WidgetModernizationStatus.Core3D);
 
         public IEnumerable<WidgetModernizationItem> WidgetsWithAntiPatterns =>
-            Items.Where(i => i.HasRedundantTemplateParser || i.RedundantFormattingMethods.Count > 0 || i.RedundantDirtyTrackingFields > 3);
+            Items.Where(i => i.HasRedundantTemplateParser || 
+                             i.RedundantFormattingMethods.Count > 0 || 
+                             i.RedundantDirtyTrackingFields > 3 ||
+                             i.HotLoopHeapAllocations > 0 ||
+                             i.HasUnmanagedCore3DUgui ||
+                             i.HotLoopUguiSetters > 5);
     }
 
     /// <summary>
@@ -204,6 +215,14 @@ namespace ModularFlightPanel.UI.Auditing
                 if (isCore3D)
                 {
                     item.Status = WidgetModernizationStatus.Core3D;
+                    // 深度审查 Core3D 内部是否混入了命令式裸 UGUI 或未受管图元
+                    int rawImageAllocs = widgetClass.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
+                        .Count(obj => obj.Type.ToString().Contains("Image"));
+                    if (item.UsesImperativeUiFactory || rawImageAllocs > 0)
+                    {
+                        item.HasUnmanagedCore3DUgui = true;
+                        item.StandardizationSuggestions.Add($"Core3D 内部混杂未纳管裸 UGUI (UIFactory 调用: {uiFactoryCalls} 处, Image 图元: {rawImageAllocs} 处; 未接入 2D UI Shader 材质管线)");
+                    }
                 }
                 else if (hasCpuRasterizer)
                 {
@@ -323,6 +342,47 @@ namespace ModularFlightPanel.UI.Auditing
                 item.UsesSetTextIfChanged = allInvocations.Any(inv =>
                     inv.Expression.ToString().EndsWith(WidgetSpecRules.SetTextIfChangedApi, StringComparison.Ordinal));
 
+                // 11. 高频生命周期帧循环堆分配与无死区 UGUI 连续赋值检测
+                var hotMethods = widgetClass.Members.OfType<MethodDeclarationSyntax>()
+                    .Where(m => WidgetSpecRules.HotLoopMethodNames.Contains(m.Identifier.Text) ||
+                                m.Identifier.Text.StartsWith("Sync", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                int hotArrayAllocs = 0;
+                int hotUguiSetters = 0;
+                foreach (var method in hotMethods)
+                {
+                    hotArrayAllocs += method.DescendantNodes().OfType<ArrayCreationExpressionSyntax>().Count();
+
+                    var assignments = method.DescendantNodes().OfType<AssignmentExpressionSyntax>();
+                    foreach (var assign in assignments)
+                    {
+                        string left = assign.Left.ToString();
+                        for (int p = 0; p < WidgetSpecRules.HotLoopUguiProperties.Length; p++)
+                        {
+                            if (left.EndsWith("." + WidgetSpecRules.HotLoopUguiProperties[p], StringComparison.Ordinal))
+                            {
+                                bool inIf = assign.Ancestors().OfType<IfStatementSyntax>().Any();
+                                if (!inIf)
+                                {
+                                    hotUguiSetters++;
+                                }
+                            }
+                        }
+                    }
+                }
+                item.HotLoopHeapAllocations = hotArrayAllocs;
+                item.HotLoopUguiSetters = hotUguiSetters;
+
+                if (hotArrayAllocs > 0)
+                {
+                    item.StandardizationSuggestions.Add($"高频帧循环存在 {hotArrayAllocs} 处运行时堆数组分配 (new T[]; 增加 GC 停顿压力)");
+                }
+                if (hotUguiSetters > 5)
+                {
+                    item.StandardizationSuggestions.Add($"高频帧循环存在 {hotUguiSetters} 处无死区保护的 UGUI 直接赋值 (触发 Canvas 频繁重建; 建议建立 Deadband Guard)");
+                }
+
                 report.Items.Add(item);
             }
 
@@ -396,6 +456,8 @@ namespace ModularFlightPanel.UI.Auditing
             sb.AppendLine($"零私有模板解析达成率:         {(report.TotalCount - report.RedundantTemplateParserCount)}/{report.TotalCount} 个组件已消除私有 ParseCustomTemplate");
             sb.AppendLine($"统一格式化套件复用率:         {(report.TotalCount - report.RedundantFormattingMethodCount)}/{report.TotalCount} 个组件已接入 AvionicsFormatting");
             sb.AppendLine($"手工脏标记字段全面纳管率:     {report.Items.Count(i => i.RedundantDirtyTrackingFields <= 3)}/{report.TotalCount} 个组件已消除字段级脏标记膨胀");
+            sb.AppendLine($"零高频循环堆分配达成率:     {(report.TotalCount - report.HotLoopHeapAllocationCount)}/{report.TotalCount} 个组件已消除帧循环 new T[]");
+            sb.AppendLine($"3D 引擎 UGUI 纯净度:          {(report.Core3DCount - report.UnmanagedCore3DUguiCount)}/{Math.Max(1, report.Core3DCount)} 个 3D 组件无裸 UGUI 逃逸");
 
             var antiPatternItems = report.WidgetsWithAntiPatterns.ToList();
             if (antiPatternItems.Count > 0)

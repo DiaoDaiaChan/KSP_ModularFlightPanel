@@ -520,7 +520,21 @@ namespace ModularFlightPanel.HeadlessValidator
                 Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件沿继承链声明 [{WidgetSpecRules.MetadataAttribute}] 特性 (MFP-SPEC-008 自动挂载)");
                 Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询（黑名单表 {WidgetSpecRules.SceneQueryApis.Length} 条：Find*ByType / GameObject.Find* / Camera.main·current·allCameras·GetAllCameras / GetRootGameObjects）");
                 var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
-                Console.WriteLine($"  └─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
+                Console.WriteLine($"  ├─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
+                var perfRisks = modReport.WidgetsWithAntiPatterns
+                    .Where(i => i.HotLoopHeapAllocations > 0 || i.HasUnmanagedCore3DUgui || i.HotLoopUguiSetters > 5)
+                    .ToList();
+                if (perfRisks.Count > 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"  ⚠ 航电效能与架构雷达侦测到 {perfRisks.Count} 个组件存在高频帧循环堆分配/裸 UGUI 逃逸 (详见 --audit-modernization):");
+                    foreach (var risk in perfRisks)
+                    {
+                        var issues = risk.StandardizationSuggestions.Where(s => s.Contains("高频") || s.Contains("Core3D")).ToList();
+                        Console.WriteLine($"     • {risk.FileName,-24} => {string.Join("; ", issues)}");
+                    }
+                    Console.ResetColor();
+                }
             }
             else
             {
@@ -1019,8 +1033,8 @@ namespace ModularFlightPanel.HeadlessValidator
                 foreach (var issue in chineseIssues)
                 {
                     Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, issue.FilePath)}:L{issue.Line}:C{issue.Column}");
-                    Console.WriteLine($"    文本: \"{issue.OffendingText}\"");
-                    Console.WriteLine($"    代码: {issue.CodeSnippet.Trim()}");
+                    Console.WriteLine($"    文本: \"{issue.OffendingText.Replace("\r", "\\r").Replace("\n", "\\n")}\"");
+                    Console.WriteLine($"    代码: {issue.CodeSnippet.Trim().Replace("\r", "\\r").Replace("\n", "\\n")}");
                 }
                 Console.WriteLine();
             }
@@ -1047,7 +1061,10 @@ namespace ModularFlightPanel.HeadlessValidator
                 Console.ResetColor();
                 foreach (var issue in uiCallIssues)
                 {
-                    Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, issue.FilePath)}:L{issue.Line} -> \"{issue.OffendingText}\" ({issue.Description})");
+                    // 文本里的 \n 是真实换行符（如 "OIL\nPRESS" 竖排标签）：必须转义后再打印，
+                    // 否则一条发现会被折成多行，清单无法被脚本逐行消费。
+                    string safeText = issue.OffendingText.Replace("\r", "\\r").Replace("\n", "\\n");
+                    Console.WriteLine($"  • {Path.GetRelativePath(repoRoot, issue.FilePath)}:L{issue.Line} -> \"{safeText}\" ({issue.Description})");
                 }
                 Console.WriteLine();
             }
