@@ -55,7 +55,7 @@ namespace ModularFlightPanel.Core
                     if (localPos.sqrMagnitude > 0.0001f)
                     {
                         Vector3 hudDir = localPos.normalized;
-                        isVisible = (hudDir.z >= -0.15f);
+                        isVisible = true;
                         dir = hudDir;
                         return true;
                     }
@@ -69,7 +69,7 @@ namespace ModularFlightPanel.Core
                         if (oppPos.sqrMagnitude > 0.0001f)
                         {
                             Vector3 hudDir = -oppPos.normalized;
-                            isVisible = (hudDir.z >= -0.15f);
+                            isVisible = true;
                             dir = hudDir;
                             return true;
                         }
@@ -364,7 +364,7 @@ namespace ModularFlightPanel.Core
 
             Vector3 screenVec = attitudeGymbal * worldVec;
             dir = screenVec.normalized;
-            isVisible = (dir.z >= -0.15f);
+            isVisible = true;
             return true;
         }
 
@@ -381,7 +381,7 @@ namespace ModularFlightPanel.Core
                     return true;
                 case "retrograde":
                     dir = new Vector3(-0.04f, -0.18f, -0.98f).normalized;
-                    isVisible = false;
+                    isVisible = true;
                     return true;
                 case "normal":
                     dir = new Vector3(0f, 0.94f, 0.34f).normalized;
@@ -389,11 +389,11 @@ namespace ModularFlightPanel.Core
                     return true;
                 case "antinormal":
                     dir = new Vector3(0f, -0.94f, -0.34f).normalized;
-                    isVisible = false;
+                    isVisible = true;
                     return true;
                 case "radialin":
                     dir = new Vector3(-0.92f, 0f, 0.38f).normalized;
-                    isVisible = false;
+                    isVisible = true;
                     return true;
                 case "radialout":
                     dir = new Vector3(0.92f, 0f, 0.38f).normalized;
@@ -401,6 +401,10 @@ namespace ModularFlightPanel.Core
                     return true;
                 case "target":
                     dir = new Vector3(0.28f, 0.32f, 0.90f).normalized;
+                    isVisible = true;
+                    return true;
+                case "antitarget":
+                    dir = new Vector3(-0.28f, -0.32f, -0.90f).normalized;
                     isVisible = true;
                     return true;
                 case "maneuver":

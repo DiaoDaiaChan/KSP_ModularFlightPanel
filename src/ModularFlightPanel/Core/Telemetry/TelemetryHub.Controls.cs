@@ -243,12 +243,11 @@ namespace ModularFlightPanel.Core
             }
             if (ActiveVessel != null && ActiveVessel.Autopilot != null)
             {
-                if (!_isSASEnabled)
-                {
-                    ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
-                    _isSASEnabled = true;
-                }
-                ActiveVessel.Autopilot.SetMode((VesselAutopilot.AutopilotMode)(int)mode);
+                var kspMode = (VesselAutopilot.AutopilotMode)(int)mode;
+                ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
+                _isSASEnabled = true;
+                ActiveVessel.Autopilot.Enable(kspMode);
+                ActiveVessel.Autopilot.SetMode(kspMode);
             }
         }
 

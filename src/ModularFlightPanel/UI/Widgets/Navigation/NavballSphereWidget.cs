@@ -132,6 +132,32 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Image[] _guidanceChevrons = new Image[4];
         private Quaternion _currentAttitudeRotation = Quaternion.identity;
 
+        // ── 矢量标悬停交互与悬浮提示 ──
+        private readonly Dictionary<string, NavballMarkerClickHandler> _markerHandlers = new Dictionary<string, NavballMarkerClickHandler>(StringComparer.OrdinalIgnoreCase);
+        private GameObject _markerHoverTooltipObj;
+        private RectTransform _markerHoverTooltipRt;
+        private Image _markerHoverTooltipBg;
+        private Outline _markerHoverTooltipOutline;
+        private Text _markerHoverTooltipText;
+        private Text _markerHoverTooltipSub;
+        private string _activeHoveredMarkerKey = null;
+        private Vector2 _activeHoveredMarkerPos = Vector2.zero;
+
+        private static readonly Dictionary<string, (string title, string sub)> MarkerTooltipLabels = new Dictionary<string, (string title, string sub)>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "prograde", ("PROGRADE", "L-CLICK: LOCK PROGRADE") },
+            { "retrograde", ("RETROGRADE", "L-CLICK: LOCK RETROGRADE") },
+            { "normal", ("NORMAL", "L-CLICK: LOCK NORMAL") },
+            { "antinormal", ("ANTI-NORMAL", "L-CLICK: LOCK ANTI-NORMAL") },
+            { "radialin", ("RADIAL IN", "L-CLICK: LOCK RADIAL IN") },
+            { "radialout", ("RADIAL OUT", "L-CLICK: LOCK RADIAL OUT") },
+            { "target", ("TARGET", "L-CLICK: LOCK TARGET") },
+            { "antitarget", ("ANTI-TARGET", "L-CLICK: LOCK ANTI-TARGET") },
+            { "maneuver", ("MANEUVER NODE", "L-CLICK: SAS / R-CLICK: WARP") },
+            { "velocity_vector", ("VELOCITY", "L-CLICK: LOCK PROGRADE") },
+            { "anti_velocity_vector", ("ANTI-VELOCITY", "L-CLICK: LOCK RETROGRADE") }
+        };
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             float s = CurrentDpiScale;
@@ -185,6 +211,7 @@ namespace ModularFlightPanel.UI.Widgets
             GameObject bezelObj = UIFactory.CreatePanel(transform, "Sphere_Bezel_Ring",
                 new Vector2(ballDiameter + 2f * CurrentDpiScale, ballDiameter + 2f * CurrentDpiScale),
                 Vector2.zero, Color.clear);
+            bezelObj.GetComponent<Image>().raycastTarget = false;
             Outline bezelOutline = bezelObj.AddComponent<Outline>();
             Color border = theme.FrameBorderColor;
             bezelOutline.effectColor = WidgetStyleManager.Weighted(border, LineWeight.Strong);
@@ -195,6 +222,12 @@ namespace ModularFlightPanel.UI.Widgets
             if (showHeadingBox)
             {
                 CreateHeadingBox(transform, CurrentDpiScale, theme);
+            }
+
+            // 标线层置于最顶层，确保鼠标悬停与点击事件不被背景包边遮挡
+            if (_markerContainer != null)
+            {
+                _markerContainer.SetAsLastSibling();
             }
 
             // 注册微控件至标准化管理器
@@ -252,10 +285,7 @@ namespace ModularFlightPanel.UI.Widgets
             _reticleImage = imgObj.GetComponent<Image>();
             _reticleImage.sprite = NavballMarkerFactory.GetReticleSprite();
             _reticleImage.color = WidgetStyleManager.NeutralOpaque;
-            _reticleImage.raycastTarget = true;
-            var reticleHandler = imgObj.AddComponent<NavballMarkerClickHandler>();
-            reticleHandler.MarkerKey = "reticle";
-            reticleHandler.Widget = this;
+            _reticleImage.raycastTarget = false;
         }
 
         private void CreateBankAngleScale(Transform parent, float radius, float s, ThemeConfig theme)
@@ -348,7 +378,8 @@ namespace ModularFlightPanel.UI.Widgets
                 "maneuver", "velocity_vector", "anti_velocity_vector"
             };
 
-            float markerSize = 22f * dpiScale;
+            float markerSize = 26f * dpiScale;
+            _markerHandlers.Clear();
             foreach (string k in markerKeys)
             {
                 GameObject mObj = new GameObject($"Marker_{k}", typeof(RectTransform), typeof(Image));
@@ -368,6 +399,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 mObj.SetActive(false);
                 _markerImages[k] = img;
+                _markerHandlers[k] = clickHandler;
             }
 
             // 1. 机动节点航向流光引导箭头容器 (Steering Director Chevron Flow)
@@ -419,6 +451,36 @@ namespace ModularFlightPanel.UI.Widgets
             _sasRippleImage.color = WidgetStyleManager.NeutralOpaque;
             _sasRippleImage.raycastTarget = false;
             rippleObj.SetActive(false);
+
+            // 4. 光标悬停微航电提示卡片 (Cursor Hover Floating Tooltip HUD Card)
+            GameObject tipObj = new GameObject("Marker_Hover_Tooltip", typeof(RectTransform), typeof(Image), typeof(Outline));
+            tipObj.transform.SetParent(_markerContainer, false);
+            _markerHoverTooltipRt = tipObj.GetComponent<RectTransform>();
+            _markerHoverTooltipRt.sizeDelta = new Vector2(104f * dpiScale, 26f * dpiScale);
+            _markerHoverTooltipRt.anchoredPosition = Vector2.zero;
+
+            _markerHoverTooltipBg = tipObj.GetComponent<Image>();
+            _markerHoverTooltipBg.color = WidgetStyleManager.NeutralOpaque;
+            _markerHoverTooltipBg.raycastTarget = false;
+
+            _markerHoverTooltipOutline = tipObj.GetComponent<Outline>();
+            _markerHoverTooltipOutline.effectDistance = new Vector2(1f * dpiScale, 1f * dpiScale);
+            _markerHoverTooltipOutline.effectColor = WidgetStyleManager.NeutralOpaque;
+
+            _markerHoverTooltipText = UIFactory.CreateText(tipObj.transform, "Tooltip_Title", "PROGRADE",
+                Mathf.Max(8, Mathf.RoundToInt(8.5f * dpiScale)), TextAnchor.MiddleCenter, WidgetStyleManager.NeutralOpaque);
+            _markerHoverTooltipText.rectTransform.anchoredPosition = new Vector2(0f, 4.5f * dpiScale);
+            _markerHoverTooltipText.rectTransform.sizeDelta = new Vector2(100f * dpiScale, 12f * dpiScale);
+            _markerHoverTooltipText.raycastTarget = false;
+
+            _markerHoverTooltipSub = UIFactory.CreateText(tipObj.transform, "Tooltip_Sub", "CLICK: ENGAGE SAS",
+                Mathf.Max(6, Mathf.RoundToInt(6.5f * dpiScale)), TextAnchor.MiddleCenter, WidgetStyleManager.NeutralOpaque);
+            _markerHoverTooltipSub.rectTransform.anchoredPosition = new Vector2(0f, -6f * dpiScale);
+            _markerHoverTooltipSub.rectTransform.sizeDelta = new Vector2(100f * dpiScale, 10f * dpiScale);
+            _markerHoverTooltipSub.raycastTarget = false;
+
+            _markerHoverTooltipObj = tipObj;
+            tipObj.SetActive(false);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
@@ -714,7 +776,7 @@ namespace ModularFlightPanel.UI.Widgets
                     hasDir = NavBallHookService.MarkerDirectionFallback(key, out dir, out isVisible);
                 }
 
-                if (hasDir && isVisible)
+                if (hasDir && (isVisible || dir.sqrMagnitude > 0.001f))
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
@@ -755,6 +817,25 @@ namespace ModularFlightPanel.UI.Widgets
                         targetScale *= pulse;
                     }
 
+                    // 光标悬停交互 (Hover Scaling, Highlight & Press Feedback)
+                    NavballMarkerClickHandler handler = null;
+                    _markerHandlers.TryGetValue(key, out handler);
+                    bool isHovered = handler != null && handler.IsHovered;
+                    bool isPressed = handler != null && handler.IsPressed;
+
+                    if (isHovered)
+                    {
+                        _activeHoveredMarkerKey = key;
+                        _activeHoveredMarkerPos = markerPos;
+                        targetScale *= 1.28f;
+                        alpha = Mathf.Max(alpha, 0.98f);
+                        if (isPressed)
+                        {
+                            targetScale *= 0.88f;
+                        }
+                        img.transform.SetAsLastSibling();
+                    }
+
                     img.rectTransform.anchoredPosition = markerPos;
                     img.rectTransform.localScale = new Vector3(targetScale, targetScale, 1.0f);
 
@@ -772,6 +853,49 @@ namespace ModularFlightPanel.UI.Widgets
                 else
                 {
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                    if (_activeHoveredMarkerKey == key)
+                    {
+                        _activeHoveredMarkerKey = null;
+                    }
+                }
+            }
+
+            // 更新悬浮提示微卡片 HUD
+            if (_markerHoverTooltipObj != null)
+            {
+                if (!string.IsNullOrEmpty(_activeHoveredMarkerKey) && MarkerTooltipLabels.TryGetValue(_activeHoveredMarkerKey, out var tipData))
+                {
+                    if (!_markerHoverTooltipObj.activeSelf) _markerHoverTooltipObj.SetActive(true);
+                    _markerHoverTooltipObj.transform.SetAsLastSibling();
+
+                    _markerHoverTooltipText.text = tipData.title;
+                    _markerHoverTooltipSub.text = tipData.sub;
+
+                    float s = CurrentDpiScale;
+                    Vector2 tipPos = _activeHoveredMarkerPos;
+                    if (tipPos.y >= 0) tipPos.y -= 25f * s;
+                    else tipPos.y += 25f * s;
+
+                    tipPos.x = Mathf.Clamp(tipPos.x, -_visualRadius * 0.65f, _visualRadius * 0.65f);
+                    _markerHoverTooltipRt.anchoredPosition = tipPos;
+
+                    ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+                    FlightSASMode? mode = GetSASModeForMarker(_activeHoveredMarkerKey);
+                    Color borderCol = mode.HasValue ? NavballMarkerFactory.GetSASModeColor(mode.Value, curTheme) : (curTheme?.AccentPrimary ?? WidgetStyleManager.NeutralOpaque);
+
+                    if (_markerHoverTooltipOutline != null) _markerHoverTooltipOutline.effectColor = borderCol;
+                    if (_markerHoverTooltipText != null) _markerHoverTooltipText.color = borderCol;
+                    if (_markerHoverTooltipSub != null) _markerHoverTooltipSub.color = curTheme?.TextPrimaryColor ?? WidgetStyleManager.NeutralOpaque;
+                    if (_markerHoverTooltipBg != null)
+                    {
+                        Color bg = curTheme?.FrameBgColor ?? WidgetStyleManager.NeutralOpaque;
+                        bg.a = 0.90f;
+                        _markerHoverTooltipBg.color = bg;
+                    }
+                }
+                else
+                {
+                    if (_markerHoverTooltipObj.activeSelf) _markerHoverTooltipObj.SetActive(false);
                 }
             }
 
@@ -948,6 +1072,20 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        public void OnMarkerHoverEnter(string markerKey, Vector2 pos)
+        {
+            _activeHoveredMarkerKey = markerKey;
+            _activeHoveredMarkerPos = pos;
+        }
+
+        public void OnMarkerHoverExit(string markerKey)
+        {
+            if (_activeHoveredMarkerKey == markerKey)
+            {
+                _activeHoveredMarkerKey = null;
+            }
+        }
+
         public void HandleMarkerClick(string markerKey, Vector2 pos)
         {
             FlightSASMode? targetMode = GetSASModeForMarker(markerKey);
@@ -956,14 +1094,32 @@ namespace ModularFlightPanel.UI.Widgets
                 var telem = FlightTelemetryContext.Current;
                 if (telem != null)
                 {
-                    if (!telem.IsSASEnabled)
-                    {
-                        telem.ToggleSAS();
-                    }
                     telem.SetSASMode(targetMode.Value);
                 }
                 ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
                 TriggerShockwaveRipple(pos, NavballMarkerFactory.GetSASModeColor(targetMode.Value, curTheme));
+            }
+        }
+
+        public void HandleMarkerRightClick(string markerKey, Vector2 pos)
+        {
+            if (markerKey != null && markerKey.Equals("maneuver", StringComparison.OrdinalIgnoreCase))
+            {
+                Vessel v = FlightGlobals.ActiveVessel;
+                if (v != null && v.patchedConicSolver != null && v.patchedConicSolver.maneuverNodes != null && v.patchedConicSolver.maneuverNodes.Count > 0)
+                {
+                    var node = v.patchedConicSolver.maneuverNodes[0];
+                    if (node != null && TimeWarp.fetch != null)
+                    {
+                        double now = Planetarium.GetUniversalTime();
+                        double targetUt = node.UT - 30.0;
+                        if (targetUt > now + 5.0)
+                        {
+                            TimeWarp.fetch.WarpTo(targetUt);
+                            ScreenMessages.PostScreenMessage("MFP: Timewarping to Maneuver Node (T-30s)", 3.0f, ScreenMessageStyle.UPPER_CENTER);
+                        }
+                    }
+                }
             }
         }
 
@@ -1416,6 +1572,17 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
+            if (_markerHoverTooltipBg != null)
+            {
+                Color bg = theme.FrameBgColor;
+                bg.a = 0.90f;
+                _markerHoverTooltipBg.color = bg;
+            }
+            if (_markerHoverTooltipSub != null)
+            {
+                _markerHoverTooltipSub.color = theme.TextPrimaryColor;
+            }
+
             this.Controls.ApplyThemeToControls(theme);
         }
 
@@ -1440,6 +1607,13 @@ namespace ModularFlightPanel.UI.Widgets
         {
             this.Controls.UnregisterAll();
             _markerImages.Clear();
+            _markerHandlers.Clear();
+            _markerHoverTooltipObj = null;
+            _markerHoverTooltipRt = null;
+            _markerHoverTooltipBg = null;
+            _markerHoverTooltipOutline = null;
+            _markerHoverTooltipText = null;
+            _markerHoverTooltipSub = null;
             _bankAngleTicks.Clear();
             _bankRollPointerRoot = null;
             _bankRollPointerImg = null;
@@ -1463,19 +1637,56 @@ namespace ModularFlightPanel.UI.Widgets
     }
 
     /// <summary>
-    /// 导航标与准星点击事件拦截转发器 (Click-to-SAS 航电操作路由)
+    /// 导航标与准星交互事件拦截转发器 (Click-to-SAS 航电操作路由 & 悬停反馈)
     /// </summary>
-    public class NavballMarkerClickHandler : MonoBehaviour, IPointerClickHandler
+    public class NavballMarkerClickHandler : MonoBehaviour,
+        IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
     {
         public string MarkerKey;
         public NavballSphereWidget Widget;
+        public bool IsHovered { get; private set; }
+        public bool IsPressed { get; private set; }
+
+        public void OnPointerEnter(PointerEventData eventData)
+        {
+            IsHovered = true;
+            Widget?.OnMarkerHoverEnter(MarkerKey, GetComponent<RectTransform>().anchoredPosition);
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            IsHovered = false;
+            IsPressed = false;
+            Widget?.OnMarkerHoverExit(MarkerKey);
+        }
+
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            if (eventData.button == PointerEventData.InputButton.Left)
+            {
+                IsPressed = true;
+            }
+        }
+
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            IsPressed = false;
+        }
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            if (eventData.button == PointerEventData.InputButton.Left && Widget != null)
+            if (Widget != null)
             {
-                Widget.HandleMarkerClick(MarkerKey, GetComponent<RectTransform>().anchoredPosition);
-                eventData.Use();
+                if (eventData.button == PointerEventData.InputButton.Left)
+                {
+                    Widget.HandleMarkerClick(MarkerKey, GetComponent<RectTransform>().anchoredPosition);
+                    eventData.Use();
+                }
+                else if (eventData.button == PointerEventData.InputButton.Right)
+                {
+                    Widget.HandleMarkerRightClick(MarkerKey, GetComponent<RectTransform>().anchoredPosition);
+                    eventData.Use();
+                }
             }
         }
     }
