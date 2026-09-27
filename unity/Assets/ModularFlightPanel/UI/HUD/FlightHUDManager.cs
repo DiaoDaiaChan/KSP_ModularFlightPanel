@@ -243,6 +243,9 @@ namespace ModularFlightPanel.UI
                 if (!MFPProfiler.IsMasterBypassed && _isUIVisible)
                 {
                     WidgetRenderManager.Instance.MasterLateUpdate();
+#if KSP_RUNTIME
+                    DockAnchorTracker.LateUpdateSync();
+#endif
                 }
                 MFPProfiler.EndFrame();
             }

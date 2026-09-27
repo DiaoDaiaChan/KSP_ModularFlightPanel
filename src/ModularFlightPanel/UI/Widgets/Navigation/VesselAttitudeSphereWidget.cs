@@ -144,7 +144,15 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
             _bgOutline.effectColor = Color.clear;
 
-            ParseCustomTemplate(config?.CustomTemplate);
+            _headingToken = GetTemplateChannel("HDG", _headingToken);
+            _pitchToken = GetTemplateChannel("PITCH", _pitchToken);
+            _rollToken = GetTemplateChannel("ROLL", _rollToken);
+            _sasToken = GetTemplateChannel("SAS", _sasToken);
+            string viewVal = GetTemplateChannel("VIEW", null);
+            if (!string.IsNullOrEmpty(viewVal))
+            {
+                _isChasePerspective = !viewVal.Equals("TOP", StringComparison.OrdinalIgnoreCase);
+            }
             EnsureSharedTextures();
 
             // 1. 初始化 3D 姿态球离屏渲染管线 (RenderTexture + Offscreen Camera + Sphere Mesh)
@@ -176,29 +184,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             ApplyTheme(theme);
         }
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "HDG": _headingToken = v; break;
-                    case "PITCH": _pitchToken = v; break;
-                    case "ROLL": _rollToken = v; break;
-                    case "SAS": _sasToken = v; break;
-                    case "VIEW":
-                        _isChasePerspective = !v.Equals("TOP", StringComparison.OrdinalIgnoreCase);
-                        break;
-                }
-            }
-        }
 
         private void InitializeOffscreenSphere(float ballDiameter, ThemeConfig theme)
         {
@@ -222,11 +207,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _renderTexture.Create();
 
             // 离屏正交摄像机 (层级 31，正交视口 1.0f)
-            GameObject camObj = new GameObject("Navball_Vessel_Cam", typeof(Camera));
-            camObj.transform.SetParent(transform, false);
+            _ballCamera = CreateChild<Camera>("Navball_Vessel_Cam", transform);
+            GameObject camObj = _ballCamera.gameObject;
             camObj.transform.localPosition = new Vector3(0f, 0f, -2.5f);
-
-            _ballCamera = camObj.GetComponent<Camera>();
             _ballCamera.clearFlags = CameraClearFlags.SolidColor;
             _ballCamera.backgroundColor = WidgetStyleManager.NeutralTransparent;
             _ballCamera.targetTexture = _renderTexture;
@@ -272,26 +255,17 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             mr.material = _sphereMaterial;
 
             // RawImage 球体主贴图视口
-            GameObject rawObj = new GameObject("Sphere_Viewport", typeof(RectTransform), typeof(RawImage));
-            rawObj.transform.SetParent(transform, false);
-            RectTransform rawRt = rawObj.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(ballDiameter, ballDiameter);
-            rawRt.anchoredPosition = Vector2.zero;
-
-            _sphereDisplayImage = rawObj.GetComponent<RawImage>();
+            _sphereDisplayImage = CreateChild<RawImage>("Sphere_Viewport", transform,
+                new Vector2(ballDiameter, ballDiameter), Vector2.zero);
             _sphereDisplayImage.texture = _renderTexture;
             _sphereDisplayImage.raycastTarget = false;
         }
 
         private void CreateBezelRing(float ballDiameter, float s, ThemeConfig theme)
         {
-            _bezelRingObj = new GameObject("Bezel_Ring", typeof(RectTransform), typeof(RawImage));
-            _bezelRingObj.transform.SetParent(transform, false);
-            RectTransform bezelRt = _bezelRingObj.GetComponent<RectTransform>();
-            bezelRt.sizeDelta = new Vector2(ballDiameter + 6f * s, ballDiameter + 6f * s);
-            bezelRt.anchoredPosition = Vector2.zero;
-
-            _bezelRingRawImage = _bezelRingObj.GetComponent<RawImage>();
+            _bezelRingRawImage = CreateChild<RawImage>("Bezel_Ring", transform,
+                new Vector2(ballDiameter + 6f * s, ballDiameter + 6f * s), Vector2.zero);
+            _bezelRingObj = _bezelRingRawImage.gameObject;
             _bezelRingRawImage.texture = _sharedBezelTexture;
             _bezelRingRawImage.color = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.85f);
             _bezelRingRawImage.raycastTarget = false;
@@ -299,11 +273,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         private void CreateMarkerOverlayLayer(Transform parent, float s)
         {
-            GameObject markerLayer = new GameObject("Markers_Layer", typeof(RectTransform));
-            markerLayer.transform.SetParent(parent, false);
-            RectTransform mlRt = markerLayer.GetComponent<RectTransform>();
-            mlRt.sizeDelta = new Vector2(_visualRadius * 2f, _visualRadius * 2f);
-            mlRt.anchoredPosition = Vector2.zero;
+            RectTransform mlRt = CreateContainer("Markers_Layer", parent,
+                new Vector2(_visualRadius * 2f, _visualRadius * 2f), Vector2.zero);
+            GameObject markerLayer = mlRt.gameObject;
 
             string[] markerKeys = new string[]
             {
@@ -316,14 +288,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             for (int i = 0; i < markerKeys.Length; i++)
             {
                 string key = markerKeys[i];
-                GameObject mObj = new GameObject("Marker_" + key, typeof(RectTransform), typeof(Image));
-                mObj.transform.SetParent(markerLayer.transform, false);
+                Image img = CreateChild<Image>("Marker_" + key, markerLayer.transform,
+                    new Vector2(markerSize, markerSize), Vector2.zero);
+                GameObject mObj = img.gameObject;
 
-                RectTransform mRt = mObj.GetComponent<RectTransform>();
-                mRt.sizeDelta = new Vector2(markerSize, markerSize);
-                mRt.anchoredPosition = Vector2.zero;
-
-                Image img = mObj.GetComponent<Image>();
                 img.sprite = NavballMarkerFactory.GetMarkerSprite(key);
                 img.color = WidgetStyleManager.NeutralOpaque;
                 img.raycastTarget = false;
@@ -336,18 +304,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private void CreateCenter3DSpacecraft(float ballDiameter, float s, ThemeConfig theme)
         {
             // 中央机构根节点
-            GameObject shipRootObj = new GameObject("Center_3D_Ship_Root", typeof(RectTransform));
-            shipRootObj.transform.SetParent(transform, false);
-            _centerShipRoot = shipRootObj.GetComponent<RectTransform>();
-            _centerShipRoot.sizeDelta = new Vector2(46f * s, 46f * s);
-            _centerShipRoot.anchoredPosition = Vector2.zero;
+            _centerShipRoot = CreateContainer("Center_3D_Ship_Root", transform,
+                new Vector2(46f * s, 46f * s), Vector2.zero);
 
             // 1. 水平基准定位指示标翼 (Aerospace Horizon Reticle Index Wings)
-            GameObject reticleObj = new GameObject("Reticle_Wings", typeof(RectTransform));
-            reticleObj.transform.SetParent(_centerShipRoot, false);
-            _reticleWingsRoot = reticleObj.GetComponent<RectTransform>();
-            _reticleWingsRoot.sizeDelta = new Vector2(74f * s, 10f * s);
-            _reticleWingsRoot.anchoredPosition = Vector2.zero;
+            _reticleWingsRoot = CreateContainer("Reticle_Wings", _centerShipRoot,
+                new Vector2(74f * s, 10f * s), Vector2.zero);
 
             float wingW = 14f * s;
             float wingH = 2.4f * s;
@@ -358,25 +320,16 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Pip_R", new Vector2(2.4f * s, 6f * s), new Vector2(wingOffX - wingW * 0.5f, -2f * s), theme.AccentPrimary);
 
             // 2. 3D 飞船主体 (Spacecraft Visual Image)
-            GameObject shipObj = new GameObject("Spacecraft_Visual", typeof(RectTransform), typeof(RawImage));
-            shipObj.transform.SetParent(_centerShipRoot, false);
-            RectTransform shipRt = shipObj.GetComponent<RectTransform>();
-            shipRt.sizeDelta = new Vector2(44f * s, 44f * s);
-            shipRt.anchoredPosition = Vector2.zero;
-
-            _shipRawImage = shipObj.GetComponent<RawImage>();
+            _shipRawImage = CreateChild<RawImage>("Spacecraft_Visual", _centerShipRoot,
+                new Vector2(44f * s, 44f * s), Vector2.zero);
             _shipRawImage.texture = _shared3DSpacecraftTexture;
             _shipRawImage.color = WidgetStyleManager.NeutralOpaque;
             _shipRawImage.raycastTarget = false;
 
             // 3. 飞行指引仪 Target Flight Director Chevron
-            GameObject fdObj = new GameObject("Flight_Director_Chevron", typeof(RectTransform), typeof(RawImage));
-            fdObj.transform.SetParent(_centerShipRoot, false);
-            _flightDirectorRoot = fdObj.GetComponent<RectTransform>();
-            _flightDirectorRoot.sizeDelta = new Vector2(24f * s, 24f * s);
-            _flightDirectorRoot.anchoredPosition = new Vector2(0f, 18f * s);
-
-            _flightDirectorRawImage = fdObj.GetComponent<RawImage>();
+            _flightDirectorRawImage = CreateChild<RawImage>("Flight_Director_Chevron", _centerShipRoot,
+                new Vector2(24f * s, 24f * s), new Vector2(0f, 18f * s));
+            _flightDirectorRoot = _flightDirectorRawImage.rectTransform;
             _flightDirectorRawImage.texture = _sharedFlightDirectorTexture;
             _flightDirectorRawImage.color = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f);
             _flightDirectorRawImage.raycastTarget = false;

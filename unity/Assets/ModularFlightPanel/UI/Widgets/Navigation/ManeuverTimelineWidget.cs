@@ -95,53 +95,23 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private string _sourceToken = "{MN:SOURCE}";
         private string _statusToken = "{MN:STATUS}";
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _frameMode = "FAINT";
-            _deltaVToken = "{MN:DV}";
-            _totalDvToken = "{MN:TOTAL_DV}";
-            _tNodeToken = "{MN:T_NODE}";
-            _burnTimeToken = "{MN:BURN_TIME}";
-            _timeToBurnToken = "{MN:T_BURN}";
-            _proToken = "{MN:PRO}";
-            _normToken = "{MN:NORM}";
-            _radToken = "{MN:RAD}";
-            _sourceToken = "{MN:SOURCE}";
-            _statusToken = "{MN:STATUS}";
-
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "FRAME": _frameMode = v.ToUpperInvariant(); break;
-                    case "DV_TOKEN":
-                    case "DELTA_V_TOKEN": _deltaVToken = v; break;
-                    case "TOTAL_DV_TOKEN": _totalDvToken = v; break;
-                    case "T_NODE_TOKEN": _tNodeToken = v; break;
-                    case "BURN_TIME_TOKEN": _burnTimeToken = v; break;
-                    case "T_BURN_TOKEN": _timeToBurnToken = v; break;
-                    case "PRO_TOKEN": _proToken = v; break;
-                    case "NORM_TOKEN": _normToken = v; break;
-                    case "RAD_TOKEN": _radToken = v; break;
-                    case "SOURCE_TOKEN": _sourceToken = v; break;
-                    case "STATUS_TOKEN": _statusToken = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            string frame = GetTemplateChannel("FRAME", null);
+            _frameMode = !string.IsNullOrEmpty(frame) ? frame.ToUpperInvariant() : "FAINT";
+            _deltaVToken = GetTemplateChannel(new[] { "DV_TOKEN", "DELTA_V_TOKEN" }, "{MN:DV}");
+            _totalDvToken = GetTemplateChannel("TOTAL_DV_TOKEN", "{MN:TOTAL_DV}");
+            _tNodeToken = GetTemplateChannel("T_NODE_TOKEN", "{MN:T_NODE}");
+            _burnTimeToken = GetTemplateChannel("BURN_TIME_TOKEN", "{MN:BURN_TIME}");
+            _timeToBurnToken = GetTemplateChannel("T_BURN_TOKEN", "{MN:T_BURN}");
+            _proToken = GetTemplateChannel("PRO_TOKEN", "{MN:PRO}");
+            _normToken = GetTemplateChannel("NORM_TOKEN", "{MN:NORM}");
+            _radToken = GetTemplateChannel("RAD_TOKEN", "{MN:RAD}");
+            _sourceToken = GetTemplateChannel("SOURCE_TOKEN", "{MN:SOURCE}");
+            _statusToken = GetTemplateChannel("STATUS_TOKEN", "{MN:STATUS}");
 
             // 1. 组件包围盒 (基准 520×100 逻辑像素，三级分层布局)
             Vector2 size = BaseSize * s;
@@ -156,37 +126,25 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // TIER 1 (上层): 水平直线时间轴轨道
             // ═══════════════════════════════════════════════════════
 
-            GameObject trackGo = new GameObject("Timeline_Track", typeof(RectTransform), typeof(Image));
-            trackGo.transform.SetParent(transform, false);
-            RectTransform trackRt = trackGo.GetComponent<RectTransform>();
-            trackRt.sizeDelta = new Vector2(TrackWidth * s, 2f * s);
-            trackRt.anchoredPosition = new Vector2(0f, TrackCenterY * s);
-            _trackLineImage = trackGo.GetComponent<Image>();
+            _trackLineImage = CreateChild<Image>("Timeline_Track", transform,
+                new Vector2(TrackWidth * s, 2f * s), new Vector2(0f, TrackCenterY * s));
             _trackLineImage.raycastTarget = false;
 
             // 燃烧窗口高亮段 (IGNITION -> BURNOUT)
             float burnZoneW = (ZoneBurnoutNorm - ZoneIgnitionNorm) * TrackWidth * s;
             float burnZoneCenterX = ((ZoneIgnitionNorm + ZoneBurnoutNorm) * 0.5f - 0.5f) * TrackWidth * s;
-            GameObject burnZoneGo = new GameObject("Burn_Zone_Track", typeof(RectTransform), typeof(Image));
-            burnZoneGo.transform.SetParent(transform, false);
-            RectTransform burnZoneRt = burnZoneGo.GetComponent<RectTransform>();
-            burnZoneRt.sizeDelta = new Vector2(burnZoneW, 3f * s);
-            burnZoneRt.anchoredPosition = new Vector2(burnZoneCenterX, TrackCenterY * s);
-            _burnZoneImage = burnZoneGo.GetComponent<Image>();
+            _burnZoneImage = CreateChild<Image>("Burn_Zone_Track", transform,
+                new Vector2(burnZoneW, 3f * s), new Vector2(burnZoneCenterX, TrackCenterY * s));
             _burnZoneImage.raycastTarget = false;
 
             // 关键任务时序节点 (APPROACH, IGNITION, T0 NODE, BURNOUT)
             BuildMilestones(s, theme);
 
             // 动态飞行光标 (Progress Pip)
-            GameObject pipGo = new GameObject("Progress_Pip", typeof(RectTransform), typeof(Image));
-            pipGo.transform.SetParent(transform, false);
-            _progressPipRt = pipGo.GetComponent<RectTransform>();
-            _progressPipRt.sizeDelta = new Vector2(6f * s, 8f * s);
-            _progressPipRt.anchoredPosition = new Vector2(-TrackWidth * 0.5f * s, TrackCenterY * s);
-
-            _progressPipImage = pipGo.GetComponent<Image>();
+            _progressPipImage = CreateChild<Image>("Progress_Pip", transform,
+                new Vector2(6f * s, 8f * s), new Vector2(-TrackWidth * 0.5f * s, TrackCenterY * s));
             _progressPipImage.raycastTarget = false;
+            _progressPipRt = _progressPipImage.rectTransform;
 
             // ═══════════════════════════════════════════════════════
             // TIER 2 (中层): 分体式双栏核心读数
@@ -218,12 +176,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             cntRt.anchoredPosition = new Vector2(leftCX, heroY);
 
             // 中央竖向分隔线 (2px 宽, 高度贯穿标签与读数两行)
-            GameObject divGo = new GameObject("Hero_Divider", typeof(RectTransform), typeof(Image));
-            divGo.transform.SetParent(transform, false);
-            RectTransform divRt = divGo.GetComponent<RectTransform>();
-            divRt.sizeDelta = new Vector2(1.5f * s, 28f * s);
-            divRt.anchoredPosition = new Vector2(0f, 6f * s);
-            _heroDivider = divGo.GetComponent<Image>();
+            _heroDivider = CreateChild<Image>("Hero_Divider", transform,
+                new Vector2(1.5f * s, 28f * s), new Vector2(0f, 6f * s));
             _heroDivider.raycastTarget = false;
 
             // 右栏小标签: Δv REMAINING
@@ -273,7 +227,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     ApplyCard(_bgImage, _bgOutline, _currentCardRole, t);
                 }
             }));
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "timeline_track", "时序轨道", trackGo, (t) => {
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "timeline_track", "时序轨道", _trackLineImage != null ? _trackLineImage.gameObject : null, (t) => {
                 if (_trackLineImage != null) _trackLineImage.color = WidgetStyleManager.Weighted(t.AccentSecondary, LineWeight.Medium);
                 if (_burnZoneImage != null) _burnZoneImage.color = WidgetStyleManager.Weighted(t.AccentPrimary, LineWeight.Light);
             }));
@@ -308,13 +262,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 float yPos = TrackCenterY * s;
 
                 // 节点标记竖向微刻度 (Tick)
-                GameObject dotGo = new GameObject($"Milestone_Tick_{i}", typeof(RectTransform), typeof(Image));
-                dotGo.transform.SetParent(transform, false);
-                RectTransform dotRt = dotGo.GetComponent<RectTransform>();
-                dotRt.sizeDelta = new Vector2(2f * s, 6f * s);
-                dotRt.anchoredPosition = new Vector2(xPos, yPos);
-
-                Image dotImg = dotGo.GetComponent<Image>();
+                Image dotImg = CreateChild<Image>($"Milestone_Tick_{i}", transform,
+                    new Vector2(2f * s, 6f * s), new Vector2(xPos, yPos));
                 dotImg.color = dotColor;
                 dotImg.raycastTarget = false;
 

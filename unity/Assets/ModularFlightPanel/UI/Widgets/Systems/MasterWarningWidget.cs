@@ -181,6 +181,26 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastCelestialBody = null;
         private string _lastFlightSituation = null;
 
+        // 高性能遥测与样式脏标记缓存
+        private double _cachedAtmoCutoff = 70000.0;
+        private double _cachedEffectivePe = 0.0;
+        private double _cachedEffectiveAp = 0.0;
+        private string _cachedAtmoBody = null;
+        private double _cachedAtmoVal = 70000.0;
+        private bool _cautWasDeadFront = false;
+        private bool _warnWasDeadFront = false;
+        private bool _cellsStyleNeedsUpdate = true;
+        private bool _nominalStyleNeedsUpdate = true;
+        private Color _lastNominalPhaseColor = Color.clear;
+        private double _lastRenderedAp = -9999999.0;
+        private double _lastRenderedPe = -9999999.0;
+        private float _lastRenderedMach = -1f;
+        private float _lastRenderedVsi = -9999f;
+        private string _cachedApSub;
+        private string _cachedPeSub;
+        private string _cachedMachSub;
+        private string _cachedVsiSub;
+
         // 左舱：Caution (黄色注意) 视图组件
         private GameObject _cautCell;
         private RectTransform _cautRect;
@@ -238,7 +258,21 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
 
             // 1. 解析自定义模板配置 (包括模块数量、自定义文本与门限)
-            ParseCustomTemplate(config?.CustomTemplate);
+            int mc = GetTemplateChannelInt(new[] { "MODULES", "MODE", "COUNT" }, _modulesCount);
+            if (mc >= 2 && mc <= 3) _modulesCount = mc;
+            if (GetTemplateChannelBool("PYRAMID", false)) _modulesCount = 3;
+            float iv = GetTemplateChannelFloat(new[] { "INTERVAL", "ROTATION" }, _switchInterval);
+            if (iv > 0.5f) _switchInterval = iv;
+            string sep = GetTemplateChannel(new[] { "SEP", "SEP_TEXT", "SEPARATION" }, null);
+            if (!string.IsNullOrEmpty(sep)) { _sepTitleTemplate = sep; _customSepExplicit = true; }
+            string eng = GetTemplateChannel(new[] { "ENG", "ENG_TEXT", "IGNITION" }, null);
+            if (!string.IsNullOrEmpty(eng)) { _engTitleTemplate = eng; _customEngExplicit = true; }
+            float dt = GetTemplateChannelFloat(new[] { "TIME", "BANNER_TIME", "DURATION" }, _bannerDuration);
+            if (dt > 0.4f) _bannerDuration = dt;
+            float fw = GetTemplateChannelFloat(new[] { "FUEL_WARN", "MIN_FUEL" }, -1f);
+            if (fw > 0.01f && fw <= 35f) _customWarnThresh = fw / 100f;
+            float fc = GetTemplateChannelFloat(new[] { "FUEL_CAUT", "LOW_FUEL" }, -1f);
+            if (fc > 0.01f && fc <= 50f) _customCautThresh = fc / 100f;
             if (!_customSepExplicit) _sepTitleTemplate = I18n.Tr("WIDGET_ALERT_SEPARATION", "分  离");
             if (!_customEngExplicit) _engTitleTemplate = I18n.Tr("WIDGET_ALERT_ENGINE_START", "引擎启动");
             _currentEvent = BuildEventItem(BannerEventType.Separation);
@@ -561,67 +595,6 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _bannerRect.sizeDelta = new Vector2(180f * s, 18f * s);
                         _bannerRect.anchoredPosition = Vector2.zero;
-                    }
-                }
-            }
-        }
-
-        private void ParseCustomTemplate(string template)
-        {
-            if (string.IsNullOrEmpty(template)) return;
-            string[] pairs = template.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string[] kv = pairs[i].Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                if (k == "MODULES" || k == "MODE" || k == "COUNT")
-                {
-                    if (int.TryParse(v, out int mc))
-                    {
-                        _modulesCount = Mathf.Clamp(mc, 2, 3);
-                    }
-                }
-                else if (k == "PYRAMID")
-                {
-                    if (v == "1" || v.Equals("TRUE", StringComparison.OrdinalIgnoreCase)) _modulesCount = 3;
-                    else if (v == "0" || v.Equals("FALSE", StringComparison.OrdinalIgnoreCase)) _modulesCount = 2;
-                }
-                else if (k == "INTERVAL" || k == "ROTATION")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float iv) && iv > 0.5f)
-                    {
-                        _switchInterval = iv;
-                    }
-                }
-                else if (k == "SEP" || k == "SEP_TEXT" || k == "SEPARATION")
-                {
-                    if (!string.IsNullOrEmpty(v)) { _sepTitleTemplate = v; _customSepExplicit = true; }
-                }
-                else if (k == "ENG" || k == "ENG_TEXT" || k == "IGNITION")
-                {
-                    if (!string.IsNullOrEmpty(v)) { _engTitleTemplate = v; _customEngExplicit = true; }
-                }
-                else if (k == "TIME" || k == "BANNER_TIME" || k == "DURATION")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float dt) && dt > 0.4f)
-                    {
-                        _bannerDuration = dt;
-                    }
-                }
-                else if (k == "FUEL_WARN" || k == "MIN_FUEL")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fw) && fw > 0.01f && fw <= 35f)
-                    {
-                        _customWarnThresh = fw / 100f;
-                    }
-                }
-                else if (k == "FUEL_CAUT" || k == "LOW_FUEL")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float fc) && fc > 0.01f && fc <= 50f)
-                    {
-                        _customCautThresh = fc / 100f;
                     }
                 }
             }
@@ -966,6 +939,11 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             float dt = Time.unscaledDeltaTime;
 
+            // 预先集中求解高精度轨道动力学与大气边界参数，单次解算供事件侦测与巡航工况复用
+            _cachedAtmoCutoff = GetAtmosphereCutoff(telemetry);
+            _cachedEffectivePe = GetEffectivePeriapsis(telemetry);
+            _cachedEffectiveAp = GetEffectiveApoapsis(telemetry);
+
             // 1. 侦测分级分离、引擎点火与机动巡航等全景瞬态事件
             DetectTransientEvents(telemetry);
 
@@ -1065,32 +1043,43 @@ namespace ModularFlightPanel.UI.Widgets
         private double GetAtmosphereCutoff(IFlightTelemetry telem)
         {
             if (telem == null) return 70000.0;
+            string curBody = telem.CelestialBodyName;
+            if (curBody != null && curBody == _cachedAtmoBody) return _cachedAtmoVal;
 
+            _cachedAtmoBody = curBody;
             // 1. 优先从外部探针注册中心检索物理大气边界 (支持 FAR / Principia / 环境物理模组注册)
             if (ExternalProbeRegistry.NumericResolver != null)
             {
                 double probeDepth = ExternalProbeRegistry.ResolveNumeric("ENV", "AtmosphereDepth");
-                if (!double.IsNaN(probeDepth) && probeDepth >= 0.0) return probeDepth;
+                if (!double.IsNaN(probeDepth) && probeDepth >= 0.0)
+                {
+                    _cachedAtmoVal = probeDepth;
+                    return probeDepth;
+                }
             }
 
             // 2. 契约通用化获取当前天体物理真实大气层高度 (0 硬编码，完美适配原版、RSS/RO、Kopernicus、Principia 及任何自定义星球)
             if (telem.AtmosphereDepth > 0.0)
             {
-                return telem.AtmosphereDepth;
+                _cachedAtmoVal = telem.AtmosphereDepth;
+                return _cachedAtmoVal;
             }
 
             // 3. 若当前天体为无大气真空天体 (如月球、水星、各类无气小行星)
             if (!telem.HasAtmosphere)
             {
+                _cachedAtmoVal = 0.0;
                 return 0.0;
             }
 
             // 4. 通用物理防御兜底：若存在宏观气压读数则按标准大气厚度兜底
             if (telem.AtmosphericPressure > 0.0001)
             {
+                _cachedAtmoVal = 70000.0;
                 return 70000.0;
             }
 
+            _cachedAtmoVal = 0.0;
             return 0.0;
         }
 
@@ -1104,10 +1093,10 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void DetectTransientEvents(IFlightTelemetry telem)
         {
-            // 解析高精度轨道动力学参数 (优先采用 Principia N 体数值摄动分析探针数据，自动 Fallback 至原版通用遥测)
-            double atmoCutoff = GetAtmosphereCutoff(telem);
-            double effectivePe = GetEffectivePeriapsis(telem);
-            double effectiveAp = GetEffectiveApoapsis(telem);
+            // 解析高精度轨道动力学参数 (直接复用 OnUpdateTelemetry 统一求解的缓存数据，杜绝重复计算)
+            double atmoCutoff = _cachedAtmoCutoff;
+            double effectivePe = _cachedEffectivePe;
+            double effectiveAp = _cachedEffectiveAp;
 
             // ── A. 分级分离判定 ──
             if (_lastStage != -1)
@@ -1311,13 +1300,13 @@ namespace ModularFlightPanel.UI.Widgets
                 float pulse = 0.82f + 0.18f * Mathf.Sin(_bannerTimer * 12f);
                 Color activeCol = WidgetStyleManager.WithAlpha(eventColor, pulse);
 
-                if (_bannerBg != null) _bannerBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
-                if (_bannerOutline != null) _bannerOutline.effectColor = activeCol;
-                if (_bannerPipBar != null) _bannerPipBar.color = activeCol;
-                if (_bannerTitle != null) _bannerTitle.color = eventColor;
-                if (_bannerSub != null) _bannerSub.color = WidgetStyleManager.WithAlpha(eventColor, 0.75f);
-                if (_bannerLeftIcon != null) _bannerLeftIcon.color = activeCol;
-                if (_bannerRightIcon != null) _bannerRightIcon.color = activeCol;
+                if (_bannerBg != null) SetColorIfChanged(_bannerBg, WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
+                if (_bannerOutline != null) SetOutlineColorIfChanged(_bannerOutline, activeCol);
+                if (_bannerPipBar != null) SetColorIfChanged(_bannerPipBar, activeCol);
+                if (_bannerTitle != null) SetColorIfChanged(_bannerTitle, eventColor);
+                if (_bannerSub != null) SetColorIfChanged(_bannerSub, WidgetStyleManager.WithAlpha(eventColor, 0.75f));
+                if (_bannerLeftIcon != null) SetColorIfChanged(_bannerLeftIcon, activeCol);
+                if (_bannerRightIcon != null) SetColorIfChanged(_bannerRightIcon, activeCol);
 
                 // 若有排队连击事件，单事件展示时长适度收紧 (0.95s)，保持紧凑利落的航电节奏感
                 float targetDuration = (_bannerQueue.Count > 0) ? Mathf.Min(_currentEvent.Duration, 0.95f) : _currentEvent.Duration;
@@ -1348,10 +1337,10 @@ namespace ModularFlightPanel.UI.Widgets
                 SetTextIfChanged(_bannerRightIcon, _currentEvent.RightIcon);
 
                 Color switchColor = ResolveEventColor(_currentEvent.ColorRole, theme);
-                if (_bannerOutline != null) _bannerOutline.effectColor = switchColor;
-                if (_bannerPipBar != null) _bannerPipBar.color = switchColor;
-                if (_bannerTitle != null) _bannerTitle.color = switchColor;
-                if (_bannerSub != null) _bannerSub.color = switchColor;
+                if (_bannerOutline != null) SetOutlineColorIfChanged(_bannerOutline, switchColor);
+                if (_bannerPipBar != null) SetColorIfChanged(_bannerPipBar, switchColor);
+                if (_bannerTitle != null) SetColorIfChanged(_bannerTitle, switchColor);
+                if (_bannerSub != null) SetColorIfChanged(_bannerSub, switchColor);
 
                 if (_bannerTimer >= 0.08f)
                 {
@@ -1399,9 +1388,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_bannerCell == null || !_bannerCell.activeSelf) return;
 
-            double atmoCutoff = GetAtmosphereCutoff(telem);
-            double effectivePe = GetEffectivePeriapsis(telem);
-            double effectiveAp = GetEffectiveApoapsis(telem);
+            double atmoCutoff = _cachedAtmoCutoff;
+            double effectivePe = _cachedEffectivePe;
+            double effectiveAp = _cachedEffectiveAp;
 
             string title;
             string sub;
@@ -1425,24 +1414,33 @@ namespace ModularFlightPanel.UI.Widgets
             else if (telem.FlightSituation == "ESCAPING" || (effectiveAp < 0 && effectiveAp > -9000000.0))
             {
                 title = I18n.Tr("WIDGET_STATUS_ESCAPE", "深空逃逸");
-                sub = $"Pe {FormatKm(effectivePe)}";
+                if (Math.Abs(effectivePe - _lastRenderedPe) > 500.0)
+                {
+                    _lastRenderedPe = effectivePe;
+                    _cachedPeSub = $"Pe {FormatKm(effectivePe)}";
+                }
+                sub = _cachedPeSub ?? ($"Pe {FormatKm(effectivePe)}");
                 icon = "▲";
                 phaseColor = theme.AccentPositive;
             }
             else if (effectivePe < atmoCutoff && telem.AltitudeASL >= atmoCutoff && effectivePe > -9000000.0)
             {
                 // 航天器处于太空高度，但近拱点已降至大气层内或地表之下 (执行了离轨制动或处于再入走廊)
+                if (Math.Abs(effectivePe - _lastRenderedPe) > 500.0)
+                {
+                    _lastRenderedPe = effectivePe;
+                    _cachedPeSub = $"Pe {FormatKm(effectivePe)}";
+                }
+                sub = _cachedPeSub ?? ($"Pe {FormatKm(effectivePe)}");
                 if (effectivePe < 0)
                 {
                     title = I18n.Tr("WIDGET_STATUS_BALLISTIC", "弹道再入撞击");
-                    sub = $"Pe {FormatKm(effectivePe)}";
                     icon = "▼";
                     phaseColor = theme.WarningColor;
                 }
                 else
                 {
                     title = I18n.Tr("WIDGET_STATUS_DEORBIT", "离轨再入走廊");
-                    sub = $"Pe {FormatKm(effectivePe)}";
                     icon = "▼";
                     phaseColor = theme.WarningColor;
                 }
@@ -1450,21 +1448,38 @@ namespace ModularFlightPanel.UI.Widgets
             else if (telem.FlightSituation == "ORBITING" || (effectivePe >= atmoCutoff && telem.AltitudeASL >= atmoCutoff))
             {
                 title = I18n.Tr("WIDGET_STATUS_ORBIT_CRUISE", "轨道巡航");
-                sub = $"Ap {FormatKm(effectiveAp)}";
+                if (Math.Abs(effectiveAp - _lastRenderedAp) > 500.0)
+                {
+                    _lastRenderedAp = effectiveAp;
+                    _cachedApSub = $"Ap {FormatKm(effectiveAp)}";
+                }
+                sub = _cachedApSub ?? ($"Ap {FormatKm(effectiveAp)}");
                 icon = "●";
                 phaseColor = theme.AccentSecondary;
             }
             else if (atmoCutoff > 0.0 && telem.AltitudeASL < atmoCutoff && telem.VerticalSpeed > 10.0)
             {
                 title = I18n.Tr("WIDGET_STATUS_ASCENT", "大气爬升");
-                sub = $"M {telem.Mach:F1}";
+                float mach = (float)telem.Mach;
+                if (Math.Abs(mach - _lastRenderedMach) > 0.05f)
+                {
+                    _lastRenderedMach = mach;
+                    _cachedMachSub = $"M {mach:F1}";
+                }
+                sub = _cachedMachSub ?? ($"M {mach:F1}");
                 icon = "▲";
                 phaseColor = theme.WarningColor;
             }
             else if (telem.VerticalSpeed < -10.0 && (atmoCutoff > 0.0 ? telem.AltitudeASL < atmoCutoff * 0.5 : telem.AltitudeAGL < 3000.0))
             {
                 title = I18n.Tr("WIDGET_STATUS_APPROACH", "降落进近");
-                sub = $"VSI {Mathf.RoundToInt((float)telem.VerticalSpeed)}";
+                float vsi = (float)telem.VerticalSpeed;
+                if (Math.Abs(vsi - _lastRenderedVsi) > 1.0f)
+                {
+                    _lastRenderedVsi = vsi;
+                    _cachedVsiSub = $"VSI {Mathf.RoundToInt(vsi)}";
+                }
+                sub = _cachedVsiSub ?? ($"VSI {Mathf.RoundToInt(vsi)}");
                 icon = "▼";
                 phaseColor = theme.WarningColor;
             }
@@ -1481,18 +1496,24 @@ namespace ModularFlightPanel.UI.Widgets
             SetTextIfChanged(_bannerLeftIcon, icon);
             SetTextIfChanged(_bannerRightIcon, icon);
 
-            // 暗舱待命微光 (Dead-front subdued glow, 0 颜色字面量)
-            Color deadFrontColor = WidgetStyleManager.WithAlpha(phaseColor, 0.45f);
-            Color deadFrontSub = WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
-            Color deadFrontGhost = WidgetStyleManager.Weighted(phaseColor, LineWeight.Ghost);
+            if (_lastNominalPhaseColor != phaseColor || _nominalStyleNeedsUpdate)
+            {
+                _lastNominalPhaseColor = phaseColor;
+                _nominalStyleNeedsUpdate = false;
 
-            if (_bannerBg != null) _bannerBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            if (_bannerOutline != null) _bannerOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (_bannerPipBar != null) _bannerPipBar.color = Color.clear;
-            if (_bannerTitle != null) _bannerTitle.color = deadFrontColor;
-            if (_bannerSub != null) _bannerSub.color = deadFrontSub;
-            if (_bannerLeftIcon != null) _bannerLeftIcon.color = deadFrontGhost;
-            if (_bannerRightIcon != null) _bannerRightIcon.color = deadFrontGhost;
+                // 暗舱待命微光 (Dead-front subdued glow, 0 颜色字面量)
+                Color deadFrontColor = WidgetStyleManager.WithAlpha(phaseColor, 0.45f);
+                Color deadFrontSub = WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
+                Color deadFrontGhost = WidgetStyleManager.Weighted(phaseColor, LineWeight.Ghost);
+
+                _bannerBg?.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                _bannerOutline?.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost));
+                _bannerPipBar?.SetColor(Color.clear);
+                _bannerTitle?.SetColor(deadFrontColor);
+                _bannerSub?.SetColor(deadFrontSub);
+                _bannerLeftIcon?.SetColor(deadFrontGhost);
+                _bannerRightIcon?.SetColor(deadFrontGhost);
+            }
         }
 
         private void EvaluateTelemetryAlerts(IFlightTelemetry telem, float dt)
@@ -1645,101 +1666,117 @@ namespace ModularFlightPanel.UI.Widgets
             bool isCautActive = _cautAlerts.Count > 0;
             if (isCautActive)
             {
+                _cautWasDeadFront = false;
                 if (_cautIndex >= _cautAlerts.Count) _cautIndex = 0;
                 AlertItem item = _cautAlerts[_cautIndex];
 
                 string pagination = _cautAlerts.Count > 1 ? $"{_cautIndex + 1}/{_cautAlerts.Count}" : item.TelemetryAffix;
-                SetTextIfChanged(_cautTitle, item.MainTitle);
-                SetTextIfChanged(_cautSub, pagination);
-                SetTextIfChanged(_cautIcon, "▲");
+                _cautTitle.SetTextSafe(item.MainTitle);
+                _cautSub.SetTextSafe(pagination);
+                _cautIcon.SetTextSafe("▲");
 
                 bool blink = _cautAcknowledged || _blink1Hz;
                 if (blink)
                 {
-                    _cautBg.color = WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution, theme);
-                    _cautOutline.effectColor = theme.WarningColor;
-                    _cautPipBar.color = theme.WarningColor;
-                    _cautTitle.color = theme.WarningColor;
-                    _cautSub.color = theme.WarningColor;
-                    _cautIcon.color = theme.WarningColor;
+                    _cautBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution, theme));
+                    _cautOutline.SetColor(theme.WarningColor);
+                    _cautPipBar.SetColor(theme.WarningColor);
+                    _cautTitle.SetColor(theme.WarningColor);
+                    _cautSub.SetColor(theme.WarningColor);
+                    _cautIcon.SetColor(theme.WarningColor);
                 }
                 else
                 {
-                    _cautBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
-                    _cautOutline.effectColor = WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Faint);
-                    _cautPipBar.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.30f);
-                    _cautTitle.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f);
-                    _cautSub.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f);
-                    _cautIcon.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f);
+                    _cautBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
+                    _cautOutline.SetColor(WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Faint));
+                    _cautPipBar.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.30f));
+                    _cautTitle.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
+                    _cautSub.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
+                    _cautIcon.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
                 }
             }
             else
             {
-                // 暗态待命 (Dead-Front Nominal)
-                SetTextIfChanged(_cautTitle, I18n.Tr("WIDGET_ALERT_CAUTION", "CAUTION"));
-                SetTextIfChanged(_cautSub, I18n.Tr("WIDGET_ALERT_NORM", "NORM"));
-                SetTextIfChanged(_cautIcon, "●");
+                if (!_cautWasDeadFront || _cellsStyleNeedsUpdate)
+                {
+                    _cautWasDeadFront = true;
+                    // 暗态待命 (Dead-Front Nominal)
+                    _cautTitle.SetTextSafe(I18n.Tr("WIDGET_ALERT_CAUTION", "CAUTION"));
+                    _cautSub.SetTextSafe(I18n.Tr("WIDGET_ALERT_NORM", "NORM"));
+                    _cautIcon.SetTextSafe("●");
 
-                _cautBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                _cautOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-                _cautPipBar.color = Color.clear;
-                _cautTitle.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.22f);
-                _cautSub.color = WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
-                _cautIcon.color = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost);
+                    _cautBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                    _cautOutline.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost));
+                    _cautPipBar.SetColor(Color.clear);
+                    _cautTitle.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.22f));
+                    _cautSub.SetColor(WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
+                    _cautIcon.SetColor(WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost));
+                }
             }
 
             // ── B. 渲染右舱：WARNING ──
             bool isWarnActive = _warnAlerts.Count > 0;
             if (isWarnActive)
             {
+                _warnWasDeadFront = false;
                 if (_warnIndex >= _warnAlerts.Count) _warnIndex = 0;
                 AlertItem item = _warnAlerts[_warnIndex];
 
                 string pagination = _warnAlerts.Count > 1 ? $"{_warnIndex + 1}/{_warnAlerts.Count}" : item.TelemetryAffix;
-                SetTextIfChanged(_warnTitle, item.MainTitle);
-                SetTextIfChanged(_warnSub, pagination);
-                SetTextIfChanged(_warnIcon, "▲");
+                _warnTitle.SetTextSafe(item.MainTitle);
+                _warnSub.SetTextSafe(pagination);
+                _warnIcon.SetTextSafe("▲");
 
                 bool blink = _warnAcknowledged || _blink2Hz;
                 if (blink)
                 {
-                    _warnBg.color = WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger, theme);
-                    _warnOutline.effectColor = theme.DangerColor;
-                    _warnPipBar.color = theme.DangerColor;
-                    _warnTitle.color = theme.DangerColor;
-                    _warnSub.color = theme.DangerColor;
-                    _warnIcon.color = theme.DangerColor;
+                    _warnBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger, theme));
+                    _warnOutline.SetColor(theme.DangerColor);
+                    _warnPipBar.SetColor(theme.DangerColor);
+                    _warnTitle.SetColor(theme.DangerColor);
+                    _warnSub.SetColor(theme.DangerColor);
+                    _warnIcon.SetColor(theme.DangerColor);
                 }
                 else
                 {
-                    _warnBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
-                    _warnOutline.effectColor = WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Faint);
-                    _warnPipBar.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.30f);
-                    _warnTitle.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f);
-                    _warnSub.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f);
-                    _warnIcon.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f);
+                    _warnBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
+                    _warnOutline.SetColor(WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Faint));
+                    _warnPipBar.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.30f));
+                    _warnTitle.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
+                    _warnSub.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
+                    _warnIcon.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
                 }
             }
             else
             {
-                // 暗态待命 (Dead-Front Nominal)
-                SetTextIfChanged(_warnTitle, I18n.Tr("WIDGET_ALERT_WARNING", "WARNING"));
-                SetTextIfChanged(_warnSub, I18n.Tr("WIDGET_ALERT_ARMED", "ARMED"));
-                SetTextIfChanged(_warnIcon, "●");
+                if (!_warnWasDeadFront || _cellsStyleNeedsUpdate)
+                {
+                    _warnWasDeadFront = true;
+                    // 暗态待命 (Dead-Front Nominal)
+                    _warnTitle.SetTextSafe(I18n.Tr("WIDGET_ALERT_WARNING", "WARNING"));
+                    _warnSub.SetTextSafe(I18n.Tr("WIDGET_ALERT_ARMED", "ARMED"));
+                    _warnIcon.SetTextSafe("●");
 
-                _warnBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                _warnOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-                _warnPipBar.color = Color.clear;
-                _warnTitle.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.22f);
-                _warnSub.color = WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme);
-                _warnIcon.color = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost);
+                    _warnBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                    _warnOutline.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost));
+                    _warnPipBar.SetColor(Color.clear);
+                    _warnTitle.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.22f));
+                    _warnSub.SetColor(WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
+                    _warnIcon.SetColor(WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost));
+                }
             }
+
+            _cellsStyleNeedsUpdate = false;
         }
 
         protected override void OnLanguageChanged()
         {
             if (!_customSepExplicit) _sepTitleTemplate = I18n.Tr("WIDGET_ALERT_SEPARATION", "分  离");
             if (!_customEngExplicit) _engTitleTemplate = I18n.Tr("WIDGET_ALERT_ENGINE_START", "引擎启动");
+            _cautWasDeadFront = false;
+            _warnWasDeadFront = false;
+            _cellsStyleNeedsUpdate = true;
+            _nominalStyleNeedsUpdate = true;
             RenderVisualCells();
         }
 
@@ -1749,12 +1786,15 @@ namespace ModularFlightPanel.UI.Widgets
             base.ApplyTheme(theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
 
-            if (_outerBezel != null) _outerBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme);
-            if (_outerOutline != null) _outerOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (_centerDivider != null) _centerDivider.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            if (_horizDivider != null) _horizDivider.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            _outerBezel?.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
+            _outerOutline?.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost));
+            _centerDivider?.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+            _horizDivider?.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
 
             this.Controls.ApplyThemeToControls(theme);
+
+            _cellsStyleNeedsUpdate = true;
+            _nominalStyleNeedsUpdate = true;
 
             if (_modulesCount == 3)
             {

@@ -137,10 +137,31 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        private static float _lastCentralSyncTime = -1f;
+
         /// <summary>
-        /// 轮询或在拖拽时同步全部已跟踪按钮的物理 Transform
+        /// 由 FlightHUDManager.LateUpdate() 统一调用的全局集中式锚点同步中枢。
+        /// 将停靠追踪彻底从各个 Toolbar 组件的 Update 业务代码中剥离，集中在帧末批量平滑对齐。
         /// </summary>
-        public static void SyncAll()
+        public static void LateUpdateSync()
+        {
+#if KSP_RUNTIME
+            if (_trackedButtons.Count == 0) return;
+            if (ThemeManager.Instance == null || ThemeManager.Instance.ToolbarStyleMode != 2) return;
+
+            float now = Time.unscaledTime;
+            // 10Hz 节流，兼顾平滑性与零 CPU 开销
+            if (now - _lastCentralSyncTime < 0.1f) return;
+            _lastCentralSyncTime = now;
+
+            SyncAll();
+#endif
+        }
+
+        /// <summary>
+        /// 轮询或在拖拽时同步全部已跟踪按钮的物理 Transform (内部集中调度，禁止组件私自调用)
+        /// </summary>
+        internal static void SyncAll()
         {
             if (ThemeManager.Instance == null || ThemeManager.Instance.ToolbarStyleMode != 2) return;
 
@@ -163,15 +184,15 @@ namespace ModularFlightPanel.Core
 
             try
             {
-                if (entry.KspButton.transform != null)
+                if (entry.KspButton.transform != null && (entry.KspButton.transform.position - worldPos).sqrMagnitude > 0.01f)
                 {
                     entry.KspButton.transform.position = worldPos;
                 }
-                if (entry.KspButton.container != null && entry.KspButton.container.transform != null)
+                if (entry.KspButton.container != null && entry.KspButton.container.transform != null && (entry.KspButton.container.transform.position - worldPos).sqrMagnitude > 0.01f)
                 {
                     entry.KspButton.container.transform.position = worldPos;
                 }
-                if (entry.KspButton.toggleButton != null && entry.KspButton.toggleButton.transform != null)
+                if (entry.KspButton.toggleButton != null && entry.KspButton.toggleButton.transform != null && (entry.KspButton.toggleButton.transform.position - worldPos).sqrMagnitude > 0.01f)
                 {
                     entry.KspButton.toggleButton.transform.position = worldPos;
                 }

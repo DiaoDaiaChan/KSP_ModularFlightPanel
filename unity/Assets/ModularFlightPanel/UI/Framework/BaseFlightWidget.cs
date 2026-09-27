@@ -619,6 +619,97 @@ namespace ModularFlightPanel.UI
 
         #endregion
 
+        #region Universal Semantic Node Builders (Zero Raw GameObject)
+
+        /// <summary>
+        /// 创建标准 UGUI 矩形容器节点 (自动注入 RectTransform、归一化 Pivot/Anchor、安全绑定父级)
+        /// </summary>
+        protected RectTransform CreateContainer(string name, Transform parent = null, Vector2? size = null, Vector2? anchoredPos = null)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent != null ? parent : transform, false);
+            RectTransform rt = (RectTransform)go.transform;
+            if (size.HasValue) rt.sizeDelta = size.Value;
+            if (anchoredPos.HasValue) rt.anchoredPosition = anchoredPos.Value;
+            return rt;
+        }
+
+        /// <summary>
+        /// 创建视口裁剪容器 (带 RectMask2D 与 RectTransform)
+        /// </summary>
+        protected RectTransform CreateViewport(string name, Transform parent = null, Vector2? size = null, Vector2? anchoredPos = null)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform), typeof(RectMask2D));
+            go.transform.SetParent(parent != null ? parent : transform, false);
+            RectTransform rt = (RectTransform)go.transform;
+            if (size.HasValue) rt.sizeDelta = size.Value;
+            if (anchoredPos.HasValue) rt.anchoredPosition = anchoredPos.Value;
+            return rt;
+        }
+
+        /// <summary>
+        /// 创建交互按钮节点 (集成 RectTransform, Image 背景与 Button 交互组件)
+        /// </summary>
+        protected Button CreateButton(string name, Transform parent, out RectTransform rt, out Image bg, Vector2? size = null, Vector2? anchoredPos = null)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent != null ? parent : transform, false);
+            rt = (RectTransform)go.transform;
+            bg = go.GetComponent<Image>();
+            if (size.HasValue) rt.sizeDelta = size.Value;
+            if (anchoredPos.HasValue) rt.anchoredPosition = anchoredPos.Value;
+            return go.GetComponent<Button>();
+        }
+
+        /// <summary>
+        /// 创建强类型子节点组件 (自动注入 RectTransform 与目标组件类型)
+        /// </summary>
+        protected TComponent CreateChild<TComponent>(string name, Transform parent = null, Vector2? size = null, Vector2? anchoredPos = null) where TComponent : Component
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform), typeof(TComponent));
+            go.transform.SetParent(parent != null ? parent : transform, false);
+            RectTransform rt = (RectTransform)go.transform;
+            if (size.HasValue) rt.sizeDelta = size.Value;
+            if (anchoredPos.HasValue) rt.anchoredPosition = anchoredPos.Value;
+            return go.GetComponent<TComponent>();
+        }
+
+        /// <summary>
+        /// 创建带有附加组件的复合节点
+        /// </summary>
+        protected GameObject CreateNode(string name, Transform parent = null, params Type[] components)
+        {
+            Type[] allComponents;
+            if (components == null || components.Length == 0)
+            {
+                allComponents = new[] { typeof(RectTransform) };
+            }
+            else
+            {
+                bool hasRt = false;
+                for (int i = 0; i < components.Length; i++)
+                {
+                    if (components[i] == typeof(RectTransform)) { hasRt = true; break; }
+                }
+                if (!hasRt)
+                {
+                    allComponents = new Type[components.Length + 1];
+                    allComponents[0] = typeof(RectTransform);
+                    Array.Copy(components, 0, allComponents, 1, components.Length);
+                }
+                else
+                {
+                    allComponents = components;
+                }
+            }
+
+            GameObject go = new GameObject(name, allComponents);
+            go.transform.SetParent(parent != null ? parent : transform, false);
+            return go;
+        }
+
+        #endregion
+
         #region Universal Performance & Zero-Allocation UI Helpers
 
         /// <summary>
@@ -654,6 +745,18 @@ namespace ModularFlightPanel.UI
             if (graphic == null) return false;
             if (graphic.color == targetColor) return false;
             graphic.color = targetColor;
+            return true;
+        }
+
+        /// <summary>
+        /// 通用描边颜色脏标记守卫：仅当描边颜色发生实际改变时才写入 Outline.effectColor，
+        /// 彻底阻断 UGUI Outline 每帧重复赋值导致的整图元顶点流 (Vertex Stream) 重建与重绘
+        /// </summary>
+        public static bool SetOutlineColorIfChanged(Outline outline, Color targetColor)
+        {
+            if (outline == null) return false;
+            if (outline.effectColor == targetColor) return false;
+            outline.effectColor = targetColor;
             return true;
         }
 
@@ -698,6 +801,32 @@ namespace ModularFlightPanel.UI
                 return false;
             }
             target.anchoredPosition = newPos;
+            return true;
+        }
+
+        /// <summary>
+        /// 通用 RectTransform 尺寸脏标记守卫：仅当尺寸变化大于容差 (默认 0.05 像素) 时才写入 sizeDelta
+        /// </summary>
+        public static bool SetSizeDeltaIfChanged(RectTransform target, Vector2 newSize, float tolerance = 0.05f)
+        {
+            if (target == null) return false;
+            Vector2 cur = target.sizeDelta;
+            if (Mathf.Abs(cur.x - newSize.x) <= tolerance && Mathf.Abs(cur.y - newSize.y) <= tolerance)
+            {
+                return false;
+            }
+            target.sizeDelta = newSize;
+            return true;
+        }
+
+        /// <summary>
+        /// 通用 GameObject 显隐脏标记守卫：仅当 activeSelf 与 targetActive 不一致时才调用 SetActive
+        /// </summary>
+        public static bool SetActiveIfChanged(GameObject target, bool targetActive)
+        {
+            if (target == null) return false;
+            if (target.activeSelf == targetActive) return false;
+            target.SetActive(targetActive);
             return true;
         }
 

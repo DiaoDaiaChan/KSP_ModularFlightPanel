@@ -234,14 +234,8 @@ namespace ModularFlightPanel.UI.Widgets
             titleRt.sizeDelta = new Vector2(bayW - 4f * s, 12f * s);
 
             // 2D 飞船剪影图元 (RawImage 显示 VesselSilhouetteBaker 或程序化矢量保底)
-            GameObject rawObj = new GameObject("VesselSilhouette_RawImage", typeof(RectTransform), typeof(RawImage));
-            rawObj.transform.SetParent(_silhouetteBayObj.transform, false);
-
-            RectTransform rawRt = rawObj.GetComponent<RectTransform>();
-            rawRt.anchoredPosition = new Vector2(0f, -2f * s);
-            rawRt.sizeDelta = new Vector2(46f * s, 102f * s);
-
-            _silhouetteRawImage = rawObj.GetComponent<RawImage>();
+            _silhouetteRawImage = CreateChild<RawImage>("VesselSilhouette_RawImage", _silhouetteBayObj.transform,
+                new Vector2(46f * s, 102f * s), new Vector2(0f, -2f * s));
             _silhouetteRawImage.raycastTarget = false;
             _silhouetteRawImage.color = secondaryAccent;
 
@@ -306,15 +300,10 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 float rowY = startY - i * (rowHeight + rowSpacing);
 
-                GameObject rowObj = new GameObject($"StageRow_{i}", typeof(RectTransform));
-                rowObj.transform.SetParent(parent, false);
-
-                RectTransform rowRt = rowObj.GetComponent<RectTransform>();
-                rowRt.anchorMin = new Vector2(0.5f, 0.5f);
-                rowRt.anchorMax = new Vector2(0.5f, 0.5f);
+                RectTransform rowRt = CreateContainer($"StageRow_{i}", parent,
+                    new Vector2(rowWidth, rowHeight), new Vector2(rowStartX, rowY));
                 rowRt.pivot = new Vector2(0f, 0.5f);
-                rowRt.sizeDelta = new Vector2(rowWidth, rowHeight);
-                rowRt.anchoredPosition = new Vector2(rowStartX, rowY);
+                GameObject rowObj = rowRt.gameObject;
 
                 // 0. 航电引出线 (Leader line: 连接剪影视窗右侧至分级标牌)
                 GameObject leaderObj = UIFactory.CreatePanel(rowObj.transform, "Leader", new Vector2(6f * s, 1.2f * s),
@@ -362,31 +351,23 @@ namespace ModularFlightPanel.UI.Widgets
                 Image trackBg = trackObj.GetComponent<Image>();
 
                 // 3. 动态充填条 (Fill Bar)
-                GameObject fillObj = new GameObject("FillBar", typeof(RectTransform), typeof(Image));
-                fillObj.transform.SetParent(trackObj.transform, false);
-
-                RectTransform fillRt = fillObj.GetComponent<RectTransform>();
+                Image fillImg = CreateChild<Image>("FillBar", trackObj.transform,
+                    new Vector2(trackW * 0.7f, trackH - 2f * s), new Vector2(1f * s, 0f));
+                GameObject fillObj = fillImg.gameObject;
+                RectTransform fillRt = fillImg.rectTransform;
                 fillRt.anchorMin = new Vector2(0f, 0.5f);
                 fillRt.anchorMax = new Vector2(0f, 0.5f);
                 fillRt.pivot = new Vector2(0f, 0.5f);
-                fillRt.sizeDelta = new Vector2(trackW * 0.7f, trackH - 2f * s);
-                fillRt.anchoredPosition = new Vector2(1f * s, 0f);
-
-                Image fillImg = fillObj.GetComponent<Image>();
                 fillImg.color = primaryAccent;
 
                 // 4. 游标高亮指示 (Caret Line)
-                GameObject caretObj = new GameObject("Caret", typeof(RectTransform), typeof(Image));
-                caretObj.transform.SetParent(fillObj.transform, false);
-
-                RectTransform caretRt = caretObj.GetComponent<RectTransform>();
+                Image caretImg = CreateChild<Image>("Caret", fillObj.transform,
+                    new Vector2(2.5f * s, trackH + 2f * s), Vector2.zero);
+                GameObject caretObj = caretImg.gameObject;
+                RectTransform caretRt = caretImg.rectTransform;
                 caretRt.anchorMin = new Vector2(1f, 0.5f);
                 caretRt.anchorMax = new Vector2(1f, 0.5f);
                 caretRt.pivot = new Vector2(1f, 0.5f);
-                caretRt.sizeDelta = new Vector2(2.5f * s, trackH + 2f * s);
-                caretRt.anchoredPosition = Vector2.zero;
-
-                Image caretImg = caretObj.GetComponent<Image>();
                 caretImg.color = WidgetStyleManager.Text(TextStyleRole.PrimaryValue);
 
                 // 5. 速度条右侧单级数值 (Stage ΔV text)

@@ -137,8 +137,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private void BuildReticleRings(float outerR, float innerR, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject ringsRoot = new GameObject("ReticleRings", typeof(RectTransform));
-            ringsRoot.transform.SetParent(transform, false);
+            RectTransform ringsRt = CreateContainer("ReticleRings", transform);
+            GameObject ringsRoot = ringsRt.gameObject;
 
             Color outerCol = style.GetLineColor(LineWeight.Subtle, theme);
             Color innerCol = style.GetLineColor(LineWeight.Light, theme);
@@ -174,9 +174,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private void BuildCenterCrosshair(float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject crossRoot = new GameObject("CenterCrosshair", typeof(RectTransform));
-            crossRoot.transform.SetParent(transform, false);
-            _crossRootRt = crossRoot.GetComponent<RectTransform>();
+            _crossRootRt = CreateContainer("CenterCrosshair", transform);
+            GameObject crossRoot = _crossRootRt.gameObject;
 
             Color lineCol = style.GetLineColor(LineWeight.Bold, theme);
 

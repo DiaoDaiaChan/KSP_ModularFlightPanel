@@ -100,8 +100,19 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 panelSize = BaseSize * s;
             RectTransform.sizeDelta = panelSize;
             _aircraftCenterPos = new Vector2(0f, -panelSize.y * 0.5f + 48f * s);
-
-            ParseCustomTemplate(config);
+            if (config != null && !string.IsNullOrEmpty(config.NumericToken))
+            {
+                _headingToken = config.NumericToken;
+            }
+            _headingToken = GetTemplateChannel(new[] { "HDG", "VAL", "TOKEN" }, _headingToken);
+            _gsTasTemplate = GetTemplateChannel(new[] { "GSTAS", "SPEED" }, _gsTasTemplate);
+            _windTemplate = GetTemplateChannel("WIND", _windTemplate);
+            _procedureTemplate = GetTemplateChannel(new[] { "PROC", "APPROACH" }, _procedureTemplate);
+            _waypointNameDistTemplate = GetTemplateChannel(new[] { "WP", "WAYPOINT" }, _waypointNameDistTemplate);
+            _waypointEtaTemplate = GetTemplateChannel("ETA", _waypointEtaTemplate);
+            _vor1Template = GetTemplateChannel("VOR1", _vor1Template);
+            _vor2Template = GetTemplateChannel("VOR2", _vor2Template);
+            _driftTemplate = GetTemplateChannel("DRIFT", _driftTemplate);
 
             // 1. 半透明暗色玻璃卡片底板 (由基类 AutoCreateCardFrame 托管)
             _bgImage = CardBackground;
@@ -141,42 +152,6 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
-        }
-
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (config != null && !string.IsNullOrEmpty(config.NumericToken))
-            {
-                _headingToken = config.NumericToken;
-            }
-
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "HDG":
-                    case "VAL":
-                    case "TOKEN": _headingToken = v; break;
-                    case "GSTAS":
-                    case "SPEED": _gsTasTemplate = v; break;
-                    case "WIND": _windTemplate = v; break;
-                    case "PROC":
-                    case "APPROACH": _procedureTemplate = v; break;
-                    case "WP":
-                    case "WAYPOINT": _waypointNameDistTemplate = v; break;
-                    case "ETA": _waypointEtaTemplate = v; break;
-                    case "VOR1": _vor1Template = v; break;
-                    case "VOR2": _vor2Template = v; break;
-                    case "DRIFT": _driftTemplate = v; break;
-                }
-            }
         }
 
         private void BuildAvionicsHeader(Vector2 size, float s, ThemeConfig theme)
@@ -236,8 +211,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildRangeRings(Vector2 size, float s, ThemeConfig theme)
         {
-            _rangeRingsRoot = new GameObject("ND_RangeRings_Root", typeof(RectTransform));
-            _rangeRingsRoot.transform.SetParent(transform, false);
+            _rangeRingsRoot = CreateContainer("ND_RangeRings_Root", transform).gameObject;
 
             Color borderCol = WidgetStyleManager.Instance.GetCardBorderColor(CardStyleRole.Normal, theme);
             Color ringCol = WidgetStyleManager.WithAlpha(borderCol, 0.28f);
@@ -288,30 +262,25 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. 顶部正中央倒三角形基准游标
             Vector2 lubberPos = _aircraftCenterPos + new Vector2(0f, radius + 3f * s);
-            _lubberTriangle = new GameObject("Lubber_Triangle", typeof(RectTransform), typeof(Image));
-            _lubberTriangle.transform.SetParent(transform, false);
-            RectTransform lubRt = _lubberTriangle.GetComponent<RectTransform>();
-            lubRt.sizeDelta = new Vector2(7f * s, 7f * s);
-            lubRt.anchoredPosition = lubberPos;
+            Image lubImg = CreateChild<Image>("Lubber_Triangle", transform,
+                new Vector2(7f * s, 7f * s), lubberPos);
+            _lubberTriangle = lubImg.gameObject;
+            RectTransform lubRt = lubImg.rectTransform;
             lubRt.localEulerAngles = new Vector3(0f, 0f, 45f);
-            Image lubImg = _lubberTriangle.GetComponent<Image>();
             lubImg.color = WidgetStyleManager.Meter(MeterStyleRole.Secondary, theme);
 
             // 2. 刻度对象池
             _tickPool.Clear();
             for (int i = 0; i < TICK_POOL_COUNT; i++)
             {
-                GameObject root = new GameObject($"ND_Tick_{i}", typeof(RectTransform));
-                root.transform.SetParent(transform, false);
-                RectTransform rt = root.GetComponent<RectTransform>();
-                rt.sizeDelta = new Vector2(24f * s, 24f * s);
+                RectTransform rt = CreateContainer($"ND_Tick_{i}", transform,
+                    new Vector2(24f * s, 24f * s), Vector2.zero);
+                GameObject root = rt.gameObject;
 
-                GameObject lineObj = new GameObject("Line", typeof(RectTransform), typeof(Image));
-                lineObj.transform.SetParent(root.transform, false);
-                RectTransform lineRt = lineObj.GetComponent<RectTransform>();
-                lineRt.sizeDelta = new Vector2(1.5f * s, 6.5f * s);
-                lineRt.anchoredPosition = Vector2.zero;
-                Image lineImg = lineObj.GetComponent<Image>();
+                Image lineImg = CreateChild<Image>("Line", root.transform,
+                    new Vector2(1.5f * s, 6.5f * s), Vector2.zero);
+                GameObject lineObj = lineImg.gameObject;
+                RectTransform lineRt = lineImg.rectTransform;
                 lineImg.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
 
                 int fontSize = Mathf.Max(7, Mathf.RoundToInt(8f * s));
@@ -358,9 +327,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 2. 标志性飞机微标
             Color goldCol = style.GetTextColor(TextStyleRole.Warning, theme);
-            _airplaneSymbol = new GameObject("ND_Aircraft_Symbol", typeof(RectTransform));
-            _airplaneSymbol.transform.SetParent(transform, false);
-            _airplaneSymbol.GetComponent<RectTransform>().anchoredPosition = _aircraftCenterPos;
+            _airplaneSymbol = CreateContainer("ND_Aircraft_Symbol", transform,
+                Vector2.zero, _aircraftCenterPos).gameObject;
 
             // 主机翼横杠
             UIFactory.CreatePanel(_airplaneSymbol.transform, "Wings", new Vector2(24f * s, 2.5f * s), Vector2.zero, goldCol);
@@ -375,14 +343,12 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 目标航点微标 (绿色菱形 ◇)
-            _targetWaypointMarker = new GameObject("ND_Target_Waypoint", typeof(RectTransform), typeof(Image));
-            _targetWaypointMarker.transform.SetParent(transform, false);
-            RectTransform wpRt = _targetWaypointMarker.GetComponent<RectTransform>();
-            wpRt.sizeDelta = new Vector2(8f * s, 8f * s);
-            wpRt.anchoredPosition = _aircraftCenterPos + new Vector2(35f * s, 45f * s);
+            Image wpImg = CreateChild<Image>("ND_Target_Waypoint", transform,
+                new Vector2(8f * s, 8f * s), _aircraftCenterPos + new Vector2(35f * s, 45f * s));
+            _targetWaypointMarker = wpImg.gameObject;
+            RectTransform wpRt = wpImg.rectTransform;
             wpRt.localEulerAngles = new Vector3(0f, 0f, 45f);
 
-            Image wpImg = _targetWaypointMarker.GetComponent<Image>();
             wpImg.color = Color.clear;
             Outline wpOl = _targetWaypointMarker.AddComponent<Outline>();
             wpOl.effectColor = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);

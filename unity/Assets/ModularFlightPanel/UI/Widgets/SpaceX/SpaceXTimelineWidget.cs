@@ -84,13 +84,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 3. 构建顶部抛物线轨迹弧 (Trajectory Arc)
             EnsureSharedArcTexture();
 
-            GameObject arcGo = new GameObject("Trajectory_Arc", typeof(RectTransform), typeof(RawImage));
-            arcGo.transform.SetParent(transform, false);
-            RectTransform arcRt = arcGo.GetComponent<RectTransform>();
-            arcRt.sizeDelta = new Vector2(ArcWidth * s, ArcHeight * s);
-            arcRt.anchoredPosition = new Vector2(0f, 26f * s);
-
-            _arcRawImage = arcGo.GetComponent<RawImage>();
+            _arcRawImage = CreateChild<RawImage>("Trajectory_Arc", transform, new Vector2(ArcWidth * s, ArcHeight * s), new Vector2(0f, 26f * s));
+            GameObject arcGo = _arcRawImage.gameObject;
+            RectTransform arcRt = _arcRawImage.rectTransform;
             _arcRawImage.texture = _sharedArcTexture;
             _arcRawImage.raycastTarget = false;
 
@@ -98,13 +94,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             BuildMilestones(s, theme);
 
             // 5. 动态飞行光标 (Progress Pip)
-            GameObject pipGo = new GameObject("Progress_Pip", typeof(RectTransform), typeof(Image));
-            pipGo.transform.SetParent(transform, false);
-            _progressPipRt = pipGo.GetComponent<RectTransform>();
-            _progressPipRt.sizeDelta = new Vector2(7f * s, 7f * s);
-            _progressPipRt.anchoredPosition = new Vector2(-ArcWidth * 0.5f * s, 26f * s);
-
-            _progressPipImage = pipGo.GetComponent<Image>();
+            _progressPipImage = CreateChild<Image>("Progress_Pip", transform, new Vector2(7f * s, 7f * s), new Vector2(-ArcWidth * 0.5f * s, 26f * s));
+            GameObject pipGo = _progressPipImage.gameObject;
+            _progressPipRt = _progressPipImage.rectTransform;
             _progressPipImage.raycastTarget = false;
 
             // 6. 中央任务时钟 (Mission Time: T+ 00:08:03)
@@ -170,13 +162,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 float yCurve = ComputeArcY(def.normX) * s + 26f * s;
 
                 // 节点小圆点
-                GameObject dotGo = new GameObject($"Milestone_Dot_{i}", typeof(RectTransform), typeof(Image));
-                dotGo.transform.SetParent(transform, false);
-                RectTransform dotRt = dotGo.GetComponent<RectTransform>();
-                dotRt.sizeDelta = new Vector2(4f * s, 4f * s);
-                dotRt.anchoredPosition = new Vector2(xPos, yCurve);
-
-                Image dotImg = dotGo.GetComponent<Image>();
+                Image dotImg = CreateChild<Image>($"Milestone_Dot_{i}", transform, new Vector2(4f * s, 4f * s), new Vector2(xPos, yCurve));
+                GameObject dotGo = dotImg.gameObject;
+                RectTransform dotRt = dotImg.rectTransform;
                 dotImg.color = dotColor;
                 dotImg.raycastTarget = false;
 

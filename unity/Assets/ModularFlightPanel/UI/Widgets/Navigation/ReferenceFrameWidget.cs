@@ -74,8 +74,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 2. 底板卡片与边框 (由基类 AutoCreateCardFrame 统一托管)
             _bgImage = CardBackground;
             _bgOutline = CardOutline;
-
-            ParseCustomTemplate(config?.CustomTemplate);
+            _frameToken = GetTemplateChannel(new[] { "FRAME", "NAME", "TITLE" }, _frameToken);
+            _typeToken = GetTemplateChannel(new[] { "TYPE", "CATEGORY" }, _typeToken);
 
             // 3. 左侧图标插槽徽章 (左对齐，垂直居中)
             _iconBox = UIFactory.CreatePanel(transform, "Frame_Icon_Box",
@@ -92,16 +92,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             ApplyCard(_iconBoxBg, _iconBoxOutline, CardStyleRole.SubtleSlot, theme);
 
             // 矢量图集 RawImage (20 x 20 px)
-            GameObject rawImgObj = new GameObject("Frame_Vector_Icon", typeof(RectTransform), typeof(RawImage));
-            rawImgObj.transform.SetParent(_iconBox.transform, false);
-            _iconRawImage = rawImgObj.GetComponent<RawImage>();
+            _iconRawImage = CreateChild<RawImage>("Frame_Vector_Icon", _iconBox.transform, new Vector2(24f * s, 24f * s), Vector2.zero);
             _iconRawImage.texture = ReferenceFrameIconAtlasGenerator.GetAtlas();
             _iconRawImage.uvRect = ReferenceFrameIconAtlasGenerator.GetIconUv(ReferenceFrameIconAtlasGenerator.INDEX_INERTIAL);
             _iconRawImage.color = style.GetTextColor(TextStyleRole.Cardinal, theme);
-
-            RectTransform rawRt = _iconRawImage.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(24f * s, 24f * s);
-            rawRt.anchoredPosition = Vector2.zero;
 
             // 4. 右侧权威参考系名称 (左对齐，紧随图标，自适应宽度)
             if (FrameTitle != null && FrameTitle.TextComponent != null)
@@ -174,21 +168,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             else
             {
                 OnCycleClicked();
-            }
-        }
-
-        private void ParseCustomTemplate(string template)
-        {
-            if (string.IsNullOrEmpty(template)) return;
-            var pairs = template.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                if (k == "FRAME" || k == "NAME" || k == "TITLE") _frameToken = v;
-                else if (k == "TYPE" || k == "CATEGORY") _typeToken = v;
             }
         }
 

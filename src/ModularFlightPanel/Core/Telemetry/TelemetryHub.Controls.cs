@@ -58,7 +58,7 @@ namespace ModularFlightPanel.Core
             private set => _currentSASMode = value;
         }
 
-        public VesselAutopilot.AutopilotMode KspSASMode => (VesselAutopilot.AutopilotMode)(int)CurrentSASMode;
+        public VesselAutopilot.AutopilotMode KspSASMode => ToKspAutopilotMode(CurrentSASMode);
 
         public float PitchInput
         {
@@ -203,7 +203,7 @@ namespace ModularFlightPanel.Core
 
                 if (ActiveVessel.Autopilot != null)
                 {
-                    _currentSASMode = (FlightSASMode)(int)ActiveVessel.Autopilot.Mode;
+                    _currentSASMode = ToFlightSASMode(ActiveVessel.Autopilot.Mode);
                 }
 
                 FlightCtrlState ctrl = ActiveVessel.ctrlState;
@@ -230,6 +230,46 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        public static VesselAutopilot.AutopilotMode ToKspAutopilotMode(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.StabilityAssist: return VesselAutopilot.AutopilotMode.StabilityAssist;
+                case FlightSASMode.Prograde: return VesselAutopilot.AutopilotMode.Prograde;
+                case FlightSASMode.Retrograde: return VesselAutopilot.AutopilotMode.Retrograde;
+                case FlightSASMode.Normal: return VesselAutopilot.AutopilotMode.Normal;
+                case FlightSASMode.Antinormal: return VesselAutopilot.AutopilotMode.Antinormal;
+                // KSP 原版内核反转：AutopilotMode.RadialIn (5) 内部实际控制飞船指向 +upAxis / -Cross 即径向向外(Radial Out)，
+                // 而 AutopilotMode.RadialOut (6) 内部实际控制飞船指向 -upAxis / +Cross 即径向向内(Radial In)
+                case FlightSASMode.RadialIn: return VesselAutopilot.AutopilotMode.RadialOut;
+                case FlightSASMode.RadialOut: return VesselAutopilot.AutopilotMode.RadialIn;
+                case FlightSASMode.Target: return VesselAutopilot.AutopilotMode.Target;
+                case FlightSASMode.AntiTarget: return VesselAutopilot.AutopilotMode.AntiTarget;
+                case FlightSASMode.Maneuver: return VesselAutopilot.AutopilotMode.Maneuver;
+                default: return VesselAutopilot.AutopilotMode.StabilityAssist;
+            }
+        }
+
+        public static FlightSASMode ToFlightSASMode(VesselAutopilot.AutopilotMode mode)
+        {
+            switch (mode)
+            {
+                case VesselAutopilot.AutopilotMode.StabilityAssist: return FlightSASMode.StabilityAssist;
+                case VesselAutopilot.AutopilotMode.Prograde: return FlightSASMode.Prograde;
+                case VesselAutopilot.AutopilotMode.Retrograde: return FlightSASMode.Retrograde;
+                case VesselAutopilot.AutopilotMode.Normal: return FlightSASMode.Normal;
+                case VesselAutopilot.AutopilotMode.Antinormal: return FlightSASMode.Antinormal;
+                // 对应 KSP 原版反转：当 KSP 处于 AutopilotMode.RadialIn 时，飞船实际指向径向向外
+                case VesselAutopilot.AutopilotMode.RadialIn: return FlightSASMode.RadialOut;
+                // 当 KSP 处于 AutopilotMode.RadialOut 时，飞船实际指向径向向内
+                case VesselAutopilot.AutopilotMode.RadialOut: return FlightSASMode.RadialIn;
+                case VesselAutopilot.AutopilotMode.Target: return FlightSASMode.Target;
+                case VesselAutopilot.AutopilotMode.AntiTarget: return FlightSASMode.AntiTarget;
+                case VesselAutopilot.AutopilotMode.Maneuver: return FlightSASMode.Maneuver;
+                default: return FlightSASMode.StabilityAssist;
+            }
+        }
+
         // -------------------------------------------------------------
         // 控制指令回调 (Control Actions & Callbacks)
         // -------------------------------------------------------------
@@ -243,7 +283,7 @@ namespace ModularFlightPanel.Core
             }
             if (ActiveVessel != null && ActiveVessel.Autopilot != null)
             {
-                var kspMode = (VesselAutopilot.AutopilotMode)(int)mode;
+                var kspMode = ToKspAutopilotMode(mode);
                 ActiveVessel.ActionGroups.SetGroup(KSPActionGroup.SAS, true);
                 _isSASEnabled = true;
                 ActiveVessel.Autopilot.Enable(kspMode);
@@ -253,7 +293,7 @@ namespace ModularFlightPanel.Core
 
         public void SetSASMode(VesselAutopilot.AutopilotMode mode)
         {
-            SetSASMode((FlightSASMode)(int)mode);
+            SetSASMode(ToFlightSASMode(mode));
         }
 
         public void ToggleSAS()

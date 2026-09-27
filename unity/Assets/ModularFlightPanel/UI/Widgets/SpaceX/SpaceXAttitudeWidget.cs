@@ -78,13 +78,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             EnsureSharedTextures();
 
             // 2. 外部圆形深色底盘 (Bezel)
-            GameObject bezelGo = new GameObject("Attitude_Bezel", typeof(RectTransform), typeof(RawImage));
-            bezelGo.transform.SetParent(transform, false);
-            RectTransform bezelRt = bezelGo.GetComponent<RectTransform>();
-            bezelRt.sizeDelta = new Vector2(diameter, diameter);
-            bezelRt.anchoredPosition = Vector2.zero;
-
-            _dialBackdropRawImage = bezelGo.GetComponent<RawImage>();
+            _dialBackdropRawImage = CreateChild<RawImage>("Attitude_Bezel", transform, new Vector2(diameter, diameter), Vector2.zero);
+            GameObject bezelGo = _dialBackdropRawImage.gameObject;
+            RectTransform bezelRt = _dialBackdropRawImage.rectTransform;
             _dialBackdropRawImage.texture = _sharedDialBezelTexture;
             _dialBackdropRawImage.raycastTarget = false;
 
@@ -97,24 +93,16 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             nRt.anchoredPosition = new Vector2(0f, (diameter * 0.5f) - 4f * s);
 
             // 4. 3D 姿态透视环 (Gimbal Reference Horizon Ring)
-            GameObject ringGo = new GameObject("Gimbal_Ring", typeof(RectTransform), typeof(RawImage));
-            ringGo.transform.SetParent(transform, false);
-            _gimbalRingRt = ringGo.GetComponent<RectTransform>();
-            _gimbalRingRt.sizeDelta = new Vector2(76f * s, 42f * s);
-            _gimbalRingRt.anchoredPosition = Vector2.zero;
-
-            _gimbalRingRawImage = ringGo.GetComponent<RawImage>();
+            _gimbalRingRawImage = CreateChild<RawImage>("Gimbal_Ring", transform, new Vector2(76f * s, 42f * s), Vector2.zero);
+            _gimbalRingRt = _gimbalRingRawImage.rectTransform;
+            GameObject ringGo = _gimbalRingRawImage.gameObject;
             _gimbalRingRawImage.texture = _sharedGimbalRingTexture;
             _gimbalRingRawImage.raycastTarget = false;
 
             // 5. 中央高精飞船 2D 剪影 (优先联动 VesselSilhouetteBaker 真实剪影，保底使用程序化星舰矢量)
-            GameObject shipGo = new GameObject("Ship_Silhouette", typeof(RectTransform), typeof(RawImage));
-            shipGo.transform.SetParent(transform, false);
-            _shipSilhouetteRt = shipGo.GetComponent<RectTransform>();
-            _shipSilhouetteRt.sizeDelta = new Vector2(56f * s, 56f * s);
-            _shipSilhouetteRt.anchoredPosition = Vector2.zero;
-
-            _shipSilhouetteRawImage = shipGo.GetComponent<RawImage>();
+            _shipSilhouetteRawImage = CreateChild<RawImage>("Ship_Silhouette", transform, new Vector2(56f * s, 56f * s), Vector2.zero);
+            _shipSilhouetteRt = _shipSilhouetteRawImage.rectTransform;
+            GameObject shipGo = _shipSilhouetteRawImage.gameObject;
             _shipSilhouetteRawImage.raycastTarget = false;
 
             Texture shipTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
@@ -206,7 +194,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 Texture tex = VesselSilhouetteService.Provider?.SilhouetteTexture;
                 if (tex == null)
                 {
-                    EnsureSharedTextures();
                     tex = _sharedStarshipTexture;
                 }
                 _shipSilhouetteRawImage.texture = tex;

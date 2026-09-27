@@ -44,12 +44,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         // ── 左列：拱点几何与倒计时 (X = -60f) ──
         public TextWidget ApLabel = new TextWidget(TextStyleRole.Label, -120f, 16f, 26f, 16f, 8.5f, TextAnchor.MiddleLeft, "AP");
-        public TextWidget ApVal = new TextWidget(TextStyleRole.PrimaryValue, -94f, 16f, 60f, 16f, 11f, TextAnchor.MiddleRight, "---");
-        public TextWidget ApUnit = new TextWidget(TextStyleRole.Unit, -32f, 16f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "km");
+        public TextWidget ApVal = new TextWidget(TextStyleRole.PrimaryValue, -94f, 16f, 80f, 16f, 11f, TextAnchor.MiddleRight, "---");
+        public TextWidget ApUnit = new TextWidget(TextStyleRole.Unit, -14f, 16f, 0f, 16f, 8f, TextAnchor.MiddleLeft, "");
 
         public TextWidget PeLabel = new TextWidget(TextStyleRole.Label, -120f, -6f, 26f, 16f, 8.5f, TextAnchor.MiddleLeft, "PE");
-        public TextWidget PeVal = new TextWidget(TextStyleRole.PrimaryValue, -94f, -6f, 60f, 16f, 11f, TextAnchor.MiddleRight, "---");
-        public TextWidget PeUnit = new TextWidget(TextStyleRole.Unit, -32f, -6f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "km");
+        public TextWidget PeVal = new TextWidget(TextStyleRole.PrimaryValue, -94f, -6f, 80f, 16f, 11f, TextAnchor.MiddleRight, "---");
+        public TextWidget PeUnit = new TextWidget(TextStyleRole.Unit, -14f, -6f, 0f, 16f, 8f, TextAnchor.MiddleLeft, "");
 
         public TextWidget TimeReadout = new TextWidget(TextStyleRole.SecondaryValue, -120f, -28f, 112f, 16f, 8f, TextAnchor.MiddleLeft, "T-AP: --:--  PE: --:--");
 
@@ -82,14 +82,14 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 远拱点 AP 与近拱点 PE
             double ap = telemetry.Apoapsis;
             double pe = telemetry.Periapsis;
-            ApVal.Text = FormatDistanceKm(ap);
-            PeVal.Text = pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatDistanceKm(pe);
+            ApVal.Text = FormatMetricDistance(ap);
+            PeVal.Text = pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe);
 
             // 2. 拱点时间倒计时
             double tAp = telemetry.TimeToAp;
             double tPe = telemetry.TimeToPe;
-            string tApStr = FormatTimeCompact(tAp);
-            string tPeStr = FormatTimeCompact(tPe);
+            string tApStr = FormatDurationCompact(tAp);
+            string tPeStr = FormatDurationCompact(tPe);
             TimeReadout.Text = $"T-AP {tApStr}  PE {tPeStr}";
 
             // 3. 轨道偏心率 Ecc (优先检索探针，无缝开普勒几何推算 Fallback)
@@ -163,29 +163,6 @@ namespace ModularFlightPanel.UI.Widgets
                 OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC 椭圆轨");
                 OrbitBadge.SetRole(TextStyleRole.PrimaryValue);
             }
-        }
-
-        private static string FormatDistanceKm(double meters)
-        {
-            if (double.IsNaN(meters) || double.IsInfinity(meters)) return "---";
-            if (Math.Abs(meters) >= 1000000000.0) return (meters * 1e-9).ToString("F2") + "Gm";
-            if (Math.Abs(meters) >= 1000000.0) return (meters * 1e-6).ToString("F2") + "Mm";
-            return (meters * 0.001).ToString("F1");
-        }
-
-        private static string FormatTimeCompact(double seconds)
-        {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0) return "--:--";
-            if (seconds > 86400.0) return $"{seconds / 86400.0:F0}d";
-            int sec = (int)seconds;
-            int m = (sec % 3600) / 60;
-            int s = sec % 60;
-            if (sec >= 3600)
-            {
-                int h = sec / 3600;
-                return $"{h:D2}:{m:D2}";
-            }
-            return $"{m:D2}:{s:D2}";
         }
 
         private static string FormatPeriod(double seconds)

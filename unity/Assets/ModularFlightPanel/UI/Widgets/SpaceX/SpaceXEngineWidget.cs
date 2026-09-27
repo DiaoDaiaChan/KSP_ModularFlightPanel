@@ -83,13 +83,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             EnsureSharedBezelTexture();
 
             // 2. 外部圆形深色底盘
-            GameObject bezelGo = new GameObject("Engine_Bezel", typeof(RectTransform), typeof(RawImage));
-            bezelGo.transform.SetParent(transform, false);
-            RectTransform bezelRt = bezelGo.GetComponent<RectTransform>();
-            bezelRt.sizeDelta = new Vector2(diameter, diameter);
-            bezelRt.anchoredPosition = Vector2.zero;
-
-            _dialBackdropRawImage = bezelGo.GetComponent<RawImage>();
+            _dialBackdropRawImage = CreateChild<RawImage>("Engine_Bezel", transform, new Vector2(diameter, diameter), Vector2.zero);
+            GameObject bezelGo = _dialBackdropRawImage.gameObject;
+            RectTransform bezelRt = _dialBackdropRawImage.rectTransform;
             _dialBackdropRawImage.texture = _sharedDialBezelTexture;
             _dialBackdropRawImage.raycastTarget = false;
 
@@ -102,12 +98,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             titRt.anchoredPosition = new Vector2(0f, (diameter * 0.5f) - 6f * s);
 
             // 4. 发动机集群挂载容器
-            GameObject contGo = new GameObject("Cluster_Container", typeof(RectTransform));
-            contGo.transform.SetParent(transform, false);
+            RectTransform contRt = CreateContainer("Cluster_Container", transform, new Vector2(diameter, diameter), Vector2.zero);
+            GameObject contGo = contRt.gameObject;
             _clusterContainer = contGo.transform;
-            RectTransform contRt = contGo.GetComponent<RectTransform>();
-            contRt.sizeDelta = new Vector2(diameter, diameter);
-            contRt.anchoredPosition = Vector2.zero;
 
             // 5. 底部状态读数 (如 "5 / 6 ACTIVE" 或 "SECO")
             _statusText = UIFactory.CreateText(transform, "Status_Text", I18n.Tr("WIDGET_SPX_ACTIVE_IDLE", "-- / -- 运行中"), Mathf.RoundToInt(7f * s), TextAnchor.LowerCenter,
@@ -220,11 +213,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 Vector2 pos = positions[i];
                 float d = diameters[i];
 
-                GameObject nodeGo = new GameObject($"Engine_Node_{i}", typeof(RectTransform));
-                nodeGo.transform.SetParent(_clusterContainer, false);
-                RectTransform nodeRt = nodeGo.GetComponent<RectTransform>();
-                nodeRt.sizeDelta = new Vector2(d, d);
-                nodeRt.anchoredPosition = pos;
+                RectTransform nodeRt = CreateContainer($"Engine_Node_{i}", _clusterContainer, new Vector2(d, d), pos);
+                GameObject nodeGo = nodeRt.gameObject;
 
                 // 外环喷管轮廓 (未启动时深灰色)
                 GameObject ringGo = UIFactory.CreatePanel(nodeGo.transform, "Nozzle_Ring", new Vector2(d, d), Vector2.zero,

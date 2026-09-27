@@ -113,6 +113,11 @@ namespace ModularFlightPanel.UI.Widgets
                 _displayMode = SASDialDisplayMode.Mode2D;
             }
 
+            if (_fallbackRocketTexture == null)
+            {
+                _fallbackRocketTexture = CreateProceduralSpacecraftTexture();
+            }
+
             // 1. 纯圆形激光蚀刻底盘
             CreateCircularBackplate(dialDiameter, s, theme);
 
@@ -150,13 +155,8 @@ namespace ModularFlightPanel.UI.Widgets
                 _circularDialTexture = GenerateCircularDialTexture(theme);
             }
 
-            GameObject bgObj = new GameObject("Dial_Circular_Backplate", typeof(RectTransform), typeof(RawImage));
-            bgObj.transform.SetParent(transform, false);
-            RectTransform rt = bgObj.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(diameter, diameter);
-            rt.anchoredPosition = Vector2.zero;
-
-            _dialBgRawImage = bgObj.GetComponent<RawImage>();
+            _dialBgRawImage = CreateChild<RawImage>("Dial_Circular_Backplate", transform,
+                new Vector2(diameter, diameter), Vector2.zero);
             _dialBgRawImage.texture = _circularDialTexture;
             _dialBgRawImage.color = WidgetStyleManager.NeutralOpaque;
             _dialBgRawImage.raycastTarget = false;
@@ -165,20 +165,14 @@ namespace ModularFlightPanel.UI.Widgets
         private void Create3DAttitudeAssembly(float dialRadius, float s, ThemeConfig theme)
         {
             // 根节点：姿态汇聚容器 (居中挂载)
-            _attitudeAssemblyRoot = new GameObject("Attitude_Assembly_Root", typeof(RectTransform));
-            _attitudeAssemblyRoot.transform.SetParent(transform, false);
-            RectTransform rootRt = _attitudeAssemblyRoot.GetComponent<RectTransform>();
-            rootRt.sizeDelta = new Vector2(dialRadius * 2f, dialRadius * 2f);
-            rootRt.anchoredPosition = Vector2.zero;
+            RectTransform rootRt = CreateContainer("Attitude_Assembly_Root", transform,
+                new Vector2(dialRadius * 2f, dialRadius * 2f), Vector2.zero);
+            _attitudeAssemblyRoot = rootRt.gameObject;
 
             // 1. 动态 3D 人造地平仪与俯仰阶梯层 (Attitude Horizon & Pitch Ladder)
-            GameObject horizonObj = new GameObject("Attitude_Horizon_Root", typeof(RectTransform), typeof(RawImage));
-            horizonObj.transform.SetParent(_attitudeAssemblyRoot.transform, false);
-            _horizonRoot = horizonObj.GetComponent<RectTransform>();
-            _horizonRoot.sizeDelta = new Vector2(74f * s, 74f * s);
-            _horizonRoot.anchoredPosition = Vector2.zero;
-
-            _horizonRawImage = horizonObj.GetComponent<RawImage>();
+            _horizonRawImage = CreateChild<RawImage>("Attitude_Horizon_Root", _attitudeAssemblyRoot.transform,
+                new Vector2(74f * s, 74f * s), Vector2.zero);
+            _horizonRoot = _horizonRawImage.rectTransform;
             _horizonRawImage.raycastTarget = false;
             if (_attitudeHorizonTexture == null)
             {
@@ -188,15 +182,12 @@ namespace ModularFlightPanel.UI.Widgets
             _horizonRawImage.color = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.70f);
 
             // 2. 中央飞船 3D/2D 姿态云台机构 (Spacecraft Attitude Gimbal)
-            _shipSilhouette = new GameObject("Ship_Silhouette_Root", typeof(RectTransform), typeof(Button));
-            _shipSilhouette.transform.SetParent(_attitudeAssemblyRoot.transform, false);
-            RectTransform sRt = _shipSilhouette.GetComponent<RectTransform>();
             float shipSize = 48f * s;
-            sRt.sizeDelta = new Vector2(shipSize, shipSize);
-            sRt.anchoredPosition = Vector2.zero;
+            Button shipBtn = CreateButton("Ship_Silhouette_Root", _attitudeAssemblyRoot.transform,
+                out RectTransform sRt, out Image clickTarget, new Vector2(shipSize, shipSize), Vector2.zero);
+            _shipSilhouette = sRt.gameObject;
 
             // 为中央剪影根节点挂载透明点击响应层，确保鼠标交互稳定触发 STAB 切换
-            Image clickTarget = _shipSilhouette.AddComponent<Image>();
             clickTarget.color = Color.clear;
             clickTarget.raycastTarget = true;
 
@@ -224,13 +215,8 @@ namespace ModularFlightPanel.UI.Widgets
             sRouter.OnRightClick = () => ToggleDisplayMode();
 
             // 飞船高清图形层 (优先 3D 离屏纹理，保底 2D 剪影与程序化矢量)
-            GameObject rawImgObj = new GameObject("Silhouette_Graphic", typeof(RectTransform), typeof(RawImage));
-            rawImgObj.transform.SetParent(_shipSilhouette.transform, false);
-            RectTransform rawRt = rawImgObj.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(shipSize, shipSize);
-            rawRt.anchoredPosition = Vector2.zero;
-
-            _silhouetteRawImage = rawImgObj.GetComponent<RawImage>();
+            _silhouetteRawImage = CreateChild<RawImage>("Silhouette_Graphic", _shipSilhouette.transform,
+                new Vector2(shipSize, shipSize), Vector2.zero);
             _silhouetteRawImage.raycastTarget = false;
             _silhouetteRawImage.color = theme.AccentSecondary;
 
@@ -248,13 +234,8 @@ namespace ModularFlightPanel.UI.Widgets
             // 机头朝向前缘高精矢量前视光标 (Precision Boresight Chevron Pointer)
             float tipSize = 8f * s;
             Vector2 tipPos = new Vector2(0f, 21.5f * s);
-            GameObject tipObj = new GameObject("Nose_Tip", typeof(RectTransform), typeof(RawImage));
-            tipObj.transform.SetParent(_shipSilhouette.transform, false);
-            RectTransform tipRt = tipObj.GetComponent<RectTransform>();
-            tipRt.sizeDelta = new Vector2(tipSize, tipSize);
-            tipRt.anchoredPosition = tipPos;
-
-            _noseTipRawImage = tipObj.GetComponent<RawImage>();
+            _noseTipRawImage = CreateChild<RawImage>("Nose_Tip", _shipSilhouette.transform,
+                new Vector2(tipSize, tipSize), tipPos);
             _noseTipRawImage.raycastTarget = false;
             if (_nosePointerTexture == null)
             {
@@ -264,13 +245,9 @@ namespace ModularFlightPanel.UI.Widgets
             _noseTipRawImage.color = theme.WarningColor;
 
             // 3. 3D SAS 目标航向指引十字/倒V光标 (SAS Target Flight Director)
-            GameObject directorObj = new GameObject("SAS_FlightDirector", typeof(RectTransform), typeof(RawImage));
-            directorObj.transform.SetParent(_attitudeAssemblyRoot.transform, false);
-            _sasDirectorRoot = directorObj.GetComponent<RectTransform>();
-            _sasDirectorRoot.sizeDelta = new Vector2(14f * s, 14f * s);
-            _sasDirectorRoot.anchoredPosition = Vector2.zero;
-
-            _sasDirectorRawImage = directorObj.GetComponent<RawImage>();
+            _sasDirectorRawImage = CreateChild<RawImage>("SAS_FlightDirector", _attitudeAssemblyRoot.transform,
+                new Vector2(14f * s, 14f * s), Vector2.zero);
+            _sasDirectorRoot = _sasDirectorRawImage.rectTransform;
             _sasDirectorRawImage.raycastTarget = false;
             if (_flightDirectorTexture == null)
             {
@@ -319,7 +296,6 @@ namespace ModularFlightPanel.UI.Widgets
                 Texture tex2D = VesselSilhouetteService.Provider?.SilhouetteTexture;
                 if (tex2D == null)
                 {
-                    if (_fallbackRocketTexture == null) _fallbackRocketTexture = CreateProceduralSpacecraftTexture();
                     tex2D = _fallbackRocketTexture;
                 }
                 _silhouetteRawImage.texture = tex2D;
@@ -466,22 +442,22 @@ namespace ModularFlightPanel.UI.Widgets
             bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.05 || Math.Abs(telemetry.Pitch - _lastPitch) > 0.05;
             if (_displayMode == SASDialDisplayMode.Mode3D)
             {
-                if (_horizonRoot != null && !_horizonRoot.gameObject.activeSelf)
+                if (_horizonRoot != null)
                 {
-                    _horizonRoot.gameObject.SetActive(true);
-                }
-                if (_horizonRoot != null && attDirty)
-                {
-                    float pitchOffset = Mathf.Clamp((float)-telemetry.Pitch * 0.16f * s, -16f * s, 16f * s);
-                    _horizonRoot.anchoredPosition = new Vector2(0f, pitchOffset);
-                    _horizonRoot.localRotation = Quaternion.Euler(0f, 0f, (float)telemetry.Roll);
+                    _horizonRoot.SetActiveSafe(true);
+                    if (attDirty)
+                    {
+                        float pitchOffset = Mathf.Clamp((float)-telemetry.Pitch * 0.16f * s, -16f * s, 16f * s);
+                        _horizonRoot.SetAnchoredPositionSafe(new Vector2(0f, pitchOffset));
+                        _horizonRoot.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, (float)telemetry.Roll));
+                    }
                 }
             }
             else
             {
-                if (_horizonRoot != null && _horizonRoot.gameObject.activeSelf)
+                if (_horizonRoot != null)
                 {
-                    _horizonRoot.gameObject.SetActive(false);
+                    _horizonRoot.SetActiveSafe(false);
                 }
             }
 
@@ -534,7 +510,7 @@ namespace ModularFlightPanel.UI.Widgets
                         float normY = VesselSilhouetteService.Provider.NormalizedNoseTipY;
                         tipY = Mathf.Clamp(normY * halfSpan, 10f * s, halfSpan + 1f * s);
                     }
-                    _noseTipRawImage.rectTransform.anchoredPosition = new Vector2(0f, tipY);
+                    _noseTipRawImage.rectTransform.SetAnchoredPositionSafe(new Vector2(0f, tipY));
                 }
             }
 
@@ -604,20 +580,17 @@ namespace ModularFlightPanel.UI.Widgets
             // 平滑阻尼过渡 (角度域，自动处理 360° 回绕)
             float dt = Time.unscaledDeltaTime;
             _smoothedRotZ = Mathf.SmoothDampAngle(_smoothedRotZ, targetRotZ, ref _rotZVelocity, kSilhouetteSmoothTime, Mathf.Infinity, dt);
-            _shipSilhouette.transform.localRotation = Quaternion.Euler(0f, 0f, _smoothedRotZ);
+            _shipSilhouette.transform.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _smoothedRotZ), 0.05f);
 
             if (_displayMode == SASDialDisplayMode.Mode3D)
             {
                 float pitchRad = (float)telemetry.Pitch * Mathf.Deg2Rad;
                 float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.6f), 0.76f, 1.0f);
-                _shipSilhouette.transform.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
+                _shipSilhouette.transform.SetLocalScaleSafe(new Vector3(1.0f, foreshortenY, 1.0f), 0.005f);
             }
             else
             {
-                if (_shipSilhouette.transform.localScale != Vector3.one)
-                {
-                    _shipSilhouette.transform.localScale = Vector3.one;
-                }
+                _shipSilhouette.transform.SetLocalScaleSafe(Vector3.one, 0.005f);
             }
         }
 
@@ -627,10 +600,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (!telemetry.IsSASEnabled)
             {
-                if (_sasDirectorRoot.gameObject.activeSelf)
-                {
-                    _sasDirectorRoot.gameObject.SetActive(false);
-                }
+                _sasDirectorRoot.SetActiveSafe(false);
                 _isDirectorLocked = false;
                 _currentMarkerHasDir = false;
                 _currentMarkerVisible = false;
@@ -645,20 +615,14 @@ namespace ModularFlightPanel.UI.Widgets
                 _currentMarkerHasDir = true;
                 _currentMarkerVisible = false;
                 _currentMarkerAngleDeg = 0f;
-                _sasDirectorRoot.anchoredPosition = Vector2.zero;
-                _sasDirectorRoot.localRotation = Quaternion.identity;
-                _sasDirectorRawImage.color = theme.AccentPrimary;
-                if (_sasDirectorRoot.gameObject.activeSelf)
-                {
-                    _sasDirectorRoot.gameObject.SetActive(false);
-                }
+                _sasDirectorRoot.SetAnchoredPositionSafe(Vector2.zero);
+                _sasDirectorRoot.SetLocalRotationSafe(Quaternion.identity);
+                _sasDirectorRawImage.SetColor(theme.AccentPrimary);
+                _sasDirectorRoot.SetActiveSafe(false);
                 return;
             }
 
-            if (!_sasDirectorRoot.gameObject.activeSelf)
-            {
-                _sasDirectorRoot.gameObject.SetActive(true);
-            }
+            _sasDirectorRoot.SetActiveSafe(true);
 
             string markerKey = GetMarkerKeyForSASMode(mode);
             Vector3 dir = Vector3.forward;
@@ -742,9 +706,10 @@ namespace ModularFlightPanel.UI.Widgets
             _smoothedDirectorPos.y = Mathf.SmoothDamp(_smoothedDirectorPos.y, targetPos.y, ref _directorPosVelocity.y, kDirectorSmoothTime, Mathf.Infinity, dt);
             _smoothedDirectorRotZ = Mathf.SmoothDampAngle(_smoothedDirectorRotZ, targetRotZ, ref _directorRotZVelocity, kDirectorSmoothTime, Mathf.Infinity, dt);
 
-            _sasDirectorRoot.anchoredPosition = _smoothedDirectorPos;
-            _sasDirectorRoot.localRotation = Quaternion.Euler(0f, 0f, _smoothedDirectorRotZ);
-            _sasDirectorRawImage.color = Color.Lerp(_sasDirectorRawImage.color, targetColor, Mathf.Clamp01(dt / kDirectorSmoothTime));
+            _sasDirectorRoot.SetAnchoredPositionSafe(_smoothedDirectorPos, 0.05f);
+            _sasDirectorRoot.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _smoothedDirectorRotZ), 0.05f);
+            Color targetLerped = Color.Lerp(_sasDirectorRawImage.color, targetColor, Mathf.Clamp01(dt / kDirectorSmoothTime));
+            _sasDirectorRawImage.SetColor(targetLerped);
         }
 
         private void UpdateStatusBadge(FlightSASMode currentMode, bool sasOn, ThemeConfig theme)
@@ -771,11 +736,11 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _lastStatusText = statusText;
                 _lastDirectorLocked = _isDirectorLocked;
-                _statusLabel.text = statusText;
+                _statusLabel.SetTextSafe(statusText);
                 ApplyText(_statusLabel, textRole, theme);
                 if (_statusOutline != null)
                 {
-                    _statusOutline.effectColor = WidgetStyleManager.Instance.GetTextColor(textRole, theme);
+                    _statusOutline.SetColor(WidgetStyleManager.Instance.GetTextColor(textRole, theme));
                 }
             }
         }

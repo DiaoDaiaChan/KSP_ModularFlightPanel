@@ -51,10 +51,16 @@ namespace ModularFlightPanel.UI.Auditing
         public int RedundantDirtyTrackingFields { get; set; }
         public bool UsesStandardizedChannels { get; set; }
         public bool UsesStandardizedFormatting { get; set; }
+        public bool UsesFastFormat { get; set; }
+        public bool UsesSmartUIExtensions { get; set; }
         public bool UsesSetTextIfChanged { get; set; }
+        public bool HasBannedDockSyncCall { get; set; }
         public int HotLoopHeapAllocations { get; set; }
         public int HotLoopUguiSetters { get; set; }
         public bool HasUnmanagedCore3DUgui { get; set; }
+        public int RawGameObjectAllocs { get; set; }
+        public int ReachableHotMethodCount { get; set; }
+        public List<string> ReachableHotMethodNames { get; } = new List<string>();
         public List<string> StandardizationSuggestions { get; } = new List<string>();
 
         public string GetMissingSummary()
@@ -83,9 +89,15 @@ namespace ModularFlightPanel.UI.Auditing
         public int RedundantFormattingMethodCount => Items.Count(i => i.RedundantFormattingMethods.Count > 0);
         public int StandardizedChannelAdoptionCount => Items.Count(i => i.UsesStandardizedChannels);
         public int StandardizedFormattingAdoptionCount => Items.Count(i => i.UsesStandardizedFormatting);
+        public int FastFormatAdoptionCount => Items.Count(i => i.UsesFastFormat);
+        public int SmartUIExtensionAdoptionCount => Items.Count(i => i.UsesSmartUIExtensions);
+        public int BannedDockSyncCallCount => Items.Count(i => i.HasBannedDockSyncCall);
         public int HotLoopHeapAllocationCount => Items.Count(i => i.HotLoopHeapAllocations > 0);
         public int UnmanagedCore3DUguiCount => Items.Count(i => i.HasUnmanagedCore3DUgui);
         public int HotLoopUguiSetterAbuseCount => Items.Count(i => i.HotLoopUguiSetters > 5);
+        public int TotalReachableHotMethodsScanned => Items.Sum(i => i.ReachableHotMethodCount);
+        public int ZeroRawGameObjectCount => Items.Count(i => i.RawGameObjectAllocs == 0);
+        public int TotalRawGameObjectCount => Items.Sum(i => i.RawGameObjectAllocs);
 
         public List<WidgetModernizationItem> Items { get; } = new List<WidgetModernizationItem>();
 
@@ -104,7 +116,9 @@ namespace ModularFlightPanel.UI.Auditing
                              i.RedundantDirtyTrackingFields > 3 ||
                              i.HotLoopHeapAllocations > 0 ||
                              i.HasUnmanagedCore3DUgui ||
-                             i.HotLoopUguiSetters > 5);
+                             i.HotLoopUguiSetters > 5 ||
+                             i.HasBannedDockSyncCall ||
+                             i.RawGameObjectAllocs > 0);
     }
 
     /// <summary>
@@ -315,10 +329,10 @@ namespace ModularFlightPanel.UI.Auditing
                 item.RedundantDirtyTrackingFields = dirtyFields;
                 if (dirtyFields > 3)
                 {
-                    item.StandardizationSuggestions.Add($"Declares {dirtyFields} manual dirty-tracking fields (recommend SetTextIfChanged or micro-controls)");
+                    item.StandardizationSuggestions.Add($"Declares {dirtyFields} manual dirty-tracking fields (recommend SmartUIExtensions or micro-controls)");
                 }
 
-                // 10. 标准化 API 调用深度检测
+                // 10. 标准化 API 与基础设施扩展深度检测
                 var allInvocations = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
                 item.UsesStandardizedChannels = allInvocations.Any(inv =>
                 {
@@ -333,7 +347,14 @@ namespace ModularFlightPanel.UI.Auditing
                 item.UsesStandardizedFormatting = allInvocations.Any(inv =>
                 {
                     string expr = inv.Expression.ToString();
-                    if (expr.StartsWith(WidgetSpecRules.StandardFormattingClass + ".", StringComparison.Ordinal)) return true;
+                    for (int s = 0; s < WidgetSpecRules.StandardFormattingClasses.Length; s++)
+                    {
+                        if (expr.StartsWith(WidgetSpecRules.StandardFormattingClasses[s] + ".", StringComparison.Ordinal) ||
+                            expr.Contains("." + WidgetSpecRules.StandardFormattingClasses[s] + "."))
+                        {
+                            return true;
+                        }
+                    }
                     for (int f = 0; f < WidgetSpecRules.StandardFormattingApis.Length; f++)
                     {
                         if (expr.EndsWith(WidgetSpecRules.StandardFormattingApis[f], StringComparison.Ordinal)) return true;
@@ -341,18 +362,119 @@ namespace ModularFlightPanel.UI.Auditing
                     return false;
                 });
 
+                item.UsesFastFormat = allInvocations.Any(inv =>
+                {
+                    string expr = inv.Expression.ToString();
+                    return expr.StartsWith(WidgetSpecRules.FastFormatClass + ".", StringComparison.Ordinal) ||
+                           expr.Contains("." + WidgetSpecRules.FastFormatClass + ".");
+                });
+
+                item.UsesSmartUIExtensions = allInvocations.Any(inv =>
+                {
+                    string expr = inv.Expression.ToString();
+                    for (int s = 0; s < WidgetSpecRules.SmartUIExtensionApis.Length; s++)
+                    {
+                        if (expr.EndsWith("." + WidgetSpecRules.SmartUIExtensionApis[s], StringComparison.Ordinal) ||
+                            expr.Equals(WidgetSpecRules.SmartUIExtensionApis[s], StringComparison.Ordinal))
+                        {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+
                 item.UsesSetTextIfChanged = allInvocations.Any(inv =>
                     inv.Expression.ToString().EndsWith(WidgetSpecRules.SetTextIfChangedApi, StringComparison.Ordinal));
 
-                // 11. 高频生命周期帧循环堆分配与无死区 UGUI 连续赋值检测
-                var hotMethods = widgetClass.Members.OfType<MethodDeclarationSyntax>()
+                // 基础设施与集中调度红线：检测源文件中是否违规调用了集中式调度 API (如 DockAnchorTracker.SyncAll)
+                var fileInvocations = widgetClass.SyntaxTree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>();
+                item.HasBannedDockSyncCall = fileInvocations.Any(inv =>
+                    inv.ToString().Contains(WidgetSpecRules.BannedWidgetDockSyncApi));
+                if (item.HasBannedDockSyncCall)
+                {
+                    item.StandardizationSuggestions.Add($"包含集中式调度 API 调用 ({WidgetSpecRules.BannedWidgetDockSyncApi}; 应交由 FlightHUDManager.LateUpdateSync 统一调度，禁止组件私自调用)");
+                }
+
+                // 10. 裸 new GameObject 视觉节点拼装反模式检测
+                int rawGoAllocs = widgetClass.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
+                    .Count(oce =>
+                    {
+                        string t = oce.Type.ToString();
+                        return t == "GameObject" || t == "UnityEngine.GameObject";
+                    });
+                item.RawGameObjectAllocs = rawGoAllocs;
+                if (rawGoAllocs > 0)
+                {
+                    item.StandardizationSuggestions.Add($"存在 {rawGoAllocs} 处裸 new GameObject 视觉拼装 (建议改用 BaseFlightWidget 语义节点工厂或 MicroControls DSL)");
+                }
+
+                // 11. 高频生命周期帧循环调用图可达闭包 (Call Graph Reachability Closure)
+                // 从 HotLoop 入口方法出发，递归跟踪所有被调用的内部私有方法/局部函数连通闭包，
+                // 彻底杜绝违规堆分配与裸 UGUI 逃逸到私有方法中。
+                var allClassMethods = widgetClass.Members.OfType<MethodDeclarationSyntax>().ToList();
+                var methodsByName = new Dictionary<string, List<MethodDeclarationSyntax>>(StringComparer.Ordinal);
+                foreach (var m in allClassMethods)
+                {
+                    string mName = m.Identifier.Text;
+                    if (!methodsByName.TryGetValue(mName, out var list))
+                    {
+                        list = new List<MethodDeclarationSyntax>();
+                        methodsByName[mName] = list;
+                    }
+                    list.Add(m);
+                }
+
+                var entryMethods = allClassMethods
                     .Where(m => WidgetSpecRules.HotLoopMethodNames.Contains(m.Identifier.Text) ||
                                 m.Identifier.Text.StartsWith("Sync", StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
+                var reachableHotMethods = new HashSet<MethodDeclarationSyntax>();
+                var methodQueue = new Queue<MethodDeclarationSyntax>();
+
+                foreach (var entry in entryMethods)
+                {
+                    if (reachableHotMethods.Add(entry))
+                    {
+                        methodQueue.Enqueue(entry);
+                    }
+                }
+
+                while (methodQueue.Count > 0)
+                {
+                    var current = methodQueue.Dequeue();
+                    foreach (var inv in current.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                    {
+                        string invokedName = null;
+                        if (inv.Expression is IdentifierNameSyntax idSyntax)
+                        {
+                            invokedName = idSyntax.Identifier.Text;
+                        }
+                        else if (inv.Expression is MemberAccessExpressionSyntax maSyntax &&
+                                 (maSyntax.Expression is ThisExpressionSyntax || maSyntax.Expression is IdentifierNameSyntax))
+                        {
+                            invokedName = maSyntax.Name.Identifier.Text;
+                        }
+
+                        if (!string.IsNullOrEmpty(invokedName) && methodsByName.TryGetValue(invokedName, out var targets))
+                        {
+                            foreach (var target in targets)
+                            {
+                                if (reachableHotMethods.Add(target))
+                                {
+                                    methodQueue.Enqueue(target);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item.ReachableHotMethodCount = reachableHotMethods.Count;
+                item.ReachableHotMethodNames.AddRange(reachableHotMethods.Select(m => m.Identifier.Text).Distinct());
+
                 int hotArrayAllocs = 0;
                 int hotUguiSetters = 0;
-                foreach (var method in hotMethods)
+                foreach (var method in reachableHotMethods)
                 {
                     hotArrayAllocs += method.DescendantNodes().OfType<ArrayCreationExpressionSyntax>().Count();
 
@@ -378,11 +500,11 @@ namespace ModularFlightPanel.UI.Auditing
 
                 if (hotArrayAllocs > 0)
                 {
-                    item.StandardizationSuggestions.Add($"高频帧循环存在 {hotArrayAllocs} 处运行时堆数组分配 (new T[]; 增加 GC 停顿压力)");
+                    item.StandardizationSuggestions.Add($"高频受染闭包存在 {hotArrayAllocs} 处运行时堆数组分配 (new T[]; 增加 GC 停顿压力)");
                 }
                 if (hotUguiSetters > 5)
                 {
-                    item.StandardizationSuggestions.Add($"高频帧循环存在 {hotUguiSetters} 处无死区保护的 UGUI 直接赋值 (触发 Canvas 频繁重建; 建议建立 Deadband Guard)");
+                    item.StandardizationSuggestions.Add($"高频受染闭包存在 {hotUguiSetters} 处无死区保护的 UGUI 直接赋值 (触发 Canvas 频繁重建; 建议改用 SmartUIExtensions 或建立 Deadband Guard)");
                 }
 
                 report.Items.Add(item);
@@ -412,6 +534,14 @@ namespace ModularFlightPanel.UI.Auditing
             foreach (var item in report.LegacyWidgets)
             {
                 sb.AppendLine($"{item.FilePath}(1,1): warning MFP_LEGACY_WIDGET: [Legacy Widget / Needs Modernization] {item.WidgetName}: {item.GetMissingSummary()}");
+            }
+
+            if (report.BannedDockSyncCallCount > 0)
+            {
+                foreach (var item in report.Items.Where(i => i.HasBannedDockSyncCall))
+                {
+                    sb.AppendLine($"{item.FilePath}(1,1): warning MFP_BANNED_DOCK_SYNC: [Anti-Pattern] {item.WidgetName}: Calls {WidgetSpecRules.BannedWidgetDockSyncApi}; must delegate to FlightHUDManager.LateUpdateSync");
+                }
             }
 
             return sb.ToString();
@@ -456,10 +586,15 @@ namespace ModularFlightPanel.UI.Auditing
             sb.AppendLine("-----------------------------------------------------------------------");
             sb.AppendLine($"标准通道提取率:               {report.StandardizedChannelAdoptionCount}/{report.TotalCount} 个组件已接入 GetTemplateChannel 系列");
             sb.AppendLine($"零私有模板解析达成率:         {(report.TotalCount - report.RedundantTemplateParserCount)}/{report.TotalCount} 个组件已消除私有 ParseCustomTemplate");
-            sb.AppendLine($"统一格式化套件复用率:         {(report.TotalCount - report.RedundantFormattingMethodCount)}/{report.TotalCount} 个组件已接入 AvionicsFormatting");
+            sb.AppendLine($"统一格式化套件复用率:         {(report.TotalCount - report.RedundantFormattingMethodCount)}/{report.TotalCount} 个组件已接入 AvionicsFormatting / AvionicsFastFormat");
+            sb.AppendLine($"高速格式化缓存 (FastFormat):  {report.FastFormatAdoptionCount}/{report.TotalCount} 个组件已采纳 AvionicsFastFormat 零 GC 查表");
+            sb.AppendLine($"智能脏检扩展 (SmartUI):       {report.SmartUIExtensionAdoptionCount}/{report.TotalCount} 个组件已接入 SmartUIExtensions 安全赋值");
             sb.AppendLine($"手工脏标记字段全面纳管率:     {report.Items.Count(i => i.RedundantDirtyTrackingFields <= 3)}/{report.TotalCount} 个组件已消除字段级脏标记膨胀");
-            sb.AppendLine($"零高频循环堆分配达成率:     {(report.TotalCount - report.HotLoopHeapAllocationCount)}/{report.TotalCount} 个组件已消除帧循环 new T[]");
+            sb.AppendLine($"零高频循环堆分配达成率:       {(report.TotalCount - report.HotLoopHeapAllocationCount)}/{report.TotalCount} 个组件已消除帧循环 new T[]");
+            sb.AppendLine($"集中调度合规率 (零私自Sync):  {(report.TotalCount - report.BannedDockSyncCallCount)}/{report.TotalCount} 个组件符合集中停靠调度");
+            sb.AppendLine($"高频调用图连通闭包覆盖:       {report.TotalReachableHotMethodsScanned} 个方法已纳入高频生命周期穿透审计");
             sb.AppendLine($"3D 引擎 UGUI 纯净度:          {(report.Core3DCount - report.UnmanagedCore3DUguiCount)}/{Math.Max(1, report.Core3DCount)} 个 3D 组件无裸 UGUI 逃逸");
+            sb.AppendLine($"零裸节点拼装达成率:           {report.ZeroRawGameObjectCount}/{report.TotalCount} 个组件已消除私自 new GameObject (全局残余 {report.TotalRawGameObjectCount} 处)");
 
             var antiPatternItems = report.WidgetsWithAntiPatterns.ToList();
             if (antiPatternItems.Count > 0)

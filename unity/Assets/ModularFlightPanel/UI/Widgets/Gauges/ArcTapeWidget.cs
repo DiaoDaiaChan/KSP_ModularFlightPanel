@@ -159,7 +159,73 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             theme = WidgetStyleManager.ResolveTheme(theme);
             ApplyCanvasIsolation(true);
 
-            ParseCustomTemplate(config);
+            bool isLeft = config != null && config.IsLeftOrientation;
+            string numToken = config?.NumericToken ?? "";
+            string widgetId = config?.WidgetId ?? "";
+
+            if (numToken.Contains("ALT") || widgetId.Contains("alt") || widgetId.Contains("altitude"))
+            {
+                _isSpeedTape = false;
+                _isLeftOrientation = isLeft;
+            }
+            else if (numToken.Contains("SPD") || widgetId.Contains("speed"))
+            {
+                _isSpeedTape = true;
+                _isLeftOrientation = true;
+            }
+            else
+            {
+                _isSpeedTape = isLeft;
+                _isLeftOrientation = isLeft;
+            }
+
+            // 初始化默认通道
+            if (_isSpeedTape)
+            {
+                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
+                _topModeTemplate = "{SPD:MODE}";
+                _bottomSecTemplate = "{MACH}";
+                _trendToken = "{DV_DT}";
+                _accToken = "{ACC}";
+                _baseStep = config != null && config.StepInterval > 0.01f ? config.StepInterval : 10f;
+                _trendMaxScale = 20.0f;
+                _activeUnitStr = "m/s";
+            }
+            else
+            {
+                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{ALT}";
+                _topModeTemplate = "{ALT:MODE}";
+                _bottomSecTemplate = "{ALT:AGL:DIST}";
+                _trendToken = "{VSI}";
+                _accToken = "{ACC}";
+                _terrainToken = "{ALT:AGL}";
+                _baseStep = config != null && config.StepInterval > 0.01f ? config.StepInterval : 100f;
+                _trendMaxScale = 100.0f;
+                _activeUnitStr = "m";
+            }
+
+            float cVal = GetTemplateChannelFloat(new[] { "CURVATURE", "CURVE" }, -1f);
+            if (cVal > 0f) _curvature = Mathf.Clamp(cVal, 0.05f, 1.0f);
+            float rVal = GetTemplateChannelFloat(new[] { "RADIUS", "R" }, -1f);
+            if (rVal > 0f) _baseRadius = Mathf.Clamp(rVal, 80f, 600f);
+            float spanVal = GetTemplateChannelFloat(new[] { "SPAN", "ANGLE" }, -1f);
+            if (spanVal > 0f) _angularSpan = Mathf.Clamp(spanVal, 40f, 120f);
+            string side = GetTemplateChannel("SIDE", null);
+            if (!string.IsNullOrEmpty(side)) _isLeftOrientation = !side.Equals("RIGHT", StringComparison.OrdinalIgnoreCase);
+            string typeVal = GetTemplateChannel(new[] { "TYPE", "MODE_TYPE" }, null);
+            if (!string.IsNullOrEmpty(typeVal)) _isSpeedTape = typeVal.Equals("SPEED", StringComparison.OrdinalIgnoreCase) || typeVal.Equals("SPD", StringComparison.OrdinalIgnoreCase);
+            _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN" }, _valueToken);
+            _topModeTemplate = GetTemplateChannel(new[] { "TOP", "MODE" }, _topModeTemplate);
+            _bottomSecTemplate = GetTemplateChannel(new[] { "BOTTOM", "SEC" }, _bottomSecTemplate);
+            _trendToken = GetTemplateChannel(new[] { "TREND", "VSI", "RATE", "DV" }, _trendToken);
+            _accToken = GetTemplateChannel("ACC", _accToken);
+            _terrainToken = GetTemplateChannel(new[] { "TERRAIN", "AGL" }, _terrainToken);
+            _trendMaxScale = GetTemplateChannelFloat("TREND_MAX", _trendMaxScale);
+
+            if (_baseRadius <= 80f || _baseRadius >= 599f)
+            {
+                _baseRadius = Mathf.Lerp(420f, 140f, Mathf.Clamp01(_curvature));
+            }
 
             float s = CurrentDpiScale;
             float r = _baseRadius * s;
@@ -213,131 +279,9 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             ApplyTheme(theme);
         }
 
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            bool isLeft = config != null && config.IsLeftOrientation;
-            string numToken = config?.NumericToken ?? "";
-            string widgetId = config?.WidgetId ?? "";
-
-            if (numToken.Contains("ALT") || widgetId.Contains("alt") || widgetId.Contains("altitude"))
-            {
-                _isSpeedTape = false;
-                _isLeftOrientation = isLeft;
-            }
-            else if (numToken.Contains("SPD") || widgetId.Contains("speed"))
-            {
-                _isSpeedTape = true;
-                _isLeftOrientation = true;
-            }
-            else
-            {
-                _isSpeedTape = isLeft;
-                _isLeftOrientation = isLeft;
-            }
-
-            // 初始化默认通道
-            if (_isSpeedTape)
-            {
-                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
-                _topModeTemplate = "{SPD:MODE}";
-                _bottomSecTemplate = "{MACH}";
-                _trendToken = "{DV_DT}";
-                _accToken = "{ACC}";
-                _baseStep = config != null && config.StepInterval > 0.01f ? config.StepInterval : 10f;
-                _trendMaxScale = 20.0f;
-                _activeUnitStr = "m/s";
-            }
-            else
-            {
-                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{ALT}";
-                _topModeTemplate = "{ALT:MODE}";
-                _bottomSecTemplate = "{ALT:AGL:DIST}";
-                _trendToken = "{VSI}";
-                _accToken = "{ACC}";
-                _terrainToken = "{ALT:AGL}";
-                _baseStep = config != null && config.StepInterval > 0.01f ? config.StepInterval : 100f;
-                _trendMaxScale = 100.0f;
-                _activeUnitStr = "m";
-            }
-
-            if (string.IsNullOrEmpty(config?.CustomTemplate))
-            {
-                _baseRadius = Mathf.Lerp(420f, 140f, Mathf.Clamp01(_curvature));
-                return;
-            }
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-
-                if (k == "CURVATURE" || k == "CURVE")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float c))
-                        _curvature = Mathf.Clamp(c, 0.05f, 1.0f);
-                }
-                else if (k == "RADIUS" || k == "R")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float r))
-                        _baseRadius = Mathf.Clamp(r, 80f, 600f);
-                }
-                else if (k == "SPAN" || k == "ANGLE")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float span))
-                        _angularSpan = Mathf.Clamp(span, 40f, 120f);
-                }
-                else if (k == "SIDE")
-                {
-                    _isLeftOrientation = !v.Equals("RIGHT", StringComparison.OrdinalIgnoreCase);
-                }
-                else if (k == "TYPE" || k == "MODE_TYPE")
-                {
-                    _isSpeedTape = v.Equals("SPEED", StringComparison.OrdinalIgnoreCase) || v.Equals("SPD", StringComparison.OrdinalIgnoreCase);
-                }
-                else if (k == "VAL" || k == "VALUE" || k == "TOKEN")
-                {
-                    _valueToken = v;
-                }
-                else if (k == "TOP" || k == "MODE")
-                {
-                    _topModeTemplate = v;
-                }
-                else if (k == "BOTTOM" || k == "SEC")
-                {
-                    _bottomSecTemplate = v;
-                }
-                else if (k == "TREND" || k == "VSI" || k == "RATE" || k == "DV")
-                {
-                    _trendToken = v;
-                }
-                else if (k == "ACC")
-                {
-                    _accToken = v;
-                }
-                else if (k == "TERRAIN" || k == "AGL")
-                {
-                    _terrainToken = v;
-                }
-                else if (k == "TREND_MAX")
-                {
-                    if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float tMax))
-                        _trendMaxScale = tMax;
-                }
-            }
-
-            if (_baseRadius <= 80f || _baseRadius >= 599f)
-            {
-                _baseRadius = Mathf.Lerp(420f, 140f, Mathf.Clamp01(_curvature));
-            }
-        }
-
         private void BuildArcBand(float radius, float s, ThemeConfig theme)
         {
-            _arcBandRoot = new GameObject("Arc_Band_Root", typeof(RectTransform));
-            _arcBandRoot.transform.SetParent(transform, false);
+            _arcBandRoot = CreateContainer("Arc_Band_Root", transform).gameObject;
 
             _bandBgImages.Clear();
             _bandRimImages.Clear();
@@ -412,12 +356,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
             for (int i = 0; i < TICK_POOL_SIZE; i++)
             {
-                GameObject root = new GameObject($"ArcTick_{i}", typeof(RectTransform));
-                root.transform.SetParent(transform, false);
-                RectTransform rt = root.GetComponent<RectTransform>();
-                rt.anchorMin = new Vector2(0.5f, 0.5f);
-                rt.anchorMax = new Vector2(0.5f, 0.5f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
+                RectTransform rt = CreateContainer($"ArcTick_{i}", transform);
+                GameObject root = rt.gameObject;
 
                 // 刻度线
                 float lineW = 9f * s;
@@ -566,8 +506,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
             float escortRadius = radius + 20f * s; // 位于主弧带外沿同心偏移 +20px
 
-            _escortRailRoot = new GameObject("Concentric_Escort_Rail", typeof(RectTransform));
-            _escortRailRoot.transform.SetParent(transform, false);
+            _escortRailRoot = CreateContainer("Concentric_Escort_Rail", transform).gameObject;
 
             _escortTrackImages.Clear();
             _escortRibbonSegments.Clear();
@@ -606,12 +545,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _escortDatumImg = _escortDatumTick.GetComponent<Image>();
 
             // 3. 伴随切向流线游标尖角 (Tangential Pointer Chevron)
-            _escortPointerObj = new GameObject("Escort_Dynamic_Pointer", typeof(RectTransform));
-            _escortPointerObj.transform.SetParent(_escortRailRoot.transform, false);
-            _escortPointerRt = _escortPointerObj.GetComponent<RectTransform>();
-            _escortPointerRt.anchorMin = new Vector2(0.5f, 0.5f);
-            _escortPointerRt.anchorMax = new Vector2(0.5f, 0.5f);
-            _escortPointerRt.pivot = new Vector2(0.5f, 0.5f);
+            _escortPointerRt = CreateContainer("Escort_Dynamic_Pointer", _escortRailRoot.transform);
+            _escortPointerObj = _escortPointerRt.gameObject;
 
             GameObject pLine = UIFactory.CreatePanel(_escortPointerObj.transform, "PointerLine",
                 new Vector2(7f * s, 1.8f * s), Vector2.zero, primaryCol);

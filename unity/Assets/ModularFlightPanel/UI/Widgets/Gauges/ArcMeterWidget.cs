@@ -86,14 +86,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 构建圆弧着色器 GameObject
-            GameObject meterObj = new GameObject("Arc_Meter_Ring", typeof(RectTransform), typeof(Image));
-            meterObj.transform.SetParent(transform, false);
-            RectTransform meterRt = meterObj.GetComponent<RectTransform>();
             float ringSize = 92f * s;
-            meterRt.sizeDelta = new Vector2(ringSize, ringSize);
-            meterRt.anchoredPosition = new Vector2(0f, -2f * s);
-
-            _meterImage = meterObj.GetComponent<Image>();
+            _meterImage = CreateChild<Image>("Arc_Meter_Ring", transform, new Vector2(ringSize, ringSize), new Vector2(0f, -2f * s));
+            GameObject meterObj = _meterImage.gameObject;
+            RectTransform meterRt = _meterImage.rectTransform;
             _meterImage.color = Color.clear;
             if (AssetLoader.RadialMeterShader != null)
             {

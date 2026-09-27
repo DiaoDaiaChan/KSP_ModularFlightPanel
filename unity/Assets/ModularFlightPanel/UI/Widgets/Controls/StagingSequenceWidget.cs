@@ -127,6 +127,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private const int MaxDisplayedStages = 32;
         private const int MaxChipsPerStage = 24;
         private readonly List<StageItemUI> _stageItems = new List<StageItemUI>();
+        private float _lastLayoutW = -1f;
+        private float _lastLayoutH = -1f;
+        private readonly List<StageDeltaVInfo> _reusableSortedStages = new List<StageDeltaVInfo>();
+        private static readonly Comparison<StageDeltaVInfo> _stageOrderAscending = (a, b) => a.Stage.CompareTo(b.Stage);
+        private static readonly Comparison<StageDeltaVInfo> _stageOrderDescending = (a, b) => b.Stage.CompareTo(a.Stage);
 
         // 可滚动分级视口组件
         private ScrollRect _scrollRect;
@@ -179,41 +184,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private string _totalDvToken = "{DV:TOTAL}";
         private string _stageDvToken = "{DV:STAGE}";
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _frameMode = "FAINT";
-            _titleTemplate = "STAGING";
-            _totalDvToken = "{DV:TOTAL}";
-            _stageDvToken = "{DV:STAGE}";
-            _stageOrder = "STOCK";
-
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "FRAME": _frameMode = v.ToUpperInvariant(); break;
-                    case "TITLE": _titleTemplate = v; break;
-                    case "TOTAL_DV_TOKEN": _totalDvToken = v; break;
-                    case "STAGE_DV_TOKEN": _stageDvToken = v; break;
-                    case "ORDER": _stageOrder = v.ToUpperInvariant(); break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            string frame = GetTemplateChannel("FRAME", null);
+            _frameMode = !string.IsNullOrEmpty(frame) ? frame.ToUpperInvariant() : "FAINT";
+            _titleTemplate = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_CTRL_STAGING", "STAGING"));
+            _totalDvToken = GetTemplateChannel("TOTAL_DV_TOKEN", "{DV:TOTAL}");
+            _stageDvToken = GetTemplateChannel("STAGE_DV_TOKEN", "{DV:STAGE}");
+            string order = GetTemplateChannel("ORDER", null);
+            _stageOrder = !string.IsNullOrEmpty(order) ? order.ToUpperInvariant() : "STOCK";
 
             // 1. 组件包围盒 (基准 160x260 逻辑像素)
             Vector2 size = BaseSize * s;
@@ -247,31 +230,23 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 顶栏快速插入新分级 [+] 按键
-            GameObject addTopGo = new GameObject("Btn_Add_Top", typeof(RectTransform), typeof(Image), typeof(Button));
-            addTopGo.transform.SetParent(transform, false);
-            RectTransform addTopRt = addTopGo.GetComponent<RectTransform>();
-            addTopRt.sizeDelta = new Vector2(14f * s, 13f * s);
-            _addStageTopBg = addTopGo.GetComponent<Image>();
+            _addStageTopBtn = CreateButton("Btn_Add_Top", transform, out RectTransform addTopRt, out _addStageTopBg,
+                new Vector2(14f * s, 13f * s), Vector2.zero);
             _addStageTopBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _addStageTopBtn = addTopGo.GetComponent<Button>();
             _addStageTopBtn.onClick.AddListener(OnAddStageTopClicked);
 
-            _addStageTopText = UIFactory.CreateText(addTopGo.transform, "Text", "+", Mathf.RoundToInt(9f * s),
+            _addStageTopText = UIFactory.CreateText(_addStageTopBtn.transform, "Text", "+", Mathf.RoundToInt(9f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _addStageTopText.fontStyle = FontStyle.Bold;
             _addStageTopText.rectTransform.sizeDelta = addTopRt.sizeDelta;
 
             // 顶栏全部展开/折叠按键 [▼ / ▶]
-            GameObject togTopGo = new GameObject("Btn_Toggle_All", typeof(RectTransform), typeof(Image), typeof(Button));
-            togTopGo.transform.SetParent(transform, false);
-            RectTransform togTopRt = togTopGo.GetComponent<RectTransform>();
-            togTopRt.sizeDelta = new Vector2(14f * s, 13f * s);
-            _toggleAllBg = togTopGo.GetComponent<Image>();
+            _toggleAllBtn = CreateButton("Btn_Toggle_All", transform, out RectTransform togTopRt, out _toggleAllBg,
+                new Vector2(14f * s, 13f * s), Vector2.zero);
             _toggleAllBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _toggleAllBtn = togTopGo.GetComponent<Button>();
             _toggleAllBtn.onClick.AddListener(OnToggleAllExpanded);
 
-            _toggleAllText = UIFactory.CreateText(togTopGo.transform, "Text", "▼", Mathf.RoundToInt(8f * s),
+            _toggleAllText = UIFactory.CreateText(_toggleAllBtn.transform, "Text", "▼", Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _toggleAllText.fontStyle = FontStyle.Bold;
             _toggleAllText.rectTransform.sizeDelta = togTopRt.sizeDelta;
@@ -281,30 +256,25 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _totalDvText.fontStyle = FontStyle.Bold;
 
             // 顶部分割微线
-            GameObject topDivGo = new GameObject("Top_Divider", typeof(RectTransform), typeof(Image));
-            topDivGo.transform.SetParent(transform, false);
-            _topDivider = topDivGo.GetComponent<Image>();
+            _topDivider = CreateChild<Image>("Top_Divider", transform);
             _topDivider.raycastTarget = false;
 
             // 4. 创建可滚动分级视口 (Scroll View + RectMask2D)
-            GameObject scrollRootGo = new GameObject("Stages_Scroll_View", typeof(RectTransform), typeof(ScrollRect), typeof(Image), typeof(RectMask2D));
-            scrollRootGo.transform.SetParent(transform, false);
-            _scrollViewportRt = scrollRootGo.GetComponent<RectTransform>();
+            _scrollViewportRt = CreateViewport("Stages_Scroll_View", transform);
             _scrollViewportRt.pivot = new Vector2(0.5f, 0.5f);
+            GameObject scrollRootGo = _scrollViewportRt.gameObject;
 
-            Image viewBg = scrollRootGo.GetComponent<Image>();
+            Image viewBg = scrollRootGo.AddComponent<Image>();
             viewBg.color = Color.clear;
             viewBg.raycastTarget = true;
 
-            _scrollRect = scrollRootGo.GetComponent<ScrollRect>();
+            _scrollRect = scrollRootGo.AddComponent<ScrollRect>();
             _scrollRect.horizontal = false;
             _scrollRect.vertical = true;
             _scrollRect.movementType = ScrollRect.MovementType.Clamped;
             _scrollRect.scrollSensitivity = 25f;
 
-            GameObject contentGo = new GameObject("Scroll_Content", typeof(RectTransform));
-            contentGo.transform.SetParent(scrollRootGo.transform, false);
-            _scrollContentRt = contentGo.GetComponent<RectTransform>();
+            _scrollContentRt = CreateContainer("Scroll_Content", _scrollViewportRt);
             _scrollContentRt.anchorMin = new Vector2(0.5f, 1f);
             _scrollContentRt.anchorMax = new Vector2(0.5f, 1f);
             _scrollContentRt.pivot = new Vector2(0.5f, 1f);
@@ -313,19 +283,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _scrollRect.viewport = _scrollViewportRt;
 
             // 拖拽插入高光指示微线 (Stage Drop Insertion Indicator)
-            _stageDropIndicatorGo = new GameObject("Stage_Drop_Indicator", typeof(RectTransform), typeof(Image), typeof(Outline));
-            _stageDropIndicatorGo.transform.SetParent(_scrollContentRt != null ? (Transform)_scrollContentRt : transform, false);
-            _stageDropIndicatorRt = _stageDropIndicatorGo.GetComponent<RectTransform>();
+            _stageDropIndicatorRt = CreateContainer("Stage_Drop_Indicator",
+                _scrollContentRt != null ? (Transform)_scrollContentRt : transform,
+                new Vector2((DefaultWidth - 10f) * s, 2.5f * s), Vector2.zero);
+            _stageDropIndicatorGo = _stageDropIndicatorRt.gameObject;
             _stageDropIndicatorRt.anchorMin = new Vector2(0.5f, 1f);
             _stageDropIndicatorRt.anchorMax = new Vector2(0.5f, 1f);
             _stageDropIndicatorRt.pivot = new Vector2(0.5f, 0.5f);
-            _stageDropIndicatorRt.sizeDelta = new Vector2((DefaultWidth - 10f) * s, 2.5f * s);
 
-            _stageDropIndicatorImg = _stageDropIndicatorGo.GetComponent<Image>();
+            _stageDropIndicatorImg = _stageDropIndicatorGo.AddComponent<Image>();
             _stageDropIndicatorImg.color = theme.AccentPrimary;
             _stageDropIndicatorImg.raycastTarget = false;
 
-            Outline dropOutl = _stageDropIndicatorGo.GetComponent<Outline>();
+            Outline dropOutl = _stageDropIndicatorGo.AddComponent<Outline>();
             dropOutl.effectDistance = new Vector2(1f * s, 1f * s);
             dropOutl.effectColor = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.5f);
 
@@ -339,37 +309,27 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 6. 底部分割微线与可交互操作栏
-            GameObject botDivGo = new GameObject("Bottom_Divider", typeof(RectTransform), typeof(Image));
-            botDivGo.transform.SetParent(transform, false);
-            _bottomDivider = botDivGo.GetComponent<Image>();
+            _bottomDivider = CreateChild<Image>("Bottom_Divider", transform);
             _bottomDivider.raycastTarget = false;
 
             // 分级锁切换按键 [ARMED / LOCKED]
-            GameObject statusBtnGo = new GameObject("Btn_Status_Lock", typeof(RectTransform), typeof(Image), typeof(Button));
-            statusBtnGo.transform.SetParent(transform, false);
-            RectTransform statusRt = statusBtnGo.GetComponent<RectTransform>();
-            statusRt.sizeDelta = new Vector2(48f * s, 15f * s);
-            _statusBadgeBg = statusBtnGo.GetComponent<Image>();
+            _statusBadgeBtn = CreateButton("Btn_Status_Lock", transform, out RectTransform statusRt, out _statusBadgeBg,
+                new Vector2(48f * s, 15f * s), Vector2.zero);
             _statusBadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _statusBadgeBtn = statusBtnGo.GetComponent<Button>();
             _statusBadgeBtn.onClick.AddListener(OnStatusLockClicked);
 
-            _statusBadgeText = UIFactory.CreateText(statusBtnGo.transform, "Status_Text", I18n.Tr("WIDGET_ALERT_ARMED", "待发"), Mathf.RoundToInt(7.5f * s),
+            _statusBadgeText = UIFactory.CreateText(_statusBadgeBtn.transform, "Status_Text", I18n.Tr("WIDGET_ALERT_ARMED", "待发"), Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _statusBadgeText.fontStyle = FontStyle.Bold;
             _statusBadgeText.rectTransform.sizeDelta = statusRt.sizeDelta;
 
             // 分级触发按键 [SPACE TO STAGE / ▶ STAGE]
-            GameObject trigBtnGo = new GameObject("Btn_Stage_Trigger", typeof(RectTransform), typeof(Image), typeof(Button));
-            trigBtnGo.transform.SetParent(transform, false);
-            RectTransform trigRt = trigBtnGo.GetComponent<RectTransform>();
-            trigRt.sizeDelta = new Vector2(85f * s, 15f * s);
-            _stageTriggerBg = trigBtnGo.GetComponent<Image>();
+            _stageTriggerBtn = CreateButton("Btn_Stage_Trigger", transform, out RectTransform trigRt, out _stageTriggerBg,
+                new Vector2(85f * s, 15f * s), Vector2.zero);
             _stageTriggerBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            _stageTriggerBtn = trigBtnGo.GetComponent<Button>();
             _stageTriggerBtn.onClick.AddListener(OnStageTriggerClicked);
 
-            _stageTriggerText = UIFactory.CreateText(trigBtnGo.transform, "Trigger_Text", I18n.Tr("WIDGET_CTRL_SPACE_STAGE", "空格分级"), Mathf.RoundToInt(7f * s),
+            _stageTriggerText = UIFactory.CreateText(_stageTriggerBtn.transform, "Trigger_Text", I18n.Tr("WIDGET_CTRL_SPACE_STAGE", "空格分级"), Mathf.RoundToInt(7f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
             _stageTriggerText.rectTransform.sizeDelta = trigRt.sizeDelta;
 
@@ -423,8 +383,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     tRt.anchorMin = new Vector2(0.5f, 0.5f);
                     tRt.anchorMax = new Vector2(0.5f, 0.5f);
                     tRt.pivot = new Vector2(0.5f, 0.5f);
-                    tRt.sizeDelta = new Vector2(titleW, 16f * s);
-                    tRt.anchoredPosition = new Vector2(-halfW + titleW * 0.5f + 8f * s, halfH - 12f * s);
+                    tRt.SetSizeDeltaSafe(new Vector2(titleW, 16f * s));
+                    tRt.SetAnchoredPositionSafe(new Vector2(-halfW + titleW * 0.5f + 8f * s, halfH - 12f * s));
                 }
             }
 
@@ -432,29 +392,29 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             {
                 RectTransform addRt = _addStageTopBtn.GetComponent<RectTransform>();
                 float addX = -halfW + titleW + 16f * s;
-                addRt.anchoredPosition = new Vector2(addX, halfH - 12f * s);
+                addRt.SetAnchoredPositionSafe(new Vector2(addX, halfH - 12f * s));
             }
 
             if (_toggleAllBtn != null)
             {
                 RectTransform togRt = _toggleAllBtn.GetComponent<RectTransform>();
                 float togX = -halfW + titleW + 32f * s;
-                togRt.anchoredPosition = new Vector2(togX, halfH - 12f * s);
+                togRt.SetAnchoredPositionSafe(new Vector2(togX, halfH - 12f * s));
             }
 
             if (_totalDvText != null)
             {
                 RectTransform dvRt = _totalDvText.rectTransform;
                 float dvW = Mathf.Clamp(width * 0.35f, 45f * s, 85f * s);
-                dvRt.sizeDelta = new Vector2(dvW, 16f * s);
-                dvRt.anchoredPosition = new Vector2(halfW - dvW * 0.5f - 8f * s, halfH - 12f * s);
+                dvRt.SetSizeDeltaSafe(new Vector2(dvW, 16f * s));
+                dvRt.SetAnchoredPositionSafe(new Vector2(halfW - dvW * 0.5f - 8f * s, halfH - 12f * s));
             }
 
             if (_topDivider != null)
             {
                 RectTransform topDivRt = _topDivider.rectTransform;
-                topDivRt.sizeDelta = new Vector2(width - 12f * s, 1f * s);
-                topDivRt.anchoredPosition = new Vector2(0f, halfH - headerH);
+                topDivRt.SetSizeDeltaSafe(new Vector2(width - 12f * s, 1f * s));
+                topDivRt.SetAnchoredPositionSafe(new Vector2(0f, halfH - headerH));
             }
 
             // 2. 底栏排版
@@ -462,8 +422,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (_bottomDivider != null)
             {
                 RectTransform botDivRt = _bottomDivider.rectTransform;
-                botDivRt.sizeDelta = new Vector2(width - 12f * s, 1f * s);
-                botDivRt.anchoredPosition = new Vector2(0f, -halfH + footerH);
+                botDivRt.SetSizeDeltaSafe(new Vector2(width - 12f * s, 1f * s));
+                botDivRt.SetAnchoredPositionSafe(new Vector2(0f, -halfH + footerH));
             }
 
             if (_statusBadgeBtn != null && _stageTriggerBtn != null)
@@ -473,23 +433,23 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 float btnY = -halfH + 11f * s;
 
                 RectTransform statRt = _statusBadgeBtn.GetComponent<RectTransform>();
-                statRt.sizeDelta = new Vector2(lockW, 15f * s);
-                statRt.anchoredPosition = new Vector2(-halfW + 8f * s + lockW * 0.5f, btnY);
-                if (_statusBadgeText != null) _statusBadgeText.rectTransform.sizeDelta = statRt.sizeDelta;
+                statRt.SetSizeDeltaSafe(new Vector2(lockW, 15f * s));
+                statRt.SetAnchoredPositionSafe(new Vector2(-halfW + 8f * s + lockW * 0.5f, btnY));
+                if (_statusBadgeText != null) _statusBadgeText.rectTransform.SetSizeDeltaSafe(statRt.sizeDelta);
 
                 RectTransform trigRt = _stageTriggerBtn.GetComponent<RectTransform>();
-                trigRt.sizeDelta = new Vector2(trigW, 15f * s);
-                trigRt.anchoredPosition = new Vector2(halfW - 8f * s - trigW * 0.5f, btnY);
-                if (_stageTriggerText != null) _stageTriggerText.rectTransform.sizeDelta = trigRt.sizeDelta;
+                trigRt.SetSizeDeltaSafe(new Vector2(trigW, 15f * s));
+                trigRt.SetAnchoredPositionSafe(new Vector2(halfW - 8f * s - trigW * 0.5f, btnY));
+                if (_stageTriggerText != null) _stageTriggerText.rectTransform.SetSizeDeltaSafe(trigRt.sizeDelta);
             }
 
             // 3. 中间视口 (ScrollView Viewport)
             float vpH = Mathf.Max(30f * s, height - headerH - footerH);
             if (_scrollViewportRt != null)
             {
-                _scrollViewportRt.sizeDelta = new Vector2(width - 8f * s, vpH);
+                _scrollViewportRt.SetSizeDeltaSafe(new Vector2(width - 8f * s, vpH));
                 float vpCenterY = (halfH - headerH) - (vpH * 0.5f);
-                _scrollViewportRt.anchoredPosition = new Vector2(0f, vpCenterY);
+                _scrollViewportRt.SetAnchoredPositionSafe(new Vector2(0f, vpCenterY));
             }
         }
 
@@ -497,43 +457,32 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
             Transform parent = _scrollContentRt != null ? (Transform)_scrollContentRt : transform;
-            GameObject root = new GameObject($"Stage_Item_{index}", typeof(RectTransform));
-            root.transform.SetParent(parent, false);
-            RectTransform rootRt = root.GetComponent<RectTransform>();
+            RectTransform rootRt = CreateContainer($"Stage_Item_{index}", parent, new Vector2((DefaultWidth - 10f) * s, 28f * s));
+            GameObject root = rootRt.gameObject;
             rootRt.anchorMin = new Vector2(0.5f, 1f);
             rootRt.anchorMax = new Vector2(0.5f, 1f);
             rootRt.pivot = new Vector2(0.5f, 0.5f);
-            rootRt.sizeDelta = new Vector2((DefaultWidth - 10f) * s, 28f * s);
 
             // 拖放悬停发光底板 (Drop Target Glow / Row Highlight)
-            GameObject rowHlGo = new GameObject("Row_Highlight_Bg", typeof(RectTransform), typeof(Image));
-            rowHlGo.transform.SetParent(root.transform, false);
-            RectTransform rowHlRt = rowHlGo.GetComponent<RectTransform>();
-            rowHlRt.sizeDelta = new Vector2((DefaultWidth - 10f) * s, 26f * s);
-            Image rowHlImg = rowHlGo.GetComponent<Image>();
-            rowHlImg.color = Color.clear;
+            Image rowHlImg = CreateChild<Image>("Row_Highlight_Bg", root.transform, new Vector2((DefaultWidth - 10f) * s, 26f * s));
+            GameObject rowHlGo = rowHlImg.gameObject;
+            RectTransform rowHlRt = rowHlImg.rectTransform;
+            rowHlImg.SetColor(Color.clear);
             rowHlImg.raycastTarget = false;
 
             // 行展开 / 折叠切换微按键 (▼ / ▶)
-            GameObject toggleGo = new GameObject("Btn_Toggle_Expand", typeof(RectTransform), typeof(Image), typeof(Button));
-            toggleGo.transform.SetParent(root.transform, false);
-            RectTransform toggleRt = toggleGo.GetComponent<RectTransform>();
-            toggleRt.sizeDelta = new Vector2(12f * s, 14f * s);
-            Image toggleImg = toggleGo.GetComponent<Image>();
-            toggleImg.color = Color.clear;
-            Button toggleBtn = toggleGo.GetComponent<Button>();
+            Button toggleBtn = CreateButton("Btn_Toggle_Expand", root.transform, out RectTransform toggleRt, out Image toggleImg, new Vector2(12f * s, 14f * s));
+            GameObject toggleGo = toggleBtn.gameObject;
+            toggleImg.SetColor(Color.clear);
 
             Text toggleTxt = UIFactory.CreateText(toggleGo.transform, "Text", "▼", Mathf.RoundToInt(7.5f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             toggleTxt.fontStyle = FontStyle.Bold;
-            toggleTxt.rectTransform.sizeDelta = toggleRt.sizeDelta;
+            toggleTxt.rectTransform.SetSizeDeltaSafe(toggleRt.sizeDelta);
 
             // 分级徽章 (可拖拽调序，如 S03 / S02)
-            GameObject badgeGo = new GameObject("Badge_Bg", typeof(RectTransform), typeof(Image), typeof(Button));
-            badgeGo.transform.SetParent(root.transform, false);
-            RectTransform badgeRt = badgeGo.GetComponent<RectTransform>();
-            badgeRt.sizeDelta = new Vector2(22f * s, 16f * s);
-            Image badgeImg = badgeGo.GetComponent<Image>();
+            Button badgeBtn = CreateButton("Badge_Bg", root.transform, out RectTransform badgeRt, out Image badgeImg, new Vector2(22f * s, 16f * s));
+            GameObject badgeGo = badgeBtn.gameObject;
             badgeImg.raycastTarget = true;
 
             StageBadgeDragHandler badgeDrag = badgeGo.AddComponent<StageBadgeDragHandler>();
@@ -542,20 +491,16 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             Text badgeText = UIFactory.CreateText(badgeGo.transform, "Badge_Text", $"S{index:00}", Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             badgeText.fontStyle = FontStyle.Bold;
-            badgeText.rectTransform.sizeDelta = badgeRt.sizeDelta;
+            badgeText.rectTransform.SetSizeDeltaSafe(badgeRt.sizeDelta);
 
             // 空分级删除 [ × ] 按键 (仅在空分级时显示)
-            GameObject delGo = new GameObject("Btn_Delete", typeof(RectTransform), typeof(Image), typeof(Button));
-            delGo.transform.SetParent(root.transform, false);
-            RectTransform delRt = delGo.GetComponent<RectTransform>();
-            delRt.sizeDelta = new Vector2(14f * s, 14f * s);
-            Image delImg = delGo.GetComponent<Image>();
-            delImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            Button delBtn = delGo.GetComponent<Button>();
+            Button delBtn = CreateButton("Btn_Delete", root.transform, out RectTransform delRt, out Image delImg, new Vector2(14f * s, 14f * s));
+            GameObject delGo = delBtn.gameObject;
+            delImg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
 
             Text delTxt = UIFactory.CreateText(delGo.transform, "Text", "×", Mathf.RoundToInt(8.5f * s),
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
-            delTxt.rectTransform.sizeDelta = delRt.sizeDelta;
+            delTxt.rectTransform.SetSizeDeltaSafe(delRt.sizeDelta);
             delGo.SetActive(false);
 
             // 单级 ΔV 数值 (右对齐，动力级时显示)
@@ -580,10 +525,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             emptyTxt.gameObject.SetActive(false);
 
             // 部件图标托盘容器 (Icons Container)
-            GameObject iconsContainer = new GameObject("Icons_Container", typeof(RectTransform));
-            iconsContainer.transform.SetParent(root.transform, false);
-            RectTransform iconsContainerRt = iconsContainer.GetComponent<RectTransform>();
-            iconsContainerRt.sizeDelta = new Vector2(70f * s, 20f * s);
+            RectTransform iconsContainerRt = CreateContainer("Icons_Container", root.transform, new Vector2(70f * s, 20f * s));
+            GameObject iconsContainer = iconsContainerRt.gameObject;
 
             var chips = new List<StageIconChipUI>();
             Texture initialAtlas = StockStageIconService.Provider?.StockAtlas ?? StageIconAtlasGenerator.GetAtlas();
@@ -595,33 +538,24 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 推进剂监测微条 (Propellant Bar)
-            GameObject propRoot = new GameObject("Prop_Bar_Root", typeof(RectTransform));
-            propRoot.transform.SetParent(root.transform, false);
-            RectTransform propRootRt = propRoot.GetComponent<RectTransform>();
-            propRootRt.sizeDelta = new Vector2((DefaultWidth - 10f) * s, 4f * s);
+            RectTransform propRootRt = CreateContainer("Prop_Bar_Root", root.transform, new Vector2((DefaultWidth - 10f) * s, 4f * s));
+            GameObject propRoot = propRootRt.gameObject;
 
-            GameObject trackGo = new GameObject("Track", typeof(RectTransform), typeof(Image));
-            trackGo.transform.SetParent(propRoot.transform, false);
-            RectTransform trackRt = trackGo.GetComponent<RectTransform>();
-            trackRt.sizeDelta = new Vector2((DefaultWidth - 10f) * s, 1.5f * s);
-            Image trackImg = trackGo.GetComponent<Image>();
+            Image trackImg = CreateChild<Image>("Track", propRoot.transform, new Vector2((DefaultWidth - 10f) * s, 1.5f * s));
+            GameObject trackGo = trackImg.gameObject;
+            RectTransform trackRt = trackImg.rectTransform;
             trackImg.raycastTarget = false;
 
-            GameObject fillGo = new GameObject("Fill", typeof(RectTransform), typeof(Image));
-            fillGo.transform.SetParent(propRoot.transform, false);
-            RectTransform fillRt = fillGo.GetComponent<RectTransform>();
+            Image fillImg = CreateChild<Image>("Fill", propRoot.transform, new Vector2((DefaultWidth - 10f) * s, 2f * s), new Vector2(-(DefaultWidth - 10f) * 0.5f * s, 0f));
+            GameObject fillGo = fillImg.gameObject;
+            RectTransform fillRt = fillImg.rectTransform;
             fillRt.pivot = new Vector2(0f, 0.5f);
-            fillRt.sizeDelta = new Vector2((DefaultWidth - 10f) * s, 2f * s);
-            fillRt.anchoredPosition = new Vector2(-(DefaultWidth - 10f) * 0.5f * s, 0f);
-            Image fillImg = fillGo.GetComponent<Image>();
             fillImg.raycastTarget = false;
 
             // 分割微线
-            GameObject sepGo = new GameObject("Sep", typeof(RectTransform), typeof(Image));
-            sepGo.transform.SetParent(root.transform, false);
-            RectTransform sepRt = sepGo.GetComponent<RectTransform>();
-            sepRt.sizeDelta = new Vector2((DefaultWidth - 10f) * s, 1f * s);
-            Image sepImg = sepGo.GetComponent<Image>();
+            Image sepImg = CreateChild<Image>("Sep", root.transform, new Vector2((DefaultWidth - 10f) * s, 1f * s));
+            GameObject sepGo = sepImg.gameObject;
+            RectTransform sepRt = sepImg.rectTransform;
             sepImg.raycastTarget = false;
 
             var item = new StageItemUI
@@ -664,44 +598,38 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private StageIconChipUI CreateIconChip(Transform parent, int chipIndex, float s, ThemeConfig theme, Texture atlas)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject chipGo = new GameObject($"Chip_{chipIndex}", typeof(RectTransform), typeof(Image), typeof(Outline));
-            chipGo.transform.SetParent(parent, false);
-            RectTransform chipRt = chipGo.GetComponent<RectTransform>();
-            chipRt.sizeDelta = new Vector2(18f * s, 18f * s);
-            chipRt.anchoredPosition = new Vector2((-40f + chipIndex * 20f) * s, 0f);
+            Image chipBg = CreateChild<Image>($"Chip_{chipIndex}", parent, new Vector2(18f * s, 18f * s), new Vector2((-40f + chipIndex * 20f) * s, 0f));
+            GameObject chipGo = chipBg.gameObject;
+            RectTransform chipRt = chipBg.rectTransform;
 
-            Image chipBg = chipGo.GetComponent<Image>();
-            chipBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            chipBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
             chipBg.raycastTarget = true;
 
-            Outline chipOutline = chipGo.GetComponent<Outline>();
+            Outline chipOutline = chipGo.AddComponent<Outline>();
             chipOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            chipOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            chipOutline.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost));
 
             // 挂载专用零件拖拽交互处理器
             StagePartDragHandler drag = chipGo.AddComponent<StagePartDragHandler>();
             drag.OwnerWidget = this;
 
             // 图标 RawImage (16x16 居中)
-            GameObject rawGo = new GameObject("Icon_Raw", typeof(RectTransform), typeof(RawImage));
-            rawGo.transform.SetParent(chipGo.transform, false);
-            RectTransform rawRt = rawGo.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(16f * s, 16f * s);
-            rawRt.anchoredPosition = Vector2.zero;
+            RawImage rawImg = CreateChild<RawImage>("Icon_Raw", chipGo.transform, new Vector2(16f * s, 16f * s), Vector2.zero);
+            GameObject rawGo = rawImg.gameObject;
+            RectTransform rawRt = rawImg.rectTransform;
 
-            RawImage rawImg = rawGo.GetComponent<RawImage>();
             rawImg.raycastTarget = false;
             rawImg.texture = atlas;
             rawImg.uvRect = StageIconAtlasGenerator.GetIconUv(2);
-            rawImg.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+            rawImg.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
 
             // 数量倍率文本 (如 ×4, ×6)
             Text multText = UIFactory.CreateText(chipGo.transform, "Mult_Text", "×1", Mathf.RoundToInt(6.5f * s),
                 TextAnchor.LowerRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             multText.fontStyle = FontStyle.Bold;
             RectTransform multRt = multText.rectTransform;
-            multRt.sizeDelta = new Vector2(16f * s, 10f * s);
-            multRt.anchoredPosition = new Vector2(2f * s, -5f * s);
+            multRt.SetSizeDeltaSafe(new Vector2(16f * s, 10f * s));
+            multRt.SetAnchoredPositionSafe(new Vector2(2f * s, -5f * s));
 
             chipGo.SetActive(false);
 
@@ -724,17 +652,15 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private void CreateTooltipPanel(float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            _tooltipRoot = new GameObject("Floating_Tooltip", typeof(RectTransform), typeof(Image), typeof(Outline));
-            _tooltipRoot.transform.SetParent(transform, false);
-            _tooltipRt = _tooltipRoot.GetComponent<RectTransform>();
-            _tooltipRt.sizeDelta = new Vector2(136f * s, 30f * s);
+            _tooltipBg = CreateChild<Image>("Floating_Tooltip", transform, new Vector2(136f * s, 30f * s));
+            _tooltipRoot = _tooltipBg.gameObject;
+            _tooltipRt = _tooltipBg.rectTransform;
             _tooltipRt.pivot = new Vector2(0.5f, 0f);
 
-            _tooltipBg = _tooltipRoot.GetComponent<Image>();
             _tooltipBg.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.90f);
             _tooltipBg.raycastTarget = false;
 
-            _tooltipOutline = _tooltipRoot.GetComponent<Outline>();
+            _tooltipOutline = _tooltipRoot.AddComponent<Outline>();
             _tooltipOutline.effectDistance = new Vector2(1f * s, 1f * s);
             _tooltipOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost);
 
@@ -755,24 +681,20 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private void CreateDragGhost(float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            _dragGhostRoot = new GameObject("Drag_Ghost_Avatar", typeof(RectTransform), typeof(Image), typeof(Outline));
-            _dragGhostRoot.transform.SetParent(transform, false);
-            _dragGhostRt = _dragGhostRoot.GetComponent<RectTransform>();
-            _dragGhostRt.sizeDelta = new Vector2(22f * s, 22f * s);
+            _dragGhostBg = CreateChild<Image>("Drag_Ghost_Avatar", transform, new Vector2(22f * s, 22f * s));
+            _dragGhostRoot = _dragGhostBg.gameObject;
+            _dragGhostRt = _dragGhostBg.rectTransform;
 
-            _dragGhostBg = _dragGhostRoot.GetComponent<Image>();
             _dragGhostBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.40f);
             _dragGhostBg.raycastTarget = false;
 
-            Outline outl = _dragGhostRoot.GetComponent<Outline>();
+            Outline outl = _dragGhostRoot.AddComponent<Outline>();
             outl.effectDistance = new Vector2(1f * s, 1f * s);
             outl.effectColor = theme.AccentPrimary;
 
-            GameObject rawGo = new GameObject("Ghost_Raw", typeof(RectTransform), typeof(RawImage));
-            rawGo.transform.SetParent(_dragGhostRoot.transform, false);
-            RectTransform rawRt = rawGo.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(18f * s, 18f * s);
-            _dragGhostIcon = rawGo.GetComponent<RawImage>();
+            _dragGhostIcon = CreateChild<RawImage>("Ghost_Raw", _dragGhostRoot.transform, new Vector2(18f * s, 18f * s));
+            GameObject rawGo = _dragGhostIcon.gameObject;
+            RectTransform rawRt = _dragGhostIcon.rectTransform;
             _dragGhostIcon.raycastTarget = false;
             _dragGhostIcon.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
 
@@ -867,10 +789,15 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 读取当前物理尺寸并自适应布局 (无强制写死 sizeDelta)
+            // 1. 读取当前物理尺寸并自适应布局 (仅在尺寸变化时才调用 ApplyLayout)
             float currentW = RectTransform.rect.width > 10f ? RectTransform.rect.width : DefaultWidth * s;
             float currentH = RectTransform.rect.height > 10f ? RectTransform.rect.height : DefaultHeight * s;
-            ApplyLayout(currentW, currentH);
+            if (Mathf.Abs(currentW - _lastLayoutW) > 0.5f || Mathf.Abs(currentH - _lastLayoutH) > 0.5f)
+            {
+                _lastLayoutW = currentW;
+                _lastLayoutH = currentH;
+                ApplyLayout(currentW, currentH);
+            }
 
             // 2. 动态标题与全级总 ΔV
             string title = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
@@ -920,24 +847,25 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             bool isUsingStockAtlas = stockAtlas != null;
             Texture currentAtlas = isUsingStockAtlas ? stockAtlas : StageIconAtlasGenerator.GetAtlas();
 
-            // 构建排序后的分级显示列表
-            List<StageDeltaVInfo> sortedStages = new List<StageDeltaVInfo>();
+            // 构建排序后的分级显示列表 (复用预分配列表，0 GC 排序)
+            _reusableSortedStages.Clear();
             if (stageCount > 0)
             {
-                sortedStages.AddRange(stages);
+                _reusableSortedStages.AddRange(stages);
                 if (_stageOrder == "REVERSE")
                 {
-                    sortedStages.Sort((a, b) => b.Stage.CompareTo(a.Stage));
+                    _reusableSortedStages.Sort(_stageOrderDescending);
                 }
                 else
                 {
-                    sortedStages.Sort((a, b) => a.Stage.CompareTo(b.Stage));
+                    _reusableSortedStages.Sort(_stageOrderAscending);
                 }
             }
             else
             {
-                sortedStages.Add(new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
+                _reusableSortedStages.Add(new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
             }
+            List<StageDeltaVInfo> sortedStages = _reusableSortedStages;
 
             if (_lastActiveStage >= 0 && _lastActiveStage != curStage)
             {
@@ -1013,10 +941,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (_scrollContentRt != null)
             {
                 float contentH = Mathf.Max(vpH, totalItemsHeight);
-                _scrollContentRt.sizeDelta = new Vector2(currentW - 10f * s, contentH);
+                SetSizeDeltaIfChanged(_scrollContentRt, new Vector2(currentW - 10f * s, contentH));
                 if (totalItemsHeight <= vpH + 1f)
                 {
-                    _scrollContentRt.anchoredPosition = Vector2.zero;
+                    SetAnchoredPositionIfChanged(_scrollContentRt, Vector2.zero);
                 }
             }
 
@@ -1027,7 +955,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 StageItemUI item = _stageItems[i];
                 if (i >= displayCount)
                 {
-                    item.Root.SetActive(false);
+                    SetActiveIfChanged(item.Root, false);
                     continue;
                 }
 
@@ -1075,9 +1003,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     item.CurrentPropFrac = propFrac;
                 }
 
-                item.Root.SetActive(true);
-                item.RootRt.sizeDelta = new Vector2(rowW, itemH * s);
-                item.RootRt.anchoredPosition = new Vector2(0f, -currentY - (itemH * 0.5f * s));
+                SetActiveIfChanged(item.Root, true);
+                SetSizeDeltaIfChanged(item.RootRt, new Vector2(rowW, itemH * s));
+                SetAnchoredPositionIfChanged(item.RootRt, new Vector2(0f, -currentY - (itemH * 0.5f * s)));
                 currentY += (itemH + rowMargin) * s;
 
                 // 顶栏元素垂直锚定 (展开模式固定于单级卡片顶部，精简模式居中)
@@ -1090,48 +1018,46 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
                 if (item.ToggleExpandBtn != null)
                 {
-                    item.ToggleExpandBtn.GetComponent<RectTransform>().anchoredPosition = new Vector2(-halfRowW + 7f * s, topElementsY);
+                    SetAnchoredPositionIfChanged(item.ToggleExpandBtn.GetComponent<RectTransform>(), new Vector2(-halfRowW + 7f * s, topElementsY));
                 }
 
                 // 行背景高亮与分级徽章
                 SetTextIfChanged(item.BadgeText, $"S{stg.Stage:00}");
-                item.RowHighlightBg.rectTransform.sizeDelta = new Vector2(rowW, (itemH - 2f) * s);
-                item.RowHighlightBg.color = isActive 
-                    ? WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.12f) 
-                    : Color.clear;
+                SetSizeDeltaIfChanged(item.RowHighlightBg.rectTransform, new Vector2(rowW, (itemH - 2f) * s));
+                SetColorIfChanged(item.RowHighlightBg, isActive ? WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.12f) : Color.clear);
 
                 if (isActive)
                 {
-                    item.BadgeBg.color = theme.AccentPrimary;
-                    item.BadgeText.color = style.GetTextColor(TextStyleRole.InverseOnAccent, theme);
+                    SetColorIfChanged(item.BadgeBg, theme.AccentPrimary);
+                    SetColorIfChanged(item.BadgeText, style.GetTextColor(TextStyleRole.InverseOnAccent, theme));
                 }
                 else
                 {
-                    item.BadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                    item.BadgeText.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                    SetColorIfChanged(item.BadgeBg, WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                    SetColorIfChanged(item.BadgeText, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                 }
 
                 // Badge 位置 (紧随折叠按钮右侧)
-                item.BadgeBg.rectTransform.anchoredPosition = new Vector2(-halfRowW + 24f * s, topElementsY);
+                SetAnchoredPositionIfChanged(item.BadgeBg.rectTransform, new Vector2(-halfRowW + 24f * s, topElementsY));
 
                 // 推进剂微量程光条 (贴附单级行下边缘)
                 if (hasProp)
                 {
-                    item.PropBarRoot.SetActive(true);
-                    item.PropBarRootRt.sizeDelta = new Vector2(rowW, 3f * s);
-                    item.PropBarRootRt.anchoredPosition = new Vector2(0f, -itemH * 0.5f * s + 1.5f * s);
-                    item.PropTrack.rectTransform.sizeDelta = new Vector2(rowW, 1.5f * s);
-                    item.PropFill.rectTransform.sizeDelta = new Vector2(rowW * propFrac, 2f * s);
-                    item.PropFill.rectTransform.anchoredPosition = new Vector2(-halfRowW, 0f);
+                    SetActiveIfChanged(item.PropBarRoot, true);
+                    SetSizeDeltaIfChanged(item.PropBarRootRt, new Vector2(rowW, 3f * s));
+                    SetAnchoredPositionIfChanged(item.PropBarRootRt, new Vector2(0f, -itemH * 0.5f * s + 1.5f * s));
+                    SetSizeDeltaIfChanged(item.PropTrack.rectTransform, new Vector2(rowW, 1.5f * s));
+                    SetSizeDeltaIfChanged(item.PropFill.rectTransform, new Vector2(rowW * propFrac, 2f * s));
+                    SetAnchoredPositionIfChanged(item.PropFill.rectTransform, new Vector2(-halfRowW, 0f));
                 }
                 else
                 {
-                    item.PropBarRoot.SetActive(false);
+                    SetActiveIfChanged(item.PropBarRoot, false);
                 }
 
                 // 分割微线
-                item.Separator.rectTransform.sizeDelta = new Vector2(rowW, 1f * s);
-                item.Separator.rectTransform.anchoredPosition = new Vector2(0f, -itemH * 0.5f * s);
+                SetSizeDeltaIfChanged(item.Separator.rectTransform, new Vector2(rowW, 1f * s));
+                SetAnchoredPositionIfChanged(item.Separator.rectTransform, new Vector2(0f, -itemH * 0.5f * s));
 
                 // 根据分级形态排布三类状态：
                 if (!hasIcons && !hasDv)
@@ -1139,58 +1065,58 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     // === Case A: 空分级 (Empty Stage) ===
                     if (item.EmptySlotText != null)
                     {
-                        item.EmptySlotText.gameObject.SetActive(true);
-                        item.EmptySlotText.rectTransform.anchoredPosition = new Vector2(-halfRowW + 40f * s, topElementsY);
+                        SetActiveIfChanged(item.EmptySlotText.gameObject, true);
+                        SetAnchoredPositionIfChanged(item.EmptySlotText.rectTransform, new Vector2(-halfRowW + 40f * s, topElementsY));
                         SetTextIfChanged(item.EmptySlotText, I18n.Tr("WIDGET_CTRL_EMPTY_STAGE", "[空级]"));
                     }
-                    item.StageDvText.gameObject.SetActive(false);
-                    item.StageMetaText.gameObject.SetActive(false);
-                    item.IconsContainer.SetActive(false);
+                    SetActiveIfChanged(item.StageDvText.gameObject, false);
+                    SetActiveIfChanged(item.StageMetaText.gameObject, false);
+                    SetActiveIfChanged(item.IconsContainer, false);
 
                     // 仅在空白分级右侧显示专属删除按键
-                    item.DeleteStageBtn.gameObject.SetActive(!isActive);
-                    item.DeleteStageBtn.GetComponent<RectTransform>().anchoredPosition = new Vector2(halfRowW - 12f * s, topElementsY);
+                    SetActiveIfChanged(item.DeleteStageBtn.gameObject, !isActive);
+                    SetAnchoredPositionIfChanged(item.DeleteStageBtn.GetComponent<RectTransform>(), new Vector2(halfRowW - 12f * s, topElementsY));
                 }
                 else if (!hasDv)
                 {
                     // === Case B: 纯动作级 (分离器、降落伞等纯功能级，无 ΔV) ===
-                    if (item.EmptySlotText != null) item.EmptySlotText.gameObject.SetActive(false);
-                    item.DeleteStageBtn.gameObject.SetActive(false);
-                    item.StageDvText.gameObject.SetActive(false);
+                    if (item.EmptySlotText != null) SetActiveIfChanged(item.EmptySlotText.gameObject, false);
+                    SetActiveIfChanged(item.DeleteStageBtn.gameObject, false);
+                    SetActiveIfChanged(item.StageDvText.gameObject, false);
 
                     if (item.IsExpanded)
                     {
-                        item.StageMetaText.gameObject.SetActive(true);
-                        item.StageMetaText.rectTransform.sizeDelta = new Vector2(75f * s, 12f * s);
-                        item.StageMetaText.rectTransform.anchoredPosition = new Vector2(halfRowW - 40f * s, topElementsY);
+                        SetActiveIfChanged(item.StageMetaText.gameObject, true);
+                        SetSizeDeltaIfChanged(item.StageMetaText.rectTransform, new Vector2(75f * s, 12f * s));
+                        SetAnchoredPositionIfChanged(item.StageMetaText.rectTransform, new Vector2(halfRowW - 40f * s, topElementsY));
                         SetTextIfChanged(item.StageMetaText, $"{partIconCount} PARTS");
 
-                        item.IconsContainer.SetActive(true);
+                        SetActiveIfChanged(item.IconsContainer, true);
                         float bayCenterY = (itemH * 0.5f * s) - (24f * s) - (partsBayH * 0.5f);
-                        item.IconsContainerRt.sizeDelta = new Vector2(availW, partsBayH);
-                        item.IconsContainerRt.anchoredPosition = new Vector2(0f, bayCenterY);
+                        SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(availW, partsBayH));
+                        SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(0f, bayCenterY));
                         ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
                     }
                     else
                     {
                         // 精简模式：展示主要部件芯片 + 数量概要
-                        item.StageMetaText.gameObject.SetActive(true);
-                        item.StageMetaText.rectTransform.sizeDelta = new Vector2(75f * s, 12f * s);
-                        item.StageMetaText.rectTransform.anchoredPosition = new Vector2(halfRowW - 40f * s, 0f);
+                        SetActiveIfChanged(item.StageMetaText.gameObject, true);
+                        SetSizeDeltaIfChanged(item.StageMetaText.rectTransform, new Vector2(75f * s, 12f * s));
+                        SetAnchoredPositionIfChanged(item.StageMetaText.rectTransform, new Vector2(halfRowW - 40f * s, 0f));
                         SetTextIfChanged(item.StageMetaText, $"{partIconCount} PARTS");
 
-                        item.IconsContainer.SetActive(true);
+                        SetActiveIfChanged(item.IconsContainer, true);
                         float compAvailW = rowW - 44f * s - 80f * s;
-                        item.IconsContainerRt.sizeDelta = new Vector2(compAvailW, 18f * s);
-                        item.IconsContainerRt.anchoredPosition = new Vector2(-halfRowW + 38f * s + compAvailW * 0.5f, 0f);
+                        SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(compAvailW, 18f * s));
+                        SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(-halfRowW + 38f * s + compAvailW * 0.5f, 0f));
                         ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
                     }
                 }
                 else
                 {
                     // === Case C: 动力推进级 (有 ΔV 与发动机) ===
-                    if (item.EmptySlotText != null) item.EmptySlotText.gameObject.SetActive(false);
-                    item.DeleteStageBtn.gameObject.SetActive(false);
+                    if (item.EmptySlotText != null) SetActiveIfChanged(item.EmptySlotText.gameObject, false);
+                    SetActiveIfChanged(item.DeleteStageBtn.gameObject, false);
 
                     int burnSec = Mathf.Max(0, (int)stg.BurnTime);
                     int min = burnSec / 60;
@@ -1203,39 +1129,39 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     {
                         // 展开模式：顶行是高反差 ΔV 与推重比/时间，底行是多行流式零件网格仓
                         float rightColW = Mathf.Clamp(rowW * 0.45f, 55f * s, 95f * s);
-                        item.StageDvText.gameObject.SetActive(true);
-                        item.StageDvText.rectTransform.sizeDelta = new Vector2(rightColW, 13f * s);
-                        item.StageDvText.rectTransform.anchoredPosition = new Vector2(halfRowW - rightColW * 0.5f - 4f * s, topElementsY + 3f * s);
+                        SetActiveIfChanged(item.StageDvText.gameObject, true);
+                        SetSizeDeltaIfChanged(item.StageDvText.rectTransform, new Vector2(rightColW, 13f * s));
+                        SetAnchoredPositionIfChanged(item.StageDvText.rectTransform, new Vector2(halfRowW - rightColW * 0.5f - 4f * s, topElementsY + 3f * s));
                         SetTextIfChanged(item.StageDvText, $"{stg.DeltaV:N0} m/s");
                         ApplyText(item.StageDvText, isActive ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
 
-                        item.StageMetaText.gameObject.SetActive(true);
-                        item.StageMetaText.rectTransform.sizeDelta = new Vector2(rightColW, 10f * s);
-                        item.StageMetaText.rectTransform.anchoredPosition = new Vector2(halfRowW - rightColW * 0.5f - 4f * s, topElementsY - 7f * s);
+                        SetActiveIfChanged(item.StageMetaText.gameObject, true);
+                        SetSizeDeltaIfChanged(item.StageMetaText.rectTransform, new Vector2(rightColW, 10f * s));
+                        SetAnchoredPositionIfChanged(item.StageMetaText.rectTransform, new Vector2(halfRowW - rightColW * 0.5f - 4f * s, topElementsY - 7f * s));
                         SetTextIfChanged(item.StageMetaText, metaStr);
 
                         if (hasIcons)
                         {
-                            item.IconsContainer.SetActive(true);
+                            SetActiveIfChanged(item.IconsContainer, true);
                             float bayCenterY = (itemH * 0.5f * s) - (24f * s) - (partsBayH * 0.5f);
-                            item.IconsContainerRt.sizeDelta = new Vector2(availW, partsBayH);
-                            item.IconsContainerRt.anchoredPosition = new Vector2(0f, bayCenterY);
+                            SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(availW, partsBayH));
+                            SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(0f, bayCenterY));
                             ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
                         }
                         else
                         {
-                            item.IconsContainer.SetActive(false);
+                            SetActiveIfChanged(item.IconsContainer, false);
                         }
                     }
                     else
                     {
                         // 精简模式 (24px)：单行徽章 + 紧凑主要部件/溢出计数 + 极简 ΔV
-                        item.StageMetaText.gameObject.SetActive(false);
+                        SetActiveIfChanged(item.StageMetaText.gameObject, false);
                         float dvW = Mathf.Clamp(rowW * 0.42f, 45f * s, 75f * s);
 
-                        item.StageDvText.gameObject.SetActive(true);
-                        item.StageDvText.rectTransform.sizeDelta = new Vector2(dvW, 14f * s);
-                        item.StageDvText.rectTransform.anchoredPosition = new Vector2(halfRowW - dvW * 0.5f - 4f * s, 0f);
+                        SetActiveIfChanged(item.StageDvText.gameObject, true);
+                        SetSizeDeltaIfChanged(item.StageDvText.rectTransform, new Vector2(dvW, 14f * s));
+                        SetAnchoredPositionIfChanged(item.StageDvText.rectTransform, new Vector2(halfRowW - dvW * 0.5f - 4f * s, 0f));
                         SetTextIfChanged(item.StageDvText, $"{stg.DeltaV:N0} m/s");
                         ApplyText(item.StageDvText, isActive ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
 
@@ -1244,19 +1170,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                             float compAvailW = rowW - 38f * s - dvW - 4f * s;
                             if (compAvailW >= 18f * s)
                             {
-                                item.IconsContainer.SetActive(true);
-                                item.IconsContainerRt.sizeDelta = new Vector2(compAvailW, 18f * s);
-                                item.IconsContainerRt.anchoredPosition = new Vector2(-halfRowW + 38f * s + compAvailW * 0.5f, 0f);
+                                SetActiveIfChanged(item.IconsContainer, true);
+                                SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(compAvailW, 18f * s));
+                                SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(-halfRowW + 38f * s + compAvailW * 0.5f, 0f));
                                 ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
                             }
                             else
                             {
-                                item.IconsContainer.SetActive(false);
+                                SetActiveIfChanged(item.IconsContainer, false);
                             }
                         }
                         else
                         {
-                            item.IconsContainer.SetActive(false);
+                            SetActiveIfChanged(item.IconsContainer, false);
                         }
                     }
                 }
@@ -1280,15 +1206,15 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     chip.StageNumber = stg.Stage;
                     chip.PartIndex = c;
 
-                    chip.RootRt.sizeDelta = new Vector2(chipSize, chipSize);
+                    chip.RootRt.SetSizeDeltaSafe(new Vector2(chipSize, chipSize));
                     int row = c / chipsPerRow;
                     int col = c % chipsPerRow;
                     float chipX = -containerWidth * 0.5f + (chipSize * 0.5f) + col * (chipSize + chipGap);
                     float chipY = (containerHeight * 0.5f) - (chipSize * 0.5f) - row * (chipSize + chipGap);
-                    chip.RootRt.anchoredPosition = new Vector2(chipX, chipY);
+                    chip.RootRt.SetAnchoredPositionSafe(new Vector2(chipX, chipY));
 
                     float rawSize = chipSize - 2f * s;
-                    chip.IconRawImage.rectTransform.sizeDelta = new Vector2(rawSize, rawSize);
+                    chip.IconRawImage.rectTransform.SetSizeDeltaSafe(new Vector2(rawSize, rawSize));
 
                     if (chip.IconRawImage.texture != currentAtlas)
                     {
@@ -1320,15 +1246,15 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         uv = StageIconAtlasGenerator.GetIconUv(iconIndex);
                     }
                     chip.IconRawImage.uvRect = uv;
-                    chip.IconRawImage.color = isActive 
+                    chip.IconRawImage.SetColor(isActive 
                         ? theme.AccentPrimary 
-                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme));
 
                     if (partData.Count > 1)
                     {
                         chip.MultiplierText.gameObject.SetActive(true);
                         SetTextIfChanged(chip.MultiplierText, $"×{partData.Count}");
-                        chip.MultiplierText.rectTransform.sizeDelta = new Vector2(chipSize, 10f * s);
+                        chip.MultiplierText.rectTransform.SetSizeDeltaSafe(new Vector2(chipSize, 10f * s));
                     }
                     else
                     {
@@ -1362,12 +1288,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     chip.StageNumber = stg.Stage;
                     chip.PartIndex = c;
 
-                    chip.RootRt.sizeDelta = new Vector2(chipSize, chipSize);
+                    chip.RootRt.SetSizeDeltaSafe(new Vector2(chipSize, chipSize));
                     float chipX = -containerWidth * 0.5f + (chipSize * 0.5f) + c * chipSpacing;
-                    chip.RootRt.anchoredPosition = new Vector2(chipX, 0f);
+                    chip.RootRt.SetAnchoredPositionSafe(new Vector2(chipX, 0f));
 
                     float rawSize = chipSize - 2f * s;
-                    chip.IconRawImage.rectTransform.sizeDelta = new Vector2(rawSize, rawSize);
+                    chip.IconRawImage.rectTransform.SetSizeDeltaSafe(new Vector2(rawSize, rawSize));
 
                     if (chip.IconRawImage.texture != currentAtlas)
                     {
@@ -1399,21 +1325,21 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         uv = StageIconAtlasGenerator.GetIconUv(iconIndex);
                     }
                     chip.IconRawImage.uvRect = uv;
-                    chip.IconRawImage.color = isActive 
+                    chip.IconRawImage.SetColor(isActive 
                         ? theme.AccentPrimary 
-                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme));
 
                     if (c == displayedChips - 1 && partIconCount > displayedChips)
                     {
                         chip.MultiplierText.gameObject.SetActive(true);
                         SetTextIfChanged(chip.MultiplierText, $"+{partIconCount - displayedChips + 1}");
-                        chip.MultiplierText.rectTransform.sizeDelta = new Vector2(chipSize, 10f * s);
+                        chip.MultiplierText.rectTransform.SetSizeDeltaSafe(new Vector2(chipSize, 10f * s));
                     }
                     else if (partData.Count > 1)
                     {
                         chip.MultiplierText.gameObject.SetActive(true);
                         SetTextIfChanged(chip.MultiplierText, $"×{partData.Count}");
-                        chip.MultiplierText.rectTransform.sizeDelta = new Vector2(chipSize, 10f * s);
+                        chip.MultiplierText.rectTransform.SetSizeDeltaSafe(new Vector2(chipSize, 10f * s));
                     }
                     else
                     {
@@ -1447,26 +1373,26 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     _stageTriggerRecoilTimer -= dt;
                     float recoilProgress = Mathf.Clamp01(_stageTriggerRecoilTimer / 0.22f);
                     float recoilScale = Mathf.Lerp(1.0f, 0.94f, recoilProgress);
-                    _stageTriggerBtn.transform.localScale = new Vector3(recoilScale, recoilScale, 1f);
+                    _stageTriggerBtn.transform.SetLocalScaleSafe(new Vector3(recoilScale, recoilScale, 1f));
                 }
                 else if (_stageTriggerBtn.transform.localScale.x != 1f)
                 {
-                    _stageTriggerBtn.transform.localScale = Vector3.one;
+                    _stageTriggerBtn.transform.SetLocalScaleSafe(Vector3.one);
                 }
 
                 if (_stageTriggerFlashTimer > 0f)
                 {
                     _stageTriggerFlashTimer -= dt;
                     float flashP = Mathf.Clamp01(_stageTriggerFlashTimer / 0.28f);
-                    _stageTriggerBg.color = Color.Lerp(theme.AccentPrimary, inverseText, flashP * 0.70f);
+                    _stageTriggerBg.SetColor(Color.Lerp(theme.AccentPrimary, inverseText, flashP * 0.70f));
                 }
                 else if (_stageTriggerBtn.interactable)
                 {
-                    _stageTriggerBg.color = theme.AccentPrimary;
+                    _stageTriggerBg.SetColor(theme.AccentPrimary);
                 }
                 else
                 {
-                    _stageTriggerBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+                    _stageTriggerBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
                 }
             }
 
@@ -1483,11 +1409,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     {
                         item.TransitionFlashTimer -= dt;
                         float flashP = Mathf.Clamp01(item.TransitionFlashTimer / 0.4f);
-                        item.RowHighlightBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, Mathf.Lerp(0.12f, 0.38f, flashP));
+                        item.RowHighlightBg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPrimary, Mathf.Lerp(0.12f, 0.38f, flashP)));
                     }
                     else
                     {
-                        item.RowHighlightBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.12f);
+                        item.RowHighlightBg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.12f));
                     }
                 }
 
@@ -1498,7 +1424,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     {
                         item.CurrentPropFrac = Mathf.MoveTowards(item.CurrentPropFrac, item.TargetPropFrac, dt * 2.2f);
                         float barW = item.PropTrack.rectTransform.sizeDelta.x;
-                        item.PropFill.rectTransform.sizeDelta = new Vector2(barW * item.CurrentPropFrac, 2f * s);
+                        item.PropFill.rectTransform.SetSizeDeltaSafe(new Vector2(barW * item.CurrentPropFrac, 2f * s));
                     }
 
                     if (item.CurrentPropFrac <= 0.05f)
@@ -1506,18 +1432,18 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         // 极低液位：平滑 1.5Hz 红色柔和告警脉冲 (优雅不刺眼)
                         float dangerPulse = 0.65f + 0.35f * Mathf.Sin(time * 9.4f);
                         Color dangerCol = style.GetMeterColor(MeterStyleRole.Danger, theme);
-                        item.PropFill.color = WidgetStyleManager.WithAlpha(dangerCol, dangerPulse);
+                        item.PropFill.SetColor(WidgetStyleManager.WithAlpha(dangerCol, dangerPulse));
                     }
                     else if (item.CurrentPropFrac <= 0.20f)
                     {
                         // 20% 低液位：柔和 0.8Hz 琥珀色提示 (Calm Amber Breath)
                         float warnPulse = 0.75f + 0.25f * Mathf.Sin(time * 5.0f);
                         Color warnCol = style.GetMeterColor(MeterStyleRole.Warning, theme);
-                        item.PropFill.color = WidgetStyleManager.WithAlpha(warnCol, warnPulse);
+                        item.PropFill.SetColor(WidgetStyleManager.WithAlpha(warnCol, warnPulse));
                     }
                     else
                     {
-                        item.PropFill.color = theme.AccentPrimary;
+                        item.PropFill.SetColor(theme.AccentPrimary);
                     }
                 }
 
@@ -1531,18 +1457,18 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     if (Mathf.Abs(chip.CurrentScale - targetScale) > 0.002f)
                     {
                         chip.CurrentScale = Mathf.MoveTowards(chip.CurrentScale, targetScale, dt * 7.5f);
-                        chip.RootRt.localScale = new Vector3(chip.CurrentScale, chip.CurrentScale, 1f);
+                        chip.RootRt.SetLocalScaleSafe(new Vector3(chip.CurrentScale, chip.CurrentScale, 1f));
                     }
 
                     if (chip.IsHovered)
                     {
-                        chip.ChipOutline.effectColor = theme.AccentPrimary;
-                        chip.ChipBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.30f);
+                        chip.ChipOutline.SetColor(theme.AccentPrimary);
+                        chip.ChipBg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.30f));
                     }
                     else
                     {
-                        chip.ChipOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
-                        chip.ChipBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+                        chip.ChipOutline.SetColor(WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost));
+                        chip.ChipBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
                     }
                 }
             }

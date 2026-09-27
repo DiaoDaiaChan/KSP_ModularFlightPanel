@@ -14,14 +14,27 @@ namespace ModularFlightPanel.UI.Auditing
     public static class RoslynAstHelper
     {
         private static readonly CSharpParseOptions DefaultOptions =
-            CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
+            CSharpParseOptions.Default
+                .WithLanguageVersion(LanguageVersion.Latest)
+                .WithPreprocessorSymbols("KSP_RUNTIME");
 
         /// <summary>
-        /// 将 C# 源码解析为 Roslyn 语法树
+        /// 将 C# 源码解析为 Roslyn 语法树（默认已穿透激活 KSP_RUNTIME 宏）
         /// </summary>
         public static SyntaxTree ParseTree(string sourceCode)
         {
             return CSharpSyntaxTree.ParseText(sourceCode ?? string.Empty, DefaultOptions);
+        }
+
+        /// <summary>
+        /// 将 C# 源码解析为 Roslyn 语法树（支持自定义预编译宏符号）
+        /// </summary>
+        public static SyntaxTree ParseTree(string sourceCode, params string[] preprocessorSymbols)
+        {
+            var options = preprocessorSymbols != null && preprocessorSymbols.Length > 0
+                ? CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest).WithPreprocessorSymbols(preprocessorSymbols)
+                : DefaultOptions;
+            return CSharpSyntaxTree.ParseText(sourceCode ?? string.Empty, options);
         }
 
         /// <summary>
@@ -30,6 +43,14 @@ namespace ModularFlightPanel.UI.Auditing
         public static CompilationUnitSyntax ParseRoot(string sourceCode)
         {
             return ParseTree(sourceCode).GetCompilationUnitRoot();
+        }
+
+        /// <summary>
+        /// 将 C# 源码解析为根编译单元语法节点 (支持自定义预编译宏符号)
+        /// </summary>
+        public static CompilationUnitSyntax ParseRoot(string sourceCode, params string[] preprocessorSymbols)
+        {
+            return ParseTree(sourceCode, preprocessorSymbols).GetCompilationUnitRoot();
         }
 
         /// <summary>

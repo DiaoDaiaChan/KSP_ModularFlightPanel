@@ -522,15 +522,15 @@ namespace ModularFlightPanel.HeadlessValidator
                 var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
                 Console.WriteLine($"  ├─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
                 var perfRisks = modReport.WidgetsWithAntiPatterns
-                    .Where(i => i.HotLoopHeapAllocations > 0 || i.HasUnmanagedCore3DUgui || i.HotLoopUguiSetters > 5)
+                    .Where(i => i.HotLoopHeapAllocations > 0 || i.HasUnmanagedCore3DUgui || i.HotLoopUguiSetters > 5 || i.HasBannedDockSyncCall)
                     .ToList();
                 if (perfRisks.Count > 0)
                 {
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"  ⚠ 航电效能与架构雷达侦测到 {perfRisks.Count} 个组件存在高频帧循环堆分配/裸 UGUI 逃逸 (详见 --audit-modernization):");
+                    Console.WriteLine($"  ⚠ 航电效能与架构雷达侦测到 {perfRisks.Count} 个组件存在高频帧循环堆分配/裸 UGUI 逃逸/非集中调度 (详见 --audit-modernization):");
                     foreach (var risk in perfRisks)
                     {
-                        var issues = risk.StandardizationSuggestions.Where(s => s.Contains("高频") || s.Contains("Core3D")).ToList();
+                        var issues = risk.StandardizationSuggestions.Where(s => s.Contains("高频") || s.Contains("Core3D") || s.Contains("调度")).ToList();
                         Console.WriteLine($"     • {risk.FileName,-24} => {string.Join("; ", issues)}");
                     }
                     Console.ResetColor();

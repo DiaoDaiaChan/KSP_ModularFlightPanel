@@ -220,15 +220,11 @@ namespace ModularFlightPanel.UI.Widgets
                 I18n.Tr("TOOLTIP_STAGE_FIRE_DESC", "手动执行下一分级点火分离序列。"), "Space");
 
             // 顶部分割细线
-            GameObject topDivGo = new GameObject("TopDivider", typeof(RectTransform), typeof(Image));
-            topDivGo.transform.SetParent(transform, false);
-            _topDivider = topDivGo.GetComponent<Image>();
+            _topDivider = CreateChild<Image>("TopDivider", transform);
             _topDivider.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
 
             // 底部分割细线
-            GameObject botDivGo = new GameObject("BottomDivider", typeof(RectTransform), typeof(Image));
-            botDivGo.transform.SetParent(transform, false);
-            _bottomDivider = botDivGo.GetComponent<Image>();
+            _bottomDivider = CreateChild<Image>("BottomDivider", transform);
             _bottomDivider.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
 
             // ==========================================
@@ -406,11 +402,9 @@ namespace ModularFlightPanel.UI.Widgets
             AxisMeterUI meter = new AxisMeterUI();
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            GameObject rootGo = new GameObject("Axis_" + name, typeof(RectTransform));
-            rootGo.transform.SetParent(parent, false);
-            meter.Root = rootGo;
-            meter.RootRt = rootGo.GetComponent<RectTransform>();
-            meter.RootRt.sizeDelta = new Vector2(DefaultPanelWidth * s, 15f * s);
+            meter.RootRt = CreateContainer("Axis_" + name, parent, new Vector2(DefaultPanelWidth * s, 15f * s));
+            meter.Root = meter.RootRt.gameObject;
+            GameObject rootGo = meter.Root;
 
             // 1. 轴标签胶囊 (PITCH / ROLL / YAW)
             meter.LabelBg = UIFactory.CreatePanel(rootGo.transform, "LabelBg",

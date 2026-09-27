@@ -225,13 +225,8 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 屏幕空间数学解析光线投射姿态球 (Screen-Space Analytic Raymarched Sphere)
             // 彻底移除独立摄像机、3D 网格小球与 RenderTexture，改为在原生 UGUI 矩形上通过着色器直接解析绘制
             // 0 摄像机开销、0 离屏纹理显存、任意大机动旋转下 CPU 耗时恒定 0.005 ms！
-            GameObject raymarchObj = new GameObject("Sphere_RaymarchImage", typeof(RectTransform), typeof(RawImage));
-            raymarchObj.transform.SetParent(transform, false);
-            RectTransform rawRt = raymarchObj.GetComponent<RectTransform>();
-            rawRt.sizeDelta = new Vector2(ballDiameter, ballDiameter);
-            rawRt.anchoredPosition = Vector2.zero;
-
-            _displayImage = raymarchObj.GetComponent<RawImage>();
+            _displayImage = CreateChild<RawImage>("Sphere_RaymarchImage", transform,
+                new Vector2(ballDiameter, ballDiameter), Vector2.zero);
             _displayImage.texture = Texture2D.whiteTexture;
             _displayImage.raycastTarget = false;
 
@@ -347,19 +342,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void CreateCrosshair(Transform parent, float dpiScale, ThemeConfig theme)
         {
-            _crosshair = new GameObject("Navball_Crosshair_Reticle", typeof(RectTransform));
-            _crosshair.transform.SetParent(parent, false);
-            RectTransform crosshairRt = _crosshair.GetComponent<RectTransform>();
-            crosshairRt.sizeDelta = new Vector2(76f * dpiScale, 32f * dpiScale);
-            crosshairRt.anchoredPosition = Vector2.zero;
+            RectTransform crosshairRt = CreateContainer("Navball_Crosshair_Reticle", parent,
+                new Vector2(76f * dpiScale, 32f * dpiScale), Vector2.zero);
+            _crosshair = crosshairRt.gameObject;
 
-            GameObject imgObj = new GameObject("Reticle_Image", typeof(RectTransform), typeof(Image));
-            imgObj.transform.SetParent(_crosshair.transform, false);
-            RectTransform imgRt = imgObj.GetComponent<RectTransform>();
-            imgRt.sizeDelta = crosshairRt.sizeDelta;
-            imgRt.anchoredPosition = Vector2.zero;
-
-            _reticleImage = imgObj.GetComponent<Image>();
+            _reticleImage = CreateChild<Image>("Reticle_Image", _crosshair.transform,
+                crosshairRt.sizeDelta, Vector2.zero);
             _reticleImage.sprite = NavballMarkerFactory.GetReticleSprite();
             _reticleImage.color = WidgetStyleManager.NeutralOpaque;
             _reticleImage.raycastTarget = false;
@@ -384,17 +372,12 @@ namespace ModularFlightPanel.UI.Widgets
                 float tickLen = isZero ? (6.5f * s) : (isMajor ? 6f * s : (isWarn ? 5f * s : 3.5f * s));
                 float tickWidth = isZero ? (2.2f * s) : (isMajor ? 1.8f * s : 1.2f * s);
 
-                GameObject tickObj = new GameObject($"BankTick_{deg:F0}", typeof(RectTransform), typeof(Image));
-                tickObj.transform.SetParent(parent, false);
-                RectTransform rt = tickObj.GetComponent<RectTransform>();
-                rt.sizeDelta = new Vector2(tickWidth, tickLen);
-
                 float rad = deg * Mathf.Deg2Rad;
                 float dist = r + tickLen * 0.5f;
-                rt.anchoredPosition = new Vector2(Mathf.Sin(rad) * dist, Mathf.Cos(rad) * dist);
-                rt.localRotation = Quaternion.Euler(0f, 0f, -deg);
-
-                Image img = tickObj.GetComponent<Image>();
+                Vector2 tickPos = new Vector2(Mathf.Sin(rad) * dist, Mathf.Cos(rad) * dist);
+                Image img = CreateChild<Image>($"BankTick_{deg:F0}", parent,
+                    new Vector2(tickWidth, tickLen), tickPos);
+                img.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -deg);
                 img.raycastTarget = false;
                 img.color = isWarn ? theme.WarningColor : (isZero ? theme.HorizonLineColor : theme.GridColor);
                 if (uiMat != null) img.material = uiMat;
@@ -402,18 +385,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 动态高精度滚转/天顶指引指针 (Roll / Sky Pointer)
-            GameObject pointerRootObj = new GameObject("BankRollPointer_Root", typeof(RectTransform));
-            pointerRootObj.transform.SetParent(parent, false);
-            _bankRollPointerRoot = pointerRootObj.GetComponent<RectTransform>();
-            _bankRollPointerRoot.sizeDelta = Vector2.zero;
-            _bankRollPointerRoot.anchoredPosition = Vector2.zero;
+            _bankRollPointerRoot = CreateContainer("BankRollPointer_Root", parent,
+                Vector2.zero, Vector2.zero);
 
-            GameObject needleObj = new GameObject("PointerNeedle", typeof(RectTransform), typeof(Image));
-            needleObj.transform.SetParent(_bankRollPointerRoot, false);
-            RectTransform needleRt = needleObj.GetComponent<RectTransform>();
-            needleRt.sizeDelta = new Vector2(10f * s, 12f * s);
-            needleRt.anchoredPosition = new Vector2(0f, r + 4.5f * s);
-            _bankRollPointerImg = needleObj.GetComponent<Image>();
+            _bankRollPointerImg = CreateChild<Image>("PointerNeedle", _bankRollPointerRoot,
+                new Vector2(10f * s, 12f * s), new Vector2(0f, r + 4.5f * s));
             _bankRollPointerImg.sprite = NavballMarkerFactory.GetRollPointerSprite();
             _bankRollPointerImg.color = theme.HorizonLineColor;
             _bankRollPointerImg.raycastTarget = false;
@@ -453,12 +429,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void CreateMarkerOverlayLayer(Transform parent, float dpiScale)
         {
-            GameObject container = new GameObject("Navball_Marker_Overlay", typeof(RectTransform));
-            container.transform.SetParent(parent, false);
-            RectTransform rt = container.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(_visualRadius * 2f, _visualRadius * 2f);
-            rt.anchoredPosition = Vector2.zero;
-            _markerContainer = container.transform;
+            RectTransform rt = CreateContainer("Navball_Marker_Overlay", parent,
+                new Vector2(_visualRadius * 2f, _visualRadius * 2f), Vector2.zero);
+            _markerContainer = rt;
 
             Material uiMat = WidgetStyleManager.Instance?.GetUiMaterial(isText: false);
             Material txtMat = WidgetStyleManager.Instance?.GetUiMaterial(isText: true);
@@ -479,13 +452,9 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _renderedMarkerPositions[k] = Vector2.zero;
                 _currentMarkerDirs[k] = Vector3.zero;
-                GameObject mObj = new GameObject($"Marker_{k}", typeof(RectTransform), typeof(Image));
-                mObj.transform.SetParent(_markerContainer, false);
-                RectTransform mRt = mObj.GetComponent<RectTransform>();
-                mRt.sizeDelta = new Vector2(markerSize, markerSize);
-                mRt.anchoredPosition = Vector2.zero;
-
-                Image img = mObj.GetComponent<Image>();
+                Image img = CreateChild<Image>($"Marker_{k}", _markerContainer,
+                    new Vector2(markerSize, markerSize), Vector2.zero);
+                GameObject mObj = img.gameObject;
                 img.sprite = NavballMarkerFactory.GetMarkerSprite(k);
                 img.color = WidgetStyleManager.NeutralOpaque;
                 img.raycastTarget = true;
@@ -501,22 +470,14 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 1. 机动节点航向流光引导箭头容器 (Steering Director Chevron Flow)
-            _maneuverGuideContainer = new GameObject("Maneuver_Guide_Flow", typeof(RectTransform));
-            _maneuverGuideContainer.transform.SetParent(_markerContainer, false);
-            RectTransform flowRt = _maneuverGuideContainer.GetComponent<RectTransform>();
-            flowRt.sizeDelta = Vector2.zero;
-            flowRt.anchoredPosition = Vector2.zero;
+            _maneuverGuideContainer = CreateContainer("Maneuver_Guide_Flow", _markerContainer,
+                Vector2.zero, Vector2.zero).gameObject;
 
             Sprite chevSprite = NavballMarkerFactory.GetGuidanceChevronSprite();
             for (int i = 0; i < _guidanceChevrons.Length; i++)
             {
-                GameObject cObj = new GameObject($"GuideChevron_{i}", typeof(RectTransform), typeof(Image));
-                cObj.transform.SetParent(_maneuverGuideContainer.transform, false);
-                RectTransform cRt = cObj.GetComponent<RectTransform>();
-                cRt.sizeDelta = new Vector2(14f * dpiScale, 14f * dpiScale);
-                cRt.anchoredPosition = Vector2.zero;
-
-                Image cImg = cObj.GetComponent<Image>();
+                Image cImg = CreateChild<Image>($"GuideChevron_{i}", _maneuverGuideContainer.transform,
+                    new Vector2(14f * dpiScale, 14f * dpiScale), Vector2.zero);
                 cImg.sprite = chevSprite;
                 cImg.color = WidgetStyleManager.NeutralOpaque;
                 cImg.raycastTarget = false;
@@ -526,46 +487,35 @@ namespace ModularFlightPanel.UI.Widgets
             _maneuverGuideContainer.SetActive(false);
 
             // 2. SAS 动态角括号锁定框 (Active SAS Lock Reticle)
-            GameObject reticleObj = new GameObject("Active_SAS_Reticle", typeof(RectTransform), typeof(Image));
-            reticleObj.transform.SetParent(_markerContainer, false);
-            _sasLockReticleRt = reticleObj.GetComponent<RectTransform>();
-            _sasLockReticleRt.sizeDelta = new Vector2(36f * dpiScale, 36f * dpiScale);
-            _sasLockReticleRt.anchoredPosition = Vector2.zero;
-
-            _sasLockReticleImage = reticleObj.GetComponent<Image>();
+            _sasLockReticleImage = CreateChild<Image>("Active_SAS_Reticle", _markerContainer,
+                new Vector2(36f * dpiScale, 36f * dpiScale), Vector2.zero);
+            _sasLockReticleRt = _sasLockReticleImage.rectTransform;
             _sasLockReticleImage.sprite = NavballMarkerFactory.GetSASLockReticleSprite();
             _sasLockReticleImage.color = WidgetStyleManager.NeutralOpaque;
             _sasLockReticleImage.raycastTarget = false;
             if (uiMat != null) _sasLockReticleImage.material = uiMat;
-            reticleObj.SetActive(false);
+            _sasLockReticleImage.gameObject.SetActive(false);
 
             // 3. 点击冲击波扩散环 (Shockwave Ripple)
-            GameObject rippleObj = new GameObject("SAS_Shockwave_Ripple", typeof(RectTransform), typeof(Image));
-            rippleObj.transform.SetParent(_markerContainer, false);
-            _sasRippleRt = rippleObj.GetComponent<RectTransform>();
-            _sasRippleRt.sizeDelta = new Vector2(48f * dpiScale, 48f * dpiScale);
-            _sasRippleRt.anchoredPosition = Vector2.zero;
-
-            _sasRippleImage = rippleObj.GetComponent<Image>();
+            _sasRippleImage = CreateChild<Image>("SAS_Shockwave_Ripple", _markerContainer,
+                new Vector2(48f * dpiScale, 48f * dpiScale), Vector2.zero);
+            _sasRippleRt = _sasRippleImage.rectTransform;
             _sasRippleImage.sprite = NavballMarkerFactory.GetShockwaveSprite();
             _sasRippleImage.color = WidgetStyleManager.NeutralOpaque;
             _sasRippleImage.raycastTarget = false;
             if (uiMat != null) _sasRippleImage.material = uiMat;
-            rippleObj.SetActive(false);
+            _sasRippleImage.gameObject.SetActive(false);
 
             // 4. 光标悬停微航电提示卡片 (Cursor Hover Floating Tooltip HUD Card)
-            GameObject tipObj = new GameObject("Marker_Hover_Tooltip", typeof(RectTransform), typeof(Image), typeof(Outline));
-            tipObj.transform.SetParent(_markerContainer, false);
-            _markerHoverTooltipRt = tipObj.GetComponent<RectTransform>();
-            _markerHoverTooltipRt.sizeDelta = new Vector2(104f * dpiScale, 26f * dpiScale);
-            _markerHoverTooltipRt.anchoredPosition = Vector2.zero;
-
-            _markerHoverTooltipBg = tipObj.GetComponent<Image>();
+            _markerHoverTooltipBg = CreateChild<Image>("Marker_Hover_Tooltip", _markerContainer,
+                new Vector2(104f * dpiScale, 26f * dpiScale), Vector2.zero);
+            GameObject tipObj = _markerHoverTooltipBg.gameObject;
+            _markerHoverTooltipRt = _markerHoverTooltipBg.rectTransform;
             _markerHoverTooltipBg.color = WidgetStyleManager.NeutralOpaque;
             _markerHoverTooltipBg.raycastTarget = false;
             if (uiMat != null) _markerHoverTooltipBg.material = uiMat;
 
-            _markerHoverTooltipOutline = tipObj.GetComponent<Outline>();
+            _markerHoverTooltipOutline = tipObj.AddComponent<Outline>();
             _markerHoverTooltipOutline.effectDistance = new Vector2(1f * dpiScale, 1f * dpiScale);
             _markerHoverTooltipOutline.effectColor = WidgetStyleManager.NeutralOpaque;
 
@@ -1683,10 +1633,11 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // 物理映射：将球体在摄像机视口下的逆运动转换为载具在屏幕视口下的真实运动角速度
-                // Pitch (抬头/低头): X 轴负向对应抬头 (+Y)
-                // Yaw (右偏/左偏): Y 轴负向对应右偏 (+X)
-                // Roll (右滚/左滚): Z 轴正向对应顺时针右滚 (-Z)
-                Vector3 rawVesselAngularVelocity = new Vector3(rawBallAngularVelocity.x, -rawBallAngularVelocity.y, -rawBallAngularVelocity.z);
+                // 球体表面运动方向与飞船实际旋转运动互为反向逆矩阵映射：
+                // Pitch (抬头/低头): 飞船向下(按W)时球体向上翻滚(Ball.x<0)，载具角速度需反向(-Ball.x)引导指示器向下
+                // Yaw (右偏/左偏): 飞船向右偏航时球体向左偏转(Ball.y<0)，载具角速度需反向(-Ball.y)引导指示器向右
+                // Roll (右滚/左滚): 飞船顺时针滚转时球体逆时针旋转(Ball.z>0)，载具角速度需反向(-Ball.z)引导指示器顺时针
+                Vector3 rawVesselAngularVelocity = -rawBallAngularVelocity;
 
                 // 低通滤波角速度矢量，彻底消除跨物理帧瞬时微步进与角轴旋转随机翻转
                 float filterBlend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 7.5f);

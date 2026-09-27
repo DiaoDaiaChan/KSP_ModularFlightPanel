@@ -47,9 +47,6 @@ namespace ModularFlightPanel.UI.Widgets
                 Vector2 delta = currentPointerPos - _lastPointerPos;
                 _lastPointerPos = currentPointerPos;
                 Owner.RectTransform.anchoredPosition += delta;
-#if KSP_RUNTIME
-                DockAnchorTracker.SyncAll();
-#endif
             }
         }
 
@@ -66,9 +63,6 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeManager.Instance.DockFavoritePosX = finalPos.x;
             ThemeManager.Instance.DockFavoritePosY = finalPos.y;
             ThemeManager.Instance.SaveSettings();
-#if KSP_RUNTIME
-            DockAnchorTracker.SyncAll();
-#endif
         }
     }
 
@@ -90,7 +84,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(220f, 46f);
         protected override bool AutoCreateCardFrame => false;
         public override bool IsInteractive => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.UltraLow;
 
         // 声明式微控件
         public TextWidget TitleWidget = TextWidget.Title(I18n.Tr("FAV_DOCK_TITLE", "★ 快速对接"));
@@ -234,8 +228,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 标题与拖拽抓手条
             if (_headerGrip == null)
             {
-                _headerGrip = new GameObject("HeaderGrip", typeof(RectTransform));
-                _headerGrip.transform.SetParent(_panelBg.transform, false);
+                _headerGrip = CreateNode("HeaderGrip", _panelBg.transform);
 
                 string titleText = I18n.Tr("FAV_DOCK_TITLE", "★ QUICK DOCK");
                 _headerTitle = UIFactory.CreateText(_headerGrip.transform, "Title", titleText,
@@ -310,9 +303,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 按钮内容容器
             if (_contentRt == null)
             {
-                GameObject contentObj = new GameObject("FavContent", typeof(RectTransform));
-                contentObj.transform.SetParent(_panelBg.transform, false);
-                _contentRt = contentObj.GetComponent<RectTransform>();
+                _contentRt = CreateContainer("FavContent", _panelBg.transform);
             }
 
             if (orient == 0)
@@ -669,10 +660,7 @@ namespace ModularFlightPanel.UI.Widgets
             bg.raycastTarget = true;
 
             // 1. 图标渲染 (RawImage) - 完美呈现原始贴图
-            RawImage rawImg = null;
-            GameObject iconObj = new GameObject("Icon", typeof(RectTransform), typeof(RawImage));
-            iconObj.transform.SetParent(itemObj.transform, false);
-            rawImg = iconObj.GetComponent<RawImage>();
+            RawImage rawImg = CreateChild<RawImage>("Icon", itemObj.transform);
             rawImg.color = WidgetStyleManager.NeutralOpaque;
             rawImg.raycastTarget = false;
             RectTransform irt = rawImg.rectTransform;
@@ -758,7 +746,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isCollapsed) return;
 
             float now = Time.unscaledTime;
-            if (now - _lastSyncTime < 0.33f) return;
+            if (now - _lastSyncTime < 1.0f) return;
             _lastSyncTime = now;
 
 #if KSP_RUNTIME
@@ -791,20 +779,21 @@ namespace ModularFlightPanel.UI.Widgets
                             if (view.IconRaw != null && view.IconRaw.texture != kspBtn.sprite.texture)
                             {
                                 view.IconRaw.texture = kspBtn.sprite.texture;
-                                view.IconRaw.gameObject.SetActive(true);
-                                if (view.LabelText != null) view.LabelText.gameObject.SetActive(false);
+                                view.IconRaw.SetActiveSafe(true);
+                                if (view.LabelText != null) view.LabelText.SetActiveSafe(false);
                             }
                         }
 
                         if (view.ActiveLed != null)
                         {
                             bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
-                            view.IsActive = active;
-                            view.ActiveLed.color = active ? ledOn : ledOff;
+                            if (view.IsActive != active)
+                            {
+                                view.IsActive = active;
+                                view.ActiveLed.SetColor(active ? ledOn : ledOff);
+                            }
                         }
                     }
-
-                    DockAnchorTracker.SyncAll();
                 }
             }
             catch (Exception ex)

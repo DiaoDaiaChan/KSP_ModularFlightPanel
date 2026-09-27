@@ -209,16 +209,22 @@ namespace ModularFlightPanel.UI
         };
 
         /// <summary>
-        /// 推荐的统一格式化套件类名与方法名
+        /// 推荐的统一格式化套件类名与方法名 (AvionicsFormatting 与 AvionicsFastFormat 零 GC 快速常量池)
         /// </summary>
         public const string StandardFormattingClass = "AvionicsFormatting";
+        public const string FastFormatClass = "AvionicsFastFormat";
+        public static readonly string[] StandardFormattingClasses = { "AvionicsFormatting", "AvionicsFastFormat" };
         public static readonly string[] StandardFormattingApis =
         {
             "FormatDuration",
             "FormatDurationCompact",
             "FormatCountdown",
             "FormatMetricDistance",
-            "FormatMetricSpeed"
+            "FormatMetricSpeed",
+            "FastInt",
+            "FastRoundInt",
+            "FastPercent",
+            "FastTwoDigits"
         };
 
         /// <summary>
@@ -227,6 +233,29 @@ namespace ModularFlightPanel.UI
         public const string SetTextIfChangedApi = "SetTextIfChanged";
         public const string SetImageFillIfChangedApi = "SetImageFillIfChanged";
         public const string EvaluateThresholdRoleApi = "EvaluateThresholdRole";
+
+        /// <summary>
+        /// 推荐的智能 UI 扩展套件 (SmartUIExtensions 零开销链式脏检查)
+        /// </summary>
+        public const string SmartUIExtensionsClass = "SmartUIExtensions";
+        public static readonly string[] SmartUIExtensionApis =
+        {
+            "SetTextSafe",
+            "SetColor",
+            "SetAlpha",
+            "SetFillAmountSafe",
+            "SetAnchoredPositionSafe",
+            "SetSizeDeltaSafe",
+            "SetLocalRotationSafe",
+            "SetLocalEulerAnglesSafe",
+            "SetLocalScaleSafe",
+            "SetActiveSafe"
+        };
+
+        /// <summary>
+        /// 禁止在具体组件帧循环内调用的集中式基础设施 API (应交由 FlightHUDManager.LateUpdateSync 集中调度)
+        /// </summary>
+        public const string BannedWidgetDockSyncApi = "DockAnchorTracker.SyncAll";
 
         // ==========================================================================================
         // 航电效能与反模式规则：高频生命周期方法与堆分配/裸 UGUI 逃逸

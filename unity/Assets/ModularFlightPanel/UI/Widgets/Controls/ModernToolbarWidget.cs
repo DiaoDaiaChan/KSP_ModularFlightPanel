@@ -103,7 +103,7 @@ namespace ModularFlightPanel.UI.Widgets
         private float _currentPanelWidth = 240f;
         private float _currentPanelHeight = 240f;
 
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.UltraLow;
 
         public void RefreshToolbarButtons()
         {
@@ -260,16 +260,13 @@ namespace ModularFlightPanel.UI.Widgets
             // 4. 滚动视口容器
             if (_dockContent == null)
             {
-                _dockContent = new GameObject("DockScrollView", typeof(RectTransform), typeof(ScrollRect));
-                _dockContent.transform.SetParent(_panelBg.transform, false);
-                _scrollRect = _dockContent.GetComponent<ScrollRect>();
+                _scrollRect = CreateChild<ScrollRect>("DockScrollView", _panelBg.transform);
+                _dockContent = _scrollRect.gameObject;
                 _scrollRect.movementType = ScrollRect.MovementType.Clamped;
                 _scrollRect.scrollSensitivity = 18f * s;
 
                 // Viewport with RectMask2D
-                GameObject viewportObj = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
-                viewportObj.transform.SetParent(_dockContent.transform, false);
-                RectTransform vpRt = viewportObj.GetComponent<RectTransform>();
+                RectTransform vpRt = CreateViewport("Viewport", _dockContent.transform);
                 vpRt.anchorMin = Vector2.zero;
                 vpRt.anchorMax = Vector2.one;
                 vpRt.offsetMin = Vector2.zero;
@@ -277,9 +274,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _scrollRect.viewport = vpRt;
 
                 // Content RectTransform
-                GameObject contentObj = new GameObject("Content", typeof(RectTransform));
-                contentObj.transform.SetParent(viewportObj.transform, false);
-                _contentRt = contentObj.GetComponent<RectTransform>();
+                _contentRt = CreateContainer("Content", vpRt);
                 _scrollRect.content = _contentRt;
             }
 
@@ -1194,7 +1189,7 @@ namespace ModularFlightPanel.UI.Widgets
             drawerRt.anchorMin = new Vector2(0.5f, 1f);
             drawerRt.anchorMax = new Vector2(0.5f, 1f);
             drawerRt.pivot = new Vector2(0.5f, 0.5f);
-            drawerRt.anchoredPosition = new Vector2(x, y);
+            drawerRt.SetAnchoredPositionSafe(new Vector2(x, y));
 
             Button drawerBtn = drawerBtnObj.AddComponent<Button>();
             drawerBtn.transition = Selectable.Transition.ColorTint;
@@ -1203,8 +1198,8 @@ namespace ModularFlightPanel.UI.Widgets
             Text drawerLbl = UIFactory.CreateText(drawerBtnObj.transform, "Label", text,
                 Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
             drawerLbl.raycastTarget = false;
-            drawerLbl.rectTransform.anchoredPosition = Vector2.zero;
-            drawerLbl.rectTransform.sizeDelta = new Vector2(w - 2f * s, h);
+            drawerLbl.rectTransform.SetAnchoredPositionSafe(Vector2.zero);
+            drawerLbl.rectTransform.SetSizeDeltaSafe(new Vector2(w - 2f * s, h));
 
             drawerBtn.onClick.AddListener(() =>
             {
@@ -1223,7 +1218,7 @@ namespace ModularFlightPanel.UI.Widgets
             drawerRt.anchorMin = new Vector2(0f, 0.5f);
             drawerRt.anchorMax = new Vector2(0f, 0.5f);
             drawerRt.pivot = new Vector2(0.5f, 0.5f);
-            drawerRt.anchoredPosition = new Vector2(x, y);
+            drawerRt.SetAnchoredPositionSafe(new Vector2(x, y));
 
             Button drawerBtn = drawerBtnObj.AddComponent<Button>();
             drawerBtn.transition = Selectable.Transition.ColorTint;
@@ -1232,8 +1227,8 @@ namespace ModularFlightPanel.UI.Widgets
             Text drawerLbl = UIFactory.CreateText(drawerBtnObj.transform, "Label", text,
                 Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.SecondaryValue));
             drawerLbl.raycastTarget = false;
-            drawerLbl.rectTransform.anchoredPosition = Vector2.zero;
-            drawerLbl.rectTransform.sizeDelta = new Vector2(w - 2f * s, h - 2f * s);
+            drawerLbl.rectTransform.SetAnchoredPositionSafe(Vector2.zero);
+            drawerLbl.rectTransform.SetSizeDeltaSafe(new Vector2(w - 2f * s, h - 2f * s));
 
             drawerBtn.onClick.AddListener(() =>
             {
@@ -1261,17 +1256,14 @@ namespace ModularFlightPanel.UI.Widgets
             itemRt.anchorMin = anchor;
             itemRt.anchorMax = anchor;
             itemRt.pivot = new Vector2(0.5f, 0.5f);
-            itemRt.anchoredPosition = new Vector2(x, y);
+            itemRt.SetAnchoredPositionSafe(new Vector2(x, y));
 
             Image bg = itemObj.GetComponent<Image>();
             bg.raycastTarget = true;
 
             // 1. 图标渲染层 (RawImage) - 完美保留所有模组原始 Icon 质感
-            RawImage rawImg = null;
-            GameObject iconObj = new GameObject("Icon", typeof(RectTransform), typeof(RawImage));
-            iconObj.transform.SetParent(itemObj.transform, false);
-            rawImg = iconObj.GetComponent<RawImage>();
-            rawImg.color = WidgetStyleManager.NeutralOpaque; // 直通原始图标贴图，不做任何着色
+            RawImage rawImg = CreateChild<RawImage>("Icon", itemObj.transform);
+            rawImg.SetColor(WidgetStyleManager.NeutralOpaque); // 直通原始图标贴图，不做任何着色
             rawImg.raycastTarget = false; // 绝不阻拦点击穿透至 itemObj
             RectTransform irt = rawImg.rectTransform;
             irt.anchorMin = new Vector2(0.5f, 0.5f);
@@ -1290,20 +1282,20 @@ namespace ModularFlightPanel.UI.Widgets
                 if (hasExplicitCustomLabel && !string.IsNullOrEmpty(label))
                 {
                     // 复合模式：上方显示 20x20 图标，下方显示自定义缩写/别名 (MFD 软键质感)
-                    irt.sizeDelta = new Vector2(20f * s, 20f * s);
-                    irt.anchoredPosition = new Vector2(0f, 4f * s);
+                    irt.SetSizeDeltaSafe(new Vector2(20f * s, 20f * s));
+                    irt.SetAnchoredPositionSafe(new Vector2(0f, 4f * s));
 
                     lbl.text = label;
                     lbl.fontSize = Mathf.RoundToInt(8f * s);
-                    lblRt.sizeDelta = new Vector2(w - 2f * s, 10f * s);
-                    lblRt.anchoredPosition = new Vector2(0f, -11f * s);
+                    lblRt.SetSizeDeltaSafe(new Vector2(w - 2f * s, 10f * s));
+                    lblRt.SetAnchoredPositionSafe(new Vector2(0f, -11f * s));
                     lbl.gameObject.SetActive(true);
                 }
                 else
                 {
                     // 纯图标模式：居中 28x28 图标
-                    irt.sizeDelta = new Vector2(w - 8f * s, h - 8f * s);
-                    irt.anchoredPosition = Vector2.zero;
+                    irt.SetSizeDeltaSafe(new Vector2(w - 8f * s, h - 8f * s));
+                    irt.SetAnchoredPositionSafe(Vector2.zero);
                     lbl.gameObject.SetActive(false);
                 }
             }
@@ -1313,8 +1305,8 @@ namespace ModularFlightPanel.UI.Widgets
                 rawImg.gameObject.SetActive(false);
                 lbl.text = label;
                 lbl.fontSize = Mathf.RoundToInt(9.5f * s);
-                lblRt.sizeDelta = new Vector2(w - 4f * s, h - 4f * s);
-                lblRt.anchoredPosition = Vector2.zero;
+                lblRt.SetSizeDeltaSafe(new Vector2(w - 4f * s, h - 4f * s));
+                lblRt.SetAnchoredPositionSafe(Vector2.zero);
                 lbl.gameObject.SetActive(true);
             }
 
@@ -1359,9 +1351,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_isCollapsed) return;
 
-            // 节流刷新 (3 Hz)，兼顾超低开销与模组热插拔瞬时捕获
+            // 节流刷新 (1 Hz 超低频)，兼顾极低开销与模组热插拔捕获
             float now = Time.unscaledTime;
-            if (now - _lastSyncTime < 0.33f) return;
+            if (now - _lastSyncTime < 1.0f) return;
             _lastSyncTime = now;
 
 #if KSP_RUNTIME
@@ -1398,8 +1390,8 @@ namespace ModularFlightPanel.UI.Widgets
                             if (view.IconRaw != null && view.IconRaw.texture != kspBtn.sprite.texture)
                             {
                                 view.IconRaw.texture = kspBtn.sprite.texture;
-                                view.IconRaw.gameObject.SetActive(true);
-                                if (view.LabelText != null) view.LabelText.gameObject.SetActive(false);
+                                view.IconRaw.SetActiveSafe(true);
+                                if (view.LabelText != null) view.LabelText.SetActiveSafe(false);
                             }
                         }
 
@@ -1407,12 +1399,13 @@ namespace ModularFlightPanel.UI.Widgets
                         if (view.ActiveLed != null)
                         {
                             bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
-                            view.IsActive = active;
-                            view.ActiveLed.color = active ? ledOn : ledOff;
+                            if (view.IsActive != active)
+                            {
+                                view.IsActive = active;
+                                view.ActiveLed.SetColor(active ? ledOn : ledOff);
+                            }
                         }
                     }
-
-                    DockAnchorTracker.SyncAll();
                 }
             }
             catch (Exception ex)

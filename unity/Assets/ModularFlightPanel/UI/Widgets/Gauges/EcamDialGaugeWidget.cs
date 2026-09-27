@@ -83,16 +83,49 @@ namespace ModularFlightPanel.UI.Widgets
             UIFactory.ApplyCockpitChrome(gameObject, _bgPanel != null ? _bgPanel.color : Color.clear, _bgOutline != null ? _bgOutline.effectColor : Color.clear, s);
 
             // 解析自定义通配符通道
-            ParseCustomTemplate(config);
+            if (config != null)
+            {
+                if (!string.IsNullOrEmpty(config.NumericToken)) _valueToken = config.NumericToken;
+                if (!string.IsNullOrEmpty(config.DisplayName))
+                {
+                    string name = config.DisplayName.Trim();
+                    if (name.StartsWith("ECAM ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        name = name.Substring(5).Trim();
+                    }
+                    string sfxMonitor = I18n.Tr("SUFFIX_DIAL_MONITOR", "监控表");
+                    string sfxG = I18n.Tr("SUFFIX_DIAL_G", "过载表");
+                    string sfxThrust = I18n.Tr("SUFFIX_DIAL_THRUST", "推力表");
+                    string sfxDial = I18n.Tr("SUFFIX_DIAL_CHAR", "表");
+
+                    if (name.EndsWith(sfxMonitor)) name = name.Substring(0, name.Length - sfxMonitor.Length).Trim();
+                    else if (name.EndsWith(sfxG)) name = name.Substring(0, name.Length - sfxG.Length).Trim();
+                    else if (name.EndsWith(sfxThrust)) name = name.Substring(0, name.Length - sfxThrust.Length).Trim();
+                    else if (name.EndsWith(sfxDial) && name.Length > 2) name = name.Substring(0, name.Length - sfxDial.Length).Trim();
+
+                    _titleTemplate = name;
+                }
+                if (!string.IsNullOrEmpty(config.UnitLabel)) _unitTemplate = config.UnitLabel;
+            }
+            _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN" }, _valueToken);
+            _titleTemplate = GetTemplateChannel(new[] { "TITLE", "LABEL", "TAG", "NAME" }, _titleTemplate);
+            _unitTemplate = GetTemplateChannel("UNIT", _unitTemplate);
+            float minVal = GetTemplateChannelFloat("MIN", float.NaN);
+            if (!float.IsNaN(minVal)) _overrideMin = minVal;
+            float maxVal = GetTemplateChannelFloat("MAX", float.NaN);
+            if (!float.IsNaN(maxVal)) _overrideMax = maxVal;
+            float cVal = GetTemplateChannelFloat("CAUTION", float.NaN);
+            if (!float.IsNaN(cVal)) _overrideCaution = cVal;
+            float wVal = GetTemplateChannelFloat(new[] { "WARN", "WARNING" }, float.NaN);
+            if (!float.IsNaN(wVal)) _overrideWarning = wVal;
+            string limitMode = GetTemplateChannel(new[] { "LIMIT", "LIMITMODE" }, null);
+            if (!string.IsNullOrEmpty(limitMode)) _overrideLimitMode = limitMode.ToLowerInvariant();
 
             // 2. 马蹄形弧线度量环 (RadialSegmentedMeter.shader)
-            _meterObj = new GameObject("ECAM_Arc_Meter", typeof(RectTransform), typeof(Image));
-            _meterObj.transform.SetParent(transform, false);
-            RectTransform meterRt = _meterObj.GetComponent<RectTransform>();
-            meterRt.sizeDelta = new Vector2(size * 0.92f, size * 0.92f);
-            meterRt.anchoredPosition = Vector2.zero;
+            _meterImage = CreateChild<Image>("ECAM_Arc_Meter", transform, new Vector2(size * 0.92f, size * 0.92f), Vector2.zero);
+            _meterObj = _meterImage.gameObject;
+            RectTransform meterRt = _meterImage.rectTransform;
 
-            _meterImage = _meterObj.GetComponent<Image>();
             if (AssetLoader.RadialMeterShader != null)
             {
                 _meterMaterial = new Material(AssetLoader.RadialMeterShader);
@@ -102,19 +135,12 @@ namespace ModularFlightPanel.UI.Widgets
             ConfigureMeterMaterial(theme);
 
             // 3. 动态指针 (Needle Pointer)
-            GameObject pivotObj = new GameObject("Needle_Pivot", typeof(RectTransform));
-            pivotObj.transform.SetParent(transform, false);
-            _needlePivot = pivotObj.GetComponent<RectTransform>();
-            _needlePivot.sizeDelta = Vector2.zero;
-            _needlePivot.anchoredPosition = Vector2.zero;
+            _needlePivot = CreateContainer("Needle_Pivot", transform, Vector2.zero, Vector2.zero);
 
-            GameObject needleObj = new GameObject("Needle_Bar", typeof(RectTransform), typeof(Image));
-            needleObj.transform.SetParent(_needlePivot, false);
-            RectTransform needleRt = needleObj.GetComponent<RectTransform>();
-            needleRt.sizeDelta = new Vector2(1.5f * s, 16f * s);
+            _needleImage = CreateChild<Image>("Needle_Bar", _needlePivot, new Vector2(1.5f * s, 16f * s), new Vector2(0f, (size * 0.46f) - (18f * s)));
+            GameObject needleObj = _needleImage.gameObject;
+            RectTransform needleRt = _needleImage.rectTransform;
             needleRt.pivot = new Vector2(0.5f, 0f);
-            needleRt.anchoredPosition = new Vector2(0f, (size * 0.46f) - (18f * s));
-            _needleImage = needleObj.GetComponent<Image>();
             _needleImage.color = WidgetStyleManager.Meter(MeterStyleRole.Secondary, theme);
 
             // 4. 标题、数显与单位 (ECAM 风格排版)
@@ -193,83 +219,6 @@ namespace ModularFlightPanel.UI.Widgets
             if (_limitModeText != null)
             {
                 ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "limit_badge", "爆表模式标识", _limitModeText.gameObject);
-            }
-        }
-
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (config != null)
-            {
-                if (!string.IsNullOrEmpty(config.NumericToken)) _valueToken = config.NumericToken;
-                if (!string.IsNullOrEmpty(config.DisplayName))
-                {
-                    string name = config.DisplayName.Trim();
-                    if (name.StartsWith("ECAM ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        name = name.Substring(5).Trim();
-                    }
-                    string sfxMonitor = I18n.Tr("SUFFIX_DIAL_MONITOR", "监控表");
-                    string sfxG = I18n.Tr("SUFFIX_DIAL_G", "过载表");
-                    string sfxThrust = I18n.Tr("SUFFIX_DIAL_THRUST", "推力表");
-                    string sfxDial = I18n.Tr("SUFFIX_DIAL_CHAR", "表");
-
-                    if (name.EndsWith(sfxMonitor)) name = name.Substring(0, name.Length - sfxMonitor.Length).Trim();
-                    else if (name.EndsWith(sfxG)) name = name.Substring(0, name.Length - sfxG.Length).Trim();
-                    else if (name.EndsWith(sfxThrust)) name = name.Substring(0, name.Length - sfxThrust.Length).Trim();
-                    else if (name.EndsWith(sfxDial) && name.Length > 2) name = name.Substring(0, name.Length - sfxDial.Length).Trim();
-
-                    _titleTemplate = name;
-                }
-                if (!string.IsNullOrEmpty(config.UnitLabel)) _unitTemplate = config.UnitLabel;
-            }
-
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "VAL":
-                    case "VALUE":
-                    case "TOKEN":
-                        _valueToken = v;
-                        break;
-                    case "TITLE":
-                    case "LABEL":
-                    case "TAG":
-                    case "NAME":
-                        _titleTemplate = v;
-                        break;
-                    case "UNIT":
-                        _unitTemplate = v;
-                        break;
-                    case "MIN":
-                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double minV))
-                            _overrideMin = minV;
-                        break;
-                    case "MAX":
-                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double maxV))
-                            _overrideMax = maxV;
-                        break;
-                    case "CAUTION":
-                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cVal))
-                            _overrideCaution = cVal;
-                        break;
-                    case "WARN":
-                    case "WARNING":
-                        if (double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double wVal))
-                            _overrideWarning = wVal;
-                        break;
-                    case "LIMIT":
-                    case "LIMITMODE":
-                        _overrideLimitMode = v.ToLowerInvariant();
-                        break;
-                }
             }
         }
 

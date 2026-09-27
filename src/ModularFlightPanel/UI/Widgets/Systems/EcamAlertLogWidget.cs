@@ -1182,6 +1182,8 @@ namespace ModularFlightPanel.UI.Widgets
             public Color Col;
         }
 
+        private readonly SysDiagEntry[] _cachedDiag = new SysDiagEntry[MAX_DISPLAY_ROWS];
+
         private void RenderSystemStatusPage(ThemeConfig theme, IFlightTelemetry telem, double effectivePe, double effectiveAp)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
@@ -1195,20 +1197,17 @@ namespace ModularFlightPanel.UI.Widgets
             if (_btnStsOutline != null) _btnStsOutline.effectColor = theme.AccentPrimary;
             if (_btnStsActiveBar != null) _btnStsActiveBar.color = theme.AccentPrimary;
 
-            SysDiagEntry[] diag = new SysDiagEntry[MAX_DISPLAY_ROWS]
-            {
-                new SysDiagEntry { Tag = "PROP", Title = I18n.Tr("ECAM_SYS_PROP", "动力推进系统 PROP"), Val = $"{telem.ActiveEngines} ENG", Aux = $"THR {Mathf.RoundToInt(telem.Throttle * 100f)}%", Col = theme.AccentPrimary },
-                new SysDiagEntry { Tag = "ELEC", Title = I18n.Tr("ECAM_SYS_ELEC", "机载电网能源 ELEC"), Val = $"{Mathf.RoundToInt((float)telem.EcPercent)}% EC", Aux = "BUS OK", Col = telem.EcPercent <= 20.0 ? theme.WarningColor : theme.AccentPositive },
-                new SysDiagEntry { Tag = "TRAJ", Title = I18n.Tr("ECAM_SYS_TRAJ", "轨道动力参数 TRAJ"), Val = $"Pe {FormatKm(effectivePe)}", Aux = $"Ap {FormatKm(effectiveAp)}", Col = theme.AccentPrimary },
-                new SysDiagEntry { Tag = "ATMO", Title = I18n.Tr("ECAM_SYS_ATMO", "飞行走廊环境 ATMO"), Val = $"M {telem.Mach:F1}", Aux = $"Q {telem.DynamicPressure:F1}k", Col = theme.AccentSecondary },
-                new SysDiagEntry { Tag = "GUID", Title = I18n.Tr("ECAM_SYS_GUID", "姿态惯导工况 GUID"), Val = $"{telem.GForce:F1}G", Aux = $"STG {telem.CurrentStage}", Col = theme.AccentPositive }
-            };
+            _cachedDiag[0] = new SysDiagEntry { Tag = "PROP", Title = I18n.Tr("ECAM_SYS_PROP", "动力推进系统 PROP"), Val = $"{telem.ActiveEngines} ENG", Aux = $"THR {Mathf.RoundToInt(telem.Throttle * 100f)}%", Col = theme.AccentPrimary };
+            _cachedDiag[1] = new SysDiagEntry { Tag = "ELEC", Title = I18n.Tr("ECAM_SYS_ELEC", "机载电网能源 ELEC"), Val = $"{Mathf.RoundToInt((float)telem.EcPercent)}% EC", Aux = "BUS OK", Col = telem.EcPercent <= 20.0 ? theme.WarningColor : theme.AccentPositive };
+            _cachedDiag[2] = new SysDiagEntry { Tag = "TRAJ", Title = I18n.Tr("ECAM_SYS_TRAJ", "轨道动力参数 TRAJ"), Val = $"Pe {FormatKm(effectivePe)}", Aux = $"Ap {FormatKm(effectiveAp)}", Col = theme.AccentPrimary };
+            _cachedDiag[3] = new SysDiagEntry { Tag = "ATMO", Title = I18n.Tr("ECAM_SYS_ATMO", "飞行走廊环境 ATMO"), Val = $"M {telem.Mach:F1}", Aux = $"Q {telem.DynamicPressure:F1}k", Col = theme.AccentSecondary };
+            _cachedDiag[4] = new SysDiagEntry { Tag = "GUID", Title = I18n.Tr("ECAM_SYS_GUID", "姿态惯导工况 GUID"), Val = $"{telem.GForce:F1}G", Aux = $"STG {telem.CurrentStage}", Col = theme.AccentPositive };
 
             for (int i = 0; i < MAX_DISPLAY_ROWS; i++)
             {
                 RowSlot slot = _rowSlots[i];
                 if (!slot.Root.activeSelf) slot.Root.SetActive(true);
-                SysDiagEntry d = diag[i];
+                SysDiagEntry d = _cachedDiag[i];
 
                 if (slot.LeftPipBar != null) slot.LeftPipBar.color = d.Col;
                 if (slot.BadgeBg != null) slot.BadgeBg.color = WidgetStyleManager.WithAlpha(d.Col, 0.16f);

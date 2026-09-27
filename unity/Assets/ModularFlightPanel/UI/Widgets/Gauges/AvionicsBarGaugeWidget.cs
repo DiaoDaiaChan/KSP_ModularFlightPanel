@@ -156,8 +156,13 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _titleTemplate = config.DisplayName;
             }
-
-            ParseCustomTemplate(config?.CustomTemplate);
+            _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN" }, _valueToken);
+            _titleTemplate = GetTemplateChannel(new[] { "TITLE", "LABEL", "NAME" }, _titleTemplate);
+            _bottomTagTemplate = GetTemplateChannel(new[] { "TAG", "BOTTOM", "BTM" }, _bottomTagTemplate);
+            _minVal = GetTemplateChannelFloat("MIN", (float)_minVal);
+            _maxVal = GetTemplateChannelFloat("MAX", (float)_maxVal);
+            _cautionVal = GetTemplateChannelFloat("CAUTION", (float)_cautionVal);
+            _warningVal = GetTemplateChannelFloat("WARNING", (float)_warningVal);
 
             RectTransform.sizeDelta = new Vector2(barWidth, barHeight);
 
@@ -228,26 +233,6 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
-        }
-
-        private void ParseCustomTemplate(string template)
-        {
-            if (string.IsNullOrEmpty(template)) return;
-            string[] pairs = template.Split(';');
-            foreach (string p in pairs)
-            {
-                string[] kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                if (k == "VAL" || k == "VALUE" || k == "TOKEN") _valueToken = v;
-                else if (k == "TITLE" || k == "LABEL" || k == "NAME") _titleTemplate = v;
-                else if (k == "TAG" || k == "BOTTOM" || k == "BTM") _bottomTagTemplate = v;
-                else if (k == "MIN") { if (double.TryParse(v, out double mn)) _minVal = mn; }
-                else if (k == "MAX") { if (double.TryParse(v, out double mx)) _maxVal = mx; }
-                else if (k == "CAUTION") { if (double.TryParse(v, out double c)) _cautionVal = c; }
-                else if (k == "WARNING") { if (double.TryParse(v, out double w)) _warningVal = w; }
-            }
         }
 
         /// <summary>
@@ -326,14 +311,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildTrack(float w, float h, float s, ThemeConfig theme)
         {
-            GameObject trackObj = new GameObject("Gauge_Track", typeof(RectTransform), typeof(Image));
-            trackObj.transform.SetParent(transform, false);
-
-            _trackRt = trackObj.GetComponent<RectTransform>();
-            _trackRt.sizeDelta = new Vector2(w, h);
-            _trackRt.anchoredPosition = Vector2.zero;
-
-            _trackBg = trackObj.GetComponent<Image>();
+            _trackBg = CreateChild<Image>("Gauge_Track", transform, new Vector2(w, h), Vector2.zero);
+            GameObject trackObj = _trackBg.gameObject;
+            _trackRt = _trackBg.rectTransform;
             _trackOutline = trackObj.AddComponent<Outline>();
             _trackOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
@@ -362,17 +342,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildFillBar(float w, float h, float s, ThemeConfig theme)
         {
-            GameObject fillObj = new GameObject("Gauge_FillBar", typeof(RectTransform), typeof(Image));
-            fillObj.transform.SetParent(_trackRt, false);
-
-            _fillBarRt = fillObj.GetComponent<RectTransform>();
+            _fillBarImage = CreateChild<Image>("Gauge_FillBar", _trackRt, new Vector2(-4f * s, 0f), new Vector2(0f, 2f * s));
+            GameObject fillObj = _fillBarImage.gameObject;
+            _fillBarRt = _fillBarImage.rectTransform;
             _fillBarRt.anchorMin = new Vector2(0f, 0f);
             _fillBarRt.anchorMax = new Vector2(1f, 0f);
             _fillBarRt.pivot = new Vector2(0.5f, 0f);
-            _fillBarRt.sizeDelta = new Vector2(-4f * s, 0f);
-            _fillBarRt.anchoredPosition = new Vector2(0f, 2f * s);
-
-            _fillBarImage = fillObj.GetComponent<Image>();
 
             if (_kind == BarGaugeKind.AtmosphericPressure || _kind == BarGaugeKind.Throttle)
             {
@@ -485,10 +460,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         private GameObject CreateNeedlePointer(Transform parent, string name, float s, bool pointingRight, Color col, out Image stemImg, out Image headImg)
         {
-            GameObject root = new GameObject(name, typeof(RectTransform));
-            root.transform.SetParent(parent, false);
-            RectTransform rt = root.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(13f * s, 8f * s);
+            RectTransform rt = CreateContainer(name, parent, new Vector2(13f * s, 8f * s));
+            GameObject root = rt.gameObject;
 
             float stemX = pointingRight ? (-2.5f * s) : (2.5f * s);
             float headX = pointingRight ? (2.5f * s) : (-2.5f * s);

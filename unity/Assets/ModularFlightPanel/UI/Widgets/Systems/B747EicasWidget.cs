@@ -119,6 +119,7 @@ namespace ModularFlightPanel.UI.Widgets
         private double[] _lastEprVals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
         private double[] _lastN1Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
         private double[] _lastEgtVals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
+        private static readonly float[] s_Variances = { -0.01f, 0.02f, -0.01f, 0.01f };
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -129,7 +130,21 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 cardSize = new Vector2(260f * s, 275f * s);
             RectTransform.sizeDelta = cardSize;
 
-            ParseCustomTemplate(config);
+            _tatTemplate = GetTemplateChannel("TAT", _tatTemplate);
+            _thrustModeTemplate = GetTemplateChannel("MODE", _thrustModeTemplate);
+            _eprToken = GetTemplateChannel("EPR", _eprToken);
+            _n1Token = GetTemplateChannel("N1", _n1Token);
+            _egtToken = GetTemplateChannel("EGT", _egtToken);
+            _cas1Template = GetTemplateChannel("CAS1", _cas1Template);
+            _cas2Template = GetTemplateChannel("CAS2", _cas2Template);
+            _gearToken = GetTemplateChannel("GEAR", _gearToken);
+            _ductTemplate = GetTemplateChannel("DUCT", _ductTemplate);
+            _cabTemplate = GetTemplateChannel("CAB", _cabTemplate);
+            _fuelTemplate = GetTemplateChannel("FUEL", _fuelTemplate);
+            _eprLabelText = GetTemplateChannel("EPR_LABEL", _eprLabelText);
+            _n1LabelText = GetTemplateChannel("N1_LABEL", _n1LabelText);
+            _egtLabelText = GetTemplateChannel("EGT_LABEL", _egtLabelText);
+            _gearLabelStr = GetTemplateChannel("GEAR_LABEL", _gearLabelStr);
 
             // 1. 底板与边框 (CRT 质感)
             _bgImage = CardBackground;
@@ -350,37 +365,6 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyTheme(theme);
         }
 
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "TAT": _tatTemplate = v; break;
-                    case "MODE": _thrustModeTemplate = v; break;
-                    case "EPR": _eprToken = v; break;
-                    case "N1": _n1Token = v; break;
-                    case "EGT": _egtToken = v; break;
-                    case "CAS1": _cas1Template = v; break;
-                    case "CAS2": _cas2Template = v; break;
-                    case "GEAR": _gearToken = v; break;
-                    case "DUCT": _ductTemplate = v; break;
-                    case "CAB": _cabTemplate = v; break;
-                    case "FUEL": _fuelTemplate = v; break;
-                    case "EPR_LABEL": _eprLabelText = v; break;
-                    case "N1_LABEL": _n1LabelText = v; break;
-                    case "EGT_LABEL": _egtLabelText = v; break;
-                    case "GEAR_LABEL": _gearLabelStr = v; break;
-                }
-            }
-        }
 
         private static void CreateReadoutBox(Transform parent, string name, Vector2 size, Vector2 anchoredPos,
             string defaultText, Color bgColor, Color borderColor, Color textColor, float s,
@@ -543,13 +527,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (double.IsNaN(baseN1)) baseN1 = 22.8 + telemetry.Throttle * 77.2;
             if (double.IsNaN(baseEgt)) baseEgt = 298.0 + telemetry.Throttle * 382.0;
 
-            float[] variances = new float[] { -0.01f, 0.02f, -0.01f, 0.01f };
-
             for (int i = 0; i < 4; i++)
             {
-                double curEpr = baseEpr + variances[i];
-                double curN1 = baseN1 + variances[i] * 5.0;
-                double curEgt = baseEgt + variances[i] * 15.0;
+                double curEpr = baseEpr + s_Variances[i];
+                double curN1 = baseN1 + s_Variances[i] * 5.0;
+                double curEgt = baseEgt + s_Variances[i] * 15.0;
 
                 // 脏检查对比
                 if (double.IsNaN(_lastEprVals[i]) || Math.Abs(curEpr - _lastEprVals[i]) > 0.005)

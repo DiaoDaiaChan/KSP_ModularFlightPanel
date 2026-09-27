@@ -94,8 +94,18 @@ namespace ModularFlightPanel.UI.Widgets
 
             _bgImage = CardBackground;
             _bgOutline = CardOutline;
-
-            ParseCustomTemplate(config);
+            if (config != null)
+            {
+                if (!string.IsNullOrEmpty(config.DisplayName)) _titleTemplate = config.DisplayName.ToUpperInvariant();
+                if (!string.IsNullOrEmpty(config.UnitLabel)) _unitTemplate = config.UnitLabel;
+            }
+            _titleTemplate = GetTemplateChannel("TITLE", _titleTemplate);
+            _deltaVToken = GetTemplateChannel(new[] { "DV", "DV_TOKEN" }, _deltaVToken);
+            _totalDvToken = GetTemplateChannel(new[] { "TOTAL_DV", "TOTAL_DV_TOKEN" }, _totalDvToken);
+            _tNodeToken = GetTemplateChannel(new[] { "TNODE", "TNODE_TOKEN" }, _tNodeToken);
+            _burnTimeToken = GetTemplateChannel(new[] { "BURN", "BURN_TOKEN" }, _burnTimeToken);
+            _warpTextTemplate = GetTemplateChannel("WARP_LABEL", _warpTextTemplate);
+            _delTextTemplate = GetTemplateChannel("DEL_LABEL", _delTextTemplate);
 
             // 2. 顶部 Header (标题 + 状态徽标已由微控件挂载)
             if (HeaderTitle != null && HeaderTitle.TextComponent != null)
@@ -253,40 +263,6 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
-        }
-
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (config != null)
-            {
-                if (!string.IsNullOrEmpty(config.DisplayName)) _titleTemplate = config.DisplayName.ToUpperInvariant();
-                if (!string.IsNullOrEmpty(config.UnitLabel)) _unitTemplate = config.UnitLabel;
-            }
-
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "TITLE": _titleTemplate = v; break;
-                    case "DV":
-                    case "DV_TOKEN": _deltaVToken = v; break;
-                    case "TOTAL_DV":
-                    case "TOTAL_DV_TOKEN": _totalDvToken = v; break;
-                    case "TNODE":
-                    case "TNODE_TOKEN": _tNodeToken = v; break;
-                    case "BURN":
-                    case "BURN_TOKEN": _burnTimeToken = v; break;
-                    case "WARP_LABEL": _warpTextTemplate = v; break;
-                    case "DEL_LABEL": _delTextTemplate = v; break;
-                }
-            }
         }
 
         public override void ApplyTheme(ThemeConfig theme)

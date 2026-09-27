@@ -125,41 +125,17 @@ namespace ModularFlightPanel.UI.Widgets
         public static float CustomAnimationTime = -1f;
         public static float CustomAnimationDeltaTime = -1f;
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _titleTemplate = "ROCKET 2D";
-            _subTitleTemplate = "STAGING";
-            _stageDvToken = "{STAGE:DV}";
-            _totalDvToken = "{DV:TOTAL}";
-            _twrToken = "{TWR}";
-
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "TITLE": _titleTemplate = v; break;
-                    case "SUBTITLE": _subTitleTemplate = v; break;
-                    case "STAGE_DV": case "DV_TOKEN": _stageDvToken = v; break;
-                    case "TOTAL_DV": case "TOTAL_DV_TOKEN": _totalDvToken = v; break;
-                    case "TWR": case "TWR_TOKEN": _twrToken = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            _titleTemplate = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_ROCKET_TITLE", "ROCKET 2D"));
+            _subTitleTemplate = GetTemplateChannel("SUBTITLE", I18n.Tr("WIDGET_SIG_CTRL_STAGING", "STAGING"));
+            _stageDvToken = GetTemplateChannel(new[] { "STAGE_DV", "DV_TOKEN" }, "{STAGE:DV}");
+            _totalDvToken = GetTemplateChannel(new[] { "TOTAL_DV", "TOTAL_DV_TOKEN" }, "{DV:TOTAL}");
+            _twrToken = GetTemplateChannel(new[] { "TWR", "TWR_TOKEN" }, "{TWR}");
 
             Vector2 panelSize = BaseSize * s;
             _bgImage = CardBackground;
@@ -223,12 +199,8 @@ namespace ModularFlightPanel.UI.Widgets
             dvRt.anchoredPosition = new Vector2(halfW - 8f * s, topY);
 
             // 分割微线
-            GameObject divGo = new GameObject("Header_Divider", typeof(RectTransform), typeof(Image));
-            divGo.transform.SetParent(parent, false);
-            RectTransform divRt = divGo.GetComponent<RectTransform>();
-            divRt.sizeDelta = new Vector2(panelSize.x - 16f * s, 1f * s);
-            divRt.anchoredPosition = new Vector2(0f, panelSize.y * 0.5f - 24f * s);
-            _headerDivider = divGo.GetComponent<Image>();
+            _headerDivider = CreateChild<Image>("Header_Divider", parent,
+                new Vector2(panelSize.x - 16f * s, 1f * s), new Vector2(0f, panelSize.y * 0.5f - 24f * s));
             _headerDivider.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
             _headerDivider.raycastTarget = false;
         }
@@ -271,14 +243,8 @@ namespace ModularFlightPanel.UI.Widgets
             titleRt.sizeDelta = new Vector2(bayW - 4f * s, 11f * s);
 
             // 2D 飞船剪影图元 (RawImage)
-            GameObject rawObj = new GameObject("VesselSilhouette_RawImage", typeof(RectTransform), typeof(RawImage));
-            rawObj.transform.SetParent(_silhouetteBayObj.transform, false);
-
-            RectTransform rawRt = rawObj.GetComponent<RectTransform>();
-            rawRt.anchoredPosition = new Vector2(0f, -2f * s);
-            rawRt.sizeDelta = new Vector2(50f * s, 108f * s);
-
-            _silhouetteRawImage = rawObj.GetComponent<RawImage>();
+            _silhouetteRawImage = CreateChild<RawImage>("VesselSilhouette_RawImage", _silhouetteBayObj.transform,
+                new Vector2(50f * s, 108f * s), new Vector2(0f, -2f * s));
             _silhouetteRawImage.raycastTarget = false;
             _silhouetteRawImage.color = theme.AccentSecondary;
 
@@ -339,24 +305,17 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 float rowY = startY - i * (rowHeight + rowSpacing);
 
-                GameObject rowObj = new GameObject($"StageRow_{i}", typeof(RectTransform));
-                rowObj.transform.SetParent(parent, false);
-
-                RectTransform rowRt = rowObj.GetComponent<RectTransform>();
-                rowRt.anchorMin = new Vector2(0.5f, 0.5f);
-                rowRt.anchorMax = new Vector2(0.5f, 0.5f);
+                RectTransform rowRt = CreateContainer($"StageRow_{i}", parent,
+                    new Vector2(stackWidth, rowHeight), new Vector2(stackStartX, rowY));
                 rowRt.pivot = new Vector2(0f, 0.5f);
-                rowRt.sizeDelta = new Vector2(stackWidth, rowHeight);
-                rowRt.anchoredPosition = new Vector2(stackStartX, rowY);
+                GameObject rowObj = rowRt.gameObject;
 
                 // 全行背景高亮 (用于活跃级呼吸)
-                GameObject rowBgGo = new GameObject("HighlightBg", typeof(RectTransform), typeof(Image));
-                rowBgGo.transform.SetParent(rowObj.transform, false);
-                RectTransform rowBgRt = rowBgGo.GetComponent<RectTransform>();
+                Image rowBgImg = CreateChild<Image>("HighlightBg", rowObj.transform);
+                RectTransform rowBgRt = rowBgImg.rectTransform;
                 rowBgRt.anchorMin = Vector2.zero;
                 rowBgRt.anchorMax = Vector2.one;
                 rowBgRt.sizeDelta = Vector2.zero;
-                Image rowBgImg = rowBgGo.GetComponent<Image>();
                 rowBgImg.color = Color.clear;
                 rowBgImg.raycastTarget = false;
 
@@ -424,15 +383,13 @@ namespace ModularFlightPanel.UI.Widgets
                 trackRt.anchoredPosition = new Vector2(33f * s, -5.5f * s);
                 Image trackBg = trackObj.GetComponent<Image>();
 
-                GameObject fillObj = new GameObject("FuelFill", typeof(RectTransform), typeof(Image));
-                fillObj.transform.SetParent(trackObj.transform, false);
-                RectTransform fillRt = fillObj.GetComponent<RectTransform>();
+                Image fillImg = CreateChild<Image>("FuelFill", trackObj.transform,
+                    new Vector2(trackW, trackH - 1f * s), new Vector2(0.5f * s, 0f));
+                GameObject fillObj = fillImg.gameObject;
+                RectTransform fillRt = fillImg.rectTransform;
                 fillRt.anchorMin = new Vector2(0f, 0.5f);
                 fillRt.anchorMax = new Vector2(0f, 0.5f);
                 fillRt.pivot = new Vector2(0f, 0.5f);
-                fillRt.sizeDelta = new Vector2(trackW, trackH - 1f * s);
-                fillRt.anchoredPosition = new Vector2(0.5f * s, 0f);
-                Image fillImg = fillObj.GetComponent<Image>();
                 fillImg.color = theme.AccentPrimary;
 
                 Text pctText = UIFactory.CreateText(rowObj.transform, "PctText", "100%", Mathf.RoundToInt(6.5f * s),
@@ -562,10 +519,6 @@ namespace ModularFlightPanel.UI.Widgets
                 Texture tex = VesselSilhouetteService.Provider?.SilhouetteTexture;
                 if (tex == null)
                 {
-                    if (_fallbackSilhouetteTexture == null)
-                    {
-                        _fallbackSilhouetteTexture = CreateProceduralRocketSilhouetteTexture();
-                    }
                     tex = _fallbackSilhouetteTexture;
                 }
                 _silhouetteRawImage.texture = tex;

@@ -118,6 +118,7 @@ namespace ModularFlightPanel.UI.Widgets
         private double[] _lastN2Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
         private double[] _lastN3Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
         private double[] _lastFfVals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
+        private static readonly float[] s_Variances = { -0.1f, 0.2f, -0.05f, 0.1f };
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -128,7 +129,20 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 cardSize = new Vector2(260f * s, 275f * s);
             RectTransform.sizeDelta = cardSize;
 
-            ParseCustomTemplate(config);
+            _n2Token = GetTemplateChannel("N2", _n2Token);
+            _n3Token = GetTemplateChannel("N3", _n3Token);
+            _ffToken = GetTemplateChannel("FF", _ffToken);
+            _oilPToken = GetTemplateChannel("OIL_P", _oilPToken);
+            _oilTToken = GetTemplateChannel("OIL_T", _oilTToken);
+            _oilQToken = GetTemplateChannel("OIL_Q", _oilQToken);
+            _vibToken = GetTemplateChannel("VIB", _vibToken);
+            _n2LabelText = GetTemplateChannel("N2_LABEL", _n2LabelText);
+            _n3LabelText = GetTemplateChannel("N3_LABEL", _n3LabelText);
+            _ffLabelText = GetTemplateChannel("FF_LABEL", _ffLabelText);
+            _oilPLabelText = GetTemplateChannel("OIL_P_LABEL", _oilPLabelText);
+            _oilTLabelText = GetTemplateChannel("OIL_T_LABEL", _oilTLabelText);
+            _oilQLabelText = GetTemplateChannel("OIL_Q_LABEL", _oilQLabelText);
+            _vibLabelText = GetTemplateChannel("VIB_LABEL", _vibLabelText);
 
             // 1. 底板与边框 (CRT 质感)
             _bgImage = CardBackground;
@@ -277,36 +291,6 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyTheme(theme);
         }
 
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "N2": _n2Token = v; break;
-                    case "N3": _n3Token = v; break;
-                    case "FF": _ffToken = v; break;
-                    case "OIL_P": _oilPToken = v; break;
-                    case "OIL_T": _oilTToken = v; break;
-                    case "OIL_Q": _oilQToken = v; break;
-                    case "VIB": _vibToken = v; break;
-                    case "N2_LABEL": _n2LabelText = v; break;
-                    case "N3_LABEL": _n3LabelText = v; break;
-                    case "FF_LABEL": _ffLabelText = v; break;
-                    case "OIL_P_LABEL": _oilPLabelText = v; break;
-                    case "OIL_T_LABEL": _oilTLabelText = v; break;
-                    case "OIL_Q_LABEL": _oilQLabelText = v; break;
-                    case "VIB_LABEL": _vibLabelText = v; break;
-                }
-            }
-        }
 
         private static void CreateReadoutBox(Transform parent, string name, Vector2 size, Vector2 anchoredPos,
             string defaultText, Color bgColor, Color borderColor, Color textColor, float s,
@@ -490,8 +474,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             for (int p = 0; p < 2; p++)
             {
-                GameObject root = new GameObject($"Vib_Bracket_{p + 1}", typeof(RectTransform));
-                root.transform.SetParent(parent, false);
+                GameObject root = UIFactory.CreatePanel(parent, $"Vib_Bracket_{p + 1}", new Vector2(bracketSpan, railHalfH * 2f), new Vector2(pairCenters[p], topY - railHalfH), Color.clear);
                 RectTransform rrt = root.GetComponent<RectTransform>();
                 rrt.anchorMin = new Vector2(0.5f, 1f);
                 rrt.anchorMax = new Vector2(0.5f, 1f);
@@ -616,13 +599,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (double.IsNaN(baseOilQ)) baseOilQ = 12.0;
             if (double.IsNaN(baseVib)) baseVib = 0.4 + telemetry.Throttle * 0.4;
 
-            float[] variances = new float[] { -0.1f, 0.2f, -0.05f, 0.1f };
-
             for (int i = 0; i < 4; i++)
             {
-                double n2Val = baseN2 + variances[i] * 0.8;
-                double n3Val = baseN3 + variances[i] * 0.5;
-                double ffVal = baseFf + variances[i] * 0.1;
+                double n2Val = baseN2 + s_Variances[i] * 0.8;
+                double n3Val = baseN3 + s_Variances[i] * 0.5;
+                double ffVal = baseFf + s_Variances[i] * 0.1;
                 double oilPVal = baseOilP;
                 double oilTVal = baseOilT;
                 double oilQVal = baseOilQ;

@@ -161,11 +161,9 @@ namespace ModularFlightPanel.UI.Widgets
             // ═════════════════════════════════════════════════════════════════
             // 2. 精简模式容器 (Compact Mode: 双嵌合卡槽 + 底部角度通栏)
             // ═════════════════════════════════════════════════════════════════
-            _compactRoot = new GameObject("Compact_Root", typeof(RectTransform));
-            _compactRoot.transform.SetParent(transform, false);
-            RectTransform cRt = _compactRoot.GetComponent<RectTransform>();
+            RectTransform cRt = CreateContainer("Compact_Root", transform, Vector2.zero, Vector2.zero);
+            _compactRoot = cRt.gameObject;
             cRt.anchorMin = Vector2.zero; cRt.anchorMax = Vector2.one;
-            cRt.sizeDelta = Vector2.zero; cRt.anchoredPosition = Vector2.zero;
 
             Color slotBg = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
             Color slotBorder = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost, theme);
@@ -221,11 +219,9 @@ namespace ModularFlightPanel.UI.Widgets
             // ═════════════════════════════════════════════════════════════════
             // 3. 完整模式容器 (Full Mode: 全息 3D 轨道球 + 四角悬浮卡槽)
             // ═════════════════════════════════════════════════════════════════
-            _fullRoot = new GameObject("Full_Root", typeof(RectTransform));
-            _fullRoot.transform.SetParent(transform, false);
-            RectTransform fRt = _fullRoot.GetComponent<RectTransform>();
+            RectTransform fRt = CreateContainer("Full_Root", transform, Vector2.zero, Vector2.zero);
+            _fullRoot = fRt.gameObject;
             fRt.anchorMin = Vector2.zero; fRt.anchorMax = Vector2.one;
-            fRt.sizeDelta = Vector2.zero; fRt.anchoredPosition = Vector2.zero;
             _fullRoot.SetActive(false);
 
             // 中央全息球视口 (UGUI 矢量网格渲染，大幅拓宽中央视口占比)
@@ -235,13 +231,11 @@ namespace ModularFlightPanel.UI.Widgets
                 new Vector2(globeBoxW, globeBoxH), new Vector2(0f, -10f * s),
                 WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme), slotBorder, s);
 
-            _globeRoot = new GameObject("Globe_Graphic", typeof(RectTransform), typeof(OrbitalDiagramGraphic));
-            _globeRoot.transform.SetParent(globeBox.transform, false);
-            RectTransform gRt = _globeRoot.GetComponent<RectTransform>();
-            gRt.sizeDelta = new Vector2(globeBoxW - 4f * s, globeBoxH - 4f * s);
-            gRt.anchoredPosition = Vector2.zero;
+            _diagramGraphic = CreateChild<OrbitalDiagramGraphic>("Globe_Graphic", globeBox.transform,
+                new Vector2(globeBoxW - 4f * s, globeBoxH - 4f * s), Vector2.zero);
+            _globeRoot = _diagramGraphic.gameObject;
+            RectTransform gRt = _diagramGraphic.rectTransform;
 
-            _diagramGraphic = _globeRoot.GetComponent<OrbitalDiagramGraphic>();
             _diagramGraphic.Widget = this;
             _diagramGraphic.raycastTarget = false;
 
@@ -668,11 +662,11 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
-            SetTextIfChanged(_apVal, FormatDistanceMetric(ap));
-            SetTextIfChanged(_peVal, pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatDistanceMetric(pe));
-            SetTextIfChanged(_tApPeReadout, $"T-AP {FormatTimeCompact(tAp)}  PE {FormatTimeCompact(tPe)}");
+            SetTextIfChanged(_apVal, FormatMetricDistance(ap));
+            SetTextIfChanged(_peVal, pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe));
+            SetTextIfChanged(_tApPeReadout, $"T-AP {FormatDurationCompact(tAp)}  PE {FormatDurationCompact(tPe)}");
 
-            SetTextIfChanged(_smaVal, FormatDistanceMetric(sma));
+            SetTextIfChanged(_smaVal, FormatMetricDistance(sma));
             SetTextIfChanged(_eccVal, ecc.ToString("F4"));
             SetTextIfChanged(_incVal, $"{inc:F1}°");
             if (_incDirVal != null)
@@ -690,11 +684,11 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateFullModeReadouts(double ap, double pe, double tAp,
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
-            SetTextIfChanged(_fApVal, $"AP {FormatDistanceMetric(ap)}");
-            SetTextIfChanged(_fPeVal, $"PE {FormatDistanceMetric(pe)}");
-            SetTextIfChanged(_fTimeVal, $"T-AP {FormatTimeCompact(tAp)}");
+            SetTextIfChanged(_fApVal, $"AP {FormatMetricDistance(ap)}");
+            SetTextIfChanged(_fPeVal, $"PE {FormatMetricDistance(pe)}");
+            SetTextIfChanged(_fTimeVal, $"T-AP {FormatDurationCompact(tAp)}");
 
-            SetTextIfChanged(_fSmaVal, $"a {FormatDistanceMetric(sma)}");
+            SetTextIfChanged(_fSmaVal, $"a {FormatMetricDistance(sma)}");
             SetTextIfChanged(_fEccVal, $"e {ecc:F4}");
             SetTextIfChanged(_fPeriodVal, $"P {FormatPeriodCompact(period)}");
 
@@ -1529,30 +1523,6 @@ namespace ModularFlightPanel.UI.Widgets
             if (double.IsNaN(degrees) || double.IsInfinity(degrees)) return 0.0;
             double m = degrees % 360.0;
             return m < 0.0 ? m + 360.0 : m;
-        }
-
-        private static string FormatDistanceMetric(double meters)
-        {
-            if (double.IsNaN(meters) || double.IsInfinity(meters)) return "---";
-            if (Math.Abs(meters) >= 1000000000.0) return (meters * 1e-9).ToString("F2") + "Gm";
-            if (Math.Abs(meters) >= 1000000.0) return (meters * 1e-6).ToString("F1") + "Mm";
-            if (Math.Abs(meters) >= 1000.0) return (meters * 1e-3).ToString("F1") + "km";
-            return meters.ToString("F0") + "m";
-        }
-
-        private static string FormatTimeCompact(double seconds)
-        {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0) return "--:--";
-            if (seconds > 86400.0) return $"{seconds / 86400.0:F0}d";
-            int sec = (int)seconds;
-            int m = (sec % 3600) / 60;
-            int s = sec % 60;
-            if (sec >= 3600)
-            {
-                int h = sec / 3600;
-                return $"{h:D2}:{m:D2}";
-            }
-            return $"{m:D2}:{s:D2}";
         }
 
         private static string FormatPeriodCompact(double seconds)

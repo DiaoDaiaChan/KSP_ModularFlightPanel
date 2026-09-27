@@ -150,6 +150,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         private const int MAX_ENGINES = 4;
         private EngineColumnUI[] _engineCols = new EngineColumnUI[MAX_ENGINES];
+        private readonly float[] _xCoords = new float[MAX_ENGINES];
+        private static readonly float[] s_Variances = { -0.15f, 0.15f, -0.05f, 0.05f };
         private int _currentEngineCount = 2; // 默认 787 双发
         private int _configuredEngineCount = -1; // -1: 自动感知, >0: 强制指定
 
@@ -260,13 +262,41 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastSatStr = string.Empty;
         private string _lastFuelTempStr = string.Empty;
 
+        private static readonly string[] EngAliases = new[] { "ENGINES", "ENG" };
+        private static readonly string[] OilPAliases = new[] { "OILP", "OIL_P" };
+        private static readonly string[] OilTAliases = new[] { "OILT", "OIL_T" };
+        private static readonly string[] OilQAliases = new[] { "OILQ", "OIL_Q" };
+        private static readonly string[] FlapAliases = new[] { "FLAP", "FLAPS" };
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            ParseCustomTemplate(config);
+            string engVal = GetTemplateChannel(EngAliases, null);
+            if (!string.IsNullOrEmpty(engVal))
+            {
+                if (engVal.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
+                    _configuredEngineCount = 0;
+                else if (int.TryParse(engVal, out int engs))
+                    _configuredEngineCount = Mathf.Clamp(engs, 1, MAX_ENGINES);
+            }
+
+            _tatTemplate = GetTemplateChannel("TAT", _tatTemplate);
+            _thrustModeTemplate = GetTemplateChannel("MODE", _thrustModeTemplate);
+            _n1Token = GetTemplateChannel("N1", _n1Token);
+            _n2Token = GetTemplateChannel("N2", _n2Token);
+            _egtToken = GetTemplateChannel("EGT", _egtToken);
+            _ffToken = GetTemplateChannel("FF", _ffToken);
+            _oilPToken = GetTemplateChannel(OilPAliases, _oilPToken);
+            _oilTToken = GetTemplateChannel(OilTAliases, _oilTToken);
+            _oilQToken = GetTemplateChannel(OilQAliases, _oilQToken);
+            _vibToken = GetTemplateChannel("VIB", _vibToken);
+            _gearToken = GetTemplateChannel("GEAR", _gearToken);
+            _flapToken = GetTemplateChannel(FlapAliases, _flapToken);
+            _stabToken = GetTemplateChannel("STAB", _stabToken);
+            _rudderToken = GetTemplateChannel("RUDDER", _rudderToken);
 
             // 1. 卡片底衬 (由基类 AutoCreateCardFrame 托管)
             _bgImage = CardBackground;
@@ -317,9 +347,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 6. 右侧独立系统挂载容器 (支持长宽比动态自适应平滑平移)
-            GameObject rightRootGo = new GameObject("Right_Systems_Root", typeof(RectTransform));
-            rightRootGo.transform.SetParent(transform, false);
-            _rightSystemsRt = rightRootGo.GetComponent<RectTransform>();
+            _rightSystemsRt = CreateContainer("Right_Systems_Root", transform);
             SetTopCenterAnchor(_rightSystemsRt, 90f * s, 0f, 0f, 0f);
 
             // ── 起落架指示器 (GEAR) ──
@@ -354,13 +382,11 @@ namespace ModularFlightPanel.UI.Widgets
             _flapsTrackImage = flapsTrackObj.GetComponent<Image>();
             SetTopCenterAnchor(flapsTrackObj.GetComponent<RectTransform>(), flapsTrackX, flapsY, 2f * s, flapsH);
 
-            GameObject flapPointerGo = new GameObject("Flap_Pointer", typeof(RectTransform));
-            flapPointerGo.transform.SetParent(flapsTrackObj.transform, false);
-            _flapPointerPivot = flapPointerGo.GetComponent<RectTransform>();
+            _flapPointerPivot = CreateContainer("Flap_Pointer", flapsTrackObj.transform,
+                Vector2.zero, new Vector2(0f, -8f * s));
             _flapPointerPivot.anchorMin = new Vector2(0.5f, 1f);
             _flapPointerPivot.anchorMax = new Vector2(0.5f, 1f);
             _flapPointerPivot.pivot = new Vector2(0.5f, 0.5f);
-            _flapPointerPivot.anchoredPosition = new Vector2(0f, -8f * s);
 
             GameObject flapTickObj = UIFactory.CreatePanel(_flapPointerPivot, "Tick", new Vector2(9f * s, 2f * s),
                 Vector2.zero, textAccent);
@@ -553,10 +579,9 @@ namespace ModularFlightPanel.UI.Widgets
             EngineColumnUI col = new EngineColumnUI();
             col.EngineIndex = index;
 
-            GameObject colGo = new GameObject($"Engine_Col_{index + 1}", typeof(RectTransform));
-            colGo.transform.SetParent(transform, false);
-            col.Root = colGo;
-            col.RootRt = colGo.GetComponent<RectTransform>();
+            col.RootRt = CreateContainer($"Engine_Col_{index + 1}", transform);
+            col.Root = col.RootRt.gameObject;
+            GameObject colGo = col.Root;
             SetTopCenterAnchor(col.RootRt, 0f, 0f, 0f, 0f);
 
             // 1. REV & Target
@@ -645,17 +670,16 @@ namespace ModularFlightPanel.UI.Widgets
         /// 波音 787 经典马蹄弧圆环指示器生成算法 (Horseshoe Cradle Generator)
         /// 彻底消除对特殊着色器的运行环境依赖，纯相对局部坐标系生成像素级锐利的弧面几何
         /// </summary>
-        private static void CreateHorseshoeDial(Transform parent, string name, float cx, float cy, float radius,
+        private void CreateHorseshoeDial(Transform parent, string name, float cx, float cy, float radius,
             string initialVal, Color boxBg, Color boxBorder, Color valColor, Color arcLineColor,
             Color bugColor, Color warnColor, Color limitColor, float s,
             bool hasBug, bool hasInnerArc, bool hasBottomTick, out DialGaugeUI dial)
         {
             dial = new DialGaugeUI();
 
-            GameObject dialRoot = new GameObject(name, typeof(RectTransform));
-            dialRoot.transform.SetParent(parent, false);
-            dial.Root = dialRoot;
-            RectTransform rootRt = dialRoot.GetComponent<RectTransform>();
+            RectTransform rootRt = CreateContainer(name, parent);
+            dial.Root = rootRt.gameObject;
+            GameObject dialRoot = dial.Root;
             SetTopCenterAnchor(rootRt, cx, cy, 0f, 0f);
 
             // 1. 顶端矩形读数框 (相对 dialRoot 中心)
@@ -786,9 +810,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 9. 顺时针动态指示针 (Needle Pointer)
-            GameObject pivotGo = new GameObject($"{name}_Pivot", typeof(RectTransform));
-            pivotGo.transform.SetParent(dialRoot.transform, false);
-            dial.NeedlePivot = pivotGo.GetComponent<RectTransform>();
+            dial.NeedlePivot = CreateContainer($"{name}_Pivot", dialRoot.transform);
             SetTopCenterAnchor(dial.NeedlePivot, 0f, 0f, 0f, 0f);
 
             GameObject needleGo = UIFactory.CreatePanel(dial.NeedlePivot, "Needle",
@@ -810,34 +832,39 @@ namespace ModularFlightPanel.UI.Widgets
             // 动态长宽比与总宽度解算
             float cardW;
             float rightCenterX;
-            float[] xCoords;
             float scaleFactor;
 
             if (_currentEngineCount == 1)
             {
                 cardW = 280f * s;
-                xCoords = new float[] { -70f * s };
+                _xCoords[0] = -70f * s;
                 rightCenterX = 70f * s;
                 scaleFactor = 1.05f;
             }
             else if (_currentEngineCount == 2)
             {
                 cardW = 350f * s;
-                xCoords = new float[] { -115f * s, -35f * s };
+                _xCoords[0] = -115f * s;
+                _xCoords[1] = -35f * s;
                 rightCenterX = 90f * s;
                 scaleFactor = 1.0f;
             }
             else if (_currentEngineCount == 3)
             {
                 cardW = 420f * s;
-                xCoords = new float[] { -150f * s, -95f * s, -40f * s };
+                _xCoords[0] = -150f * s;
+                _xCoords[1] = -95f * s;
+                _xCoords[2] = -40f * s;
                 rightCenterX = 115f * s;
                 scaleFactor = 0.95f;
             }
             else
             {
                 cardW = 490f * s;
-                xCoords = new float[] { -185f * s, -135f * s, -85f * s, -35f * s };
+                _xCoords[0] = -185f * s;
+                _xCoords[1] = -135f * s;
+                _xCoords[2] = -85f * s;
+                _xCoords[3] = -35f * s;
                 rightCenterX = 135f * s;
                 scaleFactor = 0.90f;
             }
@@ -864,7 +891,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (i < _currentEngineCount)
                 {
                     _engineCols[i].Root.SetActive(true);
-                    SetTopCenterAnchor(_engineCols[i].RootRt, xCoords[i], 0f, 0f, 0f);
+                    SetTopCenterAnchor(_engineCols[i].RootRt, _xCoords[i], 0f, 0f, 0f);
                     _engineCols[i].RootRt.localScale = new Vector3(scaleFactor, scaleFactor, 1f);
                 }
                 else
@@ -983,47 +1010,6 @@ namespace ModularFlightPanel.UI.Widgets
             rt.sizeDelta = new Vector2(w, h);
         }
 
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (config == null || string.IsNullOrEmpty(config.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "ENGINES":
-                    case "ENG":
-                        if (v.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
-                            _configuredEngineCount = 0;
-                        else if (int.TryParse(v, out int engs))
-                            _configuredEngineCount = Mathf.Clamp(engs, 1, MAX_ENGINES);
-                        break;
-                    case "TAT": _tatTemplate = v; break;
-                    case "MODE": _thrustModeTemplate = v; break;
-                    case "N1": _n1Token = v; break;
-                    case "N2": _n2Token = v; break;
-                    case "EGT": _egtToken = v; break;
-                    case "FF": _ffToken = v; break;
-                    case "OILP":
-                    case "OIL_P": _oilPToken = v; break;
-                    case "OILT":
-                    case "OIL_T": _oilTToken = v; break;
-                    case "OILQ":
-                    case "OIL_Q": _oilQToken = v; break;
-                    case "VIB": _vibToken = v; break;
-                    case "GEAR": _gearToken = v; break;
-                    case "FLAP":
-                    case "FLAPS": _flapToken = v; break;
-                    case "STAB": _stabToken = v; break;
-                    case "RUDDER": _rudderToken = v; break;
-                }
-            }
-        }
 
         public override void ApplyTheme(ThemeConfig theme)
         {
@@ -1257,7 +1243,6 @@ namespace ModularFlightPanel.UI.Widgets
                 baseVib = 0.2 + telemetry.Throttle * 0.4 + gShock;
             }
 
-            float[] variances = new float[] { -0.15f, 0.15f, -0.05f, 0.05f };
             float tapeHalfH = 9f * s;
 
             for (int i = 0; i < _currentEngineCount; i++)
@@ -1265,7 +1250,7 @@ namespace ModularFlightPanel.UI.Widgets
                 EngineColumnUI col = _engineCols[i];
                 if (col == null) continue;
 
-                float vFactor = variances[i % variances.Length];
+                float vFactor = s_Variances[i % s_Variances.Length];
                 double curN1 = Math.Max(0.0, baseN1 + vFactor * 0.8);
                 double curN2 = Math.Max(0.0, baseN2 + vFactor * 0.5);
                 double curEgt = Math.Max(0.0, baseEgt + vFactor * 4.0);

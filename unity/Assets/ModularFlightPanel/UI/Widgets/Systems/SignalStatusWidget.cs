@@ -22,7 +22,7 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override Vector2 BaseSize => new Vector2(250f, 76f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget)
         public bool AllowNonUniformScale => true;
@@ -68,6 +68,7 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastRateStr = string.Empty;
         private string _lastCtrlBadge = string.Empty;
         private string _lastHwSummary = string.Empty;
+        private bool _lastConnectedState = false;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -82,14 +83,12 @@ namespace ModularFlightPanel.UI.Widgets
             // ==========================================
             // 1. 顶栏系统与状态徽章 (Header)
             // ==========================================
-            _headerRoot = new GameObject("HeaderRoot", typeof(RectTransform));
-            _headerRoot.transform.SetParent(transform, false);
-            RectTransform hdrRt = _headerRoot.GetComponent<RectTransform>();
+            RectTransform hdrRt = CreateContainer("HeaderRoot", transform,
+                new Vector2(baseW - 14f * s, 18f * s), new Vector2(0f, -2f * s));
+            _headerRoot = hdrRt.gameObject;
             hdrRt.anchorMin = new Vector2(0.5f, 1f);
             hdrRt.anchorMax = new Vector2(0.5f, 1f);
             hdrRt.pivot = new Vector2(0.5f, 1f);
-            hdrRt.sizeDelta = new Vector2(baseW - 14f * s, 18f * s);
-            hdrRt.anchoredPosition = new Vector2(0f, -2f * s);
 
             string defTitle = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
             Title.Text = defTitle;
@@ -200,9 +199,8 @@ namespace ModularFlightPanel.UI.Widgets
             AntennaRowUI row = new AntennaRowUI();
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            row.Root = new GameObject(name, typeof(RectTransform));
-            row.Root.transform.SetParent(parent, false);
-            RectTransform rt = row.Root.GetComponent<RectTransform>();
+            RectTransform rt = CreateContainer(name, parent);
+            row.Root = rt.gameObject;
             rt.anchorMin = new Vector2(0.5f, 1f);
             rt.anchorMax = new Vector2(0.5f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
@@ -430,10 +428,7 @@ namespace ModularFlightPanel.UI.Widgets
             StatusSurfaceRole statusRole = !isConnected ? StatusSurfaceRole.Danger : (isPartial ? StatusSurfaceRole.Caution : StatusSurfaceRole.Success);
             TextStyleRole textRole = !isConnected ? TextStyleRole.Danger : (isPartial ? TextStyleRole.Warning : TextStyleRole.Accent);
 
-            if (_ctrlBadgeBg != null)
-            {
-                _ctrlBadgeBg.color = WidgetStyleManager.StatusPanel(statusRole);
-            }
+            _ctrlBadgeBg.SetColor(WidgetStyleManager.StatusPanel(statusRole));
 
             string displayCtrl;
             float currentW = RectTransform != null ? RectTransform.sizeDelta.x : BaseSize.x * CurrentDpiScale;
@@ -449,20 +444,12 @@ namespace ModularFlightPanel.UI.Widgets
                     ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路")
                     : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
             }
-            SetTextIfChanged(_ctrlBadgeText, displayCtrl);
+            _ctrlBadgeText.SetTextSafe(displayCtrl);
 
             // 心跳微光动画 (0.82 ~ 1.0)
             Color ctrlCol = style.GetTextColor(textRole, theme);
-            if (isConnected)
-            {
-                float breath = 0.82f + 0.18f * Mathf.Sin(Time.time * 2.8f);
-                if (_ctrlBadgeText != null) _ctrlBadgeText.color = WidgetStyleManager.WithAlpha(ctrlCol, breath);
-            }
-            else
-            {
-                float lossBlink = 0.72f + 0.28f * Mathf.Sin(Time.time * 2.0f);
-                if (_ctrlBadgeText != null) _ctrlBadgeText.color = WidgetStyleManager.WithAlpha(ctrlCol, lossBlink);
-            }
+            float animAlpha = isConnected ? (0.82f + 0.18f * Mathf.Sin(Time.time * 2.8f)) : (0.72f + 0.28f * Mathf.Sin(Time.time * 2.0f));
+            _ctrlBadgeText.SetColor(WidgetStyleManager.WithAlpha(ctrlCol, animAlpha));
 
             // 2. 目标测控站与拓扑
             string rawTarget = telemetry.DirectLinkTarget;
@@ -497,9 +484,13 @@ namespace ModularFlightPanel.UI.Widgets
                 routeDesc = I18n.Tr("WIDGET_SIG_SEARCHING_LINK", "搜索链路中");
             }
 
-            SetTextIfChanged(_targetNameText, targetName);
-            SetTextIfChanged(_routeTypeText, routeDesc);
-            ApplyText(_targetNameText, isConnected ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+            _targetNameText.SetTextSafe(targetName);
+            _routeTypeText.SetTextSafe(routeDesc);
+            if (isConnected != _lastConnectedState)
+            {
+                _lastConnectedState = isConnected;
+                ApplyText(_targetNameText, isConnected ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+            }
 
             // 3. 速率与 TX/RX 遥测收发微光动画
             double bps = telemetry.DataRateBps;
@@ -516,7 +507,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 rateStr = CommLinkInfo.FormatRate(100000.0 * signalStrength);
             }
-            SetTextIfChanged(_rateText, rateStr);
+            _rateText.SetTextSafe(rateStr);
 
             if (_txText != null && _rxText != null && _txText.gameObject.activeSelf)
             {
@@ -527,13 +518,13 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     float txA = (telemetry.SignalTx > 0.01) ? (0.60f + 0.40f * Mathf.Sin(Time.time * 6.5f)) : 0.30f;
                     float rxA = (telemetry.SignalRx > 0.01) ? (0.60f + 0.40f * Mathf.Cos(Time.time * 6.5f)) : 0.30f;
-                    _txText.color = WidgetStyleManager.WithAlpha(txBase, txA);
-                    _rxText.color = WidgetStyleManager.WithAlpha(rxBase, rxA);
+                    _txText.SetColor(WidgetStyleManager.WithAlpha(txBase, txA));
+                    _rxText.SetColor(WidgetStyleManager.WithAlpha(rxBase, rxA));
                 }
                 else
                 {
-                    _txText.color = WidgetStyleManager.WithAlpha(txBase, 0.20f);
-                    _rxText.color = WidgetStyleManager.WithAlpha(rxBase, 0.20f);
+                    _txText.SetColor(WidgetStyleManager.WithAlpha(txBase, 0.20f));
+                    _rxText.SetColor(WidgetStyleManager.WithAlpha(rxBase, 0.20f));
                 }
             }
 
@@ -552,16 +543,16 @@ namespace ModularFlightPanel.UI.Widgets
                         if (b == activeRfBars - 1 && isConnected)
                         {
                             float shimmer = 0.84f + 0.16f * Mathf.Sin(Time.time * 3.5f);
-                            _rfSignalBars[b].color = WidgetStyleManager.WithAlpha(activeCol, shimmer);
+                            _rfSignalBars[b].SetColor(WidgetStyleManager.WithAlpha(activeCol, shimmer));
                         }
                         else
                         {
-                            _rfSignalBars[b].color = activeCol;
+                            _rfSignalBars[b].SetColor(activeCol);
                         }
                     }
                     else
                     {
-                        _rfSignalBars[b].color = trackCol;
+                        _rfSignalBars[b].SetColor(trackCol);
                     }
                 }
             }
@@ -594,7 +585,7 @@ namespace ModularFlightPanel.UI.Widgets
                 string hwStr = isConnected
                     ? I18n.TrFormat("WIDGET_SIG_HW_SUMMARY", primaryAntName, activeAnts, totalAnts)
                     : I18n.TrFormat("WIDGET_SIG_HW_NOLINK", totalAnts);
-                SetTextIfChanged(_hardwareSummaryText, hwStr);
+                _hardwareSummaryText.SetTextSafe(hwStr);
             }
 
             // 展开模式：清单
@@ -606,8 +597,8 @@ namespace ModularFlightPanel.UI.Widgets
                 if (antennas != null && i < antennas.Count)
                 {
                     var ant = antennas[i];
-                    SetTextIfChanged(row.NameText, CleanAntennaName(ant.Name, i));
-                    SetTextIfChanged(row.StatusText, LocalizeAntennaStatus(ant.Status));
+                    row.NameText.SetTextSafe(CleanAntennaName(ant.Name, i));
+                    row.StatusText.SetTextSafe(LocalizeAntennaStatus(ant.Status));
 
                     TextStyleRole sRole = (ant.Status == "LINKED") ? TextStyleRole.Accent :
                         (ant.Status == "STANDBY" ? TextStyleRole.Cardinal : TextStyleRole.SecondaryValue);
@@ -617,14 +608,14 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else if (i == 0)
                 {
-                    SetTextIfChanged(row.NameText, I18n.Tr("WIDGET_SIG_INTERNAL_POD_ANTENNA", "内置舱段天线"));
-                    SetTextIfChanged(row.StatusText, isConnected ? I18n.Tr("WIDGET_SIG_LINKED", "已链接") : I18n.Tr("WIDGET_SIG_OFFLINE", "离线"));
+                    row.NameText.SetTextSafe(I18n.Tr("WIDGET_SIG_INTERNAL_POD_ANTENNA", "内置舱段天线"));
+                    row.StatusText.SetTextSafe(isConnected ? I18n.Tr("WIDGET_SIG_LINKED", "已链接") : I18n.Tr("WIDGET_SIG_OFFLINE", "离线"));
                     ApplyText(row.StatusText, isConnected ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                     ApplyText(row.DotText, isConnected ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                 }
                 else
                 {
-                    row.Root.SetActive(false);
+                    row.Root.SetActiveSafe(false);
                 }
             }
         }

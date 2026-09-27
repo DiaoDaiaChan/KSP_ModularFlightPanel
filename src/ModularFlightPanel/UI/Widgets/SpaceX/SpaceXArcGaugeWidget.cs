@@ -84,14 +84,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float arcDiameter = 98f * s;
 
             // 底槽轨道
-            GameObject trackGo = new GameObject("Arc_Track", typeof(RectTransform), typeof(Image));
-            trackGo.transform.SetParent(transform, false);
-            RectTransform trackRt = trackGo.GetComponent<RectTransform>();
-            trackRt.sizeDelta = new Vector2(arcDiameter, arcDiameter);
-            trackRt.anchoredPosition = new Vector2(0f, 2f * s);
+            _arcTrackImage = CreateChild<Image>("Arc_Track", transform, new Vector2(arcDiameter, arcDiameter), new Vector2(0f, 2f * s));
+            RectTransform trackRt = _arcTrackImage.rectTransform;
             trackRt.localEulerAngles = new Vector3(0f, 0f, -45f);
-
-            _arcTrackImage = trackGo.GetComponent<Image>();
             _arcTrackImage.sprite = _sharedRingSprite;
             _arcTrackImage.type = Image.Type.Filled;
             _arcTrackImage.fillMethod = Image.FillMethod.Radial360;
@@ -101,14 +96,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _arcTrackImage.raycastTarget = false;
 
             // 动态进度填充弧
-            GameObject fillGo = new GameObject("Arc_Fill", typeof(RectTransform), typeof(Image));
-            fillGo.transform.SetParent(transform, false);
-            RectTransform fillRt = fillGo.GetComponent<RectTransform>();
-            fillRt.sizeDelta = new Vector2(arcDiameter, arcDiameter);
-            fillRt.anchoredPosition = new Vector2(0f, 2f * s);
+            _arcFillImage = CreateChild<Image>("Arc_Fill", transform, new Vector2(arcDiameter, arcDiameter), new Vector2(0f, 2f * s));
+            RectTransform fillRt = _arcFillImage.rectTransform;
             fillRt.localEulerAngles = new Vector3(0f, 0f, -45f);
-
-            _arcFillImage = fillGo.GetComponent<Image>();
             _arcFillImage.sprite = _sharedRingSprite;
             _arcFillImage.type = Image.Type.Filled;
             _arcFillImage.fillMethod = Image.FillMethod.Radial360;

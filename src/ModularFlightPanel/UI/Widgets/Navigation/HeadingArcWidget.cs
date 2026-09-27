@@ -91,8 +91,11 @@ namespace ModularFlightPanel.UI.Widgets
             // 根尺寸设定，包裹顶部弧度区域
             Vector2 widgetSize = new Vector2(arcRadius * 2.2f, arcRadius * 0.85f);
             RectTransform.sizeDelta = widgetSize;
-
-            ParseCustomTemplate(config);
+            if (config != null && !string.IsNullOrEmpty(config.NumericToken))
+            {
+                _valueToken = config.NumericToken;
+            }
+            _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN", "HDG" }, _valueToken);
 
             // 1. 构建弧形暗色玻璃背景带
             BuildArcBand(arcRadius, s, theme);
@@ -133,37 +136,9 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyTheme(theme);
         }
 
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            if (config != null && !string.IsNullOrEmpty(config.NumericToken))
-            {
-                _valueToken = config.NumericToken;
-            }
-
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                if (k == "VAL" || k == "VALUE" || k == "TOKEN" || k == "HDG")
-                {
-                    _valueToken = v;
-                }
-                else if (k == "MODE" || k == "FRAME")
-                {
-                    // Reference frame is now handled by ReferenceFrameWidget
-                }
-            }
-        }
-
         private void BuildArcBand(float radius, float s, ThemeConfig theme)
         {
-            _arcBandRoot = new GameObject("Arc_Band_Root", typeof(RectTransform));
-            _arcBandRoot.transform.SetParent(transform, false);
+            _arcBandRoot = CreateContainer("Arc_Band_Root", transform).gameObject;
 
             _bandBgImages.Clear();
             _bandRimImages.Clear();
@@ -213,18 +188,15 @@ namespace ModularFlightPanel.UI.Widgets
 
             for (int i = 0; i < MAX_VISIBLE_TICKS; i++)
             {
-                GameObject root = new GameObject($"TickNode_{i}", typeof(RectTransform));
-                root.transform.SetParent(transform, false);
-                RectTransform rt = root.GetComponent<RectTransform>();
-                rt.sizeDelta = new Vector2(30f * s, 30f * s);
+                RectTransform rt = CreateContainer($"TickNode_{i}", transform,
+                    new Vector2(30f * s, 30f * s), Vector2.zero);
+                GameObject root = rt.gameObject;
 
                 // 刻度线
-                GameObject lineObj = new GameObject("Line", typeof(RectTransform), typeof(Image));
-                lineObj.transform.SetParent(root.transform, false);
-                RectTransform lineRt = lineObj.GetComponent<RectTransform>();
-                lineRt.sizeDelta = new Vector2(1.5f * s, 7f * s);
-                lineRt.anchoredPosition = Vector2.zero;
-                Image lineImg = lineObj.GetComponent<Image>();
+                Image lineImg = CreateChild<Image>("Line", root.transform,
+                    new Vector2(1.5f * s, 7f * s), Vector2.zero);
+                GameObject lineObj = lineImg.gameObject;
+                RectTransform lineRt = lineImg.rectTransform;
                 lineImg.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
 
                 // 刻度数字 / 罗盘主方位
@@ -260,20 +232,15 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 bubblePos = new Vector2(0f, radius + 15f * s);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            _speechBubbleRoot = new GameObject("Heading_SpeechBubble", typeof(RectTransform), typeof(Image), typeof(Button));
-            _speechBubbleRoot.transform.SetParent(transform, false);
-            _speechBubbleRt = _speechBubbleRoot.GetComponent<RectTransform>();
-            _speechBubbleRt.sizeDelta = boxSize;
-            _speechBubbleRt.anchoredPosition = bubblePos;
-
-            _bubbleBg = _speechBubbleRoot.GetComponent<Image>();
+            _bubbleBtn = CreateButton("Heading_SpeechBubble", transform, out _speechBubbleRt, out _bubbleBg,
+                boxSize, bubblePos);
+            _speechBubbleRoot = _speechBubbleRt.gameObject;
             _bubbleBg.color = Color.clear;
 
             _bubbleOutline = _speechBubbleRoot.AddComponent<Outline>();
             _bubbleOutline.effectDistance = new Vector2(1f * s, 1f * s);
             ApplyCard(_bubbleBg, _bubbleOutline, CardStyleRole.Emphasized, theme);
 
-            _bubbleBtn = _speechBubbleRoot.GetComponent<Button>();
             if (_bubbleBtn != null)
             {
                 _bubbleBtn.transition = Selectable.Transition.None;
@@ -295,13 +262,11 @@ namespace ModularFlightPanel.UI.Widgets
             );
 
             // 气泡框向下尖角指针
-            GameObject tipObj = new GameObject("Bubble_Pointer_Tip", typeof(RectTransform), typeof(Image));
-            tipObj.transform.SetParent(_speechBubbleRoot.transform, false);
-            RectTransform tipRt = tipObj.GetComponent<RectTransform>();
-            tipRt.sizeDelta = new Vector2(7f * s, 7f * s);
-            tipRt.anchoredPosition = new Vector2(0f, -boxSize.y * 0.5f + 0.5f * s);
+            _bubblePointerTip = CreateChild<Image>("Bubble_Pointer_Tip", _speechBubbleRoot.transform,
+                new Vector2(7f * s, 7f * s), new Vector2(0f, -boxSize.y * 0.5f + 0.5f * s));
+            GameObject tipObj = _bubblePointerTip.gameObject;
+            RectTransform tipRt = _bubblePointerTip.rectTransform;
             tipRt.localEulerAngles = new Vector3(0f, 0f, 45f);
-            _bubblePointerTip = tipObj.GetComponent<Image>();
             _bubblePointerTip.color = style.GetCardBackgroundColor(CardStyleRole.Normal, theme);
 
             _bubblePointerOutline = tipObj.AddComponent<Outline>();
@@ -324,11 +289,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             Vector2 lubberPos = new Vector2(0f, radius);
 
-            _lubberLineRoot = new GameObject("Lubber_Line_Root", typeof(RectTransform));
-            _lubberLineRoot.transform.SetParent(transform, false);
-            RectTransform lubRt = _lubberLineRoot.GetComponent<RectTransform>();
-            lubRt.sizeDelta = new Vector2(16f * s, 12f * s);
-            lubRt.anchoredPosition = lubberPos;
+            RectTransform lubRt = CreateContainer("Lubber_Line_Root", transform,
+                new Vector2(16f * s, 12f * s), lubberPos);
+            _lubberLineRoot = lubRt.gameObject;
 
             Color lubberColor = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 

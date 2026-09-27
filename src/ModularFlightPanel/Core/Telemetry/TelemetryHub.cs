@@ -27,8 +27,49 @@ namespace ModularFlightPanel.Core
 
         public Vessel ActiveVessel => FlightGlobals.ActiveVessel;
         public string VesselName => ActiveVessel != null ? ActiveVessel.vesselName : (IsSimulationMode ? SimulationEngine.VesselName : "NO VESSEL");
-        public string CelestialBodyName => ActiveVessel != null && ActiveVessel.mainBody != null ? ActiveVessel.mainBody.displayName.LocalizeRemoveGender() : (IsSimulationMode ? "KERBIN" : "UNKNOWN");
-        public string FlightSituation => ActiveVessel != null ? ActiveVessel.situation.ToString().ToUpper() : (IsSimulationMode ? "SUB_ORBITAL" : "LANDED");
+        private CelestialBody _lastMainBody;
+        private string _cachedCelestialBodyName = "UNKNOWN";
+
+        public string CelestialBodyName
+        {
+            get
+            {
+                if (IsSimulationMode) return "KERBIN";
+                var vessel = ActiveVessel;
+                if (vessel != null && vessel.mainBody != null)
+                {
+                    if (vessel.mainBody != _lastMainBody)
+                    {
+                        _lastMainBody = vessel.mainBody;
+                        _cachedCelestialBodyName = vessel.mainBody.displayName.LocalizeRemoveGender();
+                    }
+                    return _cachedCelestialBodyName;
+                }
+                return "UNKNOWN";
+            }
+        }
+
+        public string FlightSituation
+        {
+            get
+            {
+                if (IsSimulationMode) return "SUB_ORBITAL";
+                var vessel = ActiveVessel;
+                if (vessel == null) return "LANDED";
+                switch (vessel.situation)
+                {
+                    case Vessel.Situations.LANDED: return "LANDED";
+                    case Vessel.Situations.SPLASHED: return "SPLASHED";
+                    case Vessel.Situations.PRELAUNCH: return "PRELAUNCH";
+                    case Vessel.Situations.FLYING: return "FLYING";
+                    case Vessel.Situations.SUB_ORBITAL: return "SUB_ORBITAL";
+                    case Vessel.Situations.ORBITING: return "ORBITING";
+                    case Vessel.Situations.ESCAPING: return "ESCAPING";
+                    case Vessel.Situations.DOCKED: return "DOCKED";
+                    default: return "LANDED";
+                }
+            }
+        }
 
         // 仿真测试模式开关与引擎
         public bool IsSimulationMode { get; set; } = false;

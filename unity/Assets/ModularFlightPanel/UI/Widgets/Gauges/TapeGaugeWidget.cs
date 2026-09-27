@@ -59,7 +59,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _groundRibbonImg;
 
         // 刻度池项 (支持主/中/微多级刻度阶梯)
-        private struct TickItem
+        private sealed class TickItem
         {
             public GameObject Root;
             public RectTransform Rect;
@@ -67,6 +67,10 @@ namespace ModularFlightPanel.UI.Widgets
             public RectTransform LineRt;
             public Text Label;
             public RectTransform LabelRt;
+            public bool IsActive;
+            public bool IsMajor;
+            public double LastTickVal = double.NaN;
+            public float LastY = float.NaN;
         }
         private readonly List<TickItem> _tickPool = new List<TickItem>(TICK_POOL_SIZE);
 
@@ -196,6 +200,13 @@ namespace ModularFlightPanel.UI.Widgets
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
 
+        private static readonly string[] ValueAliases = new[] { "VAL", "VALUE", "TOKEN" };
+        private static readonly string[] TopAliases = new[] { "TOP", "MODE", "TOP_LABEL" };
+        private static readonly string[] BottomAliases = new[] { "BOTTOM", "BOTTOM_LABEL", "SEC" };
+        private static readonly string[] TrendAliases = new[] { "TREND_VAL", "TREND_TOKEN" };
+        private static readonly string[] TerrainAliases = new[] { "TERRAIN", "AGL_TOKEN" };
+        private static readonly string[] AutoUnitAliases = new[] { "AUTO_UNIT", "UNIT_AUTO" };
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
@@ -205,7 +216,54 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform.sizeDelta = new Vector2(width, height);
             _currentHalfTrackH = Mathf.Max(30f * s, (height - 124f * s) * 0.5f);
 
-            ParseCustomTemplate(config);
+            bool isLeft = config != null && config.IsLeftOrientation;
+            string numToken = config?.NumericToken ?? "";
+            _isSpeedTape = isLeft || numToken.Contains("SPD");
+
+            if (_isSpeedTape)
+            {
+                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
+                _topModeTemplate = "{SPD:MODE}";
+                _bottomSecTemplate = "{MACH}";
+                _trendToken = "{GFORCE}";
+                _trendTagTemplate = "ACC";
+                _trendMaxScale = 8.0f;
+            }
+            else
+            {
+                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{ALT}";
+                _topModeTemplate = "{ALT:MODE}";
+                _bottomSecTemplate = "RDR {ALT:AGL:DIST}";
+                _trendToken = "{VSI}";
+                _trendTagTemplate = "V/S";
+                _trendMaxScale = 100.0f;
+                _terrainToken = "{ALT:AGL}";
+            }
+
+            if (!string.IsNullOrEmpty(config?.DisplayName))
+            {
+                if (config.DisplayName.Length <= 4 &&
+                    !config.DisplayName.Contains(I18n.Tr("SUFFIX_SCALE_TAPE", "标尺带")) &&
+                    config.DisplayName != "SPD" && config.DisplayName != "ALT")
+                {
+                    _topModeTemplate = config.DisplayName;
+                }
+            }
+
+            _valueToken = GetTemplateChannel(ValueAliases, _valueToken);
+            _topModeTemplate = GetTemplateChannel(TopAliases, _topModeTemplate);
+            _bottomSecTemplate = GetTemplateChannel(BottomAliases, _bottomSecTemplate);
+            _trendToken = GetTemplateChannel(TrendAliases, _trendToken);
+            _terrainToken = GetTemplateChannel(TerrainAliases, _terrainToken);
+            _trendMaxScale = GetTemplateChannelFloat("TREND_MAX", _trendMaxScale);
+            _autoUnitEnabled = GetTemplateChannelBool(AutoUnitAliases, _autoUnitEnabled);
+            string unitMode = GetTemplateChannel("UNIT_MODE", null);
+            if (!string.IsNullOrEmpty(unitMode))
+            {
+                if (unitMode.Equals("FIXED", StringComparison.OrdinalIgnoreCase)) _autoUnitEnabled = false;
+                else if (unitMode.Equals("AUTO", StringComparison.OrdinalIgnoreCase)) _autoUnitEnabled = true;
+            }
+
             InitializeUnitTier();
 
             // 1. 半透明防炫底板与外框
@@ -217,18 +275,12 @@ namespace ModularFlightPanel.UI.Widgets
             UIFactory.ApplyCockpitChrome(gameObject, _bgImage.color, _bgOutline.effectColor, s);
 
             // 2. 标尺视口 (裁剪超出范围的刻度)
-            GameObject viewportObj = new GameObject("Tape_Viewport", typeof(RectTransform), typeof(RectMask2D));
-            viewportObj.transform.SetParent(transform, false);
-            _viewportRt = viewportObj.GetComponent<RectTransform>();
-            _viewportRt.sizeDelta = new Vector2(width, height - 12f * s);
-            _viewportRt.anchoredPosition = Vector2.zero;
+            _viewportRt = CreateViewport("Tape_Viewport", transform,
+                new Vector2(width, height - 12f * s), Vector2.zero);
 
             // 刻度容器
-            GameObject containerObj = new GameObject("Tick_Container", typeof(RectTransform));
-            containerObj.transform.SetParent(_viewportRt, false);
-            _tickContainer = containerObj.GetComponent<RectTransform>();
-            _tickContainer.sizeDelta = _viewportRt.sizeDelta;
-            _tickContainer.anchoredPosition = Vector2.zero;
+            _tickContainer = CreateContainer("Tick_Container", _viewportRt,
+                _viewportRt.sizeDelta, Vector2.zero);
 
             // 垂直精密导轨基线 (Backbone Rail: 贴合标尺刻度根部，柔和纤细)
             float railX = Config.IsLeftOrientation ? (21f * s) : (-21f * s);
@@ -418,94 +470,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void ParseCustomTemplate(WidgetConfig config)
-        {
-            bool isLeft = config != null && config.IsLeftOrientation;
-            string numToken = config?.NumericToken ?? "";
-            _isSpeedTape = isLeft || numToken.Contains("SPD");
-
-            if (_isSpeedTape)
-            {
-                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
-                _topModeTemplate = "{SPD:MODE}";
-                _bottomSecTemplate = "{MACH}";
-                _trendToken = "{GFORCE}";
-                _trendTagTemplate = "ACC";
-                _trendMaxScale = 8.0f;
-            }
-            else
-            {
-                _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{ALT}";
-                _topModeTemplate = "{ALT:MODE}";
-                _bottomSecTemplate = "RDR {ALT:AGL:DIST}";
-                _trendToken = "{VSI}";
-                _trendTagTemplate = "V/S";
-                _trendMaxScale = 100.0f;
-                _terrainToken = "{ALT:AGL}";
-            }
-
-            if (!string.IsNullOrEmpty(config?.DisplayName))
-            {
-                if (config.DisplayName.Length <= 4 &&
-                    !config.DisplayName.Contains(I18n.Tr("SUFFIX_SCALE_TAPE", "标尺带")) &&
-                    config.DisplayName != "SPD" && config.DisplayName != "ALT")
-                {
-                    _topModeTemplate = config.DisplayName;
-                }
-            }
-
-            if (string.IsNullOrEmpty(config?.CustomTemplate)) return;
-
-            var pairs = config.CustomTemplate.Split(';');
-            foreach (var p in pairs)
-            {
-                var kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string k = kv[0].Trim().ToUpperInvariant();
-                string v = kv[1].Trim();
-                switch (k)
-                {
-                    case "VAL":
-                    case "VALUE":
-                    case "TOKEN":
-                        _valueToken = v;
-                        break;
-                    case "TOP":
-                    case "MODE":
-                    case "TOP_LABEL":
-                        _topModeTemplate = v;
-                        break;
-                    case "BOTTOM":
-                    case "BOTTOM_LABEL":
-                    case "SEC":
-                        _bottomSecTemplate = v;
-                        break;
-                    case "TREND_VAL":
-                    case "TREND_TOKEN":
-                        _trendToken = v;
-                        break;
-                    case "TERRAIN":
-                    case "AGL_TOKEN":
-                        _terrainToken = v;
-                        break;
-                    case "TREND_MAX":
-                        if (float.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float maxS))
-                            _trendMaxScale = maxS;
-                        break;
-                    case "AUTO_UNIT":
-                    case "UNIT_AUTO":
-                        if (bool.TryParse(v, out bool autoU))
-                            _autoUnitEnabled = autoU;
-                        break;
-                    case "UNIT_MODE":
-                        if (v.Equals("FIXED", StringComparison.OrdinalIgnoreCase))
-                            _autoUnitEnabled = false;
-                        else if (v.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
-                            _autoUnitEnabled = true;
-                        break;
-                }
-            }
-        }
 
         private void InitializeUnitTier()
         {
@@ -576,19 +540,16 @@ namespace ModularFlightPanel.UI.Widgets
 
             for (int i = 0; i < TICK_POOL_SIZE; i++)
             {
-                GameObject itemObj = new GameObject($"Tick_{i}", typeof(RectTransform));
-                itemObj.transform.SetParent(_tickContainer, false);
-                RectTransform rt = itemObj.GetComponent<RectTransform>();
-                rt.sizeDelta = new Vector2(48f * s, 16f * s);
+                RectTransform rt = CreateContainer($"Tick_{i}", _tickContainer,
+                    new Vector2(48f * s, 16f * s), Vector2.zero);
+                GameObject itemObj = rt.gameObject;
 
                 // 刻度线 (精致航电级纤细微线，长齿 7.5px，粗细 1.2px)
-                GameObject lineObj = new GameObject("Tick_Line", typeof(RectTransform), typeof(Image));
-                lineObj.transform.SetParent(itemObj.transform, false);
-                RectTransform lineRt = lineObj.GetComponent<RectTransform>();
+                Image lineImg = CreateChild<Image>("Tick_Line", itemObj.transform,
+                    new Vector2(7.5f * s, 1.2f * s), new Vector2(railX, 0f));
+                GameObject lineObj = lineImg.gameObject;
+                RectTransform lineRt = lineImg.rectTransform;
                 lineRt.pivot = tickPivot;
-                lineRt.sizeDelta = new Vector2(7.5f * s, 1.2f * s);
-                lineRt.anchoredPosition = new Vector2(railX, 0f);
-                Image lineImg = lineObj.GetComponent<Image>();
                 lineImg.color = majorCol;
 
                 // 刻度数字标牌 (整齐呼吸间距，严禁贴面与遮挡)
@@ -601,6 +562,7 @@ namespace ModularFlightPanel.UI.Widgets
                 labelRt.sizeDelta = new Vector2(32f * s, 16f * s);
                 labelRt.anchoredPosition = new Vector2(labelX, 0f);
 
+                itemObj.SetActive(false);
                 _tickPool.Add(new TickItem
                 {
                     Root = itemObj,
@@ -608,7 +570,11 @@ namespace ModularFlightPanel.UI.Widgets
                     Line = lineImg,
                     LineRt = lineRt,
                     Label = labelTxt,
-                    LabelRt = labelRt
+                    LabelRt = labelRt,
+                    IsActive = false,
+                    IsMajor = false,
+                    LastTickVal = double.NaN,
+                    LastY = float.NaN
                 });
             }
         }
@@ -620,15 +586,11 @@ namespace ModularFlightPanel.UI.Widgets
             float boxH = 22f * s;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            GameObject boxObj = new GameObject("Center_Readout_Box", typeof(RectTransform), typeof(Image), typeof(Button));
-            boxObj.transform.SetParent(transform, false);
-            _centerBoxRt = boxObj.GetComponent<RectTransform>();
-            _centerBoxRt.sizeDelta = new Vector2(boxW, boxH);
-
             float offsetX = Config.IsLeftOrientation ? (2f * s) : (-2f * s);
-            _centerBoxRt.anchoredPosition = new Vector2(offsetX, 0f);
+            _centerBoxBtn = CreateButton("Center_Readout_Box", transform, out _centerBoxRt, out _centerBoxBg,
+                new Vector2(boxW, boxH), new Vector2(offsetX, 0f));
+            GameObject boxObj = _centerBoxRt.gameObject;
 
-            _centerBoxBg = boxObj.GetComponent<Image>();
             _centerBoxOutline = boxObj.AddComponent<Outline>();
             _centerBoxOutline.effectDistance = new Vector2(1f * s, 1f * s);
             ApplyCard(_centerBoxBg, _centerBoxOutline, CardStyleRole.Normal, theme);
@@ -637,31 +599,24 @@ namespace ModularFlightPanel.UI.Widgets
             _centerBoxBg.color = WidgetStyleManager.WithAlpha(resolved.FrameBgColor, 1.0f);
             _centerBoxOutline.effectColor = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 
-            _centerBoxBtn = boxObj.GetComponent<Button>();
             if (_centerBoxBtn != null)
             {
                 _centerBoxBtn.onClick.AddListener(OnBoxClicked);
             }
 
             // 1. 一体化五边形指针凸嘴 (Chevron Pointer Arrowhead)
-            GameObject arrowObj = new GameObject("Pointer_Chevron", typeof(RectTransform), typeof(Image));
-            arrowObj.transform.SetParent(boxObj.transform, false);
-            _pointerArrowRt = arrowObj.GetComponent<RectTransform>();
-            _pointerArrowRt.sizeDelta = new Vector2(6f * s, 6f * s);
             float arrowX = Config.IsLeftOrientation ? (boxW * 0.5f - 1f * s) : (-boxW * 0.5f + 1f * s);
-            _pointerArrowRt.anchoredPosition = new Vector2(arrowX, 0f);
+            _pointerArrowImg = CreateChild<Image>("Pointer_Chevron", boxObj.transform,
+                new Vector2(6f * s, 6f * s), new Vector2(arrowX, 0f));
+            _pointerArrowRt = _pointerArrowImg.rectTransform;
             _pointerArrowRt.localEulerAngles = new Vector3(0f, 0f, 45f);
-            _pointerArrowImg = arrowObj.GetComponent<Image>();
             _pointerArrowImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 
             // 2. 发光瞄准发丝基准线 (Luminescent Index Ray)
-            GameObject rayObj = new GameObject("Hairline_Ray", typeof(RectTransform), typeof(Image));
-            rayObj.transform.SetParent(boxObj.transform, false);
-            _hairlineRayRt = rayObj.GetComponent<RectTransform>();
-            _hairlineRayRt.sizeDelta = new Vector2(8f * s, 1f * s);
             float rayX = Config.IsLeftOrientation ? (boxW * 0.5f + 3f * s) : (-boxW * 0.5f - 3f * s);
-            _hairlineRayRt.anchoredPosition = new Vector2(rayX, 0f);
-            _hairlineRayImg = rayObj.GetComponent<Image>();
+            _hairlineRayImg = CreateChild<Image>("Hairline_Ray", boxObj.transform,
+                new Vector2(8f * s, 1f * s), new Vector2(rayX, 0f));
+            _hairlineRayRt = _hairlineRayImg.rectTransform;
             _hairlineRayImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 
             // 3. 机械沉降微分割缝 (Odometer Seam)
@@ -804,11 +759,8 @@ namespace ModularFlightPanel.UI.Widgets
                 float trendX = -(width * 0.5f + 21f * s);
                 float trendW = 38f * s;
 
-                GameObject root = new GameObject("Speed_Dynamics_Root", typeof(RectTransform));
-                root.transform.SetParent(transform, false);
-                _trendRoot = root.GetComponent<RectTransform>();
-                _trendRoot.sizeDelta = new Vector2(trendW, 240f * s);
-                _trendRoot.anchoredPosition = new Vector2(trendX, 0f);
+                _trendRoot = CreateContainer("Speed_Dynamics_Root", transform,
+                    new Vector2(trendW, 240f * s), new Vector2(trendX, 0f));
 
                 float colW = 18f * s;
                 float leftColX = -9.5f * s;
@@ -867,21 +819,15 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // ACC 优雅微痕发丝轨迹 (Trace Hairline from 0G up to pointer)
-                GameObject accTraceObj = new GameObject("ACC_Trace", typeof(RectTransform), typeof(Image));
-                accTraceObj.transform.SetParent(_accTrackBgObj.transform, false);
-                _accTraceRt = accTraceObj.GetComponent<RectTransform>();
-                _accTraceRt.sizeDelta = new Vector2(1.2f * s, 29f * s);
+                _accTraceImg = CreateChild<Image>("ACC_Trace", _accTrackBgObj.transform,
+                    new Vector2(1.2f * s, 29f * s), new Vector2(0f, -58f * s));
+                _accTraceRt = _accTraceImg.rectTransform;
                 _accTraceRt.pivot = new Vector2(0.5f, 0f);
-                _accTraceRt.anchoredPosition = new Vector2(0f, -58f * s);
-                _accTraceImg = accTraceObj.GetComponent<Image>();
                 _accTraceImg.color = WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Primary, theme), 0.40f);
 
                 // ACC 航空级 ──► 指针 (Needle Pointer pointing right towards rail/ticks)
-                GameObject accPointerObj = new GameObject("ACC_Pointer", typeof(RectTransform));
-                accPointerObj.transform.SetParent(_accTrackBgObj.transform, false);
-                _accPointerRt = accPointerObj.GetComponent<RectTransform>();
-                _accPointerRt.sizeDelta = new Vector2(9f * s, 6f * s);
-                _accPointerRt.anchoredPosition = new Vector2(0f, -29f * s);
+                _accPointerRt = CreateContainer("ACC_Pointer", _accTrackBgObj.transform,
+                    new Vector2(9f * s, 6f * s), new Vector2(0f, -29f * s));
 
                 GameObject accStem = UIFactory.CreatePanel(_accPointerRt.transform, "Stem",
                     new Vector2(5.5f * s, 1.5f * s), new Vector2(-1.5f * s, 0f),
@@ -949,21 +895,15 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // dV/dt 优雅微痕发丝轨迹 (Trace Hairline from zero to pointer)
-                GameObject rateTraceObj = new GameObject("Rate_Trace", typeof(RectTransform), typeof(Image));
-                rateTraceObj.transform.SetParent(_rateTrackBgObj.transform, false);
-                _rateTraceRt = rateTraceObj.GetComponent<RectTransform>();
-                _rateTraceRt.sizeDelta = new Vector2(1.2f * s, 0f);
+                _rateTraceImg = CreateChild<Image>("Rate_Trace", _rateTrackBgObj.transform,
+                    new Vector2(1.2f * s, 0f), Vector2.zero);
+                _rateTraceRt = _rateTraceImg.rectTransform;
                 _rateTraceRt.pivot = new Vector2(0.5f, 0f);
-                _rateTraceRt.anchoredPosition = Vector2.zero;
-                _rateTraceImg = rateTraceObj.GetComponent<Image>();
                 _rateTraceImg.color = WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Primary, theme), 0.40f);
 
                 // dV/dt 航空级 ──► 指针 (Needle Pointer)
-                GameObject ratePointerObj = new GameObject("Rate_Pointer", typeof(RectTransform));
-                ratePointerObj.transform.SetParent(_rateTrackBgObj.transform, false);
-                _ratePointerRt = ratePointerObj.GetComponent<RectTransform>();
-                _ratePointerRt.sizeDelta = new Vector2(9f * s, 6f * s);
-                _ratePointerRt.anchoredPosition = Vector2.zero;
+                _ratePointerRt = CreateContainer("Rate_Pointer", _rateTrackBgObj.transform,
+                    new Vector2(9f * s, 6f * s), Vector2.zero);
 
                 GameObject rateStem = UIFactory.CreatePanel(_ratePointerRt.transform, "Stem",
                     new Vector2(5.5f * s, 1.5f * s), new Vector2(-1.5f * s, 0f),
@@ -983,11 +923,8 @@ namespace ModularFlightPanel.UI.Widgets
                 float trendX = width * 0.5f + 14f * s;
                 float trendW = 18f * s;
 
-                GameObject root = new GameObject("VSI_Dynamics_Root", typeof(RectTransform));
-                root.transform.SetParent(transform, false);
-                _trendRoot = root.GetComponent<RectTransform>();
-                _trendRoot.sizeDelta = new Vector2(trendW, 240f * s);
-                _trendRoot.anchoredPosition = new Vector2(trendX, 0f);
+                _trendRoot = CreateContainer("VSI_Dynamics_Root", transform,
+                    new Vector2(trendW, 240f * s), new Vector2(trendX, 0f));
 
                 Vector2 boxSize = new Vector2(trendW, 26f * s);
                 Vector2 boxPos = new Vector2(0f, 103f * s);
@@ -1041,21 +978,15 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // VSI 优雅微痕发丝轨迹
-                GameObject vsiTraceObj = new GameObject("VSI_Trace", typeof(RectTransform), typeof(Image));
-                vsiTraceObj.transform.SetParent(_vsiTrackBgObj.transform, false);
-                _vsiTraceRt = vsiTraceObj.GetComponent<RectTransform>();
-                _vsiTraceRt.sizeDelta = new Vector2(1.2f * s, 0f);
+                _vsiTraceImg = CreateChild<Image>("VSI_Trace", _vsiTrackBgObj.transform,
+                    new Vector2(1.2f * s, 0f), Vector2.zero);
+                _vsiTraceRt = _vsiTraceImg.rectTransform;
                 _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
-                _vsiTraceRt.anchoredPosition = Vector2.zero;
-                _vsiTraceImg = vsiTraceObj.GetComponent<Image>();
                 _vsiTraceImg.color = WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Primary, theme), 0.40f);
 
                 // VSI 航空级 ◄── 指针 (Needle Pointer pointing left towards altitude tape)
-                GameObject vsiPointerObj = new GameObject("VSI_Pointer", typeof(RectTransform));
-                vsiPointerObj.transform.SetParent(_vsiTrackBgObj.transform, false);
-                _vsiPointerRt = vsiPointerObj.GetComponent<RectTransform>();
-                _vsiPointerRt.sizeDelta = new Vector2(9f * s, 6f * s);
-                _vsiPointerRt.anchoredPosition = Vector2.zero;
+                _vsiPointerRt = CreateContainer("VSI_Pointer", _vsiTrackBgObj.transform,
+                    new Vector2(9f * s, 6f * s), Vector2.zero);
 
                 GameObject vsiStem = UIFactory.CreatePanel(_vsiPointerRt.transform, "Stem",
                     new Vector2(5.5f * s, 1.5f * s), new Vector2(1.5f * s, 0f),
@@ -1258,16 +1189,22 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        private float _lastLabelEvalTime = -1f;
+
         private void UpdateLabels(IFlightTelemetry telemetry)
         {
-            string evalTop = TelemetryTokenEngine.Evaluate(_topModeTemplate, telemetry);
+            float now = Time.time;
+            if (now - _lastLabelEvalTime < 0.1f) return;
+            _lastLabelEvalTime = now;
+
+            string evalTop = _topModeTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_topModeTemplate, telemetry) : _topModeTemplate;
             if (evalTop != _lastTopText)
             {
                 _lastTopText = evalTop;
                 if (_topModeText != null) _topModeText.text = evalTop;
             }
 
-            string evalSec = TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry);
+            string evalSec = _bottomSecTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry) : _bottomSecTemplate;
             if (evalSec != _lastBottomText)
             {
                 _lastBottomText = evalSec;
@@ -1291,54 +1228,109 @@ namespace ModularFlightPanel.UI.Widgets
             Color halfCol = WidgetStyleManager.WithAlpha(borderCol, 0.30f);
 
             float s = CurrentDpiScale;
+            float halfViewportPlusMargin = (_viewportRt.sizeDelta.y * 0.5f) + 12f * s;
+            Vector2 majorLineSize = new Vector2(7.5f * s, 1.2f * s);
+            Vector2 halfLineSize = new Vector2(4.0f * s, 1.0f * s);
 
-            for (int i = 0; i < _tickPool.Count; i++)
+            int poolCount = _tickPool.Count;
+            for (int i = 0; i < poolCount; i++)
             {
                 TickItem item = _tickPool[i];
                 double tickVal = startTick + i * subStep;
 
                 if (tickVal < 0.0 && _isSpeedTape)
                 {
-                    item.Root.SetActive(false);
+                    if (item.IsActive)
+                    {
+                        item.Root.SetActive(false);
+                        item.IsActive = false;
+                    }
                     continue;
                 }
 
                 float y = Mathf.Round((float)(tickVal - currentDisplayVal) * pixelsPerUnit);
-                if (Math.Abs(y) > (_viewportRt.sizeDelta.y * 0.5f) + 12f * s)
+                if (Math.Abs(y) > halfViewportPlusMargin)
                 {
-                    item.Root.SetActive(false);
+                    if (item.IsActive)
+                    {
+                        item.Root.SetActive(false);
+                        item.IsActive = false;
+                    }
+
+                    // 由于 tickVal 严格单调递增，一旦 y 超出视口上方边界，后续所有 item 必然都在视口上方，可批量关闭并直接中断
+                    if (y > halfViewportPlusMargin)
+                    {
+                        for (int j = i + 1; j < poolCount; j++)
+                        {
+                            TickItem remaining = _tickPool[j];
+                            if (remaining.IsActive)
+                            {
+                                remaining.Root.SetActive(false);
+                                remaining.IsActive = false;
+                            }
+                        }
+                        break;
+                    }
                     continue;
                 }
 
-                item.Root.SetActive(true);
-                item.Rect.anchoredPosition = new Vector2(0f, y);
+                if (!item.IsActive)
+                {
+                    item.Root.SetActive(true);
+                    item.IsActive = true;
+                }
+
+                if (Mathf.Abs(item.LastY - y) > 0.05f)
+                {
+                    item.Rect.anchoredPosition = new Vector2(0f, y);
+                    item.LastY = y;
+                }
 
                 double majorRemainder = Math.Abs(tickVal - Math.Round(tickVal / step) * step);
                 bool isMajor = majorRemainder < (subStep * 0.25);
 
+                if (item.IsMajor != isMajor)
+                {
+                    item.IsMajor = isMajor;
+                    if (isMajor)
+                    {
+                        item.LineRt.sizeDelta = majorLineSize;
+                        SetColorIfChanged(item.Line, majorCol);
+                        item.Label.gameObject.SetActive(true);
+                    }
+                    else
+                    {
+                        item.LineRt.sizeDelta = halfLineSize;
+                        SetColorIfChanged(item.Line, halfCol);
+                        item.Label.gameObject.SetActive(false);
+                    }
+                }
+
                 if (isMajor)
                 {
-                    // 主刻度：精炼长刻线 (7.5px) + 高清文字标牌
-                    item.LineRt.sizeDelta = new Vector2(7.5f * s, 1.2f * s);
-                    item.Line.color = majorCol;
-                    item.Label.gameObject.SetActive(true);
+                    if (double.IsNaN(item.LastTickVal) || Math.Abs(item.LastTickVal - tickVal) > 0.001)
+                    {
+                        item.LastTickVal = tickVal;
+                        string labelStr;
+                        if (_currentTier == DynamicUnitTier.Mega && _isSpeedTape)
+                        {
+                            labelStr = $"{tickVal:F2}";
+                        }
+                        else if (step < 1.0f)
+                        {
+                            labelStr = $"{tickVal:F1}";
+                        }
+                        else
+                        {
+                            int intVal = (int)Math.Round(tickVal);
+                            if (intVal >= -1000 && intVal <= 9999)
+                                labelStr = FastIntString(intVal);
+                            else
+                                labelStr = $"{tickVal:F0}";
+                        }
 
-                    string labelStr;
-                    if (_currentTier == DynamicUnitTier.Mega && _isSpeedTape)
-                        labelStr = $"{tickVal:F2}";
-                    else if (step < 1.0f)
-                        labelStr = $"{tickVal:F1}";
-                    else
-                        labelStr = $"{tickVal:F0}";
-
-                    item.Label.text = labelStr;
-                }
-                else
-                {
-                    // 中刻度：半步长中刻线 (4.0px)，无文字标牌
-                    item.LineRt.sizeDelta = new Vector2(4.0f * s, 1.0f * s);
-                    item.Line.color = halfCol;
-                    item.Label.gameObject.SetActive(false);
+                        item.Label.text = labelStr;
+                    }
                 }
             }
         }
@@ -1391,49 +1383,49 @@ namespace ModularFlightPanel.UI.Widgets
                     if (_accTagText != null) ApplyText(_accTagText, tagTextRole, theme);
 
                     Color pointerCol = WidgetStyleManager.Meter(meterRole, theme);
-                    if (_accPointerHead != null) _accPointerHead.color = pointerCol;
-                    if (_accPointerStem != null) _accPointerStem.color = pointerCol;
+                    SetColorIfChanged(_accPointerHead, pointerCol);
+                    SetColorIfChanged(_accPointerStem, pointerCol);
                     if (_accTraceImg != null)
                     {
                         float traceAlpha = alertLevel == 2 ? 0.60f : alertLevel == 1 ? 0.50f : 0.40f;
-                        _accTraceImg.color = WidgetStyleManager.WithAlpha(pointerCol, traceAlpha);
+                        SetColorIfChanged(_accTraceImg, WidgetStyleManager.WithAlpha(pointerCol, traceAlpha));
                     }
 
                     if (_accTagOutline != null)
                     {
-                        _accTagOutline.effectColor = alertLevel == 2 ? WidgetStyleManager.Meter(MeterStyleRole.Danger, theme) :
-                                                     alertLevel == 1 ? WidgetStyleManager.Meter(MeterStyleRole.Warning, theme) :
-                                                     theme.FrameBorderColor.ToColor();
+                        Color outlineCol = alertLevel == 2 ? WidgetStyleManager.Meter(MeterStyleRole.Danger, theme) :
+                                           alertLevel == 1 ? WidgetStyleManager.Meter(MeterStyleRole.Warning, theme) :
+                                           theme.FrameBorderColor.ToColor();
+                        SetOutlineColorIfChanged(_accTagOutline, outlineCol);
                     }
                     if (_accTagBg != null)
                     {
                         Color baseBg = theme.FrameBgColor;
+                        Color targetBg;
                         if (alertLevel == 2)
                         {
-                            _accTagBg.color = Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Danger, theme), 0.22f);
+                            targetBg = Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Danger, theme), 0.22f);
                         }
                         else if (alertLevel == 1)
                         {
-                            _accTagBg.color = Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Warning, theme), 0.16f);
+                            targetBg = Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Warning, theme), 0.16f);
                         }
                         else
                         {
-                            _accTagBg.color = baseBg;
+                            targetBg = baseBg;
                         }
+                        SetColorIfChanged(_accTagBg, targetBg);
                     }
                 }
 
                 // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-_currentHalfTrackH 至 +_currentHalfTrackH)
                 float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
                 float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
-                if (_accPointerRt != null)
-                {
-                    _accPointerRt.anchoredPosition = new Vector2(0f, pointerY);
-                }
+                _accPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, pointerY));
                 if (_accTraceRt != null)
                 {
                     float traceLen = pointerY - (-_currentHalfTrackH);
-                    _accTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, traceLen));
+                    _accTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, traceLen)));
                 }
 
                 // ==================== 2. dV/dt (速度变化率) 微分采样与 ──► 指针式指示 ====================
@@ -1499,32 +1491,29 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 Color rateCol = WidgetStyleManager.Meter(rateMeterRole, theme);
-                if (_ratePointerHead != null) _ratePointerHead.color = rateCol;
-                if (_ratePointerStem != null) _ratePointerStem.color = rateCol;
-                if (_rateTraceImg != null) _rateTraceImg.color = WidgetStyleManager.WithAlpha(rateCol, 0.40f);
+                _ratePointerHead?.SetColor(rateCol);
+                _ratePointerStem?.SetColor(rateCol);
+                _rateTraceImg?.SetColor(WidgetStyleManager.WithAlpha(rateCol, 0.40f));
 
                 float ratePointerY = rateFraction * _currentHalfTrackH;
-                if (_ratePointerRt != null)
-                {
-                    _ratePointerRt.anchoredPosition = new Vector2(0f, ratePointerY);
-                }
+                _ratePointerRt?.SetAnchoredPositionSafe(new Vector2(0f, ratePointerY));
                 if (_rateTraceRt != null)
                 {
                     if (isRateDeadband)
                     {
-                        _rateTraceRt.sizeDelta = Vector2.zero;
+                        _rateTraceRt.SetSizeDeltaSafe(Vector2.zero);
                     }
                     else if (isRatePositive)
                     {
-                        _rateTraceRt.pivot = new Vector2(0.5f, 0f);
-                        _rateTraceRt.anchoredPosition = Vector2.zero;
-                        _rateTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, ratePointerY));
+                        if (_rateTraceRt.pivot.y != 0f) _rateTraceRt.pivot = new Vector2(0.5f, 0f);
+                        _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, ratePointerY)));
                     }
                     else
                     {
-                        _rateTraceRt.pivot = new Vector2(0.5f, 1f);
-                        _rateTraceRt.anchoredPosition = Vector2.zero;
-                        _rateTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, -ratePointerY));
+                        if (_rateTraceRt.pivot.y != 1f) _rateTraceRt.pivot = new Vector2(0.5f, 1f);
+                        _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -ratePointerY)));
                     }
                 }
             }
@@ -1562,9 +1551,9 @@ namespace ModularFlightPanel.UI.Widgets
                     _lastTrendPositive = isPositive;
 
                     Color vsiCol = WidgetStyleManager.Meter(meterRole, theme);
-                    if (_vsiPointerHead != null) _vsiPointerHead.color = vsiCol;
-                    if (_vsiPointerStem != null) _vsiPointerStem.color = vsiCol;
-                    if (_vsiTraceImg != null) _vsiTraceImg.color = WidgetStyleManager.WithAlpha(vsiCol, 0.40f);
+                    SetColorIfChanged(_vsiPointerHead, vsiCol);
+                    SetColorIfChanged(_vsiPointerStem, vsiCol);
+                    if (_vsiTraceImg != null) SetColorIfChanged(_vsiTraceImg, WidgetStyleManager.WithAlpha(vsiCol, 0.40f));
 
                     TextStyleRole textRole = isVsiDeadband || isPositive ? TextStyleRole.Accent : TextStyleRole.Warning;
                     ApplyText(_vsiRateText, textRole, theme);
@@ -1590,27 +1579,24 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 float vsiPointerY = rateFraction * _currentHalfTrackH;
-                if (_vsiPointerRt != null)
-                {
-                    _vsiPointerRt.anchoredPosition = new Vector2(0f, vsiPointerY);
-                }
+                _vsiPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, vsiPointerY));
                 if (_vsiTraceRt != null)
                 {
                     if (isVsiDeadband)
                     {
-                        _vsiTraceRt.sizeDelta = Vector2.zero;
+                        _vsiTraceRt.SetSizeDeltaSafe(Vector2.zero);
                     }
                     else if (isPositive)
                     {
-                        _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
-                        _vsiTraceRt.anchoredPosition = Vector2.zero;
-                        _vsiTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, vsiPointerY));
+                        if (_vsiTraceRt.pivot.y != 0f) _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
+                        _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, vsiPointerY)));
                     }
                     else
                     {
-                        _vsiTraceRt.pivot = new Vector2(0.5f, 1f);
-                        _vsiTraceRt.anchoredPosition = Vector2.zero;
-                        _vsiTraceRt.sizeDelta = new Vector2(1.2f * s, Mathf.Max(0f, -vsiPointerY));
+                        if (_vsiTraceRt.pivot.y != 1f) _vsiTraceRt.pivot = new Vector2(0.5f, 1f);
+                        _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -vsiPointerY)));
                     }
                 }
             }
@@ -1628,7 +1614,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (!double.IsNaN(_lastTerrainVal) && Math.Abs(agl - _lastTerrainVal) < 0.2 && _groundRibbonObj.activeSelf) return;
                 _lastTerrainVal = agl;
 
-                if (!_groundRibbonObj.activeSelf) _groundRibbonObj.SetActive(true);
+                _groundRibbonObj.SetActiveSafe(true);
 
                 float s = CurrentDpiScale;
                 float step = _activeStep > 0f ? _activeStep : 100f;
@@ -1637,12 +1623,12 @@ namespace ModularFlightPanel.UI.Widgets
                 float groundY = -(float)(agl / _tierScale) * pixelsPerUnit;
                 float ribbonHeight = Mathf.Clamp(groundY + (_viewportRt.sizeDelta.y * 0.5f), 0f, _viewportRt.sizeDelta.y);
 
-                _groundRibbonRt.sizeDelta = new Vector2(_viewportRt.sizeDelta.x - 4f * s, ribbonHeight);
-                _groundRibbonRt.anchoredPosition = new Vector2(0f, -_viewportRt.sizeDelta.y * 0.5f);
+                _groundRibbonRt?.SetSizeDeltaSafe(new Vector2(_viewportRt.sizeDelta.x - 4f * s, ribbonHeight));
+                _groundRibbonRt?.SetAnchoredPositionSafe(new Vector2(0f, -_viewportRt.sizeDelta.y * 0.5f));
             }
             else
             {
-                if (_groundRibbonObj.activeSelf) _groundRibbonObj.SetActive(false);
+                _groundRibbonObj.SetActiveSafe(false);
             }
         }
 
