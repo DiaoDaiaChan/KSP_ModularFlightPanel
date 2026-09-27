@@ -140,7 +140,7 @@ namespace ModularFlightPanel.Core
         public static string TopOffenderWidgetId { get; private set; } = "---";
         public static double TopOffenderWidgetMs { get; private set; }
 
-        public static bool EnableWidgetProfiling { get; set; } = true;
+        public static bool EnableWidgetProfiling { get; set; } = false;
         public static bool IsWidgetProfilingActive => !_isMasterBypassed && (ShowOverlay || EnableWidgetProfiling);
 
         private static readonly Dictionary<string, WidgetProfileData> _widgetProfiles = new Dictionary<string, WidgetProfileData>(StringComparer.OrdinalIgnoreCase);
@@ -404,8 +404,8 @@ namespace ModularFlightPanel.Core
 
             FrameBudgetPercent = UnityFrameTimeMs > 0.001 ? (AvgTotalMs / UnityFrameTimeMs) * 100.0 : 0.0;
 
-            // 维护活跃组件降序列表 (供悬浮 HUD 与监控屏读取)
-            if (ShowOverlay || EnableWidgetProfiling)
+            // 维护活跃组件降序列表 (供悬浮 HUD 与监控屏读取，节流至每 10 帧排序一次，杜绝每帧 GC 与 CPU 尖峰)
+            if ((ShowOverlay || EnableWidgetProfiling) && Time.frameCount % 10 == 0)
             {
                 _sortedWidgetList.Clear();
                 int currentFrame = Time.frameCount;

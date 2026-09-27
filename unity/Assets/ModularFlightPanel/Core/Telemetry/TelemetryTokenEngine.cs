@@ -389,9 +389,16 @@ namespace ModularFlightPanel.Core
                 return pfx + FormatNumber(alt, fmt, "N0", "tok_alt") + (fmt == "RAW" ? "" : " m");
             }, "ALTITUDE");
 
-            RegisterNumericToken("VSI", (t, sub) => t.VerticalSpeed, "VS", "VERTSPD");
+            RegisterNumericToken("VSI", (t, sub) =>
+            {
+                if (sub == "NORM") return t.NormalizedVSI;
+                return t.VerticalSpeed;
+            }, "VS", "VERTSPD");
             RegisterStringToken("VSI", (t, sub, fmt) =>
-                CacheManager.Instance.FastDoubleWithAffix("tok_vsi", t.VerticalSpeed, "", " m/s", fmt ?? "F1", 0.05), "VS", "VERTSPD");
+            {
+                if (sub == "NORM") return FormatNumber(t.NormalizedVSI, fmt, "F2");
+                return CacheManager.Instance.FastDoubleWithAffix("tok_vsi", t.VerticalSpeed, "", " m/s", fmt ?? "F1", 0.05);
+            }, "VS", "VERTSPD");
 
             // --- 姿态与航向 ---
             RegisterNumericToken("HDG", (t, sub) => (t.Heading % 360.0 + 360.0) % 360.0, "HEADING");

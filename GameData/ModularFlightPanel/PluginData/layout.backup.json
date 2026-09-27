@@ -4,7 +4,7 @@
     {
       "WidgetId": "core.navball",
       "DisplayName": "姿态球 (Navball)",
-      "IsEnabled": false,
+      "IsEnabled": true,
       "PositionX": 0.0,
       "PositionY": 0.0,
       "Scale": 1.0,
@@ -72,7 +72,7 @@
     {
       "WidgetId": "nav.orbital_elements",
       "DisplayName": "ORBITAL ELEMENTS 轨道六根数面板",
-      "IsEnabled": true,
+      "IsEnabled": false,
       "PositionX": 0.0,
       "PositionY": 0.0,
       "Scale": 1.0,

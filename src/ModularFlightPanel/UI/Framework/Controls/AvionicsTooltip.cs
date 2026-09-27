@@ -27,10 +27,16 @@ namespace ModularFlightPanel.UI
             ShortcutKey = shortcut;
         }
 
+        private void Awake()
+        {
+            enabled = false; // 默认严格休眠，消灭几十个 Trigger 的每帧 Update 轮询
+        }
+
         public void OnPointerEnter(PointerEventData eventData)
         {
             _isHovered = true;
             _hoverTimer = 0f;
+            enabled = true; // 仅悬停时唤醒
 
             // 若全局提示浮层当前已处于激活显示态，立即切换内容，消除二次悬停等待迟滞
             if (AvionicsTooltipOverlay.Instance != null && AvionicsTooltipOverlay.Instance.IsVisible)
@@ -43,6 +49,7 @@ namespace ModularFlightPanel.UI
         {
             _isHovered = false;
             _hoverTimer = 0f;
+            enabled = false; // 离开即休眠
             if (AvionicsTooltipOverlay.Instance != null)
             {
                 AvionicsTooltipOverlay.Instance.Hide(this);
@@ -57,7 +64,12 @@ namespace ModularFlightPanel.UI
                 if (_hoverTimer >= DelaySeconds)
                 {
                     ShowTooltip();
+                    enabled = false; // 弹出后无需继续轮询
                 }
+            }
+            else
+            {
+                enabled = false;
             }
         }
 
@@ -65,6 +77,7 @@ namespace ModularFlightPanel.UI
         {
             _isHovered = false;
             _hoverTimer = 0f;
+            enabled = false;
             if (AvionicsTooltipOverlay.Instance != null)
             {
                 AvionicsTooltipOverlay.Instance.Hide(this);

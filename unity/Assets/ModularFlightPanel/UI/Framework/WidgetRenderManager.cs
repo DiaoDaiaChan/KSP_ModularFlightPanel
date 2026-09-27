@@ -85,7 +85,24 @@ namespace ModularFlightPanel.UI
         public static WidgetRenderManager Instance => _instance ?? (_instance = new WidgetRenderManager());
 
         private readonly List<WidgetRegistration> _registrations = new List<WidgetRegistration>();
+        private readonly List<WidgetRegistration> _criticalRegistrations = new List<WidgetRegistration>();
+        private readonly List<WidgetRegistration> _nonCriticalRegistrations = new List<WidgetRegistration>();
         private readonly Dictionary<BaseFlightWidget, WidgetRegistration> _widgetLookup = new Dictionary<BaseFlightWidget, WidgetRegistration>();
+
+        private void RebuildTierBuckets()
+        {
+            _criticalRegistrations.Clear();
+            _nonCriticalRegistrations.Clear();
+            for (int i = 0; i < _registrations.Count; i++)
+            {
+                var reg = _registrations[i];
+                if (reg == null) continue;
+                if (reg.Tier == WidgetRefreshTier.Critical)
+                    _criticalRegistrations.Add(reg);
+                else
+                    _nonCriticalRegistrations.Add(reg);
+            }
+        }
 
         // 全局配置与状态
         public GlobalRefreshProfile CurrentProfile { get; set; } = GlobalRefreshProfile.Balanced;
@@ -145,16 +162,18 @@ namespace ModularFlightPanel.UI
             if (_widgetLookup.ContainsKey(widget))
             {
                 _widgetLookup[widget].Tier = tier;
+                RebuildTierBuckets();
                 return;
             }
 
             var reg = new WidgetRegistration(widget, tier)
             {
-                PhaseOffset = (_registrations.Count * 2 + 1) % 12,
+                PhaseOffset = _registrations.Count,
                 LastUpdateTime = -10f - (_registrations.Count % 8) * 0.003f
             };
             _registrations.Add(reg);
             _widgetLookup[widget] = reg;
+            RebuildTierBuckets();
         }
 
         public void UnregisterWidget(BaseFlightWidget widget)
@@ -165,6 +184,7 @@ namespace ModularFlightPanel.UI
                 reg.State = WidgetLifecycleState.Disposed;
                 _registrations.Remove(reg);
                 _widgetLookup.Remove(widget);
+                RebuildTierBuckets();
             }
         }
 
@@ -210,6 +230,8 @@ namespace ModularFlightPanel.UI
         public void ClearAll()
         {
             _registrations.Clear();
+            _criticalRegistrations.Clear();
+            _nonCriticalRegistrations.Clear();
             _widgetLookup.Clear();
         }
 
@@ -348,12 +370,14 @@ namespace ModularFlightPanel.UI
             double ticksToMs = 1000.0 / Stopwatch.Frequency;
             try
             {
-                int count = _registrations.Count;
+                int critCount = _criticalRegistrations.Count;
+                int nonCritCount = _nonCriticalRegistrations.Count;
                 int activeCount = 0;
 
                 if (!EnableBudgetSlicing)
                 {
                     // 原始全量无切片调度回退分支
+                    int count = _registrations.Count;
                     for (int i = 0; i < count; i++)
                     {
                         var reg = _registrations[i];
@@ -374,17 +398,16 @@ namespace ModularFlightPanel.UI
 
                 // -------------------------------------------------------------
                 // 阶段 1：Critical 级核心姿态航电组件无条件保活直通 (姿态球/航向指示弧)
+                // 仅遍历专用 Critical 桶，彻底消除全量线性扫描空转
                 // -------------------------------------------------------------
-                for (int i = 0; i < count; i++)
+                for (int i = 0; i < critCount; i++)
                 {
-                    var reg = _registrations[i];
+                    var reg = _criticalRegistrations[i];
                     if (reg == null || reg.Widget == null) continue;
                     if (reg.State != WidgetLifecycleState.Active) continue;
                     if (!reg.Widget.gameObject.activeSelf) continue;
 
                     activeCount++;
-
-                    if (reg.Tier != WidgetRefreshTier.Critical) continue;
 
                     if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
@@ -394,22 +417,24 @@ namespace ModularFlightPanel.UI
 
                 // -------------------------------------------------------------
                 // 阶段 2：Standard / Relaxed / UltraLow 组件公平轮询切片调度 (Round-Robin Slicing)
+                // 仅遍历专用 NonCritical 桶，彻底消除游标跳空与无意义跳步
                 // 采用独立计时管道与姿态球耗时解耦，每 3 个组件采样一次时间戳，彻底消除饥饿与高频计时抖动
                 // -------------------------------------------------------------
-                if (count > 0)
+                if (nonCritCount > 0)
                 {
-                    int startIndex = _sliceCursor % count;
+                    int startIndex = _sliceCursor % nonCritCount;
                     int scheduledNonCrit = 0;
                     long nonCritStartTick = Stopwatch.GetTimestamp();
 
-                    for (int step = 0; step < count; step++)
+                    for (int step = 0; step < nonCritCount; step++)
                     {
-                        int i = (startIndex + step) % count;
-                        var reg = _registrations[i];
+                        int i = (startIndex + step) % nonCritCount;
+                        var reg = _nonCriticalRegistrations[i];
                         if (reg == null || reg.Widget == null) continue;
                         if (reg.State != WidgetLifecycleState.Active) continue;
                         if (!reg.Widget.gameObject.activeSelf) continue;
-                        if (reg.Tier == WidgetRefreshTier.Critical) continue; // Critical 已经在阶段 1 执行完毕
+
+                        activeCount++;
 
                         if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
@@ -423,7 +448,7 @@ namespace ModularFlightPanel.UI
                             double nonCritElapsedMs = (Stopwatch.GetTimestamp() - nonCritStartTick) * ticksToMs;
                             if (nonCritElapsedMs >= MaxNonCriticalBudgetMs)
                             {
-                                _sliceCursor = (i + 1) % count;
+                                _sliceCursor = (i + 1) % nonCritCount;
                                 break;
                             }
                         }
@@ -431,7 +456,7 @@ namespace ModularFlightPanel.UI
 
                     if (scheduledNonCrit == 0 || (Stopwatch.GetTimestamp() - nonCritStartTick) * ticksToMs < MaxNonCriticalBudgetMs)
                     {
-                        _sliceCursor = (startIndex + count) % count;
+                        _sliceCursor = (startIndex + nonCritCount) % nonCritCount;
                     }
                 }
 

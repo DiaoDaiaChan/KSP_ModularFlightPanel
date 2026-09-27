@@ -56,9 +56,15 @@ namespace ModularFlightPanel.UI
             I18n.Tr("UI_TAB_SANDBOX", "🚀 仿真沙盒")
         };
 
+        private SettingsGUIDrawer _drawer;
+
         private void Awake()
         {
             _instance = this;
+            _drawer = gameObject.GetComponent<SettingsGUIDrawer>() ?? gameObject.AddComponent<SettingsGUIDrawer>();
+            _drawer.Owner = this;
+            _drawer.enabled = false;
+
             UIWidget.OnRequestOpenWorkbench = ToggleWindow;
             MFPToastBridge.OnShowToast = (msg) => Settings.MFPGuiSkin.ShowToast(msg);
             I18nManager.OnLanguageChanged += HandleLanguageChanged;
@@ -82,20 +88,15 @@ namespace ModularFlightPanel.UI
 
         private void Update()
         {
-            // F2 隐藏界面时不响应 Alt+N
-            if (KSP.UI.UIMasterController.Instance != null && !KSP.UI.UIMasterController.Instance.IsUIShowing)
-            {
-                return;
-            }
-
-            // Alt + N 快捷键呼出/关闭
+            // Alt + N 快捷键呼出/关闭 (仅在按键按下时才做 F2 隐藏判断，彻底消灭每帧单例查找)
             if ((Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) && Input.GetKeyDown(KeyCode.N))
             {
-                ToggleWindow();
+                if (KSP.UI.UIMasterController.Instance == null || KSP.UI.UIMasterController.Instance.IsUIShowing)
+                {
+                    ToggleWindow();
+                }
             }
-
-            // 打开状态下按下 ESC 退出窗口
-            if (_isOpen && Input.GetKeyDown(KeyCode.Escape))
+            else if (_isOpen && Input.GetKeyDown(KeyCode.Escape))
             {
                 ToggleWindow();
             }
@@ -110,6 +111,12 @@ namespace ModularFlightPanel.UI
         public void OpenToTab(int tabIndex)
         {
             _isOpen = true;
+            if (_drawer != null && !_drawer.enabled)
+            {
+                _drawer.enabled = true;
+            }
+            EnsureWindowRect();
+            WidgetDragHandler.IsEditModeActive = true;
             SwitchTab(tabIndex);
             OnWindowStateChanged?.Invoke(_isOpen);
         }
@@ -117,6 +124,11 @@ namespace ModularFlightPanel.UI
         public void ToggleWindow()
         {
             _isOpen = !_isOpen;
+            if (_drawer != null && _drawer.enabled != _isOpen)
+            {
+                _drawer.enabled = _isOpen;
+            }
+
             if (!_isOpen)
             {
                 // 关闭窗口时退出拖拽编辑模式、释放输入锁、提交暂存并持久化几何布局
@@ -251,7 +263,7 @@ namespace ModularFlightPanel.UI
             MFPInputLock.ReleaseAllLocks();
         }
 
-        private void OnGUI()
+        public void RenderGUI()
         {
             if (!_isOpen) return;
 
@@ -586,6 +598,28 @@ namespace ModularFlightPanel.UI
                 GUI.DragWindow(new Rect(0f, 0f, Mathf.Max(80f, _windowRect.width - 470f), 44f));
                 // 2. 底栏拖动区域 (避开右侧保存按钮与拉伸手柄约 260px)
                 GUI.DragWindow(new Rect(0f, _windowRect.height - 36f, Mathf.Max(80f, _windowRect.width - 260f), 36f));
+            }
+        }
+
+        /// <summary>
+        /// 独立 IMGUI 绘制派发器：仅在 SettingsGUI 打开时激活 (enabled = true)，
+        /// 在正常飞行与窗口关闭期间严格休眠 (enabled = false)，彻底消除 Unity C++ 引擎对 OnGUI() 的每帧 P/Invoke 轮询开销！
+        /// </summary>
+        private class SettingsGUIDrawer : MonoBehaviour
+        {
+            public SettingsGUI Owner;
+
+            private void Awake()
+            {
+                enabled = false;
+            }
+
+            private void OnGUI()
+            {
+                if (Owner != null && Owner.IsOpen)
+                {
+                    Owner.RenderGUI();
+                }
             }
         }
     }

@@ -86,11 +86,20 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 检查是否有自定义模板覆盖
             string customTpl = Config?.CustomTemplate;
-            if (!string.IsNullOrEmpty(customTpl) && customTpl.Contains(";"))
+            if (!string.IsNullOrEmpty(customTpl))
             {
-                // 高级多通道模板解析：CH1=...;CH2=...
-                ParseCustomMultiChannel(customTpl, telemetry);
-                return;
+                if (customTpl.IndexOf('=') >= 0)
+                {
+                    // 具备通道键值对解析：CH1=...;CH2=...
+                    ParseCustomMultiChannel(customTpl, telemetry);
+                    return;
+                }
+                else
+                {
+                    // 智能容错：用户输入了未带通道前缀的由 '|'、换行或逗号分隔的通配符列表
+                    ParseDelimitedChannels(customTpl, telemetry);
+                    return;
+                }
             }
 
             // 1. SPD: 当前地速/空速 (优先参考系真实速度)
@@ -124,13 +133,13 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ParseCustomMultiChannel(string template, IFlightTelemetry telemetry)
         {
-            string[] pairs = template.Split(';');
+            string[] pairs = template.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var p in pairs)
             {
-                string[] kv = p.Split('=');
-                if (kv.Length != 2) continue;
-                string key = kv[0].Trim().ToUpperInvariant();
-                string token = kv[1].Trim();
+                int eq = p.IndexOf('=');
+                if (eq <= 0) continue;
+                string key = p.Substring(0, eq).Trim().ToUpperInvariant();
+                string token = (eq < p.Length - 1) ? p.Substring(eq + 1).Trim() : string.Empty;
                 switch (key)
                 {
                     case "CH1": Ch1Val.Text = EvalToken(token, telemetry, "---"); break;
@@ -139,6 +148,31 @@ namespace ModularFlightPanel.UI.Widgets
                     case "CH4": Ch4Val.Text = EvalToken(token, telemetry, "---"); break;
                     case "CH5": Ch5Val.Text = EvalToken(token, telemetry, "---"); break;
                     case "CH6": Ch6Val.Text = EvalToken(token, telemetry, "---"); break;
+                }
+            }
+        }
+
+        private void ParseDelimitedChannels(string template, IFlightTelemetry telemetry)
+        {
+            string[] tokens = template.Split(new[] { '|', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < tokens.Length && i < 6; i++)
+            {
+                string tok = tokens[i].Trim();
+                int braceStart = tok.IndexOf('{');
+                int braceEnd = tok.LastIndexOf('}');
+                string evalStr = (braceStart >= 0 && braceEnd > braceStart) 
+                    ? tok.Substring(braceStart, braceEnd - braceStart + 1) 
+                    : tok;
+
+                string res = EvalToken(evalStr, telemetry, "---");
+                switch (i)
+                {
+                    case 0: Ch1Val.Text = res; break;
+                    case 1: Ch2Val.Text = res; break;
+                    case 2: Ch3Val.Text = res; break;
+                    case 3: Ch4Val.Text = res; break;
+                    case 4: Ch5Val.Text = res; break;
+                    case 5: Ch6Val.Text = res; break;
                 }
             }
         }

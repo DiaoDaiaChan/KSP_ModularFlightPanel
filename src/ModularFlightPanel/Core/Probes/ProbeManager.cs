@@ -259,6 +259,11 @@ namespace ModularFlightPanel.Core
 
                     p.LastPollTime = now;
 
+                    if (p is ProbeBinding pb && !pb.HasUpdateAction)
+                    {
+                        continue;
+                    }
+
                     UnityEngine.Profiling.Profiler.BeginSample("MFP.Probe." + p.ProbeId);
                     try
                     {
@@ -318,6 +323,7 @@ namespace ModularFlightPanel.Core
             public float PollingInterval { get; }
             public float LastPollTime { get; set; } = -10f;
             public int ConsecutiveErrors { get; set; } = 0;
+            public bool HasUpdateAction => _update != null;
 
             public void Initialize() => _initialize?.Invoke();
             public void UpdateTelemetry(Vessel v, IFlightTelemetry t) => _update?.Invoke(v, t);

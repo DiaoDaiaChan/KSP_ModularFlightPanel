@@ -43,6 +43,7 @@ namespace ModularFlightPanel.Config
         public bool IsLocked = false;         // 是否锁定图层 (锁定后禁止在画布中点击拖拽/变换，防止误触大背景面板)
 
         // 子部件屏蔽与定制 (Sub-Element Masking)
+        // TODO: [DetailedEditMode] 未来支持自由编辑子控件位置时，可在此持久化 SubElementTransforms (例如 "top_tag:10,-20;bottom_tag:0,50")
         public string DisabledSubElements = ""; // 逗号或分号分隔的已屏蔽子部件 ID (例如 "top_mode,bottom_sec,trend_bar")
 
         public bool IsSubElementDisabled(string controlId)

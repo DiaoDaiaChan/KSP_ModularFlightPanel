@@ -134,13 +134,41 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             float fill = 0f;
-            if (_type == ArcMeterType.VerticalSpeed)
+            string customTok = Config?.NumericToken;
+            bool isCustomBound = !string.IsNullOrEmpty(customTok) && 
+                                 customTok != "{VSI:NORM}" && 
+                                 customTok != "{PROP}" && 
+                                 customTok != "{THROTTLE}";
+
+            if (isCustomBound)
+            {
+                double val = EvalNumeric(customTok, telemetry);
+                Value.Text = EvalToken(customTok, telemetry, "---");
+                double min = Config.MinValue;
+                double max = Config.MaxValue;
+                if (max > min)
+                {
+                    fill = Mathf.Clamp01((float)((val - min) / (max - min)));
+                }
+                else
+                {
+                    fill = 0f;
+                }
+
+                if (Config.WarningThreshold > Config.CautionThreshold)
+                {
+                    if (val >= Config.WarningThreshold) Value.SetRole(TextStyleRole.Danger);
+                    else if (val >= Config.CautionThreshold) Value.SetRole(TextStyleRole.Warning);
+                    else Value.SetRole(TextStyleRole.PrimaryValue);
+                }
+            }
+            else if (_type == ArcMeterType.VerticalSpeed || customTok == "{VSI:NORM}")
             {
                 double vsi = telemetry.VerticalSpeed;
                 Value.Text = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
                 fill = (float)telemetry.NormalizedVSI;
             }
-            else if (_type == ArcMeterType.StagePropellant)
+            else if (_type == ArcMeterType.StagePropellant || customTok == "{PROP}")
             {
                 double prop = telemetry.StagePropellantFraction * 100.0;
                 Value.Text = $"{prop:F0}%";

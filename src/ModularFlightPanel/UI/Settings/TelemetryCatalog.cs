@@ -229,7 +229,52 @@ namespace ModularFlightPanel.UI.Settings
             new TelemetryParam("{TEMP}", "🔋 资源、维生与通信", "舱内/环境温度", "乘员舱生活区温度或外表面温", "°C", -50, 150, 50, 80, true, 5f),
             new TelemetryParam("{O2}", "🔋 资源、维生与通信", "氧气储量百分比", "维生氧气罐可用比例", "%", 0, 100, 25, 15, false, 5f),
             new TelemetryParam("{MONO}", "🔋 资源、维生与通信", "姿控单组元推进剂", "RCS 单组元推进剂剩余比例", "%", 0, 100, 20, 10, false, 5f),
-            new TelemetryParam("{WATER}", "🔋 资源、维生与通信", "水资源储量百分比", "生活给水储罐可用比例", "%", 0, 100, 25, 15, false, 5f)
+            new TelemetryParam("{WATER}", "🔋 资源、维生与通信", "水资源储量百分比", "生活给水储罐可用比例", "%", 0, 100, 25, 15, false, 5f),
+            new TelemetryParam("{EC:MAX}", "🔋 资源、维生与通信", "最大可用电量 (EC:MAX)", "全舰电池组总储电容量上限", "EC", 0, 5000, 0, 0, true, 100f),
+            new TelemetryParam("{VOLT}", "🔋 资源、维生与通信", "母线直流电压 (VOLT)", "主航电设备 28V 标称总线电压", "V", 0, 36, 24, 20, true, 1f),
+            new TelemetryParam("{COMM:RATE}", "🔋 资源、维生与通信", "通信数据速率 (RATE)", "天线链路当前实时吞吐带宽", "bps", 0, 1000000, 0, 0, true),
+            new TelemetryParam("{COMM:TX}", "🔋 资源、维生与通信", "通信上行信号比 (TX)", "地面站发往飞船的上行射频信号强度比率", "%", 0, 100, 25, 10, false, 5f),
+            new TelemetryParam("{COMM:RX}", "🔋 资源、维生与通信", "通信下行信号比 (RX)", "飞船发往地面站的下行射频信号强度比率", "%", 0, 100, 25, 10, false, 5f),
+            new TelemetryParam("{COMM:STATUS}", "🔋 资源、维生与通信", "通信链路状态 (STATUS)", "天线链路当前物理连接状态文本", "", 0, 0, 0, 0, false),
+            new TelemetryParam("{SIGNAL}", "🔋 资源、维生与通信", "通信网络信号 (SIGNAL)", "CommNet 链路综合信号强度 (COMM 别名)", "%", 0, 100, 35, 10, false, 5f),
+
+            // 12. 轨道几何与历元机动
+            new TelemetryParam("{ECC}", "🌌 轨道与机动", "轨道偏心率 (ECC)", "开普勒轨道离心率 (0=正圆, <1=椭圆, >=1=逃逸)", "", 0, 1.5, 0.9, 1.0, false, 0.05f),
+            new TelemetryParam("{SMA}", "🌌 轨道与机动", "半长轴 (SMA)", "开普勒轨道椭圆轨道半长轴", "km", 0, 500000, 0, 0, true, 100f),
+            new TelemetryParam("{PERIOD}", "🌌 轨道与机动", "轨道周期 (PERIOD)", "绕行中心天体一周所需的时间", "s", 0, 86400, 0, 0, true, 60f),
+            new TelemetryParam("{DV}", "🌌 轨道与机动", "分级可用速度增量 (DV)", "当前激活级预计可用真空间速度增量", "m/s", 0, 8000, 500, 200, true, 50f),
+            new TelemetryParam("{BURNTIME}", "🌌 轨道与机动", "预计工作燃时 (BURNTIME)", "当前分级引擎持续燃烧耗尽预计所需时间", "s", 0, 600, 30, 10, true, 5f),
+            new TelemetryParam("{NODEDV}", "🌌 轨道与机动", "机动节点待执行 ΔV", "当前计划机动节点剩余待消耗速度增量", "m/s", 0, 3000, 50, 10, true, 10f),
+            new TelemetryParam("{TIMETONODE}", "🌌 轨道与机动", "机动节点倒计时", "飞船沿轨运行到达机动节点剩余时间", "s", 0, 3600, 60, 15, true, 10f),
+            new TelemetryParam("{WARP}", "🌌 轨道与机动", "时间加速倍率 (WARP)", "游戏当前物理或轨道时间加速倍率", "x", 1, 100000, 0, 0, true),
+            new TelemetryParam("{WARP:RATE}", "🌌 轨道与机动", "时间加速速率", "时间加速实际比例倍数数值", "x", 1, 100000, 0, 0, true),
+            new TelemetryParam("{WARP:MAX}", "🌌 轨道与机动", "最大允许加速档位", "当前物理环境与轨道安全允许的最大加速索引", "", 0, 8, 0, 0, false),
+            new TelemetryParam("{MET}", "🌌 轨道与机动", "任务耗时 (MET)", "自载具点火发射起算的飞行任务历元总时长", "s", 0, 10000000, 0, 0, true, 60f),
+            new TelemetryParam("{UT}", "🌌 轨道与机动", "宇宙通用时间 (UT)", "坎巴拉星系绝对历元时间戳", "s", 0, 100000000, 0, 0, true, 60f),
+
+            // 13. 飞控指令、操纵输入与分级状态
+            new TelemetryParam("{CTRL_PITCH}", "🧭 姿态与控制", "俯仰操纵输入 (PITCH)", "当前玩家或自动机输入的俯仰控制轴量 (-1~1)", "", -1, 1, 0.8, 0.95, false, 0.1f),
+            new TelemetryParam("{CTRL_ROLL}", "🧭 姿态与控制", "滚转操纵输入 (ROLL)", "当前玩家或自动机输入的滚转控制轴量 (-1~1)", "", -1, 1, 0.8, 0.95, false, 0.1f),
+            new TelemetryParam("{CTRL_YAW}", "🧭 姿态与控制", "偏航操纵输入 (YAW)", "当前玩家或自动机输入的偏航控制轴量 (-1~1)", "", -1, 1, 0.8, 0.95, false, 0.1f),
+            new TelemetryParam("{CTRL_TRANSX}", "🧭 姿态与控制", "RCS 横向平移 (TRANS-X)", "姿控平移系统横向平移推力指令量 (-1~1)", "", -1, 1, 0.8, 0.95, false, 0.1f),
+            new TelemetryParam("{CTRL_TRANSY}", "🧭 姿态与控制", "RCS 垂直平移 (TRANS-Y)", "姿控平移系统垂直平移推力指令量 (-1~1)", "", -1, 1, 0.8, 0.95, false, 0.1f),
+            new TelemetryParam("{CTRL_TRANSZ}", "🧭 姿态与控制", "RCS 纵向平移 (TRANS-Z)", "姿控平移系统前后平移推力指令量 (-1~1)", "", -1, 1, 0.8, 0.95, false, 0.1f),
+            new TelemetryParam("{TRIM_PITCH}", "🧭 姿态与控制", "俯仰配平角度 (TRIM)", "气动翼面当前锁定的俯仰配平角差", "", -1, 1, 0.5, 0.8, false, 0.05f),
+            new TelemetryParam("{TRIM_ROLL}", "🧭 姿态与控制", "滚转配平角度 (TRIM)", "气动翼面当前锁定的滚转配平角差", "", -1, 1, 0.5, 0.8, false, 0.05f),
+            new TelemetryParam("{TRIM_YAW}", "🧭 姿态与控制", "偏航配平角度 (TRIM)", "气动翼面当前锁定的偏航配平角差", "", -1, 1, 0.5, 0.8, false, 0.05f),
+            new TelemetryParam("{CTRL_MODE}", "🧭 姿态与控制", "控制源模式 (CTRL_MODE)", "当前主控指令舱或参考控制轴朝向模式文本", "", 0, 0, 0, 0, false),
+            new TelemetryParam("{CTRL_PREC}", "🧭 姿态与控制", "精细操纵模式 (PRECISION)", "当前是否激活精细操纵微动模式 (1/0)", "", 0, 1, 0, 0, false),
+            new TelemetryParam("{FRAME:TYPE}", "🧭 姿态与控制", "参考系类别 (FRAME:TYPE)", "当前活动姿态参考系类别 (ORBIT/SURFACE/TARGET)", "", 0, 0, 0, 0, false),
+
+            // 14. 分级、推进剂与诊断
+            new TelemetryParam("{STAGE}", "⚡ 动力与推进", "当前分级序号 (STAGE)", "载具当前所处的分级阶段序号", "", 0, 10, 0, 0, false, 1f),
+            new TelemetryParam("{STAGE_LOCK}", "⚡ 动力与推进", "分级安全锁定 (STAGE_LOCK)", "空格分级动作是否已处于锁定保护中 (1/0)", "", 0, 1, 0, 0, false),
+            new TelemetryParam("{STAGE_PROP_NAME}", "⚡ 动力与推进", "主推进剂名 (STAGE_PROP)", "当前激活级消耗量最大的主要推进剂名称", "", 0, 0, 0, 0, false),
+            new TelemetryParam("{IGNITING}", "⚡ 动力与推进", "点火中引擎计数 (IGNITING)", "当前处于点火工作状态的火箭发动机台数", "", 0, 20, 0, 0, false, 1f),
+            new TelemetryParam("{SEPARATING}", "⚡ 动力与推进", "分离部件计数 (SEPARATING)", "当前正在执行分级分离动作的连接构件数量", "", 0, 10, 0, 0, false, 1f),
+            new TelemetryParam("{PRESSURE}", "🏔️ 高度与垂直", "环境大气静压 (PRESSURE)", "当前飞行高度的大气环境静态压强", "kPa", 0, 101.3, 80, 95, true, 5f),
+            new TelemetryParam("{VSI:NORM}", "🚀 速度与马赫", "垂直速度归一比 (VSI:NORM)", "标准化垂直爬升/下沉比率 (-1.0~1.0)", "", -1, 1, -0.8, -0.95, false, 0.1f),
+            new TelemetryParam("{PERF}", "全部参数", "面板渲染帧率 (PERF)", "MFP 航电系统当前的即时渲染更新帧率", "fps", 0, 120, 30, 20, false, 5f)
         };
 
         public static readonly string[] Categories = new string[]

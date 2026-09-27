@@ -53,6 +53,14 @@ namespace ModularFlightPanel.UI.Framework
 
     /// <summary>
     /// 标准化组件控件契约 (Standardized Widget Control Interface)
+    /// 暴露独立的 Id、RootGameObject 与 RectTransform。
+    /// 
+    /// TODO: [DetailedEditMode] 自由编辑模式（详细下钻拖拽与独立排版）：
+    /// 未来版本可在此扩展支持深入组件内部的局部自由拖拽排版 (Component Isolation Mode)。
+    /// 架构设计要点：
+    /// 1. 交互下钻：双击选中小组件进入微控件编辑层，射线检测由 BaseFlightWidget 切换为下属各 IWidgetControl；
+    /// 2. 局部变换操纵：复用 WidgetDragHandler 的位移计算，直接更新 IWidgetControl.RectTransform.anchoredPosition；
+    /// 3. 位置持久化：通过 WidgetConfig.SubElementTransforms (如 "id:x,y;id2:x,y") 或 CustomTemplate 的 "<ID>_POS=x,y" 存储。
     /// </summary>
     public interface IWidgetControl
     {
