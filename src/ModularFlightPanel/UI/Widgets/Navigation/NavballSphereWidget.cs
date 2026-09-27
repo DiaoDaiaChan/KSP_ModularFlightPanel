@@ -103,8 +103,6 @@ namespace ModularFlightPanel.UI.Widgets
         private float _currentFramePattern = 0f;
         private string _lastFrameName = null;
         private string _lastSpeedMode = null;
-        private Quaternion _lastRawRot = Quaternion.identity;
-        private bool _hasLastRawRot = false;
 
         private float _frameBadgeAnimTimer = 999f;
         private float _rollPointerAlpha = 0f;
@@ -549,9 +547,6 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 更新姿态与渲染材质
-            SyncAttitudeAndVisuals();
-
             // 更新航向读数盒与参考系模式显示
             string category = hook?.ReferenceFrameCategory ?? "SURFACE";
             if (_headingText != null)
@@ -738,10 +733,6 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     isFrameSwitch = true;
                 }
-                else if (_hasLastRawRot && Quaternion.Angle(rawRot, _lastRawRot) > 12.0f)
-                {
-                    isFrameSwitch = true;
-                }
             }
 
             if (isFrameSwitch)
@@ -776,8 +767,6 @@ namespace ModularFlightPanel.UI.Widgets
             _lastFrameCategory = category;
             _lastFrameName = frameName;
             _lastSpeedMode = speedMode;
-            _lastRawRot = rawRot;
-            _hasLastRawRot = true;
 
             float newPattern = GetFramePatternCode(category);
             float transitionProgress = 1.0f;

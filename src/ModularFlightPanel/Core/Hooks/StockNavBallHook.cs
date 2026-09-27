@@ -355,7 +355,7 @@ namespace ModularFlightPanel.Core
             {
                 return UIMasterController.Instance.uiCamera;
             }
-            return Camera.main;
+            return null;
         }
 
         /// <summary>
