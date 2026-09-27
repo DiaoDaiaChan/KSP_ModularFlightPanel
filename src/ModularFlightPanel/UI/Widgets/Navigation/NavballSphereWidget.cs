@@ -1103,6 +1103,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public void HandleMarkerRightClick(string markerKey, Vector2 pos)
         {
+#if KSP_RUNTIME
             if (markerKey != null && markerKey.Equals("maneuver", StringComparison.OrdinalIgnoreCase))
             {
                 Vessel v = FlightGlobals.ActiveVessel;
@@ -1121,6 +1122,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
             }
+#endif
         }
 
         public void TriggerShockwaveRipple(Vector2 pos, Color col)
@@ -1340,20 +1342,26 @@ namespace ModularFlightPanel.UI.Widgets
                 Vector3 halfAxis = new Vector3(delta.x, delta.y, delta.z);
                 float sinHalfAngle = halfAxis.magnitude;
 
-                Vector3 rawAngularVelocity = Vector3.zero;
+                Vector3 rawBallAngularVelocity = Vector3.zero;
                 if (sinHalfAngle > 0.00015f)
                 {
                     float angleDegrees = 2f * Mathf.Atan2(sinHalfAngle, Mathf.Clamp(delta.w, 0f, 1f)) * Mathf.Rad2Deg;
                     float rawRate = angleDegrees / dt;
-                    if (rawRate < 180f)
+                    if (rawRate < 240f)
                     {
-                        rawAngularVelocity = (halfAxis / sinHalfAngle) * rawRate;
+                        rawBallAngularVelocity = (halfAxis / sinHalfAngle) * rawRate;
                     }
                 }
 
+                // 物理映射：将球体在摄像机视口下的逆运动转换为载具在屏幕视口下的真实运动角速度
+                // Pitch (抬头/低头): X 轴负向对应抬头 (+Y)
+                // Yaw (右偏/左偏): Y 轴负向对应右偏 (+X)
+                // Roll (右滚/左滚): Z 轴正向对应顺时针右滚 (-Z)
+                Vector3 rawVesselAngularVelocity = new Vector3(rawBallAngularVelocity.x, -rawBallAngularVelocity.y, -rawBallAngularVelocity.z);
+
                 // 低通滤波角速度矢量，彻底消除跨物理帧瞬时微步进与角轴旋转随机翻转
-                float filterBlend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 6.5f);
-                _smoothedAngularVelocity = Vector3.Lerp(_smoothedAngularVelocity, rawAngularVelocity, filterBlend);
+                float filterBlend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 7.5f);
+                _smoothedAngularVelocity = Vector3.Lerp(_smoothedAngularVelocity, rawVesselAngularVelocity, filterBlend);
             }
             else
             {
@@ -1364,14 +1372,14 @@ namespace ModularFlightPanel.UI.Widgets
             _hasPreviousAttitudeRotation = true;
 
             float smoothRate = _smoothedAngularVelocity.magnitude;
-            // 死区量化守卫：低于 0.40°/s 的微幅扰动视为稳态静止，杜绝虚线趋势指示抖动
-            if (smoothRate > 0.40f)
+            // 死区量化守卫：低于 0.35°/s 的微幅扰动视为稳态静止，杜绝虚线趋势指示抖动
+            if (smoothRate > 0.35f)
             {
                 Vector3 axis = _smoothedAngularVelocity / smoothRate;
-                float predictionAngle = Mathf.Clamp(smoothRate * 0.45f, 0f, 20f);
-                Quaternion parentPrediction = Quaternion.AngleAxis(predictionAngle, axis);
-                targetTrendRotation = Quaternion.Inverse(currentRotation) * parentPrediction * currentRotation;
-                targetStrength = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 5.0f, smoothRate));
+                // 航电标准 1.25s 动量前瞻时间常数 (上限钳制在 22°，避免极端大角速度下穿模溢出)
+                float predictionAngle = Mathf.Clamp(smoothRate * 1.25f, 0f, 22f);
+                targetTrendRotation = Quaternion.AngleAxis(predictionAngle, axis);
+                targetStrength = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.45f, 4.0f, smoothRate));
             }
             else
             {
@@ -1379,7 +1387,7 @@ namespace ModularFlightPanel.UI.Widgets
                 targetStrength = 0f;
             }
 
-            float blend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 7.0f);
+            float blend = (!Application.isPlaying || dt <= 0.0001f) ? 1f : Mathf.Clamp01(dt * 8.0f);
             _filteredTrendRotation = Quaternion.Slerp(_filteredTrendRotation, targetTrendRotation, blend);
             _attitudeTrendStrength = Mathf.MoveTowards(_attitudeTrendStrength, targetStrength, (!Application.isPlaying ? 1f : dt * 3.5f));
 

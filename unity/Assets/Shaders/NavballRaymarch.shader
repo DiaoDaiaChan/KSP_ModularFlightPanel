@@ -332,6 +332,14 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 return lerp(1.0, clearAtRadius, saturate(marker.w));
             }
 
+            float DistanceToSegment2D(float2 p, float2 a, float2 b)
+            {
+                float2 pa = p - a;
+                float2 ba = b - a;
+                float h = saturate(dot(pa, ba) / max(0.00001, dot(ba, ba)));
+                return length(pa - ba * h);
+            }
+
             // 核心程序化曲面求值函数 (共享于实时备用通道与离屏烘焙通道)
             fixed4 EvaluateNavballSurface(float3 p, float pitchDeg, float headDeg, float absPitch, float absY, float NdotV, float markerClearance, float signH)
             {
@@ -1109,56 +1117,93 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     col = EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, NdotV, markerClearance, signH);
 
-                    // 姿态趋势预测动态前瞻引导系统 (Pointer-Adjacent Flight Path Lead Trend System)
-                    // 彻底收拢全屏贯穿地平线，仅在中央固定指针机翼两侧 (x in [±0.28, ±0.52]) 呈现紧凑高清晰度前瞻小翼与拉杆向量带
+                    // 姿态运动趋势全向 3D 前瞻预测引导系统 (Full 3-DOF Flight Path Trend Lead System)
+                    // 完美覆盖俯仰 (Pitch / Y 轴位移)、偏航 (Yaw / X 轴横移) 与滚转 (Roll / 姿态倾角)
                     if (_TrendStrength > 0.01)
                     {
-                        // 修正参考系手性：Mode 5 与 Mode 1 需适配坐标反演
                         float4 qTrend = _TrendRotation;
-                        if (_FramePattern > 4.5)
-                        {
-                            qTrend = float4(-qTrend.x, -qTrend.y, qTrend.z, qTrend.w);
-                        }
-                        else if (_FramePattern > 0.5 && _FramePattern < 1.5)
-                        {
-                            qTrend = float4(-qTrend.x, qTrend.y, -qTrend.z, qTrend.w);
-                        }
 
-                        // 飞机机翼端点在视口空间的基准位置：左机翼端 (-0.32, 0), 右机翼端 (+0.32, 0)
-                        // 经 qTrend 前瞻角速度旋转，计算未来姿态下的视口机翼端点
-                        float3 leftWingV  = float3(-0.32, 0.0, 1.0);
-                        float3 rightWingV = float3( 0.32, 0.0, 1.0);
-                        float3 predLeft   = RotateByQuaternion(leftWingV,  qTrend);
-                        float3 predRight  = RotateByQuaternion(rightWingV, qTrend);
+                        // 1. 基准几何顶点在正交视线空间 (固定瞄准准星参考点)
+                        // 中心准星点 (0, 0), 左机翼内端/外端, 右机翼内端/外端
+                        float3 centerV   = float3( 0.00, 0.0, 1.0);
+                        float3 leftInV   = float3(-0.16, 0.0, 1.0);
+                        float3 leftOutV  = float3(-0.36, 0.0, 1.0);
+                        float3 rightInV  = float3( 0.16, 0.0, 1.0);
+                        float3 rightOutV = float3( 0.36, 0.0, 1.0);
 
-                        // 左右引导翼片元渲染 (严格限制在指针机翼外侧 abs(coord.x) in [0.28, 0.52])
-                        float absCoordX = abs(coord.x);
-                        if (absCoordX > 0.28 && absCoordX < 0.52)
-                        {
-                            float predY = (coord.x > 0.0) ? predRight.y : predLeft.y;
-                            float distToLeadWing = abs(coord.y - predY);
-                            float leadWingAA = clamp(fwidth(distToLeadWing) * 0.75, 0.001, 0.015);
-                            
-                            // 动态前瞻微机翼 (指示未来俯仰与滚转倾角)
-                            float isLeadWingCore = 1.0 - smoothstep(0.0070 - leadWingAA, 0.0070 + leadWingAA, distToLeadWing);
-                            float isLeadWingHalo = (1.0 - smoothstep(0.0150 - leadWingAA, 0.0150 + leadWingAA, distToLeadWing)) * 0.40;
-                            float isLeadWing = max(isLeadWingCore, isLeadWingHalo) * smoothstep(0.28, 0.33, absCoordX) * (1.0 - smoothstep(0.47, 0.52, absCoordX));
-                            
-                            // 趋势拉杆指示垂直连接带 (Trend Tape: 连接当前固定机翼与未来机翼)
-                            float currentY = 0.0;
-                            float minY = min(currentY, predY);
-                            float maxY = max(currentY, predY);
-                            float isTapeH = 1.0 - smoothstep(0.003, 0.010, abs(absCoordX - 0.40));
-                            float isTapeV = (coord.y >= minY - 0.004 && coord.y <= maxY + 0.004) ? 1.0 : 0.0;
-                            float isTrendTape = isTapeH * isTapeV * 0.75;
+                        // 2. 经三维四元数 qTrend 旋转变换至未来姿态位置
+                        float3 predC  = RotateByQuaternion(centerV,   qTrend);
+                        float3 predLI = RotateByQuaternion(leftInV,   qTrend);
+                        float3 predLO = RotateByQuaternion(leftOutV,  qTrend);
+                        float3 predRI = RotateByQuaternion(rightInV,  qTrend);
+                        float3 predRO = RotateByQuaternion(rightOutV, qTrend);
 
-                            float trendTotal = max(isLeadWing, isTrendTape);
-                            float trendAlpha = trendTotal * _TrendStrength * 0.95;
+                        // 投影到屏幕 2D 坐标 (X 右, Y 上)
+                        float2 c2D  = predC.xy;
+                        float2 li2D = predLI.xy;
+                        float2 lo2D = predLO.xy;
+                        float2 ri2D = predRI.xy;
+                        float2 ro2D = predRO.xy;
 
-                            // 现代航电高对比荧光青蓝复合光色
-                            fixed3 trendColor = fixed3(0.15, 0.95, 1.0);
-                            col.rgb = lerp(col.rgb, trendColor, trendAlpha);
-                        }
+                        // 翼尖微型小翼折角端点 (Winglet Fences: 垂直于机翼且指向天顶)
+                        float2 wingDirL = normalize(lo2D - li2D + 0.0001);
+                        float2 wingNormalL = float2(-wingDirL.y, wingDirL.x);
+                        if (wingNormalL.y < 0.0) wingNormalL = -wingNormalL;
+                        float2 fenceTopL = lo2D + wingNormalL * 0.024;
+
+                        float2 wingDirR = normalize(ro2D - ri2D + 0.0001);
+                        float2 wingNormalR = float2(-wingDirR.y, wingDirR.x);
+                        if (wingNormalR.y < 0.0) wingNormalR = -wingNormalR;
+                        float2 fenceTopR = ro2D + wingNormalR * 0.024;
+
+                        float aa = clamp(fwidth(coord.x) * 0.85, 0.0008, 0.012);
+
+                        // 3. 计算片元到前瞻机翼线段与翼尖小翼的精确距离
+                        float dWingL = DistanceToSegment2D(coord, li2D, lo2D);
+                        float dWingR = DistanceToSegment2D(coord, ri2D, ro2D);
+                        float dFenceL = DistanceToSegment2D(coord, lo2D, fenceTopL);
+                        float dFenceR = DistanceToSegment2D(coord, ro2D, fenceTopR);
+
+                        float dWings = min(min(dWingL, dWingR), min(dFenceL, dFenceR));
+
+                        // 机翼主干锐利核芯与微光晕
+                        float isWingCore = 1.0 - smoothstep(0.0055 - aa, 0.0055 + aa, dWings);
+                        float isWingHalo = (1.0 - smoothstep(0.0160 - aa, 0.0160 + aa, dWings)) * 0.38;
+                        float isWings = max(isWingCore, isWingHalo);
+
+                        // 4. 前瞻瞄准中心微菱形标 (Center Flight Path Lead Diamond Pip)
+                        float2 dC = abs(coord - c2D);
+                        float dDiamond = dC.x + dC.y;
+                        float isDiamondCore = 1.0 - smoothstep(0.012 - aa, 0.012 + aa, dDiamond);
+                        float isDiamondHalo = (1.0 - smoothstep(0.024 - aa, 0.024 + aa, dDiamond)) * 0.40;
+                        float isCenterDiamond = max(isDiamondCore, isDiamondHalo);
+
+                        // 5. 3 维运动动态拉杆带与速度航向引导虚线 (Motion Trend Tapes & Lead Vector)
+                        // A. 翼端趋势拉杆带 (连接当前固定翼端与预测翼端)
+                        float dTapeL = DistanceToSegment2D(coord, float2(-0.36, 0.0), lo2D);
+                        float dTapeR = DistanceToSegment2D(coord, float2( 0.36, 0.0), ro2D);
+                        float isTapeL = (1.0 - smoothstep(0.0040 - aa, 0.0040 + aa, dTapeL)) * 0.65;
+                        float isTapeR = (1.0 - smoothstep(0.0040 - aa, 0.0040 + aa, dTapeR)) * 0.65;
+                        float isWingTapes = max(isTapeL, isTapeR);
+
+                        // B. 中心速度/角动量动态前瞻虚线 (Dashed Center Flight Path Trail)
+                        float dCenterTrail = DistanceToSegment2D(coord, float2(0.0, 0.0), c2D);
+                        float distFromOrigin = length(coord);
+                        float dashPulse = sin(distFromOrigin * 90.0 - _Time.y * 12.0) * 0.5 + 0.5;
+                        float isCenterTrail = (1.0 - smoothstep(0.0035 - aa, 0.0035 + aa, dCenterTrail)) * (0.30 + 0.45 * dashPulse);
+
+                        // 6. 综合渲染融合 (纯净发光青蓝复合航电色彩)
+                        float trendPrimary = max(isWings, isCenterDiamond);
+                        float trendSecondary = max(isWingTapes, isCenterTrail);
+                        float trendTotal = max(trendPrimary, trendSecondary);
+
+                        float trendAlpha = trendTotal * _TrendStrength * 0.95;
+
+                        fixed3 trendCoreCol = fixed3(0.18, 0.96, 1.0);  // 电光青蓝主色
+                        fixed3 trendTapeCol = fixed3(0.06, 0.70, 0.88);  // 动量带稍深青蓝
+                        fixed3 finalTrendCol = lerp(trendTapeCol, trendCoreCol, saturate(trendPrimary));
+
+                        col.rgb = lerp(col.rgb, finalTrendCol, trendAlpha);
                     }
                 }
 
