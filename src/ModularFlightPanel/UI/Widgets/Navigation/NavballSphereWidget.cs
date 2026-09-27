@@ -711,10 +711,13 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        private bool _detailScaleDirty = true;
+
         protected override void OnScaleChanged(float targetScale, float relativeRatio)
         {
             base.OnScaleChanged(targetScale, relativeRatio);
             _lastDetailScale = -1f;
+            _detailScaleDirty = true;
             UpdateProceduralDetailScale();
         }
 
@@ -763,13 +766,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             int sw = Screen.width;
             int sh = Screen.height;
-            if (_lastDetailScale >= 0f && sw == _lastScreenWidth && sh == _lastScreenHeight && !transform.hasChanged)
+            if (!_detailScaleDirty && _lastDetailScale >= 0f && sw == _lastScreenWidth && sh == _lastScreenHeight)
             {
                 return;
             }
+            _detailScaleDirty = false;
             _lastScreenWidth = sw;
             _lastScreenHeight = sh;
-            transform.hasChanged = false;
 
             Canvas canvas = _displayImage.canvas;
             Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;

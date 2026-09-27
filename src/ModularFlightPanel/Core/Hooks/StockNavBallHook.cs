@@ -81,12 +81,23 @@ namespace ModularFlightPanel.Core
 
         public static bool HasStockNavBall => StockInstance != null && StockInstance.navBall != null;
 
+        public static void InvalidateCaches()
+        {
+            _cachedNavBallCamera = null;
+            _cachedNavBallCameraFrame = -1;
+            _cachedReferenceFrameNameFrame = -1;
+            _cachedReferenceFrameCategoryFrame = -1;
+            _cachedNavballSpeedFrame = -1;
+            PrincipiaProbe.InvalidateCaches();
+        }
+
         public static void RegisterStockNavBall(NavBall instance)
         {
             if (instance == null) return;
             if (_stockInstance != instance)
             {
                 _stockInstance = instance;
+                InvalidateCaches();
                 NavballMarkerVectorExtractor.InvalidateCaches();
                 StockUIHider.ClearCaches();
                 NavBallHookService.Provider = new StockNavBallVisualHook();
@@ -99,6 +110,7 @@ namespace ModularFlightPanel.Core
             if (_stockInstance == instance)
             {
                 _stockInstance = null;
+                InvalidateCaches();
                 NavballMarkerVectorExtractor.InvalidateCaches();
                 StockUIHider.ClearCaches();
                 NavBallHookService.Provider = null;
@@ -338,23 +350,36 @@ namespace ModularFlightPanel.Core
             return null;
         }
 
+        private static Camera _cachedNavBallCamera;
+        private static int _cachedNavBallCameraFrame = -1;
+
         /// <summary>
         /// 获取渲染官方 NavBall 的权威 UI 摄像机
         /// </summary>
         public static Camera GetNavBallCamera()
         {
+            int frame = Time.frameCount;
+            if (_cachedNavBallCameraFrame == frame && _cachedNavBallCamera != null)
+            {
+                return _cachedNavBallCamera;
+            }
+            _cachedNavBallCameraFrame = frame;
+
             if (HasStockNavBall)
             {
                 Canvas canvas = StockInstance.GetComponentInParent<Canvas>();
                 if (canvas != null && canvas.worldCamera != null)
                 {
-                    return canvas.worldCamera;
+                    _cachedNavBallCamera = canvas.worldCamera;
+                    return _cachedNavBallCamera;
                 }
             }
             if (UIMasterController.Instance != null && UIMasterController.Instance.uiCamera != null)
             {
-                return UIMasterController.Instance.uiCamera;
+                _cachedNavBallCamera = UIMasterController.Instance.uiCamera;
+                return _cachedNavBallCamera;
             }
+            _cachedNavBallCamera = null;
             return null;
         }
 
@@ -367,18 +392,36 @@ namespace ModularFlightPanel.Core
             return NavballMarkerVectorExtractor.GetMarkerDirection(markerKey, out dir, out isVisible);
         }
 
+        private static int _cachedReferenceFrameNameFrame = -1;
+        private static string _cachedReferenceFrameName = "SURFACE";
+
         /// <summary>
         /// 获取当前权威导航参考系名称 (如 BARYCENTRIC, INERTIAL, SURFACE, ORBIT, TARGET)
         /// </summary>
         public static string GetReferenceFrameName()
         {
+            int frame = Time.frameCount;
+            if (_cachedReferenceFrameNameFrame == frame)
+            {
+                return _cachedReferenceFrameName;
+            }
+            _cachedReferenceFrameNameFrame = frame;
+
             PulseSpeedConsumerHeartbeat();
             if (PrincipiaProbe.IsAvailable)
             {
                 string pNav = PrincipiaProbe.NavballFrameName;
-                if (!string.IsNullOrEmpty(pNav)) return pNav.Trim();
+                if (!string.IsNullOrEmpty(pNav))
+                {
+                    _cachedReferenceFrameName = pNav.Trim();
+                    return _cachedReferenceFrameName;
+                }
                 string pFrame = PrincipiaProbe.FrameName;
-                if (!string.IsNullOrEmpty(pFrame)) return pFrame.Trim();
+                if (!string.IsNullOrEmpty(pFrame))
+                {
+                    _cachedReferenceFrameName = pFrame.Trim();
+                    return _cachedReferenceFrameName;
+                }
             }
 
             if (SpeedDisplay.Instance != null && SpeedDisplay.Instance.textTitle != null)
@@ -386,18 +429,32 @@ namespace ModularFlightPanel.Core
                 string title = SpeedDisplay.Instance.textTitle.text;
                 if (!string.IsNullOrEmpty(title))
                 {
-                    return title.Trim();
+                    _cachedReferenceFrameName = title.Trim();
+                    return _cachedReferenceFrameName;
                 }
             }
 
             switch (FlightGlobals.speedDisplayMode)
             {
-                case FlightGlobals.SpeedDisplayModes.Surface: return "SURFACE";
-                case FlightGlobals.SpeedDisplayModes.Orbit: return "ORBIT";
-                case FlightGlobals.SpeedDisplayModes.Target: return "TARGET";
-                default: return "ORBIT";
+                case FlightGlobals.SpeedDisplayModes.Surface:
+                    _cachedReferenceFrameName = "SURFACE";
+                    break;
+                case FlightGlobals.SpeedDisplayModes.Orbit:
+                    _cachedReferenceFrameName = "ORBIT";
+                    break;
+                case FlightGlobals.SpeedDisplayModes.Target:
+                    _cachedReferenceFrameName = "TARGET";
+                    break;
+                default:
+                    _cachedReferenceFrameName = "ORBIT";
+                    break;
             }
+            return _cachedReferenceFrameName;
         }
+
+        private static int _cachedNavballSpeedFrame = -1;
+        private static bool _cachedNavballSpeedResult = false;
+        private static double _cachedNavballSpeedValue = 0.0;
 
         /// <summary>
         /// 从原版姿态球/Principia 权威速度指示牌 (SpeedDisplay) 读取并解析当前显示的实际速度 (m/s)
@@ -405,6 +462,14 @@ namespace ModularFlightPanel.Core
         /// </summary>
         public static bool TryGetNavballSpeed(out double speed)
         {
+            int frame = Time.frameCount;
+            if (_cachedNavballSpeedFrame == frame)
+            {
+                speed = _cachedNavballSpeedValue;
+                return _cachedNavballSpeedResult;
+            }
+            _cachedNavballSpeedFrame = frame;
+
             PulseSpeedConsumerHeartbeat();
             speed = 0.0;
 
@@ -417,16 +482,24 @@ namespace ModularFlightPanel.Core
                     {
                         case FlightGlobals.SpeedDisplayModes.Surface:
                             speed = FlightGlobals.ship_srfSpeed;
+                            _cachedNavballSpeedValue = speed;
+                            _cachedNavballSpeedResult = true;
                             return true;
                         case FlightGlobals.SpeedDisplayModes.Orbit:
                             speed = FlightGlobals.ship_obtSpeed;
+                            _cachedNavballSpeedValue = speed;
+                            _cachedNavballSpeedResult = true;
                             return true;
                         case FlightGlobals.SpeedDisplayModes.Target:
                             speed = FlightGlobals.ship_tgtSpeed;
+                            _cachedNavballSpeedValue = speed;
+                            _cachedNavballSpeedResult = true;
                             return true;
                     }
                 }
                 speed = FlightGlobals.GetDisplaySpeed() * SpeedDisplay.speedMultiplier;
+                _cachedNavballSpeedValue = speed;
+                _cachedNavballSpeedResult = true;
                 return true;
             }
 
@@ -434,6 +507,8 @@ namespace ModularFlightPanel.Core
             if (PrincipiaProbe.GetActiveVesselSpeed(out double pSpeed))
             {
                 speed = pSpeed;
+                _cachedNavballSpeedValue = speed;
+                _cachedNavballSpeedResult = true;
                 return true;
             }
 
@@ -443,11 +518,15 @@ namespace ModularFlightPanel.Core
                 string raw = SpeedDisplay.Instance.textSpeed.text;
                 if (!string.IsNullOrEmpty(raw) && FastParseSpeed(raw, out speed))
                 {
+                    _cachedNavballSpeedValue = speed;
+                    _cachedNavballSpeedResult = true;
                     return true;
                 }
             }
 
             speed = FlightGlobals.GetDisplaySpeed() * SpeedDisplay.speedMultiplier;
+            _cachedNavballSpeedValue = speed;
+            _cachedNavballSpeedResult = true;
             return true;
         }
 
@@ -522,10 +601,25 @@ namespace ModularFlightPanel.Core
             return category;
         }
 
+        private static int _cachedReferenceFrameCategoryFrame = -1;
+        private static string _cachedReferenceFrameCategory = "SURFACE";
+
         /// <summary>
         /// 获取当前权威参考系所属宏观类别 (SURFACE, BODY_FIXED, INERTIAL, ORBIT, LAGRANGE, TARGET)
         /// </summary>
         public static string GetReferenceFrameCategory()
+        {
+            int frame = Time.frameCount;
+            if (_cachedReferenceFrameCategoryFrame == frame)
+            {
+                return _cachedReferenceFrameCategory;
+            }
+            _cachedReferenceFrameCategoryFrame = frame;
+            _cachedReferenceFrameCategory = ComputeReferenceFrameCategory();
+            return _cachedReferenceFrameCategory;
+        }
+
+        private static string ComputeReferenceFrameCategory()
         {
             if (PrincipiaProbe.IsAvailable)
             {

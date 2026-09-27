@@ -243,10 +243,24 @@ namespace ModularFlightPanel.Core
         {
             snapshot = new CacheManager.NavballFrameSnapshot
             {
-                Frame = currentFrame
+                Frame = currentFrame,
+                HasOrbit = false,
+                HasSurface = false,
+                HasPrincipiaFrenet = false
             };
 
-            if (vessel.orbit != null && vessel.mainBody != null)
+            if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out var tang, out var norm, out var binorm))
+            {
+                if (tang.sqrMagnitude > 0.001 || norm.sqrMagnitude > 0.001 || binorm.sqrMagnitude > 0.001)
+                {
+                    snapshot.HasPrincipiaFrenet = true;
+                    snapshot.PrincipiaTangent = (Vector3)tang;
+                    snapshot.PrincipiaNormal = (Vector3)norm;
+                    snapshot.PrincipiaBinormal = (Vector3)binorm;
+                }
+            }
+
+            if (vessel != null && vessel.orbit != null && vessel.mainBody != null)
             {
                 Vector3 obtVel = (Vector3)vessel.orbit.GetVel();
                 if (obtVel.sqrMagnitude > 0.0001f)
@@ -307,6 +321,11 @@ namespace ModularFlightPanel.Core
             int currentFrame = Time.frameCount;
             CacheManager.NavballFrameSnapshot snapshot = default;
             bool hasSnapshot = CacheManager.Instance != null && CacheManager.Instance.TryGetCachedNavballSnapshot(currentFrame, out snapshot);
+            if (!hasSnapshot)
+            {
+                ComputeAndCacheOrbitalTriad(vessel, currentFrame, out snapshot);
+                hasSnapshot = true;
+            }
 
             switch (markerType)
             {
@@ -314,8 +333,12 @@ namespace ModularFlightPanel.Core
                 case NavballMarkerType.Retrograde:
                 {
                     Vector3d vel = Vector3d.zero;
-                    // 若 Principia 处于活动态且有有效 Frenet 切向矢量，优先采信 Principia 绘制参考系
-                    if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out var tang, out _, out _))
+                    // 若 Principia 处于活动态且有有效 Frenet 切向矢量，直接采用同帧快照（0 额外开销）
+                    if (snapshot.HasPrincipiaFrenet && snapshot.PrincipiaTangent.sqrMagnitude > 0.001f)
+                    {
+                        vel = snapshot.PrincipiaTangent;
+                    }
+                    else if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out var tang, out _, out _))
                     {
                         if (tang.sqrMagnitude > 0.001)
                         {
@@ -396,7 +419,12 @@ namespace ModularFlightPanel.Core
                         return false;
                     }
 
-                    if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out _, out _, out var pBinorm))
+                    if (snapshot.HasPrincipiaFrenet && snapshot.PrincipiaBinormal.sqrMagnitude > 0.001f)
+                    {
+                        worldVec = (markerType == NavballMarkerType.Normal) ? snapshot.PrincipiaBinormal.normalized : -snapshot.PrincipiaBinormal.normalized;
+                        hasValidVector = true;
+                    }
+                    else if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out _, out _, out var pBinorm))
                     {
                         if (pBinorm.sqrMagnitude > 0.001)
                         {
@@ -405,18 +433,10 @@ namespace ModularFlightPanel.Core
                         }
                     }
 
-                    if (!hasValidVector)
+                    if (!hasValidVector && snapshot.HasOrbit)
                     {
-                        if (!hasSnapshot)
-                        {
-                            ComputeAndCacheOrbitalTriad(vessel, currentFrame, out snapshot);
-                            hasSnapshot = true;
-                        }
-                        if (snapshot.HasOrbit)
-                        {
-                            worldVec = (markerType == NavballMarkerType.Normal) ? snapshot.Normal : snapshot.AntiNormal;
-                            hasValidVector = true;
-                        }
+                        worldVec = (markerType == NavballMarkerType.Normal) ? snapshot.Normal : snapshot.AntiNormal;
+                        hasValidVector = true;
                     }
                     break;
                 }
@@ -430,7 +450,13 @@ namespace ModularFlightPanel.Core
                         return false;
                     }
 
-                    if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out _, out var pNorm, out _))
+                    if (snapshot.HasPrincipiaFrenet && snapshot.PrincipiaNormal.sqrMagnitude > 0.001f)
+                    {
+                        // Principia Normal 指向曲率中心即径向内 (Radial In)
+                        worldVec = (markerType == NavballMarkerType.RadialIn) ? snapshot.PrincipiaNormal.normalized : -snapshot.PrincipiaNormal.normalized;
+                        hasValidVector = true;
+                    }
+                    else if (PrincipiaProbe.IsAvailable && PrincipiaProbe.GetVesselFrenetTrihedron(out _, out var pNorm, out _))
                     {
                         if (pNorm.sqrMagnitude > 0.001)
                         {
@@ -440,18 +466,10 @@ namespace ModularFlightPanel.Core
                         }
                     }
 
-                    if (!hasValidVector)
+                    if (!hasValidVector && snapshot.HasOrbit)
                     {
-                        if (!hasSnapshot)
-                        {
-                            ComputeAndCacheOrbitalTriad(vessel, currentFrame, out snapshot);
-                            hasSnapshot = true;
-                        }
-                        if (snapshot.HasOrbit)
-                        {
-                            worldVec = (markerType == NavballMarkerType.RadialOut) ? snapshot.RadialOut : snapshot.RadialIn;
-                            hasValidVector = true;
-                        }
+                        worldVec = (markerType == NavballMarkerType.RadialOut) ? snapshot.RadialOut : snapshot.RadialIn;
+                        hasValidVector = true;
                     }
                     break;
                 }
@@ -498,7 +516,16 @@ namespace ModularFlightPanel.Core
                     {
                         if (p * p + n * n + r * r > 0.001)
                         {
-                            if (PrincipiaProbe.GetVesselFrenetTrihedron(out var tang, out var norm, out var binorm))
+                            if (snapshot.HasPrincipiaFrenet)
+                            {
+                                Vector3 totalVec = snapshot.PrincipiaTangent * (float)p + snapshot.PrincipiaBinormal * (float)n + snapshot.PrincipiaNormal * (float)r;
+                                if (totalVec.sqrMagnitude > 0.001f)
+                                {
+                                    worldVec = totalVec.normalized;
+                                    hasValidVector = true;
+                                }
+                            }
+                            else if (PrincipiaProbe.GetVesselFrenetTrihedron(out var tang, out var norm, out var binorm))
                             {
                                 Vector3d totalVec = tang * p + binorm * n + norm * r;
                                 if (totalVec.sqrMagnitude > 0.001)

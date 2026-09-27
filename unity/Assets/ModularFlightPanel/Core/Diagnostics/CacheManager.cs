@@ -371,6 +371,10 @@ namespace ModularFlightPanel.Core
             public int Frame;
             public bool HasOrbit;
             public bool HasSurface;
+            public bool HasPrincipiaFrenet;
+            public Vector3 PrincipiaTangent;
+            public Vector3 PrincipiaNormal;
+            public Vector3 PrincipiaBinormal;
             public Vector3 Prograde;
             public Vector3 Retrograde;
             public Vector3 Normal;

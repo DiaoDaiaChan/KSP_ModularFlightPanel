@@ -554,13 +554,32 @@ namespace ModularFlightPanel.Core.Probes
             catch { return null; }
         }
 
+        private static IntPtr _cachedPluginPointer = IntPtr.Zero;
+        private static int _cachedPluginPointerFrame = -1;
+
         private static IntPtr GetPluginPointer()
         {
+            int currentFrame = Time.frameCount;
+            if (_cachedPluginPointerFrame == currentFrame && _cachedPluginPointer != IntPtr.Zero)
+            {
+                return _cachedPluginPointer;
+            }
+            _cachedPluginPointerFrame = currentFrame;
+
             // 1. 从 flight_planner_ 的 plugin 属性获取
             object planner = GetFlightPlannerInstance();
             if (planner != null && _plannerPluginProp != null)
             {
-                try { return (IntPtr)_plannerPluginProp.GetValue(planner, null); } catch { }
+                try
+                {
+                    IntPtr ptr = (IntPtr)_plannerPluginProp.GetValue(planner, null);
+                    if (ptr != IntPtr.Zero)
+                    {
+                        _cachedPluginPointer = ptr;
+                        return ptr;
+                    }
+                }
+                catch { }
             }
 
             // 2. 从 adapter 的 plugin_ 字段或 Plugin() 方法获取
@@ -569,16 +588,38 @@ namespace ModularFlightPanel.Core.Probes
             {
                 if (_pluginField != null)
                 {
-                    try { return (IntPtr)_pluginField.GetValue(adapter); } catch { }
+                    try
+                    {
+                        IntPtr ptr = (IntPtr)_pluginField.GetValue(adapter);
+                        if (ptr != IntPtr.Zero)
+                        {
+                            _cachedPluginPointer = ptr;
+                            return ptr;
+                        }
+                    }
+                    catch { }
                 }
                 if (_pluginMethod != null)
                 {
-                    try { return (IntPtr)_pluginMethod.Invoke(adapter, null); } catch { }
+                    try
+                    {
+                        IntPtr ptr = (IntPtr)_pluginMethod.Invoke(adapter, null);
+                        if (ptr != IntPtr.Zero)
+                        {
+                            _cachedPluginPointer = ptr;
+                            return ptr;
+                        }
+                    }
+                    catch { }
                 }
             }
 
+            _cachedPluginPointer = IntPtr.Zero;
             return IntPtr.Zero;
         }
+
+        private static int _lastFlightPlanFrame = -1;
+        private static bool _cachedFlightPlanResult = false;
 
         /// <summary>
         /// 权威检测当前活动载具在 Principia 中是否存在有效的飞行计划与机动节点。
@@ -591,8 +632,19 @@ namespace ModularFlightPanel.Core.Probes
         public static bool HasFlightPlan()
         {
             if (!_isAvailable) return false;
+            int currentFrame = Time.frameCount;
+            if (_lastFlightPlanFrame == currentFrame)
+            {
+                return _cachedFlightPlanResult;
+            }
+            _lastFlightPlanFrame = currentFrame;
+
             Vessel v = FlightGlobals.ActiveVessel;
-            if (v == null) return false;
+            if (v == null)
+            {
+                _cachedFlightPlanResult = false;
+                return false;
+            }
 
             // 1. 如果已能从 burn_editors_ 读到活动编辑器且数量大于0，直接确认为 true
             object planner = GetFlightPlannerInstance();
@@ -603,6 +655,7 @@ namespace ModularFlightPanel.Core.Probes
                     var list = _burnEditorsField.GetValue(planner) as IList;
                     if (list != null && list.Count > 0)
                     {
+                        _cachedFlightPlanResult = true;
                         return true;
                     }
                 }
@@ -611,7 +664,11 @@ namespace ModularFlightPanel.Core.Probes
 
             // 2. 通过 Principia native 接口权威查询
             IntPtr plugin = GetPluginPointer();
-            if (plugin == IntPtr.Zero) return false;
+            if (plugin == IntPtr.Zero)
+            {
+                _cachedFlightPlanResult = false;
+                return false;
+            }
 
             string guid = v.id.ToString();
 
@@ -621,9 +678,17 @@ namespace ModularFlightPanel.Core.Probes
                 try
                 {
                     bool hasVessel = (bool)_hasVesselMethod.Invoke(null, new object[] { plugin, guid });
-                    if (!hasVessel) return false;
+                    if (!hasVessel)
+                    {
+                        _cachedFlightPlanResult = false;
+                        return false;
+                    }
                 }
-                catch { return false; }
+                catch
+                {
+                    _cachedFlightPlanResult = false;
+                    return false;
+                }
             }
 
             // 检查 FlightPlan 是否存在
@@ -632,12 +697,21 @@ namespace ModularFlightPanel.Core.Probes
                 try
                 {
                     bool exists = (bool)_flightPlanExistsMethod.Invoke(null, new object[] { plugin, guid });
-                    if (!exists) return false;
+                    if (!exists)
+                    {
+                        _cachedFlightPlanResult = false;
+                        return false;
+                    }
                 }
-                catch { return false; }
+                catch
+                {
+                    _cachedFlightPlanResult = false;
+                    return false;
+                }
             }
             else
             {
+                _cachedFlightPlanResult = false;
                 return false;
             }
 
@@ -647,11 +721,18 @@ namespace ModularFlightPanel.Core.Probes
                 try
                 {
                     int count = (int)_flightPlanNumManoeuvresMethod.Invoke(null, new object[] { plugin, guid });
-                    return count > 0;
+                    bool hasManoeuvre = count > 0;
+                    _cachedFlightPlanResult = hasManoeuvre;
+                    return hasManoeuvre;
                 }
-                catch { return false; }
+                catch
+                {
+                    _cachedFlightPlanResult = false;
+                    return false;
+                }
             }
 
+            _cachedFlightPlanResult = false;
             return false;
         }
 
@@ -821,9 +902,36 @@ namespace ModularFlightPanel.Core.Probes
             return _isAvailable ? Traverser.ResolveString(subTag, format, modifier) : "---";
         }
 
+        private static int _lastFrameNameFrame = -1;
+        private static string _cachedFrameName = "SURFACE";
+        private static int _lastNavballNameFrame = -1;
+        private static string _cachedNavballName = "SURFACE";
+
         // 强类型便捷属性与参考系控制
-        public static string FrameName => ResolveString("FrameName");
-        public static string NavballFrameName => ResolveString("NavballFrameName");
+        public static string FrameName
+        {
+            get
+            {
+                int frame = Time.frameCount;
+                if (_lastFrameNameFrame == frame) return _cachedFrameName;
+                _lastFrameNameFrame = frame;
+                _cachedFrameName = ResolveString("FrameName");
+                return _cachedFrameName;
+            }
+        }
+
+        public static string NavballFrameName
+        {
+            get
+            {
+                int frame = Time.frameCount;
+                if (_lastNavballNameFrame == frame) return _cachedNavballName;
+                _lastNavballNameFrame = frame;
+                _cachedNavballName = ResolveString("NavballFrameName");
+                return _cachedNavballName;
+            }
+        }
+
         public static double ManeuverDeltaV => HasFlightPlan() ? ResolveNumeric("ManeuverDeltaV") : double.NaN;
         public static double ManeuverDuration => HasFlightPlan() ? ResolveNumeric("ManeuverDuration") : double.NaN;
         public static double TimeToManeuver => HasFlightPlan() ? ResolveNumeric("TimeToManeuver") : double.NaN;
@@ -832,15 +940,37 @@ namespace ModularFlightPanel.Core.Probes
         public static double ManeuverDeltaVNormal => TryGetManeuverVector(out _, out double n, out _) ? n : double.NaN;
         public static double ManeuverDeltaVRadial => TryGetManeuverVector(out _, out _, out double r) ? r : double.NaN;
 
+        private static int _lastManeuverVectorFrame = -1;
+        private static bool _cachedManeuverVectorResult = false;
+        private static double _cachedMdvPrograde, _cachedMdvNormal, _cachedMdvRadial;
+
         public static bool TryGetManeuverVector(out double prograde, out double normal, out double radial)
         {
+            int currentFrame = Time.frameCount;
+            if (_lastManeuverVectorFrame == currentFrame)
+            {
+                prograde = _cachedMdvPrograde;
+                normal = _cachedMdvNormal;
+                radial = _cachedMdvRadial;
+                return _cachedManeuverVectorResult;
+            }
+            _lastManeuverVectorFrame = currentFrame;
+
             prograde = 0.0;
             normal = 0.0;
             radial = 0.0;
-            if (!HasFlightPlan()) return false;
+            if (!HasFlightPlan())
+            {
+                _cachedManeuverVectorResult = false;
+                return false;
+            }
 
             object man = GetCurrentManoeuvreOrEditor();
-            if (man == null) return false;
+            if (man == null)
+            {
+                _cachedManeuverVectorResult = false;
+                return false;
+            }
 
             // 1. 尝试从 burn.delta_v 读取 (Frenet frame: x=Tangent/Prograde, y=Normal/Radial, z=Binormal/Normal)
             try
@@ -865,6 +995,10 @@ namespace ModularFlightPanel.Core.Probes
                                     prograde = Convert.ToDouble(xf.GetValue(xyz));
                                     radial = Convert.ToDouble(yf.GetValue(xyz));
                                     normal = Convert.ToDouble(zf.GetValue(xyz));
+                                    _cachedMdvPrograde = prograde;
+                                    _cachedMdvNormal = normal;
+                                    _cachedMdvRadial = radial;
+                                    _cachedManeuverVectorResult = true;
                                     return true;
                                 }
                             }
@@ -888,6 +1022,10 @@ namespace ModularFlightPanel.Core.Probes
                     prograde = Convert.ToDouble(fiTangent.GetValue(man));
                     radial = Convert.ToDouble(fiNormal.GetValue(man));
                     normal = Convert.ToDouble(fiBinormal.GetValue(man));
+                    _cachedMdvPrograde = prograde;
+                    _cachedMdvNormal = normal;
+                    _cachedMdvRadial = radial;
+                    _cachedManeuverVectorResult = true;
                     return true;
                 }
             }
@@ -913,6 +1051,10 @@ namespace ModularFlightPanel.Core.Probes
                             prograde = d1;
                             normal = d2;
                             radial = d3;
+                            _cachedMdvPrograde = prograde;
+                            _cachedMdvNormal = normal;
+                            _cachedMdvRadial = radial;
+                            _cachedManeuverVectorResult = true;
                             return true;
                         }
                     }
@@ -920,44 +1062,69 @@ namespace ModularFlightPanel.Core.Probes
             }
             catch { }
 
+            _cachedManeuverVectorResult = false;
             return false;
         }
+
+        private static int _lastTargetFrameCheckFrame = -1;
+        private static bool _cachedIsTargetFrame;
 
         public static bool IsTargetFrameSelected
         {
             get
             {
+                int frame = Time.frameCount;
+                if (_lastTargetFrameCheckFrame == frame) return _cachedIsTargetFrame;
+                _lastTargetFrameCheckFrame = frame;
+
                 object sel = GetFrameSelectorInstance();
                 if (sel != null && _targetFrameSelectedProp != null)
                 {
-                    try { return (bool)_targetFrameSelectedProp.GetValue(sel, null); } catch { }
+                    try { _cachedIsTargetFrame = (bool)_targetFrameSelectedProp.GetValue(sel, null); return _cachedIsTargetFrame; } catch { }
                 }
+                _cachedIsTargetFrame = false;
                 return false;
             }
         }
+
+        private static int _lastFrameTypeCheckFrame = -1;
+        private static string _cachedFrameTypeString;
 
         public static string FrameTypeString
         {
             get
             {
+                int frame = Time.frameCount;
+                if (_lastFrameTypeCheckFrame == frame) return _cachedFrameTypeString;
+                _lastFrameTypeCheckFrame = frame;
+
                 object sel = GetFrameSelectorInstance();
                 if (sel != null && _frameTypeProp != null)
                 {
-                    try { return _frameTypeProp.GetValue(sel, null)?.ToString(); } catch { }
+                    try { _cachedFrameTypeString = _frameTypeProp.GetValue(sel, null)?.ToString(); return _cachedFrameTypeString; } catch { }
                 }
+                _cachedFrameTypeString = null;
                 return null;
             }
         }
+
+        private static int _lastSurfaceFrameCheckFrame = -1;
+        private static bool _cachedIsSurfaceFrame;
 
         public static bool IsSurfaceFrameSelected
         {
             get
             {
+                int frame = Time.frameCount;
+                if (_lastSurfaceFrameCheckFrame == frame) return _cachedIsSurfaceFrame;
+                _lastSurfaceFrameCheckFrame = frame;
+
                 object sel = GetFrameSelectorInstance();
                 if (sel != null && _isSurfaceFrameMethod != null)
                 {
-                    try { return (bool)_isSurfaceFrameMethod.Invoke(sel, null); } catch { }
+                    try { _cachedIsSurfaceFrame = (bool)_isSurfaceFrameMethod.Invoke(sel, null); return _cachedIsSurfaceFrame; } catch { }
                 }
+                _cachedIsSurfaceFrame = false;
                 return false;
             }
         }
@@ -1007,11 +1174,18 @@ namespace ModularFlightPanel.Core.Probes
             Target
         }
 
+        private static int _lastCategoryCheckFrame = -1;
+        private static ReferenceFrameCategory _cachedCategoryResult;
+
         public static ReferenceFrameCategory CurrentFrameCategory
         {
             get
             {
-                if (IsTargetFrameSelected) return ReferenceFrameCategory.Target;
+                int frame = Time.frameCount;
+                if (_lastCategoryCheckFrame == frame) return _cachedCategoryResult;
+                _lastCategoryCheckFrame = frame;
+
+                if (IsTargetFrameSelected) { _cachedCategoryResult = ReferenceFrameCategory.Target; return _cachedCategoryResult; }
                 object sel = GetFrameSelectorInstance();
                 if (sel != null && _frameTypeProp != null)
                 {
@@ -1023,18 +1197,19 @@ namespace ModularFlightPanel.Core.Probes
                             int intVal = Convert.ToInt32(val);
                             switch (intVal)
                             {
-                                case 6000: return ReferenceFrameCategory.Inertial;
-                                case 6001: return ReferenceFrameCategory.Lagrange;
-                                case 6002: return ReferenceFrameCategory.Orbital;
-                                case 6003: return ReferenceFrameCategory.Surface;
-                                case 6004: return ReferenceFrameCategory.Lagrange;
+                                case 6000: _cachedCategoryResult = ReferenceFrameCategory.Inertial; return _cachedCategoryResult;
+                                case 6001: _cachedCategoryResult = ReferenceFrameCategory.Lagrange; return _cachedCategoryResult;
+                                case 6002: _cachedCategoryResult = ReferenceFrameCategory.Orbital; return _cachedCategoryResult;
+                                case 6003: _cachedCategoryResult = ReferenceFrameCategory.Surface; return _cachedCategoryResult;
+                                case 6004: _cachedCategoryResult = ReferenceFrameCategory.Lagrange; return _cachedCategoryResult;
                             }
                         }
                     }
                     catch { }
                 }
-                if (IsSurfaceFrameSelected) return ReferenceFrameCategory.Surface;
-                return ReferenceFrameCategory.Inertial;
+                if (IsSurfaceFrameSelected) { _cachedCategoryResult = ReferenceFrameCategory.Surface; return _cachedCategoryResult; }
+                _cachedCategoryResult = ReferenceFrameCategory.Inertial;
+                return _cachedCategoryResult;
             }
         }
 
@@ -1145,6 +1320,10 @@ namespace ModularFlightPanel.Core.Probes
             return false;
         }
 
+        private static int _lastActiveVesselVelocityFrame = -1;
+        private static bool _lastActiveVesselVelocityResult = false;
+        private static Vector3d _cachedActiveVesselVelocity;
+
         /// <summary>
         /// 获取载具在当前 Principia 绘制参考系下的速度矢量 (m/s)
         /// 严格遵循 Principia 官方解算策略：
@@ -1156,8 +1335,24 @@ namespace ModularFlightPanel.Core.Probes
             velocity = Vector3d.zero;
             if (!_isAvailable || vessel == null) return false;
 
+            bool isActiveVessel = (FlightGlobals.ActiveVessel == vessel);
+            int frame = Time.frameCount;
+            if (isActiveVessel && _lastActiveVesselVelocityFrame == frame)
+            {
+                velocity = _cachedActiveVesselVelocity;
+                return _lastActiveVesselVelocityResult;
+            }
+
             IntPtr plugin = GetPluginPointer();
-            if (plugin == IntPtr.Zero) return false;
+            if (plugin == IntPtr.Zero)
+            {
+                if (isActiveVessel)
+                {
+                    _lastActiveVesselVelocityFrame = frame;
+                    _lastActiveVesselVelocityResult = false;
+                }
+                return false;
+            }
 
             string guid = vessel.id.ToString();
             object adapter = GetAdapterInstance();
@@ -1188,6 +1383,12 @@ namespace ModularFlightPanel.Core.Probes
                     object xyz = _vesselVelocityMethod.Invoke(null, new object[] { plugin, guid });
                     if (TryExtractXyz(xyz, out velocity))
                     {
+                        if (isActiveVessel)
+                        {
+                            _lastActiveVesselVelocityFrame = frame;
+                            _cachedActiveVesselVelocity = velocity;
+                            _lastActiveVesselVelocityResult = true;
+                        }
                         return true;
                     }
                 }
@@ -1206,6 +1407,12 @@ namespace ModularFlightPanel.Core.Probes
                         object xyz = _unmanageableVesselVelocityMethod.Invoke(null, new object[] { plugin, qp, bodyIndex });
                         if (TryExtractXyz(xyz, out velocity))
                         {
+                            if (isActiveVessel)
+                            {
+                                _lastActiveVesselVelocityFrame = frame;
+                                _cachedActiveVesselVelocity = velocity;
+                                _lastActiveVesselVelocityResult = true;
+                            }
                             return true;
                         }
                     }
@@ -1213,6 +1420,11 @@ namespace ModularFlightPanel.Core.Probes
                 catch { }
             }
 
+            if (isActiveVessel)
+            {
+                _lastActiveVesselVelocityFrame = frame;
+                _lastActiveVesselVelocityResult = false;
+            }
             return false;
         }
 
@@ -1241,21 +1453,50 @@ namespace ModularFlightPanel.Core.Probes
             return false;
         }
 
+        private static int _lastFrenetFrame = -1;
+        private static bool _lastFrenetResult = false;
+        private static Vector3d _cachedFrenetTangent;
+        private static Vector3d _cachedFrenetNormal;
+        private static Vector3d _cachedFrenetBinormal;
+
         /// <summary>
         /// 获取当前绘制参考系下 Frenet 三轴基底（切向 Prograde、法向 Normal、副法向/径向 Radial）
+        /// 支持单帧高保真快照缓存，彻底消除一帧内 10 余个标线重复 P/Invoke 原生 C++ 接口造成的性能雪崩。
         /// </summary>
         public static bool GetVesselFrenetTrihedron(out Vector3d tangent, out Vector3d normal, out Vector3d binormal)
         {
+            int currentFrame = Time.frameCount;
+            if (_lastFrenetFrame == currentFrame)
+            {
+                tangent = _cachedFrenetTangent;
+                normal = _cachedFrenetNormal;
+                binormal = _cachedFrenetBinormal;
+                return _lastFrenetResult;
+            }
+            _lastFrenetFrame = currentFrame;
+
             tangent = Vector3d.zero;
             normal = Vector3d.zero;
             binormal = Vector3d.zero;
-            if (!_isAvailable || _vesselTangentMethod == null || _vesselNormalMethod == null || _vesselBinormalMethod == null) return false;
+            if (!_isAvailable || _vesselTangentMethod == null || _vesselNormalMethod == null || _vesselBinormalMethod == null)
+            {
+                _lastFrenetResult = false;
+                return false;
+            }
 
             Vessel v = FlightGlobals.ActiveVessel;
-            if (v == null) return false;
+            if (v == null)
+            {
+                _lastFrenetResult = false;
+                return false;
+            }
 
             IntPtr plugin = GetPluginPointer();
-            if (plugin == IntPtr.Zero) return false;
+            if (plugin == IntPtr.Zero)
+            {
+                _lastFrenetResult = false;
+                return false;
+            }
 
             string guid = v.id.ToString();
             if (_hasVesselMethod != null)
@@ -1263,9 +1504,17 @@ namespace ModularFlightPanel.Core.Probes
                 try
                 {
                     bool hasVessel = (bool)_hasVesselMethod.Invoke(null, new object[] { plugin, guid });
-                    if (!hasVessel) return false;
+                    if (!hasVessel)
+                    {
+                        _lastFrenetResult = false;
+                        return false;
+                    }
                 }
-                catch { return false; }
+                catch
+                {
+                    _lastFrenetResult = false;
+                    return false;
+                }
             }
 
             try
@@ -1275,10 +1524,16 @@ namespace ModularFlightPanel.Core.Probes
                 object bObj = _vesselBinormalMethod.Invoke(null, new object[] { plugin, guid });
                 if (TryExtractXyz(tObj, out tangent) && TryExtractXyz(nObj, out normal) && TryExtractXyz(bObj, out binormal))
                 {
+                    _cachedFrenetTangent = tangent;
+                    _cachedFrenetNormal = normal;
+                    _cachedFrenetBinormal = binormal;
+                    _lastFrenetResult = true;
                     return true;
                 }
             }
             catch { }
+
+            _lastFrenetResult = false;
             return false;
         }
 
@@ -1298,6 +1553,27 @@ namespace ModularFlightPanel.Core.Probes
                 return !double.IsNaN(speed) && !double.IsInfinity(speed);
             }
             return false;
+        }
+
+        /// <summary>
+        /// 场景切换或载具切换时彻底失效所有缓存
+        /// </summary>
+        public static void InvalidateCaches()
+        {
+            _cachedPluginPointer = IntPtr.Zero;
+            _cachedPluginPointerFrame = -1;
+            _lastFlightPlanFrame = -1;
+            _lastManeuverVectorFrame = -1;
+            _lastTargetFrameCheckFrame = -1;
+            _lastFrameTypeCheckFrame = -1;
+            _lastSurfaceFrameCheckFrame = -1;
+            _lastCategoryCheckFrame = -1;
+            _lastFrameNameFrame = -1;
+            _lastNavballNameFrame = -1;
+            _lastActiveVesselVelocityFrame = -1;
+            _lastFrenetFrame = -1;
+            _lastAnalysisElementsTime = -10f;
+            _cachedAdapterInstance = null;
         }
     }
 }
