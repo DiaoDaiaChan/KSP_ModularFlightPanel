@@ -62,35 +62,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private string _cutoffLabel = "MECO / CUTOFF";
         private string _activeTemplate = "{0} / {1} ACTIVE";
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _titleCustom = "ENGINES";
-            _cutoffLabel = "MECO / CUTOFF";
-            _activeTemplate = "{0} / {1} ACTIVE";
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "TITLE": _titleCustom = v; break;
-                    case "CUTOFF_LABEL": _cutoffLabel = v; break;
-                    case "ACTIVE_TEMPLATE": _activeTemplate = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            _titleCustom = GetTemplateChannel("TITLE", "ENGINES");
+            _cutoffLabel = GetTemplateChannel("CUTOFF_LABEL", "MECO / CUTOFF");
+            _activeTemplate = GetTemplateChannel("ACTIVE_TEMPLATE", "{0} / {1} ACTIVE");
 
             // 1. 组件包围盒 (基准 96x96 逻辑像素圆形表盘，与姿态球完全一致)
             float diameter = 96f * s;

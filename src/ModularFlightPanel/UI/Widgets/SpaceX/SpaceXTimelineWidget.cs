@@ -63,33 +63,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private const float ArcWidth = 460f;
         private const float ArcHeight = 24f;
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _clockToken = "{MET:COMPACT}";
-            _subtitleCustom = null;
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "CLOCK_TOKEN": _clockToken = v; break;
-                    case "SUBTITLE": _subtitleCustom = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            _clockToken = GetTemplateChannel("CLOCK_TOKEN", "{MET:COMPACT}");
+            _subtitleCustom = GetTemplateChannel("SUBTITLE", null);
 
             // 1. 组件包围盒 (基准 520x88 逻辑像素)
             Vector2 size = new Vector2(520f * s, 88f * s);

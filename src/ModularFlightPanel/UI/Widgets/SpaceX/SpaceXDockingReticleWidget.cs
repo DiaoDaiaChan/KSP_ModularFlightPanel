@@ -78,46 +78,20 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private string _rateToken;
         private string _xyzTemplate = "X {0:F1}m\nY {1:F1}m\nZ {2:F1}m";
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _rollLabelText = "ROLL";
-            _pitchLabelText = "PITCH";
-            _yawLabelText = "YAW";
-            _rangeLabelText = "RANGE";
-            _rateLabelText = "RATE";
-            _rangeToken = "{ALT:AGL:DIST}";
-            _rateToken = null;
-            _xyzTemplate = "X {0:F1}m\nY {1:F1}m\nZ {2:F1}m";
-
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "ROLL_LABEL": _rollLabelText = v; break;
-                    case "PITCH_LABEL": _pitchLabelText = v; break;
-                    case "YAW_LABEL": _yawLabelText = v; break;
-                    case "RANGE_LABEL": _rangeLabelText = v; break;
-                    case "RATE_LABEL": _rateLabelText = v; break;
-                    case "RANGE_TOKEN": _rangeToken = v; break;
-                    case "RATE_TOKEN": _rateToken = v; break;
-                    case "XYZ_TEMPLATE": _xyzTemplate = v.Replace("\\n", "\n"); break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+
+            _rollLabelText = GetTemplateChannel("ROLL_LABEL", "ROLL");
+            _pitchLabelText = GetTemplateChannel("PITCH_LABEL", "PITCH");
+            _yawLabelText = GetTemplateChannel("YAW_LABEL", "YAW");
+            _rangeLabelText = GetTemplateChannel("RANGE_LABEL", "RANGE");
+            _rateLabelText = GetTemplateChannel("RATE_LABEL", "RATE");
+            _rangeToken = GetTemplateChannel("RANGE_TOKEN", "{ALT:AGL:DIST}");
+            _rateToken = GetTemplateChannel("RATE_TOKEN", null);
+            _xyzTemplate = GetTemplateChannel("XYZ_TEMPLATE", "X {0:F1}m\nY {1:F1}m\nZ {2:F1}m").Replace("\\n", "\n");
 
             Vector2 panelSize = new Vector2(220f * s, 220f * s);
             RectTransform.sizeDelta = panelSize;

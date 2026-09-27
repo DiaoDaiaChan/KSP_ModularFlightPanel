@@ -82,54 +82,24 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private string _peToken = "{PE:DIST}";
         private string _incToken;
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _phaseLabelStr = "ACTIVE PHASE";
-            _timerLabelStr = "SPLASHDOWN / MET";
-            _velLabelStr = "INERTIAL VELOCITY";
-            _altLabelStr = "ALTITUDE";
-            _apLabelStr = "APOGEE";
-            _peLabelStr = "PERIGEE";
-            _incLabelStr = "INCLINATION";
-            _velToken = null;
-            _altToken = "{ALT:ASL:DIST}";
-            _apToken = "{AP:DIST}";
-            _peToken = "{PE:DIST}";
-            _incToken = null;
-
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "PHASE_LABEL": _phaseLabelStr = v; break;
-                    case "TIMER_LABEL": _timerLabelStr = v; break;
-                    case "VEL_LABEL": _velLabelStr = v; break;
-                    case "ALT_LABEL": _altLabelStr = v; break;
-                    case "AP_LABEL": _apLabelStr = v; break;
-                    case "PE_LABEL": _peLabelStr = v; break;
-                    case "INC_LABEL": _incLabelStr = v; break;
-                    case "VEL_TOKEN": _velToken = v; break;
-                    case "ALT_TOKEN": _altToken = v; break;
-                    case "AP_TOKEN": _apToken = v; break;
-                    case "PE_TOKEN": _peToken = v; break;
-                    case "INC_TOKEN": _incToken = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+
+            _phaseLabelStr = GetTemplateChannel("PHASE_LABEL", "ACTIVE PHASE");
+            _timerLabelStr = GetTemplateChannel("TIMER_LABEL", "SPLASHDOWN / MET");
+            _velLabelStr = GetTemplateChannel("VEL_LABEL", "INERTIAL VELOCITY");
+            _altLabelStr = GetTemplateChannel("ALT_LABEL", "ALTITUDE");
+            _apLabelStr = GetTemplateChannel("AP_LABEL", "APOGEE");
+            _peLabelStr = GetTemplateChannel("PE_LABEL", "PERIGEE");
+            _incLabelStr = GetTemplateChannel("INC_LABEL", "INCLINATION");
+            _velToken = GetTemplateChannel("VEL_TOKEN", null);
+            _altToken = GetTemplateChannel("ALT_TOKEN", "{ALT:ASL:DIST}");
+            _apToken = GetTemplateChannel("AP_TOKEN", "{AP:DIST}");
+            _peToken = GetTemplateChannel("PE_TOKEN", "{PE:DIST}");
+            _incToken = GetTemplateChannel("INC_TOKEN", null);
 
             // 1. 顶栏包围盒 (960px x 42px)
             Vector2 panelSize = new Vector2(960f * s, 42f * s);
@@ -269,12 +239,12 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             string tLbl;
             if (telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode > 0)
             {
-                timer = "T-" + FormatSeconds((float)telemetry.ManeuverTimeToNode);
+                timer = "T-" + FormatDuration(telemetry.ManeuverTimeToNode);
                 tLbl = "TIME TO NODE";
             }
             else
             {
-                timer = "MET " + FormatSeconds((float)telemetry.MissionTime);
+                timer = "MET " + FormatDuration(telemetry.MissionTime);
                 tLbl = _timerLabelStr;
             }
 
@@ -299,7 +269,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             else
             {
                 double spd = telemetry.OrbitalSpeed > 10.0 ? telemetry.OrbitalSpeed : telemetry.CurrentSpeed;
-                velStr = spd >= 1000.0 ? $"{(spd * 0.001):F2} km/s" : $"{spd:F1} m/s";
+                velStr = FormatMetricSpeed(spd);
             }
             if (velStr != _lastVel && _velValue != null)
             {
@@ -388,16 +358,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             if (t.HasManeuverNode) return "MANEUVER BURN";
             return "SUBORBITAL FLIGHT";
-        }
-
-        private static string FormatSeconds(float sec)
-        {
-            if (sec < 0) sec = 0;
-            int s = (int)sec;
-            int h = s / 3600;
-            int m = (s % 3600) / 60;
-            int remainS = s % 60;
-            return $"{h:D2}:{m:D2}:{remainS:D2}";
         }
 
         public override void ApplyTheme(ThemeConfig theme)

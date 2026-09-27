@@ -680,35 +680,7 @@ namespace ModularFlightPanel.UI.Widgets
             return theme.FrameBorderColor;
         }
 
-        private static string FormatDuration(double seconds)
-        {
-            if (double.IsNaN(seconds) || seconds <= 0.0) return "00s";
-            int totalSec = Mathf.RoundToInt((float)seconds);
-            int m = totalSec / 60;
-            int s = totalSec % 60;
-            if (m >= 60)
-            {
-                int h = m / 60;
-                m %= 60;
-                return $"{h:D2}h {m:D2}m";
-            }
-            return $"{m:D2}m {s:D2}s";
-        }
 
-        private static string FormatDurationCompact(double seconds)
-        {
-            if (double.IsNaN(seconds) || seconds <= 0.0) return "--:--";
-            int totalSec = Mathf.RoundToInt((float)seconds);
-            int m = totalSec / 60;
-            int s = totalSec % 60;
-            if (m >= 60)
-            {
-                int h = m / 60;
-                m %= 60;
-                return $"{h}:{m:D2}h";
-            }
-            return $"{m:D2}:{s:D2}";
-        }
 
         /// <summary>
         /// 程序化高精多级火箭矢量二维剪影纹理 (用于无头测试与原地沙盒无活跃飞船时的保底呈现)

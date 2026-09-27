@@ -58,33 +58,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private string _northLabel = "N";
         private string _attitudeFormat = "P {0:+0;-0;0}° R {1:+0;-0;0}°";
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _northLabel = "N";
-            _attitudeFormat = "P {0:+0;-0;0}° R {1:+0;-0;0}°";
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "NORTH": _northLabel = v; break;
-                    case "FORMAT": _attitudeFormat = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            _northLabel = GetTemplateChannel("NORTH", "N");
+            _attitudeFormat = GetTemplateChannel("FORMAT", "P {0:+0;-0;0}° R {1:+0;-0;0}°");
 
             // 1. 组件包围盒 (基准 96x96 逻辑像素圆形表盘)
             float diameter = 96f * s;

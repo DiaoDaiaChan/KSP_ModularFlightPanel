@@ -467,16 +467,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_btnDismiss != null && _btnDismiss.interactable) _btnDismiss.interactable = false;
         }
 
-        private static string FormatDuration(double seconds)
-        {
-            if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0.0) return "00:00";
-            TimeSpan ts = TimeSpan.FromSeconds(seconds);
-            if (ts.TotalHours >= 1.0)
-            {
-                return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
-            }
-            return $"{ts.Minutes:D2}:{ts.Seconds:D2}";
-        }
+
 
         private void OnWarpClicked()
         {

@@ -75,43 +75,18 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private string _comm2 = "TDRS";
         private string _comm3 = "ISS";
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _rcsLabel = "RCS";
-            _sasLabel = "SAS";
-            _precLabel = "FINE";
-            _pointingTitle = "POINTING MODE";
-            _comm1 = "SPX";
-            _comm2 = "TDRS";
-            _comm3 = "ISS";
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "RCS_LABEL": _rcsLabel = v; break;
-                    case "SAS_LABEL": _sasLabel = v; break;
-                    case "PREC_LABEL": _precLabel = v; break;
-                    case "POINTING_TITLE": _pointingTitle = v; break;
-                    case "COMM1": _comm1 = v; break;
-                    case "COMM2": _comm2 = v; break;
-                    case "COMM3": _comm3 = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            _rcsLabel = GetTemplateChannel("RCS_LABEL", "RCS");
+            _sasLabel = GetTemplateChannel("SAS_LABEL", "SAS");
+            _precLabel = GetTemplateChannel("PREC_LABEL", "FINE");
+            _pointingTitle = GetTemplateChannel("POINTING_TITLE", "POINTING MODE");
+            _comm1 = GetTemplateChannel("COMM1", "SPX");
+            _comm2 = GetTemplateChannel("COMM2", "TDRS");
+            _comm3 = GetTemplateChannel("COMM3", "ISS");
 
             Vector2 panelSize = new Vector2(420f * s, 38f * s);
             RectTransform.sizeDelta = panelSize;

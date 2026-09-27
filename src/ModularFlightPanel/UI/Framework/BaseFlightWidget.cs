@@ -759,6 +759,95 @@ namespace ModularFlightPanel.UI
             return CacheManager.FastDegree(degree);
         }
 
+        #region Standardized Avionics Formatting & Threshold Evaluators
+
+        /// <summary>
+        /// 标准秒数持续时间格式化 ("hh:mm:ss" 或 "mm:ss")
+        /// </summary>
+        public static string FormatDuration(double seconds) => AvionicsFormatting.FormatDuration(seconds);
+
+        /// <summary>
+        /// 紧凑型飞行时序格式化（例如 "12d", "04:15:30", "08:42"）
+        /// </summary>
+        public static string FormatDurationCompact(double seconds) => AvionicsFormatting.FormatDurationCompact(seconds);
+
+        /// <summary>
+        /// 标准机动/任务倒计时格式化（支持正负时序，如 "T-01:23", "T+00:45"）
+        /// </summary>
+        public static string FormatCountdown(double seconds, string prefix = "T-") => AvionicsFormatting.FormatCountdown(seconds, prefix);
+
+        /// <summary>
+        /// 国际单位制 (SI) 距离自适应量程格式化 (Gm / Mm / km / m)
+        /// </summary>
+        public static string FormatMetricDistance(double meters, string format = "F1") => AvionicsFormatting.FormatMetricDistance(meters, format);
+
+        /// <summary>
+        /// 国际单位制 (SI) 速度自适应量程格式化 (km/s / m/s)
+        /// </summary>
+        public static string FormatMetricSpeed(double mps, string format = "F1") => AvionicsFormatting.FormatMetricSpeed(mps, format);
+
+        /// <summary>
+        /// 标准告警阈值求值器：将数值与注意/警告阈值比对，返回标准语义文本样式角色 (Normal / Warning / Danger)
+        /// </summary>
+        public static TextStyleRole EvaluateThresholdRole(double val, double cautionThresh, double warningThresh, bool lowerIsWorse = false)
+        {
+            if (double.IsNaN(val)) return TextStyleRole.PrimaryValue;
+            if (lowerIsWorse)
+            {
+                if (val <= warningThresh) return TextStyleRole.Danger;
+                if (val <= cautionThresh) return TextStyleRole.Warning;
+                return TextStyleRole.PrimaryValue;
+            }
+            else
+            {
+                if (val >= warningThresh) return TextStyleRole.Danger;
+                if (val >= cautionThresh) return TextStyleRole.Warning;
+                return TextStyleRole.PrimaryValue;
+            }
+        }
+
+        /// <summary>
+        /// 标准卡片告警阈值求值器：将数值与注意/警告阈值比对，返回标准卡片样式角色 (Normal / Warning / Danger)
+        /// </summary>
+        public static CardStyleRole EvaluateCardRole(double val, double cautionThresh, double warningThresh, bool lowerIsWorse = false)
+        {
+            if (double.IsNaN(val)) return CardStyleRole.Normal;
+            if (lowerIsWorse)
+            {
+                if (val <= warningThresh) return CardStyleRole.Danger;
+                if (val <= cautionThresh) return CardStyleRole.Warning;
+                return CardStyleRole.Normal;
+            }
+            else
+            {
+                if (val >= warningThresh) return CardStyleRole.Danger;
+                if (val >= cautionThresh) return CardStyleRole.Warning;
+                return CardStyleRole.Normal;
+            }
+        }
+
+        /// <summary>
+        /// 标准度量条告警阈值求值器：将数值与注意/警告阈值比对，返回度量条样式角色 (Primary / Secondary / Warning)
+        /// </summary>
+        public static MeterStyleRole EvaluateMeterRole(double val, double cautionThresh, double warningThresh, bool lowerIsWorse = false)
+        {
+            if (double.IsNaN(val)) return MeterStyleRole.Primary;
+            if (lowerIsWorse)
+            {
+                if (val <= warningThresh) return MeterStyleRole.Warning;
+                if (val <= cautionThresh) return MeterStyleRole.Warning;
+                return MeterStyleRole.Primary;
+            }
+            else
+            {
+                if (val >= warningThresh) return MeterStyleRole.Warning;
+                if (val >= cautionThresh) return MeterStyleRole.Warning;
+                return MeterStyleRole.Primary;
+            }
+        }
+
+        #endregion
+
         #endregion
 
         protected virtual void Update()
@@ -899,6 +988,119 @@ namespace ModularFlightPanel.UI
             return fallback;
         }
 
+        /// <summary>
+        /// 支持多个别名键名的结构化通配符通道提取器（按顺序首个匹配即返回）
+        /// </summary>
+        public string GetTemplateChannel(string[] aliases, string fallback = "")
+        {
+            if (aliases == null || aliases.Length == 0) return fallback;
+            EnsureTemplateChannelsParsed();
+            for (int i = 0; i < aliases.Length; i++)
+            {
+                if (_templateChannelCache.TryGetValue(aliases[i], out string val))
+                {
+                    return val;
+                }
+            }
+            return fallback;
+        }
+
+        /// <summary>
+        /// 零 GC 结构化浮点数通道提取器 (带 InvariantCulture 解析保护)
+        /// </summary>
+        public double GetTemplateChannelDouble(string key, double fallback = 0.0)
+        {
+            string val = GetTemplateChannel(key, null);
+            if (!string.IsNullOrEmpty(val) && double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double result))
+            {
+                return result;
+            }
+            return fallback;
+        }
+
+        public double GetTemplateChannelDouble(string[] aliases, double fallback = 0.0)
+        {
+            string val = GetTemplateChannel(aliases, null);
+            if (!string.IsNullOrEmpty(val) && double.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double result))
+            {
+                return result;
+            }
+            return fallback;
+        }
+
+        /// <summary>
+        /// 零 GC 结构化单精度浮点数通道提取器
+        /// </summary>
+        public float GetTemplateChannelFloat(string key, float fallback = 0.0f)
+        {
+            string val = GetTemplateChannel(key, null);
+            if (!string.IsNullOrEmpty(val) && float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float result))
+            {
+                return result;
+            }
+            return fallback;
+        }
+
+        public float GetTemplateChannelFloat(string[] aliases, float fallback = 0.0f)
+        {
+            string val = GetTemplateChannel(aliases, null);
+            if (!string.IsNullOrEmpty(val) && float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float result))
+            {
+                return result;
+            }
+            return fallback;
+        }
+
+        /// <summary>
+        /// 零 GC 结构化整数通道提取器
+        /// </summary>
+        public int GetTemplateChannelInt(string key, int fallback = 0)
+        {
+            string val = GetTemplateChannel(key, null);
+            if (!string.IsNullOrEmpty(val) && int.TryParse(val, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int result))
+            {
+                return result;
+            }
+            return fallback;
+        }
+
+        public int GetTemplateChannelInt(string[] aliases, int fallback = 0)
+        {
+            string val = GetTemplateChannel(aliases, null);
+            if (!string.IsNullOrEmpty(val) && int.TryParse(val, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int result))
+            {
+                return result;
+            }
+            return fallback;
+        }
+
+        /// <summary>
+        /// 零 GC 结构化布尔通道提取器 (支持 true/false, 1/0, yes/no, on/off)
+        /// </summary>
+        public bool GetTemplateChannelBool(string key, bool fallback = false)
+        {
+            string val = GetTemplateChannel(key, null);
+            if (!string.IsNullOrEmpty(val))
+            {
+                if (bool.TryParse(val, out bool b)) return b;
+                if (val == "1" || val.Equals("yes", StringComparison.OrdinalIgnoreCase) || val.Equals("on", StringComparison.OrdinalIgnoreCase)) return true;
+                if (val == "0" || val.Equals("no", StringComparison.OrdinalIgnoreCase) || val.Equals("off", StringComparison.OrdinalIgnoreCase)) return false;
+            }
+            return fallback;
+        }
+
+        public bool GetTemplateChannelBool(string[] aliases, bool fallback = false)
+        {
+            string val = GetTemplateChannel(aliases, null);
+            if (!string.IsNullOrEmpty(val))
+            {
+                if (bool.TryParse(val, out bool b)) return b;
+                if (val == "1" || val.Equals("yes", StringComparison.OrdinalIgnoreCase) || val.Equals("on", StringComparison.OrdinalIgnoreCase)) return true;
+                if (val == "0" || val.Equals("no", StringComparison.OrdinalIgnoreCase) || val.Equals("off", StringComparison.OrdinalIgnoreCase)) return false;
+            }
+            return fallback;
+        }
+
         public void InvalidateTemplateChannels()
         {
             _cachedCustomTemplateRaw = null;
@@ -918,10 +1120,10 @@ namespace ModularFlightPanel.UI
             {
                 string p = pairs[i];
                 int eq = p.IndexOf('=');
-                if (eq > 0 && eq < p.Length - 1)
+                if (eq > 0)
                 {
                     string k = p.Substring(0, eq).Trim();
-                    string v = p.Substring(eq + 1).Trim();
+                    string v = (eq < p.Length - 1) ? p.Substring(eq + 1).Trim() : string.Empty;
                     if (k.Length > 0)
                     {
                         _templateChannelCache[k] = v;

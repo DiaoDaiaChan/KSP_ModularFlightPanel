@@ -81,48 +81,21 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private string _thermalLabelStr = "ACTIVE THERMAL LOOP";
         private string _dockLabelStr = "DOCKING MECHANISM";
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _titleCustom = "VEHICLE OVERVIEW / ECLSS";
-            _pressLabelStr = "CABIN PRESS";
-            _o2LabelStr = "O2 LEVEL";
-            _tempLabelStr = "CABIN TEMP";
-            _pwrLabelStr = "NET POWER";
-            _airlockLabelStr = "AIRLOCK HATCH";
-            _propLabelStr = "DRACO RCS PROP";
-            _thermalLabelStr = "ACTIVE THERMAL LOOP";
-            _dockLabelStr = "DOCKING MECHANISM";
-
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "TITLE": _titleCustom = v; break;
-                    case "PRESS_LABEL": _pressLabelStr = v; break;
-                    case "O2_LABEL": _o2LabelStr = v; break;
-                    case "TEMP_LABEL": _tempLabelStr = v; break;
-                    case "PWR_LABEL": _pwrLabelStr = v; break;
-                    case "AIRLOCK_LABEL": _airlockLabelStr = v; break;
-                    case "PROP_LABEL": _propLabelStr = v; break;
-                    case "THERMAL_LABEL": _thermalLabelStr = v; break;
-                    case "DOCK_LABEL": _dockLabelStr = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+
+            _titleCustom = GetTemplateChannel("TITLE", "VEHICLE OVERVIEW / ECLSS");
+            _pressLabelStr = GetTemplateChannel("PRESS_LABEL", "CABIN PRESS");
+            _o2LabelStr = GetTemplateChannel("O2_LABEL", "O2 LEVEL");
+            _tempLabelStr = GetTemplateChannel("TEMP_LABEL", "CABIN TEMP");
+            _pwrLabelStr = GetTemplateChannel("PWR_LABEL", "NET POWER");
+            _airlockLabelStr = GetTemplateChannel("AIRLOCK_LABEL", "AIRLOCK HATCH");
+            _propLabelStr = GetTemplateChannel("PROP_LABEL", "DRACO RCS PROP");
+            _thermalLabelStr = GetTemplateChannel("THERMAL_LABEL", "ACTIVE THERMAL LOOP");
+            _dockLabelStr = GetTemplateChannel("DOCK_LABEL", "DOCKING MECHANISM");
 
             Vector2 panelSize = new Vector2(240f * s, 180f * s);
             RectTransform.sizeDelta = panelSize;

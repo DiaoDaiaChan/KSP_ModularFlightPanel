@@ -289,8 +289,7 @@ namespace ModularFlightPanel.UI.Auditing
                 for (int i = 0; i < legacyItems.Count; i++)
                 {
                     var item = legacyItems[i];
-                    string label = $"{item.WidgetName} ({item.FileName})";
-                    sb.AppendLine($"  ├─ [{i + 1:D2}] {label,-36} => {item.GetMissingSummary()}");
+                    sb.AppendLine($"  ├─ [{i + 1:D2}] {item.FileName,-28} => {item.GetMissingSummary()}");
                 }
             }
 

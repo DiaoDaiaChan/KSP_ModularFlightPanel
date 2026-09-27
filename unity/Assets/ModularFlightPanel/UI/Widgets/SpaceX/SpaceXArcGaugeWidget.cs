@@ -57,35 +57,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         // 弧度几何常数：270° 穹顶弧，底部 90° 开口容纳单位标签
         private const float ArcTotalFraction = 0.75f; // 270° / 360°
 
-        private void ParseCustomTemplate(string tpl)
-        {
-            _tokenKey = null;
-            _titleTemplate = null;
-            _unitTemplate = null;
-            if (string.IsNullOrEmpty(tpl)) return;
-            string[] pairs = tpl.Split(';');
-            for (int i = 0; i < pairs.Length; i++)
-            {
-                string p = pairs[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string k = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string v = p.Substring(eq + 1).Trim();
-                switch (k)
-                {
-                    case "TOKEN": _tokenKey = v; break;
-                    case "TITLE": _titleTemplate = v; break;
-                    case "UNIT": _unitTemplate = v; break;
-                }
-            }
-        }
-
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            ParseCustomTemplate(config?.CustomTemplate);
+            _tokenKey = GetTemplateChannel("TOKEN", null);
+            _titleTemplate = GetTemplateChannel("TITLE", null);
+            _unitTemplate = GetTemplateChannel("UNIT", null);
 
             // 1. 组件包围盒 (基准 110x110 逻辑像素)
             Vector2 size = new Vector2(110f * s, 110f * s);
