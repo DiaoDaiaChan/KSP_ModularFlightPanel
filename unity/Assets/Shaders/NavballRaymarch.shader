@@ -771,7 +771,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 {
                     // StockTexture: 球面坐标转标准等距柱状 UV
                     float pitch = asin(clamp(p.y, -1.0, 1.0));
-                    float head = atan2(-p.x, p.z);
+                    float head = atan2(p.x, p.z);
                     if (head < 0.0) head += 6.28318530718;
 
                     // 原版 KSP 姿态球贴图坐标系校正：对齐地平线半球(天顶天底)与真航向
@@ -804,7 +804,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 {
                     // ProceduralVector: 纯数学解析矢量求值 (极致锐利、任意分辨率无损)
                     float pitchDeg = asin(clamp(p.y, -1.0, 1.0)) * 57.2957795;
-                    float headDeg = atan2(-p.x, p.z) * 57.2957795;
+                    float headDeg = atan2(p.x, p.z) * 57.2957795;
                     if (headDeg < 0.0) headDeg += 360.0;
                     float absY = abs(p.y);
                     float absPitch = abs(pitchDeg);

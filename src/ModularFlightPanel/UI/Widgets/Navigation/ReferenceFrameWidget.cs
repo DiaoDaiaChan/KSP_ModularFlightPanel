@@ -144,7 +144,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             gameObject.SetTooltip(
                 I18n.Tr("TOOLTIP_REF_FRAME_TITLE", "导航参考系 (Reference Frame)"),
                 I18n.Tr("TOOLTIP_REF_FRAME_DESC", "显示当前绘图与速度解算参考系。左键循环切换参考系，右键打开/关闭 Principia 参考系选择器窗口。"),
-                "[L-Click] 切换 [R-Click] 窗口"
+                I18n.Tr("TOOLTIP_REF_FRAME_HOTKEY", "[L-Click] 切换 [R-Click] 窗口")
             );
 
             // 注册微控件至标准化管理器

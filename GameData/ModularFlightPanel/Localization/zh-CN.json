@@ -870,6 +870,7 @@
     "PHASE_ORBIT": "轨道巡航 ORBIT",
     "PHASE_SUBORBIT": "亚轨道 SUBORBIT",
     "PHASE_DESCENT": "下降 DESCENT",
+    "PHASE_LANDING": "着陆 LANDING",
     "ORBIT_TIME_PLACEHOLDER": "T-AP: --:--  PE: --:--",
     "THM_CAT_ALL": "全部 ({0})",
     "THM_CAT_MODERN": "✈ 现代航电 (4)",
@@ -896,6 +897,17 @@
     "GIZMO_LOCKED_TAG": " <color=#FFB703>🔒 [已锁定]</color>",
     "CTL_CARD_FRAME": "卡片底板",
     "CTL_HEADER_BAR": "标题栏",
-    "WIDGET_DISCOVERED_DESC": "动态发现组件: {0}"
+    "WIDGET_DISCOVERED_DESC": "动态发现组件: {0}",
+    "TOOLTIP_REF_FRAME_HOTKEY": "[L-Click] 切换 [R-Click] 窗口",
+    "ECAM_SYS_STS": "机载系统工况 STS",
+    "ECAM_SYS_PROP": "动力推进系统 PROP",
+    "ECAM_SYS_ELEC": "机载电网能源 ELEC",
+    "ECAM_SYS_TRAJ": "轨道动力参数 TRAJ",
+    "ECAM_SYS_ATMO": "飞行走廊环境 ATMO",
+    "ECAM_SYS_GUID": "姿态惯导工况 GUID",
+    "CTL_B787_ENG_COL_FMT": "发动机 {0} 监控纵列",
+    "CTL_B787_N1_DIAL_FMT": "N1 马蹄弧仪表 {0}",
+    "CTL_B787_EGT_DIAL_FMT": "EGT 马蹄弧仪表 {0}",
+    "CTL_B787_N2_DIAL_FMT": "N2 马蹄弧仪表 {0}"
   }
 }

@@ -77,7 +77,7 @@ namespace ModularFlightPanel.HeadlessValidator
         {
             "SPD", "SPEED", "ALT", "ALTITUDE", "VSI", "VERTSPD", "HDG", "HEADING",
             "PITCH", "ROLL", "YAW", "THROTTLE", "THR", "AP", "PE", "TWR", "G", "Q",
-            "MACH", "SAS", "RCS", "BODY", "FRAME", "EC", "COMM", "STAGE", "STG",
+            "MACH", "SAS", "RCS", "BODY", "FRAME", "EC", "COMM", "STAGE", "STG", "PROP", "SURFACE", "k",
             "NORM", "CAUT", "WARN", "OK", "ERR", "ON", "OFF", "X", "Y", "Z", "W",
             "AUTO", "MANUAL", "LOCK", "FREE", "ARM", "DISARM", "RCS/SAS", "HUD",
             "GUI", "UI", "ID", "FPS", "HZ", "MS", "KB", "MB", "GB", "V", "A", "W",
@@ -212,6 +212,9 @@ namespace ModularFlightPanel.HeadlessValidator
                 // 5. 若处于字符串比对匹配 (Contains / Equals / IndexOf / StartsWith / EndsWith)，合法放行
                 if (IsInsideStringComparison(node)) return;
 
+                // 6. 若处于微控件/内部组件注册描述符中 (Controls.Register, WrapElement, new Widget*Control)，合法放行
+                if (IsInsideMicroControlRegistration(node)) return;
+
                 var lineSpan = node.GetLocation().GetLineSpan();
                 int line = lineSpan.StartLinePosition.Line + 1;
                 int col = lineSpan.StartLinePosition.Character + 1;
@@ -258,6 +261,7 @@ namespace ModularFlightPanel.HeadlessValidator
 
                 if (IsInsideLogOrDiagnostic(node)) return;
                 if (IsExemptI18nSlot(node)) return;
+                if (IsInsideMicroControlRegistration(node)) return;
                 if (node.Ancestors().OfType<AttributeSyntax>().Any()) return;
 
                 // 仅检查插值字符串中除 {...} 表达式之外的纯文本部分 (InterpolatedStringTextSyntax)
@@ -451,6 +455,24 @@ namespace ModularFlightPanel.HeadlessValidator
                         {
                             return true;
                         }
+                    }
+                }
+                return false;
+            }
+
+            private static bool IsInsideMicroControlRegistration(SyntaxNode node)
+            {
+                foreach (var ancestor in node.Ancestors())
+                {
+                    if (ancestor is ObjectCreationExpressionSyntax oce)
+                    {
+                        string type = oce.Type.ToString();
+                        if (type.EndsWith("Control", StringComparison.Ordinal) && type.Contains("Widget")) return true;
+                    }
+                    if (ancestor is InvocationExpressionSyntax inv)
+                    {
+                        string expr = inv.Expression.ToString();
+                        if (expr.Contains("WrapElement") || expr.Contains("Controls.Wrap") || expr.Contains("Controls.Register")) return true;
                     }
                 }
                 return false;

@@ -902,13 +902,13 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (_engineCols[i]?.Root != null)
                 {
-                    this.Controls.Register(WidgetControlManager.WrapElement(this, $"eng_col_{i + 1}", $"发动机 {i + 1} 监控纵列", _engineCols[i].Root));
+                    this.Controls.Register(WidgetControlManager.WrapElement(this, $"eng_col_{i + 1}", I18n.TrFormat("CTL_B787_ENG_COL_FMT", i + 1), _engineCols[i].Root));
                     if (_engineCols[i].N1Dial?.Root != null)
-                        this.Controls.Register(WidgetControlManager.WrapElement(this, $"n1_dial_{i + 1}", $"N1 马蹄弧仪表 {i + 1}", _engineCols[i].N1Dial.Root));
+                        this.Controls.Register(WidgetControlManager.WrapElement(this, $"n1_dial_{i + 1}", I18n.TrFormat("CTL_B787_N1_DIAL_FMT", i + 1), _engineCols[i].N1Dial.Root));
                     if (_engineCols[i].EgtDial?.Root != null)
-                        this.Controls.Register(WidgetControlManager.WrapElement(this, $"egt_dial_{i + 1}", $"EGT 马蹄弧仪表 {i + 1}", _engineCols[i].EgtDial.Root));
+                        this.Controls.Register(WidgetControlManager.WrapElement(this, $"egt_dial_{i + 1}", I18n.TrFormat("CTL_B787_EGT_DIAL_FMT", i + 1), _engineCols[i].EgtDial.Root));
                     if (_engineCols[i].N2Dial?.Root != null)
-                        this.Controls.Register(WidgetControlManager.WrapElement(this, $"n2_dial_{i + 1}", $"N2 马蹄弧仪表 {i + 1}", _engineCols[i].N2Dial.Root));
+                        this.Controls.Register(WidgetControlManager.WrapElement(this, $"n2_dial_{i + 1}", I18n.TrFormat("CTL_B787_N2_DIAL_FMT", i + 1), _engineCols[i].N2Dial.Root));
                 }
             }
 

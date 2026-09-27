@@ -559,7 +559,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                     {
                         float tick25AA = clamp(fwidth(pMod25) * 0.75, 0.001, 0.12);
                         float tick25HAA = clamp(fwidth(absHOffset) * 0.75, 0.002, 0.16);
-                        isTick25 = (1.0 - smoothstep(0.18 - tick25AA, 0.18 + tick25AA, pMod25)) * (1.0 - smoothstep(2.0 - tick25HAA, 2.0 + tick25HAA, absHOffset)) * 0.65;
+                        float isTick25 = (1.0 - smoothstep(0.18 - tick25AA, 0.18 + tick25AA, pMod25)) * (1.0 - smoothstep(2.0 - tick25HAA, 2.0 + tick25HAA, absHOffset)) * 0.65;
                         combinedLadder = max(combinedLadder, isTick25 * _VernierScaleDetail * smoothstep(0.35, 0.75, _DetailScale));
                     }
                 }
@@ -722,7 +722,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float NdotV = saturate(dot(normal, viewDir));
 
                 float pitchDeg = asin(clamp(p.y, -1.0, 1.0)) * 57.2957795;
-                float headDeg = atan2(-p.x, p.z) * 57.2957795;
+                float headDeg = atan2(p.x, p.z) * 57.2957795;
                 if (headDeg < 0.0) headDeg += 360.0;
 
                 float absY = abs(p.y);
@@ -797,7 +797,7 @@ Shader "ModularFlightPanel/NavballProcedural"
                 float lon = (i.uv.x - 0.5) * 6.28318530718;
                 float lat = (i.uv.y - 0.5) * 3.14159265359;
                 float cosLat = cos(lat);
-                float3 p = float3(-sin(lon) * cosLat, sin(lat), cos(lon) * cosLat);
+                float3 p = float3(sin(lon) * cosLat, sin(lat), cos(lon) * cosLat);
                 float pitchDeg = lat * 57.2957795;
                 float headDeg = fmod(lon * 57.2957795 + 360.0, 360.0);
                 float absY = abs(p.y);

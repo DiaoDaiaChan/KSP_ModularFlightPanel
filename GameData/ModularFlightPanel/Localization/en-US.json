@@ -870,6 +870,7 @@
     "PHASE_ORBIT": "ORBIT",
     "PHASE_SUBORBIT": "SUBORBIT",
     "PHASE_DESCENT": "DESCENT",
+    "PHASE_LANDING": "LANDING",
     "ORBIT_TIME_PLACEHOLDER": "T-AP: --:--  PE: --:--",
     "THM_CAT_ALL": "All ({0})",
     "THM_CAT_MODERN": "✈ Modern Avionics (4)",
@@ -896,6 +897,17 @@
     "GIZMO_LOCKED_TAG": " <color=#FFB703>🔒 [LOCKED]</color>",
     "CTL_CARD_FRAME": "Card Frame",
     "CTL_HEADER_BAR": "Header Bar",
-    "WIDGET_DISCOVERED_DESC": "Dynamically discovered widget: {0}"
+    "WIDGET_DISCOVERED_DESC": "Dynamically discovered widget: {0}",
+    "TOOLTIP_REF_FRAME_HOTKEY": "[L-Click] Toggle [R-Click] Window",
+    "ECAM_SYS_STS": "SYSTEM STATUS STS",
+    "ECAM_SYS_PROP": "PROPULSION SYSTEM PROP",
+    "ECAM_SYS_ELEC": "ELECTRICAL POWER ELEC",
+    "ECAM_SYS_TRAJ": "TRAJECTORY DYNAMICS TRAJ",
+    "ECAM_SYS_ATMO": "ATMOSPHERIC REGIME ATMO",
+    "ECAM_SYS_GUID": "GUIDANCE & NAVIGATION GUID",
+    "CTL_B787_ENG_COL_FMT": "Engine {0} Column",
+    "CTL_B787_N1_DIAL_FMT": "N1 Dial Gauge {0}",
+    "CTL_B787_EGT_DIAL_FMT": "EGT Dial Gauge {0}",
+    "CTL_B787_N2_DIAL_FMT": "N2 Dial Gauge {0}"
   }
 }

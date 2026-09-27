@@ -1185,7 +1185,7 @@ namespace ModularFlightPanel.UI.Widgets
         private void RenderSystemStatusPage(ThemeConfig theme, IFlightTelemetry telem, double effectivePe, double effectiveAp)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            SetTextIfChanged(_statusText, "机载系统工况 STS");
+            SetTextIfChanged(_statusText, I18n.Tr("ECAM_SYS_STS", "机载系统工况 STS"));
             if (_statusText != null) _statusText.color = theme.AccentPrimary;
             if (_statusLedDot != null) _statusLedDot.color = theme.AccentPrimary;
             if (_statusLedHalo != null) _statusLedHalo.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.25f);
@@ -1197,11 +1197,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             SysDiagEntry[] diag = new SysDiagEntry[MAX_DISPLAY_ROWS]
             {
-                new SysDiagEntry { Tag = "PROP", Title = "动力推进系统 PROP", Val = $"{telem.ActiveEngines} ENG", Aux = $"THR {Mathf.RoundToInt(telem.Throttle * 100f)}%", Col = theme.AccentPrimary },
-                new SysDiagEntry { Tag = "ELEC", Title = "机载电网能源 ELEC", Val = $"{Mathf.RoundToInt((float)telem.EcPercent)}% EC", Aux = "BUS OK", Col = telem.EcPercent <= 20.0 ? theme.WarningColor : theme.AccentPositive },
-                new SysDiagEntry { Tag = "TRAJ", Title = "轨道动力参数 TRAJ", Val = $"Pe {FormatKm(effectivePe)}", Aux = $"Ap {FormatKm(effectiveAp)}", Col = theme.AccentPrimary },
-                new SysDiagEntry { Tag = "ATMO", Title = "飞行走廊环境 ATMO", Val = $"M {telem.Mach:F1}", Aux = $"Q {telem.DynamicPressure:F1}k", Col = theme.AccentSecondary },
-                new SysDiagEntry { Tag = "GUID", Title = "姿态惯导工况 GUID", Val = $"{telem.GForce:F1}G", Aux = $"STG {telem.CurrentStage}", Col = theme.AccentPositive }
+                new SysDiagEntry { Tag = "PROP", Title = I18n.Tr("ECAM_SYS_PROP", "动力推进系统 PROP"), Val = $"{telem.ActiveEngines} ENG", Aux = $"THR {Mathf.RoundToInt(telem.Throttle * 100f)}%", Col = theme.AccentPrimary },
+                new SysDiagEntry { Tag = "ELEC", Title = I18n.Tr("ECAM_SYS_ELEC", "机载电网能源 ELEC"), Val = $"{Mathf.RoundToInt((float)telem.EcPercent)}% EC", Aux = "BUS OK", Col = telem.EcPercent <= 20.0 ? theme.WarningColor : theme.AccentPositive },
+                new SysDiagEntry { Tag = "TRAJ", Title = I18n.Tr("ECAM_SYS_TRAJ", "轨道动力参数 TRAJ"), Val = $"Pe {FormatKm(effectivePe)}", Aux = $"Ap {FormatKm(effectiveAp)}", Col = theme.AccentPrimary },
+                new SysDiagEntry { Tag = "ATMO", Title = I18n.Tr("ECAM_SYS_ATMO", "飞行走廊环境 ATMO"), Val = $"M {telem.Mach:F1}", Aux = $"Q {telem.DynamicPressure:F1}k", Col = theme.AccentSecondary },
+                new SysDiagEntry { Tag = "GUID", Title = I18n.Tr("ECAM_SYS_GUID", "姿态惯导工况 GUID"), Val = $"{telem.GForce:F1}G", Aux = $"STG {telem.CurrentStage}", Col = theme.AccentPositive }
             };
 
             for (int i = 0; i < MAX_DISPLAY_ROWS; i++)
