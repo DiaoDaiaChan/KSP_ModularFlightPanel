@@ -788,6 +788,23 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_bankRollPointerRoot == null) return;
 
+            var hook = NavBallHookService.Provider;
+            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
+            bool isSurface = category.Equals("SURFACE", StringComparison.OrdinalIgnoreCase) ||
+                             category.Equals("BODY_FIXED", StringComparison.OrdinalIgnoreCase) ||
+                             category.Equals("BODY_SURFACE", StringComparison.OrdinalIgnoreCase);
+
+            // 坡度标尺与滚转指针只在地表参考系 (SURFACE) 生效；在太空/轨道/惯性/拉格朗日系下平飞坡度无空气动力学意义，平滑隐藏避免太空乱漂
+            if (!isSurface)
+            {
+                if (_bankRollPointerRoot.gameObject.activeSelf) _bankRollPointerRoot.gameObject.SetActive(false);
+                SetBankTicksVisibility(false);
+                return;
+            }
+
+            if (!_bankRollPointerRoot.gameObject.activeSelf) _bankRollPointerRoot.gameObject.SetActive(true);
+            SetBankTicksVisibility(true);
+
             float rollAngle = 0f;
             if (telemetry != null)
             {
@@ -808,6 +825,18 @@ namespace ModularFlightPanel.UI.Widgets
                 _bankRollPointerImg.color = isExtreme 
                     ? (theme != null ? (Color)theme.WarningColor : WidgetStyleManager.NeutralOpaque)
                     : (theme != null ? (Color)theme.HorizonLineColor : WidgetStyleManager.NeutralOpaque);
+            }
+        }
+
+        private void SetBankTicksVisibility(bool visible)
+        {
+            for (int i = 0; i < _bankAngleTicks.Count; i++)
+            {
+                Image img = _bankAngleTicks[i];
+                if (img != null && img.gameObject.activeSelf != visible)
+                {
+                    img.gameObject.SetActive(visible);
+                }
             }
         }
 
@@ -838,9 +867,13 @@ namespace ModularFlightPanel.UI.Widgets
             bool sasActive = telemetry != null && telemetry.IsSASEnabled;
             FlightSASMode curSASMode = telemetry != null ? telemetry.CurrentSASMode : FlightSASMode.StabilityAssist;
 
+            // 优化：StabilityAssist 属于基础姿态阻尼保持，准星本身已是基准，无需常驻黄色方框遮挡机头
+            // 仅当锁定在具体导引矢量标 (Prograde, Retrograde, Normal, Maneuver, Target 等) 时显式呈现角括号锁定框
+            bool isDirectionalLock = sasActive && curSASMode != FlightSASMode.StabilityAssist;
+
             if (_sasLockReticleRt != null && _sasLockReticleImage != null)
             {
-                if (sasActive)
+                if (isDirectionalLock)
                 {
                     if (!_sasLockReticleRt.gameObject.activeSelf) _sasLockReticleRt.gameObject.SetActive(true);
 
