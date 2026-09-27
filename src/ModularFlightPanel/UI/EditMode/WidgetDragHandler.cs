@@ -70,11 +70,20 @@ namespace ModularFlightPanel.UI
             UpdateEditVisuals();
 
             WidgetSelectionManager.OnSelectionChanged += UpdateSelectionAppearance;
+            OnEditModeChanged += HandleEditModeChanged;
+            this.enabled = IsEditModeActive;
         }
 
         private void OnDestroy()
         {
             WidgetSelectionManager.OnSelectionChanged -= UpdateSelectionAppearance;
+            OnEditModeChanged -= HandleEditModeChanged;
+        }
+
+        private void HandleEditModeChanged(bool isEdit)
+        {
+            this.enabled = isEdit;
+            UpdateEditVisuals();
         }
 
         private void CreateEditVisuals()
@@ -124,11 +133,6 @@ namespace ModularFlightPanel.UI
             trt.pivot = new Vector2(0.5f, 0f);
             trt.sizeDelta = new Vector2(220f, 20f);
             trt.anchoredPosition = new Vector2(0f, 4f);
-        }
-
-        private void Update()
-        {
-            UpdateEditVisuals();
         }
 
         public void OnPointerEnter(PointerEventData eventData)

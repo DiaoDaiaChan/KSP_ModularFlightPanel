@@ -49,6 +49,23 @@ namespace ModularFlightPanel.UI.HUD
             _scaler.referencePixelsPerUnit = 100f;
 
             _raycaster = _canvasObj.GetComponent<GraphicRaycaster>();
+            // 根画布射线按需休眠：普通飞行状态下彻底关闭根画布射线检测，交互完全由具体组件 SubRaycaster 局部承接，
+            // 消除 EventSystem 每一帧对整个主画布数百个 Graphic 元件的深度遍历开销
+            if (_raycaster != null)
+            {
+                _raycaster.enabled = false;
+            }
+        }
+
+        /// <summary>
+        /// 动态配置根画布 GraphicRaycaster 激活状态 (仅在编辑模式等全屏拾取交互时按需激活)
+        /// </summary>
+        public void SetRaycasterEnabled(bool enabled)
+        {
+            if (_raycaster != null && _raycaster.enabled != enabled)
+            {
+                _raycaster.enabled = enabled;
+            }
         }
 
         /// <summary>
@@ -88,9 +105,9 @@ namespace ModularFlightPanel.UI.HUD
             {
                 _canvasObj.SetActive(visible);
             }
-            if (_raycaster != null)
+            if (_raycaster != null && !visible)
             {
-                _raycaster.enabled = visible;
+                _raycaster.enabled = false;
             }
         }
 

@@ -67,10 +67,13 @@ namespace ModularFlightPanel.UI
             _selectionBoxOutline.effectDistance = new Vector2(1.5f, 1.5f);
 
             _selectionBoxObj.SetActive(false);
+            WidgetDragHandler.OnEditModeChanged += HandleEditModeChanged;
+            UpdateRaycastState();
         }
 
         private void OnDestroy()
         {
+            WidgetDragHandler.OnEditModeChanged -= HandleEditModeChanged;
             if (_selectionBoxObj != null)
             {
                 if (Application.isPlaying) Destroy(_selectionBoxObj);
@@ -78,9 +81,13 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        private void Update()
+        private void HandleEditModeChanged(bool isEdit)
         {
-            // 仅在编辑模式激活且显示 HUD 时启用空白拾取
+            UpdateRaycastState();
+        }
+
+        public void UpdateRaycastState()
+        {
             bool editActive = WidgetDragHandler.IsEditModeActive && (FlightHUDManager.Instance == null || FlightHUDManager.Instance.IsUIVisible);
             if (_bgRaycastCatcher != null && _bgRaycastCatcher.raycastTarget != editActive)
             {

@@ -110,8 +110,9 @@ namespace ModularFlightPanel.UI
 
         // 硬限微秒级帧预算切片调度器配置 (Budgeted Frame Slicing)
         public bool EnableBudgetSlicing { get; set; } = true;
-        public float MaxFrameBudgetMs { get; set; } = 0.15f; // 默认最大帧预算 0.15ms (150微秒)，硬限锁死最大CPU时间
-        private int _sliceCursor = 0;                        // 非 Critical 组件公平轮询切片游标
+        public float MaxFrameBudgetMs { get; set; } = 0.15f;         // 全局参考最大帧预算 (150微秒)
+        public float MaxNonCriticalBudgetMs { get; set; } = 0.08f;  // 阶段 2 非 Critical 组件独立微秒切片预算 (80微秒)，与姿态球彻底解耦，杜绝调度饥饿
+        private int _sliceCursor = 0;                                // 非 Critical 组件公平轮询切片游标
 
         public event Action<int> OnRenderResolutionChanged;
         public event Action<float> OnGlobalRenderScaleChanged;
@@ -393,11 +394,13 @@ namespace ModularFlightPanel.UI
 
                 // -------------------------------------------------------------
                 // 阶段 2：Standard / Relaxed / UltraLow 组件公平轮询切片调度 (Round-Robin Slicing)
+                // 采用独立计时管道与姿态球耗时解耦，每 3 个组件采样一次时间戳，彻底消除饥饿与高频计时抖动
                 // -------------------------------------------------------------
                 if (count > 0)
                 {
                     int startIndex = _sliceCursor % count;
                     int scheduledNonCrit = 0;
+                    long nonCritStartTick = Stopwatch.GetTimestamp();
 
                     for (int step = 0; step < count; step++)
                     {
@@ -414,16 +417,19 @@ namespace ModularFlightPanel.UI
                         ExecuteWidgetUpdate(reg, telem, profileWidgets);
                         scheduledNonCrit++;
 
-                        // 微秒预算检查：若当前帧累计耗时已达到最大帧预算，记录游标并让出执行权至下一帧
-                        double elapsedMs = (Stopwatch.GetTimestamp() - startTick) * ticksToMs;
-                        if (elapsedMs >= MaxFrameBudgetMs)
+                        // 独立微秒预算检查：每处理 3 个组件检查一次，若达到非 Critical 专属预算，记录游标并平滑让出至下一帧
+                        if (scheduledNonCrit % 3 == 0)
                         {
-                            _sliceCursor = (i + 1) % count;
-                            break;
+                            double nonCritElapsedMs = (Stopwatch.GetTimestamp() - nonCritStartTick) * ticksToMs;
+                            if (nonCritElapsedMs >= MaxNonCriticalBudgetMs)
+                            {
+                                _sliceCursor = (i + 1) % count;
+                                break;
+                            }
                         }
                     }
 
-                    if (scheduledNonCrit == 0 || (Stopwatch.GetTimestamp() - startTick) * ticksToMs < MaxFrameBudgetMs)
+                    if (scheduledNonCrit == 0 || (Stopwatch.GetTimestamp() - nonCritStartTick) * ticksToMs < MaxNonCriticalBudgetMs)
                     {
                         _sliceCursor = (startIndex + count) % count;
                     }

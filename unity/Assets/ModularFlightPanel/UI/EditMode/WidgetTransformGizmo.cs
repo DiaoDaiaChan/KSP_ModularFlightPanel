@@ -102,10 +102,12 @@ namespace ModularFlightPanel.UI
 
             WidgetSelectionManager.OnSelectionChanged += UpdateGizmoPosition;
             WidgetDragHandler.OnEditModeChanged += HandleEditModeChanged;
+            this.enabled = WidgetDragHandler.IsEditModeActive;
         }
 
         private void HandleEditModeChanged(bool active)
         {
+            this.enabled = active;
             if (!active) HideGizmo();
             else UpdateGizmoPosition();
         }
@@ -226,6 +228,7 @@ namespace ModularFlightPanel.UI
             if (!WidgetDragHandler.IsEditModeActive)
             {
                 if (_gizmoBox != null && _gizmoBox.activeSelf) HideGizmo();
+                this.enabled = false;
                 return;
             }
 

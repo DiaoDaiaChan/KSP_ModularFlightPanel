@@ -140,12 +140,14 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            // 按需同步 IMGUI 挂载组件状态：只有激活时才启用，非激活时完全杜绝 Unity IMGUI 运行
+            // 按需同步 IMGUI 挂载组件与根画布射线检测状态
             bool isEditMode = WidgetDragHandler.IsEditModeActive && _isUIVisible;
             if (_editModeToolbar != null && _editModeToolbar.enabled != isEditMode)
             {
                 _editModeToolbar.enabled = isEditMode;
             }
+
+            _canvasManager.SetRaycasterEnabled(isEditMode);
 
             bool showProfiler = MFPProfiler.ShowOverlay && _isUIVisible;
             if (_profilerOverlay != null && _profilerOverlay.enabled != showProfiler)
@@ -155,7 +157,8 @@ namespace ModularFlightPanel.UI
 
             MFPProfiler.BeginFrame();
 
-            if (!bypassed)
+            // 视口与界面隐藏态绝对零开销直通 (Zero-Cost Shortcut when UI is hidden or bypassed)
+            if (!bypassed && _isUIVisible)
             {
 #if KSP_RUNTIME
                 ModularFlightPanel.Core.StockNavBallHook.TickDynamicHooks();
@@ -187,7 +190,7 @@ namespace ModularFlightPanel.UI
 
         private void LateUpdate()
         {
-            if (!MFPProfiler.IsMasterBypassed)
+            if (!MFPProfiler.IsMasterBypassed && _isUIVisible)
             {
                 WidgetRenderManager.Instance.MasterLateUpdate();
             }
@@ -214,6 +217,7 @@ namespace ModularFlightPanel.UI
         {
             if (_hudRoot != null)
             {
+                _hudRoot.SetActive(false);
                 if (Application.isPlaying) Destroy(_hudRoot);
                 else DestroyImmediate(_hudRoot);
             }
@@ -223,8 +227,9 @@ namespace ModularFlightPanel.UI
 
             ThemeConfig theme = ThemeManager.Instance.CurrentTheme;
 
-            // 根锚点
+            // 根锚点：装配期间保持 SetActive(false)，彻底防止子节点逐个挂载/调整层级时的逐次 UGUI 重绘
             _hudRoot = new GameObject("HUD_Anchor_Root", typeof(RectTransform));
+            _hudRoot.SetActive(false);
             _hudRoot.transform.SetParent(_canvasManager.CanvasObject.transform, false);
 
             RectTransform rootRt = _hudRoot.GetComponent<RectTransform>();
@@ -232,10 +237,6 @@ namespace ModularFlightPanel.UI
             rootRt.anchorMax = new Vector2(0.5f, 0f);
             rootRt.pivot = new Vector2(0.5f, 0f);
             rootRt.anchoredPosition = new Vector2(0f, 215f * CustomScale);
-            if (!_isUIVisible)
-            {
-                _hudRoot.SetActive(false);
-            }
 
             // 实例化全屏蓝图辅助网格与对称轴 (位于底层)
             GameObject gridObj = new GameObject("CanvasBlueprintGrid", typeof(RectTransform));

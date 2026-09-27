@@ -115,7 +115,6 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _paletteInitialized = false;
         private bool _isPaletteLerping = false;
         private string _lastFrameCategory = null;
-        private float _lastFramePattern = -1f;
 
         // ── 姿态角速度低通滤波与趋势预测 ──
         private Quaternion _previousAttitudeRotation = Quaternion.identity;
@@ -1609,7 +1608,6 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             _paletteInitialized = false;
             _lastFrameCategory = null;
-            _lastFramePattern = -1f;
 
             var mode = ThemeManager.Instance.GlobalRenderMode;
             if (mode == NavballRenderMode.ProceduralBake) mode = NavballRenderMode.ProceduralVector;
