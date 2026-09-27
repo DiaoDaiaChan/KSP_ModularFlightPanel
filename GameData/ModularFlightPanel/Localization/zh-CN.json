@@ -908,6 +908,16 @@
     "CTL_B787_ENG_COL_FMT": "发动机 {0} 监控纵列",
     "CTL_B787_N1_DIAL_FMT": "N1 马蹄弧仪表 {0}",
     "CTL_B787_EGT_DIAL_FMT": "EGT 马蹄弧仪表 {0}",
-    "CTL_B787_N2_DIAL_FMT": "N2 马蹄弧仪表 {0}"
+    "CTL_B787_N2_DIAL_FMT": "N2 马蹄弧仪表 {0}",
+    "UI_FAULT_TITLE": "<color=#FF4444><b>⚠ 航电安全熔断已激活 (Avionics Circuit Breaker Active)</b></color>",
+    "UI_FAULT_DESC": "原因: {0}\n当前已完全切断 MFP 渲染并 100% 恢复原生原版界面。",
+    "UI_FAULT_BTN_RETRY": "🔄 尝试恢复 MFP",
+    "UI_TOAST_FAULT_RECOVERED": "✔ 航电系统已尝试恢复装配",
+    "UI_TOAST_FAULT_RETRY_FAIL": "✖ 恢复失败，系统保持原版降级模式",
+    "UI_BYPASS_FAULT": "⚠ 熔断接管",
+    "UI_BYPASS_ON": "🛑 原版模式",
+    "UI_BYPASS_OFF": "🚀 航电模式",
+    "UI_BYPASS_TIP_ON": "当前处于原版 UI 旁路接管状态。点击尝试恢复 MFP 航电界面 (F11)",
+    "UI_BYPASS_TIP_OFF": "点击切断 MFP 渲染并 100% 切换至原版原生 UI (F11)"
   }
 }

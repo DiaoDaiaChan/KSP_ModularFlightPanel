@@ -371,6 +371,32 @@ namespace ModularFlightPanel.UI
 
             GUILayout.Space(6f);
 
+            // 全局 Master Bypass / 故障原版旁路模式切换
+            bool bypassed = MFPProfiler.IsMasterBypassed || MFPSafetyFallback.IsFaulted;
+            string bypassText = MFPSafetyFallback.IsFaulted
+                ? I18n.Tr("UI_BYPASS_FAULT", "⚠ 熔断接管")
+                : (bypassed ? I18n.Tr("UI_BYPASS_ON", "🛑 原版模式") : I18n.Tr("UI_BYPASS_OFF", "🚀 航电模式"));
+            GUIStyle bypassStyle = MFPSafetyFallback.IsFaulted
+                ? MFPGuiSkin.DangerButtonStyle
+                : (bypassed ? MFPGuiSkin.WarningButtonStyle : MFPGuiSkin.SecondaryButtonStyle);
+            string bypassTooltip = bypassed
+                ? I18n.Tr("UI_BYPASS_TIP_ON", "当前处于原版 UI 旁路接管状态。点击尝试恢复 MFP 航电界面 (F11)")
+                : I18n.Tr("UI_BYPASS_TIP_OFF", "点击切断 MFP 渲染并 100% 切换至原版原生 UI (F11)");
+            if (GUILayout.Button(new GUIContent(bypassText, bypassTooltip), bypassStyle, GUILayout.Height(24f), GUILayout.Width(100f)))
+            {
+                if (MFPSafetyFallback.IsFaulted)
+                {
+                    bool ok = MFPSafetyFallback.TryRecoverFromFault();
+                    MFPGuiSkin.ShowToast(ok ? I18n.Tr("UI_TOAST_FAULT_RECOVERED", "✔ 已尝试恢复 MFP 航电系统") : I18n.Tr("UI_TOAST_FAULT_RETRY_FAIL", "✖ 恢复失败，系统保持原版降级模式"));
+                }
+                else
+                {
+                    MFPProfiler.ToggleMasterBypass();
+                }
+            }
+
+            GUILayout.Space(6f);
+
             // 全局语言快速切换按钮 (顶栏常驻)
             string curLang = I18nManager.Instance.CurrentLanguage;
             bool isZh = curLang.Equals("zh-CN", StringComparison.OrdinalIgnoreCase);
@@ -412,6 +438,28 @@ namespace ModularFlightPanel.UI
 
             GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
+
+            // =========================================================================
+            // 1.5 故障熔断警告栏 (Fault Fallback Banner)
+            // =========================================================================
+            if (MFPSafetyFallback.IsFaulted)
+            {
+                GUILayout.Space(4f);
+                MFPGuiSkin.BeginInset();
+                GUILayout.BeginHorizontal();
+                GUILayout.BeginVertical();
+                GUILayout.Label(I18n.Tr("UI_FAULT_TITLE", "<color=#FF4444><b>⚠ 航电安全熔断已激活 (Avionics Circuit Breaker Active)</b></color>"), GUI.skin.label);
+                GUILayout.Label(string.Format(I18n.Tr("UI_FAULT_DESC", "原因: {0}\n当前已完全切断 MFP 渲染并 100% 恢复原生原版界面。"), MFPSafetyFallback.FaultReason), GUI.skin.label);
+                GUILayout.EndVertical();
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button(I18n.Tr("UI_FAULT_BTN_RETRY", "🔄 尝试恢复 MFP"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(32f), GUILayout.Width(130f)))
+                {
+                    bool ok = MFPSafetyFallback.TryRecoverFromFault();
+                    MFPGuiSkin.ShowToast(ok ? I18n.Tr("UI_TOAST_FAULT_RECOVERED", "✔ 航电系统已尝试恢复装配") : I18n.Tr("UI_TOAST_FAULT_RETRY_FAIL", "✖ 恢复失败，系统保持原版降级模式"));
+                }
+                GUILayout.EndHorizontal();
+                MFPGuiSkin.EndInset();
+            }
 
             GUILayout.Space(4f);
 

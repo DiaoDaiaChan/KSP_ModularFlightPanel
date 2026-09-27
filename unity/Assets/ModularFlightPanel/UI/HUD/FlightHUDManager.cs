@@ -50,6 +50,9 @@ namespace ModularFlightPanel.UI
 
         public static bool IsMouseOverFloatingToolbar { get; set; } = false;
 
+        private int _consecutiveUpdateExceptions = 0;
+        private const int MaxConsecutiveExceptionsBeforeTrip = 3;
+
         private void Awake()
         {
             _instance = this;
@@ -64,137 +67,181 @@ namespace ModularFlightPanel.UI
 
         public void Initialize(Camera renderCam = null)
         {
-            WidgetLayoutManager.Instance.Initialize();
-            ThemeManager.Instance.OnThemeChanged += OnThemeChanged;
-            I18nManager.OnLanguageChanged += HandleLanguageChanged;
-            if (WidgetRenderManager.Instance != null)
-            {
-                WidgetRenderManager.Instance.OnGlobalRenderScaleChanged += HandleGlobalRenderScaleChanged;
-            }
-
-#if KSP_RUNTIME
-            // 注册 KSP 原生 UI 显隐事件、DPI 缩放与活动载具切换事件 (支持 F2 一键隐藏 UI 与切船载具专属配置)
             try
             {
-                GameEvents.onHideUI.Add(OnHideUI);
-                GameEvents.onShowUI.Add(OnShowUI);
-                GameEvents.onUIScaleChange.Add(OnUIScaleChange);
-                GameEvents.onVesselChange.Add(OnVesselChange);
-                if (FlightGlobals.ActiveVessel != null)
+                WidgetLayoutManager.Instance.Initialize();
+                ThemeManager.Instance.OnThemeChanged += OnThemeChanged;
+                I18nManager.OnLanguageChanged += HandleLanguageChanged;
+                if (WidgetRenderManager.Instance != null)
                 {
-                    WidgetLayoutManager.Instance.OnActiveVesselChanged(FlightGlobals.ActiveVessel.vesselName);
+                    WidgetRenderManager.Instance.OnGlobalRenderScaleChanged += HandleGlobalRenderScaleChanged;
                 }
-            }
-            catch { }
-#endif
-
-            BuildCanvas();
-            if (renderCam != null)
-            {
-                SetRenderCamera(renderCam);
-            }
-            BuildHUD();
-            StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
 
 #if KSP_RUNTIME
-            // 若进入场景时 KSP 已经处于 F2 隐藏界面状态，立即同步隐藏
-            try
-            {
-                if (KSP.UI.UIMasterController.Instance != null && !KSP.UI.UIMasterController.Instance.IsUIShowing)
+                // 注册 KSP 原生 UI 显隐事件、DPI 缩放与活动载具切换事件 (支持 F2 一键隐藏 UI 与切船载具专属配置)
+                try
                 {
-                    SetUIVisible(false);
+                    GameEvents.onHideUI.Add(OnHideUI);
+                    GameEvents.onShowUI.Add(OnShowUI);
+                    GameEvents.onUIScaleChange.Add(OnUIScaleChange);
+                    GameEvents.onVesselChange.Add(OnVesselChange);
+                    if (FlightGlobals.ActiveVessel != null)
+                    {
+                        WidgetLayoutManager.Instance.OnActiveVesselChanged(FlightGlobals.ActiveVessel.vesselName);
+                    }
                 }
-            }
-            catch { }
+                catch { }
 #endif
+
+                BuildCanvas();
+                if (renderCam != null)
+                {
+                    SetRenderCamera(renderCam);
+                }
+                BuildHUD();
+                StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
+
+#if KSP_RUNTIME
+                // 若进入场景时 KSP 已经处于 F2 隐藏界面状态，立即同步隐藏
+                try
+                {
+                    if (KSP.UI.UIMasterController.Instance != null && !KSP.UI.UIMasterController.Instance.IsUIShowing)
+                    {
+                        SetUIVisible(false);
+                    }
+                }
+                catch { }
+#endif
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager Initialize fatal error: {ex}");
+                MFPSafetyFallback.TriggerFaultFallback("HUD 初始化发生致命异常 (HUD Initialization Error)", ex);
+            }
         }
 
         private void Update()
         {
-            // 性能探针与主干旁路热键响应
-            if (Input.GetKeyDown(KeyCode.F11))
+            if (MFPSafetyFallback.IsFaulted)
             {
-                MFPProfiler.ToggleMasterBypass();
-            }
-            if (Input.GetKeyDown(KeyCode.F10))
-            {
-                MFPProfiler.ShowOverlay = !MFPProfiler.ShowOverlay;
-            }
-
-            bool bypassed = MFPProfiler.IsMasterBypassed;
-            if (bypassed)
-            {
-                if (_canvasManager.IsCanvasActive)
+                if (_canvasManager != null && _canvasManager.IsCanvasActive)
                 {
                     _canvasManager.SetVisible(false);
                 }
-                if (_editModeToolbar != null && _editModeToolbar.enabled) _editModeToolbar.enabled = false;
-                if (_profilerOverlay != null && _profilerOverlay.enabled) _profilerOverlay.enabled = false;
                 return;
             }
-            else
+
+            try
             {
-                if (!_canvasManager.IsCanvasActive && _isUIVisible)
+                // 性能探针与主干旁路热键响应
+                if (Input.GetKeyDown(KeyCode.F11))
                 {
-                    _canvasManager.SetVisible(true);
+                    MFPProfiler.ToggleMasterBypass();
                 }
-            }
-
-            // 按需同步 IMGUI 挂载组件与根画布射线检测状态
-            bool isEditMode = WidgetDragHandler.IsEditModeActive && _isUIVisible;
-            if (_editModeToolbar != null && _editModeToolbar.enabled != isEditMode)
-            {
-                _editModeToolbar.enabled = isEditMode;
-            }
-
-            _canvasManager.SetRaycasterEnabled(isEditMode);
-
-            bool showProfiler = MFPProfiler.ShowOverlay && _isUIVisible;
-            if (_profilerOverlay != null && _profilerOverlay.enabled != showProfiler)
-            {
-                _profilerOverlay.enabled = showProfiler;
-            }
-
-            MFPProfiler.BeginFrame();
-
-            // 视口与界面隐藏态绝对零开销直通 (Zero-Cost Shortcut when UI is hidden or bypassed)
-            if (!bypassed && _isUIVisible)
-            {
-#if KSP_RUNTIME
-                ModularFlightPanel.Core.StockNavBallHook.TickDynamicHooks();
-#endif
-                WidgetRenderManager.Instance.MasterUpdate(Time.unscaledTime);
-                WidgetSelectionManager.HandleGlobalShortcuts();
-            }
-
-#if KSP_RUNTIME
-            // 实时侦测 KSP 主控制台 UI 状态 (双重安全保障：捕获 F2 快捷键与第三方 Mod 的显隐切换)
-            // 节流为每 15 帧检查一次，避免每帧执行单例查找与反射开销
-            if (Time.frameCount % 15 == 0)
-            {
-                try
+                if (Input.GetKeyDown(KeyCode.F10))
                 {
-                    if (KSP.UI.UIMasterController.Instance != null)
+                    MFPProfiler.ShowOverlay = !MFPProfiler.ShowOverlay;
+                }
+
+                bool bypassed = MFPProfiler.IsMasterBypassed;
+                if (bypassed)
+                {
+                    if (_canvasManager.IsCanvasActive)
                     {
-                        bool isShowing = KSP.UI.UIMasterController.Instance.IsUIShowing;
-                        if (_isUIVisible != isShowing)
-                        {
-                            SetUIVisible(isShowing);
-                        }
+                        _canvasManager.SetVisible(false);
+                    }
+                    if (_editModeToolbar != null && _editModeToolbar.enabled) _editModeToolbar.enabled = false;
+                    if (_profilerOverlay != null && _profilerOverlay.enabled) _profilerOverlay.enabled = false;
+                    return;
+                }
+                else
+                {
+                    if (!_canvasManager.IsCanvasActive && _isUIVisible)
+                    {
+                        _canvasManager.SetVisible(true);
                     }
                 }
-                catch { }
-            }
+
+                // 按需同步 IMGUI 挂载组件与根画布射线检测状态
+                bool isEditMode = WidgetDragHandler.IsEditModeActive && _isUIVisible;
+                if (_editModeToolbar != null && _editModeToolbar.enabled != isEditMode)
+                {
+                    _editModeToolbar.enabled = isEditMode;
+                }
+
+                _canvasManager.SetRaycasterEnabled(isEditMode);
+
+                bool showProfiler = MFPProfiler.ShowOverlay && _isUIVisible;
+                if (_profilerOverlay != null && _profilerOverlay.enabled != showProfiler)
+                {
+                    _profilerOverlay.enabled = showProfiler;
+                }
+
+                MFPProfiler.BeginFrame();
+
+                // 视口与界面隐藏态绝对零开销直通 (Zero-Cost Shortcut when UI is hidden or bypassed)
+                if (!bypassed && _isUIVisible)
+                {
+#if KSP_RUNTIME
+                    ModularFlightPanel.Core.StockNavBallHook.TickDynamicHooks();
 #endif
+                    WidgetRenderManager.Instance.MasterUpdate(Time.unscaledTime);
+                    WidgetSelectionManager.HandleGlobalShortcuts();
+                }
+
+#if KSP_RUNTIME
+                // 实时侦测 KSP 主控制台 UI 状态 (双重安全保障：捕获 F2 快捷键与第三方 Mod 的显隐切换)
+                // 节流为每 15 帧检查一次，避免每帧执行单例查找与反射开销
+                if (Time.frameCount % 15 == 0)
+                {
+                    try
+                    {
+                        if (KSP.UI.UIMasterController.Instance != null)
+                        {
+                            bool isShowing = KSP.UI.UIMasterController.Instance.IsUIShowing;
+                            if (_isUIVisible != isShowing)
+                            {
+                                SetUIVisible(isShowing);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+#endif
+                _consecutiveUpdateExceptions = 0; // 成功执行，重置异常计数
+            }
+            catch (Exception ex)
+            {
+                _consecutiveUpdateExceptions++;
+                MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager Update exception ({_consecutiveUpdateExceptions}/{MaxConsecutiveExceptionsBeforeTrip}): {ex.Message}");
+                if (_consecutiveUpdateExceptions >= MaxConsecutiveExceptionsBeforeTrip)
+                {
+                    MFPSafetyFallback.TriggerFaultFallback("连续多帧渲染未捕获异常 (Consecutive Update Exceptions)", ex);
+                }
+            }
         }
 
         private void LateUpdate()
         {
-            if (!MFPProfiler.IsMasterBypassed && _isUIVisible)
+            if (MFPSafetyFallback.IsFaulted) return;
+
+            try
             {
-                WidgetRenderManager.Instance.MasterLateUpdate();
+                if (!MFPProfiler.IsMasterBypassed && _isUIVisible)
+                {
+                    WidgetRenderManager.Instance.MasterLateUpdate();
+                }
+                MFPProfiler.EndFrame();
             }
-            MFPProfiler.EndFrame();
+            catch (Exception ex)
+            {
+                _consecutiveUpdateExceptions++;
+                MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager LateUpdate exception ({_consecutiveUpdateExceptions}/{MaxConsecutiveExceptionsBeforeTrip}): {ex.Message}");
+                if (_consecutiveUpdateExceptions >= MaxConsecutiveExceptionsBeforeTrip)
+                {
+                    MFPSafetyFallback.TriggerFaultFallback("连续多帧 LateUpdate 未捕获异常 (Consecutive LateUpdate Exceptions)", ex);
+                }
+            }
         }
 
         private void BuildCanvas()
@@ -492,14 +539,22 @@ namespace ModularFlightPanel.UI
 
         public void RebuildHUD()
         {
-            if (WidgetLayoutManager.Instance != null && WidgetLayoutManager.Instance.CurrentLayout != null)
+            try
             {
-                if (TryInPlaceUpdateLayout(WidgetLayoutManager.Instance.CurrentLayout))
+                if (WidgetLayoutManager.Instance != null && WidgetLayoutManager.Instance.CurrentLayout != null)
                 {
-                    return;
+                    if (TryInPlaceUpdateLayout(WidgetLayoutManager.Instance.CurrentLayout))
+                    {
+                        return;
+                    }
                 }
+                BuildHUD();
             }
-            BuildHUD();
+            catch (Exception ex)
+            {
+                MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager RebuildHUD fatal error: {ex}");
+                MFPSafetyFallback.TriggerFaultFallback("HUD 重新装配致命故障 (HUD Rebuild Fatal Error)", ex);
+            }
         }
 
         /// <summary>
@@ -596,14 +651,22 @@ namespace ModularFlightPanel.UI
         private void OnVesselChange(Vessel v)
         {
             if (v == null) return;
-            bool layoutChanged = WidgetLayoutManager.Instance.OnActiveVesselChanged(v.vesselName);
-            if (layoutChanged)
+            try
             {
-                if (TryInPlaceUpdateLayout(WidgetLayoutManager.Instance.CurrentLayout))
+                bool layoutChanged = WidgetLayoutManager.Instance.OnActiveVesselChanged(v.vesselName);
+                if (layoutChanged)
                 {
-                    return;
+                    if (TryInPlaceUpdateLayout(WidgetLayoutManager.Instance.CurrentLayout))
+                    {
+                        return;
+                    }
+                    RebuildHUD();
                 }
-                RebuildHUD();
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager OnVesselChange error: {ex}");
+                MFPSafetyFallback.TriggerFaultFallback("载具切换重构时发生致命异常 (OnVesselChange Fatal Error)", ex);
             }
         }
 #endif

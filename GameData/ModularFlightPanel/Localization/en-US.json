@@ -908,6 +908,16 @@
     "CTL_B787_ENG_COL_FMT": "Engine {0} Column",
     "CTL_B787_N1_DIAL_FMT": "N1 Dial Gauge {0}",
     "CTL_B787_EGT_DIAL_FMT": "EGT Dial Gauge {0}",
-    "CTL_B787_N2_DIAL_FMT": "N2 Dial Gauge {0}"
+    "CTL_B787_N2_DIAL_FMT": "N2 Dial Gauge {0}",
+    "UI_FAULT_TITLE": "<color=#FF4444><b>⚠ Avionics Circuit Breaker Active</b></color>",
+    "UI_FAULT_DESC": "Reason: {0}\nMFP processing is suspended. Stock vanilla UI is 100% restored.",
+    "UI_FAULT_BTN_RETRY": "🔄 Retry Rebuild MFP",
+    "UI_TOAST_FAULT_RECOVERED": "✔ Avionics recovery rebuild attempted",
+    "UI_TOAST_FAULT_RETRY_FAIL": "✖ Recovery failed. Remaining in vanilla fallback mode.",
+    "UI_BYPASS_FAULT": "⚠ Fallback Active",
+    "UI_BYPASS_ON": "🛑 Stock Mode",
+    "UI_BYPASS_OFF": "🚀 Avionics Mode",
+    "UI_BYPASS_TIP_ON": "Currently bypassed to stock UI. Click to attempt recovering MFP avionics (F11)",
+    "UI_BYPASS_TIP_OFF": "Click to bypass MFP and restore 100% stock vanilla UI (F11)"
   }
 }

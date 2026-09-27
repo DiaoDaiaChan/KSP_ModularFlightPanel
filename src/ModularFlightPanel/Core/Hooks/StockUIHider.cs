@@ -98,20 +98,40 @@ namespace ModularFlightPanel.Core
 
         public static void RestoreAllStockUI()
         {
-            HideStockNavballCompletely(false);
-            HideStockAltimeter(false);
-            HideStockBottomLeft(false);
-            HideStockTimeWarp(false);
-            HideStockCommNet(false);
-            if (SpeedDisplay.Instance != null && !SpeedDisplay.Instance.enabled)
+            try { HideStockNavballCompletely(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (Navball) warning: {ex.Message}"); }
+            try { HideStockAltimeter(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (Altimeter) warning: {ex.Message}"); }
+            try { HideStockBottomLeft(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (BottomLeft) warning: {ex.Message}"); }
+            try { HideStockTimeWarp(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (TimeWarp) warning: {ex.Message}"); }
+            try { HideStockCommNet(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (CommNet) warning: {ex.Message}"); }
+            try
             {
-                SpeedDisplay.Instance.enabled = true;
+                if (SpeedDisplay.Instance != null && !SpeedDisplay.Instance.enabled)
+                {
+                    SpeedDisplay.Instance.enabled = true;
+                }
             }
-            if (StockNavBallHook.StockInstance != null && !StockNavBallHook.StockInstance.enabled)
+            catch { }
+            try
             {
-                StockNavBallHook.StockInstance.enabled = true;
+                if (StockNavBallHook.StockInstance != null && !StockNavBallHook.StockInstance.enabled)
+                {
+                    StockNavBallHook.StockInstance.enabled = true;
+                }
             }
-            NavBallHookService.RestoreStockToolbarAction?.Invoke();
+            catch { }
+            try
+            {
+                if (StageManager.Instance != null && !StageManager.Instance.enabled)
+                {
+                    StageManager.Instance.enabled = true;
+                }
+            }
+            catch { }
+            try
+            {
+                NavBallHookService.RestoreStockToolbarAction?.Invoke();
+            }
+            catch { }
         }
 
         private static void SafeAddRenderersFromTransform(Transform t, List<Renderer> list)
