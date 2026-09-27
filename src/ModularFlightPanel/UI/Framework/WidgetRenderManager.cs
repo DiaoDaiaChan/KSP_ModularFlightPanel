@@ -18,8 +18,8 @@ namespace ModularFlightPanel.UI
 
     public enum WidgetRefreshTier
     {
-        Critical = 0, // 60 Hz / 每一帧更新 (3D姿态球, 航向指示弧, 速度/高度滚带)
-        Standard = 1, // 30 Hz / 约 33ms 更新 (ECAM表盘, ND导航, SAS罗盘)
+        Critical = 0, // 60 Hz / 每一帧更新 (3D姿态球, 航向指示弧, 速度/高度滚带, 油门柱, ECAM圆弧表盘)
+        Standard = 1, // 30 Hz / 约 33ms 更新 (ND导航, SAS罗盘)
         Relaxed  = 2, // 10 Hz / 约 100ms 更新 (电力, 维生, 分级ΔV, 时钟, 工具栏, 轨道数据)
         UltraLow = 3  // 2 Hz  / 约 500ms 更新 (大尺度时间加速或后台低频监视)
     }
@@ -150,7 +150,7 @@ namespace ModularFlightPanel.UI
 
             var reg = new WidgetRegistration(widget, tier)
             {
-                PhaseOffset = _registrations.Count,
+                PhaseOffset = (_registrations.Count * 2 + 1) % 12,
                 LastUpdateTime = -10f - (_registrations.Count % 8) * 0.003f
             };
             _registrations.Add(reg);
@@ -341,7 +341,7 @@ namespace ModularFlightPanel.UI
             IFlightTelemetry telem = FlightTelemetryContext.Current;
             if (telem == null || !telem.HasVessel) return;
 
-            bool profileWidgets = MFPProfiler.ShowOverlay;
+            bool profileWidgets = MFPProfiler.IsWidgetProfilingActive;
 
             MFPProfiler.BeginSample(ProfilerSection.Widgets);
             long startTick = Stopwatch.GetTimestamp();
@@ -449,7 +449,7 @@ namespace ModularFlightPanel.UI
             {
                 try
                 {
-                    MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId);
+                    MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId, reg.Widget.DisplayName);
                     reg.Widget.MasterUpdateTelemetry(telem);
                 }
                 catch (Exception ex)

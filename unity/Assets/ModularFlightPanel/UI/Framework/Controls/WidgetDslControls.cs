@@ -201,13 +201,19 @@ namespace ModularFlightPanel.UI.Framework
             }
         }
 
+        private string _lastEvaluated = null;
+
         public override void UpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !IsVisible) return;
             if (!string.IsNullOrEmpty(Token) && TextComponent != null)
             {
                 string eval = TelemetryTokenEngine.Evaluate(Token, telemetry);
-                BaseFlightWidget.SetTextIfChanged(TextComponent, eval);
+                if (eval != null && !object.ReferenceEquals(eval, _lastEvaluated))
+                {
+                    _lastEvaluated = eval;
+                    BaseFlightWidget.SetTextIfChanged(TextComponent, eval);
+                }
             }
         }
     }
@@ -830,7 +836,9 @@ namespace ModularFlightPanel.UI.Framework
 
         public void SetFillAmount(float ratio, MeterStyleRole role = MeterStyleRole.Primary)
         {
-            _currentRatio = Mathf.Clamp01(ratio);
+            float target = Mathf.Clamp01(ratio);
+            if (Mathf.Abs(_currentRatio - target) < 0.001f && MeterRole == role) return;
+            _currentRatio = target;
             MeterRole = role;
 
             if (FillRectTransform != null)

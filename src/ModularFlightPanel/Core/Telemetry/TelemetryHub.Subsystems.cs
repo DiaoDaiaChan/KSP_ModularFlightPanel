@@ -294,7 +294,7 @@ namespace ModularFlightPanel.Core
             }
         }
 
-        private void EnsureSubsystemsUpdated()
+        public void EnsureSubsystemsUpdated()
         {
             float now = Time.unscaledTime;
             // 10 Hz 遥测子系统节流与同帧保护
@@ -317,10 +317,13 @@ namespace ModularFlightPanel.Core
                 // 统一探针中枢调度更新 (包含 Principia, GPWS, FAR, Trajectories, DPAI, MJ 等 15 大探针)
                 ProbeManager.Instance.UpdateAllProbes(v, this);
 
-                int partCount = v.parts.Count;
-                float now = Time.unscaledTime;
-                bool partsChanged = (partCount != _lastSubsystemPartCount);
-                if (partsChanged) _lastSubsystemPartCount = partCount;
+                MFPProfiler.BeginSample(ProfilerSection.Telemetry);
+                try
+                {
+                    int partCount = v.parts.Count;
+                    float now = Time.unscaledTime;
+                    bool partsChanged = (partCount != _lastSubsystemPartCount);
+                    if (partsChanged) _lastSubsystemPartCount = partCount;
 
                 // 1. 电气系统 (优先通过 KSP 原生内部资源总线直取，0 堆分配与 0 循环开销)
                 double curEc = 0.0, maxEc = 0.0;
@@ -500,6 +503,11 @@ namespace ModularFlightPanel.Core
                         v.GetConnectedResourceTotals(mpDef.id, out double curMp, out double maxMp);
                         _monoPercent = maxMp > 0.001 ? (float)(curMp / maxMp * 100.0) : 0f;
                     }
+                }
+                }
+                finally
+                {
+                    MFPProfiler.EndSample(ProfilerSection.Telemetry);
                 }
             }
             catch (Exception) { }

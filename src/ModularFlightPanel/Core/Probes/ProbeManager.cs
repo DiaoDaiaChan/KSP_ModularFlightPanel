@@ -259,6 +259,7 @@ namespace ModularFlightPanel.Core
 
                     p.LastPollTime = now;
 
+                    UnityEngine.Profiling.Profiler.BeginSample("MFP.Probe." + p.ProbeId);
                     try
                     {
                         p.UpdateTelemetry(activeVessel, telemetry);
@@ -271,6 +272,10 @@ namespace ModularFlightPanel.Core
                         {
                             Debug.LogWarning($"[ModularFlightPanel] Probe '{p.ProbeId}' warning (fail count: {p.ConsecutiveErrors}): {ex.Message}");
                         }
+                    }
+                    finally
+                    {
+                        UnityEngine.Profiling.Profiler.EndSample();
                     }
                 }
             }

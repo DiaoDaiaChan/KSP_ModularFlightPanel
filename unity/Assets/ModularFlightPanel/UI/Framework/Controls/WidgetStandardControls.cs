@@ -68,19 +68,19 @@ namespace ModularFlightPanel.UI.Framework
             if (TitleText != null && !string.IsNullOrEmpty(TitleTemplate))
             {
                 string eval = TelemetryTokenEngine.Evaluate(TitleTemplate, telemetry);
-                if (eval != _lastTitle) { _lastTitle = eval; TitleText.text = eval; }
+                if (eval != _lastTitle) { _lastTitle = eval; BaseFlightWidget.SetTextIfChanged(TitleText, eval); }
             }
 
             if (SubtitleText != null && !string.IsNullOrEmpty(SubtitleTemplate))
             {
                 string eval = TelemetryTokenEngine.Evaluate(SubtitleTemplate, telemetry);
-                if (eval != _lastSubtitle) { _lastSubtitle = eval; SubtitleText.text = eval; }
+                if (eval != _lastSubtitle) { _lastSubtitle = eval; BaseFlightWidget.SetTextIfChanged(SubtitleText, eval); }
             }
 
             if (StatusBadgeText != null && !string.IsNullOrEmpty(StatusBadgeTemplate))
             {
                 string eval = TelemetryTokenEngine.Evaluate(StatusBadgeTemplate, telemetry);
-                if (eval != _lastBadge) { _lastBadge = eval; StatusBadgeText.text = eval; }
+                if (eval != _lastBadge) { _lastBadge = eval; BaseFlightWidget.SetTextIfChanged(StatusBadgeText, eval); }
             }
         }
 

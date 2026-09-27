@@ -182,11 +182,22 @@ namespace ModularFlightPanel.UI
                 // 视口与界面隐藏态绝对零开销直通 (Zero-Cost Shortcut when UI is hidden or bypassed)
                 if (!bypassed && _isUIVisible)
                 {
+                    MFPProfiler.BeginSample(ProfilerSection.TotalMFP);
+                    try
+                    {
 #if KSP_RUNTIME
-                    ModularFlightPanel.Core.StockNavBallHook.TickDynamicHooks();
+                        ModularFlightPanel.Core.StockNavBallHook.TickDynamicHooks();
 #endif
-                    WidgetRenderManager.Instance.MasterUpdate(Time.unscaledTime);
-                    WidgetSelectionManager.HandleGlobalShortcuts();
+                        // 预热/刷新遥测与探针中枢，彻底脱耦组件渲染，避免组件 update 时把探针耗时算在首个访问组件头上
+                        TelemetryHub.Instance?.EnsureSubsystemsUpdated();
+
+                        WidgetRenderManager.Instance.MasterUpdate(Time.unscaledTime);
+                        WidgetSelectionManager.HandleGlobalShortcuts();
+                    }
+                    finally
+                    {
+                        MFPProfiler.EndSample(ProfilerSection.TotalMFP);
+                    }
                 }
 
 #if KSP_RUNTIME
@@ -229,7 +240,15 @@ namespace ModularFlightPanel.UI
             {
                 if (!MFPProfiler.IsMasterBypassed && _isUIVisible)
                 {
-                    WidgetRenderManager.Instance.MasterLateUpdate();
+                    MFPProfiler.BeginSample(ProfilerSection.TotalMFP);
+                    try
+                    {
+                        WidgetRenderManager.Instance.MasterLateUpdate();
+                    }
+                    finally
+                    {
+                        MFPProfiler.EndSample(ProfilerSection.TotalMFP);
+                    }
                 }
                 MFPProfiler.EndFrame();
             }

@@ -18,12 +18,10 @@ namespace ModularFlightPanel.UI.HUD
             enabled = false; // 默认严格休眠
         }
 
-#if KSP_RUNTIME && !UNITY_EDITOR
         private void OnGUI()
         {
             if (!MFPProfiler.ShowOverlay || MFPProfiler.IsMasterBypassed) return;
             MFPProfiler.DrawGUI();
         }
-#endif
     }
 }

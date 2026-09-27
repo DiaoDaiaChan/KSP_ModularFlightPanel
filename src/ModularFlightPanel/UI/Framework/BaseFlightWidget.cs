@@ -628,8 +628,9 @@ namespace ModularFlightPanel.UI
         public static bool SetTextIfChanged(Text textComponent, string newText)
         {
             if (textComponent == null || newText == null) return false;
-            if (object.ReferenceEquals(textComponent.text, newText)) return false;
-            if (string.Equals(textComponent.text, newText, StringComparison.Ordinal)) return false;
+            string cur = textComponent.text;
+            if (object.ReferenceEquals(cur, newText)) return false;
+            if (cur != null && cur.Length == newText.Length && string.Equals(cur, newText, StringComparison.Ordinal)) return false;
             textComponent.text = newText;
             return true;
         }
@@ -872,12 +873,14 @@ namespace ModularFlightPanel.UI
                 if (telem != null && telem.HasVessel)
                 {
                     MFPProfiler.BeginSample(ProfilerSection.Widgets);
+                    MFPProfiler.BeginWidgetSample(WidgetId, DisplayName);
                     try
                     {
                         MasterUpdateTelemetry(telem);
                     }
                     finally
                     {
+                        MFPProfiler.EndWidgetSample(WidgetId);
                         MFPProfiler.EndSample(ProfilerSection.Widgets);
                     }
                 }

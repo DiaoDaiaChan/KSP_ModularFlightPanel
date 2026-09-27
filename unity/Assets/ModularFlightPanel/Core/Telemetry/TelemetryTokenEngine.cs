@@ -764,6 +764,38 @@ namespace ModularFlightPanel.Core
 
             RegisterNumericToken("IGNITING", (t, sub) => t.IsEngineIgniting ? 1.0 : 0.0, "ENGIGNITING");
             RegisterStringToken("IGNITING", (t, sub, fmt) => t.IsEngineIgniting ? I18n.Tr("WIDGET_TOK_IGNITING", "点火中") : I18n.Tr("WIDGET_TOK_NOMINAL", "正常"), "ENGIGNITING");
+
+            // --- 航电性能探针遥测 (Performance Diagnostics) ---
+            RegisterNumericToken("PERF", (t, sub) =>
+            {
+                if (sub == "FPS") return MFPProfiler.CurrentFPS;
+                if (sub == "MS" || sub == "TOTAL") return MFPProfiler.AvgTotalMs;
+                if (sub == "BUDGET") return MFPProfiler.FrameBudgetPercent;
+                if (sub == "MEM") return MFPProfiler.TotalMemoryMB;
+                if (sub == "WIDGETS") return MFPProfiler.AvgWidgetsMs;
+                if (sub == "PROBES") return MFPProfiler.AvgProbesMs;
+                if (sub == "TELEM") return MFPProfiler.AvgTelemetryMs;
+                if (sub == "HOOKS" || sub == "CORE") return MFPProfiler.AvgHooksMs + MFPProfiler.AvgSilhouetteMs;
+                if (sub == "TOP_MS") return MFPProfiler.TopOffenderWidgetMs;
+                if (sub == "GC0") return MFPProfiler.Gc0Collections;
+                if (sub == "SPIKE") return MFPProfiler.SpikeCount;
+                return MFPProfiler.AvgTotalMs;
+            });
+
+            RegisterStringToken("PERF", (t, sub, fmt) =>
+            {
+                if (sub == "TOP" || sub == "TOP_WIDGET") return MFPProfiler.TopOffenderWidgetId;
+                if (sub == "FPS") return FormatNumber(MFPProfiler.CurrentFPS, fmt, "F0", "tok_perf_fps");
+                if (sub == "MS" || sub == "TOTAL") return FormatNumber(MFPProfiler.AvgTotalMs, fmt, "F2", "tok_perf_ms") + " ms";
+                if (sub == "BUDGET") return FormatNumber(MFPProfiler.FrameBudgetPercent, fmt, "F1", "tok_perf_bud") + "%";
+                if (sub == "MEM") return FormatNumber(MFPProfiler.TotalMemoryMB, fmt, "F1", "tok_perf_mem") + " MB";
+                if (sub == "WIDGETS") return FormatNumber(MFPProfiler.AvgWidgetsMs, fmt, "F2", "tok_perf_wid") + " ms";
+                if (sub == "PROBES") return FormatNumber(MFPProfiler.AvgProbesMs, fmt, "F2", "tok_perf_prb") + " ms";
+                if (sub == "TELEM") return FormatNumber(MFPProfiler.AvgTelemetryMs, fmt, "F2", "tok_perf_tel") + " ms";
+                if (sub == "HOOKS" || sub == "CORE") return FormatNumber(MFPProfiler.AvgHooksMs + MFPProfiler.AvgSilhouetteMs, fmt, "F2", "tok_perf_hook") + " ms";
+                if (sub == "TOP_MS") return FormatNumber(MFPProfiler.TopOffenderWidgetMs, fmt, "F2", "tok_perf_topms") + " ms";
+                return FormatNumber(MFPProfiler.AvgTotalMs, fmt, "F2", "tok_perf_ms") + " ms";
+            });
         }
 
         #endregion
