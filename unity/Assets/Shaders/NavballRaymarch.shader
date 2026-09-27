@@ -40,6 +40,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
         _NumeralTangentComp ("Tangent Foreshortening Comp", Range(0.0, 1.0)) = 1.0
         _DetailScale ("Screen-Size Detail", Range(0.0, 1.0)) = 1.0
         _FramePattern ("Reference Frame Pattern", Range(0.0, 5.0)) = 0.0
+        _FramePatternOld ("Old Reference Frame Pattern", Range(0.0, 5.0)) = 0.0
+        _FrameTransitionProgress ("Frame Transition Progress", Range(0.0, 1.0)) = 1.0
         _TrendRotation ("Predicted Attitude Delta", Vector) = (0, 0, 0, 1)
         _TrendStrength ("Attitude Trend Strength", Range(0.0, 1.0)) = 0.0
         _MarkerAvoid0 ("Marker Avoidance 0", Vector) = (0, 0, 0, 0)
@@ -153,6 +155,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
             float _NumeralTangentComp;
             float _DetailScale;
             float _FramePattern;
+            float _FramePatternOld;
+            float _FrameTransitionProgress;
             float4 _TrendRotation;
             float _TrendStrength;
             float4 _MarkerAvoid0;
@@ -338,6 +342,41 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float2 ba = b - a;
                 float h = saturate(dot(pa, ba) / max(0.00001, dot(ba, ba)));
                 return length(pa - ba * h);
+            }
+
+            // 多参考系赤道特征腰带色彩映射函数 (Principia / Stock 多参考系规范)
+            fixed4 GetBeltColorForPattern(float pat)
+            {
+                // Mode 1: INERTIAL - 经典天球赤道天青带 (Celestial Equator Horizon Blue: Principia 规范)
+                if (pat > 0.5 && pat < 1.5)
+                {
+                    return fixed4(0.24, 0.44, 0.72, 0.88);
+                }
+                // Mode 2: LAGRANGE - 雅可比势能深紫罗兰带 (Lagrangian Violet)
+                else if (pat > 1.5 && pat < 2.5)
+                {
+                    return fixed4(0.32, 0.16, 0.48, 0.88);
+                }
+                // Mode 3: TARGET - 进近雷达走廊暗铅灰带 (Docking Corridor Slate)
+                else if (pat > 2.5 && pat < 3.5)
+                {
+                    return fixed4(0.14, 0.18, 0.24, 0.85);
+                }
+                // Mode 4: ORBIT - 轨道面钛灰深石墨流光带 (Orbital Titanium Slate: Principia navball_body_direction 规范)
+                else if (pat > 3.5 && pat < 4.5)
+                {
+                    return fixed4(0.24, 0.26, 0.30, 0.90);
+                }
+                // Mode 5: BODY_FIXED - 大地测绘深海钛青带 (Geographic Oceanic Teal)
+                else if (pat > 4.5)
+                {
+                    return fixed4(0.10, 0.28, 0.48, 0.88);
+                }
+                // Mode 0: SURFACE - 经典航空深邃海天分界带 (Aero Horizon Ribbon)
+                else
+                {
+                    return fixed4(0.16, 0.36, 0.65, 0.85);
+                }
             }
 
             // 核心程序化曲面求值函数 (共享于实时备用通道与离屏烘焙通道)
@@ -549,35 +588,15 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 if (inBelt > 0.001)
                 {
                     fixed4 beltCol;
-                    // Mode 1: INERTIAL - 经典天球赤道天青带 (Celestial Equator Horizon Blue: Principia 规范)
-                    if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                    if (_FrameTransitionProgress < 0.999)
                     {
-                        beltCol = fixed4(0.24, 0.44, 0.72, 0.88);
+                        fixed4 colOld = GetBeltColorForPattern(_FramePatternOld);
+                        fixed4 colNew = GetBeltColorForPattern(_FramePattern);
+                        beltCol = lerp(colOld, colNew, _FrameTransitionProgress);
                     }
-                    // Mode 2: LAGRANGE - 雅可比势能深紫罗兰带 (Lagrangian Violet)
-                    else if (_FramePattern > 1.5 && _FramePattern < 2.5)
-                    {
-                        beltCol = fixed4(0.32, 0.16, 0.48, 0.88);
-                    }
-                    // Mode 3: TARGET - 进近雷达走廊暗铅灰带 (Docking Corridor Slate)
-                    else if (_FramePattern > 2.5 && _FramePattern < 3.5)
-                    {
-                        beltCol = fixed4(0.14, 0.18, 0.24, 0.85);
-                    }
-                    // Mode 4: ORBIT - 轨道面钛灰深石墨流光带 (Orbital Titanium Slate: Principia navball_body_direction 规范)
-                    else if (_FramePattern > 3.5 && _FramePattern < 4.5)
-                    {
-                        beltCol = fixed4(0.24, 0.26, 0.30, 0.90);
-                    }
-                    // Mode 5: BODY_FIXED - 大地测绘深海钛青带 (Geographic Oceanic Teal)
-                    else if (_FramePattern > 4.5)
-                    {
-                        beltCol = fixed4(0.10, 0.28, 0.48, 0.88);
-                    }
-                    // Mode 0: SURFACE - 经典航空深邃海天分界带 (Aero Horizon Ribbon)
                     else
                     {
-                        beltCol = fixed4(0.16, 0.36, 0.65, 0.85);
+                        beltCol = GetBeltColorForPattern(_FramePattern);
                     }
 
                     // 腰带上下边界高反差嵌边白线 (Belt Edge Rims at ±4.8°)
@@ -597,6 +616,16 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     // 赤道线外晕微弱扩展
                     float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.2 - eqAA, _EquatorWidth * 2.2 + eqAA, absY)) * 0.35;
                     col = lerp(col, _EquatorColor, saturate(isHaloEquator * _EquatorColor.a));
+                }
+
+                // 坐标系切变光学微光扫描波 (Coordinate Frame Alignment Sweep Ripple)
+                if (_FrameTransitionProgress < 0.995)
+                {
+                    float sweepNorm = _FrameTransitionProgress;
+                    float dSweep = abs(absPitch / 90.0 - sweepNorm);
+                    float isSweepRing = (1.0 - smoothstep(0.0, 0.09, dSweep)) * (1.0 - sweepNorm);
+                    fixed3 sweepCol = GetBeltColorForPattern(_FramePattern).rgb;
+                    col.rgb += sweepCol * isSweepRing * 0.45;
                 }
 
                 // 极点渐隐防聚集保护 (Polar Ring-Bunching Protection)

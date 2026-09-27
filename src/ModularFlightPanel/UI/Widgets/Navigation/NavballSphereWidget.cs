@@ -79,6 +79,8 @@ namespace ModularFlightPanel.UI.Widgets
         private static readonly int _PropNumeralTangentComp = Shader.PropertyToID("_NumeralTangentComp");
         private static readonly int _PropDetailScale = Shader.PropertyToID("_DetailScale");
         private static readonly int _PropFramePattern = Shader.PropertyToID("_FramePattern");
+        private static readonly int _PropFramePatternOld = Shader.PropertyToID("_FramePatternOld");
+        private static readonly int _PropFrameTransitionProgress = Shader.PropertyToID("_FrameTransitionProgress");
         private static readonly int _PropTrendRotation = Shader.PropertyToID("_TrendRotation");
         private static readonly int _PropTrendStrength = Shader.PropertyToID("_TrendStrength");
 
@@ -90,7 +92,24 @@ namespace ModularFlightPanel.UI.Widgets
         private static readonly int _PropGroundHazardAlert = Shader.PropertyToID("_GroundHazardAlert");
         private static readonly int _PropVernierScaleDetail = Shader.PropertyToID("_VernierScaleDetail");
 
-        // ── 多参考系动态调色板状态 ──
+        // ── 坐标系平滑切变过渡动力学与多参考系动态调色板 ──
+        private const float FrameTransitionDuration = 0.45f;
+        private bool _isFrameTransitioning = false;
+        private float _frameTransitionTimer = 999f;
+        private Quaternion _transitionStartRot = Quaternion.identity;
+        private Quaternion _displayedAttitudeRotation = Quaternion.identity;
+        private NavballFramePalette _transitionStartPalette;
+        private float _transitionStartFramePattern = 0f;
+        private float _currentFramePattern = 0f;
+        private string _lastFrameName = null;
+        private string _lastSpeedMode = null;
+        private Quaternion _lastRawRot = Quaternion.identity;
+        private bool _hasLastRawRot = false;
+
+        private float _frameBadgeAnimTimer = 999f;
+        private float _rollPointerAlpha = 0f;
+        private readonly Dictionary<string, Vector2> _renderedMarkerPositions = new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
+
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
         private bool _paletteInitialized = false;
@@ -380,8 +399,10 @@ namespace ModularFlightPanel.UI.Widgets
 
             float markerSize = 26f * dpiScale;
             _markerHandlers.Clear();
+            _renderedMarkerPositions.Clear();
             foreach (string k in markerKeys)
             {
+                _renderedMarkerPositions[k] = Vector2.zero;
                 GameObject mObj = new GameObject($"Marker_{k}", typeof(RectTransform), typeof(Image));
                 mObj.transform.SetParent(_markerContainer, false);
                 RectTransform mRt = mObj.GetComponent<RectTransform>();
@@ -588,6 +609,24 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
                 _frameText.text = frame.Length > 5 ? frame.Substring(0, 5).ToUpperInvariant() : frame.ToUpperInvariant();
+
+                // 参考系角标切变弹跳与高亮脉冲
+                ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+                if (_frameBadgeAnimTimer < 0.40f)
+                {
+                    _frameBadgeAnimTimer += Time.unscaledDeltaTime;
+                    float bt = Mathf.Clamp01(_frameBadgeAnimTimer / 0.35f);
+                    float bScale = Mathf.Lerp(1.28f, 1.0f, 1.0f - Mathf.Pow(1.0f - bt, 2.0f));
+                    _frameText.rectTransform.localScale = new Vector3(bScale, bScale, 1.0f);
+                    Color fCol = GetFrameAccentColor(category, curTheme);
+                    fCol.a = Mathf.Lerp(0.5f, 1.0f, bt);
+                    _frameText.color = fCol;
+                }
+                else
+                {
+                    _frameText.rectTransform.localScale = Vector3.one;
+                    _frameText.color = GetFrameAccentColor(category, curTheme);
+                }
             }
 
             // 同步 HUD 导航矢量标 (Prograde / Retrograde / Normal / Target 等)
@@ -668,58 +707,142 @@ namespace ModularFlightPanel.UI.Widgets
                 rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
             }
 
-            _currentAttitudeRotation = rawRot;
-            UpdateAttitudeTrend(rawRot);
+            // 2. 坐标系切变（自动/手动/Principia）探测与平滑过渡动画启动
+            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
+            string frameName = hook?.FrameName ?? "";
+            IFlightTelemetry curTelem = FlightTelemetryContext.Current;
+            string speedMode = curTelem?.SpeedModeName ?? "";
+
+            bool isFrameSwitch = false;
+            if (_paletteInitialized)
+            {
+                if (_lastFrameCategory != null && !category.Equals(_lastFrameCategory, StringComparison.OrdinalIgnoreCase))
+                {
+                    isFrameSwitch = true;
+                }
+                else if (_lastSpeedMode != null && !speedMode.Equals(_lastSpeedMode, StringComparison.OrdinalIgnoreCase))
+                {
+                    isFrameSwitch = true;
+                }
+                else if (_lastFrameName != null && !string.IsNullOrEmpty(frameName) && !frameName.Equals(_lastFrameName, StringComparison.OrdinalIgnoreCase))
+                {
+                    isFrameSwitch = true;
+                }
+                else if (_hasLastRawRot && Quaternion.Angle(rawRot, _lastRawRot) > 12.0f)
+                {
+                    isFrameSwitch = true;
+                }
+            }
+
+            if (isFrameSwitch)
+            {
+                _isFrameTransitioning = true;
+                _frameTransitionTimer = 0f;
+                _transitionStartRot = _displayedAttitudeRotation;
+                _transitionStartPalette = _currentPalette;
+                _transitionStartFramePattern = _currentFramePattern;
+
+                // 切换瞬间平息趋势预测器的角速度突变，避免跨参考系角度差导致的导引跳变
+                _hasPreviousAttitudeRotation = false;
+                _filteredTrendRotation = Quaternion.identity;
+                _attitudeTrendStrength = 0f;
+
+                // 触发中心微光雷达波扩散动画，颜色对应新参考系
+                ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+                Color frameAccent = GetFrameAccentColor(category, curTheme);
+                TriggerShockwaveRipple(Vector2.zero, frameAccent);
+
+                // 激活参考系角标徽章缩放动画
+                _frameBadgeAnimTimer = 0f;
+            }
+
+            _lastFrameCategory = category;
+            _lastFrameName = frameName;
+            _lastSpeedMode = speedMode;
+            _lastRawRot = rawRot;
+            _hasLastRawRot = true;
+
+            float newPattern = GetFramePatternCode(category);
+            float transitionProgress = 1.0f;
+            float eased = 1.0f;
+
+            if (_isFrameTransitioning)
+            {
+                _frameTransitionTimer += Time.unscaledDeltaTime;
+                transitionProgress = Mathf.Clamp01(_frameTransitionTimer / FrameTransitionDuration);
+                // 航电级三次减速平滑缓动曲线 (Cubic Ease-Out)
+                eased = 1.0f - Mathf.Pow(1.0f - transitionProgress, 3.0f);
+
+                // 姿态四元数平滑 Slerp 过渡：起点为切变瞬间姿态，目标为随飞船最新实时旋转的 rawRot
+                _displayedAttitudeRotation = Quaternion.Slerp(_transitionStartRot, rawRot, eased);
+                _currentFramePattern = Mathf.Lerp(_transitionStartFramePattern, newPattern, eased);
+
+                if (transitionProgress >= 1.0f)
+                {
+                    _isFrameTransitioning = false;
+                    _displayedAttitudeRotation = rawRot;
+                    _currentFramePattern = newPattern;
+                }
+            }
+            else
+            {
+                _displayedAttitudeRotation = rawRot;
+                _currentFramePattern = newPattern;
+            }
+
+            _currentAttitudeRotation = _displayedAttitudeRotation;
+            UpdateAttitudeTrend(_displayedAttitudeRotation);
 
             if (_sphereMaterial != null)
             {
-                // 数学解析光线投射姿态逆四元数：视线向量 viewRay 乘以此逆四元数即为球体模型坐标 p
-                Quaternion invRot = Quaternion.Inverse(rawRot);
+                Quaternion invRot = Quaternion.Inverse(_displayedAttitudeRotation);
                 _sphereMaterial.SetVector(_PropSphereInvRotation, new Vector4(invRot.x, invRot.y, invRot.z, invRot.w));
+
+                if (_sphereMaterial.HasProperty(_PropFramePatternOld))
+                {
+                    _sphereMaterial.SetFloat(_PropFramePatternOld, _transitionStartFramePattern);
+                }
+                if (_sphereMaterial.HasProperty(_PropFramePattern))
+                {
+                    _sphereMaterial.SetFloat(_PropFramePattern, newPattern);
+                }
+                if (_sphereMaterial.HasProperty(_PropFrameTransitionProgress))
+                {
+                    _sphereMaterial.SetFloat(_PropFrameTransitionProgress, _isFrameTransitioning ? eased : 1.0f);
+                }
             }
 
-            // 2. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
-            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
-
-            if (category != _lastFrameCategory || !_paletteInitialized)
+            // 3. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
+            _targetPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
+            if (!_paletteInitialized)
             {
-                _targetPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
-                if (!_paletteInitialized)
+                _currentPalette = _targetPalette;
+                _transitionStartPalette = _targetPalette;
+                _paletteInitialized = true;
+                UploadPaletteToMaterial(_currentPalette);
+            }
+            else if (_isFrameTransitioning)
+            {
+                _currentPalette = LerpPalette(_transitionStartPalette, _targetPalette, eased);
+                UploadPaletteToMaterial(_currentPalette);
+            }
+            else if (_isPaletteLerping)
+            {
+                float dt = Time.deltaTime;
+                float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
+                _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
+                UploadPaletteToMaterial(_currentPalette);
+
+                if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
                 {
                     _currentPalette = _targetPalette;
-                    _paletteInitialized = true;
-                    UploadPaletteToMaterial(_currentPalette);
+                    _isPaletteLerping = false;
                 }
-                _lastFrameCategory = category;
-                _isPaletteLerping = true;
             }
 
             if (_sphereMaterial != null)
             {
-                var curMode = ThemeManager.Instance.GlobalRenderMode;
-                float framePattern = GetFramePatternCode(category);
-                if (curMode == NavballRenderMode.ProceduralVector && Mathf.Abs(framePattern - _lastFramePattern) > 0.01f && _sphereMaterial.HasProperty(_PropFramePattern))
-                {
-                    _sphereMaterial.SetFloat(_PropFramePattern, framePattern);
-                    _lastFramePattern = framePattern;
-                }
-
-                if (_isPaletteLerping)
-                {
-                    float dt = Time.deltaTime;
-                    float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
-                    _currentPalette = LerpPalette(_currentPalette, _targetPalette, lerpFactor);
-                    UploadPaletteToMaterial(_currentPalette);
-
-                    if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
-                    {
-                        _currentPalette = _targetPalette;
-                        _isPaletteLerping = false;
-                    }
-                }
-
                 // GPWS / 近地大下沉率防撞动态斑马纹警示驱动 (Ground Terrain Hazard Pull-Up Alert)
-                IFlightTelemetry curTelem = FlightTelemetryContext.Current;
                 float hazardAlert = 0.0f;
                 if (curTelem != null)
                 {
@@ -817,6 +940,27 @@ namespace ModularFlightPanel.UI.Widgets
                         targetScale *= pulse;
                     }
 
+                    // 坐标系切换平滑过渡与轻量呼吸加权
+                    Vector2 renderedPos;
+                    if (!_renderedMarkerPositions.TryGetValue(key, out renderedPos) || renderedPos.sqrMagnitude < 0.001f)
+                    {
+                        renderedPos = markerPos;
+                        _renderedMarkerPositions[key] = markerPos;
+                    }
+                    else
+                    {
+                        float lerpRate = _isFrameTransitioning ? 10.0f : 32.0f;
+                        renderedPos = Vector2.Lerp(renderedPos, markerPos, Mathf.Clamp01(Time.unscaledDeltaTime * lerpRate));
+                        _renderedMarkerPositions[key] = renderedPos;
+                    }
+
+                    if (_isFrameTransitioning && dir.z >= 0.05f)
+                    {
+                        float transT = Mathf.Clamp01(_frameTransitionTimer / FrameTransitionDuration);
+                        float transPulse = 1.0f + 0.12f * Mathf.Sin(transT * Mathf.PI);
+                        targetScale *= transPulse;
+                    }
+
                     // 光标悬停交互 (Hover Scaling, Highlight & Press Feedback)
                     NavballMarkerClickHandler handler = null;
                     _markerHandlers.TryGetValue(key, out handler);
@@ -826,7 +970,7 @@ namespace ModularFlightPanel.UI.Widgets
                     if (isHovered)
                     {
                         _activeHoveredMarkerKey = key;
-                        _activeHoveredMarkerPos = markerPos;
+                        _activeHoveredMarkerPos = renderedPos;
                         targetScale *= 1.28f;
                         alpha = Mathf.Max(alpha, 0.98f);
                         if (isPressed)
@@ -836,7 +980,7 @@ namespace ModularFlightPanel.UI.Widgets
                         img.transform.SetAsLastSibling();
                     }
 
-                    img.rectTransform.anchoredPosition = markerPos;
+                    img.rectTransform.anchoredPosition = renderedPos;
                     img.rectTransform.localScale = new Vector3(targetScale, targetScale, 1.0f);
 
                     Color c = img.color;
@@ -853,6 +997,7 @@ namespace ModularFlightPanel.UI.Widgets
                 else
                 {
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                    _renderedMarkerPositions[key] = Vector2.zero;
                     if (_activeHoveredMarkerKey == key)
                     {
                         _activeHoveredMarkerKey = null;
@@ -918,16 +1063,20 @@ namespace ModularFlightPanel.UI.Widgets
                              category.Equals("BODY_FIXED", StringComparison.OrdinalIgnoreCase) ||
                              category.Equals("BODY_SURFACE", StringComparison.OrdinalIgnoreCase);
 
-            // 坡度标尺与滚转指针只在地表参考系 (SURFACE) 生效；在太空/轨道/惯性/拉格朗日系下平飞坡度无空气动力学意义，平滑隐藏避免太空乱漂
-            if (!isSurface)
+            float dt = Time.unscaledDeltaTime;
+            float targetAlpha = isSurface ? 1.0f : 0.0f;
+            _rollPointerAlpha = Mathf.Lerp(_rollPointerAlpha, targetAlpha, Mathf.Clamp01(dt * 9.0f));
+
+            // 坡度标尺与滚转指针只在地表参考系 (SURFACE) 生效；在太空/轨道/惯性/拉格朗日系下平滑渐隐，避免太空乱漂
+            if (_rollPointerAlpha < 0.01f)
             {
                 if (_bankRollPointerRoot.gameObject.activeSelf) _bankRollPointerRoot.gameObject.SetActive(false);
-                SetBankTicksVisibility(false);
+                SetBankTicksVisibility(false, 0f);
                 return;
             }
 
             if (!_bankRollPointerRoot.gameObject.activeSelf) _bankRollPointerRoot.gameObject.SetActive(true);
-            SetBankTicksVisibility(true);
+            SetBankTicksVisibility(true, _rollPointerAlpha);
 
             float rollAngle = 0f;
             if (telemetry != null)
@@ -946,20 +1095,29 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
                 bool isExtreme = Mathf.Abs(rollAngle) >= 44f;
-                _bankRollPointerImg.color = isExtreme 
+                Color baseCol = isExtreme 
                     ? (theme != null ? (Color)theme.WarningColor : WidgetStyleManager.NeutralOpaque)
                     : (theme != null ? (Color)theme.HorizonLineColor : WidgetStyleManager.NeutralOpaque);
+                baseCol.a = _rollPointerAlpha;
+                _bankRollPointerImg.color = baseCol;
             }
         }
 
-        private void SetBankTicksVisibility(bool visible)
+        private void SetBankTicksVisibility(bool visible, float alpha)
         {
             for (int i = 0; i < _bankAngleTicks.Count; i++)
             {
                 Image img = _bankAngleTicks[i];
-                if (img != null && img.gameObject.activeSelf != visible)
+                if (img == null) continue;
+                if (img.gameObject.activeSelf != visible)
                 {
                     img.gameObject.SetActive(visible);
+                }
+                if (visible)
+                {
+                    Color c = img.color;
+                    c.a = alpha * 0.85f;
+                    img.color = c;
                 }
             }
         }
@@ -1201,6 +1359,30 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        private static Color GetFrameAccentColor(string category, ThemeConfig theme)
+        {
+            if (theme == null) return WidgetStyleManager.NeutralOpaque;
+            switch (category?.ToUpperInvariant())
+            {
+                case "ORBIT":
+                case "ORBITAL":
+                case "BODY_DIRECTION":
+                    return theme.WarningColor;
+                case "TARGET":
+                    return theme.DangerColor;
+                case "LAGRANGE":
+                case "BARYCENTRIC":
+                    return theme.AccentMagenta;
+                case "INERTIAL":
+                    return theme.AccentSecondary;
+                case "BODY_FIXED":
+                case "BODY_SURFACE":
+                case "SURFACE":
+                default:
+                    return theme.AccentSecondary;
+            }
+        }
+
         private NavballFramePalette GetPaletteForCategory(string category, ThemeConfig theme)
         {
             switch (category?.ToUpperInvariant())
@@ -1332,6 +1514,18 @@ namespace ModularFlightPanel.UI.Widgets
             float dt = Time.unscaledDeltaTime;
             float targetStrength = 0f;
             Quaternion targetTrendRotation = Quaternion.identity;
+
+            if (_isFrameTransitioning)
+            {
+                _hasPreviousAttitudeRotation = false;
+                _filteredTrendRotation = Quaternion.identity;
+                _attitudeTrendStrength = 0f;
+                if (_sphereMaterial != null && _sphereMaterial.HasProperty(_PropTrendStrength))
+                {
+                    _sphereMaterial.SetFloat(_PropTrendStrength, 0f);
+                }
+                return;
+            }
 
             if (_hasPreviousAttitudeRotation && dt > 0.001f && dt < 0.25f)
             {
@@ -1616,6 +1810,7 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.UnregisterAll();
             _markerImages.Clear();
             _markerHandlers.Clear();
+            _renderedMarkerPositions.Clear();
             _markerHoverTooltipObj = null;
             _markerHoverTooltipRt = null;
             _markerHoverTooltipBg = null;
