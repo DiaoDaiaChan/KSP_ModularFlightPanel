@@ -709,7 +709,6 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 case "ORBIT":
                 case "ORBITAL":
-                    return WidgetStyleManager.Instance.GetNavballFramePalette(theme.AccentPrimary, theme);
                 case "SURFACE":
                 default:
                     Color skyZ = theme.SkyColor;
