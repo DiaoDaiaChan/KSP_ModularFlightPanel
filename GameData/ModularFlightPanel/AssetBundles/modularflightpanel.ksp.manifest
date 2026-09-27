@@ -1,9 +1,9 @@
 ManifestFileVersion: 0
-CRC: 2036029836
+CRC: 2352995398
 Hashes:
   AssetFileHash:
     serializedVersion: 2
-    Hash: 2b521199c79288880d85b15e3b1a853e
+    Hash: 1bf647b66cef4e5bc7df9973ab84c361
   TypeTreeHash:
     serializedVersion: 2
     Hash: 55d48f4ad9c3b13330b9eb5ee5686477
@@ -23,7 +23,6 @@ Assets:
 - Assets/Shaders/NeonGlowUI.shader
 - Assets/Shaders/Vessel3DTechnical.shader
 - Assets/Shaders/DotMatrixUI.shader
-- Assets/Shaders/NavballProcedural.shader
 - Assets/Shaders/NavballModern.shader
 - Assets/Shaders/AvionicsProceduralUI.shader
 - Assets/Shaders/CrispAvionicsText.shader

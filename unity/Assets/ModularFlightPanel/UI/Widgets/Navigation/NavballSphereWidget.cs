@@ -106,6 +106,7 @@ namespace ModularFlightPanel.UI.Widgets
         private float _attitudeTrendStrength = 0f;
         private float _lastUploadedTrendStrength = -1f;
         private Quaternion _lastUploadedTrendRotation = Quaternion.identity;
+        private int _lastTrendFrame = -1;
 
         // ── 视网膜细节与几何适配缓存 ──
         private readonly Vector3[] _displayCorners = new Vector3[4];
@@ -358,9 +359,10 @@ namespace ModularFlightPanel.UI.Widgets
             if (_crosshair != null && !_crosshair.activeSelf) _crosshair.SetActive(true);
             if (_bezelRing != null && !_bezelRing.activeSelf) _bezelRing.SetActive(true);
 
+            var hook = NavBallHookService.Provider;
+
             if (mode == NavballRenderMode.StockTexture)
             {
-                var hook = NavBallHookService.Provider;
                 Texture stockTex = hook?.BallTexture;
                 if (stockTex != null && _displayImage != null && _displayImage.texture != stockTex)
                 {
@@ -374,10 +376,10 @@ namespace ModularFlightPanel.UI.Widgets
             // 更新姿态与渲染材质
             SyncAttitudeAndVisuals();
 
-            // 更新航向读数盒
+            // 更新航向读数盒与参考系模式显示
+            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
             if (_headingText != null)
             {
-                var hook = NavBallHookService.Provider;
                 if (hook != null && !string.IsNullOrEmpty(hook.HeadingText))
                 {
                     _headingText.text = hook.HeadingText;
@@ -385,15 +387,56 @@ namespace ModularFlightPanel.UI.Widgets
                 else
                 {
                     float hdg = (telemetry != null) ? telemetry.Heading : 0f;
-                    _headingText.text = $"HDG {Mathf.RoundToInt(hdg) % 360:D3}°";
+                    int iHdg = Mathf.RoundToInt(hdg) % 360;
+                    if (iHdg < 0) iHdg += 360;
+                    switch (category.ToUpperInvariant())
+                    {
+                        case "INERTIAL":
+                            int raH = Mathf.FloorToInt((iHdg % 360) / 15f);
+                            int raM = Mathf.FloorToInt(((iHdg % 15) / 15f) * 60f);
+                            _headingText.text = $"RA {raH:D2}h{raM:D2}m";
+                            break;
+                        case "BODY_FIXED":
+                        case "BODY_SURFACE":
+                            _headingText.text = $"LON {iHdg:D3}°";
+                            break;
+                        case "ORBIT":
+                        case "ORBITAL":
+                            _headingText.text = $"OBT {iHdg:D3}°";
+                            break;
+                        case "TARGET":
+                            _headingText.text = $"TGT {iHdg:D3}°";
+                            break;
+                        case "LAGRANGE":
+                        case "BARYCENTRIC":
+                            _headingText.text = $"LAG {iHdg:D3}°";
+                            break;
+                        default:
+                            _headingText.text = $"HDG {iHdg:D3}°";
+                            break;
+                    }
                 }
             }
 
             if (_frameText != null)
             {
-                var hook = NavBallHookService.Provider;
-                string frame = hook?.FrameName ?? "SURF";
-                _frameText.text = frame.Length > 4 ? frame.Substring(0, 4).ToUpperInvariant() : frame.ToUpperInvariant();
+                string frame = hook?.FrameName;
+                if (string.IsNullOrEmpty(frame))
+                {
+                    switch (category.ToUpperInvariant())
+                    {
+                        case "INERTIAL": frame = "INERT"; break;
+                        case "BODY_FIXED":
+                        case "BODY_SURFACE": frame = "FIXED"; break;
+                        case "ORBIT":
+                        case "ORBITAL": frame = "ORBIT"; break;
+                        case "TARGET": frame = "TARGT"; break;
+                        case "LAGRANGE":
+                        case "BARYCENTRIC": frame = "LAGRN"; break;
+                        default: frame = "SURF"; break;
+                    }
+                }
+                _frameText.text = frame.Length > 5 ? frame.Substring(0, 5).ToUpperInvariant() : frame.ToUpperInvariant();
             }
 
             // 同步 HUD 导航矢量标 (Prograde / Retrograde / Normal / Target 等)
@@ -758,6 +801,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateAttitudeTrend(Quaternion currentRotation)
         {
+            if (_lastTrendFrame == Time.frameCount) return;
+            _lastTrendFrame = Time.frameCount;
+
             float dt = Time.unscaledDeltaTime;
             float targetStrength = 0f;
             Quaternion targetTrendRotation = Quaternion.identity;

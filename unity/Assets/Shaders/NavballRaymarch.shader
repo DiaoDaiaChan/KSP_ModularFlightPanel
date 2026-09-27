@@ -41,6 +41,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
         _DetailScale ("Screen-Size Detail", Range(0.0, 1.0)) = 1.0
         _FramePattern ("Reference Frame Pattern", Range(0.0, 5.0)) = 0.0
         _TrendRotation ("Predicted Attitude Delta", Vector) = (0, 0, 0, 1)
+        _TrendStrength ("Attitude Trend Strength", Range(0.0, 1.0)) = 0.0
         _MarkerAvoid0 ("Marker Avoidance 0", Vector) = (0, 0, 0, 0)
         _MarkerAvoid1 ("Marker Avoidance 1", Vector) = (0, 0, 0, 0)
         _MarkerAvoid2 ("Marker Avoidance 2", Vector) = (0, 0, 0, 0)
@@ -275,6 +276,45 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     d = min(d, SegmentSDF(p, float2(0.95, -1.75), float2(0.95, 1.75)));
                     d = min(d, SegmentSDF(p, bL, bR));
                 }
+                else if (digit == 10)
+                {
+                    // 航电小写字母 'h' (用于赤经 24h 时角标识)
+                    d = min(d, SegmentSDF(p, float2(-0.80, -1.95), float2(-0.80, 1.95)));
+                    d = min(d, SegmentSDF(p, float2(-0.80, 0.35), float2(0.35, 0.35)));
+                    d = min(d, SegmentSDF(p, float2(0.35, 0.35), float2(0.75, -0.10)));
+                    d = min(d, SegmentSDF(p, float2(0.75, -0.10), float2(0.75, -1.95)));
+                }
+                else if (digit == 11)
+                {
+                    // 航电大写字母 'N' (正北基准方位标)
+                    d = min(d, SegmentSDF(p, float2(-0.85, -1.95), float2(-0.85, 1.95)));
+                    d = min(d, SegmentSDF(p, float2(-0.85, 1.95), float2(0.85, -1.95)));
+                    d = min(d, SegmentSDF(p, float2(0.85, -1.95), float2(0.85, 1.95)));
+                }
+                else if (digit == 12)
+                {
+                    // 罗马数字 'I' (主天体靶盘 Primary Body)
+                    d = min(d, SegmentSDF(p, float2(0.0, -1.85), float2(0.0, 1.85)));
+                    d = min(d, SegmentSDF(p, float2(-0.65, 1.85), float2(0.65, 1.85)));
+                    d = min(d, SegmentSDF(p, float2(-0.65, -1.85), float2(0.65, -1.85)));
+                }
+                else if (digit == 13)
+                {
+                    // 罗马数字 'II' (次天体靶盘 Secondary Body)
+                    d = min(d, SegmentSDF(p, float2(-0.55, -1.85), float2(-0.55, 1.85)));
+                    d = min(d, SegmentSDF(p, float2(0.55, -1.85), float2(0.55, 1.85)));
+                    d = min(d, SegmentSDF(p, float2(-0.95, 1.85), float2(0.95, 1.85)));
+                    d = min(d, SegmentSDF(p, float2(-0.95, -1.85), float2(0.95, -1.85)));
+                }
+                else if (digit == 14)
+                {
+                    // 天球春分点黄金符号 ♈ (Vernal Equinox Aries Sign)
+                    d = min(d, SegmentSDF(p, float2(0.0, -1.95), float2(0.0, 0.45)));
+                    d = min(d, SegmentSDF(p, float2(0.0, 0.45), float2(-0.75, 1.85)));
+                    d = min(d, SegmentSDF(p, float2(-0.75, 1.85), float2(-1.15, 1.35)));
+                    d = min(d, SegmentSDF(p, float2(0.0, 0.45), float2(0.75, 1.85)));
+                    d = min(d, SegmentSDF(p, float2(0.75, 1.85), float2(1.15, 1.35)));
+                }
 
                 return d - r;
             }
@@ -338,114 +378,146 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 参考系专属微视觉签名与动态流光 (Mode-Specific Signatures & Flow)
                 float frameDetail = 0.0;
                 
-                // Mode 0: SURFACE (地表系) - 跑道水平对准羽翼与等高微环
+                // Mode 0: SURFACE (地表飞行系) - 跑道水平翼与航空等高微环
                 if (_FramePattern < 0.5)
                 {
                     // 航向 0°, 90°, 180°, 270° 正向水平对准导引羽翼 (Runway Datum Wings)
                     float cardMod90 = abs(fmod(headDeg + 45.0, 90.0) - 45.0);
-                    if (cardMod90 < 4.2 && absPitch < 1.4)
+                    if (cardMod90 < 5.0 && absPitch < 1.6)
                     {
                         float wingAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.15);
-                        float wingMask = (1.0 - smoothstep(0.24 - wingAA, 0.24 + wingAA, absPitch)) *
-                                         smoothstep(1.5, 3.8, cardMod90);
-                        frameDetail += wingMask * 0.65;
+                        float wingMask = (1.0 - smoothstep(0.28 - wingAA, 0.28 + wingAA, absPitch)) *
+                                         smoothstep(1.5, 4.5, cardMod90);
+                        frameDetail += wingMask * 0.75;
                     }
+                    // 大地等高微环线 (-15°, -30°, -45°)
                     if (p.y < 0.0)
                     {
                         float srfContour = abs(frac((absPitch + 7.5) / 15.0 + 0.5) - 0.5);
-                        frameDetail += (1.0 - smoothstep(0.01, 0.045, srfContour)) * 0.15;
+                        float contourAA = clamp(fwidth(srfContour) * 0.75, 0.001, 0.05);
+                        frameDetail += (1.0 - smoothstep(0.015 - contourAA, 0.015 + contourAA, srfContour)) * 0.22;
                     }
                 }
-                // Mode 1: INERTIAL (惯性系) - 程序化微星星芒点阵与赤经时角分划
+                // Mode 1: INERTIAL (天球惯性系) - 程序化恒星微闪烁与 15°(1h) 赤经时角微刻度
                 else if (_FramePattern > 0.5 && _FramePattern < 1.5)
                 {
-                    // 伪随机天球微星点阵 (Procedural Starfield with Twinkle)
-                    float3 starCell = floor(p * 28.0);
+                    // 伪随机天球微星点阵 (Procedural Celestial Starfield with Twinkle)
+                    float3 starCell = floor(p * 32.0);
                     float starRand = frac(sin(dot(starCell, float3(12.9898, 78.233, 45.164))) * 43758.5453);
-                    if (starRand > 0.945)
+                    if (starRand > 0.940)
                     {
-                        float3 starPos = (starCell + 0.5) / 28.0;
+                        float3 starPos = (starCell + 0.5) / 32.0;
                         float starDist = length(p - starPos);
-                        float twinkle = 0.70 + 0.30 * sin(_Time.y * 3.5 + starRand * 6.28);
-                        float starIntensity = (1.0 - smoothstep(0.003, 0.013, starDist)) * twinkle;
-                        frameDetail += starIntensity * 0.85;
+                        float twinkle = 0.65 + 0.35 * sin(_Time.y * 3.8 + starRand * 6.28);
+                        float starIntensity = (1.0 - smoothstep(0.002, 0.011, starDist)) * twinkle;
+                        frameDetail += starIntensity * 0.90;
                     }
                     // 天球赤道 15° (1h) 赤经时角微刻度
                     if (absPitch < 2.2)
                     {
                         float raMod15 = abs(fmod(headDeg + 7.5, 15.0) - 7.5);
                         float raTick = (1.0 - smoothstep(0.25, 0.35, raMod15)) * (1.0 - smoothstep(1.0, 2.0, absPitch));
-                        frameDetail += raTick * 0.40;
+                        frameDetail += raTick * 0.45;
                     }
-                    // 0h 春分点菱标 (Vernal Equinox)
+                    // 0h 春分点黄金菱标 (Vernal Equinox)
                     if ((headDeg < 2.5 || headDeg > 357.5) && absPitch < 2.5)
                     {
                         float equinoxDist = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg) + absPitch;
                         float isEquinox = (1.0 - smoothstep(1.2, 1.8, equinoxDist)) * smoothstep(0.4, 0.8, equinoxDist);
-                        frameDetail += isEquinox * 0.75;
+                        frameDetail += isEquinox * 0.85;
                     }
                 }
-                // Mode 2: LAGRANGE (拉格朗日系) - 雅可比势能双曲马鞍等势线与 L 点驻标
+                // Mode 2: LAGRANGE (拉格朗日系) - 雅可比双曲势能等势线与 L1~L5 驻标、主/次天体靶盘
                 else if (_FramePattern > 1.5 && _FramePattern < 2.5)
                 {
+                    // 雅可比势能双曲鞍点等势线 (Jacobi Equipotential Contours)
                     float saddle = (p.x * p.x - p.z * p.z) * 3.2;
                     float saddleMod = abs(frac(saddle) - 0.5);
-                    float isSaddle = (1.0 - smoothstep(0.02, 0.085, saddleMod)) * 0.28;
+                    float isSaddle = (1.0 - smoothstep(0.02, 0.085, saddleMod)) * 0.32;
                     frameDetail += isSaddle;
 
                     // L1~L5 关键引力鞍点微型空心菱标
                     float lagDist = abs(fmod(headDeg + 30.0, 60.0) - 30.0) + absPitch;
                     float isLagAnchor = (1.0 - smoothstep(1.5, 2.2, lagDist)) * smoothstep(0.6, 1.1, lagDist);
-                    frameDetail += isLagAnchor * 0.45;
+                    frameDetail += isLagAnchor * 0.55;
+
+                    // Principia 科学基准：0° (Secondary II) 与 180° (Primary I) 实体天体靶盘底衬
+                    if (absPitch < 5.2)
+                    {
+                        float d0 = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
+                        float d180 = abs(headDeg - 180.0);
+                        float diskDist = min(sqrt(d0 * d0 + pitchDeg * pitchDeg), sqrt(d180 * d180 + pitchDeg * pitchDeg));
+                        float diskAA = clamp(fwidth(diskDist) * 0.75, 0.01, 0.25);
+                        float isDiskCore = 1.0 - smoothstep(4.0 - diskAA, 4.0 + diskAA, diskDist);
+                        float isDiskRing = (1.0 - smoothstep(0.40 - diskAA, 0.40 + diskAA, abs(diskDist - 4.0))) * 0.85;
+                        col.rgb = lerp(col.rgb, fixed3(0.08, 0.05, 0.15), isDiskCore * 0.75);
+                        frameDetail += isDiskRing;
+                    }
                 }
-                // Mode 3: TARGET (目标相对系) - 同心雷达距标环与正交对接引导轴
+                // Mode 3: TARGET (目标相对交会系) - 同心雷达距标环、脉冲扫描波与正交对接引导轴
                 else if (_FramePattern > 2.5 && _FramePattern < 3.5)
                 {
                     float targetAngle = acos(clamp(p.z, -1.0, 1.0)) * 57.2957795;
                     float ringMod15 = abs(fmod(targetAngle, 15.0) - 7.5);
-                    float isRangeRing = (1.0 - smoothstep(0.18, 0.75, ringMod15)) * 0.26;
+                    float isRangeRing = (1.0 - smoothstep(0.18, 0.75, ringMod15)) * 0.32;
 
-                    // 主动探测雷达脉冲扫描波 (Radar Pulse Wave)
-                    float radarPing = frac(targetAngle / 60.0 - _Time.y * 0.65);
-                    float isRadarWave = (1.0 - smoothstep(0.0, 0.12, abs(radarPing - 0.5))) * 0.35;
+                    // 主动探测雷达脉冲扫描波 (Radar Pulse Wave: 沿前向扩散)
+                    float radarPing = frac(targetAngle / 50.0 - _Time.y * 0.75);
+                    float isRadarWave = (1.0 - smoothstep(0.0, 0.15, abs(radarPing - 0.5))) * 0.45 * smoothstep(0.0, 0.25, p.z);
                     frameDetail += isRangeRing + isRadarWave;
 
-                    // 正交十字对接瞄准轴线
-                    float crossX = 1.0 - smoothstep(0.003, 0.010, abs(p.x));
-                    float crossY = 1.0 - smoothstep(0.003, 0.010, abs(p.y));
-                    frameDetail += max(crossX, crossY) * 0.32 * smoothstep(0.15, 0.75, p.z);
+                    // 正交十字激光对接瞄准轴线
+                    float crossX = 1.0 - smoothstep(0.003, 0.012, abs(p.x));
+                    float crossY = 1.0 - smoothstep(0.003, 0.012, abs(p.y));
+                    frameDetail += max(crossX, crossY) * 0.40 * smoothstep(0.15, 0.85, p.z);
+
+                    // 退行背向半球警戒斜纹条纹 (p.z < -0.15)
+                    if (p.z < -0.15)
+                    {
+                        float rearStripe = frac((p.x + p.y) * 8.0);
+                        float rearAA = clamp(fwidth(rearStripe) * 0.75, 0.001, 0.12);
+                        float isRearWarning = (1.0 - smoothstep(0.40 - rearAA, 0.40 + rearAA, abs(rearStripe - 0.5))) * 0.25 * smoothstep(-0.15, -0.65, p.z);
+                        frameDetail += isRearWarning;
+                    }
                 }
-                // Mode 4: ORBIT (轨道面系) - 轨道面双导轨与顺行前向微箭头流光
+                // Mode 4: ORBIT (开普勒轨道系) - 轨道面双导轨、顺行前向微箭头恒速流光与引力线
                 else if (_FramePattern > 3.5 && _FramePattern < 4.5)
                 {
                     // 顺行前向流动微箭头 (Chevrons flowing in prograde direction: > > >)
-                    float flowPhase = frac(headDeg / 15.0 - _Time.y * 0.85);
-                    float chevronShape = abs(flowPhase - 0.5) * 2.0 + abs(pitchDeg) * 0.35;
-                    float isChevron = (1.0 - smoothstep(0.18, 0.42, chevronShape)) * (1.0 - smoothstep(1.2, 2.8, absPitch)) * 0.55;
+                    float flowPhase = frac(headDeg / 15.0 - _Time.y * 1.20);
+                    float chevronShape = abs(flowPhase - 0.5) * 2.2 + abs(pitchDeg) * 0.45;
+                    float isChevron = (1.0 - smoothstep(0.16, 0.38, chevronShape)) * (1.0 - smoothstep(1.5, 3.2, absPitch)) * 0.85;
                     frameDetail += isChevron;
 
-                    // 离心 (上半球) 与向心 (下半球) 导轨引力线
+                    // 轨道面双导轨 (Dual Orbital Rails) at pitch ±1.4°
+                    float railAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.12);
+                    float isRail = (1.0 - smoothstep(0.22 - railAA, 0.22 + railAA, abs(absPitch - 1.4))) * 0.65;
+                    frameDetail += isRail;
+
+                    // 离心 (上半球 Radial Out) 与向心 (下半球 Radial In) 导轨引力线
                     float radLines = abs(frac(headDeg / 30.0 + 0.5) - 0.5);
-                    frameDetail += (1.0 - smoothstep(0.015, 0.045, radLines)) * 0.20;
+                    float radLineAA = clamp(fwidth(radLines) * 0.75, 0.001, 0.05);
+                    frameDetail += (1.0 - smoothstep(0.015 - radLineAA, 0.015 + radLineAA, radLines)) * 0.22;
                 }
-                // Mode 5: BODY-FIXED (体固系) - 15° 经纬大地测量十字准星与 0° 本初子午线双轨
+                // Mode 5: BODY-FIXED (星体体固系) - 15° 大地经纬十字准星、0° 本初子午线平行双轨与基准脉冲
                 else if (_FramePattern > 4.5)
                 {
-                    // 0° 本初子午线平行双轨特显 (Prime Meridian Dual Track)
+                    // 0° 本初子午线平行双轨特显 (Prime Meridian Dual Track) + 微弱自转基准脉冲
                     float primeDist = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
-                    if (primeDist < 1.8)
+                    if (primeDist < 2.0)
                     {
-                        float isDualTrack = (1.0 - smoothstep(0.10, 0.28, abs(primeDist - 0.75))) * 0.70;
-                        frameDetail += isDualTrack;
+                        float isDualTrack = (1.0 - smoothstep(0.10, 0.32, abs(primeDist - 0.85))) * 0.80;
+                        float primePulse = 0.80 + 0.20 * sin(_Time.y * 2.5);
+                        frameDetail += isDualTrack * primePulse;
                     }
                     // 15° 经纬度网格交点微型大地测量十字标校准星 (+)
                     float latMod15 = abs(fmod(absPitch, 15.0));
                     float lonMod15 = abs(fmod(headDeg + 7.5, 15.0) - 7.5);
-                    if (latMod15 < 1.2 && lonMod15 < 1.2 && absPitch > 6.0 && absPitch < 82.0)
+                    if (latMod15 < 1.4 && lonMod15 < 1.4 && absPitch > 6.0 && absPitch < 82.0)
                     {
-                        float crossH = (1.0 - smoothstep(0.15, 0.35, lonMod15)) * (1.0 - smoothstep(0.8, 1.2, latMod15));
-                        float crossV = (1.0 - smoothstep(0.15, 0.35, latMod15)) * (1.0 - smoothstep(0.8, 1.2, lonMod15));
-                        frameDetail += max(crossH, crossV) * 0.50;
+                        float crossH = (1.0 - smoothstep(0.18, 0.38, lonMod15)) * (1.0 - smoothstep(0.9, 1.3, latMod15));
+                        float crossV = (1.0 - smoothstep(0.18, 0.38, latMod15)) * (1.0 - smoothstep(0.9, 1.3, lonMod15));
+                        frameDetail += max(crossH, crossV) * 0.55;
                     }
                 }
 
@@ -681,10 +753,47 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                         if (headingTextEnabled > 0.001)
                         {
-                            headingGlyphDistance = min(
-                                DigitDistance(rotHeadOffset + float2(3.8, 0.0), headingHundreds),
-                                min(DigitDistance(rotHeadOffset, headingTens),
-                                    DigitDistance(rotHeadOffset - float2(3.8, 0.0), headingOnes)));
+                            // Mode 1: INERTIAL - 天球赤经 24 小时制时角 (02h, 04h, ... 22h) 与 0h 春分点 ♈ 标
+                            if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                            {
+                                float raHour = fmod(floor(headingNumber / 15.0 + 0.5), 24.0);
+                                if (raHour < 0.5)
+                                {
+                                    // 0h: 绘制春分点黄金符号 ♈
+                                    headingGlyphDistance = DigitDistance(rotHeadOffset, 14.0);
+                                }
+                                else
+                                {
+                                    // 两位数码时角 + 'h'
+                                    float raTens = floor(raHour / 10.0);
+                                    float raOnes = fmod(raHour, 10.0);
+                                    headingGlyphDistance = min(
+                                        DigitDistance(rotHeadOffset + float2(3.6, 0.0), raTens),
+                                        min(DigitDistance(rotHeadOffset + float2(0.2, 0.0), raOnes),
+                                            DigitDistance(rotHeadOffset - float2(3.4, 0.0), 10.0)));
+                                }
+                            }
+                            // Mode 2: LAGRANGE - 0° 为次天体 "II", 180° 为主天体 "I" (Principia 科学规范)
+                            else if (_FramePattern > 1.5 && _FramePattern < 2.5 && headingNumber < 1.0)
+                            {
+                                headingGlyphDistance = DigitDistance(rotHeadOffset, 13.0); // II
+                            }
+                            else if (_FramePattern > 1.5 && _FramePattern < 2.5 && abs(headingNumber - 180.0) < 1.0)
+                            {
+                                headingGlyphDistance = DigitDistance(rotHeadOffset, 12.0); // I
+                            }
+                            // Mode 0 / Mode 5: 000° 航向显示航电大写 "N"
+                            else if ((_FramePattern < 0.5 || _FramePattern > 4.5) && headingNumber < 1.0)
+                            {
+                                headingGlyphDistance = DigitDistance(rotHeadOffset, 11.0); // N
+                            }
+                            else
+                            {
+                                headingGlyphDistance = min(
+                                    DigitDistance(rotHeadOffset + float2(3.8, 0.0), headingHundreds),
+                                    min(DigitDistance(rotHeadOffset, headingTens),
+                                        DigitDistance(rotHeadOffset - float2(3.8, 0.0), headingOnes)));
+                            }
                         }
                         headingGlyphAA = clamp(max(fwidth(headingOffset * tangentAspect), fwidth(pitchDeg)) * 0.75, 0.001, 0.18);
                     }
@@ -696,6 +805,10 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float textOutline = max(pitchTextOutline, headingTextOutline);
                 float textFill = max(pitchTextFill, headingTextFill);
                 fixed4 labelCol = (_LabelColor.a > 0.01) ? _LabelColor : fixed4(0.96, 0.98, 1.0, 1.0);
+                if (_FramePattern > 0.5 && _FramePattern < 1.5 && (headDeg < 2.5 || headDeg > 357.5) && headingTextFill > 0.01)
+                {
+                    labelCol.rgb = fixed3(1.0, 0.86, 0.30);
+                }
                 fixed4 outlineCol = (_LabelOutlineColor.a > 0.01) ? _LabelOutlineColor : fixed4(0.02, 0.03, 0.05, 0.92);
                 col.rgb = lerp(col.rgb, outlineCol.rgb, saturate(textOutline * outlineCol.a));
                 col.rgb = lerp(col.rgb, labelCol.rgb, saturate(textFill * labelCol.a));
@@ -842,18 +955,48 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     // 姿态趋势预测动态前瞻导轨 (Flight Path Lead Horizon)
                     if (_TrendStrength > 0.01)
                     {
-                        float3 futureP = normalize(RotateByQuaternion(procP, float4(-_TrendRotation.x, -_TrendRotation.y, -_TrendRotation.z, _TrendRotation.w)));
-                        float trendAA = clamp(fwidth(futureP.y) * 0.75, 0.0005, 0.015);
-                        float futureHorizon = 1.0 - smoothstep(0.0032, 0.0032 + trendAA, abs(futureP.y));
-                        float dashVal = frac(headDeg / 20.0);
-                        float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.08);
-                        float trendDash = smoothstep(0.24 - dashAA, 0.24 + dashAA, dashVal);
+                        // 修正参考系手性：Mode 5 与 Mode 1 需适配坐标反演
+                        float4 qTrend = _TrendRotation;
+                        if (_FramePattern > 4.5)
+                        {
+                            qTrend = float4(-qTrend.x, -qTrend.y, qTrend.z, qTrend.w);
+                        }
+                        else if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                        {
+                            qTrend = float4(-qTrend.x, qTrend.y, -qTrend.z, qTrend.w);
+                        }
 
-                        // 前瞻导轨两端指向切向指示端 (Lead Horizon Wingtips)
-                        float leadWing = (abs(futureP.x) > 0.45 && abs(futureP.x) < 0.62 && abs(futureP.y) < 0.018) ? 0.65 : 0.0;
+                        float3 futureP = normalize(RotateByQuaternion(procP, float4(-qTrend.xyz, qTrend.w)));
+                        float trendAA = clamp(fwidth(futureP.y) * 0.75, 0.0008, 0.020);
+                        
+                        // 航电级高辨识线宽：0.0075 核心 + 0.016 柔和光晕 (约 1.8~3 像素)
+                        float futureCore = 1.0 - smoothstep(0.0075 - trendAA, 0.0075 + trendAA, abs(futureP.y));
+                        float futureHalo = (1.0 - smoothstep(0.016 - trendAA, 0.016 + trendAA, abs(futureP.y))) * 0.45;
+                        float futureHorizon = max(futureCore, futureHalo);
+
+                        // 沿视口弧向高频虚线 (Dash Pattern)
+                        float viewAngle = atan2(coord.x, max(z, 0.001)) * 57.2957795;
+                        float dashVal = frac((viewAngle + 180.0) / 12.0);
+                        float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.12);
+                        float trendDash = smoothstep(0.30 - dashAA, 0.30 + dashAA, dashVal);
+
+                        // 视口空间前瞻导轨翼梢 (View-Space Wingtips) - 无论朝向何方均在视口两侧呈现切向引导翼
+                        float absX = abs(coord.x);
+                        float leadWing = 0.0;
+                        if (absX > 0.40 && absX < 0.65)
+                        {
+                            float wingY = abs(futureP.y);
+                            float wingMask = (1.0 - smoothstep(0.012 - trendAA, 0.012 + trendAA, wingY)) *
+                                             smoothstep(0.40, 0.48, absX) * (1.0 - smoothstep(0.58, 0.65, absX));
+                            leadWing = wingMask * 0.85;
+                        }
+
                         float trendTotal = max(futureHorizon * trendDash, leadWing);
-                        float trendOpacity = trendTotal * _TrendStrength * _HeadingLineColor.a * 0.85;
-                        col.rgb = lerp(col.rgb, _HeadingLineColor.rgb, trendOpacity);
+                        float trendOpacity = trendTotal * _TrendStrength * 0.95;
+                        
+                        // 现代航电高对比荧光青蓝复合光色
+                        fixed3 trendColor = lerp(_HeadingLineColor.rgb, fixed3(0.20, 0.95, 1.0), 0.65);
+                        col.rgb = lerp(col.rgb, trendColor, trendOpacity);
                     }
                 }
 

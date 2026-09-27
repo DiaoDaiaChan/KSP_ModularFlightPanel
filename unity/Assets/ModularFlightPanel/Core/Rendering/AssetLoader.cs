@@ -34,7 +34,7 @@ namespace ModularFlightPanel.Core
 #if UNITY_EDITOR
             // 在 Unity 编辑器与无头渲染环境下，优先加载当前工程源码着色器，保证修改即时热生效
             RaymarchShader = Shader.Find("ModularFlightPanel/NavballRaymarch");
-            ProceduralShader = Shader.Find("ModularFlightPanel/NavballProcedural");
+            ProceduralShader = RaymarchShader ?? Shader.Find("ModularFlightPanel/NavballRaymarch");
             EnhancedShader = Shader.Find("ModularFlightPanel/NavballEnhanced");
             HalftoneShader = Shader.Find("ModularFlightPanel/NavballHalftone");
             ModernShader = Shader.Find("ModularFlightPanel/NavballModern");
@@ -48,7 +48,7 @@ namespace ModularFlightPanel.Core
             MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere");
             CrispAvionicsTextShader = Shader.Find("ModularFlightPanel/CrispAvionicsText");
             AvionicsProceduralShader = Shader.Find("ModularFlightPanel/AvionicsProceduralUI") ?? Shader.Find("ModularFlightPanel/AvionicsTapeGauge");
-            if (ProceduralShader != null && EnhancedShader != null)
+            if (RaymarchShader != null && EnhancedShader != null)
             {
                 MFPLogger.Info(MFPLogger.CatRender, "In Editor: Loaded live project shaders successfully!");
                 return;
@@ -64,7 +64,8 @@ namespace ModularFlightPanel.Core
                     if (_bundle != null)
                     {
                         EnhancedShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NavballEnhanced.shader");
-                        ProceduralShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NavballProcedural.shader");
+                        RaymarchShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NavballRaymarch.shader");
+                        ProceduralShader = RaymarchShader;
                         HalftoneShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NavballHalftone.shader");
                         ModernShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NavballModern.shader");
                         RadialMeterShader = _bundle.LoadAsset<Shader>("Assets/Shaders/RadialSegmentedMeter.shader");
@@ -74,7 +75,6 @@ namespace ModularFlightPanel.Core
                         PhosphorHoloShader = _bundle.LoadAsset<Shader>("Assets/Shaders/PhosphorHoloUI.shader");
                         DigitalSegmentShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DigitalSegmentUI.shader");
                         CrispAvionicsTextShader = _bundle.LoadAsset<Shader>("Assets/Shaders/CrispAvionicsText.shader");
-                        RaymarchShader = _bundle.LoadAsset<Shader>("Assets/Shaders/NavballRaymarch.shader");
                         AvionicsProceduralShader = _bundle.LoadAsset<Shader>("Assets/Shaders/AvionicsProceduralUI.shader") ?? _bundle.LoadAsset<Shader>("Assets/Shaders/AvionicsTapeGauge.shader");
                         MFPLogger.Info(MFPLogger.CatRender, "Successfully loaded custom shaders from AssetBundle!");
                     }
@@ -91,9 +91,9 @@ namespace ModularFlightPanel.Core
 
             // Fallbacks
             if (RaymarchShader == null) RaymarchShader = Shader.Find("ModularFlightPanel/NavballRaymarch") ?? Shader.Find("UI/Default");
+            if (ProceduralShader == null) ProceduralShader = RaymarchShader ?? Shader.Find("UI/Default");
             if (AvionicsProceduralShader == null) AvionicsProceduralShader = Shader.Find("ModularFlightPanel/AvionicsProceduralUI") ?? Shader.Find("ModularFlightPanel/AvionicsTapeGauge") ?? Shader.Find("UI/Default");
             if (EnhancedShader == null) EnhancedShader = Shader.Find("ModularFlightPanel/NavballEnhanced") ?? Shader.Find("Unlit/Texture");
-            if (ProceduralShader == null) ProceduralShader = Shader.Find("ModularFlightPanel/NavballProcedural") ?? Shader.Find("Unlit/Texture");
             if (HalftoneShader == null) HalftoneShader = Shader.Find("ModularFlightPanel/NavballHalftone") ?? Shader.Find("Unlit/Texture");
             if (ModernShader == null) ModernShader = Shader.Find("ModularFlightPanel/NavballModern") ?? Shader.Find("Unlit/Texture");
             if (RadialMeterShader == null) RadialMeterShader = Shader.Find("ModularFlightPanel/RadialSegmentedMeter") ?? Shader.Find("UI/Default");
