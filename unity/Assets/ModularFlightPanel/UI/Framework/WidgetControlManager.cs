@@ -383,6 +383,45 @@ namespace ModularFlightPanel.UI.Framework
             return WidgetControlManager.GetControl<T>(_owner, id);
         }
 
+        public void SetControlVisibility(string id, bool visible)
+        {
+            var ctrl = Get<IWidgetControl>(id);
+            if (ctrl != null)
+            {
+                ctrl.IsVisible = visible;
+            }
+            if (_owner?.Config != null)
+            {
+                _owner.Config.SetSubElementDisabled(id, !visible);
+            }
+        }
+
+        public void SetControlOffset(string id, Vector2 offset)
+        {
+            var ctrl = Get<IWidgetControl>(id);
+            if (ctrl != null)
+            {
+                ctrl.ApplyOffset(offset);
+            }
+            if (_owner?.Config != null)
+            {
+                _owner.Config.SetSubElementOffset(id, offset);
+            }
+        }
+
+        public void ResetAllOffsets()
+        {
+            var list = All;
+            for (int i = 0; i < list.Count; i++)
+            {
+                list[i].ResetOffset();
+            }
+            if (_owner?.Config != null)
+            {
+                _owner.Config.ResetSubElementOffsets();
+            }
+        }
+
         public WidgetGenericSubElementControl Wrap(string id, string displayName, GameObject rootGo, Action<ThemeConfig> onApplyTheme = null, Action<IFlightTelemetry> onUpdateTelemetry = null)
             => WidgetControlManager.WrapElement(_owner, id, displayName, rootGo, onApplyTheme, onUpdateTelemetry);
 

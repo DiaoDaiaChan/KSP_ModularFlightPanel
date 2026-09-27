@@ -5,6 +5,7 @@ using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -428,6 +429,11 @@ namespace ModularFlightPanel.UI.Settings
             {
                 DrawCoreInfoCard(w);
             }
+
+            GUILayout.Space(4f);
+
+            // 3b. 组件微控件定制 (Micro-Controls Customizer)
+            DrawMicroControlsCard(w);
 
             GUILayout.Space(4f);
 
@@ -861,6 +867,170 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.EndInset();
 
             MFPGuiSkin.EndCard();
+        }
+
+        private static Vector2 _asmSubScrollPos = Vector2.zero;
+
+        private static void DrawMicroControlsCard(WidgetConfig w)
+        {
+            BaseFlightWidget runtime = null;
+            if (FlightHUDManager.Instance != null && FlightHUDManager.Instance.ModularWidgets != null)
+            {
+                runtime = FlightHUDManager.Instance.ModularWidgets.Find(x => x.WidgetId == w.WidgetId);
+            }
+
+            var ctrlList = runtime?.Controls?.All;
+            if (ctrlList == null || ctrlList.Count == 0) return;
+
+            MFPGuiSkin.BeginCard();
+            MFPGuiSkin.DrawHeader(
+                I18n.Tr("ASM_CARD_MICRO_CONTROLS", "⚙️ 组件子控件配置与显隐排版"),
+                string.Format(I18n.Tr("ASM_MICRO_COUNT", "已纳管 {0} 个微控件 (支持独立显隐与局部位移)"), ctrlList.Count)
+            );
+
+            // 批处理栏
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(I18n.Tr("MGR_BTN_SHOW_ALL", "✔ 全部显示"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f), GUILayout.Height(20f)))
+            {
+                for (int i = 0; i < ctrlList.Count; i++) runtime.Controls.SetControlVisibility(ctrlList[i].Id, true);
+                MarkDirty();
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+            if (GUILayout.Button(I18n.Tr("MGR_BTN_HIDE_ALL", "○ 全部隐藏"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f), GUILayout.Height(20f)))
+            {
+                for (int i = 0; i < ctrlList.Count; i++) runtime.Controls.SetControlVisibility(ctrlList[i].Id, false);
+                MarkDirty();
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+            if (GUILayout.Button(I18n.Tr("CTL_RESET_ALL_OFFSETS", "↺ 全部复位"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f), GUILayout.Height(20f)))
+            {
+                runtime.Controls.ResetAllOffsets();
+                MarkDirty();
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("<color=#7088A8><size=10>Shift: 10px 快速步进</size></color>");
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            _asmSubScrollPos = GUILayout.BeginScrollView(_asmSubScrollPos, GUILayout.MaxHeight(180f));
+            for (int i = 0; i < ctrlList.Count; i++)
+            {
+                var ctrl = ctrlList[i];
+                if (ctrl == null) continue;
+
+                GUILayout.BeginHorizontal(MFPGuiSkin.InsetStyle, GUILayout.Height(24f));
+
+                // 1. 显隐
+                string led = ctrl.IsVisible ? "<color=#00FF88>● 显</color>" : "<color=#7088A8>○ 隐</color>";
+                if (GUILayout.Button(led, MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f), GUILayout.Height(20f)))
+                {
+                    runtime.Controls.SetControlVisibility(ctrl.Id, !ctrl.IsVisible);
+                    MarkDirty();
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+
+                // 2. 类别
+                string catTag = GetCategoryShortTag(ctrl.Category);
+                MFPGuiSkin.DrawBadge(catTag, Color.white, GetCategoryColor(ctrl.Category), 42f);
+
+                // 3. 名称
+                GUILayout.Label($"<b>{ctrl.DisplayName}</b>", GUILayout.Width(130f));
+
+                // 4. 微调按钮
+                float step = Event.current.shift ? 10f : 2f;
+                Vector2 curOff = ctrl.CurrentOffset;
+
+                if (GUILayout.Button("◀", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(20f)))
+                {
+                    runtime.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(-step, 0f));
+                    MarkDirty();
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+                if (GUILayout.Button("▶", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(20f)))
+                {
+                    runtime.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(step, 0f));
+                    MarkDirty();
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+                if (GUILayout.Button("▲", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(20f)))
+                {
+                    runtime.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(0f, step));
+                    MarkDirty();
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+                if (GUILayout.Button("▼", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(20f)))
+                {
+                    runtime.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(0f, -step));
+                    MarkDirty();
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+
+                // 5. 偏移数值与复位
+                bool hasOff = Mathf.Abs(curOff.x) > 0.01f || Mathf.Abs(curOff.y) > 0.01f;
+                if (hasOff)
+                {
+                    GUILayout.Label($"<color=#00E5FF><size=10>{curOff.x:+0.0;-0.0;0}, {curOff.y:+0.0;-0.0;0}</size></color>", GUILayout.Width(68f));
+                    if (GUILayout.Button("↺", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(20f)))
+                    {
+                        runtime.Controls.SetControlOffset(ctrl.Id, Vector2.zero);
+                        MarkDirty();
+                        WidgetLayoutManager.Instance.SaveLayout();
+                    }
+                }
+                else
+                {
+                    GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=10>0.0, 0.0</size></color>", GUILayout.Width(68f));
+                    GUILayout.Space(26f);
+                }
+
+                GUILayout.EndHorizontal();
+
+                if (Event.current.type == EventType.Repaint)
+                {
+                    Rect rowRect = GUILayoutUtility.GetLastRect();
+                    if (rowRect.Contains(Event.current.mousePosition))
+                    {
+                        WidgetControlHighlighter.HighlightedControl = ctrl;
+                    }
+                }
+            }
+            GUILayout.EndScrollView();
+
+            MFPGuiSkin.EndCard();
+        }
+
+        private static string GetCategoryShortTag(WidgetControlCategory cat)
+        {
+            switch (cat)
+            {
+                case WidgetControlCategory.Header: return "标题";
+                case WidgetControlCategory.Readout: return "数显";
+                case WidgetControlCategory.LinearGauge: return "柱条";
+                case WidgetControlCategory.ArcGauge: return "弧表";
+                case WidgetControlCategory.NeedlePointer: return "指针";
+                case WidgetControlCategory.ActionButton: return "按键";
+                case WidgetControlCategory.Annunciator: return "灯珠";
+                case WidgetControlCategory.Viewport: return "视口";
+                case WidgetControlCategory.DataStack: return "列表";
+                case WidgetControlCategory.ModeCapsule: return "胶囊";
+                case WidgetControlCategory.TrendBar: return "趋势";
+                default: return "图元";
+            }
+        }
+
+        private static Color GetCategoryColor(WidgetControlCategory cat)
+        {
+            switch (cat)
+            {
+                case WidgetControlCategory.Readout: return new Color(0.00f, 0.45f, 0.65f, 0.9f);
+                case WidgetControlCategory.LinearGauge:
+                case WidgetControlCategory.ArcGauge: return new Color(0.00f, 0.50f, 0.30f, 0.9f);
+                case WidgetControlCategory.ActionButton: return new Color(0.55f, 0.35f, 0.05f, 0.9f);
+                case WidgetControlCategory.Header: return new Color(0.35f, 0.20f, 0.50f, 0.9f);
+                default: return new Color(0.25f, 0.30f, 0.38f, 0.9f);
+            }
         }
 
         private static void DrawTelemetryDrawerLauncherCard(WidgetConfig curWidget)

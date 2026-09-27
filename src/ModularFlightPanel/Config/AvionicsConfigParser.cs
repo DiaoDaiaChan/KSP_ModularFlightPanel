@@ -581,6 +581,7 @@ namespace ModularFlightPanel.Config
                         cfg.DrawOrder = wObj.GetInt("DrawOrder", i);
                         cfg.IsLocked = wObj.GetBool("IsLocked", false);
                         cfg.DisabledSubElements = wObj.GetString("DisabledSubElements", "");
+                        cfg.SubElementTransforms = wObj.GetString("SubElementTransforms", "");
 
                         cfg.ValueDeltaThreshold = wObj.GetFloat("ValueDeltaThreshold", 0.05f);
                         cfg.BadgeNormal = wObj.GetString("BadgeNormal", "NORM");
@@ -647,6 +648,7 @@ namespace ModularFlightPanel.Config
                     wObj.Add("DrawOrder", cfg.DrawOrder);
                     wObj.Add("IsLocked", cfg.IsLocked);
                     wObj.Add("DisabledSubElements", cfg.DisabledSubElements ?? "");
+                    wObj.Add("SubElementTransforms", cfg.SubElementTransforms ?? "");
                     wObj.Add("ValueDeltaThreshold", cfg.ValueDeltaThreshold);
                     wObj.Add("BadgeNormal", cfg.BadgeNormal ?? "NORM");
                     wObj.Add("BadgeCaution", cfg.BadgeCaution ?? "CAUT");

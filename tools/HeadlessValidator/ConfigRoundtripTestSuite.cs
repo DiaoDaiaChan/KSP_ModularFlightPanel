@@ -683,6 +683,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 if (wA.DrawOrder != wB.DrawOrder) { PrintError($"{prefix} DrawOrder: {wA.DrawOrder} vs {wB.DrawOrder}"); diffs++; }
                 if (wA.IsLocked != wB.IsLocked) { PrintError($"{prefix} IsLocked: {wA.IsLocked} vs {wB.IsLocked}"); diffs++; }
                 if (wA.DisabledSubElements != wB.DisabledSubElements) { PrintError($"{prefix} DisabledSubElements: '{wA.DisabledSubElements}' vs '{wB.DisabledSubElements}'"); diffs++; }
+                if (wA.SubElementTransforms != wB.SubElementTransforms) { PrintError($"{prefix} SubElementTransforms: '{wA.SubElementTransforms}' vs '{wB.SubElementTransforms}'"); diffs++; }
                 if (Math.Abs(wA.ValueDeltaThreshold - wB.ValueDeltaThreshold) > FloatEpsilon) { PrintError($"{prefix} ValueDeltaThreshold: {wA.ValueDeltaThreshold} vs {wB.ValueDeltaThreshold}"); diffs++; }
                 if (wA.BadgeNormal != wB.BadgeNormal) { PrintError($"{prefix} BadgeNormal: '{wA.BadgeNormal}' vs '{wB.BadgeNormal}'"); diffs++; }
                 if (wA.BadgeCaution != wB.BadgeCaution) { PrintError($"{prefix} BadgeCaution: '{wA.BadgeCaution}' vs '{wB.BadgeCaution}'"); diffs++; }

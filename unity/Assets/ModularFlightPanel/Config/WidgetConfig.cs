@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 
 namespace ModularFlightPanel.Config
 {
@@ -43,8 +44,9 @@ namespace ModularFlightPanel.Config
         public bool IsLocked = false;         // 是否锁定图层 (锁定后禁止在画布中点击拖拽/变换，防止误触大背景面板)
 
         // 子部件屏蔽与定制 (Sub-Element Masking)
-        // TODO: [DetailedEditMode] 未来支持自由编辑子控件位置时，可在此持久化 SubElementTransforms (例如 "top_tag:10,-20;bottom_tag:0,50")
         public string DisabledSubElements = ""; // 逗号或分号分隔的已屏蔽子部件 ID (例如 "top_mode,bottom_sec,trend_bar")
+        // 子部件局部变换偏移与排版定制 (Sub-Element Custom Transforms: "id1:dx,dy;id2:dx,dy")
+        public string SubElementTransforms = "";
 
         public bool IsSubElementDisabled(string controlId)
         {
@@ -71,6 +73,94 @@ namespace ModularFlightPanel.Config
             else set.Remove(controlId.Trim());
 
             DisabledSubElements = string.Join(",", set);
+        }
+
+        public Vector2 GetSubElementOffset(string controlId)
+        {
+            if (string.IsNullOrEmpty(SubElementTransforms) || string.IsNullOrEmpty(controlId)) return Vector2.zero;
+            string[] items = SubElementTransforms.Split(new[] { ';', '|' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < items.Length; i++)
+            {
+                string item = items[i].Trim();
+                int colonIdx = item.IndexOf(':');
+                if (colonIdx > 0)
+                {
+                    string id = item.Substring(0, colonIdx).Trim();
+                    if (string.Equals(id, controlId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string coords = item.Substring(colonIdx + 1).Trim();
+                        string[] xy = coords.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (xy.Length == 2 &&
+                            float.TryParse(xy[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float x) &&
+                            float.TryParse(xy[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float y))
+                        {
+                            return new Vector2(x, y);
+                        }
+                    }
+                }
+            }
+            return Vector2.zero;
+        }
+
+        public void SetSubElementOffset(string controlId, Vector2 offset)
+        {
+            if (string.IsNullOrEmpty(controlId)) return;
+            var dict = new System.Collections.Generic.Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(SubElementTransforms))
+            {
+                string[] items = SubElementTransforms.Split(new[] { ';', '|' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < items.Length; i++)
+                {
+                    string item = items[i].Trim();
+                    int colonIdx = item.IndexOf(':');
+                    if (colonIdx > 0)
+                    {
+                        string id = item.Substring(0, colonIdx).Trim();
+                        string coords = item.Substring(colonIdx + 1).Trim();
+                        string[] xy = coords.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (xy.Length == 2 &&
+                            float.TryParse(xy[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float x) &&
+                            float.TryParse(xy[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float y))
+                        {
+                            dict[id] = new Vector2(x, y);
+                        }
+                    }
+                }
+            }
+
+            if (Math.Abs(offset.x) > 0.01f || Math.Abs(offset.y) > 0.01f)
+            {
+                dict[controlId.Trim()] = offset;
+            }
+            else
+            {
+                dict.Remove(controlId.Trim());
+            }
+
+            if (dict.Count == 0)
+            {
+                SubElementTransforms = "";
+            }
+            else
+            {
+                var sb = new System.Text.StringBuilder();
+                bool first = true;
+                foreach (var kvp in dict)
+                {
+                    if (!first) sb.Append(';');
+                    sb.Append(kvp.Key).Append(':')
+                      .Append(kvp.Value.x.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))
+                      .Append(',')
+                      .Append(kvp.Value.y.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+                    first = false;
+                }
+                SubElementTransforms = sb.ToString();
+            }
+        }
+
+        public void ResetSubElementOffsets()
+        {
+            SubElementTransforms = "";
         }
 
         // ===== 视图策略 (原硬编码常量的配置化出口，可在 layout.json / 预设 JSON 中逐组件覆盖) =====
@@ -100,3 +190,16 @@ namespace ModularFlightPanel.Config
         }
     }
 }
+
+#if !KSP_RUNTIME
+namespace UnityEngine
+{
+    public struct Vector2
+    {
+        public float x;
+        public float y;
+        public Vector2(float x, float y) { this.x = x; this.y = y; }
+        public static Vector2 zero => new Vector2(0f, 0f);
+    }
+}
+#endif

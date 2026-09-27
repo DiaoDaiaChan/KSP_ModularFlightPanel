@@ -70,6 +70,10 @@ namespace ModularFlightPanel.UI.Framework
         bool IsVisible { get; set; }
         GameObject RootGameObject { get; }
         RectTransform RectTransform { get; }
+        Vector2 DefaultAnchoredPosition { get; }
+        Vector2 CurrentOffset { get; }
+        void ApplyOffset(Vector2 offset);
+        void ResetOffset();
         void ApplyTheme(ThemeConfig theme);
         void UpdateTelemetry(IFlightTelemetry telemetry);
         void BindConfig(WidgetConfig config);
@@ -97,6 +101,44 @@ namespace ModularFlightPanel.UI.Framework
         public GameObject RootGameObject { get; protected set; }
         public RectTransform RectTransform => RootGameObject != null ? RootGameObject.GetComponent<RectTransform>() : null;
 
+        protected Vector2 _defaultAnchoredPosition = Vector2.zero;
+        protected bool _defaultPosCaptured = false;
+        public Vector2 DefaultAnchoredPosition
+        {
+            get
+            {
+                CaptureDefaultPosition();
+                return _defaultAnchoredPosition;
+            }
+        }
+
+        protected Vector2 _currentOffset = Vector2.zero;
+        public Vector2 CurrentOffset => _currentOffset;
+
+        protected void CaptureDefaultPosition()
+        {
+            if (!_defaultPosCaptured && RectTransform != null)
+            {
+                _defaultAnchoredPosition = RectTransform.anchoredPosition;
+                _defaultPosCaptured = true;
+            }
+        }
+
+        public virtual void ApplyOffset(Vector2 offset)
+        {
+            CaptureDefaultPosition();
+            _currentOffset = offset;
+            if (RectTransform != null)
+            {
+                RectTransform.anchoredPosition = _defaultAnchoredPosition + offset;
+            }
+        }
+
+        public virtual void ResetOffset()
+        {
+            ApplyOffset(Vector2.zero);
+        }
+
         private bool _isVisible = true;
         public virtual bool IsVisible
         {
@@ -120,6 +162,7 @@ namespace ModularFlightPanel.UI.Framework
             DisplayName = displayName ?? Id;
             Category = category;
             RootGameObject = rootGo;
+            CaptureDefaultPosition();
         }
 
         protected BaseWidgetControl(string id, string displayName, WidgetControlCategory category, GameObject rootGo)
@@ -132,9 +175,19 @@ namespace ModularFlightPanel.UI.Framework
 
         public virtual void BindConfig(WidgetConfig config)
         {
-            if (config != null && config.IsSubElementDisabled(Id))
+            CaptureDefaultPosition();
+            if (config != null)
             {
-                IsVisible = false;
+                if (config.IsSubElementDisabled(Id))
+                {
+                    IsVisible = false;
+                }
+                else
+                {
+                    IsVisible = true;
+                }
+                Vector2 offset = config.GetSubElementOffset(Id);
+                ApplyOffset(offset);
             }
         }
     }

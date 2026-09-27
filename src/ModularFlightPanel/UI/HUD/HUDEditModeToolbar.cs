@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
+using ModularFlightPanel.UI.Widgets.Controls;
 #if KSP_RUNTIME
 using ModularFlightPanel.UI.Settings;
 #endif
@@ -35,8 +37,9 @@ namespace ModularFlightPanel.UI.HUD
             MFPGuiSkin.EnsureInitialized();
 
             FlightHUDManager.IsMouseOverFloatingToolbar = false;
+            WidgetControlHighlighter.HighlightedControl = null;
 
-            float toolbarW = 1040f;
+            float toolbarW = 1180f;
             float toolbarH = 78f;
             float x = (Screen.width - toolbarW) * 0.5f;
             float y = 12f;
@@ -49,7 +52,7 @@ namespace ModularFlightPanel.UI.HUD
 
             GUILayout.BeginArea(topToolbarRect, MFPGuiSkin.CardStyle);
 
-            // 第一行：标题 + 撤销/重做 + 全套对齐工具
+            // 第一行：标题 + 撤销/重做 + 全套对齐工具 + 快速分享/导入
             GUILayout.BeginHorizontal();
             int selCount = WidgetSelectionManager.Count;
             string selInfo = selCount > 0 ? $"<color=#FFE000><b>已选 {selCount} 项</b></color>" : "<color=#AAAAAA>未选中 (拉框多选)</color>";
@@ -75,6 +78,32 @@ namespace ModularFlightPanel.UI.HUD
             GUI.enabled = selCount >= 1;
             if (GUILayout.Button("⌖ X=0中轴", GUILayout.Width(64f), GUILayout.Height(24f))) WidgetSelectionManager.CenterToScreenX();
             GUI.enabled = true;
+
+            GUILayout.Space(6f);
+            if (GUILayout.Button("📋 分享码", GUILayout.Width(68f), GUILayout.Height(24f)))
+            {
+                string code = LayoutShareHub.ExportShareCode(WidgetLayoutManager.Instance.CurrentLayout);
+                if (!string.IsNullOrEmpty(code))
+                {
+                    GUIUtility.systemCopyBuffer = code;
+                    MFPToastBridge.Show(I18n.Tr("PRF_TOAST_SHARE_COPIED", "✔ 已成功复制分享码至剪贴板！"));
+                }
+            }
+            if (GUILayout.Button("📥 导入", GUILayout.Width(52f), GUILayout.Height(24f)))
+            {
+                string clip = GUIUtility.systemCopyBuffer;
+                if (!string.IsNullOrEmpty(clip) && LayoutShareHub.TryImportShareCode(clip, out var imported, out string err))
+                {
+                    WidgetSelectionManager.ClearSelection();
+                    WidgetLayoutManager.Instance.ApplyLayout(imported);
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    MFPToastBridge.Show(I18n.TrFormat("PRF_TOAST_IMPORT_OK", imported.Widgets.Count));
+                }
+                else
+                {
+                    UIWidget.OnRequestOpenWorkbench?.Invoke();
+                }
+            }
             GUILayout.EndHorizontal();
 
             // 第二行：磁吸/网格开关 + 图层/删除/微调 + 快捷退出
@@ -157,6 +186,9 @@ namespace ModularFlightPanel.UI.HUD
             // 绘制 Photoshop 级悬浮图层管理器抽屉 (按 L 键或点击工具栏切换)
             WidgetLayerManager.DrawLayerPanel(selCount);
 
+            // 绘制微控件实时悬停高亮边框
+            WidgetControlHighlighter.DrawGizmo(_hudManager?.Canvas);
+
             MFPInputLock.SetWindowHoverLock(FlightHUDManager.IsMouseOverFloatingToolbar);
         }
 
@@ -196,7 +228,7 @@ namespace ModularFlightPanel.UI.HUD
             float guiMaxY = Screen.height - minY_screen;
 
             float badgeW = 345f;
-            float badgeH = 108f;
+            float badgeH = selCount == 1 ? 134f : 108f;
 
             // 优先置于组件右侧，留出 10px 空隙
             float bx = maxX + 10f;
@@ -317,6 +349,214 @@ namespace ModularFlightPanel.UI.HUD
                 WidgetLayerManager.ToggleLock(primary);
             }
             GUILayout.EndHorizontal();
+
+            // 5. 子控件微调与显隐入口 (仅在单选且拥有注册微控件时展示)
+            if (selCount == 1)
+            {
+                var ctrlList = primary.Controls.All;
+                int totalCtrls = ctrlList.Count;
+                if (totalCtrls > 0)
+                {
+                    int visCtrls = 0;
+                    for (int i = 0; i < totalCtrls; i++) if (ctrlList[i].IsVisible) visCtrls++;
+                    GUILayout.Space(2f);
+                    GUILayout.BeginHorizontal();
+                    string btnTxt = _showSubControlInspector ? $"⚙️ 控件定制: [已展开] ({visCtrls}/{totalCtrls})" : $"⚙️ 控件定制 ({visCtrls}/{totalCtrls})";
+                    GUI.color = _showSubControlInspector ? new Color(0f, 0.9f, 1f) : Color.white;
+                    if (GUILayout.Button(btnTxt, GUILayout.Height(20f)))
+                    {
+                        _showSubControlInspector = !_showSubControlInspector;
+                    }
+                    GUI.color = Color.white;
+                    GUILayout.EndHorizontal();
+                }
+            }
+
+            GUILayout.EndArea();
+
+            if (_showSubControlInspector && selCount == 1 && primary.Controls.All.Count > 0)
+            {
+                DrawSubControlInspector(primary, badgeRect);
+            }
+        }
+
+        private static bool _showSubControlInspector = false;
+        private static Vector2 _subControlScrollPos = Vector2.zero;
+
+        private static string GetCategoryShortTag(WidgetControlCategory cat)
+        {
+            switch (cat)
+            {
+                case WidgetControlCategory.Header: return "标题";
+                case WidgetControlCategory.Readout: return "数显";
+                case WidgetControlCategory.LinearGauge: return "柱条";
+                case WidgetControlCategory.ArcGauge: return "弧表";
+                case WidgetControlCategory.NeedlePointer: return "指针";
+                case WidgetControlCategory.ActionButton: return "按键";
+                case WidgetControlCategory.Annunciator: return "灯珠";
+                case WidgetControlCategory.Viewport: return "视口";
+                case WidgetControlCategory.DataStack: return "列表";
+                case WidgetControlCategory.ModeCapsule: return "胶囊";
+                case WidgetControlCategory.TrendBar: return "趋势";
+                default: return "图元";
+            }
+        }
+
+        private static Color GetCategoryColor(WidgetControlCategory cat)
+        {
+            switch (cat)
+            {
+                case WidgetControlCategory.Readout: return new Color(0.00f, 0.45f, 0.65f, 0.9f);
+                case WidgetControlCategory.LinearGauge:
+                case WidgetControlCategory.ArcGauge: return new Color(0.00f, 0.50f, 0.30f, 0.9f);
+                case WidgetControlCategory.ActionButton: return new Color(0.55f, 0.35f, 0.05f, 0.9f);
+                case WidgetControlCategory.Header: return new Color(0.35f, 0.20f, 0.50f, 0.9f);
+                default: return new Color(0.25f, 0.30f, 0.38f, 0.9f);
+            }
+        }
+
+        private void DrawSubControlInspector(BaseFlightWidget primary, Rect badgeRect)
+        {
+            if (primary == null) return;
+            var ctrlList = primary.Controls.All;
+            if (ctrlList.Count == 0) return;
+
+            float subW = 345f;
+            float subH = Mathf.Min(260f, 65f + ctrlList.Count * 28f);
+
+            // 优先置于 badgeRect 下方
+            float subX = badgeRect.x;
+            float subY = badgeRect.y + badgeRect.height + 6f;
+
+            // 若下方超出屏幕边缘，则自适应翻转至上方
+            if (subY + subH > Screen.height - 10f)
+            {
+                subY = badgeRect.y - subH - 6f;
+            }
+
+            subX = Mathf.Clamp(subX, 10f, Screen.width - subW - 10f);
+            subY = Mathf.Clamp(subY, 10f, Screen.height - subH - 10f);
+
+            Rect subRect = new Rect(subX, subY, subW, subH);
+
+            if (subRect.Contains(Event.current.mousePosition))
+            {
+                FlightHUDManager.IsMouseOverFloatingToolbar = true;
+            }
+
+            GUILayout.BeginArea(subRect, MFPGuiSkin.CardStyle);
+
+            // 标题栏
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"⚙️ <b>{primary.DisplayName}</b> - 子控件定制", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button("×", GUILayout.Width(22f), GUILayout.Height(18f)))
+            {
+                _showSubControlInspector = false;
+            }
+            GUILayout.EndHorizontal();
+
+            // 批处理工具栏
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("✔ 全显", GUILayout.Width(46f), GUILayout.Height(19f)))
+            {
+                for (int i = 0; i < ctrlList.Count; i++) primary.Controls.SetControlVisibility(ctrlList[i].Id, true);
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+            if (GUILayout.Button("○ 全隐", GUILayout.Width(46f), GUILayout.Height(19f)))
+            {
+                for (int i = 0; i < ctrlList.Count; i++) primary.Controls.SetControlVisibility(ctrlList[i].Id, false);
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+            if (GUILayout.Button("↺ 复位", GUILayout.Width(46f), GUILayout.Height(19f)))
+            {
+                primary.Controls.ResetAllOffsets();
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("<color=#7088A8><size=9>Shift:10px步进</size></color>");
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(2f);
+
+            // 列表
+            _subControlScrollPos = GUILayout.BeginScrollView(_subControlScrollPos, GUILayout.Height(subH - 52f));
+            for (int i = 0; i < ctrlList.Count; i++)
+            {
+                var ctrl = ctrlList[i];
+                if (ctrl == null) continue;
+
+                GUILayout.BeginHorizontal(MFPGuiSkin.InsetStyle, GUILayout.Height(22f));
+
+                // 1. 显隐开关
+                string led = ctrl.IsVisible ? "<color=#00FF88>●</color>" : "<color=#7088A8>○</color>";
+                if (GUILayout.Button(led, GUILayout.Width(22f), GUILayout.Height(18f)))
+                {
+                    primary.Controls.SetControlVisibility(ctrl.Id, !ctrl.IsVisible);
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+
+                // 2. 类别徽章
+                string catTag = GetCategoryShortTag(ctrl.Category);
+                MFPGuiSkin.DrawBadge(catTag, Color.white, GetCategoryColor(ctrl.Category), 38f);
+
+                // 3. 控件名称
+                GUILayout.Label($"<b>{ctrl.DisplayName}</b>", GUILayout.Width(92f));
+
+                // 4. 步进位移
+                float step = Event.current.shift ? 10f : 2f;
+                Vector2 curOff = ctrl.CurrentOffset;
+
+                if (GUILayout.Button("◀", GUILayout.Width(18f), GUILayout.Height(18f)))
+                {
+                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(-step, 0f));
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+                if (GUILayout.Button("▶", GUILayout.Width(18f), GUILayout.Height(18f)))
+                {
+                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(step, 0f));
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+                if (GUILayout.Button("▲", GUILayout.Width(18f), GUILayout.Height(18f)))
+                {
+                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(0f, step));
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+                if (GUILayout.Button("▼", GUILayout.Width(18f), GUILayout.Height(18f)))
+                {
+                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(0f, -step));
+                    WidgetLayoutManager.Instance.SaveLayout();
+                }
+
+                // 5. 偏移量读数与单项复位
+                bool hasOff = Mathf.Abs(curOff.x) > 0.01f || Mathf.Abs(curOff.y) > 0.01f;
+                if (hasOff)
+                {
+                    GUILayout.Label($"<color=#00E5FF><size=9>{curOff.x:+0;-0;0},{curOff.y:+0;-0;0}</size></color>", GUILayout.Width(38f));
+                    if (GUILayout.Button("↺", GUILayout.Width(18f), GUILayout.Height(18f)))
+                    {
+                        primary.Controls.SetControlOffset(ctrl.Id, Vector2.zero);
+                        WidgetLayoutManager.Instance.SaveLayout();
+                    }
+                }
+                else
+                {
+                    GUILayout.Label("<color=#506070><size=9>0,0</size></color>", GUILayout.Width(38f));
+                    GUILayout.Space(22f);
+                }
+
+                GUILayout.EndHorizontal();
+
+                // 实时悬停高亮检测
+                if (Event.current.type == EventType.Repaint)
+                {
+                    Rect rowRect = GUILayoutUtility.GetLastRect();
+                    if (rowRect.Contains(Event.current.mousePosition))
+                    {
+                        WidgetControlHighlighter.HighlightedControl = ctrl;
+                    }
+                }
+            }
+            GUILayout.EndScrollView();
 
             GUILayout.EndArea();
         }
