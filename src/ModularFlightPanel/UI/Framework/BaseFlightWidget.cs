@@ -16,7 +16,7 @@ namespace ModularFlightPanel.UI
     /// 全自动化交互侦测与 EventSystem 射线按需裁剪 (Raycast Target Pruning)、
     /// 集中式数据心跳驱动与物理步长解算 (IDataHeartBeat)
     /// </summary>
-    public abstract class BaseFlightWidget : MonoBehaviour, IDataHeartBeat
+    public abstract class BaseFlightWidget : MonoBehaviour, IDataHeartBeat, IUIDrawLoop
     {
         public WidgetConfig Config { get; set; }
         public string WidgetId => Config?.WidgetId ?? "unknown";
@@ -162,6 +162,16 @@ namespace ModularFlightPanel.UI
         /// 默认刷新间隔 (秒)。优先由 CustomHz 换算推导，亦可直接重写。
         /// </summary>
         public virtual float DefaultUpdateInterval => CustomHz > 0.001f ? (1.0f / CustomHz) : 0f;
+
+        /// <summary>
+        /// 组件首选的 UI 绘制管线类型 (默认标准 2D UI 矢量/着色器管线，姿态球类可覆盖返回 NavballSphere3D)
+        /// </summary>
+        public virtual UIDrawPipelineKind PreferredDrawPipeline => UIDrawPipelineKind.UiShader2D;
+
+        /// <summary>
+        /// 姿态球专属绘制管线构造器（默认返回空，由 BaseNavballSphereWidget 派生实现）
+        /// </summary>
+        public virtual FlightNavballPipeline GetNavballPipeline() => default;
 
         /// <summary>
         /// 是否已受全局 WidgetRenderManager 接管（接管后禁用 MonoBehaviour 独立 Update，改由主分发调度）
@@ -661,8 +671,40 @@ namespace ModularFlightPanel.UI
             // 1. 微控件全自动化遥测更新 (包含通配符 Token 计算与脏检查)
             this.Controls.UpdateControls(telemetry);
 
-            // 2. 纯 UI 渲染/平滑补间帧更新
-            OnUpdateRender(Time.unscaledDeltaTime);
+            // 2. UI 绘制循环调度器 (UIDrawLoop，含 2D UI Shader 材质管线与姿态球管线)
+            ExecuteUIDrawLoop(Time.unscaledDeltaTime);
+        }
+
+        /// <summary>
+        /// 父类统一纳管的 UI 绘制循环主调度器（内嵌帧调度、异常沙箱隔离与管线装配）
+        /// </summary>
+        public void ExecuteUIDrawLoop(float deltaTime)
+        {
+            if (!gameObject.activeSelf) return;
+
+            var theme = WidgetStyleManager.Instance?.CurrentTheme;
+            var style = WidgetStyleManager.Instance;
+            var navball = GetNavballPipeline();
+            var drawCtx = new FlightUIDrawContext(deltaTime, this, PreferredDrawPipeline, theme, style, navball);
+
+            try
+            {
+                OnUIDrawLoop(ref drawCtx);
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogWarning($"[ModularFlightPanel] Error in {WidgetId}.OnUIDrawLoop: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 【核心航电 UI 绘制循环契约】由父类严格按 RefreshTier 节律或 AlwaysFullPower 满帧调度的 UI 视觉绘制入口。
+        /// 承载 2D UI Shader 材质管线绑定与 3D/矢量姿态球管线驱动。
+        /// 默认实现自动回退调用 OnUpdateRender(context.DeltaTime)，确保全库 46 个存量组件 100% 向后兼容。
+        /// </summary>
+        public virtual void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            OnUpdateRender(context.DeltaTime);
         }
 
         /// <summary>

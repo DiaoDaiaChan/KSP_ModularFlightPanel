@@ -127,8 +127,27 @@ namespace ModularFlightPanel.UI
         }
 
         // ------------------------------------------------------------------------------------
-        // [Part 5: 遥测数据求值与动态呈现 (OnUpdateTelemetry)]
+        // [Part 5: 数据心跳与 UI 绘制双轨生命周期 (OnDataHeartBeat & OnUIDrawLoop)]
         // ------------------------------------------------------------------------------------
+
+        /// <summary>
+        /// 【核心数据心跳】按 EffectiveHeartBeatTier 节律调用，专用于执行物理推算与遥测解算。
+        /// </summary>
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            // 数据计算逻辑（若不需要分频，可直接调用既有 OnUpdateTelemetry 或在此解算）
+            OnUpdateTelemetry(context.Telemetry);
+        }
+
+        /// <summary>
+        /// 【核心 UI 绘制循环】按 RefreshTier 满帧驱动，专用于 2D UI 着色器材质管线与视觉渲染。
+        /// </summary>
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            // 示例：可便捷使用 context.Shader2D 或 context.ApplyUiMaterial 挂载主题着色器
+        }
 
         /// <summary>
         /// 由 WidgetRenderManager 在对应 RefreshTier 刷新时刻调用。

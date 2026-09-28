@@ -37,6 +37,31 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            // 驱动 3D 姿态仪离屏相机渲染与脏标记复位
+            if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
+            {
+                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation) > RotationDirtyThreshold);
+                bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime) >= HeartbeatInterval;
+
+                if (rotDirty || _isPaletteLerping || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
+                {
+                    context.Navball.RenderCamera();
+                    _hasEverRendered = true;
+                    if (_sphereObject != null)
+                    {
+                        _lastRenderedRotation = _sphereObject.transform.localRotation;
+                    }
+                    _lastRenderedTime = Time.unscaledTime;
+                    _isMaterialDirty = false;
+                    _isRenderDirty = false;
+                }
+            }
+        }
+
         // UI 视图节点
         private Image _bgImage;
         private Outline _bgOutline;

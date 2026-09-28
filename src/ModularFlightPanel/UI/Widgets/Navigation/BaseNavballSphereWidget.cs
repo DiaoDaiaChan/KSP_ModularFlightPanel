@@ -18,6 +18,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     public abstract class BaseNavballSphereWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+        public override UIDrawPipelineKind PreferredDrawPipeline => UIDrawPipelineKind.NavballSphere3D;
 
         public override void ApplyTheme(ThemeConfig theme)
         {
@@ -33,6 +34,38 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         protected Material _sphereMaterial;
         protected bool _isRenderDirty = true;
         public void MarkRenderDirty() => _isRenderDirty = true;
+        public void MarkRenderClean() => _isRenderDirty = false;
+        public bool IsRenderDirty => _isRenderDirty;
+        public Material SphereMaterial => _sphereMaterial;
+        public RenderTexture TargetTexture => _renderTexture;
+        public Camera OffscreenCamera => _ballCamera;
+
+        public override FlightNavballPipeline GetNavballPipeline()
+        {
+            int optRes = 512;
+            if (WidgetRenderManager.Instance != null)
+            {
+                float dim = RectTransform != null ? Mathf.Max(RectTransform.rect.width, RectTransform.rect.height) : 200f;
+                if (dim <= 0.1f) dim = 200f;
+                optRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
+                    new Vector2(dim, dim),
+                    Config != null ? Config.Scale : 1.0f,
+                    Config != null ? Config.RenderScale : 1.0f,
+                    minRes: 512);
+            }
+            return new FlightNavballPipeline(_sphereMaterial, _renderTexture, _ballCamera, _isRenderDirty, optRes, this);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            // 若配置了 3D 离屏相机且检测到重绘脏标记，安全驱动离屏渲染
+            if (_ballCamera != null && _isRenderDirty && _renderTexture != null && _renderTexture.IsCreated())
+            {
+                context.Navball.RenderCamera();
+            }
+        }
 
         protected const int NavballOffscreenLayer = 31;
 

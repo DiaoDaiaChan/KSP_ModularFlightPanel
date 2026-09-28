@@ -26,6 +26,21 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            // 姿态球片元着色器管线保活与材质状态同步
+            if (_sphereMaterial != null && _displayImage != null && _displayImage.enabled)
+            {
+                Shader targetShader = AssetLoader.RaymarchShader ?? Shader.Find("ModularFlightPanel/NavballRaymarch") ?? Shader.Find("UI/Default");
+                if (_sphereMaterial.shader != targetShader && targetShader != null)
+                {
+                    _sphereMaterial.shader = targetShader;
+                }
+            }
+        }
+
         // ── 渲染显示组件 ──
         private RawImage _displayImage;
         private float _visualRadius;
