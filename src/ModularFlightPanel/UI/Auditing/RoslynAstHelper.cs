@@ -414,15 +414,17 @@ namespace ModularFlightPanel.UI.Auditing
         /// <summary>
         /// 判断方法是否为"public override + 单一指定类型参数"的契约实现形状
         /// </summary>
-        public static bool IsPublicOverrideWithSingleParam(MethodDeclarationSyntax method, string parameterTypeSimpleName)
+        public static bool IsPublicOverrideWithSingleParam(MethodDeclarationSyntax method, string parameterTypeSimpleName, SyntaxKind? expectedModifier = null)
         {
             if (method == null) return false;
             if (!HasModifier(method, SyntaxKind.PublicKeyword)) return false;
             if (!HasModifier(method, SyntaxKind.OverrideKeyword)) return false;
 
             var parameters = method.ParameterList.Parameters;
-            return parameters.Count == 1
-                && GetSimpleTypeName(parameters[0].Type) == parameterTypeSimpleName;
+            if (parameters.Count != 1) return false;
+            if (expectedModifier.HasValue && !parameters[0].Modifiers.Any(m => m.IsKind(expectedModifier.Value)))
+                return false;
+            return GetSimpleTypeName(parameters[0].Type) == parameterTypeSimpleName;
         }
 
         /// <summary>

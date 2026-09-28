@@ -56,6 +56,8 @@ namespace ModularFlightPanel.UI
         public PropertyDeclarationSyntax HeartBeatTierProperty;
         public MethodDeclarationSyntax ThemeMethod;
         public MethodDeclarationSyntax TelemetryMethod;
+        public MethodDeclarationSyntax DataHeartBeatMethod;
+        public MethodDeclarationSyntax UIDrawLoopMethod;
         public MethodDeclarationSyntax OnDestroyMethod;
 
         /// <summary>自身 → 直接基类 → … 的链（不含接口/未解析的外部基类）</summary>
@@ -206,6 +208,8 @@ namespace ModularFlightPanel.UI
                     node.HeartBeatTierProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.HeartBeatTierProperty);
                     node.ThemeMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.ThemeMethod);
                     node.TelemetryMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.TelemetryMethod);
+                    node.DataHeartBeatMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.DataHeartBeatMethod);
+                    node.UIDrawLoopMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.UIDrawLoopMethod);
                     node.OnDestroyMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.LifecycleMethod);
 
                     graph.All.Add(node);
@@ -1010,6 +1014,12 @@ namespace ModularFlightPanel.UI
             // ── SPEC-004 遥测契约（签名 + 缺失）──
             ScanTelemetryContract(node, report);
 
+            // ── SPEC-004C 数据心跳契约（必须在组件内显式重写 OnDataHeartBeat）──
+            ScanDataHeartBeatContract(node, report);
+
+            // ── SPEC-004D UI绘制循环契约（必须在组件内显式重写 OnUIDrawLoop）──
+            ScanUIDrawLoopContract(node, report);
+
             // ── SPEC-005 安全生命周期（仅约束组件类，Unity 助手类的消息式 OnDestroy 不在契约内）──
             ScanLifecycle(node, report);
 
@@ -1173,6 +1183,58 @@ namespace ModularFlightPanel.UI
                 Add(report, node.FileName, WidgetSpecRules.TelemetryContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
                     "未重写 " + WidgetSpecRules.TelemetryMethod + "(" + WidgetSpecRules.TelemetryParameterType + ") 遥测驱动接口（本类或继承链上的组件类必须提供合规实现）");
             }
+        }
+
+        private static void ScanDataHeartBeatContract(WidgetClassNode node, WidgetSourceAuditReport report)
+        {
+            if (node.IsAbstract || node.IsContractRoot || node.IsObsoleteShim) return;
+
+            if (node.DataHeartBeatMethod != null)
+            {
+                if (!RoslynAstHelper.IsPublicOverrideWithSingleParam(node.DataHeartBeatMethod, WidgetSpecRules.DataHeartBeatParameterType, SyntaxKind.InKeyword))
+                {
+                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", RoslynAstHelper.GetLine(node.DataHeartBeatMethod),
+                        "声明了 " + WidgetSpecRules.DataHeartBeatMethod + " 但签名不符合规范（应为 public override void "
+                        + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType + " context)）");
+                }
+                return;
+            }
+
+            Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
+                "未在组件内显式重写 " + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType
+                + ") 独立数据心跳接口。\n"
+                + "  【规范指引】必须在组件类内显式重写该方法，将物理量计算与 UI 绘制解耦：\n"
+                + "      public override void OnDataHeartBeat(in FlightHeartbeatContext context)\n"
+                + "      {\n"
+                + "          base.OnDataHeartBeat(in context);\n"
+                + "          // 在此执行遥测参数计算、多频分频 (context.Every) 或跨组件广播 (context.Publish)\n"
+                + "      }");
+        }
+
+        private static void ScanUIDrawLoopContract(WidgetClassNode node, WidgetSourceAuditReport report)
+        {
+            if (node.IsAbstract || node.IsContractRoot || node.IsObsoleteShim) return;
+
+            if (node.UIDrawLoopMethod != null)
+            {
+                if (!RoslynAstHelper.IsPublicOverrideWithSingleParam(node.UIDrawLoopMethod, WidgetSpecRules.UIDrawLoopParameterType, SyntaxKind.RefKeyword))
+                {
+                    Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", RoslynAstHelper.GetLine(node.UIDrawLoopMethod),
+                        "声明了 " + WidgetSpecRules.UIDrawLoopMethod + " 但签名不符合规范（应为 public override void "
+                        + WidgetSpecRules.UIDrawLoopMethod + "(ref " + WidgetSpecRules.UIDrawLoopParameterType + " context)）");
+                }
+                return;
+            }
+
+            Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
+                "未在组件内显式重写 " + WidgetSpecRules.UIDrawLoopMethod + "(ref " + WidgetSpecRules.UIDrawLoopParameterType
+                + ") 独立 UI 绘制循环接口。\n"
+                + "  【规范指引】必须在组件类内显式重写该方法，将视觉动效与 2D UI Shader 材质管线集中管理：\n"
+                + "      public override void OnUIDrawLoop(ref FlightUIDrawContext context)\n"
+                + "      {\n"
+                + "          base.OnUIDrawLoop(ref context);\n"
+                + "          // 在此挂载 2D UI 着色器材质 (context.ApplyUiMaterial) 或驱动视觉补间\n"
+                + "      }");
         }
 
         private static void ScanLifecycle(WidgetClassNode node, WidgetSourceAuditReport report)
@@ -1535,7 +1597,7 @@ namespace ModularFlightPanel.UI
 
             // ── 4. 跨文件间接派生：契约由继承链提供，不要求同类同文件 ──
             string midSrc = compliant.Replace("class FakeWidget", "class FakeMid");
-            string leafSrc = "namespace N { [FlightWidget(\"leaf\")] public class FakeLeaf : FakeMid { } }";
+            string leafSrc = "namespace N { [FlightWidget(\"leaf\")] public class FakeLeaf : FakeMid { public override void OnDataHeartBeat(in FlightHeartbeatContext context) { } public override void OnUIDrawLoop(ref FlightUIDrawContext context) { } } }";
             var indirectReport = Scan(new[] { MakeFile("FakeMid.cs", midSrc), MakeFile("FakeLeaf.cs", leafSrc) });
             check(indirectReport.ErrorCount == 0, "跨文件间接派生被误判 -> " + Describe(indirectReport));
             check(indirectReport.WidgetsScanned == 2, "跨文件间接派生的组件数统计不正确");
@@ -1544,9 +1606,18 @@ namespace ModularFlightPanel.UI
             string qualified = compliant
                 .Replace("ApplyTheme(ThemeConfig theme)", "ApplyTheme(ModularFlightPanel.UI.ThemeConfig theme)")
                 .Replace("OnUpdateTelemetry(IFlightTelemetry telemetry)", "OnUpdateTelemetry(ModularFlightPanel.Core.IFlightTelemetry telemetry)")
+                .Replace("OnDataHeartBeat(in FlightHeartbeatContext context)", "OnDataHeartBeat(in ModularFlightPanel.UI.FlightHeartbeatContext context)")
+                .Replace("OnUIDrawLoop(ref FlightUIDrawContext context)", "OnUIDrawLoop(ref ModularFlightPanel.UI.FlightUIDrawContext context)")
                 .Replace("override WidgetRefreshTier RefreshTier", "override ModularFlightPanel.UI.WidgetRefreshTier RefreshTier");
             var qualifiedReport = Scan(new[] { MakeFile("Qualified.cs", qualified) });
             check(qualifiedReport.ErrorCount == 0, "全限定类型名被误判 -> " + Describe(qualifiedReport));
+
+            // ── 5b. SPEC-004C / SPEC-004D 数据心跳与 UI 绘制循环契约显式声明测试 ──
+            var dhbMissing = Scan(new[] { MakeFile("DhbMissing.cs", compliant.Replace("        public override void OnDataHeartBeat(in FlightHeartbeatContext context) { }\n", string.Empty)) });
+            check(dhbMissing.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C 缺失 OnDataHeartBeat 未拦下");
+
+            var drawLoopMissing = Scan(new[] { MakeFile("DrawLoopMissing.cs", compliant.Replace("        public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }\n", string.Empty)) });
+            check(drawLoopMissing.CountByRule(WidgetSpecRules.UIDrawLoopContract) == 1, "SPEC-004D 缺失 OnUIDrawLoop 未拦下");
 
             // ── 6. SPEC-002 阶梯：缺失 / 强转 / 注释伪造 / 块状 get / 字段回填 / 满帧声明 ──
             var tierMissing = Scan(new[] { MakeFile("TierMissing.cs", compliant.Replace("        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n", string.Empty)) });
@@ -1925,6 +1996,8 @@ namespace ModularFlightPanel.UI
                  + "        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n"
                  + "        public override void ApplyTheme(ThemeConfig theme) { }\n"
                  + "        public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { }\n"
+                 + "        public override void OnDataHeartBeat(in FlightHeartbeatContext context) { }\n"
+                 + "        public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }\n"
                  + "        protected override void OnDestroy() { base.OnDestroy(); }\n"
                  + (string.IsNullOrEmpty(extra) ? string.Empty : extra + "\n")
                  + "    }\n"

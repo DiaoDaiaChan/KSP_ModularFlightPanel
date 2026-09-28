@@ -19,13 +19,15 @@ namespace ModularFlightPanel.UI
         public const string HeartBeatTier = "MFP-SPEC-002B";     // 心跳频率不得高于刷新率 (HeartBeatTier >= RefreshTier)
         public const string SemanticTheming = "MFP-SPEC-003";    // 必须实现 ApplyTheme(ThemeConfig)
         public const string TelemetryContract = "MFP-SPEC-004";  // 必须实现 OnUpdateTelemetry(IFlightTelemetry)
+        public const string DataHeartBeatContract = "MFP-SPEC-004C"; // 必须在组件内显式重写 OnDataHeartBeat(in FlightHeartbeatContext)
+        public const string UIDrawLoopContract = "MFP-SPEC-004D";    // 必须在组件内显式重写 OnUIDrawLoop(ref FlightUIDrawContext)
         public const string SafeLifecycle = "MFP-SPEC-005";      // OnDestroy 必须 override
         public const string NoHardcodedColors = "MFP-SPEC-006";  // 禁止颜色字面量（零容忍）
         public const string NoSceneQueries = "MFP-SPEC-007";     // 禁止组件内场景查询，统一走 ProbeManager
         public const string AutoRegistration = "MFP-SPEC-008";   // 必须声明 [FlightWidget] 自动注册与预设库元数据
         public const string TelemetryAssemblyWarning = "MFP-WARN-TELEM-ASSEMBLY"; // 微控件未支持标准化遥测装配警告
 
-        public const int RuleCount = 9;
+        public const int RuleCount = 11;
 
         /// <summary>审计内核自身问题（发现层失效 / 判定依据缺失）的统一报告名</summary>
         public const string KernelReportName = "AuditKernel";
@@ -74,6 +76,14 @@ namespace ModularFlightPanel.UI
         /// <summary>遥测契约方法名与唯一合法参数类型</summary>
         public const string TelemetryMethod = "OnUpdateTelemetry";
         public const string TelemetryParameterType = "IFlightTelemetry";
+
+        /// <summary>数据心跳方法名与参数类型</summary>
+        public const string DataHeartBeatMethod = "OnDataHeartBeat";
+        public const string DataHeartBeatParameterType = "FlightHeartbeatContext";
+
+        /// <summary>UI绘制循环方法名与参数类型</summary>
+        public const string UIDrawLoopMethod = "OnUIDrawLoop";
+        public const string UIDrawLoopParameterType = "FlightUIDrawContext";
 
         /// <summary>生命周期方法名（override 且必须回链 base）</summary>
         public const string LifecycleMethod = "OnDestroy";
