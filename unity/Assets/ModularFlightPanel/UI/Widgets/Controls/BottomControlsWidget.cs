@@ -34,6 +34,7 @@ namespace ModularFlightPanel.UI.Widgets
     {
         // ── 头部集中声明区：尺寸、刷新率与全部交互微控件 (一屏之内尽收眼底) ──
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
         public override Vector2 BaseSize => new Vector2(184f, 22f);
         protected override bool AutoCreateCardFrame => false; // 紧凑型浮动药丸底控栏，微控件自带胶囊插槽
 
@@ -95,9 +96,15 @@ namespace ModularFlightPanel.UI.Widgets
         private string _typeToken = "{FRAME:TYPE}";
         private string _frameToken = "{FRAME}";
         private string _framePrefix = "";
-        private string _lastSpeedModeName = null;
+        private SpeedDisplayMode _lastSpeedMode = (SpeedDisplayMode)(-1);
         private string _lastNavHookCategory = null;
         private string _lastNavHookTitle = null;
+        private bool _dataHasVessel = false;
+        private bool _lastRcs = false;
+        private bool _lastSas = false;
+        private string _lastRefCategory;
+        private string _lastRefTitle;
+        private bool _refFrameDirty = false;
 
         // ── 视图初始化钩子：绑定多语言悬浮提示 ──
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -108,32 +115,39 @@ namespace ModularFlightPanel.UI.Widgets
             _framePrefix = GetTemplateChannel("FRAME_PREFIX", "");
         }
 
-        // ── 遥测数据动态刷新：自包装属性写入自动触发内置脏检查 ──
-        public override void OnUpdateTelemetry(IFlightTelemetry telem)
+        // ── 航电数据心跳：中频 10Hz 解析与物理状态脏检查 ──
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telem == null) return;
+            base.OnDataHeartBeat(in context);
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
 
-            // 1. RCS / SAS 状态同步 (内置脏检查，仅物理状态改变时触发视觉重绘)
-            if (Rcs.IsActive != telem.IsRCSEnabled)
-                Rcs.IsActive = telem.IsRCSEnabled;
-            if (Sas.IsActive != telem.IsSASEnabled)
-                Sas.IsActive = telem.IsSASEnabled;
+            _dataHasVessel = true;
+            IFlightTelemetry telem = context.Telemetry;
 
-            // 2. 参考系模式状态同步 (支持 Principia 权威参考系与原生 KSP 模式)
-            string curSpeedMode = telem.SpeedModeName;
+            _lastRcs = telem.IsRCSEnabled;
+            _lastSas = telem.IsSASEnabled;
+
+            // 参考系模式状态同步：仅在速度模式或探针参考系变更时执行慢速重构，巡航静默 0 开销
+            SpeedDisplayMode curSpeedMode = telem.CurrentSpeedMode;
             var navHook = NavBallHookService.Provider;
             string curHookCat = navHook != null ? navHook.ReferenceFrameCategory : null;
             string curHookTitle = navHook != null ? navHook.FrameName : null;
 
-            bool frameDirty = curSpeedMode != _lastSpeedModeName 
+            bool frameDirty = curSpeedMode != _lastSpeedMode 
                 || curHookCat != _lastNavHookCategory 
                 || curHookTitle != _lastNavHookTitle;
 
             if (frameDirty)
             {
-                _lastSpeedModeName = curSpeedMode;
+                _lastSpeedMode = curSpeedMode;
                 _lastNavHookCategory = curHookCat;
                 _lastNavHookTitle = curHookTitle;
+
+                string curSpeedModeName = telem.SpeedModeName;
 
                 string category = TelemetryTokenEngine.Evaluate(_typeToken, telem);
                 if (string.IsNullOrEmpty(category) || category == "---")
@@ -144,7 +158,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     else
                     {
-                        category = !string.IsNullOrEmpty(curSpeedMode) ? curSpeedMode.ToUpperInvariant() : "ORBIT";
+                        category = !string.IsNullOrEmpty(curSpeedModeName) ? curSpeedModeName.ToUpperInvariant() : "ORBIT";
                     }
                 }
 
@@ -157,12 +171,31 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     else
                     {
-                        title = curSpeedMode ?? category;
+                        title = curSpeedModeName ?? category;
                     }
                 }
 
-                string displayTitle = !string.IsNullOrEmpty(_framePrefix) ? $"{_framePrefix}{title}" : title;
-                Ref.UpdateFrame(category, displayTitle, ThemeManager.Instance?.CurrentTheme);
+                _lastRefCategory = category;
+                _lastRefTitle = !string.IsNullOrEmpty(_framePrefix) ? $"{_framePrefix}{title}" : title;
+                _refFrameDirty = true;
+            }
+        }
+
+        // ── 航电视图渲染：按需应用视觉状态 ──
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
+
+            if (Rcs.IsActive != _lastRcs)
+                Rcs.IsActive = _lastRcs;
+            if (Sas.IsActive != _lastSas)
+                Sas.IsActive = _lastSas;
+
+            if (_refFrameDirty)
+            {
+                _refFrameDirty = false;
+                Ref.UpdateFrame(_lastRefCategory, _lastRefTitle, context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null));
             }
         }
 

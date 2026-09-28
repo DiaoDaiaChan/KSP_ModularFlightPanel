@@ -608,6 +608,47 @@ namespace ModularFlightPanel.Core
 
         #endregion
 
+        #region P5: Flight Transient Event Cache (飞行瞬态事件与关键轨道参数同帧快照)
+
+        public struct FlightEventSnapshot
+        {
+            public int Frame;
+            public float Timestamp;
+            public bool HasVessel;
+            public FlightTransientEventType TriggeredEvent;
+            public double EffectivePeriapsis;
+            public double EffectiveApoapsis;
+            public double AtmosphereCutoff;
+            public string CelestialBody;
+            public string FlightSituation;
+        }
+
+        private FlightEventSnapshot _cachedFlightEventSnapshot;
+
+        /// <summary>
+        /// 尝试从当前帧快照中获取已解算的飞行瞬态事件快照（消除多组件同帧重复判定）
+        /// </summary>
+        public bool TryGetCachedFlightEventSnapshot(int frame, out FlightEventSnapshot snapshot)
+        {
+            if (_cachedFlightEventSnapshot.Frame == frame && _cachedFlightEventSnapshot.Frame != 0)
+            {
+                snapshot = _cachedFlightEventSnapshot;
+                return true;
+            }
+            snapshot = default;
+            return false;
+        }
+
+        /// <summary>
+        /// 记录当前帧飞行瞬态事件与轨道边界快照
+        /// </summary>
+        public void SetCachedFlightEventSnapshot(ref FlightEventSnapshot snapshot)
+        {
+            _cachedFlightEventSnapshot = snapshot;
+        }
+
+        #endregion
+
         #region Cache Lifecycle Management
 
         /// <summary>
@@ -622,6 +663,7 @@ namespace ModularFlightPanel.Core
             _probeNumericCache.Clear();
             _probeStringCache.Clear();
             _lastProbeFrame = -1;
+            _cachedFlightEventSnapshot = default;
             TotalRequests = 0;
             CacheHits = 0;
         }

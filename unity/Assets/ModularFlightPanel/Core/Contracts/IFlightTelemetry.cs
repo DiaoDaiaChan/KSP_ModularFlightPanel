@@ -45,6 +45,7 @@ namespace ModularFlightPanel.Core
         float Roll { get; }
 
         // 速度与马赫数
+        SpeedDisplayMode CurrentSpeedMode { get; }
         string SpeedModeName { get; }
         double CurrentSpeed { get; }
         double SurfaceSpeed { get; }

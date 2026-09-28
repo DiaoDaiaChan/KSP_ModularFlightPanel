@@ -158,6 +158,15 @@ namespace ModularFlightPanel.Core
         public bool IsRCSEnabled { get; set; } = true;
         public bool IsSASEnabled { get; set; } = true;
         public FlightSASMode CurrentSASMode { get; set; } = FlightSASMode.StabilityAssist;
+        public SpeedDisplayMode CurrentSpeedMode
+        {
+            get
+            {
+                if (SpeedModeName == "TARGET") return SpeedDisplayMode.Target;
+                if (SpeedModeName == "ORBIT") return SpeedDisplayMode.Orbit;
+                return SpeedDisplayMode.Surface;
+            }
+        }
         public string SpeedModeName { get; set; } = "SURFACE";
 
         // 三轴姿态操纵量与配平 (-1.0 ~ +1.0)

@@ -104,6 +104,9 @@ namespace ModularFlightPanel.UI
                 else
                     _nonCriticalRegistrations.Add(reg);
             }
+
+            _criticalRegistrations.Sort((a, b) => (a.Widget?.Config?.DrawOrder ?? 0).CompareTo(b.Widget?.Config?.DrawOrder ?? 0));
+            _nonCriticalRegistrations.Sort((a, b) => (a.Widget?.Config?.DrawOrder ?? 0).CompareTo(b.Widget?.Config?.DrawOrder ?? 0));
         }
 
         // 全局配置与状态
@@ -134,6 +137,12 @@ namespace ModularFlightPanel.UI
         public float MaxNonCriticalBudgetMs { get; set; } = 0.08f;  // 阶段 2 非 Critical 组件独立微秒切片预算 (80微秒)，与姿态球彻底解耦，杜绝调度饥饿
         private int _sliceCursor = 0;                                // 非 Critical 组件公平轮询切片游标
 
+        public int SliceCursor => _sliceCursor;
+        public int CriticalWidgetCount => _criticalRegistrations.Count;
+        public int NonCriticalWidgetCount => _nonCriticalRegistrations.Count;
+        public IReadOnlyList<WidgetRegistration> CriticalRegistrations => _criticalRegistrations;
+        public IReadOnlyList<WidgetRegistration> NonCriticalRegistrations => _nonCriticalRegistrations;
+
         public event Action<int> OnRenderResolutionChanged;
         public event Action<float> OnGlobalRenderScaleChanged;
         public event Action OnRenderSettingChanged;
@@ -155,6 +164,22 @@ namespace ModularFlightPanel.UI
 
         private WidgetRenderManager()
         {
+            WidgetLayerManager.OnLayersChanged += SortRegistrationsByDrawOrder;
+        }
+
+        /// <summary>
+        /// 严格按照 UGUI 图层与 SiblingIndex 绘制顺序 (DrawOrder) 升序排列组件注册表与切片桶，
+        /// 确保切片调度与时序执行完全与图层绘制顺序对齐。
+        /// </summary>
+        public void SortRegistrationsByDrawOrder()
+        {
+            _registrations.Sort((a, b) =>
+            {
+                int orderA = a.Widget?.Config?.DrawOrder ?? 0;
+                int orderB = b.Widget?.Config?.DrawOrder ?? 0;
+                return orderA.CompareTo(orderB);
+            });
+            RebuildTierBuckets();
         }
 
         #region Registration & Lifecycle Management
@@ -180,7 +205,7 @@ namespace ModularFlightPanel.UI
             };
             _registrations.Add(reg);
             _widgetLookup[widget] = reg;
-            RebuildTierBuckets();
+            SortRegistrationsByDrawOrder();
         }
 
         public void UnregisterWidget(BaseFlightWidget widget)
@@ -397,7 +422,7 @@ namespace ModularFlightPanel.UI
                         if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
                         reg.LastUpdateTime = unscaledTime;
-                        ExecuteWidgetUpdate(reg, telem, profileWidgets);
+                        ExecuteWidgetUpdate(reg, telem, profileWidgets, wasSliced: false);
                     }
                     MFPProfiler.ActiveWidgetCount = activeCount;
                     return;
@@ -405,7 +430,7 @@ namespace ModularFlightPanel.UI
 
                 // -------------------------------------------------------------
                 // 阶段 1：Critical 级核心姿态航电组件无条件保活直通 (姿态球/航向指示弧)
-                // 仅遍历专用 Critical 桶，彻底消除全量线性扫描空转
+                // 仅遍历专用 Critical 桶，按 DrawOrder 升序严格执行
                 // -------------------------------------------------------------
                 for (int i = 0; i < critCount; i++)
                 {
@@ -419,12 +444,12 @@ namespace ModularFlightPanel.UI
                     if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
                     reg.LastUpdateTime = unscaledTime;
-                    ExecuteWidgetUpdate(reg, telem, profileWidgets);
+                    ExecuteWidgetUpdate(reg, telem, profileWidgets, wasSliced: false);
                 }
 
                 // -------------------------------------------------------------
                 // 阶段 2：Standard / Relaxed / UltraLow 组件公平轮询切片调度 (Round-Robin Slicing)
-                // 仅遍历专用 NonCritical 桶，彻底消除游标跳空与无意义跳步
+                // 仅遍历专用 NonCritical 桶，按 DrawOrder 升序严格执行切片调度
                 // 采用独立计时管道与姿态球耗时解耦，每 3 个组件采样一次时间戳，彻底消除饥饿与高频计时抖动
                 // -------------------------------------------------------------
                 if (nonCritCount > 0)
@@ -446,7 +471,7 @@ namespace ModularFlightPanel.UI
                         if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
                         reg.LastUpdateTime = unscaledTime;
-                        ExecuteWidgetUpdate(reg, telem, profileWidgets);
+                        ExecuteWidgetUpdate(reg, telem, profileWidgets, wasSliced: true);
                         scheduledNonCrit++;
 
                         // 独立微秒预算检查：每处理 3 个组件检查一次，若达到非 Critical 专属预算，记录游标并平滑让出至下一帧
@@ -475,13 +500,14 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        private void ExecuteWidgetUpdate(WidgetRegistration reg, IFlightTelemetry telem, bool profileWidgets)
+        private void ExecuteWidgetUpdate(WidgetRegistration reg, IFlightTelemetry telem, bool profileWidgets, bool wasSliced = false)
         {
             if (profileWidgets)
             {
                 try
                 {
-                    MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId, reg.Widget.DisplayName);
+                    int drawOrder = reg.Widget?.Config?.DrawOrder ?? 0;
+                    MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId, reg.Widget.DisplayName, drawOrder, reg.Tier, wasSliced);
                     reg.Widget.MasterUpdateTelemetry(telem);
                 }
                 catch (Exception ex)

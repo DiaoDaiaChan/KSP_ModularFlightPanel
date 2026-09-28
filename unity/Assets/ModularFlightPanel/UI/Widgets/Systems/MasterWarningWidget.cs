@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
@@ -78,22 +79,23 @@ namespace ModularFlightPanel.UI.Widgets
 
         public enum BannerEventType
         {
-            Separation,         // 分级分离 / 脱扣
-            EngineStart,        // 引擎启动 / 点火
-            MECO,               // 主发关机 / 熄火
-            ManeuverApproach,   // 接近机动节点 (T-60s)
-            ManeuverBurn,       // 机动点火执行
-            OrbitAchieved,      // 入轨圆化完成 (Stable Orbit)
-            Deorbit,            // 飞船离轨制动 / 进入再入走廊
-            AtmosphereEntry,    // 再入/进入大气层 (Entry Interface)
-            Blackout,           // 再入等离子体黑障
-            Escape,             // 逃逸轨道建立 (双曲线逃逸)
-            SoiTransition,      // 穿越引力范围 (SOI 切换)
-            SuicideBurn,        // 动力减速着陆点火
-            ApoapsisPass,       // 通过远拱点
-            PeriapsisPass,      // 通过近拱点
-            DockingMode,        // 进入对接模式
-            Touchdown           // 着陆接地成功
+            None = FlightTransientEventType.None,
+            Separation = FlightTransientEventType.Separation,         // 分级分离 / 脱扣
+            EngineStart = FlightTransientEventType.EngineStart,       // 引擎启动 / 点火
+            MECO = FlightTransientEventType.MECO,                     // 主发关机 / 熄火
+            ManeuverApproach = FlightTransientEventType.ManeuverApproach, // 接近机动节点 (T-60s)
+            ManeuverBurn = FlightTransientEventType.ManeuverBurn,     // 机动点火执行
+            OrbitAchieved = FlightTransientEventType.OrbitAchieved,   // 入轨圆化完成 (Stable Orbit)
+            Deorbit = FlightTransientEventType.Deorbit,               // 飞船离轨制动 / 进入再入走廊
+            AtmosphereEntry = FlightTransientEventType.AtmosphereEntry, // 再入/进入大气层 (Entry Interface)
+            Blackout = FlightTransientEventType.Blackout,             // 再入等离子体黑障
+            Escape = FlightTransientEventType.Escape,                 // 逃逸轨道建立 (双曲线逃逸)
+            SoiTransition = FlightTransientEventType.SoiTransition,   // 穿越引力范围 (SOI 切换)
+            SuicideBurn = FlightTransientEventType.SuicideBurn,       // 动力减速着陆点火
+            ApoapsisPass = FlightTransientEventType.ApoapsisPass,     // 通过远拱点
+            PeriapsisPass = FlightTransientEventType.PeriapsisPass,   // 通过近拱点
+            DockingMode = FlightTransientEventType.DockingMode,       // 进入对接模式
+            Touchdown = FlightTransientEventType.Touchdown            // 着陆接地成功
         }
 
         private enum EventColorRole
@@ -162,32 +164,10 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _bannerRightIcon;
         private Text _bannerSub;
 
-        // 上一帧遥测缓存 (用于瞬态边缘脉冲触发)
-        private int _lastStage = -1;
-        private int _lastActiveEngines = -1;
-        private float _lastThrottle = -1f;
-        private bool _lastIsStageSeparating = false;
-        private bool _lastIsEngineIgniting = false;
-        private double _lastTimeToNode = -1.0;
-        private bool _lastManeuverBurnTriggered = false;
-        private double _lastPeriapsis = -9999999.0;
-        private double _lastAltitude = -1.0;
-        private double _lastTimeToAp = -1.0;
-        private double _lastTimeToPe = -1.0;
-        private bool _lastIsDockingMode = false;
-        private bool _lastIsLanded = true;
-        private double _lastAltitudeAGL = 0.0;
-        private double _lastEffectivePe = -9999999.0;
-        private double _lastEffectiveAp = -9999999.0;
-        private string _lastCelestialBody = null;
-        private string _lastFlightSituation = null;
-
-        // 高性能遥测与样式脏标记缓存
+        // 高性能遥测与样式脏标记缓存 (接入 FlightTransientEventDetector 与 CacheManager)
         private double _cachedAtmoCutoff = 70000.0;
         private double _cachedEffectivePe = 0.0;
         private double _cachedEffectiveAp = 0.0;
-        private string _cachedAtmoBody = null;
-        private double _cachedAtmoVal = 70000.0;
         private bool _cautWasDeadFront = false;
         private bool _warnWasDeadFront = false;
         private bool _cellsStyleNeedsUpdate = true;
@@ -195,12 +175,21 @@ namespace ModularFlightPanel.UI.Widgets
         private Color _lastNominalPhaseColor = Color.clear;
         private double _lastRenderedAp = -9999999.0;
         private double _lastRenderedPe = -9999999.0;
+        private double _lastRenderedDv = -999.0;
         private float _lastRenderedMach = -1f;
         private float _lastRenderedVsi = -9999f;
         private string _cachedApSub;
         private string _cachedPeSub;
+        private string _cachedDvSub;
         private string _cachedMachSub;
         private string _cachedVsiSub;
+        private string _lastRenderedNominalTitle;
+        private string _lastRenderedNominalSub;
+        private string _lastRenderedNominalIcon;
+        private string _lastRenderedEventTitle;
+        private string _lastRenderedEventSub;
+        private string _lastRenderedEventLeftIcon;
+        private string _lastRenderedEventRightIcon;
 
         // 左舱：Caution (黄色注意) 视图组件
         private GameObject _cautCell;
@@ -855,6 +844,12 @@ namespace ModularFlightPanel.UI.Widgets
             _bannerQueue.Insert(insertIdx, item);
         }
 
+        public void TriggerBanner(FlightTransientEventType eventType, bool immediateHolding = false)
+        {
+            if (eventType == FlightTransientEventType.None) return;
+            TriggerBanner((BannerEventType)eventType, immediateHolding);
+        }
+
         public void TriggerBanner(BannerEventType eventType, bool immediateHolding = false)
         {
             float now = Time.unscaledTime;
@@ -947,29 +942,26 @@ namespace ModularFlightPanel.UI.Widgets
             IFlightTelemetry telemetry = context.Telemetry;
             float dt = context.DeltaTime;
 
-            // 判定降频与瞬态事件侦测 (10Hz 判定节拍器，分级/引擎状态变化时立即触发)
-            bool stateChanged = telemetry.CurrentStage != _lastStage ||
-                                telemetry.ActiveEngines != _lastActiveEngines ||
-                                telemetry.IsStageSeparating != _lastIsStageSeparating ||
-                                telemetry.IsEngineIgniting != _lastIsEngineIgniting ||
-                                (telemetry.Throttle > 0.05f != _lastThrottle > 0.05f) ||
-                                (telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode <= 60.0 && (_lastTimeToNode > 60.0 || _lastTimeToNode < 0.0));
+            // 1. 标准化接入独立飞行瞬态事件检测器与 CacheManager 统一快送
+            float now = Time.unscaledTime;
+            int frame = Time.frameCount;
+            var snapshot = FlightTransientEventDetector.Instance.DetectEvents(telemetry, now, frame);
+            if (snapshot.TriggeredEvent != FlightTransientEventType.None)
+            {
+                TriggerBanner(snapshot.TriggeredEvent);
+            }
 
+            _cachedAtmoCutoff = snapshot.AtmosphereCutoff;
+            _cachedEffectivePe = snapshot.EffectivePeriapsis;
+            _cachedEffectiveAp = snapshot.EffectiveApoapsis;
+
+            // 2. 持续评估当前所有活跃警报 (10Hz 判定节拍，发生瞬态事件或首次评估时立即触发)
             _alertEvalTimer += dt;
-            if (_alertEvalTimer >= ALERT_EVAL_INTERVAL || _forceImmediateAlertEval || stateChanged)
+            if (_alertEvalTimer >= ALERT_EVAL_INTERVAL || _forceImmediateAlertEval || snapshot.TriggeredEvent != FlightTransientEventType.None)
             {
                 _alertEvalTimer = 0f;
                 _forceImmediateAlertEval = false;
 
-                // 预先集中求解高精度轨道动力学与大气边界参数，单次解算供事件侦测与巡航工况复用
-                _cachedAtmoCutoff = GetAtmosphereCutoff(telemetry);
-                _cachedEffectivePe = GetEffectivePeriapsis(telemetry);
-                _cachedEffectiveAp = GetEffectiveApoapsis(telemetry);
-
-                // 1. 侦测分级分离、引擎点火与机动巡航等全景瞬态事件
-                DetectTransientEvents(telemetry);
-
-                // 2. 持续评估当前所有活跃警报
                 EvaluateTelemetryAlerts(telemetry, dt);
             }
 
@@ -1050,240 +1042,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private double GetEffectivePeriapsis(IFlightTelemetry telem)
-        {
-            if (ExternalProbeRegistry.NumericResolver != null)
-            {
-                double pPe = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "AnalysisPeriapsis");
-                if (!double.IsNaN(pPe) && pPe > -9000000.0) return pPe;
-
-                double pPe2 = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "PERIAPSIS");
-                if (!double.IsNaN(pPe2) && pPe2 > -9000000.0) return pPe2;
-            }
-            return telem.Periapsis;
-        }
-
-        private double GetEffectiveApoapsis(IFlightTelemetry telem)
-        {
-            if (ExternalProbeRegistry.NumericResolver != null)
-            {
-                double pAp = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "AnalysisApoapsis");
-                if (!double.IsNaN(pAp) && pAp > -9000000.0) return pAp;
-
-                double pAp2 = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "APOAPSIS");
-                if (!double.IsNaN(pAp2) && pAp2 > -9000000.0) return pAp2;
-            }
-            return telem.Apoapsis;
-        }
-
-        private double GetAtmosphereCutoff(IFlightTelemetry telem)
-        {
-            if (telem == null) return 70000.0;
-            string curBody = telem.CelestialBodyName;
-            if (curBody != null && curBody == _cachedAtmoBody) return _cachedAtmoVal;
-
-            _cachedAtmoBody = curBody;
-            // 1. 优先从外部探针注册中心检索物理大气边界 (支持 FAR / Principia / 环境物理模组注册)
-            if (ExternalProbeRegistry.NumericResolver != null)
-            {
-                double probeDepth = ExternalProbeRegistry.ResolveNumeric("ENV", "AtmosphereDepth");
-                if (!double.IsNaN(probeDepth) && probeDepth >= 0.0)
-                {
-                    _cachedAtmoVal = probeDepth;
-                    return probeDepth;
-                }
-            }
-
-            // 2. 契约通用化获取当前天体物理真实大气层高度 (0 硬编码，完美适配原版、RSS/RO、Kopernicus、Principia 及任何自定义星球)
-            if (telem.AtmosphereDepth > 0.0)
-            {
-                _cachedAtmoVal = telem.AtmosphereDepth;
-                return _cachedAtmoVal;
-            }
-
-            // 3. 若当前天体为无大气真空天体 (如月球、水星、各类无气小行星)
-            if (!telem.HasAtmosphere)
-            {
-                _cachedAtmoVal = 0.0;
-                return 0.0;
-            }
-
-            // 4. 通用物理防御兜底：若存在宏观气压读数则按标准大气厚度兜底
-            if (telem.AtmosphericPressure > 0.0001)
-            {
-                _cachedAtmoVal = 70000.0;
-                return 70000.0;
-            }
-
-            _cachedAtmoVal = 0.0;
-            return 0.0;
-        }
-
         private static string FormatKm(double meters)
         {
             if (double.IsNaN(meters)) return "--";
             double km = meters / 1000.0;
             if (Math.Abs(km) >= 1000.0) return $"{km / 1000.0:F1}M";
             return $"{km:F0}k";
-        }
-
-        private void DetectTransientEvents(IFlightTelemetry telem)
-        {
-            // 解析高精度轨道动力学参数 (直接复用 OnUpdateTelemetry 统一求解的缓存数据，杜绝重复计算)
-            double atmoCutoff = _cachedAtmoCutoff;
-            double effectivePe = _cachedEffectivePe;
-            double effectiveAp = _cachedEffectiveAp;
-
-            // ── A. 分级分离判定 ──
-            if (_lastStage != -1)
-            {
-                bool sepSignal = telem.IsStageSeparating && !_lastIsStageSeparating;
-                bool stageDropped = telem.CurrentStage < _lastStage;
-                if (sepSignal || stageDropped)
-                {
-                    TriggerBanner(BannerEventType.Separation);
-                }
-            }
-
-            // ── B. 引擎点火启动判定 ──
-            if (_lastActiveEngines != -1)
-            {
-                bool ignSignal = telem.IsEngineIgniting && !_lastIsEngineIgniting;
-                bool engStarted = (_lastActiveEngines == 0 && telem.ActiveEngines > 0 && telem.Throttle > 0.02f) ||
-                                  (_lastThrottle <= 0.001f && telem.Throttle > 0.05f && telem.ActiveEngines > 0);
-                if (ignSignal || engStarted)
-                {
-                    TriggerBanner(BannerEventType.EngineStart);
-                }
-
-                // ── C. 主发关机 MECO 判定 ──
-                bool mecoCutoff = (_lastActiveEngines > 0 && telem.ActiveEngines == 0 &&
-                                   (telem.FlightSituation == "FLYING" || telem.FlightSituation == "SUB_ORBITAL" || telem.FlightSituation == "ORBITING"));
-                bool throttleCut = (_lastThrottle > 0.25f && telem.Throttle <= 0.001f && telem.ActiveEngines > 0 &&
-                                    telem.VerticalSpeed > 10.0 && telem.FlightSituation != "LANDED" && telem.FlightSituation != "PRELAUNCH");
-                if (mecoCutoff || throttleCut)
-                {
-                    TriggerBanner(BannerEventType.MECO);
-                }
-            }
-
-            // ── D. 接近机动节点 (T-60s) 判定 ──
-            if (telem.HasManeuverNode && telem.ManeuverTimeToNode > 0.0 && telem.ManeuverTimeToNode <= 60.0)
-            {
-                if (_lastTimeToNode > 60.0 || _lastTimeToNode < 0.0)
-                {
-                    TriggerBanner(BannerEventType.ManeuverApproach);
-                }
-            }
-
-            // ── E. 机动点火执行 BURN 判定 ──
-            if (telem.HasManeuverNode && telem.ManeuverTimeToNode <= 2.0 && telem.Throttle > 0.05f)
-            {
-                if (!_lastManeuverBurnTriggered)
-                {
-                    _lastManeuverBurnTriggered = true;
-                    TriggerBanner(BannerEventType.ManeuverBurn);
-                }
-            }
-            else if (!telem.HasManeuverNode || telem.Throttle <= 0.01f)
-            {
-                _lastManeuverBurnTriggered = false;
-            }
-
-            // ── F. 入轨圆化完成 ORBIT STABLE 判定 ──
-            if (_lastEffectivePe > -999999.0 && _lastEffectivePe < atmoCutoff && effectivePe >= atmoCutoff && effectiveAp >= atmoCutoff &&
-                telem.FlightSituation != "LANDED" && telem.FlightSituation != "PRELAUNCH")
-            {
-                TriggerBanner(BannerEventType.OrbitAchieved);
-            }
-
-            // ── G. 飞船离轨制动 DEORBIT 判定 ──
-            // 飞船在闭合轨道 (原先 Pe >= atmoCutoff && Ap >= atmoCutoff)，点火或机动使近拱点降至大气层内 (Pe < atmoCutoff)
-            if (_lastEffectivePe >= atmoCutoff && _lastEffectiveAp >= atmoCutoff && effectivePe < atmoCutoff && effectivePe > -9000000.0 &&
-                telem.FlightSituation != "LANDED" && telem.FlightSituation != "PRELAUNCH")
-            {
-                TriggerBanner(BannerEventType.Deorbit);
-            }
-
-            // ── H. 逃逸轨道建立 ESCAPE 判定 (双曲线脱离) ──
-            bool isEscapingNow = (telem.FlightSituation == "ESCAPING") || (effectiveAp < 0 && effectiveAp > -9000000.0);
-            bool wasEscapingBefore = (_lastFlightSituation == "ESCAPING") || (_lastEffectiveAp < 0 && _lastEffectiveAp > -9000000.0);
-            if (!wasEscapingBefore && isEscapingNow && telem.FlightSituation != "LANDED" && telem.FlightSituation != "PRELAUNCH")
-            {
-                TriggerBanner(BannerEventType.Escape);
-            }
-
-            // ── I. 穿越天体引力范围 (SOI Transition) 判定 ──
-            if (!string.IsNullOrEmpty(_lastCelestialBody) && !string.IsNullOrEmpty(telem.CelestialBodyName) &&
-                !_lastCelestialBody.Equals(telem.CelestialBodyName, StringComparison.OrdinalIgnoreCase))
-            {
-                TriggerBanner(BannerEventType.SoiTransition);
-            }
-
-            // ── J. 再入/进入大气层 ATMOSPHERE ENTRY 判定 ──
-            if (atmoCutoff > 0.0 && _lastAltitude >= atmoCutoff && telem.AltitudeASL < atmoCutoff && telem.VerticalSpeed < -5.0 &&
-                telem.FlightSituation != "LANDED" && telem.FlightSituation != "PRELAUNCH")
-            {
-                TriggerBanner(BannerEventType.AtmosphereEntry);
-            }
-
-            // ── K. 再入等离子体黑障 (REENTRY BLACKOUT) 判定 ──
-            if (atmoCutoff > 0.0 && telem.AltitudeASL < atmoCutoff && telem.AltitudeASL > atmoCutoff * 0.35 && telem.Mach > 8.0 && telem.DynamicPressure > 12.0)
-            {
-                TriggerBanner(BannerEventType.Blackout);
-            }
-
-            // ── L. 动力减速着陆点火 (SUICIDE / LANDING BURN) 判定 ──
-            if (telem.AltitudeAGL < 2000.0 && telem.AltitudeAGL > 15.0 && telem.VerticalSpeed < -15.0 && telem.Throttle > 0.40f && telem.ActiveEngines > 0)
-            {
-                TriggerBanner(BannerEventType.SuicideBurn);
-            }
-
-            // ── M. 拱点穿越判定 (远拱点 Ap / 近拱点 Pe) ──
-            if (effectivePe >= atmoCutoff)
-            {
-                if (_lastTimeToAp > 1.0 && telem.TimeToAp <= 1.0 && telem.TimeToAp >= 0.0)
-                {
-                    TriggerBanner(BannerEventType.ApoapsisPass);
-                }
-                if (_lastTimeToPe > 1.0 && telem.TimeToPe <= 1.0 && telem.TimeToPe >= 0.0)
-                {
-                    TriggerBanner(BannerEventType.PeriapsisPass);
-                }
-            }
-
-            // ── N. 对接模式进入判定 ──
-            if (telem.IsDockingMode && !_lastIsDockingMode)
-            {
-                TriggerBanner(BannerEventType.DockingMode);
-            }
-
-            // ── O. 着陆接地确认 TOUCHDOWN 判定 ──
-            bool isLandedNow = (telem.FlightSituation == "LANDED" || telem.FlightSituation == "SPLASHED" || telem.IsTouchdownAlert);
-            if (!_lastIsLanded && isLandedNow && _lastAltitudeAGL > 2.0)
-            {
-                TriggerBanner(BannerEventType.Touchdown);
-            }
-
-            // 更新历史遥测缓存
-            _lastStage = telem.CurrentStage;
-            _lastActiveEngines = telem.ActiveEngines;
-            _lastThrottle = telem.Throttle;
-            _lastIsStageSeparating = telem.IsStageSeparating;
-            _lastIsEngineIgniting = telem.IsEngineIgniting;
-            _lastTimeToNode = telem.HasManeuverNode ? telem.ManeuverTimeToNode : -1.0;
-            _lastPeriapsis = telem.Periapsis;
-            _lastAltitude = telem.AltitudeASL;
-            _lastTimeToAp = telem.TimeToAp;
-            _lastTimeToPe = telem.TimeToPe;
-            _lastIsDockingMode = telem.IsDockingMode;
-            _lastIsLanded = isLandedNow;
-            _lastAltitudeAGL = telem.AltitudeAGL;
-            _lastEffectivePe = effectivePe;
-            _lastEffectiveAp = effectiveAp;
-            _lastCelestialBody = telem.CelestialBodyName;
-            _lastFlightSituation = telem.FlightSituation;
-            _lastAltitudeAGL = telem.AltitudeAGL;
         }
 
         private void UpdateBannerAnimation(float dt, ThemeConfig theme)
@@ -1341,10 +1105,26 @@ namespace ModularFlightPanel.UI.Widgets
                     if (_bannerCell != null && !_bannerCell.activeSelf) _bannerCell.SetActive(true);
                 }
 
-                SetTextIfChanged(_bannerTitle, _currentEvent.Title);
-                SetTextIfChanged(_bannerSub, _currentEvent.Sub);
-                SetTextIfChanged(_bannerLeftIcon, _currentEvent.LeftIcon);
-                SetTextIfChanged(_bannerRightIcon, _currentEvent.RightIcon);
+                if (!object.ReferenceEquals(_lastRenderedEventTitle, _currentEvent.Title) && _lastRenderedEventTitle != _currentEvent.Title)
+                {
+                    _lastRenderedEventTitle = _currentEvent.Title;
+                    if (_bannerTitle != null) _bannerTitle.text = _currentEvent.Title;
+                }
+                if (!object.ReferenceEquals(_lastRenderedEventSub, _currentEvent.Sub) && _lastRenderedEventSub != _currentEvent.Sub)
+                {
+                    _lastRenderedEventSub = _currentEvent.Sub;
+                    if (_bannerSub != null) _bannerSub.text = _currentEvent.Sub;
+                }
+                if (!object.ReferenceEquals(_lastRenderedEventLeftIcon, _currentEvent.LeftIcon) && _lastRenderedEventLeftIcon != _currentEvent.LeftIcon)
+                {
+                    _lastRenderedEventLeftIcon = _currentEvent.LeftIcon;
+                    if (_bannerLeftIcon != null) _bannerLeftIcon.text = _currentEvent.LeftIcon;
+                }
+                if (!object.ReferenceEquals(_lastRenderedEventRightIcon, _currentEvent.RightIcon) && _lastRenderedEventRightIcon != _currentEvent.RightIcon)
+                {
+                    _lastRenderedEventRightIcon = _currentEvent.RightIcon;
+                    if (_bannerRightIcon != null) _bannerRightIcon.text = _currentEvent.RightIcon;
+                }
 
                 // 航电高光微脉冲 (呼吸感)
                 float pulse = 0.82f + 0.18f * Mathf.Sin(_bannerTimer * 12f);
@@ -1381,10 +1161,26 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _bannerTimer += dt;
 
-                SetTextIfChanged(_bannerTitle, _currentEvent.Title);
-                SetTextIfChanged(_bannerSub, _currentEvent.Sub);
-                SetTextIfChanged(_bannerLeftIcon, _currentEvent.LeftIcon);
-                SetTextIfChanged(_bannerRightIcon, _currentEvent.RightIcon);
+                if (!object.ReferenceEquals(_lastRenderedEventTitle, _currentEvent.Title) && _lastRenderedEventTitle != _currentEvent.Title)
+                {
+                    _lastRenderedEventTitle = _currentEvent.Title;
+                    if (_bannerTitle != null) _bannerTitle.text = _currentEvent.Title;
+                }
+                if (!object.ReferenceEquals(_lastRenderedEventSub, _currentEvent.Sub) && _lastRenderedEventSub != _currentEvent.Sub)
+                {
+                    _lastRenderedEventSub = _currentEvent.Sub;
+                    if (_bannerSub != null) _bannerSub.text = _currentEvent.Sub;
+                }
+                if (!object.ReferenceEquals(_lastRenderedEventLeftIcon, _currentEvent.LeftIcon) && _lastRenderedEventLeftIcon != _currentEvent.LeftIcon)
+                {
+                    _lastRenderedEventLeftIcon = _currentEvent.LeftIcon;
+                    if (_bannerLeftIcon != null) _bannerLeftIcon.text = _currentEvent.LeftIcon;
+                }
+                if (!object.ReferenceEquals(_lastRenderedEventRightIcon, _currentEvent.RightIcon) && _lastRenderedEventRightIcon != _currentEvent.RightIcon)
+                {
+                    _lastRenderedEventRightIcon = _currentEvent.RightIcon;
+                    if (_bannerRightIcon != null) _bannerRightIcon.text = _currentEvent.RightIcon;
+                }
 
                 Color switchColor = ResolveEventColor(_currentEvent.ColorRole, theme);
                 if (_bannerOutline != null) SetOutlineColorIfChanged(_bannerOutline, switchColor);
@@ -1419,6 +1215,10 @@ namespace ModularFlightPanel.UI.Widgets
 
                         _bannerState = BannerDisplayState.Normal;
                         _bannerTimer = 0f;
+                        _lastRenderedNominalTitle = null;
+                        _lastRenderedNominalSub = null;
+                        _lastRenderedNominalIcon = null;
+                        _nominalStyleNeedsUpdate = true;
                         RenderVisualCells(theme);
                     }
                 }
@@ -1429,6 +1229,10 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _bannerState = BannerDisplayState.Normal;
                         _bannerTimer = 0f;
+                        _lastRenderedNominalTitle = null;
+                        _lastRenderedNominalSub = null;
+                        _lastRenderedNominalIcon = null;
+                        _nominalStyleNeedsUpdate = true;
                     }
                 }
             }
@@ -1450,7 +1254,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (telem.HasManeuverNode)
             {
                 title = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命");
-                sub = $"Δv {telem.ManeuverDeltaV:F0}";
+                double dv = telem.ManeuverDeltaV;
+                if (Math.Abs(dv - _lastRenderedDv) > 0.5)
+                {
+                    _lastRenderedDv = dv;
+                    _cachedDvSub = $"Δv {dv:F0}";
+                }
+                sub = _cachedDvSub ?? ($"Δv {dv:F0}");
                 icon = "◆";
                 role = EventColorRole.AccentPrimary;
             }
@@ -1553,10 +1363,22 @@ namespace ModularFlightPanel.UI.Widgets
 
             Color phaseColor = ResolveEventColor(_dataNominalRole, theme);
 
-            SetTextIfChanged(_bannerTitle, _dataNominalTitle);
-            SetTextIfChanged(_bannerSub, _dataNominalSub);
-            SetTextIfChanged(_bannerLeftIcon, _dataNominalIcon);
-            SetTextIfChanged(_bannerRightIcon, _dataNominalIcon);
+            if (!object.ReferenceEquals(_lastRenderedNominalTitle, _dataNominalTitle) && _lastRenderedNominalTitle != _dataNominalTitle)
+            {
+                _lastRenderedNominalTitle = _dataNominalTitle;
+                if (_bannerTitle != null) _bannerTitle.text = _dataNominalTitle;
+            }
+            if (!object.ReferenceEquals(_lastRenderedNominalSub, _dataNominalSub) && _lastRenderedNominalSub != _dataNominalSub)
+            {
+                _lastRenderedNominalSub = _dataNominalSub;
+                if (_bannerSub != null) _bannerSub.text = _dataNominalSub;
+            }
+            if (!object.ReferenceEquals(_lastRenderedNominalIcon, _dataNominalIcon) && _lastRenderedNominalIcon != _dataNominalIcon)
+            {
+                _lastRenderedNominalIcon = _dataNominalIcon;
+                if (_bannerLeftIcon != null) _bannerLeftIcon.text = _dataNominalIcon;
+                if (_bannerRightIcon != null) _bannerRightIcon.text = _dataNominalIcon;
+            }
 
             if (_lastNominalPhaseColor != phaseColor || _nominalStyleNeedsUpdate)
             {
@@ -1618,8 +1440,8 @@ namespace ModularFlightPanel.UI.Widgets
                 _lowFuelPersistentTimer = 0f;
             }
 
-            // RealFuels 探针沉底状态
-            if (ExternalProbeRegistry.StringResolver != null)
+            // RealFuels 探针沉底状态 (物理门控：仅在引擎处于武装状态且推力请求大于 0 时查询)
+            if (engineArmed && telem.Throttle > 0.001f && ExternalProbeRegistry.StringResolver != null)
             {
                 string rfUllage = ExternalProbeRegistry.ResolveString("RF", "ULLAGE", "");
                 if (!string.IsNullOrEmpty(rfUllage) &&
@@ -1653,9 +1475,9 @@ namespace ModularFlightPanel.UI.Widgets
                 _cautAlerts.Add(new AlertItem("SINK RATE", $"{vsiInt}m/s", false));
             }
 
-            // ── 4. 气动失速 (STALL / FAR / GPWS) ──
+            // ── 4. 气动失速 (STALL / FAR / GPWS) (物理门控：仅在大气层内且有可观动压时查询) ──
             double farStall = double.NaN;
-            if (ExternalProbeRegistry.NumericResolver != null)
+            if (telem.AtmosphericPressure > 0.001 && telem.DynamicPressure > 0.5 && ExternalProbeRegistry.NumericResolver != null)
             {
                 farStall = ExternalProbeRegistry.ResolveNumeric("FAR", "STALL");
             }
@@ -1702,8 +1524,8 @@ namespace ModularFlightPanel.UI.Widgets
                 _cautAlerts.Add(new AlertItem("HIGH G", $"{g:F1}G", false));
             }
 
-            // ── 8. 发动机故障 (TESTFLIGHT) ──
-            if (ExternalProbeRegistry.NumericResolver != null)
+            // ── 8. 发动机故障 (TESTFLIGHT) (物理门控：仅在活跃引擎数 > 0 时查询) ──
+            if (telem.ActiveEngines > 0 && ExternalProbeRegistry.NumericResolver != null)
             {
                 double tfFailed = ExternalProbeRegistry.ResolveNumeric("TF", "FAILED");
                 if (tfFailed > 0.5)

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.Profiling;
 using ModularFlightPanel.Config;
+using ModularFlightPanel.UI;
 
 namespace ModularFlightPanel.Core
 {
@@ -30,6 +31,25 @@ namespace ModularFlightPanel.Core
         public long StartTick;
         public int SampleCount;
         public int LastSampleFrame;
+    }
+
+    /// <summary>
+    /// 单个航电组件在一帧内的更新时序节点 (Microsecond Widget Timeline Entry)
+    /// 记录其在 UGUI Hierarchy 的图层绘制顺序 (DrawOrder)、刷新阶梯、切片调度状态以及起止时间戳
+    /// </summary>
+    public class WidgetTimelineEntry
+    {
+        public string WidgetId;
+        public string DisplayName;
+        public int DrawOrder;
+        public WidgetRefreshTier Tier;
+        public bool WasSliced;
+        public double StartOffsetMs;
+        public double DurationMs;
+        public int ExecutionIndex;
+        public long StartTick;
+
+        public double EndOffsetMs => StartOffsetMs + DurationMs;
     }
 
     /// <summary>
@@ -150,7 +170,48 @@ namespace ModularFlightPanel.Core
         private static string _currentFrameTopWidgetId = "---";
         private static double _currentFrameTopWidgetMs = 0.0;
 
-        public static void BeginWidgetSample(string widgetId, string displayName = null)
+        // ------------------ UI 更新时序时间轴 (Widget Update Timeline) ------------------
+        private static readonly List<WidgetTimelineEntry> _currentFrameTimeline = new List<WidgetTimelineEntry>(64);
+        private static readonly List<WidgetTimelineEntry> _snapshotTimeline = new List<WidgetTimelineEntry>(64);
+        private static readonly List<WidgetTimelineEntry> _entryPool = new List<WidgetTimelineEntry>(64);
+        private static readonly List<WidgetTimelineEntry> _snapshotTimelinePool = new List<WidgetTimelineEntry>(64);
+        private static int _poolAllocIndex = 0;
+        private static long _timelineStartTick = 0;
+
+        public static bool IsTimelineFrozen { get; set; } = false;
+        public static int SnapshotFrameCount { get; private set; }
+        public static double SnapshotTotalWidgetsMs { get; private set; }
+        public static int SnapshotSliceCursor { get; private set; }
+        public static float SnapshotMaxBudgetMs { get; private set; } = 0.08f;
+        public static int SnapshotCritCount { get; private set; }
+        public static int SnapshotNonCritCount { get; private set; }
+        public static IReadOnlyList<WidgetTimelineEntry> SnapshotTimeline => _snapshotTimeline;
+
+        private static int _selectedTab = 0; // 0: 概览明细, 1: 更新时序时间轴
+        private static Vector2 _timelineScrollPos = Vector2.zero;
+
+        private static WidgetTimelineEntry AcquireEntry()
+        {
+            if (_poolAllocIndex < _entryPool.Count)
+            {
+                return _entryPool[_poolAllocIndex++];
+            }
+            var entry = new WidgetTimelineEntry();
+            _entryPool.Add(entry);
+            _poolAllocIndex++;
+            return entry;
+        }
+
+        private static WidgetTimelineEntry AcquireSnapshotEntry(int index)
+        {
+            while (_snapshotTimelinePool.Count <= index)
+            {
+                _snapshotTimelinePool.Add(new WidgetTimelineEntry());
+            }
+            return _snapshotTimelinePool[index];
+        }
+
+        public static void BeginWidgetSample(string widgetId, string displayName = null, int drawOrder = -1, WidgetRefreshTier tier = WidgetRefreshTier.Standard, bool wasSliced = false)
         {
             if (!IsWidgetProfilingActive || string.IsNullOrEmpty(widgetId)) return;
 
@@ -168,8 +229,29 @@ namespace ModularFlightPanel.Core
                 data.DisplayName = displayName;
             }
 
-            data.StartTick = Stopwatch.GetTimestamp();
+            long nowTick = Stopwatch.GetTimestamp();
+            data.StartTick = nowTick;
             Profiler.BeginSample(widgetId);
+
+            // 记录当前帧时序时间轴节点
+            if (_timelineStartTick == 0)
+            {
+                _timelineStartTick = nowTick;
+            }
+            double offsetMs = Math.Max(0.0, (nowTick - _timelineStartTick) * TicksToMs);
+
+            var entry = AcquireEntry();
+            entry.WidgetId = widgetId;
+            entry.DisplayName = !string.IsNullOrEmpty(displayName) ? displayName : widgetId;
+            entry.DrawOrder = drawOrder >= 0 ? drawOrder : 0;
+            entry.Tier = tier;
+            entry.WasSliced = wasSliced;
+            entry.StartOffsetMs = offsetMs;
+            entry.DurationMs = 0.0;
+            entry.ExecutionIndex = _currentFrameTimeline.Count + 1;
+            entry.StartTick = nowTick;
+
+            _currentFrameTimeline.Add(entry);
         }
 
         public static void EndWidgetSample(string widgetId)
@@ -178,9 +260,10 @@ namespace ModularFlightPanel.Core
 
             Profiler.EndSample();
 
+            long endTick = Stopwatch.GetTimestamp();
             if (_widgetProfiles.TryGetValue(widgetId, out var data))
             {
-                long elapsedTicks = Stopwatch.GetTimestamp() - data.StartTick;
+                long elapsedTicks = endTick - data.StartTick;
                 if (elapsedTicks > 0)
                 {
                     double ms = elapsedTicks * TicksToMs;
@@ -199,6 +282,20 @@ namespace ModularFlightPanel.Core
                     {
                         _currentFrameTopWidgetMs = ms;
                         _currentFrameTopWidgetId = !string.IsNullOrEmpty(data.DisplayName) ? data.DisplayName : widgetId;
+                    }
+                }
+            }
+
+            if (_currentFrameTimeline.Count > 0)
+            {
+                for (int i = _currentFrameTimeline.Count - 1; i >= 0; i--)
+                {
+                    var entry = _currentFrameTimeline[i];
+                    if (entry.WidgetId == widgetId)
+                    {
+                        long elapsedTicks = endTick - entry.StartTick;
+                        entry.DurationMs = elapsedTicks > 0 ? elapsedTicks * TicksToMs : 0.0;
+                        break;
                     }
                 }
             }
@@ -249,6 +346,21 @@ namespace ModularFlightPanel.Core
             InjectSimulatedWidget("custom.orbit_info", I18n.Tr("WIDGET_ORBIT_TITLE", "ORBIT 轨道六根数态势卡"), widgetsMs * 0.10, widgetsMs * 0.09, widgetsMs * 0.15);
             InjectSimulatedWidget("custom.signal", I18n.Tr("WIDGET_SIGNAL_TITLE", "COMMNET 天线通信网络"), widgetsMs * 0.05, widgetsMs * 0.05, widgetsMs * 0.08);
 
+            // 注入时序时间轴模拟数据
+            _snapshotTimeline.Clear();
+            AddSimulatedTimelineEntry("custom.navball", I18n.Tr("WIDGET_NAVBALL_TITLE", "NAVBALL 姿态航向球"), 0, WidgetRefreshTier.Critical, false, 0.000, widgetsMs * 0.45, 1);
+            AddSimulatedTimelineEntry("custom.stage_dv", I18n.Tr("WIDGET_STAGE_DV_TITLE", "STAGE ΔV 本级推演仪表"), 1, WidgetRefreshTier.Standard, true, widgetsMs * 0.45, widgetsMs * 0.25, 2);
+            AddSimulatedTimelineEntry("custom.altitude", I18n.Tr("WIDGET_ALTITUDE_TITLE", "ALTITUDE 混合高度带"), 2, WidgetRefreshTier.Standard, true, widgetsMs * 0.70, widgetsMs * 0.15, 3);
+            AddSimulatedTimelineEntry("custom.orbit_info", I18n.Tr("WIDGET_ORBIT_TITLE", "ORBIT 轨道六根数态势卡"), 3, WidgetRefreshTier.Relaxed, true, widgetsMs * 0.85, widgetsMs * 0.10, 4);
+            AddSimulatedTimelineEntry("custom.signal", I18n.Tr("WIDGET_SIGNAL_TITLE", "COMMNET 天线通信网络"), 4, WidgetRefreshTier.UltraLow, true, widgetsMs * 0.95, widgetsMs * 0.05, 5);
+
+            SnapshotFrameCount = 100;
+            SnapshotTotalWidgetsMs = widgetsMs;
+            SnapshotSliceCursor = 2;
+            SnapshotMaxBudgetMs = 0.08f;
+            SnapshotCritCount = 1;
+            SnapshotNonCritCount = 4;
+
             _sortedWidgetList.Clear();
             _sortedWidgetList.AddRange(_widgetProfiles.Values);
             _sortedWidgetList.Sort((a, b) => b.AvgMs.CompareTo(a.AvgMs));
@@ -257,6 +369,20 @@ namespace ModularFlightPanel.Core
                 TopOffenderWidgetId = _sortedWidgetList[0].DisplayName;
                 TopOffenderWidgetMs = _sortedWidgetList[0].AvgMs;
             }
+        }
+
+        private static void AddSimulatedTimelineEntry(string id, string name, int drawOrder, WidgetRefreshTier tier, bool wasSliced, double offsetMs, double durationMs, int seq)
+        {
+            var entry = AcquireSnapshotEntry(_snapshotTimeline.Count);
+            entry.WidgetId = id;
+            entry.DisplayName = name;
+            entry.DrawOrder = drawOrder;
+            entry.Tier = tier;
+            entry.WasSliced = wasSliced;
+            entry.StartOffsetMs = offsetMs;
+            entry.DurationMs = durationMs;
+            entry.ExecutionIndex = seq;
+            _snapshotTimeline.Add(entry);
         }
 
         private static void InjectSimulatedWidget(string id, string name, double lastMs, double avgMs, double maxMs)
@@ -307,6 +433,10 @@ namespace ModularFlightPanel.Core
             // 单帧开始：清零当前帧局部采样与累加值，确保每帧采样边界严谨隔离
             _currentFrameTopWidgetId = "---";
             _currentFrameTopWidgetMs = 0.0;
+            _poolAllocIndex = 0;
+            _currentFrameTimeline.Clear();
+            _timelineStartTick = 0;
+
             for (int i = 0; i < _timings.Length; i++)
             {
                 _timings[i].CurrentFrameMs = 0.0;
@@ -437,6 +567,62 @@ namespace ModularFlightPanel.Core
                 MaxTotalMs = max;
                 SpikeCount = spikes;
             }
+
+            // 同步时序时间轴快照 (零 GC 预热对象池复用)
+            if (!IsTimelineFrozen && (ShowOverlay || EnableWidgetProfiling))
+            {
+                _snapshotTimeline.Clear();
+                for (int i = 0; i < _currentFrameTimeline.Count; i++)
+                {
+                    var src = _currentFrameTimeline[i];
+                    var dst = AcquireSnapshotEntry(i);
+                    dst.WidgetId = src.WidgetId;
+                    dst.DisplayName = src.DisplayName;
+                    dst.DrawOrder = src.DrawOrder;
+                    dst.Tier = src.Tier;
+                    dst.WasSliced = src.WasSliced;
+                    dst.StartOffsetMs = src.StartOffsetMs;
+                    dst.DurationMs = src.DurationMs;
+                    dst.ExecutionIndex = src.ExecutionIndex;
+                    _snapshotTimeline.Add(dst);
+                }
+
+                SnapshotFrameCount = Time.frameCount;
+                SnapshotTotalWidgetsMs = curWidgets;
+                SnapshotSliceCursor = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.SliceCursor : 0;
+                SnapshotMaxBudgetMs = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.MaxNonCriticalBudgetMs : 0.08f;
+                SnapshotCritCount = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.CriticalWidgetCount : 0;
+                SnapshotNonCritCount = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.NonCriticalWidgetCount : 0;
+            }
+        }
+
+        /// <summary>
+        /// 捕获单帧时序快照 (供冻结状态下逐帧步进分析使用)
+        /// </summary>
+        public static void CaptureSingleStepSnapshot()
+        {
+            _snapshotTimeline.Clear();
+            for (int i = 0; i < _currentFrameTimeline.Count; i++)
+            {
+                var src = _currentFrameTimeline[i];
+                var dst = AcquireSnapshotEntry(i);
+                dst.WidgetId = src.WidgetId;
+                dst.DisplayName = src.DisplayName;
+                dst.DrawOrder = src.DrawOrder;
+                dst.Tier = src.Tier;
+                dst.WasSliced = src.WasSliced;
+                dst.StartOffsetMs = src.StartOffsetMs;
+                dst.DurationMs = src.DurationMs;
+                dst.ExecutionIndex = src.ExecutionIndex;
+                _snapshotTimeline.Add(dst);
+            }
+
+            SnapshotFrameCount = Time.frameCount;
+            SnapshotTotalWidgetsMs = _timings[(int)ProfilerSection.Widgets].AccumulatedMs;
+            SnapshotSliceCursor = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.SliceCursor : 0;
+            SnapshotMaxBudgetMs = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.MaxNonCriticalBudgetMs : 0.08f;
+            SnapshotCritCount = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.CriticalWidgetCount : 0;
+            SnapshotNonCritCount = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.NonCriticalWidgetCount : 0;
         }
 
         /// <summary>
@@ -448,8 +634,8 @@ namespace ModularFlightPanel.Core
 
             ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
             GUI.color = theme != null ? (Color)theme.FrameBgColor : GUI.contentColor;
-            float w = _showDetailedBreakdown ? 390f : 320f;
-            float h = _showDetailedBreakdown ? 390f : 88f;
+            float w = _showDetailedBreakdown ? 430f : 320f;
+            float h = _showDetailedBreakdown ? 440f : 88f;
             _overlayRect.width = w;
             _overlayRect.height = h;
 
@@ -459,7 +645,7 @@ namespace ModularFlightPanel.Core
 
         private static void DrawOverlayWindow(int windowId)
         {
-            GUI.DragWindow(new Rect(0, 0, 390, 20));
+            GUI.DragWindow(new Rect(0, 0, _overlayRect.width, 20));
 
             GUILayout.BeginVertical();
 
@@ -495,59 +681,269 @@ namespace ModularFlightPanel.Core
             }
             GUILayout.EndHorizontal();
 
-            // 展开的子系统详细耗时与逐组件明细
+            // 展开的子系统详细耗时与逐组件明细 / 时序时间轴
             if (_showDetailedBreakdown && !_isMasterBypassed)
             {
                 GUILayout.Space(4f);
                 GUILayout.Box("", GUILayout.Height(1f), GUILayout.ExpandWidth(true)); // 分割线
 
-                DrawStatRow(I18n.Tr("PROF_ROW_TELEMETRY", "遥测核心:"), AvgTelemetryMs);
-                DrawStatRow(I18n.Tr("PROF_ROW_PROBES", "外部探针 (FAR/RA/MJ):"), AvgProbesMs);
-                DrawStatRow(I18n.Tr("PROF_ROW_WIDGETS", "组件管线呈现:"), AvgWidgetsMs);
-                DrawStatRow(I18n.Tr("PROF_ROW_SILHOUETTE", "飞船剪影烘焙:"), AvgSilhouetteMs);
-                DrawStatRow(I18n.Tr("PROF_ROW_HOOKS", "原版界面挂钩:"), AvgHooksMs);
-
-                GUILayout.Space(6f);
+                // Tab 切换导航: [📊 负载概览] | [⏱️ 更新时序轴]
                 GUILayout.BeginHorizontal();
-                int activeCount = _sortedWidgetList.Count;
-                GUILayout.Label($"<b>{I18n.Tr("PROF_WIDGET_BREAKDOWN", "组件耗时明细 (Widget Breakdown)")}</b> ({activeCount})", GUILayout.ExpandWidth(true));
-                if (GUILayout.Button(I18n.Tr("PROF_BTN_RESET_PEAK", "重置峰值"), GUILayout.Width(72f), GUILayout.Height(20f)))
+                GUI.color = _selectedTab == 0 ? (theme != null ? (Color)theme.AccentPrimary : Color.cyan) : GUI.contentColor;
+                if (GUILayout.Button(I18n.Tr("PROF_TAB_OVERVIEW", "📊 负载概览"), GUILayout.Height(22f)))
                 {
-                    ResetPeakStats();
+                    _selectedTab = 0;
                 }
+                GUI.color = _selectedTab == 1 ? (theme != null ? (Color)theme.AccentPrimary : Color.cyan) : GUI.contentColor;
+                if (GUILayout.Button(I18n.Tr("PROF_TAB_TIMELINE", "⏱️ 更新时序轴"), GUILayout.Height(22f)))
+                {
+                    _selectedTab = 1;
+                }
+                GUI.color = theme != null ? (Color)theme.TextPrimaryColor : GUI.contentColor;
                 GUILayout.EndHorizontal();
 
-                // 表头
-                GUILayout.BeginHorizontal();
-                DrawHeaderCell(I18n.Tr("PROF_COL_NAME", "组件名称 / ID"), 190f);
-                DrawHeaderCell(I18n.Tr("PROF_COL_AVG", "均值"), 75f);
-                DrawHeaderCell(I18n.Tr("PROF_COL_LAST", "实时 / 峰值"), -1f);
-                GUILayout.EndHorizontal();
-
-                _widgetScrollPos = GUILayout.BeginScrollView(_widgetScrollPos, GUILayout.Height(150f));
-                for (int i = 0; i < activeCount; i++)
+                if (_selectedTab == 0)
                 {
-                    var w = _sortedWidgetList[i];
-                    GUILayout.BeginHorizontal();
-                    string displayName = !string.IsNullOrEmpty(w.DisplayName) && w.DisplayName != w.WidgetId
-                        ? $"{w.DisplayName}"
-                        : w.WidgetId;
-                    string tooltip = $"{w.WidgetId}\n{I18n.Tr("PROF_TOOLTIP_LAST", "末次")}: {w.LastMs:F3} ms\n{I18n.Tr("PROF_TOOLTIP_AVG", "均值")}: {w.AvgMs:F3} ms\n{I18n.Tr("PROF_TOOLTIP_MAX", "峰值")}: {w.MaxMs:F3} ms";
-                    GUILayout.Label(new GUIContent($"<color=#D0D0D0>{displayName}</color>", tooltip), GUILayout.Width(190f));
-
-                    string color = w.AvgMs < 0.1 ? "#00E5FF" : (w.AvgMs < 0.4 ? "#FFE000" : "#FF5555");
-                    GUILayout.Label($"<color={color}><b>{w.AvgMs:F3} ms</b></color>", GUILayout.Width(75f));
-                    GUILayout.Label($"<color=#888888>{w.LastMs:F2} / {w.MaxMs:F2}</color>", GUILayout.ExpandWidth(true));
-                    GUILayout.EndHorizontal();
+                    DrawOverviewTab(theme);
                 }
-                if (activeCount == 0)
+                else
                 {
-                    GUILayout.Label(I18n.Tr("PROF_NO_ACTIVE_WIDGETS", "<i>无活跃组件刷新采样...</i>"));
+                    DrawTimelineTab(theme);
                 }
-                GUILayout.EndScrollView();
             }
 
             GUILayout.EndVertical();
+        }
+
+        private static void DrawOverviewTab(ThemeConfig theme)
+        {
+            GUILayout.Space(4f);
+            DrawStatRow(I18n.Tr("PROF_ROW_TELEMETRY", "遥测核心:"), AvgTelemetryMs);
+            DrawStatRow(I18n.Tr("PROF_ROW_PROBES", "外部探针 (FAR/RA/MJ):"), AvgProbesMs);
+            DrawStatRow(I18n.Tr("PROF_ROW_WIDGETS", "组件管线呈现:"), AvgWidgetsMs);
+            DrawStatRow(I18n.Tr("PROF_ROW_SILHOUETTE", "飞船剪影烘焙:"), AvgSilhouetteMs);
+            DrawStatRow(I18n.Tr("PROF_ROW_HOOKS", "原版界面挂钩:"), AvgHooksMs);
+
+            GUILayout.Space(6f);
+            GUILayout.BeginHorizontal();
+            int activeCount = _sortedWidgetList.Count;
+            GUILayout.Label($"<b>{I18n.Tr("PROF_WIDGET_BREAKDOWN", "组件耗时明细 (Widget Breakdown)")}</b> ({activeCount})", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button(I18n.Tr("PROF_BTN_RESET_PEAK", "重置峰值"), GUILayout.Width(72f), GUILayout.Height(20f)))
+            {
+                ResetPeakStats();
+            }
+            GUILayout.EndHorizontal();
+
+            // 表头
+            GUILayout.BeginHorizontal();
+            DrawHeaderCell(I18n.Tr("PROF_COL_NAME", "组件名称 / ID"), 190f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_AVG", "均值"), 75f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_LAST", "实时 / 峰值"), -1f);
+            GUILayout.EndHorizontal();
+
+            _widgetScrollPos = GUILayout.BeginScrollView(_widgetScrollPos, GUILayout.Height(150f));
+            for (int i = 0; i < activeCount; i++)
+            {
+                var w = _sortedWidgetList[i];
+                GUILayout.BeginHorizontal();
+                string displayName = !string.IsNullOrEmpty(w.DisplayName) && w.DisplayName != w.WidgetId
+                    ? $"{w.DisplayName}"
+                    : w.WidgetId;
+                string tooltip = $"{w.WidgetId}\n{I18n.Tr("PROF_TOOLTIP_LAST", "末次")}: {w.LastMs:F3} ms\n{I18n.Tr("PROF_TOOLTIP_AVG", "均值")}: {w.AvgMs:F3} ms\n{I18n.Tr("PROF_TOOLTIP_MAX", "峰值")}: {w.MaxMs:F3} ms";
+                GUILayout.Label(new GUIContent($"<color=#D0D0D0>{displayName}</color>", tooltip), GUILayout.Width(190f));
+
+                string color = w.AvgMs < 0.1 ? "#00E5FF" : (w.AvgMs < 0.4 ? "#FFE000" : "#FF5555");
+                GUILayout.Label($"<color={color}><b>{w.AvgMs:F3} ms</b></color>", GUILayout.Width(75f));
+                GUILayout.Label($"<color=#888888>{w.LastMs:F2} / {w.MaxMs:F2}</color>", GUILayout.ExpandWidth(true));
+                GUILayout.EndHorizontal();
+            }
+            if (activeCount == 0)
+            {
+                GUILayout.Label(I18n.Tr("PROF_NO_ACTIVE_WIDGETS", "<i>无活跃组件刷新采样...</i>"));
+            }
+            GUILayout.EndScrollView();
+        }
+
+        private static void DrawTimelineTab(ThemeConfig theme)
+        {
+            GUILayout.Space(4f);
+
+            // 1. 状态与冻结控制栏
+            GUILayout.BeginHorizontal();
+            string statusTag = IsTimelineFrozen
+                ? $"<color=#FFCC00><b>{I18n.Tr("PROF_STATUS_FROZEN", "[已冻结]")}</b></color>"
+                : $"<color=#00E5FF><b>{I18n.Tr("PROF_STATUS_LIVE", "[实时跟踪]")}</b></color>";
+            GUILayout.Label($"<b>{I18n.Tr("PROF_TIMELINE_TITLE", "UI 更新时序与切片调度")}</b> {statusTag}", GUILayout.ExpandWidth(true));
+
+            string freezeBtnLabel = IsTimelineFrozen ? I18n.Tr("PROF_BTN_LIVE", "▶ 跟踪") : I18n.Tr("PROF_BTN_FREEZE", "⏸ 冻结");
+            if (GUILayout.Button(freezeBtnLabel, GUILayout.Width(54f), GUILayout.Height(20f)))
+            {
+                IsTimelineFrozen = !IsTimelineFrozen;
+            }
+            if (IsTimelineFrozen)
+            {
+                if (GUILayout.Button(I18n.Tr("PROF_BTN_STEP", "↺ 单步"), GUILayout.Width(46f), GUILayout.Height(20f)))
+                {
+                    CaptureSingleStepSnapshot();
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            // 2. 切片调度与预算摘要
+            GUILayout.BeginHorizontal();
+            int executedCount = _snapshotTimeline.Count;
+            GUILayout.Label($"<color=#AAAAAA>{I18n.Tr("PROF_STAGE1_CRIT", "阶段1 满帧:")}</color> <color=#00E5FF>{SnapshotCritCount}</color>  " +
+                            $"<color=#AAAAAA>{I18n.Tr("PROF_STAGE2_SLICE", "阶段2 切片:")}</color> <color=#34C759>{Math.Max(0, executedCount - SnapshotCritCount)}</color>/{SnapshotNonCritCount}  " +
+                            $"<color=#AAAAAA>{I18n.Tr("PROF_CURSOR_INDEX", "游标:")}</color> <color=#FFCC00>#{SnapshotSliceCursor}</color>  " +
+                            $"<color=#AAAAAA>{I18n.Tr("PROF_BUDGET_LIMIT", "预算:")}</color> <color=#FF8800>{SnapshotMaxBudgetMs:F2}ms</color>",
+                            GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(2f);
+
+            // 3. 水平时序甘特图 (Visual Timeline Bar)
+            DrawVisualTimelineBar();
+
+            GUILayout.Space(4f);
+
+            // 4. 时序执行与图层排序明细表头
+            GUILayout.BeginHorizontal();
+            DrawHeaderCell(I18n.Tr("PROF_COL_SEQ", "#"), 24f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_LAYER", "图层"), 38f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_TIER", "阶梯"), 42f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_NAME", "组件名称 / ID"), 145f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_TIMING", "时序区间"), 75f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_DURATION", "耗时"), -1f);
+            GUILayout.EndHorizontal();
+
+            // 5. 滚动明细列表 (按本帧实际执行时序排列，并标注 UGUI DrawOrder 图层)
+            _timelineScrollPos = GUILayout.BeginScrollView(_timelineScrollPos, GUILayout.Height(150f));
+            for (int i = 0; i < executedCount; i++)
+            {
+                var entry = _snapshotTimeline[i];
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"<color=#888888>{entry.ExecutionIndex}</color>", GUILayout.Width(24f));
+
+                string layerColor = entry.DrawOrder < 3 ? "#00E5FF" : (entry.DrawOrder < 8 ? "#34C759" : "#FFCC00");
+                GUILayout.Label($"<color={layerColor}>{I18n.TrFormat("PROF_LAYER_TAG_FMT", "L{0}", entry.DrawOrder)}</color>", GUILayout.Width(38f));
+
+                string tierName = GetTierShortName(entry.Tier);
+                string tierColor = GetTierColor(entry.Tier);
+                GUILayout.Label($"<color={tierColor}>{tierName}</color>", GUILayout.Width(42f));
+
+                string name = !string.IsNullOrEmpty(entry.DisplayName) ? entry.DisplayName : entry.WidgetId;
+                string tooltip = $"{entry.WidgetId}\n{I18n.Tr("PROF_COL_LAYER", "图层")}: L{entry.DrawOrder}\n{I18n.Tr("PROF_COL_TIMING", "时序")}: +{entry.StartOffsetMs:F3}ms ~ +{entry.EndOffsetMs:F3}ms\n{I18n.Tr("PROF_COL_DURATION", "耗时")}: {entry.DurationMs:F3}ms";
+                GUILayout.Label(new GUIContent($"<color=#D0D0D0>{name}</color>", tooltip), GUILayout.Width(145f));
+
+                GUILayout.Label($"<color=#888888>+{entry.StartOffsetMs:F2}ms</color>", GUILayout.Width(75f));
+
+                string costColor = entry.DurationMs < 0.05 ? "#00E5FF" : (entry.DurationMs < 0.20 ? "#FFE000" : "#FF5555");
+                string sliceTag = entry.WasSliced
+                    ? $"<color=#34C759>{I18n.Tr("PROF_STATUS_SLICED", "[切片]")}</color>"
+                    : $"<color=#00E5FF>{I18n.Tr("PROF_STATUS_FULL_PASS", "[直通]")}</color>";
+                GUILayout.Label($"<color={costColor}><b>{entry.DurationMs:F3}</b></color> {sliceTag}", GUILayout.ExpandWidth(true));
+                GUILayout.EndHorizontal();
+            }
+            if (executedCount == 0)
+            {
+                GUILayout.Label(I18n.Tr("PROF_TIMELINE_EMPTY", "<i>本帧无组件执行更新...</i>"));
+            }
+            GUILayout.EndScrollView();
+        }
+
+        private static void DrawVisualTimelineBar()
+        {
+            Rect barRect = GUILayoutUtility.GetRect(400f, 24f, GUILayout.ExpandWidth(true));
+            GUI.Box(barRect, GUIContent.none);
+
+            double totalSpan = Math.Max(0.10, SnapshotTotalWidgetsMs > 0.001 ? SnapshotTotalWidgetsMs * 1.15 : 0.10);
+            if (_snapshotTimeline.Count > 0)
+            {
+                double lastEnd = _snapshotTimeline[_snapshotTimeline.Count - 1].EndOffsetMs;
+                if (lastEnd > totalSpan) totalSpan = lastEnd * 1.05;
+            }
+
+            Color prevColor = GUI.color;
+            for (int i = 0; i < _snapshotTimeline.Count; i++)
+            {
+                var entry = _snapshotTimeline[i];
+                float startX = barRect.x + 2f + (float)(entry.StartOffsetMs / totalSpan) * (barRect.width - 4f);
+                float blockW = Mathf.Max(3f, (float)(entry.DurationMs / totalSpan) * (barRect.width - 4f));
+                if (startX + blockW > barRect.xMax - 2f)
+                {
+                    blockW = Mathf.Max(2f, barRect.xMax - 2f - startX);
+                }
+
+                Rect blockRect = new Rect(startX, barRect.y + 2f, blockW, barRect.height - 4f);
+                GUI.color = GetTierColorValue(entry.Tier);
+                GUI.DrawTexture(blockRect, Texture2D.whiteTexture);
+
+                if (blockW >= 22f)
+                {
+                    GUI.color = Color.black;
+                    GUI.Label(new Rect(blockRect.x, blockRect.y, blockRect.width, blockRect.height), $"#{entry.ExecutionIndex}", GUI.skin.label);
+                }
+            }
+
+            // 绘制切片预算硬限阈值线 (例如 0.08ms)
+            if (SnapshotMaxBudgetMs > 0f && SnapshotMaxBudgetMs < totalSpan)
+            {
+                float budgetX = barRect.x + 2f + (float)(SnapshotMaxBudgetMs / totalSpan) * (barRect.width - 4f);
+                Rect lineRect = new Rect(budgetX - 1f, barRect.y, 2f, barRect.height);
+                GUI.color = new Color(1f, 0.3f, 0.2f, 0.9f);
+                GUI.DrawTexture(lineRect, Texture2D.whiteTexture);
+            }
+
+            GUI.color = prevColor;
+
+            // 标尺读数行
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<color=#666666>0.00ms</color>", GUILayout.Width(60f));
+            GUILayout.Label($"<color=#FF5555>| {I18n.Tr("PROF_BUDGET_LIMIT", "预算:")} {SnapshotMaxBudgetMs:F2}ms</color>", GUILayout.ExpandWidth(true));
+            GUILayout.Label($"<color=#666666>{totalSpan:F2}ms</color>", GUILayout.Width(60f));
+            GUILayout.EndHorizontal();
+        }
+
+        private static string GetTierShortName(WidgetRefreshTier tier)
+        {
+            switch (tier)
+            {
+                case WidgetRefreshTier.Critical: return "CRIT";
+                case WidgetRefreshTier.Standard: return "STD";
+                case WidgetRefreshTier.Slow: return "SLOW";
+                case WidgetRefreshTier.Relaxed: return "RLX";
+                case WidgetRefreshTier.UltraLow: return "LOW";
+                case WidgetRefreshTier.Custom: return "CUST";
+                default: return "TIER";
+            }
+        }
+
+        private static string GetTierColor(WidgetRefreshTier tier)
+        {
+            switch (tier)
+            {
+                case WidgetRefreshTier.Critical: return "#00E5FF";
+                case WidgetRefreshTier.Standard: return "#34C759";
+                case WidgetRefreshTier.Slow: return "#FFE000";
+                case WidgetRefreshTier.Relaxed: return "#FFCC00";
+                case WidgetRefreshTier.UltraLow: return "#FF9500";
+                case WidgetRefreshTier.Custom: return "#AF52DE";
+                default: return "#FFFFFF";
+            }
+        }
+
+        private static Color GetTierColorValue(WidgetRefreshTier tier)
+        {
+            switch (tier)
+            {
+                case WidgetRefreshTier.Critical: return new Color(0f, 0.9f, 1f, 0.85f);
+                case WidgetRefreshTier.Standard: return new Color(0.2f, 0.8f, 0.35f, 0.85f);
+                case WidgetRefreshTier.Slow: return new Color(1f, 0.88f, 0f, 0.85f);
+                case WidgetRefreshTier.Relaxed: return new Color(1f, 0.8f, 0f, 0.85f);
+                case WidgetRefreshTier.UltraLow: return new Color(1f, 0.58f, 0f, 0.85f);
+                case WidgetRefreshTier.Custom: return new Color(0.7f, 0.3f, 0.9f, 0.85f);
+                default: return new Color(0.8f, 0.8f, 0.8f, 0.85f);
+            }
         }
 
         private static void DrawHeaderCell(string text, float width)
