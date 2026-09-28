@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -39,6 +40,36 @@ namespace ModularFlightPanel.UI
         public float CurrentDpiScale { get; protected set; } = 1.0f;
         protected float LastUpdateTime { get; private set; } = -1f;
 
+        private bool? _cachedAlwaysFullPower;
+
+        /// <summary>
+        /// 声明该组件是否强制满血极速运行 (Always Full Power / Unthrottled)。
+        /// 支持通过在类上标注 [AlwaysFullPower] 特性、[FlightWidget(..., AlwaysFullPower = true)] 或 override 此属性返回 true。
+        /// 当为 true 时：
+        /// 1. RefreshTier 自动为 Critical (随游戏实时 FPS 满帧直通，永不降频)；
+        /// 2. HeartBeatTier 自动为 Critical (每一渲染帧同步更新遥测，零延迟)；
+        /// 3. 彻底豁免全局微秒帧预算切片 (Budget Slicing Exempt) 与省电节能模式 (Eco Saver Exempt)；
+        /// 专为 3D 姿态球 (NavballSphereWidget) 等核心航电生命线量身定制！
+        /// </summary>
+        public virtual bool AlwaysFullPower
+        {
+            get
+            {
+                if (!_cachedAlwaysFullPower.HasValue)
+                {
+                    Type t = GetType();
+                    bool hasAttr = Attribute.IsDefined(t, typeof(AlwaysFullPowerAttribute), true);
+                    if (!hasAttr)
+                    {
+                        var fw = (FlightWidgetAttribute)Attribute.GetCustomAttribute(t, typeof(FlightWidgetAttribute), true);
+                        hasAttr = fw != null && fw.AlwaysFullPower;
+                    }
+                    _cachedAlwaysFullPower = hasAttr;
+                }
+                return _cachedAlwaysFullPower.Value;
+            }
+        }
+
         /// <summary>
         /// 控件在 WidgetRenderManager 中的刷新率阶梯。
         /// Critical: 随游戏 FPS (满帧直通游戏实时渲染帧率，如 3D 姿态球)
@@ -47,15 +78,17 @@ namespace ModularFlightPanel.UI
         /// Relaxed: 10Hz (低频监控，如电力, 维生, ΔV, 控制栏, 时间加速, 轨道数据)
         /// UltraLow: 2Hz (后台低频监视，深空巡航)
         /// Custom: 自定义 (由 CustomHz / DefaultUpdateInterval 决定)
+        /// 若声明了 AlwaysFullPower，自动强制返回 Critical。
         /// </summary>
-        public virtual WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public virtual WidgetRefreshTier RefreshTier => AlwaysFullPower ? WidgetRefreshTier.Critical : WidgetRefreshTier.Standard;
 
         /// <summary>
         /// 控件数据心跳节拍阶梯 (Data Heartbeat Tier)。
         /// 约束契约：HeartBeat 频率必须小于等于 RefreshTier 组件画面刷新率。
         /// 缺省等价机制：默认与当前组件的 RefreshTier 保持相等，零额外心智负担。
+        /// 若声明了 AlwaysFullPower，自动强制返回 Critical 每一帧同步求解。
         /// </summary>
-        public virtual WidgetRefreshTier HeartBeatTier => RefreshTier;
+        public virtual WidgetRefreshTier HeartBeatTier => AlwaysFullPower ? WidgetRefreshTier.Critical : RefreshTier;
 
         /// <summary>
         /// 根据阶梯与自定义参数换算周期秒数
@@ -77,12 +110,12 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 当前组件画面刷新周期 (秒)
         /// </summary>
-        public float RefreshInterval => GetTierInterval(RefreshTier, DefaultUpdateInterval);
+        public float RefreshInterval => AlwaysFullPower ? 0f : GetTierInterval(RefreshTier, DefaultUpdateInterval);
 
         /// <summary>
         /// 当前组件声明的数据心跳周期 (秒)
         /// </summary>
-        public float HeartBeatInterval => GetTierInterval(HeartBeatTier, DefaultUpdateInterval);
+        public float HeartBeatInterval => AlwaysFullPower ? 0f : GetTierInterval(HeartBeatTier, DefaultUpdateInterval);
 
         /// <summary>
         /// 经父类安全拦截收敛后的实际生效数据心跳阶梯（物理保证 HeartBeat 频率 <= RefreshTier 刷新率）。
@@ -92,6 +125,7 @@ namespace ModularFlightPanel.UI
         {
             get
             {
+                if (AlwaysFullPower) return WidgetRefreshTier.Critical;
                 WidgetRefreshTier hb = HeartBeatTier;
                 WidgetRefreshTier rf = RefreshTier;
                 if (hb == WidgetRefreshTier.Custom || rf == WidgetRefreshTier.Custom)
@@ -109,6 +143,7 @@ namespace ModularFlightPanel.UI
         {
             get
             {
+                if (AlwaysFullPower) return 0f;
                 float rfInterval = RefreshInterval;
                 float hbInterval = HeartBeatInterval;
                 // 心跳频率必须 <= 刷新率，即心跳周期必须 >= 刷新周期
@@ -590,6 +625,10 @@ namespace ModularFlightPanel.UI
 
         private float _lastHeartBeatTime = -10f;
 
+        private int _heartBeatTick = 0;
+        private Dictionary<string, float> _subCadenceTimers;
+        private static readonly System.Collections.Generic.Dictionary<string, object> _globalPublishedChannels = new System.Collections.Generic.Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>
         /// 全局主遥测更新派发调度入口 (Master Telemetry Update Dispatcher)。
         /// 由 WidgetRenderManager 单点阶梯分发，自动执行：
@@ -613,8 +652,9 @@ namespace ModularFlightPanel.UI
             {
                 float dt = _lastHeartBeatTime > 0f ? (now - _lastHeartBeatTime) : Time.unscaledDeltaTime;
                 _lastHeartBeatTime = now;
+                int tick = _heartBeatTick++;
 
-                var ctx = new FlightHeartbeatContext(telemetry, dt);
+                var ctx = new FlightHeartbeatContext(telemetry, dt, tick, this);
                 OnDataHeartBeat(in ctx);
             }
 
@@ -649,6 +689,51 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public virtual void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
+        }
+
+        /// <summary>
+        /// 判定指定命名的心跳子通道自上次触发后是否已经过指定秒数 (免子类声明 private float 计时器字段)
+        /// </summary>
+        public bool CheckChannelElapsed(string channelKey, float intervalSeconds)
+        {
+            if (string.IsNullOrEmpty(channelKey)) return true;
+            if (_subCadenceTimers == null) _subCadenceTimers = new Dictionary<string, float>(4, StringComparer.Ordinal);
+            float now = Time.unscaledTime;
+            if (!_subCadenceTimers.TryGetValue(channelKey, out float lastTime) || (now - lastTime >= intervalSeconds - 0.0005f))
+            {
+                _subCadenceTimers[channelKey] = now;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 跨仪表发布自定义计算结果与状态通道，供全机舱其他组件无缝联动读取
+        /// </summary>
+        public void PublishDataChannel(string key, object value)
+        {
+            if (string.IsNullOrEmpty(key)) return;
+            lock (_globalPublishedChannels)
+            {
+                _globalPublishedChannels[key] = value;
+            }
+        }
+
+        /// <summary>
+        /// 尝试读取全机舱由其他组件发布的自定义数据通道
+        /// </summary>
+        public static bool TryGetPublishedChannel<T>(string key, out T value)
+        {
+            lock (_globalPublishedChannels)
+            {
+                if (_globalPublishedChannels.TryGetValue(key, out object obj) && obj is T typed)
+                {
+                    value = typed;
+                    return true;
+                }
+            }
+            value = default;
+            return false;
         }
 
         #region Avionics Evaluation & Computation Helpers

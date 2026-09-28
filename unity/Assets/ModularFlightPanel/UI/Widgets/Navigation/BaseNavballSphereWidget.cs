@@ -14,6 +14,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     /// 4. WidgetRenderManager 分辨率自适应与设置联动事件注册/注销；
     /// 5. 严格杜绝内存泄漏与多余数学计算。
     /// </summary>
+    [AlwaysFullPower]
     public abstract class BaseNavballSphereWidget : BaseFlightWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;

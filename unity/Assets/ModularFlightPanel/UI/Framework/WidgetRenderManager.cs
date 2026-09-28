@@ -99,7 +99,7 @@ namespace ModularFlightPanel.UI
             {
                 var reg = _registrations[i];
                 if (reg == null) continue;
-                if (reg.Tier == WidgetRefreshTier.Critical)
+                if (reg.Tier == WidgetRefreshTier.Critical || (reg.Widget != null && reg.Widget.AlwaysFullPower))
                     _criticalRegistrations.Add(reg);
                 else
                     _nonCriticalRegistrations.Add(reg);
@@ -162,6 +162,10 @@ namespace ModularFlightPanel.UI
         public void RegisterWidget(BaseFlightWidget widget, WidgetRefreshTier tier = WidgetRefreshTier.Standard)
         {
             if (widget == null) return;
+            if (widget.AlwaysFullPower)
+            {
+                tier = WidgetRefreshTier.Critical;
+            }
             if (_widgetLookup.ContainsKey(widget))
             {
                 _widgetLookup[widget].Tier = tier;
@@ -592,9 +596,15 @@ namespace ModularFlightPanel.UI
 
         /// <summary>
         /// 判定当前组件是否应该刷新 (支持垂直同步跟随游戏实际帧率，或自由填写自定义 Hz)
+        /// 标注 AlwaysFullPower 的组件彻底豁免一切节流，随游戏实时 FPS 满帧直通
         /// </summary>
         private bool ShouldUpdateWidget(WidgetRegistration reg, float unscaledTime)
         {
+            if (reg != null && reg.Widget != null && reg.Widget.AlwaysFullPower)
+            {
+                reg.LastUpdateTime = unscaledTime;
+                return true;
+            }
             return ShouldUpdateTier(reg.Tier, unscaledTime, ref reg.LastUpdateTime, reg.CustomInterval, reg.PhaseOffset);
         }
 

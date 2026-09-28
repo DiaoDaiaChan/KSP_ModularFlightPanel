@@ -46,10 +46,17 @@ namespace ModularFlightPanel.UI
         public bool IsSingleton { get; set; } = false;
 
         /// <summary>
-        /// 声明式满帧标记：该组件属于高速姿态/操纵类，允许使用 RefreshTier.Critical (60Hz 满帧)。
-        /// 这是 MFP-SPEC-002 判定"满帧阶梯是否合法"的唯一依据——审计不再按组件名字/文件名猜测。
+        /// 声明式满帧标记：该组件属于高速姿态/操纵类，允许使用 RefreshTier.Critical (随游戏FPS直通)。
+        /// 这是 MFP-SPEC-002 判定"满帧阶梯是否合法"的唯一依据。
         /// </summary>
         public bool HighFrequency { get; set; } = false;
+
+        /// <summary>
+        /// 强制满血运行豁免标记 (Always Full Power / Unthrottled)：
+        /// 彻底豁免一切节流，随游戏实时 FPS 满帧直通，心跳同步每帧更新，并豁免微秒帧预算切片与节能模式。
+        /// 专为 3D 姿态球 (NavballSphereWidget) 等核心航电生命线量身定制。
+        /// </summary>
+        public bool AlwaysFullPower { get; set; } = false;
 
         public FlightWidgetAttribute(string typeName, params string[] aliases)
         {
@@ -57,6 +64,19 @@ namespace ModularFlightPanel.UI
             Aliases = aliases ?? new string[0];
             ExactIds = new string[0];
         }
+    }
+
+    /// <summary>
+    /// 【满血极速运行声明特性】(Always Full Power / Unthrottled)
+    /// 在类头部标注即可实现 100% 满血运行豁免：
+    /// 1. 随游戏实时渲染 FPS 满帧直通更新 (Critical 阶梯)；
+    /// 2. 数据心跳每一帧同步求解物理遥测，零心跳间隔；
+    /// 3. 强制豁免全局微秒帧预算切片与节能模式降频；
+    /// 4. 专为 3D 导航球 (Navball) 等核心姿态仪表量身定制。
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, Inherited = true, AllowMultiple = false)]
+    public sealed class AlwaysFullPowerAttribute : Attribute
+    {
     }
 
     /// <summary>

@@ -192,10 +192,15 @@ namespace ModularFlightPanel.UI
                     }
 
                     node.HasMetadataAttribute = RoslynAstHelper.HasAttribute(cd, WidgetSpecRules.MetadataAttribute);
-                    node.DeclaresHighFrequency = node.HasMetadataAttribute &&
+                    node.DeclaresHighFrequency = (node.HasMetadataAttribute &&
                         RoslynAstHelper.HasTrueNamedArgument(
                             RoslynAstHelper.GetAttribute(cd, WidgetSpecRules.MetadataAttribute),
-                            WidgetSpecRules.HighFrequencyMetadata);
+                            WidgetSpecRules.HighFrequencyMetadata)) ||
+                        RoslynAstHelper.HasAttribute(cd, "AlwaysFullPower") ||
+                        (node.HasMetadataAttribute &&
+                        RoslynAstHelper.HasTrueNamedArgument(
+                            RoslynAstHelper.GetAttribute(cd, WidgetSpecRules.MetadataAttribute),
+                            "AlwaysFullPower"));
 
                     node.TierProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.TierProperty);
                     node.HeartBeatTierProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.HeartBeatTierProperty);
