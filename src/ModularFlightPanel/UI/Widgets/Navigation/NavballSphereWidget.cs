@@ -26,20 +26,28 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
+        public override FlightNavballPipeline GetNavballPipeline()
+        {
+            return new FlightNavballPipeline(_sphereMaterial, null, null, false, 512, this);
+        }
+
         private NavballRenderMode _cachedRenderMode;
         private Texture _cachedStockTex;
         private Vector2 _cachedTexScale = Vector2.one;
         private Vector2 _cachedTexOffset = Vector2.zero;
         private string _cachedRefCategory = "SURFACE";
+        private string _cachedRefCategoryUpper = "SURFACE";
         private string _cachedHookHeadingText;
         private float _cachedHeading;
         private string _cachedFrameName;
+        private string _lastAppliedFrameText;
+        private Color _lastAppliedFrameColor = Color.clear;
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
 
-            _cachedRenderMode = ThemeManager.Instance.GlobalRenderMode;
+            _cachedRenderMode = ThemeManager.Instance?.GlobalRenderMode ?? NavballRenderMode.ProceduralVector;
             if (_cachedRenderMode == NavballRenderMode.ProceduralBake) _cachedRenderMode = NavballRenderMode.ProceduralVector;
 
             var hook = NavBallHookService.Provider;
@@ -48,7 +56,10 @@ namespace ModularFlightPanel.UI.Widgets
                 _cachedStockTex = hook.BallTexture;
                 _cachedTexScale = hook.TextureScale;
                 _cachedTexOffset = hook.TextureOffset;
-                _cachedRefCategory = hook.ReferenceFrameCategory ?? "SURFACE";
+                string rawCat = hook.ReferenceFrameCategory;
+                if (string.IsNullOrEmpty(rawCat)) rawCat = "SURFACE";
+                _cachedRefCategory = rawCat;
+                _cachedRefCategoryUpper = rawCat.ToUpperInvariant();
                 _cachedHookHeadingText = hook.HeadingText;
                 _cachedFrameName = hook.FrameName;
             }
@@ -58,6 +69,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _cachedTexScale = Vector2.one;
                 _cachedTexOffset = Vector2.zero;
                 _cachedRefCategory = "SURFACE";
+                _cachedRefCategoryUpper = "SURFACE";
                 _cachedHookHeadingText = null;
                 _cachedFrameName = null;
             }
@@ -68,16 +80,6 @@ namespace ModularFlightPanel.UI.Widgets
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-
-            // 姿态球片元着色器管线保活与材质状态同步
-            if (_sphereMaterial != null && _displayImage != null && _displayImage.enabled)
-            {
-                Shader targetShader = AssetLoader.RaymarchShader ?? Shader.Find("ModularFlightPanel/NavballRaymarch") ?? Shader.Find("UI/Default");
-                if (_sphereMaterial.shader != targetShader && targetShader != null)
-                {
-                    _sphereMaterial.shader = targetShader;
-                }
-            }
 
             var mode = _cachedRenderMode;
             if (mode == NavballRenderMode.StockDirect)
@@ -113,7 +115,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 更新航向读数盒与参考系模式显示
-            string category = _cachedRefCategory;
+            string catUpper = _cachedRefCategoryUpper;
             if (_headingText != null)
             {
                 if (!string.IsNullOrEmpty(_cachedHookHeadingText))
@@ -129,7 +131,6 @@ namespace ModularFlightPanel.UI.Widgets
                     float hdg = _cachedHeading;
                     int iHdg = Mathf.RoundToInt(hdg) % 360;
                     if (iHdg < 0) iHdg += 360;
-                    string catUpper = category.ToUpperInvariant();
 
                     if (iHdg != _lastHeadingValue || catUpper != _lastHeadingCategory)
                     {
@@ -171,7 +172,7 @@ namespace ModularFlightPanel.UI.Widgets
                 string frame = _cachedFrameName;
                 if (string.IsNullOrEmpty(frame))
                 {
-                    switch (category.ToUpperInvariant())
+                    switch (catUpper)
                     {
                         case "INERTIAL": frame = "INERT"; break;
                         case "BODY_FIXED":
@@ -184,13 +185,31 @@ namespace ModularFlightPanel.UI.Widgets
                         default: frame = "SURF"; break;
                     }
                 }
-                _frameText.text = frame.Length > 5 ? frame.Substring(0, 5).ToUpperInvariant() : frame.ToUpperInvariant();
+                else if (frame.Length > 5)
+                {
+                    frame = frame.Substring(0, 5).ToUpperInvariant();
+                }
+                else
+                {
+                    frame = frame.ToUpperInvariant();
+                }
 
-                // 参考系角标切变颜色同步
-                ThemeConfig curTheme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
+                if (!string.Equals(frame, _lastAppliedFrameText, StringComparison.Ordinal))
+                {
+                    _lastAppliedFrameText = frame;
+                    _frameText.text = frame;
+                }
+
+                // 参考系角标切变颜色同步 (仅在动画结束后且颜色发生改变时写入 UGUI)
                 if (_frameBadgeAnimTimer >= 0.40f)
                 {
-                    _frameText.color = GetFrameAccentColor(category, curTheme);
+                    ThemeConfig curTheme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
+                    Color accentCol = GetFrameAccentColor(catUpper, curTheme);
+                    if (_lastAppliedFrameColor != accentCol)
+                    {
+                        _lastAppliedFrameColor = accentCol;
+                        _frameText.color = accentCol;
+                    }
                 }
             }
         }
@@ -447,7 +466,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 注册微控件至标准化管理器
             this.Controls.Register(new WidgetGraphicViewportControl("navball_viewport", "3D球体视口", _displayImage != null ? _displayImage.gameObject : gameObject, _displayImage));
             if (_crosshair != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "crosshair", "准星标线", _crosshair));
-            if (_headingBox != null) this.Controls.Register(new WidgetReadoutControl("heading_box", "航向盒读数", _headingBox, _headingText, _frameText, TextStyleRole.PrimaryValue, "{HDG}"));
+            if (_headingBox != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "heading_box", "航向盒读数", _headingBox));
             if (_shellRoot != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "ecam_shell", "ECAM机匣外壳", _shellRoot, (t) => ApplyCard(_shellImage, _shellOutline, CardStyleRole.Normal, t)));
 
             this.Controls.BindConfigToControls(config);

@@ -40,20 +40,23 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         public RenderTexture TargetTexture => _renderTexture;
         public Camera OffscreenCamera => _ballCamera;
 
+        protected int _cachedOptimalResolution = 512;
+        protected bool _optimalResDirty = true;
+
         public override FlightNavballPipeline GetNavballPipeline()
         {
-            int optRes = 512;
-            if (WidgetRenderManager.Instance != null)
+            if (_optimalResDirty && WidgetRenderManager.Instance != null)
             {
                 float dim = RectTransform != null ? Mathf.Max(RectTransform.rect.width, RectTransform.rect.height) : 200f;
                 if (dim <= 0.1f) dim = 200f;
-                optRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
+                _cachedOptimalResolution = WidgetRenderManager.Instance.CalculateOptimalResolution(
                     new Vector2(dim, dim),
                     Config != null ? Config.Scale : 1.0f,
                     Config != null ? Config.RenderScale : 1.0f,
                     minRes: 512);
+                _optimalResDirty = false;
             }
-            return new FlightNavballPipeline(_sphereMaterial, _renderTexture, _ballCamera, _isRenderDirty, optRes, this);
+            return new FlightNavballPipeline(_sphereMaterial, _renderTexture, _ballCamera, _isRenderDirty, _cachedOptimalResolution, this);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -168,6 +171,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         protected override void OnScaleChanged(float targetScale, float relativeRatio)
         {
             base.OnScaleChanged(targetScale, relativeRatio);
+            _optimalResDirty = true;
             UpdateSphereScale();
             HandleRenderSettingChanged();
         }
@@ -183,6 +187,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         protected virtual void HandleResolutionChanged(int newRes)
         {
+            _optimalResDirty = true;
             if (_renderTexture == null || !_renderTexture.IsCreated()) return;
             if (_renderTexture.width == newRes) return;
 
