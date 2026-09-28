@@ -1189,7 +1189,20 @@ namespace ModularFlightPanel.UI
         {
             if (node.IsAbstract || node.IsContractRoot || node.IsObsoleteShim) return;
 
-            if (node.DataHeartBeatMethod != null)
+            // 1. 显式重写声明检查
+            if (node.DataHeartBeatMethod == null)
+            {
+                Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
+                    "未在组件内显式重写 " + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType
+                    + ") 独立数据心跳接口。\n"
+                    + "  【架构收拢规范指引】组件内所有遥测数据更新与物理计算必须写在 DataHeartBeat 里面：\n"
+                    + "      public override void OnDataHeartBeat(in FlightHeartbeatContext context)\n"
+                    + "      {\n"
+                    + "          base.OnDataHeartBeat(in context);\n"
+                    + "          // 在此执行遥测参数计算、多频分频 (context.Every) 或跨组件广播 (context.Publish)\n"
+                    + "      }");
+            }
+            else
             {
                 if (!RoslynAstHelper.IsPublicOverrideWithSingleParam(node.DataHeartBeatMethod, WidgetSpecRules.DataHeartBeatParameterType, SyntaxKind.InKeyword))
                 {
@@ -1197,25 +1210,72 @@ namespace ModularFlightPanel.UI
                         "声明了 " + WidgetSpecRules.DataHeartBeatMethod + " 但签名不符合规范（应为 public override void "
                         + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType + " context)）");
                 }
-                return;
+
+                // 2. DataHeartBeat 纯净性检查：严禁在数据心跳中混写 UI 绘制与图元操作
+                var drawOps = RoslynAstHelper.FindUIDrawExpressions(node.DataHeartBeatMethod);
+                if (drawOps.Count > 0)
+                {
+                    var firstOp = drawOps[0];
+                    int line = RoslynAstHelper.GetLine(firstOp.Node);
+                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                        "OnDataHeartBeat 数据心跳中检测到 UI 绘制与图元操作 (" + firstOp.MatchedText
+                        + ")。根据架构收拢规范，数据心跳专注于物理解算与遥测采样，UI 绘制必须收拢至 OnUIDrawLoop 里面");
+                }
             }
 
-            Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
-                "未在组件内显式重写 " + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType
-                + ") 独立数据心跳接口。\n"
-                + "  【规范指引】必须在组件类内显式重写该方法，将物理量计算与 UI 绘制解耦：\n"
-                + "      public override void OnDataHeartBeat(in FlightHeartbeatContext context)\n"
-                + "      {\n"
-                + "          base.OnDataHeartBeat(in context);\n"
-                + "          // 在此执行遥测参数计算、多频分频 (context.Every) 或跨组件广播 (context.Publish)\n"
-                + "      }");
+            // 3. 遥测数据更新收拢检查：遥测数据更新必须写在 DataHeartBeat 里面，禁止在旧版 OnUpdateTelemetry 中编写遥测逻辑
+            if (node.TelemetryMethod != null)
+            {
+                var telemOps = RoslynAstHelper.FindTelemetryUpdateExpressions(node.TelemetryMethod);
+                if (telemOps.Count > 0)
+                {
+                    var firstOp = telemOps[0];
+                    int line = RoslynAstHelper.GetLine(firstOp.Node);
+                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                        "OnUpdateTelemetry 中检测到遥测数据更新 (" + firstOp.MatchedText
+                        + ")。根据架构收拢规范，遥测数据更新必须全部收拢至 OnDataHeartBeat 里面，禁止在旧版 OnUpdateTelemetry 中更新遥测");
+                }
+                else if (node.TelemetryMethod.Body != null && node.TelemetryMethod.Body.Statements.Count > 0)
+                {
+                    int line = RoslynAstHelper.GetLine(node.TelemetryMethod);
+                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                        "检测到具体组件仍包含旧版 OnUpdateTelemetry 逻辑。根据架构收拢规范，遥测数据更新必须收拢至 OnDataHeartBeat 独立数据心跳中");
+                }
+            }
+
+            // 4. 禁止在 UIDrawLoop 内部采样遥测数据
+            if (node.UIDrawLoopMethod != null)
+            {
+                var telemOpsInDraw = RoslynAstHelper.FindTelemetryUpdateExpressions(node.UIDrawLoopMethod);
+                if (telemOpsInDraw.Count > 0)
+                {
+                    var firstOp = telemOpsInDraw[0];
+                    int line = RoslynAstHelper.GetLine(firstOp.Node);
+                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                        "OnUIDrawLoop 内部禁止执行遥测数据采样或物理解算 (" + firstOp.MatchedText
+                        + ")。根据架构收拢规范，遥测数据更新必须写在 OnDataHeartBeat 里面，UI 绘制循环仅负责视觉呈现");
+                }
+            }
         }
 
         private static void ScanUIDrawLoopContract(WidgetClassNode node, WidgetSourceAuditReport report)
         {
             if (node.IsAbstract || node.IsContractRoot || node.IsObsoleteShim) return;
 
-            if (node.UIDrawLoopMethod != null)
+            // 1. 显式重写声明检查
+            if (node.UIDrawLoopMethod == null)
+            {
+                Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
+                    "未在组件内显式重写 " + WidgetSpecRules.UIDrawLoopMethod + "(ref " + WidgetSpecRules.UIDrawLoopParameterType
+                    + ") 独立 UI 绘制循环接口。\n"
+                    + "  【架构收拢规范指引】所有视觉呈现与 UI 绘制必须写在 UIDrawLoop 里面：\n"
+                    + "      public override void OnUIDrawLoop(ref FlightUIDrawContext context)\n"
+                    + "      {\n"
+                    + "          base.OnUIDrawLoop(ref context);\n"
+                    + "          // 在此挂载 2D UI 着色器材质 (context.ApplyUiMaterial) 或驱动视觉补间\n"
+                    + "      }");
+            }
+            else
             {
                 if (!RoslynAstHelper.IsPublicOverrideWithSingleParam(node.UIDrawLoopMethod, WidgetSpecRules.UIDrawLoopParameterType, SyntaxKind.RefKeyword))
                 {
@@ -1223,18 +1283,21 @@ namespace ModularFlightPanel.UI
                         "声明了 " + WidgetSpecRules.UIDrawLoopMethod + " 但签名不符合规范（应为 public override void "
                         + WidgetSpecRules.UIDrawLoopMethod + "(ref " + WidgetSpecRules.UIDrawLoopParameterType + " context)）");
                 }
-                return;
             }
 
-            Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
-                "未在组件内显式重写 " + WidgetSpecRules.UIDrawLoopMethod + "(ref " + WidgetSpecRules.UIDrawLoopParameterType
-                + ") 独立 UI 绘制循环接口。\n"
-                + "  【规范指引】必须在组件类内显式重写该方法，将视觉动效与 2D UI Shader 材质管线集中管理：\n"
-                + "      public override void OnUIDrawLoop(ref FlightUIDrawContext context)\n"
-                + "      {\n"
-                + "          base.OnUIDrawLoop(ref context);\n"
-                + "          // 在此挂载 2D UI 着色器材质 (context.ApplyUiMaterial) 或驱动视觉补间\n"
-                + "      }");
+            // 2. UI 绘制收拢检查：所有 UI 绘制必须写在 UIDrawLoop 里面，禁止在旧版 OnUpdateTelemetry 中执行绘制
+            if (node.TelemetryMethod != null)
+            {
+                var drawOps = RoslynAstHelper.FindUIDrawExpressions(node.TelemetryMethod);
+                if (drawOps.Count > 0)
+                {
+                    var firstOp = drawOps[0];
+                    int line = RoslynAstHelper.GetLine(firstOp.Node);
+                    Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", line,
+                        "OnUpdateTelemetry 中检测到 UI 绘制与图元操作 (" + firstOp.MatchedText
+                        + ")。根据架构收拢规范，所有 UI 绘制、文本更新与材质着色器提交必须收拢至 OnUIDrawLoop 里面");
+                }
+            }
         }
 
         private static void ScanLifecycle(WidgetClassNode node, WidgetSourceAuditReport report)
@@ -1618,6 +1681,31 @@ namespace ModularFlightPanel.UI
 
             var drawLoopMissing = Scan(new[] { MakeFile("DrawLoopMissing.cs", compliant.Replace("        public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }\n", string.Empty)) });
             check(drawLoopMissing.CountByRule(WidgetSpecRules.UIDrawLoopContract) == 1, "SPEC-004D 缺失 OnUIDrawLoop 未拦下");
+
+            string dhbHasDrawSrc = compliant.Replace(
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { }",
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { Value.Text = \"123\"; }");
+            var dhbDrawReport = Scan(new[] { MakeFile("DhbDraw.cs", dhbHasDrawSrc) });
+            check(dhbDrawReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnDataHeartBeat 混写 UI 绘制未拦下");
+
+            string drawLoopTelemSrc = compliant.Replace(
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }",
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { var v = context.Telemetry.Speed; }");
+            var drawTelemReport = Scan(new[] { MakeFile("DrawTelem.cs", drawLoopTelemSrc) });
+            check(drawTelemReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnUIDrawLoop 采样遥测未拦下");
+
+            string telemMethodSrc = compliant.Replace(
+                "public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { }",
+                "public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { var s = telemetry.Speed; }");
+            var telemMethodReport = Scan(new[] { MakeFile("TelemMethod.cs", telemMethodSrc) });
+            check(telemMethodReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnUpdateTelemetry 未收拢遥测逻辑未拦下");
+
+            string telemDrawSrc = compliant.Replace(
+                "public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { }",
+                "public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { Value.Text = \"123\"; }");
+            var telemDrawReport = Scan(new[] { MakeFile("TelemDraw.cs", telemDrawSrc) });
+            check(telemDrawReport.CountByRule(WidgetSpecRules.UIDrawLoopContract) == 1, "SPEC-004D OnUpdateTelemetry 混写 UI 绘制未拦下");
+
 
             // ── 6. SPEC-002 阶梯：缺失 / 强转 / 注释伪造 / 块状 get / 字段回填 / 满帧声明 ──
             var tierMissing = Scan(new[] { MakeFile("TierMissing.cs", compliant.Replace("        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n", string.Empty)) });

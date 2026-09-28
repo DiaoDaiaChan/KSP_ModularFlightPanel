@@ -459,5 +459,147 @@ namespace ModularFlightPanel.UI.Auditing
             }
             return result;
         }
+
+        public struct AstMatchResult
+        {
+            public SyntaxNode Node;
+            public string MatchedText;
+            public AstMatchResult(SyntaxNode node, string matchedText)
+            {
+                Node = node;
+                MatchedText = matchedText;
+            }
+        }
+
+        /// <summary>
+        /// 判定指定语法节点是否属于遥测数据采样/物理量计算表达式
+        /// </summary>
+        public static bool IsTelemetryDataExpression(SyntaxNode node, out string matchedText)
+        {
+            matchedText = null;
+            if (node == null) return false;
+
+            if (node is MemberAccessExpressionSyntax ma)
+            {
+                string text = ma.ToString();
+                if (text.StartsWith("telemetry.", StringComparison.Ordinal) ||
+                    text.StartsWith("_telemetry.", StringComparison.Ordinal) ||
+                    text.StartsWith("context.Telemetry.", StringComparison.Ordinal) ||
+                    text.StartsWith("ctx.Telemetry.", StringComparison.Ordinal) ||
+                    text.StartsWith("FlightGlobals.", StringComparison.Ordinal))
+                {
+                    matchedText = text;
+                    return true;
+                }
+            }
+            else if (node is InvocationExpressionSyntax inv)
+            {
+                string expr = inv.Expression.ToString();
+                if (expr.EndsWith("EvalNumeric", StringComparison.Ordinal) ||
+                    expr.EndsWith("EvalToken", StringComparison.Ordinal) ||
+                    expr.Contains("GetTemplateChannel"))
+                {
+                    matchedText = expr + "(...)";
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 判定指定语法节点是否属于 UI 绘制、文本更新或材质/动效渲染表达式
+        /// </summary>
+        public static bool IsUIDrawExpression(SyntaxNode node, out string matchedText)
+        {
+            matchedText = null;
+            if (node == null) return false;
+
+            if (node is AssignmentExpressionSyntax assign && assign.IsKind(SyntaxKind.SimpleAssignmentExpression))
+            {
+                string leftText = assign.Left.ToString();
+                if (leftText.EndsWith(".Text", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".text", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".color", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".fillAmount", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".material", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".anchoredPosition", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".sizeDelta", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".localScale", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".localEulerAngles", StringComparison.Ordinal) ||
+                    leftText.EndsWith(".localRotation", StringComparison.Ordinal))
+                {
+                    matchedText = leftText + " = ...";
+                    return true;
+                }
+            }
+            else if (node is InvocationExpressionSyntax inv)
+            {
+                string expr = inv.Expression.ToString();
+                if (expr.EndsWith("SetText", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetTextSafe", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetTextIfChanged", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetRole", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetColor", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetAlpha", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetFillAmountSafe", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetImageFillIfChanged", StringComparison.Ordinal) ||
+                    expr.EndsWith(".SetFloat", StringComparison.Ordinal) ||
+                    expr.EndsWith(".SetColor", StringComparison.Ordinal) ||
+                    expr.EndsWith(".SetVector", StringComparison.Ordinal) ||
+                    expr.EndsWith(".SetTexture", StringComparison.Ordinal) ||
+                    expr.EndsWith("ApplyUiMaterial", StringComparison.Ordinal) ||
+                    expr.EndsWith("GetUiMaterial", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetAnchoredPositionSafe", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetSizeDeltaSafe", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetLocalScaleSafe", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetLocalRotationSafe", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetLocalEulerAnglesSafe", StringComparison.Ordinal) ||
+                    expr.StartsWith("GL.", StringComparison.Ordinal) ||
+                    expr.StartsWith("Graphics.Draw", StringComparison.Ordinal))
+                {
+                    matchedText = expr + "(...)";
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 扫描语法节点内出现的所有遥测数据采样/物理计算表达式
+        /// </summary>
+        public static List<AstMatchResult> FindTelemetryUpdateExpressions(SyntaxNode root)
+        {
+            var list = new List<AstMatchResult>();
+            if (root == null) return list;
+
+            foreach (var node in root.DescendantNodes())
+            {
+                if (IsTelemetryDataExpression(node, out string matched))
+                {
+                    list.Add(new AstMatchResult(node, matched));
+                }
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// 扫描语法节点内出现的所有 UI 绘制与图元操作表达式
+        /// </summary>
+        public static List<AstMatchResult> FindUIDrawExpressions(SyntaxNode root)
+        {
+            var list = new List<AstMatchResult>();
+            if (root == null) return list;
+
+            foreach (var node in root.DescendantNodes())
+            {
+                if (IsUIDrawExpression(node, out string matched))
+                {
+                    list.Add(new AstMatchResult(node, matched));
+                }
+            }
+            return list;
+        }
     }
 }
