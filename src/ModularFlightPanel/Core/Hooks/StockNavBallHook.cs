@@ -738,15 +738,23 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        private static float _latchedHeading = 0f;
+        private static bool _hasLatchedHeading = false;
+
         public static string GetHeadingText()
         {
-            if (HasStockNavBall && StockInstance.headingText != null)
+            if (!PrincipiaProbe.IsAvailable && HasStockNavBall && StockInstance.headingText != null)
             {
                 string txt = StockInstance.headingText.text;
                 if (!string.IsNullOrEmpty(txt)) return txt;
             }
-            int h = TelemetryHub.Instance != null ? Mathf.RoundToInt(TelemetryHub.Instance.Heading) % 360 : 0;
-            return $"{h:D3}°";
+            if (GetContinuousHeading(out float hdg))
+            {
+                int h = (Mathf.RoundToInt(hdg) % 360 + 360) % 360;
+                return $"{h:D3}°";
+            }
+            int fallbackH = TelemetryHub.Instance != null ? Mathf.RoundToInt(TelemetryHub.Instance.Heading) % 360 : 0;
+            return $"{fallbackH:D3}°";
         }
 
         public static bool GetContinuousHeading(out float heading)
@@ -755,8 +763,64 @@ namespace ModularFlightPanel.Core
             {
                 try
                 {
-                    Quaternion invGymbal = Quaternion.Inverse(StockInstance.relativeGymbal);
-                    heading = (invGymbal.eulerAngles.y % 360f + 360f) % 360f;
+                    // 1. 优先获取权威 NavBall 真实 3D 旋转 (100% 原生适配 Principia 多参考系切换与原生 KSP)
+                    Quaternion ballRot = (StockInstance.navBall != null)
+                        ? StockInstance.navBall.rotation
+                        : StockInstance.relativeGymbal;
+
+                    // 2. 转换至 NavBall 摄像机视口空间
+                    Camera cam = GetNavBallCamera();
+                    Quaternion camRot = (cam != null) ? cam.transform.rotation : Quaternion.identity;
+                    Quaternion viewRot = Quaternion.Inverse(camRot) * ballRot;
+                    Quaternion invRot = Quaternion.Inverse(viewRot);
+
+                    // 3. 在姿态球参考系内解算机头前向矢量与天顶矢量 (彻底规避 Unity eulerAngles 万向节死锁 180° 翻转与微颤)
+                    Vector3 fwdInBall = invRot * Vector3.forward;
+                    Vector3 upInBall = invRot * Vector3.up;
+
+                    float horizSqr = fwdInBall.x * fwdInBall.x + fwdInBall.z * fwdInBall.z;
+                    float calcHdg;
+                    if (horizSqr > 0.0001f)
+                    {
+                        // 正常俯仰区间 (-88° ~ +88°)：前向矢量在参考系水平面 (X-Z) 投影的极坐标方位角
+                        calcHdg = Mathf.Atan2(fwdInBall.x, fwdInBall.z) * Mathf.Rad2Deg;
+                    }
+                    else
+                    {
+                        // 极点天顶/天底俯仰区间 (|Pitch| > 88°，如发射台垂直待发)：利用视口天顶轴平滑解析方位
+                        calcHdg = (fwdInBall.y >= 0f)
+                            ? Mathf.Atan2(upInBall.x, upInBall.z) * Mathf.Rad2Deg
+                            : Mathf.Atan2(-upInBall.x, -upInBall.z) * Mathf.Rad2Deg;
+                    }
+
+                    calcHdg = (calcHdg % 360f + 360f) % 360f;
+
+                    // 4. 地表预发射与静止态抗噪死区锁存 (杜绝地面发射台弹簧夹具与微抖动导致的大范围跳动)
+                    Vessel v = FlightGlobals.ActiveVessel;
+                    if (v != null && (v.situation == Vessel.Situations.PRELAUNCH || (v.LandedOrSplashed && v.srfSpeed < 0.2)))
+                    {
+                        FlightCtrlState ctrl = v.ctrlState;
+                        bool hasControlInput = ctrl != null && (Mathf.Abs(ctrl.pitch) > 0.05f || Mathf.Abs(ctrl.yaw) > 0.05f || Mathf.Abs(ctrl.roll) > 0.05f);
+                        if (!_hasLatchedHeading)
+                        {
+                            _latchedHeading = calcHdg;
+                            _hasLatchedHeading = true;
+                        }
+                        else if (!hasControlInput && Mathf.Abs(Mathf.DeltaAngle(calcHdg, _latchedHeading)) < 2.0f)
+                        {
+                            calcHdg = _latchedHeading;
+                        }
+                        else
+                        {
+                            _latchedHeading = calcHdg;
+                        }
+                    }
+                    else
+                    {
+                        _hasLatchedHeading = false;
+                    }
+
+                    heading = calcHdg;
                     return true;
                 }
                 catch { }

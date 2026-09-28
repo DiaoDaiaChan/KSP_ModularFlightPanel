@@ -174,7 +174,10 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
             }));
-            this.Controls.Register(new WidgetReadoutControl("speech_bubble", "气泡航向标牌", _speechBubbleRoot, _headingText, null, TextStyleRole.PrimaryValue, _valueToken));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "speech_bubble", "气泡航向标牌", _speechBubbleRoot, (t) => {
+                ApplyCard(_bubbleBg, _bubbleOutline, CardStyleRole.Emphasized, t);
+                ApplyText(_headingText, TextStyleRole.PrimaryValue, t);
+            }));
             this.Controls.Register(WidgetControlManager.WrapElement(this, "lubber_mark", "翡翠绿基准游标", _lubberLineRoot, (t) => {
                 Color lc = WidgetStyleManager.Meter(MeterStyleRole.Primary, t);
                 if (_lubberBar != null) _lubberBar.color = lc;
@@ -428,16 +431,16 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel) return;
 
-            double evalHdg = TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
             float rawHeading;
-            if (!double.IsNaN(evalHdg))
+            var hook = NavBallHookService.Provider;
+            if (hook != null && hook.HasStockNavBall)
             {
-                rawHeading = (float)evalHdg;
+                rawHeading = hook.HeadingAngle;
             }
             else
             {
-                var hook = NavBallHookService.Provider;
-                rawHeading = (hook != null && hook.HasStockNavBall) ? hook.HeadingAngle : (float)telemetry.Heading;
+                double evalHdg = TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
+                rawHeading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)telemetry.Heading;
             }
             if (float.IsNaN(rawHeading)) rawHeading = 0f;
 

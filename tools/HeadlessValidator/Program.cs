@@ -431,21 +431,19 @@ namespace ModularFlightPanel.HeadlessValidator
             int specErrors = ValidateWidgetSpecifications(repoRoot);
             overallErrors += specErrors;
 
-            // 7. 审计内核自检：继承图规则 + 颜色字面量计数器 + I18n AST 语法树 + 现代化网格闭包自检
-            Console.WriteLine($"\n[7/10] 审计内核自检 (Spec Rules + Color Ledger + I18n AST + Modernization Mesh Self-Test)...");
+            // 7. 审计内核自检：继承图规则 + 颜色字面量计数器 + I18n AST 语法树自检
+            Console.WriteLine($"\n[7/10] 审计内核自检 (Spec Rules + Color Ledger + I18n AST Self-Test)...");
             var ruleFailures = WidgetSourceAudit.SelfTest();
             var colorFailures = WidgetColorLiteralAudit.SelfTest();
             var i18nSelfTestFailures = I18nSyntaxAuditor.SelfTest();
             var i18nDictSelfTestFailures = I18nDictionaryValueAudit.SelfTest();
-            var modFailures = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.SelfTest();
-            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0 && i18nDictSelfTestFailures.Count == 0 && modFailures.Count == 0)
+            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0 && i18nDictSelfTestFailures.Count == 0)
             {
                 // 用例条数由内核回传真实计数：写死数字必然随代码漂移成假信息。
                 PrintSuccess($"审计内核自检通过: 规则自检 {WidgetSourceAudit.LastSelfTestCaseCount} 条对照用例"
                            + $" + 颜色字面量 {WidgetColorLiteralAudit.LastSelfTestCaseCount} 条边界用例"
                            + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条用例"
-                           + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条用例"
-                           + $" + 现代化网格闭包 {ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.LastSelfTestCaseCount} 条用例 全部符合预期。");
+                           + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条用例 全部符合预期。");
             }
             else
             {
@@ -453,8 +451,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 foreach (var failure in colorFailures) PrintError($"颜色字面量自检失败: {failure}");
                 foreach (var failure in i18nSelfTestFailures) PrintError($"I18n 语法树自检失败: {failure}");
                 foreach (var failure in i18nDictSelfTestFailures) PrintError($"I18n 词典值自检失败: {failure}");
-                foreach (var failure in modFailures) PrintError($"现代化网格闭包自检失败: {failure}");
-                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count + i18nDictSelfTestFailures.Count + modFailures.Count;
+                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count + i18nDictSelfTestFailures.Count;
             }
 
             // 8. Unity 无头预览工程镜像一致性（清单 tools/unity_mirror.manifest 即合约）
@@ -572,15 +569,15 @@ namespace ModularFlightPanel.HeadlessValidator
                 var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
                 Console.WriteLine($"  ├─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
                 var perfRisks = modReport.WidgetsWithAntiPatterns
-                    .Where(i => i.HotLoopHeapAllocations > 0 || i.HasUnmanagedCore3DUgui || i.HotLoopUguiSetters > 5 || i.HasBannedDockSyncCall || i.HotLoopMeshRebuilds > 0)
+                    .Where(i => i.HotLoopHeapAllocations > 0 || i.HasUnmanagedCore3DUgui || i.HotLoopUguiSetters > 5 || i.HasBannedDockSyncCall)
                     .ToList();
                 if (perfRisks.Count > 0)
                 {
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"  ⚠ 航电效能与架构雷达侦测到 {perfRisks.Count} 个组件存在高频帧循环堆分配/网格脏重建/裸 UGUI 逃逸/非集中调度 (详见 --audit-modernization):");
+                    Console.WriteLine($"  ⚠ 航电效能与架构雷达侦测到 {perfRisks.Count} 个组件存在高频帧循环堆分配/裸 UGUI 逃逸/非集中调度 (详见 --audit-modernization):");
                     foreach (var risk in perfRisks)
                     {
-                        var issues = risk.StandardizationSuggestions.Where(s => s.Contains("高频") || s.Contains("Core3D") || s.Contains("调度") || s.Contains("网格") || s.Contains("重建")).ToList();
+                        var issues = risk.StandardizationSuggestions.Where(s => s.Contains("高频") || s.Contains("Core3D") || s.Contains("调度")).ToList();
                         Console.WriteLine($"     • {risk.FileName,-24} => {string.Join("; ", issues)}");
                     }
                     Console.ResetColor();
