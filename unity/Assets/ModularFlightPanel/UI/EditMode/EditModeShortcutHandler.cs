@@ -32,6 +32,23 @@ namespace ModularFlightPanel.UI
                 return;
             }
 
+            // 1.1 复制 / 粘贴 / 克隆 (Ctrl + C / Ctrl + V / Ctrl + D)
+            if (ctrl && Input.GetKeyDown(KeyCode.C))
+            {
+                WidgetClipboardManager.CopySelected();
+                return;
+            }
+            if (ctrl && Input.GetKeyDown(KeyCode.V))
+            {
+                WidgetClipboardManager.Paste();
+                return;
+            }
+            if (ctrl && Input.GetKeyDown(KeyCode.D))
+            {
+                WidgetClipboardManager.DuplicateSelected();
+                return;
+            }
+
             // 2. 切换蓝图辅助网格 (G 键)
             if (Input.GetKeyDown(KeyCode.G) && !ctrl)
             {

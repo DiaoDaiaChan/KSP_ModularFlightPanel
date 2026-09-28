@@ -188,6 +188,18 @@ namespace ModularFlightPanel.Config
             Rotation = rotation;
             WidgetType = id.StartsWith("tape.") ? "tape" : (id.StartsWith("arc_tape.") ? "arc_tape" : (id.StartsWith("ecam.") ? "ecam_dial" : (id.StartsWith("custom.") ? "custom" : "core")));
         }
+
+        /// <summary>
+        /// 创建该小组件配置的独立副本，可指定新 ID 与坐标偏移
+        /// </summary>
+        public WidgetConfig Clone(string newId = null, float offsetX = 0f, float offsetY = 0f)
+        {
+            var copy = (WidgetConfig)this.MemberwiseClone();
+            if (!string.IsNullOrEmpty(newId)) copy.WidgetId = newId;
+            copy.PositionX += offsetX;
+            copy.PositionY += offsetY;
+            return copy;
+        }
     }
 }
 

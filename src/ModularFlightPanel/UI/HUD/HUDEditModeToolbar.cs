@@ -416,6 +416,12 @@ namespace ModularFlightPanel.UI.HUD
                     }
                 }
 
+                // 快捷克隆副本 (Ctrl+D / Copy-Paste)
+                if (GUILayout.Button("📑 克隆", GUILayout.Width(62f), GUILayout.Height(20f)))
+                {
+                    WidgetClipboardManager.DuplicateSelected();
+                }
+
                 GUI.color = Color.white;
                 GUILayout.EndHorizontal();
             }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
@@ -344,69 +345,90 @@ namespace ModularFlightPanel.UI.Settings
                 MFPGuiSkin.DrawBadge(I18n.Tr("LIB_BADGE_MULTI", "多实例"), Color.white, new Color(0.08f, 0.26f, 0.22f, 0.9f));
             }
 
-            // 检查当前布局中是否已激活该组件
+            // 统计当前布局中该组件已激活的实例列表
             var layout = WidgetLayoutManager.Instance?.CurrentLayout;
-            WidgetConfig activeCfg = null;
+            var activeList = new List<WidgetConfig>();
             if (layout != null && layout.Widgets != null)
             {
-                if (!string.IsNullOrEmpty(desc.DefaultWidgetId))
+                foreach (var w in layout.Widgets)
                 {
-                    activeCfg = layout.Widgets.Find(w => string.Equals(w.WidgetId, desc.DefaultWidgetId, StringComparison.OrdinalIgnoreCase));
-                }
-                if (activeCfg == null && desc.IsSingleton && !string.IsNullOrEmpty(desc.TypeName))
-                {
-                    activeCfg = layout.Widgets.Find(w => string.Equals(w.WidgetType, desc.TypeName, StringComparison.OrdinalIgnoreCase));
+                    if (w == null) continue;
+                    bool match = false;
+                    if (!string.IsNullOrEmpty(desc.DefaultWidgetId) && string.Equals(w.WidgetId, desc.DefaultWidgetId, StringComparison.OrdinalIgnoreCase)) match = true;
+                    else if (!string.IsNullOrEmpty(desc.TypeName) && string.Equals(w.WidgetType, desc.TypeName, StringComparison.OrdinalIgnoreCase)) match = true;
+                    else if (desc.ExactIds != null && desc.ExactIds.Any(id => string.Equals(w.WidgetId, id, StringComparison.OrdinalIgnoreCase))) match = true;
+
+                    if (match && w.IsEnabled)
+                    {
+                        activeList.Add(w);
+                    }
                 }
             }
 
-            bool isAdded = (activeCfg != null && activeCfg.IsEnabled);
+            int activeCount = activeList.Count;
 
-            if (isAdded)
+            if (activeCount > 0)
             {
-                if (GUILayout.Button(I18n.Tr("LIB_RUNNING_HIDE", "● 运行中 (点击隐藏)"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(135f), GUILayout.Height(24f)))
+                string runText = activeCount == 1 ? I18n.Tr("LIB_RUNNING_HIDE", "● 运行中 (隐藏)") : I18n.TrFormat("LIB_RUNNING_COUNT", "● {0}个运行中", activeCount);
+                if (GUILayout.Button(runText, MFPGuiSkin.WarningButtonStyle, GUILayout.Width(105f), GUILayout.Height(24f)))
                 {
-                    activeCfg.IsEnabled = false;
+                    var last = activeList[activeList.Count - 1];
+                    last.IsEnabled = false;
+                    WidgetLayoutManager.Instance.SaveLayout();
                     FlightHUDManager.Instance?.RebuildHUD();
                     ShowToast(I18n.TrFormat("LIB_TOAST_HIDDEN", title));
+                }
+
+                if (GUILayout.Button(I18n.Tr("LIB_ADD_COPY", "+ 添加副本"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(75f), GUILayout.Height(24f)))
+                {
+                    string newId = GenerateUniqueWidgetIdForDescriptor(desc, layout);
+                    var newCfg = desc.CreateConfig(newId);
+                    newCfg.IsEnabled = true;
+                    newCfg.WidgetType = desc.TypeName;
+                    var pos = GetSmartSpawnPosition();
+                    newCfg.PositionX = pos.x;
+                    newCfg.PositionY = pos.y;
+
+                    layout.Widgets.Add(newCfg);
+                    WidgetLayoutManager.Instance.SaveLayout();
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    OnWidgetAdded(newCfg.WidgetId, title);
+                    ShowToast(I18n.TrFormat("LIB_TOAST_ADDED_COPY", "已添加 {0} 副本", title));
                 }
             }
             else
             {
-                string btnText = desc.IsSingleton
-                    ? I18n.Tr("LIB_ENABLE_CORE", "+ 开启核心组件")
-                    : I18n.Tr("LIB_ADD_TO_PANEL", "+ 添加到面板");
+                // 尚无激活实例，检查是否存在被隐藏的历史配置
+                var disabledCfg = layout?.Widgets?.Find(w => !w.IsEnabled && (
+                    (!string.IsNullOrEmpty(desc.DefaultWidgetId) && string.Equals(w.WidgetId, desc.DefaultWidgetId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(desc.TypeName) && string.Equals(w.WidgetType, desc.TypeName, StringComparison.OrdinalIgnoreCase))
+                ));
 
-                GUIStyle btnStyle = desc.IsSingleton ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SuccessButtonStyle;
-
-                if (GUILayout.Button(btnText, btnStyle, GUILayout.Width(135f), GUILayout.Height(24f)))
+                string btnText = I18n.Tr("LIB_ADD_TO_PANEL", "+ 添加到面板");
+                if (GUILayout.Button(btnText, MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(135f), GUILayout.Height(24f)))
                 {
-                    if (activeCfg != null)
+                    if (disabledCfg != null)
                     {
-                        activeCfg.IsEnabled = true;
+                        disabledCfg.IsEnabled = true;
+                        WidgetLayoutManager.Instance.SaveLayout();
+                        FlightHUDManager.Instance?.RebuildHUD();
+                        OnWidgetAdded(disabledCfg.WidgetId, title);
                     }
                     else
                     {
-                        string newId = desc.DefaultWidgetId;
-                        if (!desc.IsSingleton && layout != null && layout.Widgets != null)
-                        {
-                            int count = 1;
-                            while (layout.Widgets.Exists(w => string.Equals(w.WidgetId, newId, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                newId = $"{desc.TypeName}_{count++}";
-                            }
-                        }
+                        string newId = GenerateUniqueWidgetIdForDescriptor(desc, layout);
+                        var newCfg = desc.CreateConfig(newId);
+                        newCfg.IsEnabled = true;
+                        newCfg.WidgetType = desc.TypeName;
+                        var pos = GetSmartSpawnPosition();
+                        newCfg.PositionX = pos.x;
+                        newCfg.PositionY = pos.y;
 
-                        activeCfg = desc.CreateConfig(newId);
-                        if (!desc.IsSingleton)
-                        {
-                            activeCfg.PositionX = GetSmartSpawnPosition().x;
-                            activeCfg.PositionY = GetSmartSpawnPosition().y;
-                        }
-                        WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(activeCfg);
+                        layout?.Widgets?.Add(newCfg);
+                        WidgetLayoutManager.Instance.SaveLayout();
+                        FlightHUDManager.Instance?.RebuildHUD();
+                        OnWidgetAdded(newCfg.WidgetId, title);
                     }
-
-                    FlightHUDManager.Instance?.RebuildHUD();
-                    OnWidgetAdded(activeCfg.WidgetId, title);
                 }
             }
             GUILayout.EndHorizontal();
@@ -677,23 +699,17 @@ namespace ModularFlightPanel.UI.Settings
                 if (GUILayout.Button(I18n.Tr("LIB_ADD_TO_PANEL", "+ 添加到面板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(130f), GUILayout.Height(30f)))
                 {
                     var layout = WidgetLayoutManager.Instance?.CurrentLayout;
-                    string newId = _zoomedDescObj.DefaultWidgetId;
-                    if (!_zoomedDescObj.IsSingleton && layout != null && layout.Widgets != null)
-                    {
-                        int count = 1;
-                        while (layout.Widgets.Exists(w => string.Equals(w.WidgetId, newId, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            newId = $"{_zoomedDescObj.TypeName}_{count++}";
-                        }
-                    }
+                    string newId = GenerateUniqueWidgetIdForDescriptor(_zoomedDescObj, layout);
 
                     WidgetConfig activeCfg = _zoomedDescObj.CreateConfig(newId);
-                    if (!_zoomedDescObj.IsSingleton)
-                    {
-                        activeCfg.PositionX = GetSmartSpawnPosition().x;
-                        activeCfg.PositionY = GetSmartSpawnPosition().y;
-                    }
+                    activeCfg.IsEnabled = true;
+                    activeCfg.WidgetType = _zoomedDescObj.TypeName;
+                    var pos = GetSmartSpawnPosition();
+                    activeCfg.PositionX = pos.x;
+                    activeCfg.PositionY = pos.y;
+
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(activeCfg);
+                    WidgetLayoutManager.Instance.SaveLayout();
                     FlightHUDManager.Instance?.RebuildHUD();
                     OnWidgetAdded(activeCfg.WidgetId, _zoomedTitle);
                     _zoomedTexture = null;
@@ -703,6 +719,27 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.EndHorizontal();
 
             GUILayout.EndArea();
+        }
+
+        private static string GenerateUniqueWidgetIdForDescriptor(WidgetDescriptor desc, WidgetLayoutData layout)
+        {
+            if (desc == null) return "widget_" + Guid.NewGuid().ToString("N").Substring(0, 6);
+            string baseId = !string.IsNullOrEmpty(desc.DefaultWidgetId) ? desc.DefaultWidgetId : desc.TypeName;
+            if (string.IsNullOrEmpty(baseId)) baseId = "widget";
+
+            if (layout == null || layout.Widgets == null || !layout.Widgets.Exists(w => string.Equals(w.WidgetId, baseId, StringComparison.OrdinalIgnoreCase)))
+            {
+                return baseId;
+            }
+
+            int count = 1;
+            string candidate = $"{baseId}_{count}";
+            while (layout.Widgets.Exists(w => string.Equals(w.WidgetId, candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                count++;
+                candidate = $"{baseId}_{count}";
+            }
+            return candidate;
         }
 
         private static Vector2 GetSmartSpawnPosition()
