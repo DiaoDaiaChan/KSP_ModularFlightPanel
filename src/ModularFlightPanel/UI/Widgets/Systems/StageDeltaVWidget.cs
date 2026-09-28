@@ -436,90 +436,177 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastFooterStatusText;
         private string _lastSourceText;
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private struct DvRowSnapshot
         {
-            if (telemetry == null || !telemetry.HasVessel)
+            public int Stage;
+            public bool IsActive;
+            public double DeltaV;
+            public double BurnTime;
+            public float Ratio;
+            public bool Visible;
+        }
+        private readonly DvRowSnapshot[] _cachedRowSnapshots = new DvRowSnapshot[16];
+        private readonly List<StageDeltaVInfo> _reusableStageList = new List<StageDeltaVInfo>();
+        private bool _cachedHasVessel;
+        private string _cachedSource;
+        private string _cachedTotalDvText;
+        private string _cachedTotalTimeText;
+        private bool _cachedHasActive;
+        private StageDeltaVInfo _cachedActiveStageInfo;
+        private bool _cachedIsFiring;
+        private float _cachedThrottle;
+        private string _cachedBayFootStr;
+        private string _cachedFootStatusStr;
+        private TextStyleRole _cachedFootRole;
+        private int _cachedStageCount;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
             {
-                if (_footerStatusText != null && _footerStatusText.text != I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路"))
-                {
-                    _footerStatusText.text = I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路");
-                    ApplyText(_footerStatusText, TextStyleRole.Warning, _currentTheme);
-                }
-                if (_plumeObj != null) _plumeObj.SetActive(false);
+                _cachedHasVessel = false;
                 return;
             }
 
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
-            Color borderCol = borderColOrDefault(theme);
+            _cachedHasVessel = true;
 
-            // 1. 数据源标识
-            string src = string.IsNullOrEmpty(telemetry.DeltaVSource) ? "SIM" : telemetry.DeltaVSource.ToUpperInvariant();
-            if (_sourceBadgeText != null && src != _lastSourceText)
-            {
-                _lastSourceText = src;
-                _sourceBadgeText.text = src;
-            }
+            string src = string.IsNullOrEmpty(context.Telemetry.DeltaVSource) ? "SIM" : context.Telemetry.DeltaVSource.ToUpperInvariant();
+            _cachedSource = src;
 
-            // 2. 总 Δv 与总烧燃时序 (CustomTemplate & Dirty Checking)
             string totalDvTpl = GetTemplateChannel("TOTAL_DV_FORMAT", "{DV:TOTAL}");
             string totalTimeTpl = GetTemplateChannel("TOTAL_TIME_FORMAT", "Σ {DV:TOTALTIME}");
+            _cachedTotalDvText = TelemetryTokenEngine.Evaluate(totalDvTpl, context.Telemetry);
+            _cachedTotalTimeText = TelemetryTokenEngine.Evaluate(totalTimeTpl, context.Telemetry);
 
-            string newTotalDv = TelemetryTokenEngine.Evaluate(totalDvTpl, telemetry);
-            if (_totalDvValue != null && newTotalDv != _lastTotalDvText)
-            {
-                _lastTotalDvText = newTotalDv;
-                _totalDvValue.text = newTotalDv;
-            }
-
-            string newTotalTime = TelemetryTokenEngine.Evaluate(totalTimeTpl, telemetry);
-            if (_totalTimeValue != null && newTotalTime != _lastTotalTimeText)
-            {
-                _lastTotalTimeText = newTotalTime;
-                _totalTimeValue.text = newTotalTime;
-            }
-
-            // 3. 多级分级列表获取
-            IReadOnlyList<StageDeltaVInfo> stages = telemetry.StageDeltaVList;
+            IReadOnlyList<StageDeltaVInfo> stages = context.Telemetry.StageDeltaVList;
+            _reusableStageList.Clear();
             if (stages == null || stages.Count == 0)
             {
-                // 回退合成单级
-                stages = new List<StageDeltaVInfo>
-                {
-                    new StageDeltaVInfo(telemetry.CurrentStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true)
-                };
+                _reusableStageList.Add(new StageDeltaVInfo(context.Telemetry.CurrentStage, context.Telemetry.StageDeltaV, context.Telemetry.StageBurnTime, context.Telemetry.TWR, 310.0, true));
             }
-
-            // 计算所有分级中最大的 Δv，作为百分比相对充满基准 (最低 500m/s 防止除以零)
-            double maxStageDv = 500.0;
-            for (int i = 0; i < stages.Count; i++)
+            else
             {
-                if (stages[i].DeltaV > maxStageDv) maxStageDv = stages[i].DeltaV;
+                _reusableStageList.AddRange(stages);
             }
 
-            float maxTrackW = TrackWidth * _cachedScale;
+            _cachedStageCount = _reusableStageList.Count;
+
+            double maxStageDv = 500.0;
+            for (int i = 0; i < _reusableStageList.Count; i++)
+            {
+                if (_reusableStageList[i].DeltaV > maxStageDv) maxStageDv = _reusableStageList[i].DeltaV;
+            }
+
             StageDeltaVInfo activeStageInfo = default;
             bool hasActive = false;
 
-            // 逐行更新速度条 (100% 语义化驱动)
-            for (int i = 0; i < _stageRows.Count; i++)
+            for (int i = 0; i < _stageRows.Count && i < _cachedRowSnapshots.Length; i++)
             {
-                StageRowUI row = _stageRows[i];
-
-                if (i < stages.Count)
+                if (i < _reusableStageList.Count)
                 {
-                    StageDeltaVInfo info = stages[i];
-                    row.Root.SetActive(true);
-
+                    StageDeltaVInfo info = _reusableStageList[i];
                     if (info.IsActive)
                     {
                         activeStageInfo = info;
                         hasActive = true;
                     }
 
-                    // 1. 分级标号与激活高亮
-                    row.StageBadgeText.text = $"S{info.Stage:D2}";
+                    float ratio = Mathf.Clamp01((float)(info.DeltaV / maxStageDv));
+                    _cachedRowSnapshots[i] = new DvRowSnapshot
+                    {
+                        Stage = info.Stage,
+                        IsActive = info.IsActive,
+                        DeltaV = info.DeltaV,
+                        BurnTime = info.BurnTime,
+                        Ratio = ratio,
+                        Visible = true
+                    };
+                }
+                else
+                {
+                    _cachedRowSnapshots[i] = new DvRowSnapshot { Visible = false };
+                }
+            }
 
-                    if (info.IsActive)
+            _cachedHasActive = hasActive;
+            _cachedActiveStageInfo = activeStageInfo;
+
+            bool isFiring = hasActive && (context.Telemetry.ActiveEngines > 0 || context.Telemetry.Throttle > 0.01f);
+            _cachedIsFiring = isFiring;
+            _cachedThrottle = Mathf.Clamp((float)context.Telemetry.Throttle, 0.25f, 1.0f);
+
+            _cachedBayFootStr = hasActive ? I18n.TrFormat("WIDGET_DV_STAGE_ACTV_FORMAT", activeStageInfo.Stage) : I18n.Tr("WIDGET_DV_STAGING_ARMED", "分级待发");
+
+            if (hasActive)
+            {
+                _cachedFootStatusStr = $"ACTIVE S{activeStageInfo.Stage:D2}: {activeStageInfo.DeltaV:N0} m/s | ⏱ {FormatDuration(activeStageInfo.BurnTime)}";
+                _cachedFootRole = TextStyleRole.Accent;
+            }
+            else if (_reusableStageList.Count > 0)
+            {
+                _cachedFootStatusStr = $"ALL {_reusableStageList.Count} STAGES ARMED | Σ {context.Telemetry.TotalDeltaV:N0} m/s";
+                _cachedFootRole = TextStyleRole.SecondaryValue;
+            }
+            else
+            {
+                _cachedFootStatusStr = "NO STAGE DATA";
+                _cachedFootRole = TextStyleRole.Warning;
+            }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme);
+            Color borderCol = borderColOrDefault(theme);
+
+            if (!_cachedHasVessel)
+            {
+                if (_footerStatusText != null && _footerStatusText.text != I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路"))
+                {
+                    _footerStatusText.text = I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路");
+                    ApplyText(_footerStatusText, TextStyleRole.Warning, theme);
+                }
+                if (_plumeObj != null) _plumeObj.SetActive(false);
+                return;
+            }
+
+            // 1. 数据源标识
+            if (_sourceBadgeText != null && _cachedSource != _lastSourceText)
+            {
+                _lastSourceText = _cachedSource;
+                _sourceBadgeText.text = _cachedSource;
+            }
+
+            // 2. 总 Δv 与总烧燃时序
+            if (_totalDvValue != null && _cachedTotalDvText != _lastTotalDvText)
+            {
+                _lastTotalDvText = _cachedTotalDvText;
+                _totalDvValue.text = _cachedTotalDvText;
+            }
+
+            if (_totalTimeValue != null && _cachedTotalTimeText != _lastTotalTimeText)
+            {
+                _lastTotalTimeText = _cachedTotalTimeText;
+                _totalTimeValue.text = _cachedTotalTimeText;
+            }
+
+            // 3. 逐行速度条
+            float maxTrackW = TrackWidth * _cachedScale;
+            for (int i = 0; i < _stageRows.Count && i < _cachedRowSnapshots.Length; i++)
+            {
+                StageRowUI row = _stageRows[i];
+                var snap = _cachedRowSnapshots[i];
+
+                if (snap.Visible)
+                {
+                    row.Root.SetActive(true);
+                    row.StageBadgeText.text = $"S{snap.Stage:D2}";
+
+                    if (snap.IsActive)
                     {
                         row.StageBadgeBg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                         ApplyText(row.StageBadgeText, TextStyleRole.InverseOnAccent, theme);
@@ -532,12 +619,10 @@ namespace ModularFlightPanel.UI.Widgets
                         row.LeaderLine.color = WidgetStyleManager.Weighted(borderCol, LineWeight.Normal);
                     }
 
-                    // 2. 速度条填充宽度与游标
-                    float ratio = Mathf.Clamp01((float)(info.DeltaV / maxStageDv));
-                    float barW = Mathf.Max(3f * _cachedScale, ratio * maxTrackW);
+                    float barW = Mathf.Max(3f * _cachedScale, snap.Ratio * maxTrackW);
                     row.FillBarRt.sizeDelta = new Vector2(barW, row.TrackRt.sizeDelta.y - 2f * _cachedScale);
 
-                    if (info.IsActive)
+                    if (snap.IsActive)
                     {
                         row.FillBarImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                         row.CaretImg.enabled = true;
@@ -549,9 +634,8 @@ namespace ModularFlightPanel.UI.Widgets
                         row.CaretImg.enabled = false;
                     }
 
-                    // 3. 数值文本
-                    row.StageDvText.text = $"{info.DeltaV:N0} m/s";
-                    row.StageTimeText.text = FormatDurationCompact(info.BurnTime);
+                    row.StageDvText.text = $"{snap.DeltaV:N0} m/s";
+                    row.StageTimeText.text = FormatDurationCompact(snap.BurnTime);
                 }
                 else
                 {
@@ -562,23 +646,20 @@ namespace ModularFlightPanel.UI.Widgets
             // 4. 左侧 2D 剪影视窗底部状态与发动机羽流
             if (_silhouetteBayFooter != null)
             {
-                string bayFootStr = hasActive ? I18n.TrFormat("WIDGET_DV_STAGE_ACTV_FORMAT", activeStageInfo.Stage) : I18n.Tr("WIDGET_DV_STAGING_ARMED", "分级待发");
-                if (bayFootStr != _lastBayFooterText)
+                if (_cachedBayFootStr != _lastBayFooterText)
                 {
-                    _lastBayFooterText = bayFootStr;
-                    _silhouetteBayFooter.text = bayFootStr;
-                    ApplyText(_silhouetteBayFooter, hasActive ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
+                    _lastBayFooterText = _cachedBayFootStr;
+                    _silhouetteBayFooter.text = _cachedBayFootStr;
+                    ApplyText(_silhouetteBayFooter, _cachedHasActive ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                 }
             }
 
-            // 动态点火羽流 (Exhaust Plume)
-            bool isFiring = hasActive && (telemetry.ActiveEngines > 0 || telemetry.Throttle > 0.01f);
             if (_plumeObj != null)
             {
-                _plumeObj.SetActive(isFiring);
-                if (isFiring && _plumeRt != null)
+                _plumeObj.SetActive(_cachedIsFiring);
+                if (_cachedIsFiring && _plumeRt != null)
                 {
-                    float thr = Mathf.Clamp(telemetry.Throttle, 0.25f, 1.0f);
+                    float thr = _cachedThrottle;
                     _plumeRt.sizeDelta = new Vector2(9f * _cachedScale, (6f + 8f * thr) * _cachedScale);
                     _plumeImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                 }
@@ -587,29 +668,11 @@ namespace ModularFlightPanel.UI.Widgets
             // 5. 底栏摘要
             if (_footerStatusText != null)
             {
-                string footStatusStr;
-                TextStyleRole footRole;
-                if (hasActive)
+                if (_cachedFootStatusStr != _lastFooterStatusText)
                 {
-                    footStatusStr = $"ACTIVE S{activeStageInfo.Stage:D2}: {activeStageInfo.DeltaV:N0} m/s | ⏱ {FormatDuration(activeStageInfo.BurnTime)}";
-                    footRole = TextStyleRole.Accent;
-                }
-                else if (stages.Count > 0)
-                {
-                    footStatusStr = $"ALL {stages.Count} STAGES ARMED | Σ {telemetry.TotalDeltaV:N0} m/s";
-                    footRole = TextStyleRole.SecondaryValue;
-                }
-                else
-                {
-                    footStatusStr = "NO STAGE DATA";
-                    footRole = TextStyleRole.Warning;
-                }
-
-                if (footStatusStr != _lastFooterStatusText)
-                {
-                    _lastFooterStatusText = footStatusStr;
-                    _footerStatusText.text = footStatusStr;
-                    ApplyText(_footerStatusText, footRole, theme);
+                    _lastFooterStatusText = _cachedFootStatusStr;
+                    _footerStatusText.text = _cachedFootStatusStr;
+                    ApplyText(_footerStatusText, _cachedFootRole, theme);
                 }
             }
         }

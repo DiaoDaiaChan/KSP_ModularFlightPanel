@@ -34,11 +34,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public Image SeparatorImage;
         public WidgetReadoutControl Control;
 
-        // Dirty tracking
+        // Dirty tracking & dual-track pending state
         public string LastValue = string.Empty;
         public string LastTitle = string.Empty;
         public double LastNumeric = double.NaN;
         public int LastSec = -1;
+        public string PendingValue = null;
+        public string PendingTitle = null;
     }
 
     /// <summary>
@@ -481,31 +483,25 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             return sepGo.GetComponent<Image>();
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel) return;
 
             for (int i = 0; i < _slots.Count; i++)
             {
                 var slot = _slots[i];
-                if (slot.ValueText == null) continue;
 
                 if (slot.Type == SpaceXSlotType.PhaseBadge)
                 {
-                    string phase;
                     if (string.IsNullOrEmpty(slot.Token) || slot.Token == "{SITUATION}")
                     {
-                        phase = InferFlightPhase(telemetry);
+                        slot.PendingValue = InferFlightPhase(telemetry);
                     }
                     else
                     {
-                        phase = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
-                    }
-
-                    if (phase != slot.LastValue)
-                    {
-                        slot.LastValue = phase;
-                        slot.ValueText.text = phase;
+                        slot.PendingValue = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
                     }
                 }
                 else if (slot.Type == SpaceXSlotType.Timer)
@@ -513,31 +509,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     if (string.IsNullOrEmpty(slot.Token) || slot.Token == "{MET}")
                     {
                         bool isNode = telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode > 0;
-                        int curSec = isNode ? (int)telemetry.ManeuverTimeToNode : (int)telemetry.MissionTime;
                         string tLbl = isNode ? "TIME TO NODE" : (slot.Title ?? "MET");
-
-                        if (tLbl != slot.LastTitle && slot.TitleLabel != null)
-                        {
-                            slot.LastTitle = tLbl;
-                            slot.TitleLabel.text = tLbl;
-                        }
-
-                        if (curSec != slot.LastSec)
-                        {
-                            slot.LastSec = curSec;
-                            string timer = isNode ? ("T-" + FormatDuration(telemetry.ManeuverTimeToNode)) : ("MET " + FormatDuration(telemetry.MissionTime));
-                            slot.LastValue = timer;
-                            slot.ValueText.text = timer;
-                        }
+                        slot.PendingTitle = tLbl;
+                        slot.PendingValue = isNode ? ("T-" + FormatDuration(telemetry.ManeuverTimeToNode)) : ("MET " + FormatDuration(telemetry.MissionTime));
                     }
                     else
                     {
-                        string timer = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
-                        if (timer != slot.LastValue)
-                        {
-                            slot.LastValue = timer;
-                            slot.ValueText.text = timer;
-                        }
+                        slot.PendingValue = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
                     }
                 }
                 else
@@ -545,31 +523,58 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     if (slot.Id == "vel" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{SPD}"))
                     {
                         double spd = telemetry.OrbitalSpeed > 10.0 ? telemetry.OrbitalSpeed : telemetry.CurrentSpeed;
-                        slot.Control?.SetMetricSpeed(spd, 0.5);
+                        slot.PendingValue = FormatMetricSpeed(spd);
                     }
                     else if (slot.Id == "alt" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{ALT:ASL:DIST}"))
                     {
-                        slot.Control?.SetMetricDistance(telemetry.AltitudeASL, 1.0);
+                        slot.PendingValue = FormatMetricDistance(telemetry.AltitudeASL);
                     }
                     else if ((slot.Id == "ap" || slot.Id == "apo") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{AP:DIST}"))
                     {
-                        slot.Control?.SetMetricDistance(telemetry.Apoapsis, 5.0);
+                        slot.PendingValue = FormatMetricDistance(telemetry.Apoapsis);
                     }
                     else if ((slot.Id == "pe" || slot.Id == "peri") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{PE:DIST}"))
                     {
                         double pe = telemetry.Periapsis;
-                        if (pe < -100000.0) slot.Control?.SetValue("IMPACT");
-                        else slot.Control?.SetMetricDistance(pe, 5.0);
+                        if (pe < -100000.0) slot.PendingValue = "IMPACT";
+                        else slot.PendingValue = FormatMetricDistance(pe);
                     }
                     else if (slot.Id == "inc" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{INC}"))
                     {
-                        slot.Control?.SetNumeric(telemetry.Inclination, "F2", 0.05, "°");
+                        slot.PendingValue = $"{telemetry.Inclination:F2}°";
                     }
                     else
                     {
                         string tok = !string.IsNullOrEmpty(slot.Token) ? slot.Token : "{ALT:ASL:DIST}";
-                        string val = TelemetryTokenEngine.Evaluate(tok, telemetry);
-                        slot.Control?.SetValue(val);
+                        slot.PendingValue = TelemetryTokenEngine.Evaluate(tok, telemetry);
+                    }
+                }
+            }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            for (int i = 0; i < _slots.Count; i++)
+            {
+                var slot = _slots[i];
+                if (slot.TitleLabel != null && slot.PendingTitle != null && slot.PendingTitle != slot.LastTitle)
+                {
+                    slot.LastTitle = slot.PendingTitle;
+                    slot.TitleLabel.text = slot.PendingTitle;
+                }
+
+                if (slot.PendingValue != null && slot.PendingValue != slot.LastValue)
+                {
+                    slot.LastValue = slot.PendingValue;
+                    if (slot.Control != null)
+                    {
+                        slot.Control.SetValue(slot.PendingValue);
+                    }
+                    else if (slot.ValueText != null)
+                    {
+                        slot.ValueText.text = slot.PendingValue;
                     }
                 }
             }
@@ -783,7 +788,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         // ==========================================
         // IDynamicSlotWidget 契约接口显式实现
         // ==========================================
-        public string SlotOrchestratorTitle => "SpaceX 顶栏动态槽位: 可自由加减数据列、调整顺序与分隔线";
+        public string SlotOrchestratorTitle => I18n.Tr("SPX_HEADER_SLOT_TITLE", "SpaceX 顶栏动态槽位: 可自由加减数据列、调整顺序与分隔线");
 
         private readonly List<DynamicSlotDescriptor> _cachedDescriptors = new List<DynamicSlotDescriptor>();
         public IReadOnlyList<DynamicSlotDescriptor> DynamicSlots

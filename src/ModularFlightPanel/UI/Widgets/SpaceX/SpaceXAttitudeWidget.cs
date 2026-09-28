@@ -184,9 +184,31 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             ApplyText(_attitudeLabelText, TextStyleRole.SecondaryValue, theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private float _dataPitch;
+        private float _dataRoll;
+        private float _dataHeading;
+        private bool _dataHasVessel;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+            _dataHasVessel = true;
+
+            _dataPitch = telemetry.Pitch;
+            _dataRoll = telemetry.Roll;
+            _dataHeading = telemetry.Heading;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
 
             // 纹理保底与热插拔自愈检查
             if (_shipSilhouetteRawImage != null && _shipSilhouetteRawImage.texture == null)
@@ -199,9 +221,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 _shipSilhouetteRawImage.texture = tex;
             }
 
-            float pitch = telemetry.Pitch;
-            float roll = telemetry.Roll;
-            float heading = telemetry.Heading;
+            float pitch = _dataPitch;
+            float roll = _dataRoll;
+            float heading = _dataHeading;
 
             // 姿态变动脏标记检查 (0.1 度分辨率)
             if (!float.IsNaN(_lastPitch) &&

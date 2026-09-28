@@ -169,10 +169,21 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             ApplyMeter(_arcTrackImage, _arcFillImage, null, MeterStyleRole.Primary, theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private double _dataVal = double.NaN;
+        private bool _dataHasValue = false;
+        private string _dataNewStr = "---";
+        private float _dataFrac = 0f;
+        private CardStyleRole _dataTargetRole = CardStyleRole.Normal;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel || Config == null) return;
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel || Config == null)
+            {
+                _dataHasValue = false;
+                return;
+            }
 
             // 1. 通过通配符引擎求值 (优先使用 _tokenKey 或 Config.NumericToken，例如 {SPD:SURF:KMH} 或 {ALT:ASL:KM})
             string token = !string.IsNullOrEmpty(_tokenKey)
@@ -182,43 +193,59 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             if (double.IsNaN(val))
             {
+                _dataHasValue = false;
+                return;
+            }
+
+            _dataHasValue = true;
+            _dataVal = val;
+            _dataNewStr = TelemetryTokenEngine.Evaluate(token, telemetry);
+            _dataFrac = NormalizeToRange(val);
+            _dataTargetRole = ResolveCardRole(val);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_dataHasValue)
+            {
                 ShowUnavailable();
                 return;
             }
 
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
+
             // 2. 脏标记检查：变化小于阈值时不触发 UGUI 文本重排
             double delta = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (!double.IsNaN(_lastCachedValue) && Math.Abs(val - _lastCachedValue) <= delta)
+            if (!double.IsNaN(_lastCachedValue) && Math.Abs(_dataVal - _lastCachedValue) <= delta)
             {
                 return;
             }
-            _lastCachedValue = val;
+            _lastCachedValue = _dataVal;
 
             // 3. 更新数字文本
-            string newStr = TelemetryTokenEngine.Evaluate(token, telemetry);
-            if (newStr != _lastFormattedText)
+            if (_dataNewStr != _lastFormattedText)
             {
-                _lastFormattedText = newStr;
-                _primaryValueText.text = newStr;
+                _lastFormattedText = _dataNewStr;
+                _primaryValueText.text = _dataNewStr;
             }
 
             // 4. 计算圆弧填充百分比 (归一化量程 [MinValue, MaxValue]，最大占 270°)
-            float frac = NormalizeToRange(val);
             if (_arcFillImage != null)
             {
-                _arcFillImage.fillAmount = frac * ArcTotalFraction;
+                _arcFillImage.fillAmount = _dataFrac * ArcTotalFraction;
             }
 
             // 5. 状态机告警着色
-            CardStyleRole targetRole = ResolveCardRole(val);
-            if (_currentCardRole != targetRole)
+            if (_currentCardRole != _dataTargetRole)
             {
-                _currentCardRole = targetRole;
-                ApplyCard(_bgImage, _bgOutline, targetRole, theme);
-                ApplyText(_primaryValueText, GetValueTextRole(targetRole), theme);
-                MeterStyleRole meterRole = targetRole == CardStyleRole.Danger
+                _currentCardRole = _dataTargetRole;
+                ApplyCard(_bgImage, _bgOutline, _dataTargetRole, theme);
+                ApplyText(_primaryValueText, GetValueTextRole(_dataTargetRole), theme);
+                MeterStyleRole meterRole = _dataTargetRole == CardStyleRole.Danger
                     ? MeterStyleRole.Danger
-                    : (targetRole == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
+                    : (_dataTargetRole == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
                 ApplyMeter(null, _arcFillImage, null, meterRole, theme);
             }
         }

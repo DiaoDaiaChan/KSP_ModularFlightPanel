@@ -114,6 +114,20 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastBottomStr = string.Empty;
         private CardStyleRole _currentRole = CardStyleRole.Normal;
 
+        // 双轨状态快照
+        private string _pendingTitleStr = string.Empty;
+        private string _pendingValueStr = string.Empty;
+        private string _pendingBottomStr = string.Empty;
+        private TextStyleRole _pendingBottomRole = TextStyleRole.Muted;
+        private CardStyleRole _pendingRole = CardStyleRole.Normal;
+        private Vector2 _pendingCmdPointerPos;
+        private Vector2 _pendingCmdBugLinePos;
+        private bool _hasPendingCmdPointer = false;
+        private Vector2 _pendingActPointerPos;
+        private Vector2 _pendingFillBarSize;
+        private Vector2 _pendingTraceSize;
+        private bool _hasPendingBarVisual = false;
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
@@ -552,11 +566,11 @@ namespace ModularFlightPanel.UI.Widgets
             _cautionLineImg.raycastTarget = false;
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel) return;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            ThemeConfig theme = style.CurrentTheme;
 
             float s = CurrentDpiScale;
             float trackH = 186f * s;
@@ -567,12 +581,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 动态标题求值
             if (_topTagTitle != null)
             {
-                string evalTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-                if (evalTitle != _lastTitleStr)
-                {
-                    _lastTitleStr = evalTitle;
-                    _topTagTitle.text = evalTitle;
-                }
+                _pendingTitleStr = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
             }
 
             // 2. 数值求值 (驱动光柱高度与游标)
@@ -584,14 +593,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_kind == BarGaugeKind.Throttle)
             {
-                // ==================== 油门推力组件动力学响应 ====================
                 float targetThrottle = Mathf.Clamp((float)val, (float)_minVal, (float)_maxVal);
                 _commandedThrottle = targetThrottle;
 
-                // 引擎转速滞后动态插值 (Spool Dynamics)
                 if (float.IsNaN(_spoolThrottle))
                 {
-                    // 在 Unity 原生离屏渲染与预览模式下，若设定推力为 100%，将平滑滞后状态赋为 82%，直观展示两者延迟追赶的视觉效果
                     if (Application.isBatchMode && targetThrottle > 50f)
                     {
                         _spoolThrottle = targetThrottle * 0.82f;
@@ -603,185 +609,140 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else
                 {
-                    float dt = Time.deltaTime > 0f ? Mathf.Min(Time.deltaTime, 0.1f) : 0.02f;
-                    float spoolSpeed = 180f; // 约 0.55s 完成 0~100% 全行程转速响应
+                    float dt = context.DeltaTime > 0f ? Mathf.Min(context.DeltaTime, 0.1f) : 0.02f;
+                    float spoolSpeed = 180f;
                     _spoolThrottle = Mathf.MoveTowards(_spoolThrottle, _commandedThrottle, spoolSpeed * dt);
                 }
 
-                // 2.1 指令游标 (Command Bug)：推动瞬间瞬达设定位置
                 float cmdFrac = Mathf.Clamp01((_commandedThrottle - (float)_minVal) / (float)range);
                 float cmdY = (-usableH * 0.5f) + (usableH * cmdFrac);
-                if (_cmdPointerRt != null)
-                {
-                    _cmdPointerRt.anchoredPosition = new Vector2(pointerX, cmdY);
-                }
-                if (_cmdBugLineRt != null)
-                {
-                    _cmdBugLineRt.anchoredPosition = new Vector2(0f, cmdY);
-                }
+                _pendingCmdPointerPos = new Vector2(pointerX, cmdY);
+                _pendingCmdBugLinePos = new Vector2(0f, cmdY);
+                _hasPendingCmdPointer = true;
 
-                // 2.2 实际推力游标与充填柱 (Spool Thrust)：平滑动画滞后到达
                 float spoolFrac = Mathf.Clamp01((_spoolThrottle - (float)_minVal) / (float)range);
                 float spoolY = (-usableH * 0.5f) + (usableH * spoolFrac);
                 float fillHeight = usableH * spoolFrac;
 
-                if (_actPointerRt != null)
-                {
-                    _actPointerRt.anchoredPosition = new Vector2(pointerX, spoolY);
-                }
-                if (_fillBarRt != null)
-                {
-                    _fillBarRt.sizeDelta = new Vector2(-4f * s, fillHeight);
-                }
-                if (_traceRt != null)
-                {
-                    _traceRt.sizeDelta = new Vector2(1.2f * s, fillHeight);
-                }
+                _pendingActPointerPos = new Vector2(pointerX, spoolY);
+                _pendingFillBarSize = new Vector2(-4f * s, fillHeight);
+                _pendingTraceSize = new Vector2(1.2f * s, fillHeight);
+                _hasPendingBarVisual = true;
 
-                // 2.3 读数文本更新
-                if (_topTagValue != null)
-                {
-                    string str = $"{Mathf.RoundToInt(_spoolThrottle)}%";
-                    if (str != _lastValueStr)
-                    {
-                        _lastValueStr = str;
-                        _topTagValue.text = str;
-                    }
-                }
+                _pendingValueStr = $"{Mathf.RoundToInt(_spoolThrottle)}%";
 
-                // 2.4 底部档位标牌状态流转
-                if (_bottomTagText != null)
-                {
-                    string statusTag;
-                    if (_spoolThrottle < 2f) statusTag = "IDLE";
-                    else if (Mathf.Abs(_spoolThrottle - _commandedThrottle) > 1.5f) statusTag = "SPOOL";
-                    else if (_spoolThrottle >= 98f) statusTag = "MAX";
-                    else statusTag = "MIL";
+                string statusTag;
+                if (_spoolThrottle < 2f) statusTag = "IDLE";
+                else if (Mathf.Abs(_spoolThrottle - _commandedThrottle) > 1.5f) statusTag = "SPOOL";
+                else if (_spoolThrottle >= 98f) statusTag = "MAX";
+                else statusTag = "MIL";
 
-                    if (statusTag != _lastBottomStr)
-                    {
-                        _lastBottomStr = statusTag;
-                        _bottomTagText.text = statusTag;
+                _pendingBottomStr = statusTag;
+                _pendingBottomRole = (statusTag == "MAX" || statusTag == "SPOOL") ? TextStyleRole.Accent : TextStyleRole.Muted;
 
-                        TextStyleRole role = (statusTag == "MAX" || statusTag == "SPOOL") ? TextStyleRole.Accent : TextStyleRole.Muted;
-                        ApplyText(_bottomTagText, role, theme);
-                    }
-                }
-
-                // 语义告警颜色流转
                 CardStyleRole targetRole = CardStyleRole.Normal;
                 if (_warningVal > 0 && targetThrottle >= _warningVal) targetRole = CardStyleRole.Danger;
                 else if (_cautionVal > 0 && targetThrottle >= _cautionVal) targetRole = CardStyleRole.Warning;
-
-                if (targetRole != _currentRole)
-                {
-                    _currentRole = targetRole;
-                    MeterStyleRole meterRole = targetRole == CardStyleRole.Danger
-                        ? MeterStyleRole.Danger
-                        : (targetRole == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
-                    Color meterCol = WidgetStyleManager.Meter(meterRole, theme);
-                    if (_fillBarImage != null && _kind != BarGaugeKind.Throttle && _kind != BarGaugeKind.AtmosphericPressure)
-                        _fillBarImage.color = meterCol;
-                    if (_actPointerStem != null) _actPointerStem.color = meterCol;
-                    if (_actPointerHead != null) _actPointerHead.color = meterCol;
-                    if (_capRayImg != null) _capRayImg.color = WidgetStyleManager.WithAlpha(meterCol, 0.85f);
-                    if (_traceImg != null) _traceImg.color = WidgetStyleManager.WithAlpha(meterCol, 0.45f);
-                }
+                _pendingRole = targetRole;
             }
             else if (_kind == BarGaugeKind.AtmosphericPressure)
             {
-                // ==================== 大气压强组件响应 (多波段深蓝至真空过渡) ====================
+                _hasPendingCmdPointer = false;
                 float currentAtm = Mathf.Clamp((float)val, (float)_minVal, (float)_maxVal);
                 float atmFrac = Mathf.Clamp01((currentAtm - (float)_minVal) / (float)range);
                 float atmY = (-usableH * 0.5f) + (usableH * atmFrac);
                 float fillHeight = usableH * atmFrac;
 
-                if (_actPointerRt != null)
-                {
-                    _actPointerRt.anchoredPosition = new Vector2(pointerX, atmY);
-                }
-                if (_fillBarRt != null)
-                {
-                    _fillBarRt.sizeDelta = new Vector2(-4f * s, fillHeight);
-                }
-                if (_traceRt != null)
-                {
-                    _traceRt.sizeDelta = new Vector2(1.2f * s, fillHeight);
-                }
+                _pendingActPointerPos = new Vector2(pointerX, atmY);
+                _pendingFillBarSize = new Vector2(-4f * s, fillHeight);
+                _pendingTraceSize = new Vector2(1.2f * s, fillHeight);
+                _hasPendingBarVisual = true;
 
-                // 读数文本更新
-                if (_topTagValue != null)
-                {
-                    string str;
-                    if (val < 0.001) str = "0.00 atm";
-                    else if (val < 0.10) str = $"{val:F3} atm";
-                    else str = $"{val:F2} atm";
+                if (val < 0.001) _pendingValueStr = "0.00 atm";
+                else if (val < 0.10) _pendingValueStr = $"{val:F3} atm";
+                else _pendingValueStr = $"{val:F2} atm";
 
-                    if (str != _lastValueStr)
-                    {
-                        _lastValueStr = str;
-                        _topTagValue.text = str;
-                    }
-                }
+                string layerTag;
+                if (val >= 0.70) layerTag = "SEA";
+                else if (val >= 0.30) layerTag = "TROP";
+                else if (val >= 0.05) layerTag = "STRAT";
+                else if (val > 0.001) layerTag = "MESO";
+                else layerTag = "VAC";
 
-                // 底部大气层阶梯标牌流转 (SEA -> TROP -> STRAT -> MESO -> VAC)
-                if (_bottomTagText != null)
-                {
-                    string layerTag;
-                    if (val >= 0.70) layerTag = "SEA";
-                    else if (val >= 0.30) layerTag = "TROP";
-                    else if (val >= 0.05) layerTag = "STRAT";
-                    else if (val > 0.001) layerTag = "MESO";
-                    else layerTag = "VAC";
-
-                    if (layerTag != _lastBottomStr)
-                    {
-                        _lastBottomStr = layerTag;
-                        _bottomTagText.text = layerTag;
-                        TextStyleRole role = (layerTag == "VAC") ? TextStyleRole.Muted : TextStyleRole.Accent;
-                        ApplyText(_bottomTagText, role, theme);
-                    }
-                }
+                _pendingBottomStr = layerTag;
+                _pendingBottomRole = (layerTag == "VAC") ? TextStyleRole.Muted : TextStyleRole.Accent;
+                _pendingRole = CardStyleRole.Normal;
             }
             else
             {
-                // ==================== 动压或通用量柱 ====================
+                _hasPendingCmdPointer = false;
                 float generalFrac = Mathf.Clamp01((float)((val - _minVal) / range));
                 float generalY = (-usableH * 0.5f) + (usableH * generalFrac);
                 float fillHeight = usableH * generalFrac;
 
-                if (_actPointerRt != null)
-                {
-                    _actPointerRt.anchoredPosition = new Vector2(pointerX, generalY);
-                }
-                if (_fillBarRt != null)
-                {
-                    _fillBarRt.sizeDelta = new Vector2(-4f * s, fillHeight);
-                }
-                if (_traceRt != null)
-                {
-                    _traceRt.sizeDelta = new Vector2(1.2f * s, fillHeight);
-                }
+                _pendingActPointerPos = new Vector2(pointerX, generalY);
+                _pendingFillBarSize = new Vector2(-4f * s, fillHeight);
+                _pendingTraceSize = new Vector2(1.2f * s, fillHeight);
+                _hasPendingBarVisual = true;
 
-                if (_topTagValue != null)
-                {
-                    string str = TelemetryTokenEngine.Evaluate(_valueToken, telemetry);
-                    if (str != _lastValueStr)
-                    {
-                        _lastValueStr = str;
-                        _topTagValue.text = str;
-                    }
-                }
+                _pendingValueStr = TelemetryTokenEngine.Evaluate(_valueToken, telemetry);
+                _pendingBottomStr = TelemetryTokenEngine.Evaluate(_bottomTagTemplate, telemetry);
+                _pendingBottomRole = TextStyleRole.Accent;
+                _pendingRole = CardStyleRole.Normal;
+            }
+        }
 
-                if (_bottomTagText != null)
-                {
-                    string btmStr = TelemetryTokenEngine.Evaluate(_bottomTagTemplate, telemetry);
-                    if (btmStr != _lastBottomStr)
-                    {
-                        _lastBottomStr = btmStr;
-                        _bottomTagText.text = btmStr;
-                    }
-                }
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (_topTagTitle != null && _pendingTitleStr != _lastTitleStr)
+            {
+                _lastTitleStr = _pendingTitleStr;
+                _topTagTitle.text = _pendingTitleStr;
+            }
+
+            if (_hasPendingCmdPointer)
+            {
+                if (_cmdPointerRt != null) _cmdPointerRt.anchoredPosition = _pendingCmdPointerPos;
+                if (_cmdBugLineRt != null) _cmdBugLineRt.anchoredPosition = _pendingCmdBugLinePos;
+            }
+
+            if (_hasPendingBarVisual)
+            {
+                if (_actPointerRt != null) _actPointerRt.anchoredPosition = _pendingActPointerPos;
+                if (_fillBarRt != null) _fillBarRt.sizeDelta = _pendingFillBarSize;
+                if (_traceRt != null) _traceRt.sizeDelta = _pendingTraceSize;
+            }
+
+            if (_topTagValue != null && _pendingValueStr != _lastValueStr)
+            {
+                _lastValueStr = _pendingValueStr;
+                _topTagValue.text = _pendingValueStr;
+            }
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
+
+            if (_bottomTagText != null && _pendingBottomStr != _lastBottomStr)
+            {
+                _lastBottomStr = _pendingBottomStr;
+                _bottomTagText.text = _pendingBottomStr;
+                ApplyText(_bottomTagText, _pendingBottomRole, theme);
+            }
+
+            if (_pendingRole != _currentRole)
+            {
+                _currentRole = _pendingRole;
+                MeterStyleRole meterRole = _pendingRole == CardStyleRole.Danger
+                    ? MeterStyleRole.Danger
+                    : (_pendingRole == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
+                Color meterCol = WidgetStyleManager.Meter(meterRole, theme);
+                if (_fillBarImage != null && _kind != BarGaugeKind.Throttle && _kind != BarGaugeKind.AtmosphericPressure)
+                    _fillBarImage.color = meterCol;
+                if (_actPointerStem != null) _actPointerStem.color = meterCol;
+                if (_actPointerHead != null) _actPointerHead.color = meterCol;
+                if (_capRayImg != null) _capRayImg.color = WidgetStyleManager.WithAlpha(meterCol, 0.85f);
+                if (_traceImg != null) _traceImg.color = WidgetStyleManager.WithAlpha(meterCol, 0.45f);
             }
         }
 

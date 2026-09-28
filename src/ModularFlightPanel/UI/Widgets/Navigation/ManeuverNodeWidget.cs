@@ -83,6 +83,18 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastTitleStr = string.Empty;
         private string _lastBadgeStr = string.Empty;
 
+        // 双轨快照
+        private bool _pendingHasNode = false;
+        private string _pendingTitleStr = string.Empty;
+        private string _pendingDeltaVStr = string.Empty;
+        private float _pendingMeterFraction = 1f;
+        private string _pendingTNodeStr = string.Empty;
+        private string _pendingBurnTimeStr = string.Empty;
+        private string _pendingBurnInStr = string.Empty;
+        private CardStyleRole _pendingCardRole = CardStyleRole.Normal;
+        private string _pendingBadgeStr = string.Empty;
+        private bool _hasPendingHeartbeat = false;
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             float s = CurrentDpiScale;
@@ -290,28 +302,23 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel || Config == null) return;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
-
             // 标题动态求值
-            string evalTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-            if (evalTitle != _lastTitleStr)
-            {
-                _lastTitleStr = evalTitle;
-                if (_headerTitleText != null) _headerTitleText.text = evalTitle;
-            }
+            _pendingTitleStr = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
 
-            // 1. 无机动节点时优雅降级为 STANDBY 待机模式
             if (!telemetry.HasManeuverNode)
             {
-                ShowUnavailable(theme);
+                _pendingHasNode = false;
+                _hasPendingHeartbeat = true;
                 return;
             }
 
-            _lastHasNode = true;
+            _pendingHasNode = true;
             double dv = TelemetryTokenEngine.EvaluateNumeric(_deltaVToken, telemetry);
             if (double.IsNaN(dv)) dv = telemetry.ManeuverDeltaV;
 
@@ -327,7 +334,6 @@ namespace ModularFlightPanel.UI.Widgets
             double timeToBurn = TelemetryTokenEngine.EvaluateNumeric(_timeToBurnToken, telemetry);
             if (double.IsNaN(timeToBurn)) timeToBurn = telemetry.ManeuverTimeToBurn;
 
-            // 2. 脏标记检查：阈值对比
             double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
             bool dvChanged = double.IsNaN(_lastDeltaV) || Math.Abs(dv - _lastDeltaV) > deltaThreshold;
             bool tNodeChanged = double.IsNaN(_lastTimeToNode) || Math.Abs(timeToNode - _lastTimeToNode) >= 0.5;
@@ -337,33 +343,26 @@ namespace ModularFlightPanel.UI.Widgets
             if (dvChanged)
             {
                 _lastDeltaV = dv;
-                string newDvStr = $"{dv:F1}";
-                if (newDvStr != _lastFormattedDeltaV)
-                {
-                    _lastFormattedDeltaV = newDvStr;
-                    _deltaVValueText.text = newDvStr;
-                }
-
+                _pendingDeltaVStr = $"{dv:F1}";
                 float fraction = 1.0f;
                 if (totalDv > 0.1)
                 {
                     fraction = Mathf.Clamp01((float)(dv / totalDv));
                 }
-                float maxW = _meterTrack.rectTransform.sizeDelta.x;
-                _meterFill.rectTransform.sizeDelta = new Vector2(maxW * fraction, _meterFill.rectTransform.sizeDelta.y);
+                _pendingMeterFraction = fraction;
             }
 
             if (tNodeChanged)
             {
                 _lastTimeToNode = timeToNode;
                 string prefix = timeToNode < 0 ? "T+ " : "T- ";
-                _tNodeValueText.text = prefix + FormatDuration(Math.Abs(timeToNode));
+                _pendingTNodeStr = prefix + FormatDuration(Math.Abs(timeToNode));
             }
 
             if (burnTimeChanged)
             {
                 _lastBurnTime = burnTime;
-                _burnTimeValueText.text = FormatDuration(Math.Max(0.0, burnTime));
+                _pendingBurnTimeStr = FormatDuration(Math.Max(0.0, burnTime));
             }
 
             if (timeToBurnChanged)
@@ -371,15 +370,14 @@ namespace ModularFlightPanel.UI.Widgets
                 _lastTimeToBurn = timeToBurn;
                 if (timeToBurn <= 0.0)
                 {
-                    _burnInText.text = I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!";
+                    _pendingBurnInStr = I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!";
                 }
                 else
                 {
-                    _burnInText.text = I18n.Tr("WIDGET_NAV_BURN_IN", "点火") + " " + FormatDuration(timeToBurn);
+                    _pendingBurnInStr = I18n.Tr("WIDGET_NAV_BURN_IN", "点火") + " " + FormatDuration(timeToBurn);
                 }
             }
 
-            // 3. 状态判定与主题响应
             CardStyleRole targetRole = CardStyleRole.Normal;
             string badgeText = "ARMED";
 
@@ -394,18 +392,71 @@ namespace ModularFlightPanel.UI.Widgets
                 badgeText = "COMPLETE";
             }
 
-            if (_currentCardRole != targetRole)
+            _pendingCardRole = targetRole;
+            _pendingBadgeStr = badgeText;
+            _hasPendingHeartbeat = true;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_hasPendingHeartbeat) return;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+
+            if (_pendingTitleStr != _lastTitleStr)
             {
-                _currentCardRole = targetRole;
-                ApplyCard(_bgImage, _bgOutline, targetRole, theme);
-                ApplyText(_deltaVValueText, TextStyleRole.PrimaryValue, theme);
-                ApplyText(_statusBadgeText, targetRole == CardStyleRole.Emphasized ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+                _lastTitleStr = _pendingTitleStr;
+                if (_headerTitleText != null) _headerTitleText.text = _pendingTitleStr;
             }
 
-            if (badgeText != _lastBadgeStr)
+            if (!_pendingHasNode)
             {
-                _lastBadgeStr = badgeText;
-                _statusBadgeText.text = badgeText;
+                ShowUnavailable(theme);
+                return;
+            }
+
+            _lastHasNode = true;
+
+            if (_pendingDeltaVStr != null && _pendingDeltaVStr != _lastFormattedDeltaV)
+            {
+                _lastFormattedDeltaV = _pendingDeltaVStr;
+                if (_deltaVValueText != null) _deltaVValueText.text = _pendingDeltaVStr;
+
+                if (_meterTrack != null && _meterFill != null)
+                {
+                    float maxW = _meterTrack.rectTransform.sizeDelta.x;
+                    _meterFill.rectTransform.sizeDelta = new Vector2(maxW * _pendingMeterFraction, _meterFill.rectTransform.sizeDelta.y);
+                }
+            }
+
+            if (_pendingTNodeStr != null && _tNodeValueText != null && _tNodeValueText.text != _pendingTNodeStr)
+            {
+                _tNodeValueText.text = _pendingTNodeStr;
+            }
+
+            if (_pendingBurnTimeStr != null && _burnTimeValueText != null && _burnTimeValueText.text != _pendingBurnTimeStr)
+            {
+                _burnTimeValueText.text = _pendingBurnTimeStr;
+            }
+
+            if (_pendingBurnInStr != null && _burnInText != null && _burnInText.text != _pendingBurnInStr)
+            {
+                _burnInText.text = _pendingBurnInStr;
+            }
+
+            if (_currentCardRole != _pendingCardRole)
+            {
+                _currentCardRole = _pendingCardRole;
+                ApplyCard(_bgImage, _bgOutline, _pendingCardRole, theme);
+                ApplyText(_deltaVValueText, TextStyleRole.PrimaryValue, theme);
+                ApplyText(_statusBadgeText, _pendingCardRole == CardStyleRole.Emphasized ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+            }
+
+            if (_pendingBadgeStr != _lastBadgeStr)
+            {
+                _lastBadgeStr = _pendingBadgeStr;
+                if (_statusBadgeText != null) _statusBadgeText.text = _pendingBadgeStr;
             }
 
             if (_btnWarp != null && !_btnWarp.interactable) _btnWarp.interactable = true;

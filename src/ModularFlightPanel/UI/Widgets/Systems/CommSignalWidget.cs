@@ -273,24 +273,109 @@ namespace ModularFlightPanel.UI.Widgets
             _summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private struct PeerRowSnapshot
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
-            _lastTelemetry = telemetry;
+            public string PeerName;
+            public bool IsDirectHome;
+            public string FormattedDataRate;
+            public int PeerBars;
+        }
+        private readonly PeerRowSnapshot[] _cachedPeerSnapshots = new PeerRowSnapshot[MaxPeerRows];
+        private int _cachedLinkCount;
+        private string _cachedMatrixSummary;
+        private string _cachedMatrixFooter;
+        private bool _cachedHasVessel;
+        private double _cachedSig;
+        private int _cachedLitBars;
+        private int _cachedCtrlState;
+        private string _cachedTargetName;
+        private string _cachedRateSummary;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_currentTheme);
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
+
+            _cachedHasVessel = true;
+            _lastTelemetry = context.Telemetry;
+
+            double sig = Mathf.Clamp01((float)context.Telemetry.CommSignal);
+            _cachedSig = sig;
+            int litBars = Mathf.RoundToInt((float)sig * MainBarCount);
+            bool sigStateChanged = litBars != _cachedLitBars;
+            _cachedLitBars = litBars;
+
+            _cachedCtrlState = (!context.Telemetry.IsConnected && sig <= 0.001) ? 0 : ((sig < 0.2) ? 1 : 2);
+
+            string tgt = context.Telemetry.DirectLinkTarget;
+            _cachedTargetName = string.IsNullOrEmpty(tgt)
+                ? (_targetFallback ?? (_targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"))))
+                : tgt;
+
+            _rateUpdateTimer += context.DeltaTime;
+            if (_rateUpdateTimer >= 0.25f || sigStateChanged)
+            {
+                _rateUpdateTimer = 0f;
+                if (_rateTemplate == null) _rateTemplate = GetTemplateChannel("RATE_TEMPLATE", "{COMM} | {COMM:RATE}");
+                _cachedRateSummary = TelemetryTokenEngine.Evaluate(_rateTemplate, context.Telemetry);
+            }
+
+            if (_dropdownPanel != null && _dropdownPanel.activeSelf)
+            {
+                _matrixUpdateTimer += context.DeltaTime;
+                if (_matrixUpdateTimer >= 0.25f || sigStateChanged)
+                {
+                    _matrixUpdateTimer = 0f;
+                    if (_summaryTemplate == null) _summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
+                    _cachedMatrixSummary = TelemetryTokenEngine.Evaluate(_summaryTemplate, context.Telemetry);
+
+                    var links = context.Telemetry.ActiveCommLinks;
+                    int linkCount = (links != null) ? links.Count : 0;
+                    _cachedLinkCount = linkCount;
+
+                    for (int r = 0; r < MaxPeerRows; r++)
+                    {
+                        if (r < linkCount)
+                        {
+                            var info = links[r];
+                            _cachedPeerSnapshots[r] = new PeerRowSnapshot
+                            {
+                                PeerName = info.PeerName,
+                                IsDirectHome = info.IsDirectHome,
+                                FormattedDataRate = info.FormattedDataRate,
+                                PeerBars = Mathf.RoundToInt((float)info.SignalStrength * 5f)
+                            };
+                        }
+                    }
+
+                    _cachedMatrixFooter = I18n.TrFormat("WIDGET_SIGNAL_FOOTER", linkCount);
+                }
+            }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 主信号条点亮与色彩驱动 (100% 语义化 MeterStyleRole，零硬编码颜色字面量)
-            double sig = Mathf.Clamp01((float)telemetry.CommSignal);
-            int litBars = Mathf.RoundToInt((float)sig * MainBarCount);
+            // 1. 主信号条点亮与色彩驱动
+            int litBars = _cachedLitBars;
+            double sig = _cachedSig;
             MeterStyleRole barRole = (sig > 0.4)
                 ? MeterStyleRole.Primary
                 : ((sig > 0.1) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
             Color sigColor = WidgetStyleManager.Meter(barRole, theme);
 
-            bool sigStateChanged = litBars != _lastLitBars;
-            if (sigStateChanged)
+            if (litBars != _lastLitBars)
             {
                 _lastLitBars = litBars;
                 for (int i = 0; i < MainBarCount; i++)
@@ -308,7 +393,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 控制权徽章 (FULL / PART / NONE)
-            int ctrlState = (!telemetry.IsConnected && sig <= 0.001) ? 0 : ((sig < 0.2) ? 1 : 2);
+            int ctrlState = _cachedCtrlState;
             if (ctrlState != _lastCtrlState && _ctrlBadgeText != null && _ctrlBadgeBg != null)
             {
                 _lastCtrlState = ctrlState;
@@ -332,79 +417,61 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 3. 主站点名称与综合速率 (CustomTemplate 驱动与 Dirty Cache)
-            string tgt = telemetry.DirectLinkTarget;
-            string newTgtName = string.IsNullOrEmpty(tgt) ? (_targetFallback ?? (_targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络")))) : tgt;
-            if (_targetNameText != null && newTgtName != _lastTargetName)
+            // 3. 主站点名称与综合速率
+            if (_targetNameText != null && _cachedTargetName != _lastTargetName)
             {
-                _lastTargetName = newTgtName;
-                _targetNameText.text = newTgtName;
+                _lastTargetName = _cachedTargetName;
+                _targetNameText.text = _cachedTargetName;
             }
 
-            _rateUpdateTimer += Time.deltaTime;
-            if (_rateUpdateTimer >= 0.25f || sigStateChanged)
+            if (_rateSummaryText != null && _cachedRateSummary != null && _cachedRateSummary != _lastRateSummary)
             {
-                _rateUpdateTimer = 0f;
-                if (_rateTemplate == null) _rateTemplate = GetTemplateChannel("RATE_TEMPLATE", "{COMM} | {COMM:RATE}");
-                string newRateSummary = TelemetryTokenEngine.Evaluate(_rateTemplate, telemetry);
-                if (_rateSummaryText != null && newRateSummary != _lastRateSummary)
-                {
-                    _lastRateSummary = newRateSummary;
-                    _rateSummaryText.text = newRateSummary;
-                }
+                _lastRateSummary = _cachedRateSummary;
+                _rateSummaryText.text = _cachedRateSummary;
             }
 
-            // 4. 抽屉矩阵更新 (4Hz 降频解算)
+            // 4. 抽屉矩阵更新
             if (_dropdownPanel != null && _dropdownPanel.activeSelf)
             {
-                _matrixUpdateTimer += Time.deltaTime;
-                if (_matrixUpdateTimer >= 0.25f || sigStateChanged)
+                if (_matrixSummaryText != null && _cachedMatrixSummary != null && _cachedMatrixSummary != _lastMatrixSummary)
                 {
-                    _matrixUpdateTimer = 0f;
-                    if (_summaryTemplate == null) _summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
-                    string newMatrixSummary = TelemetryTokenEngine.Evaluate(_summaryTemplate, telemetry);
-                    if (_matrixSummaryText != null && newMatrixSummary != _lastMatrixSummary)
-                    {
-                        _lastMatrixSummary = newMatrixSummary;
-                        _matrixSummaryText.text = newMatrixSummary;
-                    }
+                    _lastMatrixSummary = _cachedMatrixSummary;
+                    _matrixSummaryText.text = _cachedMatrixSummary;
+                }
 
-                    var links = telemetry.ActiveCommLinks;
-                    int linkCount = (links != null) ? links.Count : 0;
+                int linkCount = _cachedLinkCount;
 
-                    for (int r = 0; r < MaxPeerRows; r++)
+                for (int r = 0; r < MaxPeerRows; r++)
+                {
+                    if (r < linkCount)
                     {
-                        if (r < linkCount)
+                        var info = _cachedPeerSnapshots[r];
+                        _peerRows[r].RowObj.SetActive(true);
+                        _peerRows[r].NameText.text = info.PeerName;
+                        _peerRows[r].TagText.text = info.IsDirectHome ? I18n.Tr("WIDGET_SIGNAL_DSN", "DSN") : I18n.Tr("WIDGET_SIGNAL_RELAY", "RELAY");
+                        _peerRows[r].RateText.text = info.FormattedDataRate;
+
+                        int peerBars = info.PeerBars;
+                        for (int b = 0; b < 5; b++)
                         {
-                            var info = links[r];
-                            _peerRows[r].RowObj.SetActive(true);
-                            _peerRows[r].NameText.text = info.PeerName;
-                            _peerRows[r].TagText.text = info.IsDirectHome ? I18n.Tr("WIDGET_SIGNAL_DSN", "DSN") : I18n.Tr("WIDGET_SIGNAL_RELAY", "RELAY");
-                            _peerRows[r].RateText.text = info.FormattedDataRate;
-
-                            int peerBars = Mathf.RoundToInt((float)info.SignalStrength * 5f);
-                            for (int b = 0; b < 5; b++)
+                            if (_peerRows[r].MiniBars[b] != null)
                             {
-                                if (_peerRows[r].MiniBars[b] != null)
-                                {
-                                    _peerRows[r].MiniBars[b].color = (b < peerBars)
-                                        ? sigColor
-                                        : WidgetStyleManager.WithAlpha(sigColor, style.GetLineAlpha(LineWeight.Ghost, theme));
-                                }
+                                _peerRows[r].MiniBars[b].color = (b < peerBars)
+                                    ? sigColor
+                                    : WidgetStyleManager.WithAlpha(sigColor, style.GetLineAlpha(LineWeight.Ghost, theme));
                             }
                         }
-                        else
-                        {
-                            _peerRows[r].RowObj.SetActive(false);
-                        }
                     }
-
-                    string newFooter = I18n.TrFormat("WIDGET_SIGNAL_FOOTER", "● {0} ACTIVE LINKS  |  REALANTENNAS PROBE", linkCount);
-                    if (_matrixFooterText != null && newFooter != _lastMatrixFooter)
+                    else
                     {
-                        _lastMatrixFooter = newFooter;
-                        _matrixFooterText.text = newFooter;
+                        _peerRows[r].RowObj.SetActive(false);
                     }
+                }
+
+                if (_matrixFooterText != null && _cachedMatrixFooter != null && _cachedMatrixFooter != _lastMatrixFooter)
+                {
+                    _lastMatrixFooter = _cachedMatrixFooter;
+                    _matrixFooterText.text = _cachedMatrixFooter;
                 }
             }
 

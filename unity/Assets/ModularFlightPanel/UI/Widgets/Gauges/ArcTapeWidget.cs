@@ -151,6 +151,20 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         private string _lastBadgeSecondaryText = string.Empty;
         private int _lastAlertLevel = -1;
 
+        // 双轨状态快照
+        private double _pendingRawVal = double.NaN;
+        private double _pendingDisplayVal = double.NaN;
+        private string _pendingTopText = string.Empty;
+        private string _pendingBottomText = string.Empty;
+        private int _pendingAlertLevel = 0;
+        private string _pendingBadgePrimary = string.Empty;
+        private string _pendingBadgeSecondary = string.Empty;
+        private float _pendingTargetAngle = 0f;
+        private bool _pendingIsDeadband = true;
+        private double _pendingAgl = double.NaN;
+        private bool _hasPendingHeartbeat = false;
+        private bool _trendRatePositive = true;
+
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
 
@@ -674,8 +688,10 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             if (_escortBadgeTextSecondary != null) ApplyText(_escortBadgeTextSecondary, TextStyleRole.Accent, theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel) return;
 
             // 1. 数值双精度求值 (速度或高度)
@@ -687,28 +703,113 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             UpdateDynamicUnits(rawVal);
 
             double displayVal = rawVal * _activeScale;
+            _pendingRawVal = rawVal;
+            _pendingDisplayVal = displayVal;
 
-            // 3. 几何脏检查防抖 (死区小于阈值不重构弧度刻度)
-            double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (double.IsNaN(_lastRawVal) || Math.Abs(rawVal - _lastRawVal) > deltaThreshold)
+            // 3. 模式标签与次级信息窗求值
+            _pendingTopText = TelemetryTokenEngine.Evaluate(_topModeTemplate, telemetry);
+            _pendingBottomText = TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry);
+
+            // 4. 同心伴随弧轨动力学系统求值 (ACC、dV/dt 或 VSI)
+            double rawRate = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
+            if (double.IsNaN(rawRate)) rawRate = 0.0;
+
+            if (Math.Abs(rawRate - _lastRawTrendRate) < DYNAMIC_DEADBAND)
             {
-                _lastRawVal = rawVal;
-                _lastDisplayVal = displayVal;
-
-                UpdateCenterReadout(displayVal);
-                UpdateArcTicks(displayVal);
+                rawRate = _filteredTrendRate;
+            }
+            else
+            {
+                _filteredTrendRate = rawRate;
+                _lastRawTrendRate = rawRate;
             }
 
-            // 4. 模式标签与次级信息窗求值
-            UpdateLabels(telemetry);
+            _trendRatePositive = rawRate >= 0;
+            int alertLevel = 0;
 
-            // 5. 同心伴随弧轨动力学系统求值 (ACC、dV/dt 或 VSI)
-            UpdateConcentricEscortDynamics(telemetry);
+            if (_isSpeedTape)
+            {
+                double gForce = TelemetryTokenEngine.EvaluateNumeric(_accToken, telemetry);
+                if (double.IsNaN(gForce)) gForce = 1.0;
 
-            // 6. 若为高度带，计算地面防撞警戒弧板着色
+                if (gForce >= 8.0) alertLevel = 2;
+                else if (gForce >= 4.0) alertLevel = 1;
+
+                _pendingBadgePrimary = UIFactory.FormatTabular($"ACC {gForce:F1}G");
+                string rateSign = rawRate > 0 ? "+" : "";
+                _pendingBadgeSecondary = Math.Abs(rawRate) < 0.05 ? "dV 0.0" : UIFactory.FormatTabular($"dV {rateSign}{rawRate:F1}");
+            }
+            else
+            {
+                if (rawRate < -25.0) alertLevel = 2;
+                else if (rawRate < -15.0) alertLevel = 1;
+
+                string vsiSign = rawRate > 0 ? "+" : "";
+                string vsiStr;
+                if (Math.Abs(rawRate) < 0.05)
+                    vsiStr = "V/S 0.0";
+                else if (Math.Abs(rawRate) >= 1000.0)
+                    vsiStr = $"{vsiSign}{rawRate / 1000.0:F1}k m/s";
+                else
+                    vsiStr = $"{vsiSign}{rawRate:F1} m/s";
+
+                _pendingBadgePrimary = UIFactory.FormatTabular(vsiStr);
+            }
+            _pendingAlertLevel = alertLevel;
+
+            float halfSpan = _angularSpan * 0.5f;
+            float maxScale = _trendMaxScale > 0.1f ? _trendMaxScale : 20.0f;
+            float rateFraction = Mathf.Clamp((float)(rawRate / maxScale), -1f, 1f);
+            _pendingTargetAngle = rateFraction * (halfSpan * 0.82f);
+            _pendingIsDeadband = Math.Abs(rawRate) < 0.05;
+
+            // 5. 若为高度带，计算地面防撞警戒
             if (!_isSpeedTape)
             {
-                UpdateTerrainGroundHighlight(telemetry, rawVal);
+                double agl = TelemetryTokenEngine.EvaluateNumeric(_terrainToken, telemetry);
+                if (double.IsNaN(agl)) agl = rawVal;
+                _pendingAgl = agl;
+            }
+
+            _hasPendingHeartbeat = true;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_hasPendingHeartbeat) return;
+
+            // 1. 几何脏检查防抖 (死区小于阈值不重构弧度刻度)
+            double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
+            if (double.IsNaN(_lastRawVal) || Math.Abs(_pendingRawVal - _lastRawVal) > deltaThreshold)
+            {
+                _lastRawVal = _pendingRawVal;
+                _lastDisplayVal = _pendingDisplayVal;
+
+                UpdateCenterReadout(_pendingDisplayVal);
+                UpdateArcTicks(_pendingDisplayVal);
+            }
+
+            // 2. 模式标签与次级信息窗更新
+            if (_pendingTopText != _lastTopText)
+            {
+                _lastTopText = _pendingTopText;
+                SetTextIfChanged(_modeTagText, _pendingTopText);
+            }
+
+            if (_pendingBottomText != _lastBottomText)
+            {
+                _lastBottomText = _pendingBottomText;
+                SetTextIfChanged(_bottomSecText, _pendingBottomText);
+            }
+
+            // 3. 同心伴随弧轨动力学绘制
+            DrawConcentricEscortDynamics();
+
+            // 4. 地面防撞警戒弧板绘制
+            if (!_isSpeedTape)
+            {
+                DrawTerrainGroundHighlight();
             }
         }
 
@@ -897,22 +998,6 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             }
         }
 
-        private void UpdateLabels(IFlightTelemetry telemetry)
-        {
-            string evalTop = TelemetryTokenEngine.Evaluate(_topModeTemplate, telemetry);
-            if (evalTop != _lastTopText)
-            {
-                _lastTopText = evalTop;
-                SetTextIfChanged(_modeTagText, evalTop);
-            }
-
-            string evalSec = TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry);
-            if (evalSec != _lastBottomText)
-            {
-                _lastBottomText = evalSec;
-                SetTextIfChanged(_bottomSecText, evalSec);
-            }
-        }
 
         private void UpdateArcTicks(double displayVal)
         {
@@ -994,8 +1079,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             }
         }
 
-        // ==================== 同心伴随弧轨动力学刷新 ====================
-        private void UpdateConcentricEscortDynamics(IFlightTelemetry telemetry)
+        // ==================== 同心伴随弧轨动力学绘制 ====================
+        private void DrawConcentricEscortDynamics()
         {
             if (_escortRailRoot == null) return;
 
@@ -1006,79 +1091,32 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            double rawRate = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
-            if (double.IsNaN(rawRate)) rawRate = 0.0;
-
-            // 死区平滑滤波防闪烁 (0.08 单位)
-            if (Math.Abs(rawRate - _lastRawTrendRate) < DYNAMIC_DEADBAND)
-            {
-                rawRate = _filteredTrendRate;
-            }
-            else
-            {
-                _filteredTrendRate = rawRate;
-                _lastRawTrendRate = rawRate;
-            }
-
-            int alertLevel = 0; // 0: Normal, 1: Warning, 2: Danger
-            Color dynamicCol;
+            int alertLevel = _pendingAlertLevel;
+            Color dynamicCol = alertLevel == 2 ? style.GetMeterColor(MeterStyleRole.Danger, theme) :
+                               alertLevel == 1 ? style.GetMeterColor(MeterStyleRole.Warning, theme) :
+                               (_isSpeedTape ? style.GetMeterColor(MeterStyleRole.Primary, theme) :
+                                (_trendRatePositive ? style.GetMeterColor(MeterStyleRole.Primary, theme) :
+                                                      style.GetMeterColor(MeterStyleRole.Accent, theme)));
 
             if (_isSpeedTape)
             {
-                // ==================== 速度带动力学：ACC (过载) + dV/dt (速度变化率) ====================
-                double gForce = TelemetryTokenEngine.EvaluateNumeric(_accToken, telemetry);
-                if (double.IsNaN(gForce)) gForce = 1.0;
-
-                // ACC 告警阈值：4G 黄色，8G 红色
-                if (gForce >= 8.0) alertLevel = 2;
-                else if (gForce >= 4.0) alertLevel = 1;
-
-                dynamicCol = alertLevel == 2 ? style.GetMeterColor(MeterStyleRole.Danger, theme) :
-                             alertLevel == 1 ? style.GetMeterColor(MeterStyleRole.Warning, theme) :
-                                               style.GetMeterColor(MeterStyleRole.Primary, theme);
-
-                // 更新流线微胶囊文本
-                string accStr = UIFactory.FormatTabular($"ACC {gForce:F1}G");
-                string rateSign = rawRate > 0 ? "+" : "";
-                string rateStr = Math.Abs(rawRate) < 0.05 ? "dV 0.0" : UIFactory.FormatTabular($"dV {rateSign}{rawRate:F1}");
-
-                if (accStr != _lastBadgePrimaryText)
+                if (_pendingBadgePrimary != _lastBadgePrimaryText)
                 {
-                    _lastBadgePrimaryText = accStr;
-                    if (_escortBadgeTextPrimary != null) _escortBadgeTextPrimary.text = accStr;
+                    _lastBadgePrimaryText = _pendingBadgePrimary;
+                    if (_escortBadgeTextPrimary != null) _escortBadgeTextPrimary.text = _pendingBadgePrimary;
                 }
-                if (rateStr != _lastBadgeSecondaryText)
+                if (_pendingBadgeSecondary != _lastBadgeSecondaryText)
                 {
-                    _lastBadgeSecondaryText = rateStr;
-                    if (_escortBadgeTextSecondary != null) _escortBadgeTextSecondary.text = rateStr;
+                    _lastBadgeSecondaryText = _pendingBadgeSecondary;
+                    if (_escortBadgeTextSecondary != null) _escortBadgeTextSecondary.text = _pendingBadgeSecondary;
                 }
             }
             else
             {
-                // ==================== 高度带动力学：VSI (垂直升降速度) ====================
-                // 急剧下沉 (Sink Rate > 20 m/s) 危险告警
-                if (rawRate < -25.0) alertLevel = 2;
-                else if (rawRate < -15.0) alertLevel = 1;
-
-                dynamicCol = alertLevel == 2 ? style.GetMeterColor(MeterStyleRole.Danger, theme) :
-                             alertLevel == 1 ? style.GetMeterColor(MeterStyleRole.Warning, theme) :
-                             rawRate >= 0 ? style.GetMeterColor(MeterStyleRole.Primary, theme) :
-                                            style.GetMeterColor(MeterStyleRole.Accent, theme);
-
-                string vsiSign = rawRate > 0 ? "+" : "";
-                string vsiStr;
-                if (Math.Abs(rawRate) < 0.05)
-                    vsiStr = "V/S 0.0";
-                else if (Math.Abs(rawRate) >= 1000.0)
-                    vsiStr = $"{vsiSign}{rawRate / 1000.0:F1}k m/s";
-                else
-                    vsiStr = $"{vsiSign}{rawRate:F1} m/s";
-
-                vsiStr = UIFactory.FormatTabular(vsiStr);
-                if (vsiStr != _lastBadgePrimaryText)
+                if (_pendingBadgePrimary != _lastBadgePrimaryText)
                 {
-                    _lastBadgePrimaryText = vsiStr;
-                    if (_escortBadgeTextPrimary != null) _escortBadgeTextPrimary.text = vsiStr;
+                    _lastBadgePrimaryText = _pendingBadgePrimary;
+                    if (_escortBadgeTextPrimary != null) _escortBadgeTextPrimary.text = _pendingBadgePrimary;
                 }
             }
 
@@ -1104,16 +1142,10 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                 }
             }
 
-            // 映射动力学变化率到视角偏移角 (±maxScale 对应 ±halfSpan * 0.85)
-            float maxScale = _trendMaxScale > 0.1f ? _trendMaxScale : 20.0f;
-            float rateFraction = Mathf.Clamp((float)(rawRate / maxScale), -1f, 1f);
-            float targetAngle = rateFraction * (halfSpan * 0.82f);
-            _lastTrendAngle = Mathf.Lerp(_lastTrendAngle, targetAngle, 0.25f);
-
-            bool isDeadband = Math.Abs(rawRate) < 0.05;
+            _lastTrendAngle = Mathf.Lerp(_lastTrendAngle, _pendingTargetAngle, 0.25f);
+            bool isDeadband = _pendingIsDeadband;
 
             // 1. 动态充填同心圆弧发光流线段 (Concentric Ribbon Fill)
-            // 以 θ = 0° 水平线为基准，向上扬起加速/爬升弧段，向下沉降减速/俯冲弧段
             float step = _angularSpan / ESCORT_SEGMENT_COUNT;
             for (int i = 0; i < _escortRibbonSegments.Count; i++)
             {
@@ -1130,19 +1162,16 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                 bool inRange = false;
                 if (_lastTrendAngle >= 0f)
                 {
-                    // 向上爬升 / 正向加速：0° ~ targetAngle
                     inRange = (segAng >= -step * 0.5f && segAng <= _lastTrendAngle + step * 0.5f);
                 }
                 else
                 {
-                    // 向下沉降 / 负向制动：targetAngle ~ 0°
                     inRange = (segAng <= step * 0.5f && segAng >= _lastTrendAngle - step * 0.5f);
                 }
 
                 if (inRange)
                 {
                     seg.gameObject.SetActive(true);
-                    // 距头部越近光芒越亮
                     float distFraction = Mathf.Clamp01(Mathf.Abs(segAng) / (Mathf.Abs(_lastTrendAngle) + 0.1f));
                     float segAlpha = Mathf.Lerp(0.40f, 0.95f, distFraction);
                     seg.color = WidgetStyleManager.WithAlpha(dynamicCol, segAlpha);
@@ -1173,13 +1202,11 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             }
         }
 
-        private void UpdateTerrainGroundHighlight(IFlightTelemetry telemetry, double currentAlt)
+        private void DrawTerrainGroundHighlight()
         {
-            if (telemetry == null || _bandBgImages.Count == 0) return;
+            if (_bandBgImages.Count == 0 || double.IsNaN(_pendingAgl)) return;
 
-            double agl = TelemetryTokenEngine.EvaluateNumeric(_terrainToken, telemetry);
-            if (double.IsNaN(agl)) agl = currentAlt;
-
+            double agl = _pendingAgl;
             if (agl < 300.0 && agl >= -5.0)
             {
                 if (!double.IsNaN(_lastTerrainVal) && Math.Abs(agl - _lastTerrainVal) < 0.2) return;

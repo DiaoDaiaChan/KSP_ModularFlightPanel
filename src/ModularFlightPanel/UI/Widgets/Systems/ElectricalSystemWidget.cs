@@ -128,11 +128,32 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastLoadVal;
         private string _lastLoadSub;
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
-        {
-            if (telemetry == null || !telemetry.HasVessel) return;
+        private string _dataBat1Val;
+        private string _dataBat1Sub;
+        private TextStyleRole _dataBat1SubRole;
+        private string _dataBat2Val;
+        private string _dataBat2Sub;
+        private TextStyleRole _dataBat2SubRole;
+        private string _dataDcVal;
+        private string _dataDcSub;
+        private string _dataGenVal;
+        private string _dataGenSub;
+        private TextStyleRole _dataGenRole;
+        private string _dataLoadVal;
+        private string _dataLoadSub;
+        private TextStyleRole _dataLoadRole;
+        private bool _dataHasVessel;
 
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+            _dataHasVessel = true;
 
             double currentEc = TelemetryTokenEngine.EvaluateNumeric("{EC}", telemetry);
             double netRate = TelemetryTokenEngine.EvaluateNumeric("{EC:RATE}", telemetry);
@@ -142,98 +163,110 @@ namespace ModularFlightPanel.UI.Widgets
 
             // BAT 1 & BAT 2
             string bat1Template = GetTemplateChannel("BAT1_VAL", "{VOLT}");
-            string b1Val = TelemetryTokenEngine.Evaluate(bat1Template, telemetry);
-            string b1Sub = currentEc > 1.0 ? I18n.Tr("WIDGET_ELEC_BATT_ONLINE", "在线") : I18n.Tr("WIDGET_ELEC_BATT_DEPLETED", "耗尽");
-            if (b1Val != _lastBat1Val)
-            {
-                _lastBat1Val = b1Val;
-                _bat1ValText.text = b1Val;
-            }
-            if (b1Sub != _lastBat1Sub)
-            {
-                _lastBat1Sub = b1Sub;
-                _bat1SubText.text = b1Sub;
-                ApplyText(_bat1SubText, currentEc > 1.0 ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
-            }
+            _dataBat1Val = TelemetryTokenEngine.Evaluate(bat1Template, telemetry);
+            _dataBat1Sub = currentEc > 1.0 ? I18n.Tr("WIDGET_ELEC_BATT_ONLINE", "在线") : I18n.Tr("WIDGET_ELEC_BATT_DEPLETED", "耗尽");
+            _dataBat1SubRole = currentEc > 1.0 ? TextStyleRole.Accent : TextStyleRole.Warning;
 
-            string b2Val = $"{busVoltage * 0.995f:F1} V";
-            string b2Sub = currentEc > 1.0 ? "STANDBY" : "OFFLINE";
-            if (b2Val != _lastBat2Val)
-            {
-                _lastBat2Val = b2Val;
-                _bat2ValText.text = b2Val;
-            }
-            if (b2Sub != _lastBat2Sub)
-            {
-                _lastBat2Sub = b2Sub;
-                _bat2SubText.text = b2Sub;
-                ApplyText(_bat2SubText, currentEc > 1.0 ? TextStyleRole.Label : TextStyleRole.Warning, theme);
-            }
+            _dataBat2Val = $"{busVoltage * 0.995f:F1} V";
+            _dataBat2Sub = currentEc > 1.0 ? "STANDBY" : "OFFLINE";
+            _dataBat2SubRole = currentEc > 1.0 ? TextStyleRole.Label : TextStyleRole.Warning;
 
             // DC ESS BUS
             string dcBusValTpl = GetTemplateChannel("DCBUS_VAL", "{EC:PCT}%");
             string dcBusSubTpl = GetTemplateChannel("DCBUS_SUB", "{EC}/{EC:MAX} EC");
-            string dcVal = TelemetryTokenEngine.Evaluate(dcBusValTpl, telemetry);
-            string dcSub = TelemetryTokenEngine.Evaluate(dcBusSubTpl, telemetry);
-            if (dcVal != _lastDcBusVal)
-            {
-                _lastDcBusVal = dcVal;
-                _dcBusValText.text = dcVal;
-            }
-            if (dcSub != _lastDcBusSub)
-            {
-                _lastDcBusSub = dcSub;
-                _dcBusSubText.text = dcSub;
-            }
+            _dataDcVal = TelemetryTokenEngine.Evaluate(dcBusValTpl, telemetry);
+            _dataDcSub = TelemetryTokenEngine.Evaluate(dcBusSubTpl, telemetry);
 
             // POWER SOURCES
-            string gVal = solarActiveCount > 0 ? TelemetryTokenEngine.Evaluate("+{SOLAR}", telemetry) : I18n.Tr("WIDGET_ELEC_NO_SOLAR", "无太阳能");
-            string gSub = solarActiveCount > 0 ? I18n.TrFormat("WIDGET_ELEC_SOLAR_ACTIVE", TelemetryTokenEngine.Evaluate("{SOLAR:ACTIVE}", telemetry)) : I18n.Tr("WIDGET_ELEC_BATTERY_ONLY", "仅电池");
-            if (gVal != _lastGenVal)
-            {
-                _lastGenVal = gVal;
-                _genValText.text = gVal;
-                ApplyText(_genValText, solarActiveCount > 0 ? TextStyleRole.Accent : TextStyleRole.Label, theme);
-            }
-            if (gSub != _lastGenSub)
-            {
-                _lastGenSub = gSub;
-                _genSubText.text = gSub;
-            }
+            _dataGenVal = solarActiveCount > 0 ? TelemetryTokenEngine.Evaluate("+{SOLAR}", telemetry) : I18n.Tr("WIDGET_ELEC_NO_SOLAR", "无太阳能");
+            _dataGenSub = solarActiveCount > 0 ? I18n.TrFormat("WIDGET_ELEC_SOLAR_ACTIVE", TelemetryTokenEngine.Evaluate("{SOLAR:ACTIVE}", telemetry)) : I18n.Tr("WIDGET_ELEC_BATTERY_ONLY", "仅电池");
+            _dataGenRole = solarActiveCount > 0 ? TextStyleRole.Accent : TextStyleRole.Label;
 
             // LOAD & FLOW
-            string lVal;
-            string lSub;
-            TextStyleRole loadRole;
             if (Math.Abs(netRate) < 0.01)
             {
-                lVal = "0.00 e/s";
-                lSub = "BALANCED";
-                loadRole = TextStyleRole.PrimaryValue;
+                _dataLoadVal = "0.00 e/s";
+                _dataLoadSub = "BALANCED";
+                _dataLoadRole = TextStyleRole.PrimaryValue;
             }
             else if (netRate > 0)
             {
-                lVal = TelemetryTokenEngine.Evaluate("+{EC:RATE}", telemetry);
-                lSub = "CHARGING";
-                loadRole = TextStyleRole.Accent;
+                _dataLoadVal = TelemetryTokenEngine.Evaluate("+{EC:RATE}", telemetry);
+                _dataLoadSub = "CHARGING";
+                _dataLoadRole = TextStyleRole.Accent;
             }
             else
             {
-                lVal = TelemetryTokenEngine.Evaluate("{EC:RATE}", telemetry);
-                lSub = "DRAINING";
-                loadRole = TextStyleRole.Warning;
+                _dataLoadVal = TelemetryTokenEngine.Evaluate("{EC:RATE}", telemetry);
+                _dataLoadSub = "DRAINING";
+                _dataLoadRole = TextStyleRole.Warning;
+            }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
+
+            if (_dataBat1Val != _lastBat1Val)
+            {
+                _lastBat1Val = _dataBat1Val;
+                _bat1ValText.text = _dataBat1Val;
+            }
+            if (_dataBat1Sub != _lastBat1Sub)
+            {
+                _lastBat1Sub = _dataBat1Sub;
+                _bat1SubText.text = _dataBat1Sub;
+                ApplyText(_bat1SubText, _dataBat1SubRole, theme);
             }
 
-            if (lVal != _lastLoadVal)
+            if (_dataBat2Val != _lastBat2Val)
             {
-                _lastLoadVal = lVal;
-                _loadValText.text = lVal;
-                ApplyText(_loadValText, loadRole, theme);
+                _lastBat2Val = _dataBat2Val;
+                _bat2ValText.text = _dataBat2Val;
             }
-            if (lSub != _lastLoadSub)
+            if (_dataBat2Sub != _lastBat2Sub)
             {
-                _lastLoadSub = lSub;
-                _loadSubText.text = lSub;
+                _lastBat2Sub = _dataBat2Sub;
+                _bat2SubText.text = _dataBat2Sub;
+                ApplyText(_bat2SubText, _dataBat2SubRole, theme);
+            }
+
+            if (_dataDcVal != _lastDcBusVal)
+            {
+                _lastDcBusVal = _dataDcVal;
+                _dcBusValText.text = _dataDcVal;
+            }
+            if (_dataDcSub != _lastDcBusSub)
+            {
+                _lastDcBusSub = _dataDcSub;
+                _dcBusSubText.text = _dataDcSub;
+            }
+
+            if (_dataGenVal != _lastGenVal)
+            {
+                _lastGenVal = _dataGenVal;
+                _genValText.text = _dataGenVal;
+                ApplyText(_genValText, _dataGenRole, theme);
+            }
+            if (_dataGenSub != _lastGenSub)
+            {
+                _lastGenSub = _dataGenSub;
+                _genSubText.text = _dataGenSub;
+            }
+
+            if (_dataLoadVal != _lastLoadVal)
+            {
+                _lastLoadVal = _dataLoadVal;
+                _loadValText.text = _dataLoadVal;
+                ApplyText(_loadValText, _dataLoadRole, theme);
+            }
+            if (_dataLoadSub != _lastLoadSub)
+            {
+                _lastLoadSub = _dataLoadSub;
+                _loadSubText.text = _dataLoadSub;
             }
         }
 

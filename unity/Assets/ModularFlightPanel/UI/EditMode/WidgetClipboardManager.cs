@@ -40,7 +40,7 @@ namespace ModularFlightPanel.UI
             }
 
             _consecutivePasteCount = 0;
-            MFPToastBridge.Show(I18n.TrFormat("TOAST_CLIPBOARD_COPIED", "已复制 {0} 个小组件", _clipboard.Count));
+            MFPToastBridge.Show(I18n.TrFormat("TOAST_CLIPBOARD_COPIED", _clipboard.Count));
         }
 
         /// <summary>
@@ -93,7 +93,7 @@ namespace ModularFlightPanel.UI
                 }
             });
 
-            MFPToastBridge.Show(I18n.TrFormat("TOAST_CLIPBOARD_PASTED", "已粘贴 {0} 个小组件", createdIds.Count));
+            MFPToastBridge.Show(I18n.TrFormat("TOAST_CLIPBOARD_PASTED", createdIds.Count));
         }
 
         /// <summary>

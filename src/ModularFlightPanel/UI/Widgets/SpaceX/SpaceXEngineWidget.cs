@@ -274,13 +274,50 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private int _dataActiveEngines;
+        private int _dataTotalEngines = 6;
+        private float _dataThrottle;
+        private bool _dataIsIgniting;
+        private bool _dataIsFlameout;
+        private bool _dataIsFiring;
+        private bool _dataHasVessel;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+            _dataHasVessel = true;
 
             int activeEngines = telemetry.ActiveEngines;
             int totalEngines = telemetry.TotalStageEngines > 0 ? telemetry.TotalStageEngines : 6;
             float throttle = telemetry.Throttle;
+
+            _dataActiveEngines = activeEngines;
+            _dataTotalEngines = totalEngines;
+            _dataThrottle = throttle;
+
+            bool isIgniting = telemetry.IsEngineIgniting;
+            bool isFlameout = throttle > 0.05f && (activeEngines == 0 || telemetry.StagePropellantFraction <= 0.0001f);
+            bool isFiring = !isFlameout && (isIgniting || (throttle > 0.005f && activeEngines > 0));
+
+            _dataIsIgniting = isIgniting;
+            _dataIsFlameout = isFlameout;
+            _dataIsFiring = isFiring;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
+
+            int activeEngines = _dataActiveEngines;
+            int totalEngines = _dataTotalEngines;
+            float throttle = _dataThrottle;
 
             // 脏标记检查
             if (activeEngines == _cachedActiveEngines &&
@@ -293,7 +330,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _cachedActiveEngines = activeEngines;
             _cachedThrottle = throttle;
 
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
             float s = CurrentDpiScale;
 
             // 若当前级发动机总数变动，自适应重构排布
@@ -303,10 +340,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 RebuildEngineLayout(totalEngines, s, theme);
             }
 
-            // 引擎点火逻辑 (严格关联油门、点火瞬态与燃料耗尽状态)
-            bool isIgniting = telemetry.IsEngineIgniting;
-            bool isFlameout = throttle > 0.05f && (activeEngines == 0 || telemetry.StagePropellantFraction <= 0.0001f);
-            bool isFiring = !isFlameout && (isIgniting || (throttle > 0.005f && activeEngines > 0));
+            bool isIgniting = _dataIsIgniting;
+            bool isFlameout = _dataIsFlameout;
+            bool isFiring = _dataIsFiring;
             int litCount = isFiring ? Mathf.Min(activeEngines > 0 ? activeEngines : totalEngines, _engineNodes.Count) : 0;
 
             float throttleScale = Mathf.Lerp(0.5f, 1.0f, Mathf.Clamp01(throttle));

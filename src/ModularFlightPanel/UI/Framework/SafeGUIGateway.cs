@@ -55,15 +55,15 @@ namespace ModularFlightPanel.UI.Framework
                 // 呈现窗口内自愈卡片，保障窗口仍然可操作、可关闭、可重置
                 GUILayout.BeginVertical();
                 MFPGuiSkin.BeginCard();
-                GUILayout.Label("<color=#FF5555><b>⚠️ 界面绘制遇到异常 (GUI Render Error)</b></color>");
+                GUILayout.Label($"<color=#FF5555><b>{I18n.Tr("ERR_GUI_RENDER_ERROR", "⚠️ 界面绘制遇到异常 (GUI Render Error)")}</b></color>");
                 GUILayout.Label($"<color=#CCCCCC><size=11>{ex.GetType().Name}: {ex.Message}</size></color>");
                 GUILayout.Space(8f);
                 GUILayout.BeginHorizontal();
-                if (onRecover != null && GUILayout.Button("🔄 尝试重置界面", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
+                if (onRecover != null && GUILayout.Button(I18n.Tr("ERR_BTN_RESET_GUI", "🔄 尝试重置界面"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
                 {
                     try { onRecover(); } catch { }
                 }
-                if (GUILayout.Button("✖ 释放控制锁", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(120f), GUILayout.Height(24f)))
+                if (GUILayout.Button(I18n.Tr("ERR_BTN_RELEASE_LOCKS", "✖ 释放控制锁"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(120f), GUILayout.Height(24f)))
                 {
                     MFPInputLock.ReleaseAllLocks();
                 }

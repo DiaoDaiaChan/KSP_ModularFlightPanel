@@ -293,19 +293,81 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private bool _cachedHasVessel;
+        private bool _cachedBypassed;
+        private double _cachedFps;
+        private double _cachedTotalMs;
+        private double _cachedBudget;
+        private double _cachedWidgetsMs;
+        private double _cachedProbesMs;
+        private double _cachedTelemMs;
+        private double _cachedCoreMs;
+        private double _cachedMem;
+        private string _cachedHealthStr;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
+
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
+
+            _cachedHasVessel = true;
+            _cachedBypassed = MFPProfiler.IsMasterBypassed;
+
+            double fps = TelemetryTokenEngine.EvaluateNumeric(_fpsToken, context.Telemetry);
+            if (double.IsNaN(fps) || fps <= 0.0) fps = MFPProfiler.CurrentFPS;
+            _cachedFps = fps;
+
+            double totalMs = TelemetryTokenEngine.EvaluateNumeric(_totalMsToken, context.Telemetry);
+            if (double.IsNaN(totalMs)) totalMs = MFPProfiler.AvgTotalMs;
+            _cachedTotalMs = totalMs;
+
+            double budget = TelemetryTokenEngine.EvaluateNumeric(_budgetToken, context.Telemetry);
+            if (double.IsNaN(budget)) budget = MFPProfiler.FrameBudgetPercent;
+            _cachedBudget = budget;
+
+            double wMs = TelemetryTokenEngine.EvaluateNumeric(_widgetsToken, context.Telemetry);
+            if (double.IsNaN(wMs)) wMs = MFPProfiler.AvgWidgetsMs;
+            _cachedWidgetsMs = wMs;
+
+            double pMs = TelemetryTokenEngine.EvaluateNumeric(_probesToken, context.Telemetry);
+            if (double.IsNaN(pMs)) pMs = MFPProfiler.AvgProbesMs;
+            _cachedProbesMs = pMs;
+
+            double tMs = TelemetryTokenEngine.EvaluateNumeric(_telemToken, context.Telemetry);
+            if (double.IsNaN(tMs)) tMs = MFPProfiler.AvgTelemetryMs;
+            _cachedTelemMs = tMs;
+
+            double cMs = TelemetryTokenEngine.EvaluateNumeric(_coreToken, context.Telemetry);
+            if (double.IsNaN(cMs)) cMs = MFPProfiler.AvgHooksMs + MFPProfiler.AvgSilhouetteMs;
+            _cachedCoreMs = cMs;
+
+            double mem = TelemetryTokenEngine.EvaluateNumeric(_memToken, context.Telemetry);
+            if (double.IsNaN(mem)) mem = MFPProfiler.TotalMemoryMB;
+            _cachedMem = mem;
+
+            _cachedHealthStr = $"GC0: {MFPProfiler.Gc0Collections} · SPIKE: {MFPProfiler.SpikeCount}";
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
 
             float s = CurrentDpiScale;
             double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.02;
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme);
 
             // 1. 旁路状态变动侦测
-            bool bypassed = MFPProfiler.IsMasterBypassed;
+            bool bypassed = _cachedBypassed;
             if (bypassed != _lastBypassState)
             {
                 _lastBypassState = bypassed;
-                ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
                 StatusBadge.Text = bypassed ? "● " + I18n.Tr("WIDGET_PERF_BYPASS", "旁路") : "● " + I18n.Tr("WIDGET_PERF_LIVE", "实时");
                 StatusBadge.SetRole(bypassed ? TextStyleRole.Warning : TextStyleRole.Accent);
                 _bypassBtnLabel.text = bypassed ? "▶ " + I18n.Tr("WIDGET_PERF_RESUME", "恢复 MFP HUD") : "⏸ " + I18n.Tr("WIDGET_PERF_BYPASS_BTN", "旁路 MFP (零开销)");
@@ -313,9 +375,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. FPS 读数与语义告警
-            double fps = TelemetryTokenEngine.EvaluateNumeric(_fpsToken, telemetry);
-            if (double.IsNaN(fps) || fps <= 0.0) fps = MFPProfiler.CurrentFPS;
-
+            double fps = _cachedFps;
             if (double.IsNaN(_lastFps) || Math.Abs(fps - _lastFps) > 0.8)
             {
                 _lastFps = fps;
@@ -325,7 +385,6 @@ namespace ModularFlightPanel.UI.Widgets
                     _lastFormattedFps = fpsStr;
                     _fpsValText.text = fpsStr;
 
-                    ThemeConfig theme = WidgetStyleManager.ResolveTheme(null);
                     if (fps < 25.0) ApplyText(_fpsValText, TextStyleRole.Danger, theme);
                     else if (fps < 45.0) ApplyText(_fpsValText, TextStyleRole.Warning, theme);
                     else ApplyText(_fpsValText, TextStyleRole.Cardinal, theme);
@@ -333,9 +392,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. MFP 帧耗时与预算占比
-            double totalMs = TelemetryTokenEngine.EvaluateNumeric(_totalMsToken, telemetry);
-            if (double.IsNaN(totalMs)) totalMs = MFPProfiler.AvgTotalMs;
-
+            double totalMs = _cachedTotalMs;
             if (double.IsNaN(_lastTotalMs) || Math.Abs(totalMs - _lastTotalMs) > deltaThreshold)
             {
                 _lastTotalMs = totalMs;
@@ -347,9 +404,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            double budget = TelemetryTokenEngine.EvaluateNumeric(_budgetToken, telemetry);
-            if (double.IsNaN(budget)) budget = MFPProfiler.FrameBudgetPercent;
-
+            double budget = _cachedBudget;
             if (double.IsNaN(_lastBudget) || Math.Abs(budget - _lastBudget) > 0.1)
             {
                 _lastBudget = budget;
@@ -366,8 +421,7 @@ namespace ModularFlightPanel.UI.Widgets
             float maxBarWidth = 88f * s;
 
             // Widgets
-            double wMs = TelemetryTokenEngine.EvaluateNumeric(_widgetsToken, telemetry);
-            if (double.IsNaN(wMs)) wMs = MFPProfiler.AvgWidgetsMs;
+            double wMs = _cachedWidgetsMs;
             if (double.IsNaN(_lastWidgetsMs) || Math.Abs(wMs - _lastWidgetsMs) > 0.01)
             {
                 _lastWidgetsMs = wMs;
@@ -377,8 +431,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // Probes
-            double pMs = TelemetryTokenEngine.EvaluateNumeric(_probesToken, telemetry);
-            if (double.IsNaN(pMs)) pMs = MFPProfiler.AvgProbesMs;
+            double pMs = _cachedProbesMs;
             if (double.IsNaN(_lastProbesMs) || Math.Abs(pMs - _lastProbesMs) > 0.01)
             {
                 _lastProbesMs = pMs;
@@ -388,8 +441,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // Telem
-            double tMs = TelemetryTokenEngine.EvaluateNumeric(_telemToken, telemetry);
-            if (double.IsNaN(tMs)) tMs = MFPProfiler.AvgTelemetryMs;
+            double tMs = _cachedTelemMs;
             if (double.IsNaN(_lastTelemMs) || Math.Abs(tMs - _lastTelemMs) > 0.01)
             {
                 _lastTelemMs = tMs;
@@ -399,8 +451,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // Core / Hooks
-            double cMs = TelemetryTokenEngine.EvaluateNumeric(_coreToken, telemetry);
-            if (double.IsNaN(cMs)) cMs = MFPProfiler.AvgHooksMs + MFPProfiler.AvgSilhouetteMs;
+            double cMs = _cachedCoreMs;
             if (double.IsNaN(_lastCoreMs) || Math.Abs(cMs - _lastCoreMs) > 0.01)
             {
                 _lastCoreMs = cMs;
@@ -410,8 +461,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 内存分配与稳定性
-            double mem = TelemetryTokenEngine.EvaluateNumeric(_memToken, telemetry);
-            if (double.IsNaN(mem)) mem = MFPProfiler.TotalMemoryMB;
+            double mem = _cachedMem;
             if (double.IsNaN(_lastMem) || Math.Abs(mem - _lastMem) > 0.5)
             {
                 _lastMem = mem;
@@ -423,7 +473,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            string healthStr = $"GC0: {MFPProfiler.Gc0Collections} · SPIKE: {MFPProfiler.SpikeCount}";
+            string healthStr = _cachedHealthStr;
             if (healthStr != _lastFormattedHealth)
             {
                 _lastFormattedHealth = healthStr;

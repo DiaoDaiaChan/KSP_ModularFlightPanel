@@ -403,97 +403,127 @@ namespace ModularFlightPanel.UI.Widgets
             driftRt.anchoredPosition = _aircraftCenterPos + new Vector2(-28f * s, 0f);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private bool _cachedHasVessel;
+        private float _cachedHeading;
+        private string _cachedTensStr;
+        private string _cachedGsTas;
+        private string _cachedWind;
+        private string _cachedProc;
+        private string _cachedWp;
+        private string _cachedEta;
+        private string _cachedVor1;
+        private string _cachedVor2;
+        private string _cachedDrift;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
 
-            double evalHdg = TelemetryTokenEngine.EvaluateNumeric(_headingToken, telemetry);
-            float heading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)telemetry.Heading;
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
+
+            _cachedHasVessel = true;
+
+            double evalHdg = TelemetryTokenEngine.EvaluateNumeric(_headingToken, context.Telemetry);
+            float heading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)context.Telemetry.Heading;
             if (float.IsNaN(heading)) heading = 0f;
+            _cachedHeading = heading;
 
-            // 1. 更新顶部大十位数显 (如 24 代表 240°)
             int tens = Mathf.RoundToInt(heading / 10f) % 36;
             if (tens < 0) tens += 36;
-            string tensStr = $"{tens:D2}";
-            if (tensStr != _lastTens)
+            _cachedTensStr = $"{tens:D2}";
+
+            _cachedGsTas = TelemetryTokenEngine.Evaluate(_gsTasTemplate, context.Telemetry);
+            _cachedWind = TelemetryTokenEngine.Evaluate(_windTemplate, context.Telemetry);
+            _cachedProc = TelemetryTokenEngine.Evaluate(_procedureTemplate, context.Telemetry);
+            _cachedWp = TelemetryTokenEngine.Evaluate(_waypointNameDistTemplate, context.Telemetry);
+            _cachedEta = TelemetryTokenEngine.Evaluate(_waypointEtaTemplate, context.Telemetry);
+            _cachedVor1 = TelemetryTokenEngine.Evaluate(_vor1Template, context.Telemetry);
+            _cachedVor2 = TelemetryTokenEngine.Evaluate(_vor2Template, context.Telemetry);
+            _cachedDrift = TelemetryTokenEngine.Evaluate(_driftTemplate, context.Telemetry);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            // 1. 更新顶部大十位数显 (如 24 代表 240°)
+            if (_cachedTensStr != _lastTens)
             {
-                _lastTens = tensStr;
-                if (_topHeadingText != null) _topHeadingText.text = tensStr;
+                _lastTens = _cachedTensStr;
+                if (_topHeadingText != null) _topHeadingText.text = _cachedTensStr;
             }
 
-            // 2. 动态更新四角航电读数 (通配符求值与脏检查)
-            string evalGsTas = TelemetryTokenEngine.Evaluate(_gsTasTemplate, telemetry);
-            if (evalGsTas != _lastGsTas)
+            // 2. 动态更新四角航电读数
+            if (_cachedGsTas != _lastGsTas)
             {
-                _lastGsTas = evalGsTas;
-                if (_gsTasText != null) _gsTasText.text = evalGsTas;
+                _lastGsTas = _cachedGsTas;
+                if (_gsTasText != null) _gsTasText.text = _cachedGsTas;
             }
 
-            string evalWind = TelemetryTokenEngine.Evaluate(_windTemplate, telemetry);
-            if (evalWind != _lastWind)
+            if (_cachedWind != _lastWind)
             {
-                _lastWind = evalWind;
-                if (_windText != null) _windText.text = evalWind;
+                _lastWind = _cachedWind;
+                if (_windText != null) _windText.text = _cachedWind;
             }
 
-            string evalProc = TelemetryTokenEngine.Evaluate(_procedureTemplate, telemetry);
-            if (evalProc != _lastProc)
+            if (_cachedProc != _lastProc)
             {
-                _lastProc = evalProc;
-                if (_procedureText != null) _procedureText.text = evalProc;
+                _lastProc = _cachedProc;
+                if (_procedureText != null) _procedureText.text = _cachedProc;
             }
 
-            string evalWp = TelemetryTokenEngine.Evaluate(_waypointNameDistTemplate, telemetry);
-            if (evalWp != _lastWp)
+            if (_cachedWp != _lastWp)
             {
-                _lastWp = evalWp;
-                if (_waypointNameDistText != null) _waypointNameDistText.text = evalWp;
+                _lastWp = _cachedWp;
+                if (_waypointNameDistText != null) _waypointNameDistText.text = _cachedWp;
             }
 
-            string evalEta = TelemetryTokenEngine.Evaluate(_waypointEtaTemplate, telemetry);
-            if (evalEta != _lastEta)
+            if (_cachedEta != _lastEta)
             {
-                _lastEta = evalEta;
-                if (_waypointEtaText != null) _waypointEtaText.text = evalEta;
+                _lastEta = _cachedEta;
+                if (_waypointEtaText != null) _waypointEtaText.text = _cachedEta;
             }
 
-            string evalVor1 = TelemetryTokenEngine.Evaluate(_vor1Template, telemetry);
-            if (evalVor1 != _lastVor1)
+            if (_cachedVor1 != _lastVor1)
             {
-                _lastVor1 = evalVor1;
-                if (_vor1Text != null) _vor1Text.text = evalVor1;
+                _lastVor1 = _cachedVor1;
+                if (_vor1Text != null) _vor1Text.text = _cachedVor1;
             }
 
-            string evalVor2 = TelemetryTokenEngine.Evaluate(_vor2Template, telemetry);
-            if (evalVor2 != _lastVor2)
+            if (_cachedVor2 != _lastVor2)
             {
-                _lastVor2 = evalVor2;
-                if (_vor2Text != null) _vor2Text.text = evalVor2;
+                _lastVor2 = _cachedVor2;
+                if (_vor2Text != null) _vor2Text.text = _cachedVor2;
             }
 
-            string evalDrift = TelemetryTokenEngine.Evaluate(_driftTemplate, telemetry);
-            if (evalDrift != _lastDrift)
+            if (_cachedDrift != _lastDrift)
             {
-                _lastDrift = evalDrift;
-                if (_driftText != null) _driftText.text = evalDrift;
+                _lastDrift = _cachedDrift;
+                if (_driftText != null) _driftText.text = _cachedDrift;
             }
 
             // 3. 动态更新罗盘圆弧十度刻度带
-            if (Mathf.Abs(Mathf.DeltaAngle(heading, _lastRenderedHeading)) > 0.05f)
+            if (Mathf.Abs(Mathf.DeltaAngle(_cachedHeading, _lastRenderedHeading)) > 0.05f)
             {
-                _lastRenderedHeading = heading;
-                UpdateArcCompassRose(heading);
+                _lastRenderedHeading = _cachedHeading;
+                UpdateArcCompassRose(_cachedHeading, context.Theme);
             }
         }
 
-        private void UpdateArcCompassRose(float currentHeading)
+        private void UpdateArcCompassRose(float currentHeading, ThemeConfig themeOverride = null)
         {
             float s = CurrentDpiScale;
             float radius = ND_ARC_RADIUS * s;
             int centerTickDeg = Mathf.RoundToInt(currentHeading / 5f) * 5;
             int tickIdx = 0;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(themeOverride ?? ThemeManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
             Color textCol = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
             Color subTickCol = style.GetTextColor(TextStyleRole.SecondaryValue, theme);

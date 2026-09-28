@@ -74,6 +74,17 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private string _lastHeroStr = string.Empty;
         private string _lastSubtitleStr = string.Empty;
 
+        // 双轨快照
+        private bool _pendingHasNode = false;
+        private double _pendingDeltaV = 0.0;
+        private float _pendingPipProgress = 0.08f;
+        private CardStyleRole _pendingCardRole = CardStyleRole.Normal;
+        private string _pendingCountdownLabel = string.Empty;
+        private string _pendingCountdownStr = string.Empty;
+        private string _pendingDvStr = string.Empty;
+        private string _pendingSubtitleStr = string.Empty;
+        private bool _hasPendingHeartbeat = false;
+
         // 几何参数 (基准像素)
         private const float TrackWidth = 460f;
         private const float TrackCenterY = 32f;
@@ -356,22 +367,21 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel) return;
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
-            float s = CurrentDpiScale;
 
-            // 1. 无机动节点时优雅待机降级
             if (!telemetry.HasManeuverNode)
             {
-                ShowStandby(theme, s);
+                _pendingHasNode = false;
+                _hasPendingHeartbeat = true;
                 return;
             }
 
-            _lastHasNode = true;
+            _pendingHasNode = true;
 
-            // 2. 遥测数值双精度求值 (面向纯 C# 契约与通配符引擎)
             double dv = TelemetryTokenEngine.EvaluateNumeric(_deltaVToken, telemetry);
             if (double.IsNaN(dv)) dv = telemetry.ManeuverDeltaV;
 
@@ -388,7 +398,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             double timeToBurn = TelemetryTokenEngine.EvaluateNumeric(_timeToBurnToken, telemetry);
             if (double.IsNaN(timeToBurn)) timeToBurn = telemetry.ManeuverTimeToBurn;
 
-            // 三轴机动速度矢量求值
             double proDv = TelemetryTokenEngine.EvaluateNumeric(_proToken, telemetry);
             if (double.IsNaN(proDv)) proDv = telemetry.ManeuverDeltaVPrograde;
 
@@ -398,91 +407,39 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             double radDv = TelemetryTokenEngine.EvaluateNumeric(_radToken, telemetry);
             if (double.IsNaN(radDv)) radDv = telemetry.ManeuverDeltaVRadial;
 
-            // 来源与状态标识
             string srcStr = TelemetryTokenEngine.Evaluate(_sourceToken, telemetry);
             if (string.IsNullOrEmpty(srcStr) || srcStr.StartsWith("{")) srcStr = telemetry.ManeuverSource ?? "MANEUVER";
 
-            // 3. 状态研判与高亮模式切换
             CardStyleRole targetRole = CardStyleRole.Normal;
             if (timeToBurn <= 0.0 && dv > 0.1)
             {
                 targetRole = CardStyleRole.Emphasized;
             }
+            _pendingCardRole = targetRole;
 
-            if (_currentCardRole != targetRole)
-            {
-                _currentCardRole = targetRole;
-                if (_frameMode == "FAINT" && _bgOutline != null)
-                {
-                    _bgOutline.effectColor = targetRole == CardStyleRole.Emphasized
-                        ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
-                        : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-                }
-                else if (_frameMode == "NORMAL")
-                {
-                    ApplyCard(_bgImage, _bgOutline, targetRole, theme);
-                }
-            }
-
-            // 4. 计算归一化飞行光标位置 (pipProgress)
             float pipProgress;
             if (timeToBurn > 0.0)
             {
-                // 进场阶段：依据倒计时从 0.08 推进至 IGNITION 点 (0.38)
                 float approachRatio = Mathf.Clamp01(1.0f - (float)(timeToBurn / Math.Max(timeToBurn + 30.0, 120.0)));
                 pipProgress = Mathf.Lerp(0.08f, ZoneIgnitionNorm, approachRatio);
             }
             else if (dv > 0.1)
             {
-                // 点火阶段：从 IGNITION (0.38) 推进至 BURNOUT (0.88)
                 float burnProgress = totalDv > 0.01 ? Mathf.Clamp01(1.0f - (float)(dv / totalDv)) : 0.5f;
                 pipProgress = Mathf.Lerp(ZoneIgnitionNorm, ZoneBurnoutNorm, burnProgress);
             }
             else
             {
-                // 关机完成阶段
                 pipProgress = 0.90f;
             }
+            _pendingPipProgress = pipProgress;
 
-            // 更新光标水平几何位置与节点经过高亮
-            if (Mathf.Abs(pipProgress - _lastCachedPipProgress) > 0.002f)
-            {
-                _lastCachedPipProgress = pipProgress;
-                float pipX = (pipProgress - 0.5f) * TrackWidth * s;
-                if (_progressPipRt != null)
-                {
-                    _progressPipRt.anchoredPosition = new Vector2(pipX, TrackCenterY * s);
-                }
-
-                // 更新里程碑点亮状态 (已通过节点高亮)
-                if (_milestones != null)
-                {
-                    Color activeDot = theme.AccentPrimary;
-                    Color inactiveDot = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Bold);
-
-                    for (int i = 0; i < _milestones.Length; i++)
-                    {
-                        bool passed = pipProgress >= _milestones[i].NormalizedX - 0.01f;
-                        if (_milestones[i].Dot != null)
-                        {
-                            _milestones[i].Dot.color = passed ? activeDot : inactiveDot;
-                        }
-                        if (_milestones[i].Label != null)
-                        {
-                            ApplyText(_milestones[i].Label, passed ? TextStyleRole.PrimaryValue : TextStyleRole.Label, theme);
-                        }
-                    }
-                }
-            }
-
-            // 5. 分体式双栏核心读数 — 左: 倒计时 / 右: ΔV
             string labelStr;
             string countdownStr;
             string dvStr;
 
             if (timeToBurn > 0.0)
             {
-                // 进场模式
                 labelStr = "COUNTDOWN";
                 int totalSec = Mathf.Abs((int)timeToBurn);
                 countdownStr = $"T- {totalSec / 60:00}:{totalSec % 60:00}";
@@ -490,7 +447,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
             else if (dv > 0.1)
             {
-                // 正在燃烧
                 labelStr = "BURN ELAPSED";
                 int elapsed = Mathf.Abs((int)timeToBurn);
                 countdownStr = $"T+ {elapsed / 60:00}:{elapsed % 60:00}";
@@ -498,24 +454,16 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
             else
             {
-                // 关机完成
                 labelStr = "STATUS";
                 countdownStr = "COMPLETE";
                 dvStr = "0.0 m/s";
             }
 
-            if (countdownStr != _lastHeroStr)
-            {
-                _lastHeroStr = countdownStr;
-                SetTextIfChanged(_countdownText, countdownStr);
-                SetTextIfChanged(_countdownLabel, labelStr);
-            }
-            if (dvStr != _lastSubtitleStr || _lastDeltaV != dv)
-            {
-                SetTextIfChanged(_deltaVText, dvStr);
-            }
+            _pendingCountdownLabel = labelStr;
+            _pendingCountdownStr = countdownStr;
+            _pendingDvStr = dvStr;
+            _pendingDeltaV = dv;
 
-            // 6. 底部单行三向矢量遥测标牌更新 ([PRINCIPIA] PRO +310.0 · NRM +75.0 · RAD -25.0 m/s)
             double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
             if (double.IsNaN(_lastPrograde) || Math.Abs(proDv - _lastPrograde) > deltaThreshold ||
                 Math.Abs(normDv - _lastNormal) > deltaThreshold || Math.Abs(radDv - _lastRadial) > deltaThreshold)
@@ -533,12 +481,89 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     subStr = $"[{srcStr}]  NOMINAL BURNOUT  ·  ALL NODES EXECUTED";
                 }
+                _pendingSubtitleStr = subStr;
+            }
 
-                if (subStr != _lastSubtitleStr)
+            _hasPendingHeartbeat = true;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_hasPendingHeartbeat) return;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(_cachedTheme);
+            float s = CurrentDpiScale;
+
+            if (!_pendingHasNode)
+            {
+                ShowStandby(theme, s);
+                return;
+            }
+
+            _lastHasNode = true;
+
+            if (_currentCardRole != _pendingCardRole)
+            {
+                _currentCardRole = _pendingCardRole;
+                if (_frameMode == "FAINT" && _bgOutline != null)
                 {
-                    _lastSubtitleStr = subStr;
-                    SetTextIfChanged(_vectorSubtitleText, subStr);
+                    _bgOutline.effectColor = _pendingCardRole == CardStyleRole.Emphasized
+                        ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
+                        : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
                 }
+                else if (_frameMode == "NORMAL")
+                {
+                    ApplyCard(_bgImage, _bgOutline, _pendingCardRole, theme);
+                }
+            }
+
+            if (Mathf.Abs(_pendingPipProgress - _lastCachedPipProgress) > 0.002f)
+            {
+                _lastCachedPipProgress = _pendingPipProgress;
+                float pipX = (_pendingPipProgress - 0.5f) * TrackWidth * s;
+                if (_progressPipRt != null)
+                {
+                    _progressPipRt.anchoredPosition = new Vector2(pipX, TrackCenterY * s);
+                }
+
+                if (_milestones != null)
+                {
+                    Color activeDot = theme.AccentPrimary;
+                    Color inactiveDot = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Bold);
+
+                    for (int i = 0; i < _milestones.Length; i++)
+                    {
+                        bool passed = _pendingPipProgress >= _milestones[i].NormalizedX - 0.01f;
+                        if (_milestones[i].Dot != null)
+                        {
+                            _milestones[i].Dot.color = passed ? activeDot : inactiveDot;
+                        }
+                        if (_milestones[i].Label != null)
+                        {
+                            ApplyText(_milestones[i].Label, passed ? TextStyleRole.PrimaryValue : TextStyleRole.Label, theme);
+                        }
+                    }
+                }
+            }
+
+            if (_pendingCountdownStr != _lastHeroStr)
+            {
+                _lastHeroStr = _pendingCountdownStr;
+                SetTextIfChanged(_countdownText, _pendingCountdownStr);
+                SetTextIfChanged(_countdownLabel, _pendingCountdownLabel);
+            }
+
+            if (_pendingDvStr != _lastSubtitleStr || _lastDeltaV != _pendingDeltaV)
+            {
+                _lastDeltaV = _pendingDeltaV;
+                SetTextIfChanged(_deltaVText, _pendingDvStr);
+            }
+
+            if (_pendingSubtitleStr != null && _pendingSubtitleStr != _lastSubtitleStr)
+            {
+                _lastSubtitleStr = _pendingSubtitleStr;
+                SetTextIfChanged(_vectorSubtitleText, _pendingSubtitleStr);
             }
         }
 

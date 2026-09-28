@@ -446,8 +446,10 @@ namespace ModularFlightPanel.UI.Widgets
             OnCycleHeadingModeAction?.Invoke();
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel) return;
 
             float rawHeading;
@@ -469,42 +471,33 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _displayedHeading = _targetHeading;
                 _isHeadingInitialized = true;
-                UpdateRotatingCompassRose(_displayedHeading);
-                UpdateBubbleHeadingText(_displayedHeading);
             }
-        }
 
-        protected override void Update()
-        {
-            base.Update();
-
-            if (!_isHeadingInitialized) return;
-
-            float dt = Time.deltaTime;
+            float dt = context.DeltaTime;
             if (dt <= 0.0001f)
             {
                 _displayedHeading = _targetHeading;
-                UpdateRotatingCompassRose(_displayedHeading, true);
-                UpdateBubbleHeadingText(_displayedHeading);
-                return;
-            }
-
-            float angleDiff = Mathf.DeltaAngle(_displayedHeading, _targetHeading);
-            if (Mathf.Abs(angleDiff) < 0.015f && Mathf.Abs(_headingVelocity) < 0.005f)
-            {
-                return;
-            }
-
-            if (Mathf.Abs(angleDiff) > 120f)
-            {
-                _displayedHeading = _targetHeading;
-                _headingVelocity = 0f;
             }
             else
             {
-                _displayedHeading = Mathf.SmoothDampAngle(_displayedHeading, _targetHeading, ref _headingVelocity, 0.09f, 900f, dt);
-                _displayedHeading = (_displayedHeading % 360f + 360f) % 360f;
+                float angleDiff = Mathf.DeltaAngle(_displayedHeading, _targetHeading);
+                if (Mathf.Abs(angleDiff) > 120f)
+                {
+                    _displayedHeading = _targetHeading;
+                    _headingVelocity = 0f;
+                }
+                else
+                {
+                    _displayedHeading = Mathf.SmoothDampAngle(_displayedHeading, _targetHeading, ref _headingVelocity, 0.09f, 900f, dt);
+                    _displayedHeading = (_displayedHeading % 360f + 360f) % 360f;
+                }
             }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_isHeadingInitialized) return;
 
             UpdateRotatingCompassRose(_displayedHeading);
             UpdateBubbleHeadingText(_displayedHeading);

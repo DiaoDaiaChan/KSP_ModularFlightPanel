@@ -77,15 +77,15 @@ namespace ModularFlightPanel.UI.Settings
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button(I18n.Tr("ASM_BTN_SPAWN_DIAL", "+ 生成 ECAM 仪表"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(28f)))
                 {
-                    SpawnQuickWidget("ecam_dial", "ecam_dial", "ECAM 仪表");
+                    SpawnQuickWidget("ecam_dial", "ecam_dial", I18n.Tr("ASM_SPAWN_ECAM", "ECAM 仪表"));
                 }
                 if (GUILayout.Button(I18n.Tr("ASM_BTN_SPAWN_TAPE", "+ 生成 PFD 标尺带"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(28f)))
                 {
-                    SpawnQuickWidget("tape", "tape", "PFD 标尺带");
+                    SpawnQuickWidget("tape", "tape", I18n.Tr("ASM_SPAWN_TAPE", "PFD 标尺带"));
                 }
                 if (GUILayout.Button(I18n.Tr("ASM_BTN_SPAWN_CARD", "+ 生成 6通道遥测矩阵卡"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(28f)))
                 {
-                    SpawnQuickWidget("custom_token", "custom.telemetry_card", "遥测矩阵卡");
+                    SpawnQuickWidget("custom_token", "custom.telemetry_card", I18n.Tr("ASM_SPAWN_CARD", "遥测矩阵卡"));
                 }
                 GUILayout.EndHorizontal();
                 MFPGuiSkin.EndCard();
@@ -176,26 +176,26 @@ namespace ModularFlightPanel.UI.Settings
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button(I18n.Tr("ASM_SPAWN_ECAM", "📊 ECAM 仪表"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
-                    SpawnQuickWidget("ecam_dial", "ecam_dial", "ECAM 仪表");
+                    SpawnQuickWidget("ecam_dial", "ecam_dial", I18n.Tr("ASM_SPAWN_ECAM", "ECAM 仪表"));
                 }
                 if (GUILayout.Button(I18n.Tr("ASM_SPAWN_TAPE", "📏 PFD 标尺带"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
-                    SpawnQuickWidget("tape", "tape", "PFD 标尺带");
+                    SpawnQuickWidget("tape", "tape", I18n.Tr("ASM_SPAWN_TAPE", "PFD 标尺带"));
                 }
                 GUILayout.EndHorizontal();
 
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button(I18n.Tr("ASM_SPAWN_CARD", "📝 遥测矩阵卡"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
-                    SpawnQuickWidget("custom_token", "custom.telemetry_card", "遥测矩阵卡");
+                    SpawnQuickWidget("custom_token", "custom.telemetry_card", I18n.Tr("ASM_SPAWN_CARD", "遥测矩阵卡"));
                 }
                 if (GUILayout.Button(I18n.Tr("ASM_SPAWN_ARC", "🎛️ 弧形表"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
-                    SpawnQuickWidget("arc_meter", "arc_meter", "弧形指示器");
+                    SpawnQuickWidget("arc_meter", "arc_meter", I18n.Tr("ASM_TAG_ARC", "弧形指示器"));
                 }
                 if (GUILayout.Button(I18n.Tr("ASM_SPAWN_BAR", "📶 状态条"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
-                    SpawnQuickWidget("bar_gauge", "bar_gauge", "横向条形表");
+                    SpawnQuickWidget("bar_gauge", "bar_gauge", I18n.Tr("ASM_TAG_BAR", "横向条形表"));
                 }
                 GUILayout.EndHorizontal();
                 MFPGuiSkin.EndInset();
@@ -604,7 +604,7 @@ namespace ModularFlightPanel.UI.Settings
             // 🔍 选参数按钮 -> 打开速查抽屉
             if (GUILayout.Button(I18n.Tr("ASM_BTN_PICK_PARAM", "🔍 选参数"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(75f), GUILayout.Height(22f)))
             {
-                TelemetryParamDrawer.Open(w.DisplayName + " 主驱动源", chosenToken =>
+                TelemetryParamDrawer.Open(w.DisplayName + I18n.Tr("ASM_PARAM_MAIN_SRC", " 主驱动源"), chosenToken =>
                 {
                     w.NumericToken = chosenToken;
                     var meta = TelemetryCatalog.FindByToken(chosenToken);
@@ -698,8 +698,21 @@ namespace ModularFlightPanel.UI.Settings
             MFPGuiSkin.EndCard();
         }
 
+        private static string GetDefaultChannelName(int index)
+        {
+            switch (index)
+            {
+                case 0: return I18n.Tr("ASM_CH_SPD", "空速 (SPD)");
+                case 1: return I18n.Tr("ASM_CH_TWR", "推重比 (TWR)");
+                case 2: return I18n.Tr("ASM_CH_RALT", "雷达真高 (RALT)");
+                case 3: return I18n.Tr("ASM_CH_Q", "大气动压 (Q)");
+                case 4: return I18n.Tr("ASM_CH_VSI", "垂直升降 (VSI)");
+                case 5: return I18n.Tr("ASM_CH_G", "重力过载 (G)");
+                default: return $"CH{index + 1}";
+            }
+        }
+
         private static readonly string[] DefaultChannelKeys = new string[] { "CH1", "CH2", "CH3", "CH4", "CH5", "CH6" };
-        private static readonly string[] DefaultChannelNames = new string[] { "空速 (SPD)", "推重比 (TWR)", "雷达真高 (RALT)", "大气动压 (Q)", "垂直升降 (VSI)", "重力过载 (G)" };
         private static readonly string[] DefaultChannelTokens = new string[] { "{SPD}", "{TWR}", "{ALT:AGL}", "{Q}", "{VSI}", "{GFORCE}" };
 
         private static void DrawMultiChannelCard(WidgetConfig w)
@@ -733,12 +746,12 @@ namespace ModularFlightPanel.UI.Settings
                 }
 
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("+ ' | ' 分隔符", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f)))
+                if (GUILayout.Button(I18n.Tr("ASM_BTN_ADD_PIPE", "+ ' | ' 分隔符"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f)))
                 {
                     w.CustomTemplate = (w.CustomTemplate ?? "") + " | ";
                     MarkDirty();
                 }
-                if (GUILayout.Button("+ 分号 ';'", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f)))
+                if (GUILayout.Button(I18n.Tr("ASM_BTN_ADD_SEMICOLON", "+ 分号 ';'"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f)))
                 {
                     w.CustomTemplate = (w.CustomTemplate ?? "") + ";";
                     MarkDirty();
@@ -762,7 +775,7 @@ namespace ModularFlightPanel.UI.Settings
                 for (int i = 0; i < 6; i++)
                 {
                     string chKey = DefaultChannelKeys[i];
-                    string chName = DefaultChannelNames[i];
+                    string chName = GetDefaultChannelName(i);
                     string defaultToken = DefaultChannelTokens[i];
 
                     string currentVal;
@@ -854,7 +867,7 @@ namespace ModularFlightPanel.UI.Settings
 
             if (GUILayout.Button(I18n.Tr("ASM_BTN_PICK_PARAM", "🔍 选参数"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(75f), GUILayout.Height(22f)))
             {
-                TelemetryParamDrawer.Open(w.DisplayName + " 模板", chosenToken =>
+                TelemetryParamDrawer.Open(w.DisplayName + I18n.Tr("ASM_PARAM_TEMPLATE", " 模板"), chosenToken =>
                 {
                     string cur = w.CustomTemplate ?? "";
                     string prefix = string.IsNullOrEmpty(cur) ? "" : (cur.EndsWith(";") ? "" : ";");
@@ -909,7 +922,7 @@ namespace ModularFlightPanel.UI.Settings
                 WidgetLayoutManager.Instance.SaveLayout();
             }
             GUILayout.FlexibleSpace();
-            GUILayout.Label("<color=#7088A8><size=10>Shift: 10px 快速步进</size></color>");
+            GUILayout.Label($"<color=#7088A8><size=10>{I18n.Tr("ASM_SHIFT_STEP_HINT", "Shift: 10px 快速步进")}</size></color>");
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4f);
@@ -923,7 +936,7 @@ namespace ModularFlightPanel.UI.Settings
                 GUILayout.BeginHorizontal(MFPGuiSkin.InsetStyle, GUILayout.Height(24f));
 
                 // 1. 显隐
-                string led = ctrl.IsVisible ? "<color=#00FF88>● 显</color>" : "<color=#7088A8>○ 隐</color>";
+                string led = ctrl.IsVisible ? $"<color=#00FF88>{I18n.Tr("ASM_CTRL_VISIBLE", "● 显")}</color>" : $"<color=#7088A8>{I18n.Tr("ASM_CTRL_HIDDEN", "○ 隐")}</color>";
                 if (GUILayout.Button(led, MFPGuiSkin.StepperButtonStyle, GUILayout.Width(45f), GUILayout.Height(20f)))
                 {
                     runtime.Controls.SetControlVisibility(ctrl.Id, !ctrl.IsVisible);
@@ -1005,18 +1018,18 @@ namespace ModularFlightPanel.UI.Settings
         {
             switch (cat)
             {
-                case WidgetControlCategory.Header: return "标题";
-                case WidgetControlCategory.Readout: return "数显";
-                case WidgetControlCategory.LinearGauge: return "柱条";
-                case WidgetControlCategory.ArcGauge: return "弧表";
-                case WidgetControlCategory.NeedlePointer: return "指针";
-                case WidgetControlCategory.ActionButton: return "按键";
-                case WidgetControlCategory.Annunciator: return "灯珠";
-                case WidgetControlCategory.Viewport: return "视口";
-                case WidgetControlCategory.DataStack: return "列表";
-                case WidgetControlCategory.ModeCapsule: return "胶囊";
-                case WidgetControlCategory.TrendBar: return "趋势";
-                default: return "图元";
+                case WidgetControlCategory.Header: return I18n.Tr("ASM_CAT_HEADER", "标题");
+                case WidgetControlCategory.Readout: return I18n.Tr("ASM_CAT_READOUT", "数显");
+                case WidgetControlCategory.LinearGauge: return I18n.Tr("ASM_CAT_LINEAR_GAUGE", "柱条");
+                case WidgetControlCategory.ArcGauge: return I18n.Tr("ASM_CAT_ARC_GAUGE", "弧表");
+                case WidgetControlCategory.NeedlePointer: return I18n.Tr("ASM_CAT_NEEDLE", "指针");
+                case WidgetControlCategory.ActionButton: return I18n.Tr("ASM_CAT_BTN", "按键");
+                case WidgetControlCategory.Annunciator: return I18n.Tr("ASM_CAT_ANNUNCIATOR", "灯珠");
+                case WidgetControlCategory.Viewport: return I18n.Tr("ASM_CAT_VIEWPORT", "视口");
+                case WidgetControlCategory.DataStack: return I18n.Tr("ASM_CAT_DATA_STACK", "列表");
+                case WidgetControlCategory.ModeCapsule: return I18n.Tr("ASM_CAT_CAPSULE", "胶囊");
+                case WidgetControlCategory.TrendBar: return I18n.Tr("ASM_CAT_TREND", "趋势");
+                default: return I18n.Tr("ASM_CAT_PRIMITIVE", "图元");
             }
         }
 

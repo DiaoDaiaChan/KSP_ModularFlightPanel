@@ -490,115 +490,97 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private struct StageRowSnapshot
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            public int StageNumber;
+            public bool IsActive;
+            public bool IsExpended;
+            public bool IsBurning;
+            public string BadgeText;
+            public string RoleText;
+            public string DvText;
+            public string MetaText;
+            public float PropFrac;
+            public bool Visible;
+        }
+        private readonly StageRowSnapshot[] _cachedStageSnapshots = new StageRowSnapshot[16];
+        private readonly List<StageDeltaVInfo> _reusableSortedStages = new List<StageDeltaVInfo>();
+        private bool _cachedHasVessel;
+        private string _cachedTitle;
+        private string _cachedSubTitle;
+        private string _cachedTwrStr;
+        private string _cachedDvStr;
+        private Texture _cachedSilhouetteTex;
+        private bool _cachedIsFiring;
+        private string _cachedBayFootStr;
+        private int _cachedDisplayCount;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            float s = CurrentDpiScale;
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
 
-            // 1. 顶部 Header 动态评估
-            string evalTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-            SetTextIfChanged(_titleText, evalTitle);
-
-            string evalSubTitle = TelemetryTokenEngine.Evaluate(_subTitleTemplate, telemetry);
-            SetTextIfChanged(_subTitleText, evalSubTitle);
-
-            string twrVal = TelemetryTokenEngine.Evaluate(_twrToken, telemetry);
-            string twrStr = $"TWR {twrVal}";
-            SetTextIfChanged(_summaryTwrText, twrStr);
-
-            string dvVal = TelemetryTokenEngine.Evaluate(_totalDvToken, telemetry);
-            string dvStr = dvVal.EndsWith("m/s", StringComparison.OrdinalIgnoreCase) ? dvVal : $"{dvVal} m/s";
-            SetTextIfChanged(_summaryDvText, dvStr);
-
-            // 2. 剪影视窗与纹理守卫
-            if (_silhouetteRawImage != null && _silhouetteRawImage.texture == null)
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
             {
-                Texture tex = VesselSilhouetteService.Provider?.SilhouetteTexture;
-                if (tex == null)
-                {
-                    tex = _fallbackSilhouetteTexture;
-                }
-                _silhouetteRawImage.texture = tex;
+                _cachedHasVessel = false;
+                return;
             }
 
-            // 3. 读取真实载具分级动力学
-            IReadOnlyList<StageDeltaVInfo> stages = telemetry.StageDeltaVList;
-            int stageCount = stages != null ? stages.Count : 0;
-            int curStage = telemetry.CurrentStage;
+            _cachedHasVessel = true;
 
-            List<StageDeltaVInfo> sortedStages = new List<StageDeltaVInfo>();
+            _cachedTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, context.Telemetry);
+            _cachedSubTitle = TelemetryTokenEngine.Evaluate(_subTitleTemplate, context.Telemetry);
+
+            string twrVal = TelemetryTokenEngine.Evaluate(_twrToken, context.Telemetry);
+            _cachedTwrStr = $"TWR {twrVal}";
+
+            string dvVal = TelemetryTokenEngine.Evaluate(_totalDvToken, context.Telemetry);
+            _cachedDvStr = dvVal.EndsWith("m/s", StringComparison.OrdinalIgnoreCase) ? dvVal : $"{dvVal} m/s";
+
+            _cachedSilhouetteTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
+
+            IReadOnlyList<StageDeltaVInfo> stages = context.Telemetry.StageDeltaVList;
+            int stageCount = stages != null ? stages.Count : 0;
+            int curStage = context.Telemetry.CurrentStage;
+
+            _reusableSortedStages.Clear();
             if (stageCount > 0)
             {
-                sortedStages.AddRange(stages);
-                // 标准航电顺位：自顶向下由 Payload(S00) 排列至 Booster(S06)
-                sortedStages.Sort((a, b) => a.Stage.CompareTo(b.Stage));
+                _reusableSortedStages.AddRange(stages);
+                _reusableSortedStages.Sort((a, b) => a.Stage.CompareTo(b.Stage));
             }
             else
             {
-                sortedStages.Add(new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
+                _reusableSortedStages.Add(new StageDeltaVInfo(curStage, context.Telemetry.StageDeltaV, context.Telemetry.StageBurnTime, context.Telemetry.TWR, 310.0, true));
             }
 
-            // 动态滑动视窗算法：确保当前点火级 (curStage) 始终位于 5 行视野内
             int curIdx = -1;
-            for (int k = 0; k < sortedStages.Count; k++)
+            for (int k = 0; k < _reusableSortedStages.Count; k++)
             {
-                if (sortedStages[k].Stage == curStage)
+                if (_reusableSortedStages[k].Stage == curStage)
                 {
                     curIdx = k;
                     break;
                 }
             }
-            if (curIdx < 0) curIdx = sortedStages.Count - 1;
+            if (curIdx < 0) curIdx = _reusableSortedStages.Count - 1;
 
             int windowStart = 0;
-            if (sortedStages.Count > MaxDisplayedStages)
+            if (_reusableSortedStages.Count > MaxDisplayedStages)
             {
-                windowStart = Mathf.Clamp(curIdx - (MaxDisplayedStages - 1), 0, sortedStages.Count - MaxDisplayedStages);
+                windowStart = Mathf.Clamp(curIdx - (MaxDisplayedStages - 1), 0, _reusableSortedStages.Count - MaxDisplayedStages);
             }
-            int displayCount = Mathf.Min(sortedStages.Count, MaxDisplayedStages);
+            int displayCount = Mathf.Min(_reusableSortedStages.Count, MaxDisplayedStages);
+            _cachedDisplayCount = displayCount;
 
-            // 4. 逐级更新推进栈各行
-            for (int i = 0; i < _stageRows.Count; i++)
+            for (int i = 0; i < _stageRows.Count && i < _cachedStageSnapshots.Length; i++)
             {
-                StageRowUI row = _stageRows[i];
                 if (i < displayCount)
                 {
-                    row.Root.SetActive(true);
-                    StageDeltaVInfo stg = sortedStages[windowStart + i];
-                    row.StageNumber = stg.Stage;
+                    StageDeltaVInfo stg = _reusableSortedStages[windowStart + i];
                     bool isActive = stg.IsActive || (stg.Stage == curStage);
-                    bool isExpended = stg.Stage > curStage; // 已脱落级
-                    row.IsActiveStage = isActive;
-                    row.IsBurning = isActive && (telemetry.Throttle > 0.01f || telemetry.ActiveEngines > 0 || stg.BurnTime > 0.01);
+                    bool isExpended = stg.Stage > curStage;
+                    bool isBurning = isActive && (context.Telemetry.Throttle > 0.01 || context.Telemetry.ActiveEngines > 0 || stg.BurnTime > 0.01);
 
-                    // A. 徽章标号与全行高亮
-                    SetTextIfChanged(row.BadgeText, $"S{stg.Stage:D2}");
-                    if (isActive)
-                    {
-                        row.BadgeBg.color = theme.AccentPrimary;
-                        row.BadgeText.color = style.GetTextColor(TextStyleRole.InverseOnAccent, theme);
-                        row.LeaderLine.color = theme.AccentPrimary;
-                        ApplyText(row.StageDvText, TextStyleRole.PrimaryValue, theme);
-                    }
-                    else if (isExpended)
-                    {
-                        row.BadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
-                        row.BadgeText.color = style.GetTextColor(TextStyleRole.Label, theme);
-                        row.LeaderLine.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
-                        ApplyText(row.StageDvText, TextStyleRole.Label, theme);
-                    }
-                    else
-                    {
-                        row.BadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
-                        row.BadgeText.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
-                        row.LeaderLine.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Normal);
-                        ApplyText(row.StageDvText, TextStyleRole.SecondaryValue, theme);
-                    }
-
-                    // B. 分级角色推断 (BOOSTER / CORE / UPPER / PAYLOAD / SEP)
                     string roleStr = null;
                     if (stg.PartIcons != null && stg.PartIcons.Count > 0)
                     {
@@ -622,25 +604,19 @@ namespace ModularFlightPanel.UI.Widgets
                         else if (stg.DeltaV < 0.01 && stg.BurnTime < 0.01) roleStr = "STAGE SEP";
                         else roleStr = $"STAGE {stg.Stage:D2}";
                     }
-                    SetTextIfChanged(row.StageRoleText, roleStr);
 
-                    // C. 单级 ΔV 与烧燃倒计时
                     string dvTextStr = stg.DeltaV > 0.01 ? $"{stg.DeltaV:N0} m/s" : "---";
-                    SetTextIfChanged(row.StageDvText, dvTextStr);
-
                     int burnSec = Mathf.Max(0, (int)stg.BurnTime);
                     int m = burnSec / 60;
                     int sec = burnSec % 60;
                     string metaStr = stg.TWR > 0.01 
                         ? $"{m:D2}:{sec:D2} · {stg.TWR:F2}T" 
                         : $"{m:D2}:{sec:D2} · {stg.Isp:F0}s";
-                    SetTextIfChanged(row.StageTimeText, metaStr);
 
-                    // D. 推进剂余量推算
                     float propFrac = 0f;
                     if (isActive)
                     {
-                        propFrac = Mathf.Clamp01(telemetry.StagePropellantFraction);
+                        propFrac = Mathf.Clamp01((float)context.Telemetry.StagePropellantFraction);
                     }
                     else if (isExpended)
                     {
@@ -659,9 +635,106 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     else
                     {
-                        propFrac = 1.0f; // 待命级预设充满
+                        propFrac = 1.0f;
                     }
 
+                    _cachedStageSnapshots[i] = new StageRowSnapshot
+                    {
+                        StageNumber = stg.Stage,
+                        IsActive = isActive,
+                        IsExpended = isExpended,
+                        IsBurning = isBurning,
+                        BadgeText = $"S{stg.Stage:D2}",
+                        RoleText = roleStr,
+                        DvText = dvTextStr,
+                        MetaText = metaStr,
+                        PropFrac = propFrac,
+                        Visible = true
+                    };
+                }
+                else
+                {
+                    _cachedStageSnapshots[i] = new StageRowSnapshot { Visible = false };
+                }
+            }
+
+            bool isFiring = curStage >= 0 && (context.Telemetry.ActiveEngines > 0 || context.Telemetry.Throttle > 0.01);
+            _cachedIsFiring = isFiring;
+            _cachedBayFootStr = curStage >= 0 ? $"S{curStage:D2} · {(isFiring ? I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"))}" : I18n.Tr("WIDGET_ROCKET_SAFED", "已保险");
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _cachedTheme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+            float s = CurrentDpiScale;
+
+            // 1. 顶部 Header 动态评估
+            SetTextIfChanged(_titleText, _cachedTitle);
+            SetTextIfChanged(_subTitleText, _cachedSubTitle);
+            SetTextIfChanged(_summaryTwrText, _cachedTwrStr);
+            SetTextIfChanged(_summaryDvText, _cachedDvStr);
+
+            // 2. 剪影视窗与纹理守卫
+            if (_silhouetteRawImage != null)
+            {
+                Texture tex = _cachedSilhouetteTex ?? _fallbackSilhouetteTexture;
+                if (_silhouetteRawImage.texture != tex)
+                {
+                    _silhouetteRawImage.texture = tex;
+                }
+            }
+
+            // 4. 逐级更新推进栈各行
+            int displayCount = _cachedDisplayCount;
+            for (int i = 0; i < _stageRows.Count; i++)
+            {
+                StageRowUI row = _stageRows[i];
+                if (i < displayCount)
+                {
+                    row.Root.SetActive(true);
+                    var snap = _cachedStageSnapshots[i];
+                    row.StageNumber = snap.StageNumber;
+                    row.IsActiveStage = snap.IsActive;
+                    row.IsBurning = snap.IsBurning;
+
+                    // A. 徽章标号与全行高亮
+                    SetTextIfChanged(row.BadgeText, snap.BadgeText);
+                    if (snap.IsActive)
+                    {
+                        row.BadgeBg.color = theme.AccentPrimary;
+                        row.BadgeText.color = style.GetTextColor(TextStyleRole.InverseOnAccent, theme);
+                        row.LeaderLine.color = theme.AccentPrimary;
+                        ApplyText(row.StageDvText, TextStyleRole.PrimaryValue, theme);
+                    }
+                    else if (snap.IsExpended)
+                    {
+                        row.BadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
+                        row.BadgeText.color = style.GetTextColor(TextStyleRole.Label, theme);
+                        row.LeaderLine.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
+                        ApplyText(row.StageDvText, TextStyleRole.Label, theme);
+                    }
+                    else
+                    {
+                        row.BadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
+                        row.BadgeText.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                        row.LeaderLine.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Normal);
+                        ApplyText(row.StageDvText, TextStyleRole.SecondaryValue, theme);
+                    }
+
+                    // B. 分级角色
+                    SetTextIfChanged(row.StageRoleText, snap.RoleText);
+
+                    // C. 单级 ΔV 与烧燃倒计时
+                    SetTextIfChanged(row.StageDvText, snap.DvText);
+                    SetTextIfChanged(row.StageTimeText, snap.MetaText);
+
+                    // D. 推进剂余量推算
+                    float propFrac = snap.PropFrac;
                     row.TargetFuelFrac = propFrac;
                     if (row.CurrentFuelFrac < 0.001f && propFrac > 0.001f)
                     {
@@ -670,7 +743,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                     float trackW = FuelTrackMaxWidth * s;
                     row.FuelFillRt.sizeDelta = new Vector2(trackW * row.CurrentFuelFrac, row.FuelFillRt.sizeDelta.y);
-                    SetTextIfChanged(row.FuelPercentText, isExpended ? "JETT" : $"{(propFrac * 100f):F0}%");
+                    SetTextIfChanged(row.FuelPercentText, snap.IsExpended ? "JETT" : $"{(propFrac * 100f):F0}%");
                 }
                 else
                 {
@@ -679,14 +752,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 视窗底部状态与羽流控制
-            bool isFiring = curStage >= 0 && (telemetry.ActiveEngines > 0 || telemetry.Throttle > 0.01f);
             if (_plumeObj != null)
             {
-                _plumeObj.SetActive(isFiring);
+                _plumeObj.SetActive(_cachedIsFiring);
             }
 
-            string bayFootStr = curStage >= 0 ? $"S{curStage:D2} · {(isFiring ? I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"))}" : I18n.Tr("WIDGET_ROCKET_SAFED", "已保险");
-            SetTextIfChanged(_silhouetteBayFooter, bayFootStr);
+            SetTextIfChanged(_silhouetteBayFooter, _cachedBayFootStr);
         }
 
         protected override void Update()

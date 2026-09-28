@@ -55,13 +55,13 @@ namespace ModularFlightPanel.Core
                 catch (Exception ex)
                 {
                     MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager initialization error: {ex}");
-                    MFPSafetyFallback.TriggerFaultFallback("HUD 初始化致命异常 (HUD Initialization Error)", ex);
+                    MFPSafetyFallback.TriggerFaultFallback(I18n.Tr("ERR_HUD_INIT_FATAL", "HUD 初始化致命异常 (HUD Initialization Error)"), ex);
                 }
             }
             catch (Exception fatalEx)
             {
                 MFPLogger.Error(MFPLogger.CatCore, $"Fatal error during NavballPlugin Awake: {fatalEx}");
-                MFPSafetyFallback.TriggerFaultFallback("插件启动阶段发生致命异常 (Plugin Startup Fatal Error)", fatalEx);
+                MFPSafetyFallback.TriggerFaultFallback(I18n.Tr("ERR_PLUGIN_STARTUP_FATAL", "插件启动阶段发生致命异常 (Plugin Startup Fatal Error)"), fatalEx);
             }
             finally
             {

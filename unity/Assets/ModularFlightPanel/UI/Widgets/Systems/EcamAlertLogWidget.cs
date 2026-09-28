@@ -626,27 +626,66 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private bool _cachedHasVessel;
+        private double _cachedEffectivePe;
+        private double _cachedEffectiveAp;
+        private string _cachedFlightSituation = string.Empty;
+        private int _cachedActiveEngines;
+        private float _cachedThrottle;
+        private double _cachedEcPercent;
+        private float _cachedMach;
+        private float _cachedDynamicPressure;
+        private float _cachedGForce;
+        private int _cachedCurrentStage;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
-            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
-            float dt = Time.deltaTime;
+            base.OnDataHeartBeat(in context);
+
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
+
+            _cachedHasVessel = true;
+
+            // 1. 评估高精度轨道动力学与物理大气边界
+            double atmoCutoff = GetAtmosphereCutoff(context.Telemetry);
+            double effectivePe = GetEffectivePeriapsis(context.Telemetry);
+            double effectiveAp = GetEffectiveApoapsis(context.Telemetry);
+            _cachedEffectivePe = effectivePe;
+            _cachedEffectiveAp = effectiveAp;
+
+            // 2. 检测机载瞬态事件并自动注入日志队列
+            DetectAndIngestEvents(context.Telemetry, atmoCutoff, effectivePe, effectiveAp);
+
+            // 3. 评估持续性告警 (低油量、拉起、过温、失速、过载、沉底等)
+            EvaluatePersistentAlerts(context.Telemetry, context.DeltaTime);
+
+            _cachedFlightSituation = context.Telemetry.FlightSituation;
+            _cachedActiveEngines = context.Telemetry.ActiveEngines;
+            _cachedThrottle = (float)context.Telemetry.Throttle;
+            _cachedEcPercent = context.Telemetry.EcPercent;
+            _cachedMach = (float)context.Telemetry.Mach;
+            _cachedDynamicPressure = (float)context.Telemetry.DynamicPressure;
+            _cachedGForce = (float)context.Telemetry.GForce;
+            _cachedCurrentStage = context.Telemetry.CurrentStage;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme);
+            float dt = context.DeltaTime;
             _globalBlinkTimer += dt;
             if (_globalBlinkTimer >= 1000f) _globalBlinkTimer = 0f;
 
-            // 1. 评估高精度轨道动力学与物理大气边界 (0 硬编码任何星球，Principia 探针优先)
-            double atmoCutoff = GetAtmosphereCutoff(telemetry);
-            double effectivePe = GetEffectivePeriapsis(telemetry);
-            double effectiveAp = GetEffectiveApoapsis(telemetry);
-
-            // 2. 检测机载瞬态事件并自动注入日志队列
-            DetectAndIngestEvents(telemetry, atmoCutoff, effectivePe, effectiveAp);
-
-            // 3. 评估持续性告警 (低油量、拉起、过温、失速、过载、沉底等)
-            EvaluatePersistentAlerts(telemetry, dt);
-
             // 4. 汇总当前活跃消息并刷新 5 槽位视图
-            RenderEcamLogView(theme, telemetry, effectivePe, effectiveAp);
+            RenderEcamLogView(theme);
         }
 
         private static double GetAtmosphereCutoff(IFlightTelemetry telem)
@@ -974,7 +1013,7 @@ namespace ModularFlightPanel.UI.Widgets
             return upper.Length > 6 ? upper.Substring(0, 6) : upper;
         }
 
-        private void RenderEcamLogView(ThemeConfig theme, IFlightTelemetry telem, double effectivePe, double effectiveAp)
+        private void RenderEcamLogView(ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
@@ -999,7 +1038,7 @@ namespace ModularFlightPanel.UI.Widgets
             bool blinkOn = ((int)(_globalBlinkTimer * 2f)) % 2 == 0;
 
             // 1. 顶栏飞行阶段胶囊更新
-            string phaseName = FormatFlightPhase(telem?.FlightSituation);
+            string phaseName = FormatFlightPhase(_cachedFlightSituation);
             SetTextIfChanged(_phaseBadgeText, phaseName);
 
             // 2. 顶栏光字牌更新 (Master Annunciator Tiles)
@@ -1055,7 +1094,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 3. 底栏总体工况显示
             if (_showSystemStatusPage)
             {
-                RenderSystemStatusPage(theme, telem, effectivePe, effectiveAp);
+                RenderSystemStatusPage(theme);
                 return;
             }
 
@@ -1184,7 +1223,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private readonly SysDiagEntry[] _cachedDiag = new SysDiagEntry[MAX_DISPLAY_ROWS];
 
-        private void RenderSystemStatusPage(ThemeConfig theme, IFlightTelemetry telem, double effectivePe, double effectiveAp)
+        private void RenderSystemStatusPage(ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
             SetTextIfChanged(_statusText, I18n.Tr("ECAM_SYS_STS", "机载系统工况 STS"));
@@ -1197,11 +1236,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (_btnStsOutline != null) _btnStsOutline.effectColor = theme.AccentPrimary;
             if (_btnStsActiveBar != null) _btnStsActiveBar.color = theme.AccentPrimary;
 
-            _cachedDiag[0] = new SysDiagEntry { Tag = "PROP", Title = I18n.Tr("ECAM_SYS_PROP", "动力推进系统 PROP"), Val = $"{telem.ActiveEngines} ENG", Aux = $"THR {Mathf.RoundToInt(telem.Throttle * 100f)}%", Col = theme.AccentPrimary };
-            _cachedDiag[1] = new SysDiagEntry { Tag = "ELEC", Title = I18n.Tr("ECAM_SYS_ELEC", "机载电网能源 ELEC"), Val = $"{Mathf.RoundToInt((float)telem.EcPercent)}% EC", Aux = "BUS OK", Col = telem.EcPercent <= 20.0 ? theme.WarningColor : theme.AccentPositive };
-            _cachedDiag[2] = new SysDiagEntry { Tag = "TRAJ", Title = I18n.Tr("ECAM_SYS_TRAJ", "轨道动力参数 TRAJ"), Val = $"Pe {FormatKm(effectivePe)}", Aux = $"Ap {FormatKm(effectiveAp)}", Col = theme.AccentPrimary };
-            _cachedDiag[3] = new SysDiagEntry { Tag = "ATMO", Title = I18n.Tr("ECAM_SYS_ATMO", "飞行走廊环境 ATMO"), Val = $"M {telem.Mach:F1}", Aux = $"Q {telem.DynamicPressure:F1}k", Col = theme.AccentSecondary };
-            _cachedDiag[4] = new SysDiagEntry { Tag = "GUID", Title = I18n.Tr("ECAM_SYS_GUID", "姿态惯导工况 GUID"), Val = $"{telem.GForce:F1}G", Aux = $"STG {telem.CurrentStage}", Col = theme.AccentPositive };
+            _cachedDiag[0] = new SysDiagEntry { Tag = "PROP", Title = I18n.Tr("ECAM_SYS_PROP", "动力推进系统 PROP"), Val = $"{_cachedActiveEngines} ENG", Aux = $"THR {Mathf.RoundToInt(_cachedThrottle * 100f)}%", Col = theme.AccentPrimary };
+            _cachedDiag[1] = new SysDiagEntry { Tag = "ELEC", Title = I18n.Tr("ECAM_SYS_ELEC", "机载电网能源 ELEC"), Val = $"{Mathf.RoundToInt((float)_cachedEcPercent)}% EC", Aux = "BUS OK", Col = _cachedEcPercent <= 20.0 ? theme.WarningColor : theme.AccentPositive };
+            _cachedDiag[2] = new SysDiagEntry { Tag = "TRAJ", Title = I18n.Tr("ECAM_SYS_TRAJ", "轨道动力参数 TRAJ"), Val = $"Pe {FormatKm(_cachedEffectivePe)}", Aux = $"Ap {FormatKm(_cachedEffectiveAp)}", Col = theme.AccentPrimary };
+            _cachedDiag[3] = new SysDiagEntry { Tag = "ATMO", Title = I18n.Tr("ECAM_SYS_ATMO", "飞行走廊环境 ATMO"), Val = $"M {_cachedMach:F1}", Aux = $"Q {_cachedDynamicPressure:F1}k", Col = theme.AccentSecondary };
+            _cachedDiag[4] = new SysDiagEntry { Tag = "GUID", Title = I18n.Tr("ECAM_SYS_GUID", "姿态惯导工况 GUID"), Val = $"{_cachedGForce:F1}G", Aux = $"STG {_cachedCurrentStage}", Col = theme.AccentPositive };
 
             for (int i = 0; i < MAX_DISPLAY_ROWS; i++)
             {

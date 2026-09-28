@@ -32,8 +32,8 @@ namespace ModularFlightPanel.Core
             if (IsFaulted) return; // 避免由于连续异常重复触发级联
 
             IsFaulted = true;
-            FaultReason = reason ?? "未知航电异常 (Unknown Avionics Fault)";
-            FaultDetails = ex != null ? $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}" : "无异常调用栈 (No Exception Details)";
+            FaultReason = reason ?? I18n.Tr("ERR_UNKNOWN_AVIONICS_FAULT", "未知航电异常 (Unknown Avionics Fault)");
+            FaultDetails = ex != null ? $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}" : I18n.Tr("ERR_NO_EXCEPTION_DETAILS", "无异常调用栈 (No Exception Details)");
             FaultTimestamp = DateTime.Now;
 
             MFPLogger.Error(MFPLogger.CatCore, $"[MFPSafetyFallback] Circuit breaker TRIPPED! Reason: {FaultReason}");
@@ -157,7 +157,7 @@ namespace ModularFlightPanel.Core
             catch (Exception ex)
             {
                 MFPLogger.Error(MFPLogger.CatCore, $"[MFPSafetyFallback] Recovery attempt failed: {ex.Message}");
-                TriggerFaultFallback("重新恢复航电系统时再次发生异常 (Recovery Failed)", ex);
+                TriggerFaultFallback(I18n.Tr("ERR_RECOVERY_FAILED", "重新恢复航电系统时再次发生异常 (Recovery Failed)"), ex);
                 return false;
             }
         }
@@ -165,9 +165,9 @@ namespace ModularFlightPanel.Core
         /// <summary>
         /// 手动降级回原版界面
         /// </summary>
-        public static void ForceFallbackToStock(string reason = "用户手动降级至原版界面")
+        public static void ForceFallbackToStock(string reason = null)
         {
-            TriggerFaultFallback(reason, null);
+            TriggerFaultFallback(reason ?? I18n.Tr("ERR_USER_DOWNGRADE_STOCK", "用户手动降级至原版界面"), null);
         }
     }
 }

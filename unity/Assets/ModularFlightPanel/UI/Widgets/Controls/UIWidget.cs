@@ -563,10 +563,20 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private int _cachedTotalWidgets;
+        private int _cachedActiveWidgets;
+        private bool _hasWidgetStats;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+
             var widgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets;
-            if (widgets == null) return;
+            if (widgets == null)
+            {
+                _hasWidgetStats = false;
+                return;
+            }
 
             int total = widgets.Count;
             int active = 0;
@@ -574,6 +584,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             {
                 if (widgets[i].IsEnabled) active++;
             }
+            _cachedTotalWidgets = total;
+            _cachedActiveWidgets = active;
+            _hasWidgetStats = true;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_hasWidgetStats) return;
+
+            int total = _cachedTotalWidgets;
+            int active = _cachedActiveWidgets;
 
             if (total != _lastWidgetCount || active != _lastActiveCount)
             {

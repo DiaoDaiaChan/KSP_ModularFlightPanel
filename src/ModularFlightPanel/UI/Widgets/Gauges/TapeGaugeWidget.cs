@@ -183,7 +183,6 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 速度变化率高精度微分采样 (Velocity Rate of Change: dV/dt)
         private double _lastSampleSpeed = double.NaN;
-        private float _lastSampleTime = 0f;
         private double _calculatedAccelMps2 = 0.0;
 
         // 脏检查与状态缓存
@@ -203,10 +202,20 @@ namespace ModularFlightPanel.UI.Widgets
         private double _lastRenderedAccel = double.NaN;
         private bool _showingIntegerReadout = false;
         private float _currentHalfTrackH = 58f;
-        private float _lastTerrainEvalTime = -1f;
         private Color _cachedMajorCol;
         private Color _cachedHalfCol;
         private bool _hasCachedTapeColors = false;
+
+        // 双轨状态快照
+        private double _pendingRawVal = double.NaN;
+        private double _pendingDisplayVal = double.NaN;
+        private string _pendingTopText = string.Empty;
+        private string _pendingBottomText = string.Empty;
+        private double _pendingGForce = double.NaN;
+        private double _pendingAccelMps2 = 0.0;
+        private double _pendingVs = double.NaN;
+        private double _pendingAgl = double.NaN;
+        private bool _hasPendingTapeHeartbeat = false;
 
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
@@ -1034,8 +1043,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel) return;
 
             // 采样主驱动数值 (JIT 强类型零装箱编译委托直读，1.5ns 极致微秒性能)
@@ -1044,25 +1055,78 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. 运行太空全场景动态无极工程量纲自愈引擎 (带 15% 滞后死区)
             UpdateDynamicUnitTier(rawVal);
+            _pendingRawVal = rawVal;
+            _pendingDisplayVal = rawVal / _tierScale;
 
-            // 2. 脏标记检查并更新主刻度与读数
-            double deltaThreshold = Config != null && Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.02;
-            if (double.IsNaN(_lastRawVal) || Math.Abs(rawVal - _lastRawVal) > deltaThreshold)
+            // 2. 模式与次级航电标签
+            _pendingTopText = _topModeTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_topModeTemplate, telemetry) : _topModeTemplate;
+            _pendingBottomText = _bottomSecTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry) : _bottomSecTemplate;
+
+            if (_isSpeedTape)
             {
-                _lastRawVal = rawVal;
-                double displayVal = rawVal / _tierScale;
-                UpdateCenterReadout(displayVal);
-                UpdateRollingTape(displayVal);
+                double gForce = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
+                if (double.IsNaN(gForce)) gForce = 0.0;
+                _pendingGForce = gForce;
+
+                float dt = context.DeltaTime > 0.0001f ? context.DeltaTime : 0.02f;
+                if (!double.IsNaN(_lastSampleSpeed))
+                {
+                    double instantaneousAccel = (rawVal - _lastSampleSpeed) / dt;
+                    _calculatedAccelMps2 = Mathf.Lerp((float)_calculatedAccelMps2, (float)instantaneousAccel, 0.35f);
+                    _lastSampleSpeed = rawVal;
+                }
+                else
+                {
+                    _lastSampleSpeed = rawVal;
+                    _calculatedAccelMps2 = 0.0;
+                }
+                _pendingAccelMps2 = _calculatedAccelMps2;
+            }
+            else
+            {
+                double vs = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
+                if (double.IsNaN(vs)) vs = 0.0;
+                _pendingVs = vs;
+
+                double agl = TelemetryTokenEngine.EvaluateNumeric(_terrainToken, telemetry);
+                if (double.IsNaN(agl)) agl = rawVal;
+                _pendingAgl = agl;
             }
 
-            // 3. 动态求值并更新模式与次级航电标签
-            UpdateLabels(telemetry);
+            _hasPendingTapeHeartbeat = true;
+        }
 
-            // 4. 动态更新趋势指示器 (6秒空速预测 + 速度变化率 dV/dt 或水平对齐 VSI)
-            UpdateDynamicTrendIndicator(telemetry, rawVal);
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_hasPendingTapeHeartbeat) return;
 
-            // 5. 贴地雷达地形感知警戒带
-            UpdateTerrainRibbon(telemetry, rawVal);
+            double deltaThreshold = Config != null && Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.02;
+            if (double.IsNaN(_lastRawVal) || Math.Abs(_pendingRawVal - _lastRawVal) > deltaThreshold)
+            {
+                _lastRawVal = _pendingRawVal;
+                UpdateCenterReadout(_pendingDisplayVal);
+                UpdateRollingTape(_pendingDisplayVal);
+            }
+
+            if (_pendingTopText != _lastTopText)
+            {
+                _lastTopText = _pendingTopText;
+                if (_topModeText != null) _topModeText.text = _pendingTopText;
+            }
+
+            if (_pendingBottomText != _lastBottomText)
+            {
+                _lastBottomText = _pendingBottomText;
+                if (_bottomSecText != null) _bottomSecText.text = _pendingBottomText;
+            }
+
+            DrawDynamicTrendIndicator();
+
+            if (!_isSpeedTape)
+            {
+                DrawTerrainRibbon();
+            }
         }
 
         private void UpdateDynamicUnitTier(double rawVal)
@@ -1167,8 +1231,6 @@ namespace ModularFlightPanel.UI.Widgets
                         break;
                 }
             }
-
-            SetTextIfChanged(_centerUnitText, _activeUnitStr);
         }
 
         private void UpdateCenterReadout(double displayVal)
@@ -1209,28 +1271,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private float _lastLabelEvalTime = -1f;
-
-        private void UpdateLabels(IFlightTelemetry telemetry)
-        {
-            float now = Time.time;
-            if (now - _lastLabelEvalTime < 0.1f) return;
-            _lastLabelEvalTime = now;
-
-            string evalTop = _topModeTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_topModeTemplate, telemetry) : _topModeTemplate;
-            if (evalTop != _lastTopText)
-            {
-                _lastTopText = evalTop;
-                if (_topModeText != null) _topModeText.text = evalTop;
-            }
-
-            string evalSec = _bottomSecTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry) : _bottomSecTemplate;
-            if (evalSec != _lastBottomText)
-            {
-                _lastBottomText = evalSec;
-                if (_bottomSecText != null) _bottomSecText.text = evalSec;
-            }
-        }
 
         private void UpdateRollingTape(double currentDisplayVal)
         {
@@ -1361,17 +1401,15 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void UpdateDynamicTrendIndicator(IFlightTelemetry telemetry, double rawSpeed)
+        private void DrawDynamicTrendIndicator()
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
-
             float s = CurrentDpiScale;
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
 
             if (_isSpeedTape)
             {
                 // ==================== 1. ACC (G 载荷) 解算与警告/危险变色关照 (──► 指针式) ====================
-                double gForce = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
+                double gForce = _pendingGForce;
                 if (double.IsNaN(gForce)) gForce = 0.0;
 
                 // 航天生理与结构载荷警戒判定 (对齐用户规范：4G 黄色，8G 红色)：
@@ -1437,30 +1475,13 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                // ==================== 2. dV/dt (速度变化率) 微分采样与 ──► 指针式指示 ====================
-                float now = Time.time;
-                if (!double.IsNaN(_lastSampleSpeed) && now > _lastSampleTime + 0.05f)
-                {
-                    float dt = now - _lastSampleTime;
-                    double instantaneousAccel = (rawSpeed - _lastSampleSpeed) / dt;
-                    _calculatedAccelMps2 = Mathf.Lerp((float)_calculatedAccelMps2, (float)instantaneousAccel, 0.35f);
-                    _lastSampleSpeed = rawSpeed;
-                    _lastSampleTime = now;
-                }
-                else if (double.IsNaN(_lastSampleSpeed))
-                {
-                    _lastSampleSpeed = rawSpeed;
-                    _lastSampleTime = now;
-                    _calculatedAccelMps2 = 0.0;
-                }
-
-                // 速度变化率零位死区 (0.08 m/s²)，彻底消除物理微颤引起的正负频繁跳变与闪烁
+                // ==================== 2. dV/dt (速度变化率) 指针式指示 ====================
                 const double RATE_DEADBAND = 0.08;
-                bool isRateDeadband = Math.Abs(_calculatedAccelMps2) < RATE_DEADBAND;
+                bool isRateDeadband = Math.Abs(_pendingAccelMps2) < RATE_DEADBAND;
 
-                if (double.IsNaN(_lastRenderedAccel) || Math.Abs(_calculatedAccelMps2 - _lastRenderedAccel) > 0.05)
+                if (double.IsNaN(_lastRenderedAccel) || Math.Abs(_pendingAccelMps2 - _lastRenderedAccel) > 0.05)
                 {
-                    _lastRenderedAccel = _calculatedAccelMps2;
+                    _lastRenderedAccel = _pendingAccelMps2;
 
                     string rateStr;
                     if (isRateDeadband)
@@ -1469,7 +1490,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     else
                     {
-                        rateStr = _calculatedAccelMps2 > 0 ? $"+{_calculatedAccelMps2:F1}" : $"{_calculatedAccelMps2:F1}";
+                        rateStr = _pendingAccelMps2 > 0 ? $"+{_pendingAccelMps2:F1}" : $"{_pendingAccelMps2:F1}";
                     }
 
                     rateStr = UIFactory.FormatTabular(rateStr);
@@ -1480,7 +1501,7 @@ namespace ModularFlightPanel.UI.Widgets
                         if (_rateValText != null)
                         {
                             _rateValText.text = rateStr;
-                            TextStyleRole rateRole = isRateDeadband || _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
+                            TextStyleRole rateRole = isRateDeadband || _pendingAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
                             ApplyText(_rateValText, rateRole, theme);
                         }
                     }
@@ -1498,7 +1519,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     else
                     {
-                        rateFraction = Mathf.Clamp((float)(_calculatedAccelMps2 / maxScale), -1f, 1f);
+                        rateFraction = Mathf.Clamp((float)(_pendingAccelMps2 / maxScale), -1f, 1f);
                         isRatePositive = rateFraction >= 0f;
                         rateMeterRole = isRatePositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                     }
@@ -1534,10 +1555,9 @@ namespace ModularFlightPanel.UI.Widgets
             else
             {
                 // ==================== 高度带 VSI：零位水平严格对齐中央 (y = 0，◄── 指针式) ====================
-                double vs = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
+                double vs = _pendingVs;
                 if (double.IsNaN(vs)) vs = 0.0;
 
-                // 垂直速度零位死区 (0.08 m/s)，彻底消除微小振荡引起的正负频繁跳变与闪烁
                 const double VSI_DEADBAND = 0.08;
                 bool isVsiDeadband = Math.Abs(vs) < VSI_DEADBAND;
 
@@ -1616,23 +1636,18 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void UpdateTerrainRibbon(IFlightTelemetry telemetry, double currentAlt)
+        private void DrawTerrainRibbon()
         {
-            if (_groundRibbonObj == null || _isSpeedTape || telemetry == null) return;
+            if (_groundRibbonObj == null || _isSpeedTape || double.IsNaN(_pendingAgl)) return;
 
-            // 高于 10km (包括入轨阶段) 地形警戒条必然不显示，无需高频解析 Token
-            if (currentAlt > 10000.0)
+            // 高于 10km (包括入轨阶段) 地形警戒条必然不显示
+            if (_pendingRawVal > 10000.0)
             {
                 if (_groundRibbonObj.activeSelf) _groundRibbonObj.SetActiveSafe(false);
                 return;
             }
 
-            float now = Time.time;
-            if (now - _lastTerrainEvalTime < 0.1f) return; // 10Hz 节流
-            _lastTerrainEvalTime = now;
-
-            double agl = TelemetryTokenEngine.EvaluateNumeric(_terrainToken, telemetry);
-            if (double.IsNaN(agl)) agl = currentAlt;
+            double agl = _pendingAgl;
 
             if (agl < 500.0 && agl >= -10.0)
             {

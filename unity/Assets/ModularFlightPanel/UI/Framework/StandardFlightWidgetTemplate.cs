@@ -126,38 +126,34 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        // 数据心跳与 UI 绘制双轨解耦缓存
+        private bool _dataHasValue = false;
+        private double _dataVal = double.NaN;
+        private string _dataText = "---";
+        private float _dataFraction = 0f;
+        private CardStyleRole _dataTargetRole = CardStyleRole.Normal;
+
         // ------------------------------------------------------------------------------------
         // [Part 5: 数据心跳与 UI 绘制双轨生命周期 (OnDataHeartBeat & OnUIDrawLoop)]
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// 【核心数据心跳】按 EffectiveHeartBeatTier 节律调用，专用于执行物理推算与遥测解算。
+        /// 【核心数据心跳】按 EffectiveHeartBeatTier 节律调用，专用于执行物理推算与遥测解算 (0 UI 绘制)。
         /// </summary>
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            // 数据计算逻辑（若不需要分频，可直接调用既有 OnUpdateTelemetry 或在此解算）
-            OnUpdateTelemetry(context.Telemetry);
-        }
+            base.OnDataHeartBeat(in context);
 
-        /// <summary>
-        /// 【核心 UI 绘制循环】按 RefreshTier 满帧驱动，专用于 2D UI 着色器材质管线与视觉渲染。
-        /// </summary>
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
-        {
-            base.OnUIDrawLoop(ref context);
-
-            // 示例：可便捷使用 context.Shader2D 或 context.ApplyUiMaterial 挂载主题着色器
-        }
-
-        /// <summary>
-        /// 由 WidgetRenderManager 在对应 RefreshTier 刷新时刻调用。
-        /// 上级已在 MasterUpdateTelemetry 执行过 HasVessel 空船守卫。
-        /// </summary>
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
-        {
-            if (telemetry == null || Config == null) return;
-
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || Config == null)
+            {
+                _dataHasValue = false;
+                _dataVal = double.NaN;
+                _dataText = "---";
+                _dataFraction = 0f;
+                _dataTargetRole = CardStyleRole.Normal;
+                return;
+            }
 
             // 1. 通过父类内置 EvalNumeric 求取数值 (严格面向契约，绝不直触 KSP 核心内部类)
             string token = !string.IsNullOrEmpty(Config.NumericToken) ? Config.NumericToken : "{SPD:SURF:F1}";
@@ -165,38 +161,58 @@ namespace ModularFlightPanel.UI
 
             if (double.IsNaN(val))
             {
+                _dataHasValue = false;
+                _dataVal = double.NaN;
+                _dataText = "---";
+                _dataFraction = 0f;
+                _dataTargetRole = CardStyleRole.Normal;
+                return;
+            }
+
+            _dataHasValue = true;
+            _dataVal = val;
+            _dataText = EvalToken(token, telemetry, "---");
+            _dataFraction = NormalizeValue(val, Config.MinValue, Config.MaxValue);
+            _dataTargetRole = ResolveCardRole(val);
+        }
+
+        /// <summary>
+        /// 【核心 UI 绘制循环】按 RefreshTier 满帧驱动，专用于 UGUI 读数更新、2D UI 着色器材质管线与视觉渲染 (0 遥测物理采样)。
+        /// </summary>
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_dataHasValue)
+            {
                 ShowUnavailable();
                 return;
             }
 
-            // 2. 脏标记检查：阈值来自 Config.ValueDeltaThreshold，仅在显著变化时才驱动 UI 重绘
+            // 脏标记检查：阈值来自 Config.ValueDeltaThreshold，仅在显著变化时才驱动 UI 重绘
             double delta = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.0;
-            if (!double.IsNaN(_lastCachedValue) && Math.Abs(val - _lastCachedValue) <= delta)
+            if (!double.IsNaN(_lastCachedValue) && Math.Abs(_dataVal - _lastCachedValue) <= delta)
             {
                 return;
             }
-            _lastCachedValue = val;
+            _lastCachedValue = _dataVal;
 
-            // 3. 使用父类内置 EvalToken 与 DSL 属性自动进行脏检查与防重绘
-            PrimaryValue.Text = EvalToken(token, telemetry, "---");
+            // 更新微控件读数与填充
+            PrimaryValue.Text = _dataText;
+            MeterBar.SetFillAmount(_dataFraction, MeterBar.MeterRole);
 
-            // 4. 使用父类内置 NormalizeValue 驱动计量条归一化填充 (量程来自 Config，几何永远钳制在 0~1)
-            float fraction = NormalizeValue(val, Config.MinValue, Config.MaxValue);
-            MeterBar.SetFillAmount(fraction, MeterBar.MeterRole);
-
-            // 5. 限幅模式 + 阈值告警状态机 (Normal -> Caution/Warning -> Danger)
-            CardStyleRole targetRole = ResolveCardRole(val);
-
-            if (_currentCardRole != targetRole)
+            // 限幅模式 + 阈值告警状态机 (Normal -> Caution/Warning -> Danger)
+            if (_currentCardRole != _dataTargetRole)
             {
-                _currentCardRole = targetRole;
+                _currentCardRole = _dataTargetRole;
+                ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
                 if (CardBackground != null && CardOutline != null)
                 {
-                    ApplyCard(CardBackground, CardOutline, targetRole, theme);
+                    ApplyCard(CardBackground, CardOutline, _dataTargetRole, theme);
                 }
-                PrimaryValue.SetRole(GetValueTextRole(targetRole));
-                StatusBadge.SetRole(GetValueTextRole(targetRole));
-                StatusBadge.Text = GetBadgeText(targetRole);
+                PrimaryValue.SetRole(GetValueTextRole(_dataTargetRole));
+                StatusBadge.SetRole(GetValueTextRole(_dataTargetRole));
+                StatusBadge.Text = GetBadgeText(_dataTargetRole);
             }
         }
 

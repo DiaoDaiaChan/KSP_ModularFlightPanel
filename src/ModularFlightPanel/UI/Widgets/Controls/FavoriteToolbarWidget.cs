@@ -741,8 +741,19 @@ namespace ModularFlightPanel.UI.Widgets
             _itemViews.Add(view);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private struct ButtonStateSnapshot
         {
+            public Texture Texture;
+            public bool HasTexture;
+            public bool Active;
+        }
+        private ButtonStateSnapshot[] _cachedButtonStates;
+        private bool _needsRepopulate;
+        private int _snapshotCount;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
             if (_isCollapsed) return;
 
             float now = Time.unscaledTime;
@@ -761,44 +772,82 @@ namespace ModularFlightPanel.UI.Widgets
 
                     if (currentCount != _cachedButtonCount)
                     {
-                        PopulateButtons(_contentRt, CurrentDpiScale);
+                        _needsRepopulate = true;
                         return;
                     }
 
-                    Color ledOn = _currentTheme.AccentPrimary;
-                    Color ledOff = WidgetStyleManager.Surface(SurfaceStyleRole.LedOff);
+                    if (_cachedButtonStates == null || _cachedButtonStates.Length < _itemViews.Count)
+                    {
+                        _cachedButtonStates = new ButtonStateSnapshot[_itemViews.Count];
+                    }
+                    _snapshotCount = _itemViews.Count;
 
                     for (int i = 0; i < _itemViews.Count; i++)
                     {
                         var view = _itemViews[i];
-                        if (view == null || view.KspButton == null) continue;
+                        if (view == null || view.KspButton == null)
+                        {
+                            _cachedButtonStates[i] = default;
+                            continue;
+                        }
 
                         var kspBtn = view.KspButton;
-                        if (kspBtn.sprite != null && kspBtn.sprite.texture != null)
+                        Texture tex = (kspBtn.sprite != null) ? kspBtn.sprite.texture : null;
+                        bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
+                        _cachedButtonStates[i] = new ButtonStateSnapshot
                         {
-                            if (view.IconRaw != null && view.IconRaw.texture != kspBtn.sprite.texture)
-                            {
-                                view.IconRaw.texture = kspBtn.sprite.texture;
-                                view.IconRaw.SetActiveSafe(true);
-                                if (view.LabelText != null) view.LabelText.SetActiveSafe(false);
-                            }
-                        }
-
-                        if (view.ActiveLed != null)
-                        {
-                            bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
-                            if (view.IsActive != active)
-                            {
-                                view.IsActive = active;
-                                view.ActiveLed.SetColor(active ? ledOn : ledOff);
-                            }
-                        }
+                            Texture = tex,
+                            HasTexture = tex != null,
+                            Active = active
+                        };
                     }
                 }
             }
             catch (Exception ex)
             {
-                MFPLogger.WarnThrottled("FavToolbar_SyncStates", $"Failed syncing KSP button states: {ex.Message}");
+                MFPLogger.WarnThrottled("FavToolbar_Heartbeat", $"Failed heartbeat KSP button states: {ex.Message}");
+            }
+#endif
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (_isCollapsed) return;
+
+#if KSP_RUNTIME
+            if (_needsRepopulate)
+            {
+                _needsRepopulate = false;
+                PopulateButtons(_contentRt, CurrentDpiScale);
+                return;
+            }
+
+            if (_cachedButtonStates == null || _itemViews == null) return;
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme ?? WidgetStyleManager.Instance?.CurrentTheme);
+            Color ledOn = theme.AccentPrimary;
+            Color ledOff = WidgetStyleManager.Surface(SurfaceStyleRole.LedOff);
+
+            for (int i = 0; i < _snapshotCount && i < _itemViews.Count; i++)
+            {
+                var view = _itemViews[i];
+                if (view == null) continue;
+
+                var state = _cachedButtonStates[i];
+                if (state.HasTexture && view.IconRaw != null && view.IconRaw.texture != state.Texture)
+                {
+                    view.IconRaw.texture = state.Texture;
+                    view.IconRaw.SetActiveSafe(true);
+                    if (view.LabelText != null) view.LabelText.SetActiveSafe(false);
+                }
+
+                if (view.ActiveLed != null && view.IsActive != state.Active)
+                {
+                    view.IsActive = state.Active;
+                    view.ActiveLed.SetColor(state.Active ? ledOn : ledOff);
+                }
             }
 #endif
         }

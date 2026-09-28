@@ -68,7 +68,7 @@ namespace ModularFlightPanel.Core.Diagnostics
             // 若异常在短时间内持续恶化累积，主动启动系统级安全熔断
             if (_consecutiveMfpExceptions >= MaxConsecutiveExceptionsBeforeFallback && !MFPSafetyFallback.IsFaulted)
             {
-                MFPSafetyFallback.TriggerFaultFallback("全局未捕获异常持续激增熔断 (Consecutive Unhandled Exceptions)", new Exception(condition));
+                MFPSafetyFallback.TriggerFaultFallback(I18n.Tr("ERR_CONSECUTIVE_UNHANDLED", "全局未捕获异常持续激增熔断 (Consecutive Unhandled Exceptions)"), new Exception(condition));
             }
         }
     }

@@ -207,70 +207,107 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             FlightTelemetryContext.Current?.TogglePrecisionMode();
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
-        {
-            if (telemetry == null || !telemetry.HasVessel) return;
+        private bool _dataRcs;
+        private bool _dataSas;
+        private string _dataModeName = "ORBIT";
+        private bool _dataPrec;
+        private string _dataPointing = string.Empty;
+        private bool _dataSpxConn;
+        private bool _dataTdrsConn;
+        private bool _dataIssConn;
+        private bool _dataHasVessel;
 
-            ThemeConfig th = ThemeManager.Instance.CurrentTheme;
-            WidgetStyleManager st = WidgetStyleManager.Instance;
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+            _dataHasVessel = true;
 
             // 1. RCS 按钮状态
-            if (telemetry.IsRCSEnabled != _lastRcs)
+            _dataRcs = telemetry.IsRCSEnabled;
+
+            // 2. SAS 按钮状态
+            _dataSas = telemetry.IsSASEnabled;
+
+            // 3. 速度参考系模式 (SURF / ORBIT / TARGET)
+            _dataModeName = telemetry.SpeedModeName?.ToUpperInvariant() ?? "ORBIT";
+
+            // 4. 精细控制
+            _dataPrec = telemetry.IsPrecisionControl;
+
+            // 5. 当前指向模式
+            _dataPointing = GetPointingModeDescription(telemetry);
+
+            // 6. 通信链路独立状态 (SPX地面站、TDRS中继、ISS空间站/目标近距遥测)
+            _dataSpxConn = telemetry.IsConnected;
+            _dataTdrsConn = telemetry.IsConnected && (telemetry.ActiveCommLinks != null && telemetry.ActiveCommLinks.Count > 1 || telemetry.AntennaCount > 1 || telemetry.SignalRx > 0.4);
+            _dataIssConn = telemetry.HasTarget && telemetry.TargetDistance < 80000.0;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
+
+            ThemeConfig th = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
+
+            // 1. RCS 按钮状态
+            if (_dataRcs != _lastRcs)
             {
-                _lastRcs = telemetry.IsRCSEnabled;
+                _lastRcs = _dataRcs;
                 UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, _lastRcs, th);
             }
 
             // 2. SAS 按钮状态
-            if (telemetry.IsSASEnabled != _lastSas)
+            if (_dataSas != _lastSas)
             {
-                _lastSas = telemetry.IsSASEnabled;
+                _lastSas = _dataSas;
                 UpdatePillAppearance(_sasImg, _sasOutline, _sasText, _lastSas, th);
             }
 
-            // 3. 速度参考系模式 (SURF / ORBIT / TARGET)
-            string modeName = telemetry.SpeedModeName?.ToUpperInvariant() ?? "ORBIT";
-            if (modeName != _lastModeStr && _modeText != null)
+            // 3. 速度参考系模式
+            if (_dataModeName != _lastModeStr && _modeText != null)
             {
-                _lastModeStr = modeName;
-                _modeText.text = modeName;
+                _lastModeStr = _dataModeName;
+                _modeText.text = _dataModeName;
             }
 
             // 4. 精细控制
-            if (telemetry.IsPrecisionControl != _lastPrec)
+            if (_dataPrec != _lastPrec)
             {
-                _lastPrec = telemetry.IsPrecisionControl;
+                _lastPrec = _dataPrec;
                 UpdatePillAppearance(_precImg, _precOutline, _precText, _lastPrec, th);
             }
 
             // 5. 当前指向模式
-            string pointing = GetPointingModeDescription(telemetry);
-            if (pointing != _lastPointing && _pointingValue != null)
+            if (_dataPointing != _lastPointing && _pointingValue != null)
             {
-                _lastPointing = pointing;
-                _pointingValue.text = pointing;
+                _lastPointing = _dataPointing;
+                _pointingValue.text = _dataPointing;
             }
 
-            // 6. 通信链路独立状态 (SPX地面站、TDRS中继、ISS空间站/目标近距遥测)
-            bool spxConn = telemetry.IsConnected;
-            if (spxConn != _lastSpxConn)
+            // 6. 通信链路
+            if (_dataSpxConn != _lastSpxConn)
             {
-                _lastSpxConn = spxConn;
-                ApplyText(_commSpx, spxConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+                _lastSpxConn = _dataSpxConn;
+                ApplyText(_commSpx, _dataSpxConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
 
-            bool tdrsConn = telemetry.IsConnected && (telemetry.ActiveCommLinks != null && telemetry.ActiveCommLinks.Count > 1 || telemetry.AntennaCount > 1 || telemetry.SignalRx > 0.4);
-            if (tdrsConn != _lastTdrsConn)
+            if (_dataTdrsConn != _lastTdrsConn)
             {
-                _lastTdrsConn = tdrsConn;
-                ApplyText(_commTdrs, tdrsConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+                _lastTdrsConn = _dataTdrsConn;
+                ApplyText(_commTdrs, _dataTdrsConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
 
-            bool issConn = telemetry.HasTarget && telemetry.TargetDistance < 80000.0;
-            if (issConn != _lastIssConn)
+            if (_dataIssConn != _lastIssConn)
             {
-                _lastIssConn = issConn;
-                ApplyText(_commIss, issConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+                _lastIssConn = _dataIssConn;
+                ApplyText(_commIss, _dataIssConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
         }
 

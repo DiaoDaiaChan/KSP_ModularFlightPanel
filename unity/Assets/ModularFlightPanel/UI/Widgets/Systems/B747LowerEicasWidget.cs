@@ -117,8 +117,21 @@ namespace ModularFlightPanel.UI.Widgets
 
         private double[] _lastN2Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
         private double[] _lastN3Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
-        private double[] _lastFfVals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
         private static readonly float[] s_Variances = { -0.1f, 0.2f, -0.05f, 0.1f };
+
+        // 双轨架构快照字段
+        private bool _cachedHasVessel;
+        private readonly string[] _cachedN2Strs = new string[4];
+        private readonly string[] _cachedN3Strs = new string[4];
+        private readonly float[] _cachedN3Fracs = new float[4];
+        private readonly string[] _cachedFfStrs = new string[4];
+        private readonly string[] _cachedOilPStrs = new string[4];
+        private readonly float[] _cachedOilPFracs = new float[4];
+        private readonly string[] _cachedOilTStrs = new string[4];
+        private readonly float[] _cachedOilTFracs = new float[4];
+        private readonly string[] _cachedOilQStrs = new string[4];
+        private readonly string[] _cachedVibStrs = new string[4];
+        private readonly float[] _cachedVibFracs = new float[4];
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -574,30 +587,33 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
 
-            float s = CurrentDpiScale;
-            float n3GaugeMaxH = 22f * s;
-            float oilAxisHalfH = 9f * s;
-            float vibRailHalfH = 5.5f * s;
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
 
-            double baseN2 = TelemetryTokenEngine.EvaluateNumeric(_n2Token, telemetry);
-            double baseN3 = TelemetryTokenEngine.EvaluateNumeric(_n3Token, telemetry);
-            double baseFf = TelemetryTokenEngine.EvaluateNumeric(_ffToken, telemetry);
-            double baseOilP = TelemetryTokenEngine.EvaluateNumeric(_oilPToken, telemetry);
-            double baseOilT = TelemetryTokenEngine.EvaluateNumeric(_oilTToken, telemetry);
-            double baseOilQ = TelemetryTokenEngine.EvaluateNumeric(_oilQToken, telemetry);
-            double baseVib = TelemetryTokenEngine.EvaluateNumeric(_vibToken, telemetry);
+            _cachedHasVessel = true;
 
-            if (double.IsNaN(baseN2)) baseN2 = 50.0 + telemetry.Throttle * 46.0;
-            if (double.IsNaN(baseN3)) baseN3 = 61.2 + telemetry.Throttle * 39.0;
-            if (double.IsNaN(baseFf)) baseFf = 0.6 + telemetry.Throttle * 4.8;
-            if (double.IsNaN(baseOilP)) baseOilP = 80.5 + telemetry.Throttle * 5.5;
-            if (double.IsNaN(baseOilT)) baseOilT = 46.0 + telemetry.Throttle * 46.0;
+            double baseN2 = TelemetryTokenEngine.EvaluateNumeric(_n2Token, context.Telemetry);
+            double baseN3 = TelemetryTokenEngine.EvaluateNumeric(_n3Token, context.Telemetry);
+            double baseFf = TelemetryTokenEngine.EvaluateNumeric(_ffToken, context.Telemetry);
+            double baseOilP = TelemetryTokenEngine.EvaluateNumeric(_oilPToken, context.Telemetry);
+            double baseOilT = TelemetryTokenEngine.EvaluateNumeric(_oilTToken, context.Telemetry);
+            double baseOilQ = TelemetryTokenEngine.EvaluateNumeric(_oilQToken, context.Telemetry);
+            double baseVib = TelemetryTokenEngine.EvaluateNumeric(_vibToken, context.Telemetry);
+
+            if (double.IsNaN(baseN2)) baseN2 = 50.0 + context.Telemetry.Throttle * 46.0;
+            if (double.IsNaN(baseN3)) baseN3 = 61.2 + context.Telemetry.Throttle * 39.0;
+            if (double.IsNaN(baseFf)) baseFf = 0.6 + context.Telemetry.Throttle * 4.8;
+            if (double.IsNaN(baseOilP)) baseOilP = 80.5 + context.Telemetry.Throttle * 5.5;
+            if (double.IsNaN(baseOilT)) baseOilT = 46.0 + context.Telemetry.Throttle * 46.0;
             if (double.IsNaN(baseOilQ)) baseOilQ = 12.0;
-            if (double.IsNaN(baseVib)) baseVib = 0.4 + telemetry.Throttle * 0.4;
+            if (double.IsNaN(baseVib)) baseVib = 0.4 + context.Telemetry.Throttle * 0.4;
 
             for (int i = 0; i < 4; i++)
             {
@@ -609,94 +625,103 @@ namespace ModularFlightPanel.UI.Widgets
                 double oilQVal = baseOilQ;
                 double vibVal = baseVib;
 
+                _cachedN2Strs[i] = Mathf.RoundToInt((float)n2Val).ToString(CultureInfo.InvariantCulture);
+
+                _cachedN3Strs[i] = n3Val >= 100.0 ? Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture) :
+                    (n3Val >= 50.0 ? Mathf.RoundToInt((float)n3Val * 10f).ToString(CultureInfo.InvariantCulture) : Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture));
+                _cachedN3Fracs[i] = Mathf.Clamp01((float)(n3Val / 105.0));
+
+                _cachedFfStrs[i] = ffVal < 1.0 ? $"0{Mathf.RoundToInt((float)ffVal * 10f)}" : Mathf.RoundToInt((float)ffVal * 10f).ToString(CultureInfo.InvariantCulture);
+
+                _cachedOilPStrs[i] = Mathf.RoundToInt((float)oilPVal).ToString(CultureInfo.InvariantCulture);
+                _cachedOilPFracs[i] = Mathf.Clamp01((float)(oilPVal / 100.0));
+
+                _cachedOilTStrs[i] = Mathf.RoundToInt((float)oilTVal).ToString(CultureInfo.InvariantCulture);
+                _cachedOilTFracs[i] = Mathf.Clamp01((float)(oilTVal / 140.0));
+
+                _cachedOilQStrs[i] = Mathf.RoundToInt((float)oilQVal).ToString(CultureInfo.InvariantCulture);
+
+                _cachedVibStrs[i] = vibVal.ToString("0.0", CultureInfo.InvariantCulture);
+                _cachedVibFracs[i] = Mathf.Clamp01((float)(vibVal / 2.0));
+            }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            float s = CurrentDpiScale;
+            float n3GaugeMaxH = 22f * s;
+            float oilAxisHalfH = 9f * s;
+            float vibRailHalfH = 5.5f * s;
+
+            for (int i = 0; i < 4; i++)
+            {
                 // 1. N2 读数框
-                if (double.IsNaN(_lastN2Vals[i]) || Math.Abs(n2Val - _lastN2Vals[i]) > 0.05)
+                if (_cachedN2Strs[i] != _lastN2Strs[i])
                 {
-                    _lastN2Vals[i] = n2Val;
-                    string n2Str = Mathf.RoundToInt((float)n2Val).ToString(CultureInfo.InvariantCulture);
-                    if (n2Str != _lastN2Strs[i])
-                    {
-                        _lastN2Strs[i] = n2Str;
-                        if (_n2ReadoutTexts[i] != null) _n2ReadoutTexts[i].text = n2Str;
-                    }
+                    _lastN2Strs[i] = _cachedN2Strs[i];
+                    if (_n2ReadoutTexts[i] != null) _n2ReadoutTexts[i].text = _cachedN2Strs[i];
                 }
 
                 // 2. N3 读数框与垂直柱
-                if (double.IsNaN(_lastN3Vals[i]) || Math.Abs(n3Val - _lastN3Vals[i]) > 0.05)
+                if (_cachedN3Strs[i] != _lastN3Strs[i])
                 {
-                    _lastN3Vals[i] = n3Val;
-                    string n3Str = n3Val >= 100.0 ? Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture) :
-                        (n3Val >= 50.0 ? Mathf.RoundToInt((float)n3Val * 10f).ToString(CultureInfo.InvariantCulture) : Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture));
-                    if (n3Str != _lastN3Strs[i])
-                    {
-                        _lastN3Strs[i] = n3Str;
-                        if (_n3ReadoutTexts[i] != null) _n3ReadoutTexts[i].text = n3Str;
-                    }
-
-                    float n3Frac = Mathf.Clamp01((float)(n3Val / 105.0));
-                    if (_n3GaugeFills[i] != null)
-                        _n3GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, n3GaugeMaxH * n3Frac);
+                    _lastN3Strs[i] = _cachedN3Strs[i];
+                    if (_n3ReadoutTexts[i] != null) _n3ReadoutTexts[i].text = _cachedN3Strs[i];
                 }
+                if (_n3GaugeFills[i] != null)
+                    _n3GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, n3GaugeMaxH * _cachedN3Fracs[i]);
 
                 // 3. FF 燃油流量框
-                if (double.IsNaN(_lastFfVals[i]) || Math.Abs(ffVal - _lastFfVals[i]) > 0.02)
+                if (_cachedFfStrs[i] != _lastFfStrs[i])
                 {
-                    _lastFfVals[i] = ffVal;
-                    string ffStr = ffVal < 1.0 ? $"0{Mathf.RoundToInt((float)ffVal * 10f)}" : Mathf.RoundToInt((float)ffVal * 10f).ToString(CultureInfo.InvariantCulture);
-                    if (ffStr != _lastFfStrs[i])
-                    {
-                        _lastFfStrs[i] = ffStr;
-                        if (_ffReadoutTexts[i] != null) _ffReadoutTexts[i].text = ffStr;
-                    }
+                    _lastFfStrs[i] = _cachedFfStrs[i];
+                    if (_ffReadoutTexts[i] != null) _ffReadoutTexts[i].text = _cachedFfStrs[i];
                 }
 
                 // 4. OIL P 读数与指针位移
-                string oilPStr = Mathf.RoundToInt((float)oilPVal).ToString(CultureInfo.InvariantCulture);
-                if (oilPStr != _lastOilPStrs[i])
+                if (_cachedOilPStrs[i] != _lastOilPStrs[i])
                 {
-                    _lastOilPStrs[i] = oilPStr;
-                    if (_oilPReadoutTexts[i] != null) _oilPReadoutTexts[i].text = oilPStr;
+                    _lastOilPStrs[i] = _cachedOilPStrs[i];
+                    if (_oilPReadoutTexts[i] != null) _oilPReadoutTexts[i].text = _cachedOilPStrs[i];
                 }
-                float oilPFrac = Mathf.Clamp01((float)(oilPVal / 100.0));
                 if (_oilPPointerTransforms[i] != null)
                 {
-                    float ptrY = -92f * s - oilAxisHalfH + ((oilPFrac - 0.5f) * oilAxisHalfH * 1.6f);
+                    float ptrY = -92f * s - oilAxisHalfH + ((_cachedOilPFracs[i] - 0.5f) * oilAxisHalfH * 1.6f);
                     _oilPPointerTransforms[i].anchoredPosition = new Vector2(_oilPPointerTransforms[i].anchoredPosition.x, ptrY);
                 }
 
                 // 5. OIL T 读数与指针位移
-                string oilTStr = Mathf.RoundToInt((float)oilTVal).ToString(CultureInfo.InvariantCulture);
-                if (oilTStr != _lastOilTStrs[i])
+                if (_cachedOilTStrs[i] != _lastOilTStrs[i])
                 {
-                    _lastOilTStrs[i] = oilTStr;
-                    if (_oilTReadoutTexts[i] != null) _oilTReadoutTexts[i].text = oilTStr;
+                    _lastOilTStrs[i] = _cachedOilTStrs[i];
+                    if (_oilTReadoutTexts[i] != null) _oilTReadoutTexts[i].text = _cachedOilTStrs[i];
                 }
-                float oilTFrac = Mathf.Clamp01((float)(oilTVal / 140.0));
                 if (_oilTPointerTransforms[i] != null)
                 {
-                    float ptrY = -128f * s - oilAxisHalfH + ((oilTFrac - 0.5f) * oilAxisHalfH * 1.6f);
+                    float ptrY = -128f * s - oilAxisHalfH + ((_cachedOilTFracs[i] - 0.5f) * oilAxisHalfH * 1.6f);
                     _oilTPointerTransforms[i].anchoredPosition = new Vector2(_oilTPointerTransforms[i].anchoredPosition.x, ptrY);
                 }
 
                 // 6. OIL Q 读数
-                string oilQStr = Mathf.RoundToInt((float)oilQVal).ToString(CultureInfo.InvariantCulture);
-                if (oilQStr != _lastOilQStrs[i])
+                if (_cachedOilQStrs[i] != _lastOilQStrs[i])
                 {
-                    _lastOilQStrs[i] = oilQStr;
-                    if (_oilQReadoutTexts[i] != null) _oilQReadoutTexts[i].text = oilQStr;
+                    _lastOilQStrs[i] = _cachedOilQStrs[i];
+                    if (_oilQReadoutTexts[i] != null) _oilQReadoutTexts[i].text = _cachedOilQStrs[i];
                 }
 
                 // 7. VIB 读数与滑块位移
-                string vibStr = vibVal.ToString("0.0", CultureInfo.InvariantCulture);
-                if (vibStr != _lastVibStrs[i])
+                if (_cachedVibStrs[i] != _lastVibStrs[i])
                 {
-                    _lastVibStrs[i] = vibStr;
-                    if (_vibReadoutTexts[i] != null) _vibReadoutTexts[i].text = vibStr;
+                    _lastVibStrs[i] = _cachedVibStrs[i];
+                    if (_vibReadoutTexts[i] != null) _vibReadoutTexts[i].text = _cachedVibStrs[i];
                 }
-                float vibFrac = Mathf.Clamp01((float)(vibVal / 2.0));
                 if (_vibPointerTransforms[i] != null)
                 {
-                    float ptrY = -184f * s - vibRailHalfH + ((vibFrac - 0.5f) * vibRailHalfH * 1.6f);
+                    float ptrY = -184f * s - vibRailHalfH + ((_cachedVibFracs[i] - 0.5f) * vibRailHalfH * 1.6f);
                     _vibPointerTransforms[i].anchoredPosition = new Vector2(_vibPointerTransforms[i].anchoredPosition.x, ptrY);
                 }
             }

@@ -165,11 +165,24 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastTempText;
         private int _lastStatusBadgeState = -1;
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
-        {
-            if (telemetry == null || !telemetry.HasVessel) return;
+        private string _dataCrewStr;
+        private string _dataPresStr;
+        private string _dataTempStr;
+        private float[] _dataFractions = new float[4];
+        private string[] _dataGaugePercentTexts = new string[4];
+        private int _dataBadgeState = 0;
+        private bool _dataHasVessel;
 
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+            _dataHasVessel = true;
 
             string slot0Token = GetTemplateChannel("SLOT0_TOKEN", "{O2}");
             string slot1Token = GetTemplateChannel("SLOT1_TOKEN", "{EC:PCT}");
@@ -181,46 +194,64 @@ namespace ModularFlightPanel.UI.Widgets
             float monoFraction = (float)(TelemetryTokenEngine.EvaluateNumeric(slot2Token, telemetry) / 100.0);
             float h2oFraction = (float)(TelemetryTokenEngine.EvaluateNumeric(slot3Token, telemetry) / 100.0);
 
+            _dataFractions[0] = o2Fraction;
+            _dataFractions[1] = ecFraction;
+            _dataFractions[2] = monoFraction;
+            _dataFractions[3] = h2oFraction;
+
+            _dataGaugePercentTexts[0] = TelemetryTokenEngine.Evaluate(slot0Token, telemetry);
+            _dataGaugePercentTexts[1] = TelemetryTokenEngine.Evaluate(slot1Token + "%", telemetry);
+            _dataGaugePercentTexts[2] = TelemetryTokenEngine.Evaluate(slot2Token, telemetry);
+            _dataGaugePercentTexts[3] = TelemetryTokenEngine.Evaluate(slot3Token, telemetry);
+
             string crewTpl = GetTemplateChannel("CREW_TPL", "{CREW}");
             string atmTpl = GetTemplateChannel("ATM_TPL", "{ATM}");
             string tempTpl = GetTemplateChannel("TEMP_TPL", "{TEMP}");
 
-            string crewStr = TelemetryTokenEngine.Evaluate(crewTpl, telemetry);
-            if (crewStr != _lastCrewText)
+            _dataCrewStr = TelemetryTokenEngine.Evaluate(crewTpl, telemetry);
+            _dataPresStr = TelemetryTokenEngine.Evaluate(atmTpl, telemetry);
+            _dataTempStr = TelemetryTokenEngine.Evaluate(tempTpl, telemetry);
+
+            _dataBadgeState = (ecFraction < 0.1f || o2Fraction < 0.15f) ? 2 : ((ecFraction < 0.25f) ? 1 : 0);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
+
+            if (_dataCrewStr != _lastCrewText)
             {
-                _lastCrewText = crewStr;
-                _crewText.text = crewStr;
+                _lastCrewText = _dataCrewStr;
+                _crewText.text = _dataCrewStr;
             }
 
-            string presStr = TelemetryTokenEngine.Evaluate(atmTpl, telemetry);
-            if (presStr != _lastPressureText)
+            if (_dataPresStr != _lastPressureText)
             {
-                _lastPressureText = presStr;
-                _pressureText.text = presStr;
+                _lastPressureText = _dataPresStr;
+                _pressureText.text = _dataPresStr;
             }
 
-            string tempStr = TelemetryTokenEngine.Evaluate(tempTpl, telemetry);
-            if (tempStr != _lastTempText)
+            if (_dataTempStr != _lastTempText)
             {
-                _lastTempText = tempStr;
-                _tempText.text = tempStr;
+                _lastTempText = _dataTempStr;
+                _tempText.text = _dataTempStr;
             }
 
-            UpdateGauge(0, o2Fraction, TelemetryTokenEngine.Evaluate(slot0Token, telemetry));
-            UpdateGauge(1, ecFraction, TelemetryTokenEngine.Evaluate(slot1Token + "%", telemetry));
-            UpdateGauge(2, monoFraction, TelemetryTokenEngine.Evaluate(slot2Token, telemetry));
-            UpdateGauge(3, h2oFraction, TelemetryTokenEngine.Evaluate(slot3Token, telemetry));
-
-            int badgeState = (ecFraction < 0.1f || o2Fraction < 0.15f) ? 2 : ((ecFraction < 0.25f) ? 1 : 0);
-            if (badgeState != _lastStatusBadgeState)
+            for (int i = 0; i < 4; i++)
             {
-                _lastStatusBadgeState = badgeState;
-                if (badgeState == 2)
+                UpdateGauge(i, _dataFractions[i], _dataGaugePercentTexts[i]);
+            }
+
+            if (_dataBadgeState != _lastStatusBadgeState)
+            {
+                _lastStatusBadgeState = _dataBadgeState;
+                if (_dataBadgeState == 2)
                 {
                     StatusBadge.Text = "▲ " + I18n.Tr("WIDGET_LIFE_WARNING", "警告");
                     StatusBadge.SetRole(TextStyleRole.Danger);
                 }
-                else if (badgeState == 1)
+                else if (_dataBadgeState == 1)
                 {
                     StatusBadge.Text = "● " + I18n.Tr("WIDGET_LIFE_CAUTION", "注意");
                     StatusBadge.SetRole(TextStyleRole.Warning);

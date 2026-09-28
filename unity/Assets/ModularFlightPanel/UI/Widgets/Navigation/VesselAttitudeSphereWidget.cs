@@ -37,6 +37,97 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
+        private bool _cachedHasVessel;
+        private float _cachedPitch;
+        private float _cachedRoll;
+        private float _cachedHeading;
+        private Texture _cachedTex3D;
+        private string _cachedTopFormatted;
+        private string _cachedBtmFormatted;
+        private bool _cachedDirectorActive;
+        private bool _cachedDirectorLocked;
+        private float _cachedDeflX;
+        private float _cachedDeflY;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
+
+            _cachedHasVessel = true;
+            _cachedPitch = (float)context.Telemetry.Pitch;
+            _cachedRoll = (float)context.Telemetry.Roll;
+            _cachedHeading = (float)context.Telemetry.Heading;
+
+            _cachedTex3D = Vessel3DService.Provider?.Texture3D;
+
+            string hdgStr = TelemetryTokenEngine.Evaluate(_headingToken, context.Telemetry);
+            if (hdgStr.EndsWith("°")) hdgStr = hdgStr.Substring(0, hdgStr.Length - 1).Trim();
+            var hook = NavBallHookService.Provider;
+            string frameCat = hook?.ReferenceFrameCategory ?? "SURFACE";
+            _cachedTopFormatted = $"HDG {hdgStr}° | {frameCat}";
+
+            string pStr = TelemetryTokenEngine.Evaluate(_pitchToken, context.Telemetry);
+            if (pStr.EndsWith("°")) pStr = pStr.Substring(0, pStr.Length - 1).Trim();
+            string rStr = TelemetryTokenEngine.Evaluate(_rollToken, context.Telemetry);
+            if (rStr.EndsWith("°")) rStr = rStr.Substring(0, rStr.Length - 1).Trim();
+            string sasMode = TelemetryTokenEngine.Evaluate(_sasToken, context.Telemetry);
+
+            bool sasActive = context.Telemetry.IsSASEnabled;
+            if (!sasActive)
+            {
+                _cachedDirectorActive = false;
+                _isDirectorLocked = false;
+            }
+            else
+            {
+                string sasModeKey = context.Telemetry.CurrentSASMode.ToString().ToLowerInvariant();
+                Vector3 targetDir = Vector3.forward;
+                bool isVis = false;
+                bool hasDir = false;
+
+                if (hook != null)
+                {
+                    hasDir = hook.GetMarkerDirection(sasModeKey, out targetDir, out isVis);
+                }
+                if (!hasDir && NavBallHookService.MarkerDirectionFallback != null)
+                {
+                    hasDir = NavBallHookService.MarkerDirectionFallback(sasModeKey, out targetDir, out isVis);
+                }
+
+                if (!hasDir || !isVis)
+                {
+                    _cachedDirectorActive = false;
+                    _isDirectorLocked = false;
+                }
+                else
+                {
+                    _cachedDirectorActive = true;
+                    float deflX = Mathf.Clamp(targetDir.x, -1f, 1f);
+                    float deflY = Mathf.Clamp(targetDir.y, -1f, 1f);
+                    float angError = Mathf.Atan2(Mathf.Sqrt(targetDir.x * targetDir.x + targetDir.y * targetDir.y), Mathf.Max(0.001f, targetDir.z)) * Mathf.Rad2Deg;
+
+                    bool targetLocked = _isDirectorLocked ? (angError <= 1.8f) : (angError <= 1.3f);
+                    _isDirectorLocked = targetLocked;
+                    _cachedDirectorLocked = targetLocked;
+                    _cachedDeflX = deflX;
+                    _cachedDeflY = deflY;
+                }
+            }
+
+            string lockTag = _isDirectorLocked ? " [LOCK]" : "";
+            _cachedBtmFormatted = $"P {pStr}° R {rStr}° | {sasMode}{lockTag}";
+
+            _lastPitch = context.Telemetry.Pitch;
+            _lastRoll = context.Telemetry.Roll;
+            _lastHeading = context.Telemetry.Heading;
+        }
+
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
@@ -59,6 +150,87 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     _isMaterialDirty = false;
                     _isRenderDirty = false;
                 }
+            }
+
+            if (!_cachedHasVessel) return;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
+
+            // 1. 优先挂载 Vessel3DService 实时烘焙的 3D 飞船贴图
+            if (_shipRawImage != null)
+            {
+                Texture tex3D = _cachedTex3D;
+                if (tex3D != null && _shipRawImage.texture != tex3D)
+                {
+                    _shipRawImage.texture = tex3D;
+                }
+                else if (tex3D == null && _shipRawImage.texture != _shared3DSpacecraftTexture)
+                {
+                    _shipRawImage.texture = _shared3DSpacecraftTexture;
+                }
+            }
+
+            // 2. 中央 3D 飞船姿态与俯仰收缩
+            if (_centerShipRoot != null)
+            {
+                if (_isChasePerspective)
+                {
+                    float pitchRad = _cachedPitch * Mathf.Deg2Rad;
+                    float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.5f), 0.72f, 1.0f);
+                    _centerShipRoot.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
+                    _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, -_cachedRoll * 0.25f);
+                }
+                else
+                {
+                    _centerShipRoot.localScale = Vector3.one;
+                    _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, -_cachedRoll);
+                }
+            }
+
+            // 3. 飞行指引仪 Target Flight Director
+            if (_flightDirectorRoot != null)
+            {
+                if (!_cachedDirectorActive)
+                {
+                    if (_flightDirectorRoot.gameObject.activeSelf) _flightDirectorRoot.gameObject.SetActive(false);
+                }
+                else
+                {
+                    if (!_flightDirectorRoot.gameObject.activeSelf) _flightDirectorRoot.gameObject.SetActive(true);
+
+                    float s = CurrentDpiScale;
+                    float maxDeflection = 22f * s;
+                    Vector2 targetPos = _cachedDirectorLocked
+                        ? new Vector2(0f, 14f * s)
+                        : new Vector2(_cachedDeflX * maxDeflection, 14f * s + _cachedDeflY * maxDeflection);
+
+                    float dt = context.DeltaTime;
+                    float lerpT = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 14.0f);
+                    _flightDirectorRoot.anchoredPosition = Vector2.Lerp(_flightDirectorRoot.anchoredPosition, targetPos, lerpT);
+
+                    if (_flightDirectorRawImage != null)
+                    {
+                        Color targetCol = _cachedDirectorLocked
+                            ? WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f)
+                            : WidgetStyleManager.WithAlpha(theme.AccentWarning, 0.90f);
+                        if (_flightDirectorRawImage.color != targetCol)
+                            _flightDirectorRawImage.color = targetCol;
+                    }
+                }
+            }
+
+            // 4. 顶部航向与参考系标牌更新
+            if (_cachedTopFormatted != _lastTopText)
+            {
+                _lastTopText = _cachedTopFormatted;
+                SetTextIfChanged(_topBadgeText, _cachedTopFormatted);
+            }
+
+            // 5. 底部俯仰/滚转与 SAS 状态更新
+            if (_cachedBtmFormatted != _lastBottomText)
+            {
+                _lastBottomText = _cachedBtmFormatted;
+                SetTextIfChanged(_bottomBadgeText, _cachedBtmFormatted);
             }
         }
 
@@ -449,141 +621,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
-        {
-            if (telemetry == null || !telemetry.HasVessel) return;
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 优先挂载 Vessel3DService 实时烘焙的 3D 飞船贴图
-            if (_shipRawImage != null)
-            {
-                Texture tex3D = Vessel3DService.Provider?.Texture3D;
-                if (tex3D != null && _shipRawImage.texture != tex3D)
-                {
-                    _shipRawImage.texture = tex3D;
-                }
-                else if (tex3D == null && _shipRawImage.texture != _shared3DSpacecraftTexture)
-                {
-                    _shipRawImage.texture = _shared3DSpacecraftTexture;
-                }
-            }
-
-            // 2. 中央 3D 飞船姿态与俯仰收缩 (3D Gimbal Dynamics: 全帧平滑响应，杜绝步进卡顿)
-            if (_centerShipRoot != null)
-            {
-                if (_isChasePerspective)
-                {
-                    // 追尾视角：飞船主体微幅俯仰/滚转，产生逼真空间悬浮纵深
-                    float pitchRad = (float)telemetry.Pitch * Mathf.Deg2Rad;
-                    float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.5f), 0.72f, 1.0f);
-                    _centerShipRoot.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
-                    _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, (float)-telemetry.Roll * 0.25f);
-                }
-                else
-                {
-                    // 俯视机动视角：1:1 纯滚转
-                    _centerShipRoot.localScale = Vector3.one;
-                    _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, (float)-telemetry.Roll);
-                }
-            }
-
-            // 3. 飞行指引仪 Target Flight Director Chevron 解算
-            UpdateFlightDirector(telemetry, theme);
-
-            // 4. 顶部航向与参考系标牌更新
-            string hdgStr = TelemetryTokenEngine.Evaluate(_headingToken, telemetry);
-            if (hdgStr.EndsWith("°")) hdgStr = hdgStr.Substring(0, hdgStr.Length - 1).Trim();
-            var hook = NavBallHookService.Provider;
-            string frameCat = hook?.ReferenceFrameCategory ?? "SURFACE";
-            string topFormatted = $"HDG {hdgStr}° | {frameCat}";
-            if (topFormatted != _lastTopText)
-            {
-                _lastTopText = topFormatted;
-                SetTextIfChanged(_topBadgeText, topFormatted);
-            }
-
-            // 5. 底部俯仰/滚转与 SAS 状态更新
-            string pStr = TelemetryTokenEngine.Evaluate(_pitchToken, telemetry);
-            if (pStr.EndsWith("°")) pStr = pStr.Substring(0, pStr.Length - 1).Trim();
-            string rStr = TelemetryTokenEngine.Evaluate(_rollToken, telemetry);
-            if (rStr.EndsWith("°")) rStr = rStr.Substring(0, rStr.Length - 1).Trim();
-            string sasMode = TelemetryTokenEngine.Evaluate(_sasToken, telemetry);
-            string lockTag = _isDirectorLocked ? " [LOCK]" : "";
-            string btmFormatted = $"P {pStr}° R {rStr}° | {sasMode}{lockTag}";
-            if (btmFormatted != _lastBottomText)
-            {
-                _lastBottomText = btmFormatted;
-                SetTextIfChanged(_bottomBadgeText, btmFormatted);
-            }
-
-            _lastPitch = telemetry.Pitch;
-            _lastRoll = telemetry.Roll;
-            _lastHeading = telemetry.Heading;
-        }
-
-        private void UpdateFlightDirector(IFlightTelemetry telemetry, ThemeConfig theme)
-        {
-            if (_flightDirectorRoot == null) return;
-            bool sasActive = FlightTelemetryContext.Current?.IsSASEnabled ?? false;
-            if (!sasActive)
-            {
-                if (_flightDirectorRoot.gameObject.activeSelf) _flightDirectorRoot.gameObject.SetActive(false);
-                _isDirectorLocked = false;
-                return;
-            }
-
-            var hook = NavBallHookService.Provider;
-            string sasModeKey = (FlightTelemetryContext.Current?.CurrentSASMode ?? FlightSASMode.StabilityAssist).ToString().ToLowerInvariant();
-            Vector3 targetDir = Vector3.forward;
-            bool isVis = false;
-            bool hasDir = false;
-
-            if (hook != null)
-            {
-                hasDir = hook.GetMarkerDirection(sasModeKey, out targetDir, out isVis);
-            }
-            if (!hasDir && NavBallHookService.MarkerDirectionFallback != null)
-            {
-                hasDir = NavBallHookService.MarkerDirectionFallback(sasModeKey, out targetDir, out isVis);
-            }
-
-            if (!hasDir || !isVis)
-            {
-                if (_flightDirectorRoot.gameObject.activeSelf) _flightDirectorRoot.gameObject.SetActive(false);
-                _isDirectorLocked = false;
-                return;
-            }
-
-            if (!_flightDirectorRoot.gameObject.activeSelf) _flightDirectorRoot.gameObject.SetActive(true);
-
-            Vector3 localDir = targetDir;
-            float deflX = Mathf.Clamp(localDir.x, -1f, 1f);
-            float deflY = Mathf.Clamp(localDir.y, -1f, 1f);
-            float angError = Mathf.Atan2(Mathf.Sqrt(localDir.x * localDir.x + localDir.y * localDir.y), Mathf.Max(0.001f, localDir.z)) * Mathf.Rad2Deg;
-
-            float s = CurrentDpiScale;
-            float maxDeflection = 22f * s;
-            bool targetLocked = _isDirectorLocked ? (angError <= 1.8f) : (angError <= 1.3f);
-            _isDirectorLocked = targetLocked;
-
-            Vector2 targetPos = targetLocked
-                ? new Vector2(0f, 14f * s)
-                : new Vector2(deflX * maxDeflection, 14f * s + deflY * maxDeflection);
-
-            float dt = Time.deltaTime;
-            float lerpT = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 14.0f);
-            _flightDirectorRoot.anchoredPosition = Vector2.Lerp(_flightDirectorRoot.anchoredPosition, targetPos, lerpT);
-
-            if (_flightDirectorRawImage != null)
-            {
-                Color targetCol = targetLocked
-                    ? WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f)
-                    : WidgetStyleManager.WithAlpha(theme.AccentWarning, 0.90f);
-                if (_flightDirectorRawImage.color != targetCol)
-                    _flightDirectorRawImage.color = targetCol;
-            }
-        }
 
         protected override void LateUpdate()
         {

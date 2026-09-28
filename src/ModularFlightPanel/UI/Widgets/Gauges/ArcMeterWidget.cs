@@ -120,12 +120,19 @@ namespace ModularFlightPanel.UI.Widgets
             _meterMaterial.SetColor("_BorderColor", style.GetCardBorderColor(CardStyleRole.Normal, theme));
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private string _dataValueText = "---";
+        private float _dataFill = 0f;
+        private TextStyleRole _dataRole = TextStyleRole.PrimaryValue;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel)
             {
-                Value.Text = "---";
-                if (_meterMaterial != null) _meterMaterial.SetFloat("_FillAmount", 0f);
+                _dataValueText = "---";
+                _dataFill = 0f;
+                _dataRole = TextStyleRole.PrimaryValue;
                 return;
             }
 
@@ -139,7 +146,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (isCustomBound)
             {
                 double val = EvalNumeric(customTok, telemetry);
-                Value.Text = EvalToken(customTok, telemetry, "---");
+                _dataValueText = EvalToken(customTok, telemetry, "---");
                 double min = Config.MinValue;
                 double max = Config.MaxValue;
                 if (max > min)
@@ -153,35 +160,47 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (Config.WarningThreshold > Config.CautionThreshold)
                 {
-                    if (val >= Config.WarningThreshold) Value.SetRole(TextStyleRole.Danger);
-                    else if (val >= Config.CautionThreshold) Value.SetRole(TextStyleRole.Warning);
-                    else Value.SetRole(TextStyleRole.PrimaryValue);
+                    if (val >= Config.WarningThreshold) _dataRole = TextStyleRole.Danger;
+                    else if (val >= Config.CautionThreshold) _dataRole = TextStyleRole.Warning;
+                    else _dataRole = TextStyleRole.PrimaryValue;
                 }
             }
             else if (_type == ArcMeterType.VerticalSpeed || customTok == "{VSI:NORM}")
             {
                 double vsi = telemetry.VerticalSpeed;
-                Value.Text = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
+                _dataValueText = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
                 fill = (float)telemetry.NormalizedVSI;
+                _dataRole = TextStyleRole.PrimaryValue;
             }
             else if (_type == ArcMeterType.StagePropellant || customTok == "{PROP}")
             {
                 double prop = telemetry.StagePropellantFraction * 100.0;
-                Value.Text = $"{prop:F0}%";
+                _dataValueText = $"{prop:F0}%";
                 fill = Mathf.Clamp01(telemetry.StagePropellantFraction);
-                Value.SetRole(fill < 0.15f ? TextStyleRole.Danger : (fill < 0.30f ? TextStyleRole.Warning : TextStyleRole.PrimaryValue));
+                _dataRole = fill < 0.15f ? TextStyleRole.Danger : (fill < 0.30f ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
             }
             else
             {
                 double thr = telemetry.Throttle * 100.0;
-                Value.Text = $"{thr:F0}%";
+                _dataValueText = $"{thr:F0}%";
                 fill = Mathf.Clamp01((float)telemetry.Throttle);
+                _dataRole = TextStyleRole.PrimaryValue;
             }
 
-            if (_meterMaterial != null && Math.Abs(fill - _lastFill) > 0.002f)
+            _dataFill = fill;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            Value.Text = _dataValueText;
+            Value.SetRole(_dataRole);
+
+            if (_meterMaterial != null && Math.Abs(_dataFill - _lastFill) > 0.002f)
             {
-                _lastFill = fill;
-                _meterMaterial.SetFloat("_FillAmount", fill);
+                _lastFill = _dataFill;
+                _meterMaterial.SetFloat("_FillAmount", _dataFill);
             }
         }
 

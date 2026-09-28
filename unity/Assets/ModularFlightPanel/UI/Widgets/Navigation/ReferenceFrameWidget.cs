@@ -260,9 +260,20 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private string _dataCategory;
+        private string _dataTitle;
+        private bool _dataHasVessel;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+            _dataHasVessel = true;
 
             // 1. 动态评估当前参考系类型类别 (INERTIAL / SURFACE / ORBIT / LAGRANGE / TARGET)
             string category = TelemetryTokenEngine.Evaluate(_typeToken, telemetry);
@@ -277,12 +288,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     category = !string.IsNullOrEmpty(telemetry.SpeedModeName) ? telemetry.SpeedModeName.ToUpperInvariant() : "ORBIT";
                 }
             }
-
-            if (category != _lastCategory)
-            {
-                _lastCategory = category;
-                UpdateCategoryVisuals(category, ThemeManager.Instance?.CurrentTheme);
-            }
+            _dataCategory = category;
 
             // 2. 动态评估参考系全称标题 (如 "HELIOCENTRIC INERTIAL", "KERBIN SURFACE", "ORBIT")
             string title = TelemetryTokenEngine.Evaluate(_frameToken, telemetry);
@@ -297,12 +303,27 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     title = telemetry.SpeedModeName ?? category;
                 }
             }
+            _dataTitle = title;
+        }
 
-            if (title != _lastTitle)
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
+
+            ThemeConfig theme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
+
+            if (_dataCategory != _lastCategory)
             {
-                _lastTitle = title;
-                SetTextIfChanged(_frameTitleText, title);
-                AdjustCardWidth(title);
+                _lastCategory = _dataCategory;
+                UpdateCategoryVisuals(_dataCategory, theme);
+            }
+
+            if (_dataTitle != _lastTitle)
+            {
+                _lastTitle = _dataTitle;
+                SetTextIfChanged(_frameTitleText, _dataTitle);
+                AdjustCardWidth(_dataTitle);
             }
         }
 

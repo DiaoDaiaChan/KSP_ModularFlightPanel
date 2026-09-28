@@ -64,33 +64,46 @@ namespace ModularFlightPanel.UI.Widgets
         public TextWidget PeriodLabel = new TextWidget(TextStyleRole.Label, 12f, -28f, 28f, 16f, 8.5f, TextAnchor.MiddleLeft, "PER");
         public TextWidget PeriodVal = new TextWidget(TextStyleRole.SecondaryValue, 42f, -28f, 74f, 16f, 8.5f, TextAnchor.MiddleRight, "--m --s");
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private string _dataApVal = "---";
+        private string _dataPeVal = "---";
+        private string _dataTimeReadout = "T-AP: --:--  PE: --:--";
+        private string _dataEccVal = "0.000";
+        private string _dataIncVal = "0.0°";
+        private string _dataIncDir = "PRO";
+        private TextStyleRole _dataIncDirRole = TextStyleRole.Unit;
+        private string _dataPeriodVal = "--m --s";
+        private string _dataOrbitBadgeText = string.Empty;
+        private TextStyleRole _dataOrbitBadgeRole = TextStyleRole.SecondaryValue;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel)
             {
-                ApVal.Text = "---";
-                PeVal.Text = "---";
-                TimeReadout.Text = I18n.Tr("ORBIT_TIME_PLACEHOLDER", "T-AP: --:--  PE: --:--");
-                EccVal.Text = "---";
-                IncVal.Text = "---";
-                PeriodVal.Text = "---";
-                OrbitBadge.Text = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
-                OrbitBadge.SetRole(TextStyleRole.Muted);
+                _dataApVal = "---";
+                _dataPeVal = "---";
+                _dataTimeReadout = I18n.Tr("ORBIT_TIME_PLACEHOLDER", "T-AP: --:--  PE: --:--");
+                _dataEccVal = "---";
+                _dataIncVal = "---";
+                _dataPeriodVal = "---";
+                _dataOrbitBadgeText = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
+                _dataOrbitBadgeRole = TextStyleRole.Muted;
                 return;
             }
 
             // 1. 远拱点 AP 与近拱点 PE
             double ap = telemetry.Apoapsis;
             double pe = telemetry.Periapsis;
-            ApVal.Text = FormatMetricDistance(ap);
-            PeVal.Text = pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe);
+            _dataApVal = FormatMetricDistance(ap);
+            _dataPeVal = pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe);
 
             // 2. 拱点时间倒计时
             double tAp = telemetry.TimeToAp;
             double tPe = telemetry.TimeToPe;
             string tApStr = FormatDurationCompact(tAp);
             string tPeStr = FormatDurationCompact(tPe);
-            TimeReadout.Text = $"T-AP {tApStr}  PE {tPeStr}";
+            _dataTimeReadout = $"T-AP {tApStr}  PE {tPeStr}";
 
             // 3. 轨道偏心率 Ecc (优先检索探针，无缝开普勒几何推算 Fallback)
             double ecc = ExternalProbeRegistry.ResolveNumeric("ORBIT", "ECC");
@@ -100,21 +113,21 @@ namespace ModularFlightPanel.UI.Widgets
                 double rP = 600000.0 + pe;
                 ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
             }
-            EccVal.Text = ecc.ToString("F3");
+            _dataEccVal = ecc.ToString("F3");
 
             // 4. 轨道倾角 Inc (探针优先)
             double inc = ExternalProbeRegistry.ResolveNumeric("ORBIT", "INC");
             if (double.IsNaN(inc)) inc = 0.0;
-            IncVal.Text = $"{inc:F1}°";
+            _dataIncVal = $"{inc:F1}°";
             if (inc > 90.0)
             {
-                IncDir.Text = I18n.Tr("ORBIT_DIR_RET", "RET"); // 逆行
-                IncDir.SetRole(TextStyleRole.Warning);
+                _dataIncDir = I18n.Tr("ORBIT_DIR_RET", "RET"); // 逆行
+                _dataIncDirRole = TextStyleRole.Warning;
             }
             else
             {
-                IncDir.Text = I18n.Tr("ORBIT_DIR_PRO", "PRO"); // 顺行
-                IncDir.SetRole(TextStyleRole.Unit);
+                _dataIncDir = I18n.Tr("ORBIT_DIR_PRO", "PRO"); // 顺行
+                _dataIncDirRole = TextStyleRole.Unit;
             }
 
             // 5. 轨道周期 Period (探针优先或基于拱点时钟推算)
@@ -123,10 +136,26 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 period = ecc < 1.0 ? Math.Abs(tAp - tPe) * 2.0 : 0.0;
             }
-            PeriodVal.Text = FormatPeriod(period);
+            _dataPeriodVal = FormatPeriod(period);
 
             // 6. 轨道动力学能量状态胶囊
             UpdateOrbitState(telemetry, ap, pe, ecc);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            ApVal.Text = _dataApVal;
+            PeVal.Text = _dataPeVal;
+            TimeReadout.Text = _dataTimeReadout;
+            EccVal.Text = _dataEccVal;
+            IncVal.Text = _dataIncVal;
+            IncDir.Text = _dataIncDir;
+            IncDir.SetRole(_dataIncDirRole);
+            PeriodVal.Text = _dataPeriodVal;
+            OrbitBadge.Text = _dataOrbitBadgeText;
+            OrbitBadge.SetRole(_dataOrbitBadgeRole);
         }
 
         private void UpdateOrbitState(IFlightTelemetry telemetry, double ap, double pe, double ecc)
@@ -137,31 +166,31 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (ecc >= 1.0)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE 逃逸");
-                OrbitBadge.SetRole(TextStyleRole.Danger);
+                _dataOrbitBadgeText = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE 逃逸");
+                _dataOrbitBadgeRole = TextStyleRole.Danger;
             }
             else if (pe < safeAlt)
             {
                 if (pe < 0.0)
                 {
-                    OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC 撞击");
-                    OrbitBadge.SetRole(TextStyleRole.Danger);
+                    _dataOrbitBadgeText = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC 撞击");
+                    _dataOrbitBadgeRole = TextStyleRole.Danger;
                 }
                 else
                 {
-                    OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBITAL 亚轨道");
-                    OrbitBadge.SetRole(TextStyleRole.Warning);
+                    _dataOrbitBadgeText = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBITAL 亚轨道");
+                    _dataOrbitBadgeRole = TextStyleRole.Warning;
                 }
             }
             else if (ecc < 0.015)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR 圆轨道");
-                OrbitBadge.SetRole(TextStyleRole.Accent);
+                _dataOrbitBadgeText = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR 圆轨道");
+                _dataOrbitBadgeRole = TextStyleRole.Accent;
             }
             else
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC 椭圆轨");
-                OrbitBadge.SetRole(TextStyleRole.PrimaryValue);
+                _dataOrbitBadgeText = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC 椭圆轨");
+                _dataOrbitBadgeRole = TextStyleRole.PrimaryValue;
             }
         }
 

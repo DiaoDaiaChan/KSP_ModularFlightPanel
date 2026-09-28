@@ -71,22 +71,38 @@ namespace ModularFlightPanel.UI.Widgets
         private static readonly char[] MultiChannelSeparators = { ';', '\n', '\r' };
         private static readonly char[] DelimitedSeparators = { '|', '\n', '\r' };
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private string _titleText = string.Empty;
+        private string _ch1Text = "---";
+        private TextStyleRole _ch1Role = TextStyleRole.PrimaryValue;
+        private string _ch2Text = "---";
+        private TextStyleRole _ch2Role = TextStyleRole.PrimaryValue;
+        private string _ch3Text = "---";
+        private TextStyleRole _ch3Role = TextStyleRole.PrimaryValue;
+        private string _ch4Text = "---";
+        private TextStyleRole _ch4Role = TextStyleRole.PrimaryValue;
+        private string _ch5Text = "---";
+        private TextStyleRole _ch5Role = TextStyleRole.PrimaryValue;
+        private string _ch6Text = "---";
+        private TextStyleRole _ch6Role = TextStyleRole.PrimaryValue;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel)
             {
-                Ch1Val.Text = "---";
-                Ch2Val.Text = "---";
-                Ch3Val.Text = "---";
-                Ch4Val.Text = "---";
-                Ch5Val.Text = "---";
-                Ch6Val.Text = "---";
+                _ch1Text = "---";
+                _ch2Text = "---";
+                _ch3Text = "---";
+                _ch4Text = "---";
+                _ch5Text = "---";
+                _ch6Text = "---";
                 return;
             }
 
             // 自定义标题更新
             string titleTpl = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵");
-            Title.Text = EvalToken(titleTpl, telemetry, I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵"));
+            _titleText = EvalToken(titleTpl, telemetry, I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵"));
 
             // 检查是否有自定义模板覆盖
             string customTpl = Config?.CustomTemplate;
@@ -108,31 +124,58 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. SPD: 当前地速/空速 (优先参考系真实速度)
             double spd = telemetry.SurfaceSpeed;
-            Ch1Val.Text = spd >= 10000.0 ? (spd * 0.001).ToString("F1") + "k" : spd.ToString("F1");
+            _ch1Text = spd >= 10000.0 ? (spd * 0.001).ToString("F1") + "k" : spd.ToString("F1");
+            _ch1Role = TextStyleRole.PrimaryValue;
 
             // 2. TWR: 实际可用推重比
             double twr = telemetry.TWR;
-            Ch2Val.Text = twr.ToString("F2");
-            Ch2Val.SetRole(twr > 0.05 && twr < 1.0 && telemetry.AltitudeAGL < 1000.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
+            _ch2Text = twr.ToString("F2");
+            _ch2Role = twr > 0.05 && twr < 1.0 && telemetry.AltitudeAGL < 1000.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue;
 
             // 3. RALT: 雷达真高 (AGL)
             double ralt = telemetry.AltitudeAGL;
-            Ch3Val.Text = ralt >= 100000.0 ? (ralt * 0.001).ToString("F0") + "k" : ralt.ToString("F0");
+            _ch3Text = ralt >= 100000.0 ? (ralt * 0.001).ToString("F0") + "k" : ralt.ToString("F0");
+            _ch3Role = TextStyleRole.PrimaryValue;
 
             // 4. Q: 动压 (kPa)
             double q = telemetry.DynamicPressure;
-            Ch4Val.Text = q.ToString("F1");
-            Ch4Val.SetRole(q > 35.0 ? TextStyleRole.Danger : (q > 25.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue));
+            _ch4Text = q.ToString("F1");
+            _ch4Role = q > 35.0 ? TextStyleRole.Danger : (q > 25.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
 
             // 5. VSI: 垂直速度
             double vsi = telemetry.VerticalSpeed;
-            Ch5Val.Text = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
-            Ch5Val.SetRole(vsi < -50.0 && ralt < 3000.0 ? TextStyleRole.Danger : TextStyleRole.PrimaryValue);
+            _ch5Text = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
+            _ch5Role = vsi < -50.0 && ralt < 3000.0 ? TextStyleRole.Danger : TextStyleRole.PrimaryValue;
 
             // 6. G: 当前加速度过载
             double g = telemetry.GForce;
-            Ch6Val.Text = g.ToString("F2");
-            Ch6Val.SetRole(g > 6.0 ? TextStyleRole.Danger : (g > 4.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue));
+            _ch6Text = g.ToString("F2");
+            _ch6Role = g > 6.0 ? TextStyleRole.Danger : (g > 4.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            Title.Text = _titleText;
+
+            Ch1Val.Text = _ch1Text;
+            Ch1Val.SetRole(_ch1Role);
+
+            Ch2Val.Text = _ch2Text;
+            Ch2Val.SetRole(_ch2Role);
+
+            Ch3Val.Text = _ch3Text;
+            Ch3Val.SetRole(_ch3Role);
+
+            Ch4Val.Text = _ch4Text;
+            Ch4Val.SetRole(_ch4Role);
+
+            Ch5Val.Text = _ch5Text;
+            Ch5Val.SetRole(_ch5Role);
+
+            Ch6Val.Text = _ch6Text;
+            Ch6Val.SetRole(_ch6Role);
         }
 
         private void ParseCustomMultiChannel(string template, IFlightTelemetry telemetry)
@@ -146,12 +189,12 @@ namespace ModularFlightPanel.UI.Widgets
                 string token = (eq < p.Length - 1) ? p.Substring(eq + 1).Trim() : string.Empty;
                 switch (key)
                 {
-                    case "CH1": Ch1Val.Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH2": Ch2Val.Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH3": Ch3Val.Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH4": Ch4Val.Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH5": Ch5Val.Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH6": Ch6Val.Text = EvalToken(token, telemetry, "---"); break;
+                    case "CH1": _ch1Text = EvalToken(token, telemetry, "---"); break;
+                    case "CH2": _ch2Text = EvalToken(token, telemetry, "---"); break;
+                    case "CH3": _ch3Text = EvalToken(token, telemetry, "---"); break;
+                    case "CH4": _ch4Text = EvalToken(token, telemetry, "---"); break;
+                    case "CH5": _ch5Text = EvalToken(token, telemetry, "---"); break;
+                    case "CH6": _ch6Text = EvalToken(token, telemetry, "---"); break;
                 }
             }
         }
@@ -171,12 +214,12 @@ namespace ModularFlightPanel.UI.Widgets
                 string res = EvalToken(evalStr, telemetry, "---");
                 switch (i)
                 {
-                    case 0: Ch1Val.Text = res; break;
-                    case 1: Ch2Val.Text = res; break;
-                    case 2: Ch3Val.Text = res; break;
-                    case 3: Ch4Val.Text = res; break;
-                    case 4: Ch5Val.Text = res; break;
-                    case 5: Ch6Val.Text = res; break;
+                    case 0: _ch1Text = res; break;
+                    case 1: _ch2Text = res; break;
+                    case 2: _ch3Text = res; break;
+                    case 3: _ch4Text = res; break;
+                    case 4: _ch5Text = res; break;
+                    case 5: _ch6Text = res; break;
                 }
             }
         }

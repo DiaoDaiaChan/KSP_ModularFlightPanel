@@ -121,6 +121,25 @@ namespace ModularFlightPanel.UI.Widgets
         private double[] _lastEgtVals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
         private static readonly float[] s_Variances = { -0.01f, 0.02f, -0.01f, 0.01f };
 
+        // 双轨架构快照字段
+        private bool _cachedHasVessel;
+        private string _cachedTatStr = string.Empty;
+        private string _cachedModeStr = string.Empty;
+        private readonly string[] _cachedEprStrs = new string[4];
+        private readonly string[] _cachedN1Strs = new string[4];
+        private readonly string[] _cachedEgtStrs = new string[4];
+        private readonly float[] _cachedEprFracs = new float[4];
+        private readonly float[] _cachedN1Fracs = new float[4];
+        private readonly float[] _cachedEgtFracs = new float[4];
+        private string _cachedCas1Str = string.Empty;
+        private string _cachedCas2Str = string.Empty;
+        private bool _cachedIsTouchdownAlert;
+        private bool _cachedIsSasEnabled;
+        private string _cachedGearStr = string.Empty;
+        private string _cachedDuctStr = string.Empty;
+        private string _cachedCabStr = string.Empty;
+        private string _cachedFuelStr = string.Empty;
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
@@ -486,46 +505,42 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
-            WidgetStyleManager style = WidgetStyleManager.Instance;
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
+
+            _cachedHasVessel = true;
 
             // 1. 顶端 TAT 与推力模式更新 (100% 由 TokenEngine 驱动)
-            string evalTat = TelemetryTokenEngine.Evaluate(_tatTemplate, telemetry);
+            string evalTat = TelemetryTokenEngine.Evaluate(_tatTemplate, context.Telemetry);
             if (string.IsNullOrEmpty(evalTat) || evalTat.Contains("{"))
             {
-                double temp = TelemetryTokenEngine.EvaluateNumeric("{TEMP}", telemetry);
+                double temp = TelemetryTokenEngine.EvaluateNumeric("{TEMP}", context.Telemetry);
                 evalTat = $"TAT {(double.IsNaN(temp) ? 15.0 : temp):+0;-0;+0} c";
             }
-            if (evalTat != _lastTatStr)
-            {
-                _lastTatStr = evalTat;
-                if (_tatText != null) _tatText.text = evalTat;
-            }
+            _cachedTatStr = evalTat;
 
-            string evalMode = TelemetryTokenEngine.Evaluate(_thrustModeTemplate, telemetry);
+            string evalMode = TelemetryTokenEngine.Evaluate(_thrustModeTemplate, context.Telemetry);
             if (string.IsNullOrEmpty(evalMode) || evalMode.Contains("{"))
             {
-                evalMode = telemetry.Throttle > 0.85f ? "TO" : (telemetry.VerticalSpeed > 8 ? "CLB" : "CRZ");
+                evalMode = context.Telemetry.Throttle > 0.85f ? "TO" : (context.Telemetry.VerticalSpeed > 8 ? "CLB" : "CRZ");
             }
-            if (evalMode != _lastModeStr)
-            {
-                _lastModeStr = evalMode;
-                if (_thrustModeText != null) _thrustModeText.text = evalMode;
-            }
+            _cachedModeStr = evalMode;
 
             // 2. 四发独立遥测通道求值与仪表更新
-            float gaugeMaxH = 24f * CurrentDpiScale;
-            double baseEpr = TelemetryTokenEngine.EvaluateNumeric(_eprToken, telemetry);
-            double baseN1 = TelemetryTokenEngine.EvaluateNumeric(_n1Token, telemetry);
-            double baseEgt = TelemetryTokenEngine.EvaluateNumeric(_egtToken, telemetry);
+            double baseEpr = TelemetryTokenEngine.EvaluateNumeric(_eprToken, context.Telemetry);
+            double baseN1 = TelemetryTokenEngine.EvaluateNumeric(_n1Token, context.Telemetry);
+            double baseEgt = TelemetryTokenEngine.EvaluateNumeric(_egtToken, context.Telemetry);
 
-            if (double.IsNaN(baseEpr)) baseEpr = 1.0 + telemetry.Throttle * 0.71;
-            if (double.IsNaN(baseN1)) baseN1 = 22.8 + telemetry.Throttle * 77.2;
-            if (double.IsNaN(baseEgt)) baseEgt = 298.0 + telemetry.Throttle * 382.0;
+            if (double.IsNaN(baseEpr)) baseEpr = 1.0 + context.Telemetry.Throttle * 0.71;
+            if (double.IsNaN(baseN1)) baseN1 = 22.8 + context.Telemetry.Throttle * 77.2;
+            if (double.IsNaN(baseEgt)) baseEgt = 298.0 + context.Telemetry.Throttle * 382.0;
 
             for (int i = 0; i < 4; i++)
             {
@@ -533,93 +548,134 @@ namespace ModularFlightPanel.UI.Widgets
                 double curN1 = baseN1 + s_Variances[i] * 5.0;
                 double curEgt = baseEgt + s_Variances[i] * 15.0;
 
-                // 脏检查对比
-                if (double.IsNaN(_lastEprVals[i]) || Math.Abs(curEpr - _lastEprVals[i]) > 0.005)
-                {
-                    _lastEprVals[i] = curEpr;
-                    string eprStr = curEpr.ToString("0.00", CultureInfo.InvariantCulture);
-                    if (eprStr != _lastEprStrs[i])
-                    {
-                        _lastEprStrs[i] = eprStr;
-                        if (_eprReadoutTexts[i] != null) _eprReadoutTexts[i].text = eprStr;
-                    }
+                _cachedEprStrs[i] = curEpr.ToString("0.00", CultureInfo.InvariantCulture);
+                _cachedN1Strs[i] = curN1 >= 10.0 ? curN1.ToString("00.0", CultureInfo.InvariantCulture) : curN1.ToString("0.0", CultureInfo.InvariantCulture);
+                _cachedEgtStrs[i] = Mathf.RoundToInt((float)curEgt).ToString(CultureInfo.InvariantCulture);
 
-                    float eprFrac = Mathf.Clamp01((float)((curEpr - 0.8) / 1.0));
-                    if (_eprGaugeFills[i] != null)
-                        _eprGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * eprFrac);
-                }
-
-                if (double.IsNaN(_lastN1Vals[i]) || Math.Abs(curN1 - _lastN1Vals[i]) > 0.05)
-                {
-                    _lastN1Vals[i] = curN1;
-                    string n1Str = curN1 >= 10.0 ? curN1.ToString("00.0", CultureInfo.InvariantCulture) : curN1.ToString("0.0", CultureInfo.InvariantCulture);
-                    if (n1Str != _lastN1Strs[i])
-                    {
-                        _lastN1Strs[i] = n1Str;
-                        if (_n1ReadoutTexts[i] != null) _n1ReadoutTexts[i].text = n1Str;
-                    }
-
-                    float n1Frac = Mathf.Clamp01((float)(curN1 / 105.0));
-                    if (_n1GaugeFills[i] != null)
-                        _n1GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * n1Frac);
-                }
-
-                if (double.IsNaN(_lastEgtVals[i]) || Math.Abs(curEgt - _lastEgtVals[i]) > 0.5)
-                {
-                    _lastEgtVals[i] = curEgt;
-                    string egtStr = Mathf.RoundToInt((float)curEgt).ToString(CultureInfo.InvariantCulture);
-                    if (egtStr != _lastEgtStrs[i])
-                    {
-                        _lastEgtStrs[i] = egtStr;
-                        if (_egtReadoutTexts[i] != null) _egtReadoutTexts[i].text = egtStr;
-                    }
-
-                    float egtFrac = Mathf.Clamp01((float)(curEgt / 750.0));
-                    if (_egtGaugeFills[i] != null)
-                        _egtGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * egtFrac);
-                }
+                _cachedEprFracs[i] = Mathf.Clamp01((float)((curEpr - 0.8) / 1.0));
+                _cachedN1Fracs[i] = Mathf.Clamp01((float)(curN1 / 105.0));
+                _cachedEgtFracs[i] = Mathf.Clamp01((float)(curEgt / 750.0));
             }
 
             // 3. 右侧机组告警与起落架更新
-            string evalCas1 = TelemetryTokenEngine.Evaluate(_cas1Template, telemetry);
-            if (evalCas1 != _lastCas1Str)
-            {
-                _lastCas1Str = evalCas1;
-                if (_casMemo1Text != null) _casMemo1Text.text = evalCas1;
-            }
+            string evalCas1 = TelemetryTokenEngine.Evaluate(_cas1Template, context.Telemetry);
+            _cachedCas1Str = evalCas1;
 
-            string evalCas2 = TelemetryTokenEngine.Evaluate(_cas2Template, telemetry);
+            string evalCas2 = TelemetryTokenEngine.Evaluate(_cas2Template, context.Telemetry);
             if (string.IsNullOrEmpty(evalCas2) || evalCas2.Contains("{"))
             {
-                evalCas2 = telemetry.IsTouchdownAlert ? I18n.Tr("WIDGET_EICAS_CAS_TERRAIN_PULL_UP", "地形拉升") : (telemetry.IsSASEnabled ? I18n.Tr("WIDGET_EICAS_CAS_SAS_ACTIVE", "SAS 接通") : I18n.Tr("WIDGET_EICAS_CAS_STAB_TRIM", "安定面配平"));
+                evalCas2 = context.Telemetry.IsTouchdownAlert ? I18n.Tr("WIDGET_EICAS_CAS_TERRAIN_PULL_UP", "地形拉升") : (context.Telemetry.IsSASEnabled ? I18n.Tr("WIDGET_EICAS_CAS_SAS_ACTIVE", "SAS 接通") : I18n.Tr("WIDGET_EICAS_CAS_STAB_TRIM", "安定面配平"));
             }
-            if (evalCas2 != _lastCas2Str)
+            _cachedCas2Str = evalCas2;
+            _cachedIsTouchdownAlert = context.Telemetry.IsTouchdownAlert;
+            _cachedIsSasEnabled = context.Telemetry.IsSASEnabled;
+
+            // 起落架状态
+            string gearStr = TelemetryTokenEngine.Evaluate(_gearToken, context.Telemetry);
+            if (string.IsNullOrEmpty(gearStr) || gearStr.Contains("{"))
             {
-                _lastCas2Str = evalCas2;
+                bool isGearDown = context.Telemetry.AltitudeAGL < 600.0 || context.Telemetry.IsTouchdownAlert || context.Telemetry.FlightSituation == "LANDED" || context.Telemetry.FlightSituation == "PRELAUNCH";
+                gearStr = isGearDown ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
+            }
+            _cachedGearStr = gearStr;
+
+            // 4. 底部引气、客舱增压与燃油总重
+            string evalDuct = TelemetryTokenEngine.Evaluate(_ductTemplate, context.Telemetry);
+            if (string.IsNullOrEmpty(evalDuct) || evalDuct.Contains("{"))
+            {
+                evalDuct = "26  DUCT PRESS  25";
+            }
+            _cachedDuctStr = evalDuct;
+
+            string evalCab = TelemetryTokenEngine.Evaluate(_cabTemplate, context.Telemetry);
+            _cachedCabStr = evalCab;
+
+            string evalFuel = TelemetryTokenEngine.Evaluate(_fuelTemplate, context.Telemetry);
+            if (string.IsNullOrEmpty(evalFuel) || evalFuel.Contains("{"))
+            {
+                double fuelKg = context.Telemetry.StagePropellantFraction * 1737.0;
+                evalFuel = string.Format(CultureInfo.InvariantCulture, "TOTAL FUEL {0:0000} KGS X 1000   TEMP +15c", fuelKg);
+            }
+            _cachedFuelStr = evalFuel;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            // 1. 顶端 TAT 与推力模式更新
+            if (_cachedTatStr != _lastTatStr)
+            {
+                _lastTatStr = _cachedTatStr;
+                if (_tatText != null) _tatText.text = _cachedTatStr;
+            }
+
+            if (_cachedModeStr != _lastModeStr)
+            {
+                _lastModeStr = _cachedModeStr;
+                if (_thrustModeText != null) _thrustModeText.text = _cachedModeStr;
+            }
+
+            // 2. 四发独立仪表更新
+            float gaugeMaxH = 24f * CurrentDpiScale;
+            for (int i = 0; i < 4; i++)
+            {
+                if (_cachedEprStrs[i] != _lastEprStrs[i])
+                {
+                    _lastEprStrs[i] = _cachedEprStrs[i];
+                    if (_eprReadoutTexts[i] != null) _eprReadoutTexts[i].text = _cachedEprStrs[i];
+                }
+                if (_eprGaugeFills[i] != null)
+                    _eprGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedEprFracs[i]);
+
+                if (_cachedN1Strs[i] != _lastN1Strs[i])
+                {
+                    _lastN1Strs[i] = _cachedN1Strs[i];
+                    if (_n1ReadoutTexts[i] != null) _n1ReadoutTexts[i].text = _cachedN1Strs[i];
+                }
+                if (_n1GaugeFills[i] != null)
+                    _n1GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedN1Fracs[i]);
+
+                if (_cachedEgtStrs[i] != _lastEgtStrs[i])
+                {
+                    _lastEgtStrs[i] = _cachedEgtStrs[i];
+                    if (_egtReadoutTexts[i] != null) _egtReadoutTexts[i].text = _cachedEgtStrs[i];
+                }
+                if (_egtGaugeFills[i] != null)
+                    _egtGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedEgtFracs[i]);
+            }
+
+            // 3. 右侧机组告警与起落架更新
+            if (_cachedCas1Str != _lastCas1Str)
+            {
+                _lastCas1Str = _cachedCas1Str;
+                if (_casMemo1Text != null) _casMemo1Text.text = _cachedCas1Str;
+            }
+
+            if (_cachedCas2Str != _lastCas2Str)
+            {
+                _lastCas2Str = _cachedCas2Str;
                 if (_casMemo2Text != null)
                 {
-                    _casMemo2Text.text = evalCas2;
-                    TextStyleRole casRole = telemetry.IsTouchdownAlert ? TextStyleRole.Danger : (telemetry.IsSASEnabled ? TextStyleRole.Accent : TextStyleRole.Label);
+                    _casMemo2Text.text = _cachedCas2Str;
+                    TextStyleRole casRole = _cachedIsTouchdownAlert ? TextStyleRole.Danger : (_cachedIsSasEnabled ? TextStyleRole.Accent : TextStyleRole.Label);
                     ApplyText(_casMemo2Text, casRole, theme);
                 }
             }
 
-            // 起落架状态
-            string gearStr = TelemetryTokenEngine.Evaluate(_gearToken, telemetry);
-            if (string.IsNullOrEmpty(gearStr) || gearStr.Contains("{"))
+            if (_cachedGearStr != _lastGearStr)
             {
-                bool isGearDown = telemetry.AltitudeAGL < 600.0 || telemetry.IsTouchdownAlert || telemetry.FlightSituation == "LANDED" || telemetry.FlightSituation == "PRELAUNCH";
-                gearStr = isGearDown ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
-            }
-            if (gearStr != _lastGearStr)
-            {
-                _lastGearStr = gearStr;
+                _lastGearStr = _cachedGearStr;
                 if (_gearStatusText != null)
                 {
-                    _gearStatusText.text = gearStr;
-                    // 文案已汉化（"放下"/"收起"），自定义模板注入的英文令牌 "DOWN" 同样要能命中高亮
-                    bool isDown = gearStr.Equals("DOWN", StringComparison.OrdinalIgnoreCase)
-                               || gearStr.Equals(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase);
+                    _gearStatusText.text = _cachedGearStr;
+                    bool isDown = _cachedGearStr.Equals("DOWN", StringComparison.OrdinalIgnoreCase)
+                               || _cachedGearStr.Equals(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase);
                     ApplyText(_gearStatusText, isDown ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                     if (_gearBoxOutline != null)
                     {
@@ -631,34 +687,22 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 底部引气、客舱增压与燃油总重
-            string evalDuct = TelemetryTokenEngine.Evaluate(_ductTemplate, telemetry);
-            if (string.IsNullOrEmpty(evalDuct) || evalDuct.Contains("{"))
+            if (_cachedDuctStr != _lastDuctStr)
             {
-                evalDuct = "26  DUCT PRESS  25";
-            }
-            if (evalDuct != _lastDuctStr)
-            {
-                _lastDuctStr = evalDuct;
-                if (_ductPressText != null) _ductPressText.text = evalDuct;
+                _lastDuctStr = _cachedDuctStr;
+                if (_ductPressText != null) _ductPressText.text = _cachedDuctStr;
             }
 
-            string evalCab = TelemetryTokenEngine.Evaluate(_cabTemplate, telemetry);
-            if (evalCab != _lastCabStr)
+            if (_cachedCabStr != _lastCabStr)
             {
-                _lastCabStr = evalCab;
-                if (_cabPressText != null) _cabPressText.text = evalCab;
+                _lastCabStr = _cachedCabStr;
+                if (_cabPressText != null) _cabPressText.text = _cachedCabStr;
             }
 
-            string evalFuel = TelemetryTokenEngine.Evaluate(_fuelTemplate, telemetry);
-            if (string.IsNullOrEmpty(evalFuel) || evalFuel.Contains("{"))
+            if (_cachedFuelStr != _lastFuelStr)
             {
-                double fuelKg = telemetry.StagePropellantFraction * 1737.0;
-                evalFuel = string.Format(CultureInfo.InvariantCulture, "TOTAL FUEL {0:0000} KGS X 1000   TEMP +15c", fuelKg);
-            }
-            if (evalFuel != _lastFuelStr)
-            {
-                _lastFuelStr = evalFuel;
-                if (_fuelSummaryText != null) _fuelSummaryText.text = evalFuel;
+                _lastFuelStr = _cachedFuelStr;
+                if (_fuelSummaryText != null) _fuelSummaryText.text = _cachedFuelStr;
             }
         }
 

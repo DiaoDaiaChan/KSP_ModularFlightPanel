@@ -369,7 +369,7 @@ namespace ModularFlightPanel.UI.Settings
 
             if (activeCount > 0)
             {
-                string runText = activeCount == 1 ? I18n.Tr("LIB_RUNNING_HIDE", "● 运行中 (隐藏)") : I18n.TrFormat("LIB_RUNNING_COUNT", "● {0}个运行中", activeCount);
+                string runText = activeCount == 1 ? I18n.Tr("LIB_RUNNING_HIDE", "● 运行中 (隐藏)") : I18n.TrFormat("LIB_RUNNING_COUNT", activeCount);
                 if (GUILayout.Button(runText, MFPGuiSkin.WarningButtonStyle, GUILayout.Width(105f), GUILayout.Height(24f)))
                 {
                     var last = activeList[activeList.Count - 1];
@@ -393,7 +393,7 @@ namespace ModularFlightPanel.UI.Settings
                     WidgetLayoutManager.Instance.SaveLayout();
                     FlightHUDManager.Instance?.RebuildHUD();
                     OnWidgetAdded(newCfg.WidgetId, title);
-                    ShowToast(I18n.TrFormat("LIB_TOAST_ADDED_COPY", "已添加 {0} 副本", title));
+                    ShowToast(I18n.TrFormat("LIB_TOAST_ADDED_COPY", title));
                 }
             }
             else

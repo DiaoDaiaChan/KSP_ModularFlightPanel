@@ -116,7 +116,7 @@ namespace ModularFlightPanel.UI
             catch (Exception ex)
             {
                 MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager Initialize fatal error: {ex}");
-                MFPSafetyFallback.TriggerFaultFallback("HUD 初始化发生致命异常 (HUD Initialization Error)", ex);
+                MFPSafetyFallback.TriggerFaultFallback(I18n.Tr("ERR_HUD_INIT_FATAL", "HUD 初始化发生致命异常 (HUD Initialization Error)"), ex);
             }
         }
 
@@ -229,7 +229,7 @@ namespace ModularFlightPanel.UI
                 MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager Update exception ({_consecutiveUpdateExceptions}/{MaxConsecutiveExceptionsBeforeTrip}): {ex.Message}");
                 if (_consecutiveUpdateExceptions >= MaxConsecutiveExceptionsBeforeTrip)
                 {
-                    MFPSafetyFallback.TriggerFaultFallback("连续多帧渲染未捕获异常 (Consecutive Update Exceptions)", ex);
+                    MFPSafetyFallback.TriggerFaultFallback(I18n.Tr("ERR_CONSECUTIVE_UPDATE", "连续多帧渲染未捕获异常 (Consecutive Update Exceptions)"), ex);
                 }
             }
         }
@@ -255,7 +255,7 @@ namespace ModularFlightPanel.UI
                 MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager LateUpdate exception ({_consecutiveUpdateExceptions}/{MaxConsecutiveExceptionsBeforeTrip}): {ex.Message}");
                 if (_consecutiveUpdateExceptions >= MaxConsecutiveExceptionsBeforeTrip)
                 {
-                    MFPSafetyFallback.TriggerFaultFallback("连续多帧 LateUpdate 未捕获异常 (Consecutive LateUpdate Exceptions)", ex);
+                    MFPSafetyFallback.TriggerFaultFallback(I18n.Tr("ERR_CONSECUTIVE_LATEUPDATE", "连续多帧 LateUpdate 未捕获异常 (Consecutive LateUpdate Exceptions)"), ex);
                 }
             }
         }
@@ -583,7 +583,7 @@ namespace ModularFlightPanel.UI
             catch (Exception ex)
             {
                 MFPLogger.Error(MFPLogger.CatUI, $"FlightHUDManager RebuildHUD fatal error: {ex}");
-                MFPSafetyFallback.TriggerFaultFallback("HUD 重新装配致命故障 (HUD Rebuild Fatal Error)", ex);
+                MFPSafetyFallback.TriggerFaultFallback(I18n.Tr("ERR_HUD_REBUILD_FATAL", "HUD 重新装配致命故障 (HUD Rebuild Fatal Error)"), ex);
             }
         }
 

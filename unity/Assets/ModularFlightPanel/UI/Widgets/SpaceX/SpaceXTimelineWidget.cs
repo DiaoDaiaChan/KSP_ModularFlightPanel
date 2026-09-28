@@ -233,48 +233,75 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             ApplyText(_missionPhaseText, TextStyleRole.SecondaryValue, theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private double _dataMissionTime;
+        private string _dataClockStr;
+        private float _dataPipProgress;
+        private string _dataDynamicPhase;
+        private bool _dataHasVessel;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+            _dataHasVessel = true;
+
+            // 1. 任务时钟更新
+            _dataMissionTime = telemetry.MissionTime;
+            _dataClockStr = TelemetryTokenEngine.Evaluate(_clockToken, telemetry);
+
+            // 2. 动态计算时序光标进度 (0.0 .. 1.0)
+            _dataPipProgress = CalculateMissionProgress(telemetry);
+
+            // 3. 动态任务阶段文本推导
+            _dataDynamicPhase = ResolveMissionPhase(telemetry);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+            if (!_dataHasVessel) return;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
 
             // 1. 任务时钟更新 (T+ 00:08:03 格式)
-            double mTime = telemetry.MissionTime;
-            if (double.IsNaN(_lastCachedMissionTime) || Math.Abs(mTime - _lastCachedMissionTime) >= 0.5)
+            if (double.IsNaN(_lastCachedMissionTime) || Math.Abs(_dataMissionTime - _lastCachedMissionTime) >= 0.5)
             {
-                _lastCachedMissionTime = mTime;
-                string clockStr = TelemetryTokenEngine.Evaluate(_clockToken, telemetry);
-                if (clockStr != _lastClockStr && _missionClockText != null)
+                _lastCachedMissionTime = _dataMissionTime;
+                if (_dataClockStr != _lastClockStr && _missionClockText != null)
                 {
-                    _lastClockStr = clockStr;
-                    _missionClockText.text = clockStr;
+                    _lastClockStr = _dataClockStr;
+                    _missionClockText.text = _dataClockStr;
                 }
             }
 
             // 2. 动态计算时序光标进度 (0.0 .. 1.0)
-            float pipProgress = CalculateMissionProgress(telemetry);
-            if (Mathf.Abs(pipProgress - _lastCachedPipProgress) > 0.002f)
+            if (Mathf.Abs(_dataPipProgress - _lastCachedPipProgress) > 0.002f)
             {
-                _lastCachedPipProgress = pipProgress;
+                _lastCachedPipProgress = _dataPipProgress;
                 float s = CurrentDpiScale;
-                float pipX = (pipProgress - 0.5f) * ArcWidth * s;
-                float pipY = ComputeArcY(pipProgress) * s + 26f * s;
+                float pipX = (_dataPipProgress - 0.5f) * ArcWidth * s;
+                float pipY = ComputeArcY(_dataPipProgress) * s + 26f * s;
                 if (_progressPipRt != null)
                 {
                     _progressPipRt.anchoredPosition = new Vector2(pipX, pipY);
                 }
 
                 // 动态高亮已达成里程碑节点
-                UpdateMilestones(pipProgress);
+                UpdateMilestones(_dataPipProgress);
             }
 
             // 3. 动态任务阶段文本推导
-            string dynamicPhase = ResolveMissionPhase(telemetry);
-            if (dynamicPhase != _lastPhaseStr)
+            if (_dataDynamicPhase != _lastPhaseStr)
             {
-                _lastPhaseStr = dynamicPhase;
+                _lastPhaseStr = _dataDynamicPhase;
                 if (_missionPhaseText != null)
                 {
-                    _missionPhaseText.text = dynamicPhase;
+                    _missionPhaseText.text = _dataDynamicPhase;
                 }
             }
         }

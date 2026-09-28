@@ -824,57 +824,43 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (_tooltipSub != null) ApplyText(_tooltipSub, TextStyleRole.SecondaryValue, theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private bool _cachedHasVessel;
+        private string _cachedTitle;
+        private double _cachedTotalDv;
+        private bool _cachedIsLocked;
+        private int _cachedCurStage;
+        private float _cachedThrottle;
+        private double _cachedVerticalSpeed;
+        private float _cachedPropFrac;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
-            float s = CurrentDpiScale;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
+            base.OnDataHeartBeat(in context);
 
-            // 1. 读取当前物理尺寸并自适应布局 (仅在尺寸变化时才调用 ApplyLayout)
-            float currentW = RectTransform.rect.width > 10f ? RectTransform.rect.width : DefaultWidth * s;
-            float currentH = RectTransform.rect.height > 10f ? RectTransform.rect.height : DefaultHeight * s;
-            if (Mathf.Abs(currentW - _lastLayoutW) > 0.5f || Mathf.Abs(currentH - _lastLayoutH) > 0.5f)
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
             {
-                _lastLayoutW = currentW;
-                _lastLayoutH = currentH;
-                ApplyLayout(currentW, currentH);
+                _cachedHasVessel = false;
+                return;
             }
 
-            // 2. 动态标题与全级总 ΔV
-            string title = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-            if (Title != null && Title.Text != title)
-            {
-                Title.Text = title;
-            }
+            _cachedHasVessel = true;
+            _cachedTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, context.Telemetry);
 
-            double totalDv = TelemetryTokenEngine.EvaluateNumeric(_totalDvToken, telemetry);
-            if (double.IsNaN(totalDv)) totalDv = telemetry.TotalDeltaV;
-            if (Math.Abs(totalDv - _lastTotalDv) >= 0.5 || string.IsNullOrEmpty(_lastTotalDvStr))
-            {
-                _lastTotalDv = totalDv;
-                _lastTotalDvStr = $"{totalDv:N0} m/s";
-                SetTextIfChanged(_totalDvText, _lastTotalDvStr);
-            }
+            double totalDv = TelemetryTokenEngine.EvaluateNumeric(_totalDvToken, context.Telemetry);
+            if (double.IsNaN(totalDv)) totalDv = context.Telemetry.TotalDeltaV;
+            _cachedTotalDv = totalDv;
 
-            // 3. 分级安全锁与状态
-            bool isLocked = StockStageActionService.IsStagingLocked || telemetry.IsStageLocked;
-            if (isLocked != _lastStageLocked)
-            {
-                _lastStageLocked = isLocked;
-                string statusText = isLocked ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定") : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
-                SetTextIfChanged(_statusBadgeText, statusText);
-                _statusBadgeText.color = isLocked 
-                    ? style.GetTextColor(TextStyleRole.Warning, theme)
-                    : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
-            }
+            _cachedIsLocked = StockStageActionService.IsStagingLocked || context.Telemetry.IsStageLocked;
 
-            // 4. 读取分级列表
-            IReadOnlyList<StageDeltaVInfo> stages = telemetry.StageDeltaVList;
+            int curStage = context.Telemetry.CurrentStage;
+            _cachedCurStage = curStage;
+            _cachedThrottle = (float)context.Telemetry.Throttle;
+            _cachedVerticalSpeed = context.Telemetry.VerticalSpeed;
+            _cachedPropFrac = Mathf.Clamp01((float)context.Telemetry.StagePropellantFraction);
+
+            IReadOnlyList<StageDeltaVInfo> stages = context.Telemetry.StageDeltaVList;
             int stageCount = stages != null ? stages.Count : 0;
-            int curStage = telemetry.CurrentStage;
 
-            // 记录当前最高分级编号
             _highestStageNumber = curStage;
             if (stages != null && stages.Count > 0)
             {
@@ -884,12 +870,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
             }
 
-            // 获取当前有效图集
-            Texture stockAtlas = StockStageIconService.Provider?.StockAtlas;
-            bool isUsingStockAtlas = stockAtlas != null;
-            Texture currentAtlas = isUsingStockAtlas ? stockAtlas : StageIconAtlasGenerator.GetAtlas();
-
-            // 构建排序后的分级显示列表 (复用预分配列表，0 GC 排序)
             _reusableSortedStages.Clear();
             if (stageCount > 0)
             {
@@ -905,8 +885,62 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
             else
             {
-                _reusableSortedStages.Add(new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
+                _reusableSortedStages.Add(new StageDeltaVInfo(curStage, context.Telemetry.StageDeltaV, context.Telemetry.StageBurnTime, context.Telemetry.TWR, 310.0, true));
             }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _cachedTheme);
+            float s = CurrentDpiScale;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            // 1. 读取当前物理尺寸并自适应布局 (仅在尺寸变化时才调用 ApplyLayout)
+            float currentW = RectTransform.rect.width > 10f ? RectTransform.rect.width : DefaultWidth * s;
+            float currentH = RectTransform.rect.height > 10f ? RectTransform.rect.height : DefaultHeight * s;
+            if (Mathf.Abs(currentW - _lastLayoutW) > 0.5f || Mathf.Abs(currentH - _lastLayoutH) > 0.5f)
+            {
+                _lastLayoutW = currentW;
+                _lastLayoutH = currentH;
+                ApplyLayout(currentW, currentH);
+            }
+
+            // 2. 动态标题与全级总 ΔV
+            if (Title != null && Title.Text != _cachedTitle)
+            {
+                Title.Text = _cachedTitle;
+            }
+
+            double totalDv = _cachedTotalDv;
+            if (Math.Abs(totalDv - _lastTotalDv) >= 0.5 || string.IsNullOrEmpty(_lastTotalDvStr))
+            {
+                _lastTotalDv = totalDv;
+                _lastTotalDvStr = $"{totalDv:N0} m/s";
+                SetTextIfChanged(_totalDvText, _lastTotalDvStr);
+            }
+
+            // 3. 分级安全锁与状态
+            bool isLocked = _cachedIsLocked;
+            if (isLocked != _lastStageLocked)
+            {
+                _lastStageLocked = isLocked;
+                string statusText = isLocked ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定") : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
+                SetTextIfChanged(_statusBadgeText, statusText);
+                _statusBadgeText.color = isLocked 
+                    ? style.GetTextColor(TextStyleRole.Warning, theme)
+                    : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+            }
+
+            int curStage = _cachedCurStage;
+
+            // 获取当前有效图集
+            Texture stockAtlas = StockStageIconService.Provider?.StockAtlas;
+            bool isUsingStockAtlas = stockAtlas != null;
+            Texture currentAtlas = isUsingStockAtlas ? stockAtlas : StageIconAtlasGenerator.GetAtlas();
+
             List<StageDeltaVInfo> sortedStages = _reusableSortedStages;
 
             if (_lastActiveStage >= 0 && _lastActiveStage != curStage)
@@ -1005,7 +1039,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 item.StageNumber = stg.Stage;
                 bool isActive = stg.IsActive || (stg.Stage == curStage);
                 item.IsActiveStage = isActive;
-                item.IsBurning = isActive && (telemetry.Throttle > 0.01f || telemetry.VerticalSpeed > 1f || stg.BurnTime > 0.01);
+                item.IsBurning = isActive && (_cachedThrottle > 0.01f || _cachedVerticalSpeed > 1f || stg.BurnTime > 0.01);
 
                 if (!item.HasUserToggled)
                 {
@@ -1037,7 +1071,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
 
                 bool hasProp = isActive;
-                float propFrac = isActive ? Mathf.Clamp01(telemetry.StagePropellantFraction) : 0f;
+                float propFrac = isActive ? _cachedPropFrac : 0f;
 
                 item.TargetPropFrac = propFrac;
                 if (item.CurrentPropFrac < 0.001f && propFrac > 0.001f)

@@ -825,7 +825,7 @@ namespace ModularFlightPanel.Core
                 GUILayout.Label($"<color=#888888>{entry.ExecutionIndex}</color>", GUILayout.Width(24f));
 
                 string layerColor = entry.DrawOrder < 3 ? "#00E5FF" : (entry.DrawOrder < 8 ? "#34C759" : "#FFCC00");
-                GUILayout.Label($"<color={layerColor}>{I18n.TrFormat("PROF_LAYER_TAG_FMT", "L{0}", entry.DrawOrder)}</color>", GUILayout.Width(38f));
+                GUILayout.Label($"<color={layerColor}>{I18n.TrFormat("PROF_LAYER_TAG_FMT", entry.DrawOrder)}</color>", GUILayout.Width(38f));
 
                 string tierName = GetTierShortName(entry.Tier);
                 string tierColor = GetTierColor(entry.Tier);

@@ -1347,11 +1347,21 @@ namespace ModularFlightPanel.UI.Widgets
             _itemViews.Add(view);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private struct ButtonStateSnapshot
         {
+            public Texture Texture;
+            public bool HasTexture;
+            public bool Active;
+        }
+        private ButtonStateSnapshot[] _cachedButtonStates;
+        private bool _needsRepopulate;
+        private int _snapshotCount;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
             if (_isCollapsed) return;
 
-            // 节流刷新 (1 Hz 超低频)，兼顾极低开销与模组热插拔捕获
             float now = Time.unscaledTime;
             if (now - _lastSyncTime < 1.0f) return;
             _lastSyncTime = now;
@@ -1366,51 +1376,85 @@ namespace ModularFlightPanel.UI.Widgets
                     var modBtns = StockToolbarHook.GetModButtons(launcher);
                     int currentCount = (stockBtns != null ? stockBtns.Count : 0) + (modBtns != null ? modBtns.Count : 0);
 
-                    // 1. 动态自动适配：如果模组数量发生变化 (例如第三方 Mod 在飞行中动态注入或移除按钮)，实时自适应重构
+                    // 1. 动态自动适配：如果模组数量发生变化，标记自适应重构
                     if (currentCount != _cachedButtonCount)
                     {
-                        PopulateToolbarButtons(_contentRt, CurrentDpiScale);
+                        _needsRepopulate = true;
                         return;
                     }
 
-                    // 2. 贴图与状态实时热同步
-                    Color ledOn = _currentTheme.AccentPrimary;
-                    Color ledOff = WidgetStyleManager.Surface(SurfaceStyleRole.LedOff);
+                    if (_cachedButtonStates == null || _cachedButtonStates.Length < _itemViews.Count)
+                    {
+                        _cachedButtonStates = new ButtonStateSnapshot[_itemViews.Count];
+                    }
+                    _snapshotCount = _itemViews.Count;
 
                     for (int i = 0; i < _itemViews.Count; i++)
                     {
                         var view = _itemViews[i];
-                        if (view == null || view.KspButton == null) continue;
+                        if (view == null || view.KspButton == null)
+                        {
+                            _cachedButtonStates[i] = default;
+                            continue;
+                        }
 
                         var kspBtn = view.KspButton;
-
-                        // 同步可能延迟加载或由 ToolbarControl 切换的贴图
-                        if (kspBtn.sprite != null && kspBtn.sprite.texture != null)
+                        Texture tex = (kspBtn.sprite != null) ? kspBtn.sprite.texture : null;
+                        bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
+                        _cachedButtonStates[i] = new ButtonStateSnapshot
                         {
-                            if (view.IconRaw != null && view.IconRaw.texture != kspBtn.sprite.texture)
-                            {
-                                view.IconRaw.texture = kspBtn.sprite.texture;
-                                view.IconRaw.SetActiveSafe(true);
-                                if (view.LabelText != null) view.LabelText.SetActiveSafe(false);
-                            }
-                        }
-
-                        // 同步激活状态
-                        if (view.ActiveLed != null)
-                        {
-                            bool active = (kspBtn.toggleButton != null && kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
-                            if (view.IsActive != active)
-                            {
-                                view.IsActive = active;
-                                view.ActiveLed.SetColor(active ? ledOn : ledOff);
-                            }
-                        }
+                            Texture = tex,
+                            HasTexture = tex != null,
+                            Active = active
+                        };
                     }
                 }
             }
             catch (Exception ex)
             {
-                MFPLogger.WarnThrottled("ModernToolbar_SyncStates", $"Failed syncing KSP button states: {ex.Message}");
+                MFPLogger.WarnThrottled("ModernToolbar_Heartbeat", $"Failed heartbeat KSP button states: {ex.Message}");
+            }
+#endif
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (_isCollapsed) return;
+
+#if KSP_RUNTIME
+            if (_needsRepopulate)
+            {
+                _needsRepopulate = false;
+                PopulateToolbarButtons(_contentRt, CurrentDpiScale);
+                return;
+            }
+
+            if (_cachedButtonStates == null || _itemViews == null) return;
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme ?? WidgetStyleManager.Instance?.CurrentTheme);
+            Color ledOn = theme.AccentPrimary;
+            Color ledOff = WidgetStyleManager.Surface(SurfaceStyleRole.LedOff);
+
+            for (int i = 0; i < _snapshotCount && i < _itemViews.Count; i++)
+            {
+                var view = _itemViews[i];
+                if (view == null) continue;
+
+                var state = _cachedButtonStates[i];
+                if (state.HasTexture && view.IconRaw != null && view.IconRaw.texture != state.Texture)
+                {
+                    view.IconRaw.texture = state.Texture;
+                    view.IconRaw.SetActiveSafe(true);
+                    if (view.LabelText != null) view.LabelText.SetActiveSafe(false);
+                }
+
+                if (view.ActiveLed != null && view.IsActive != state.Active)
+                {
+                    view.IsActive = state.Active;
+                    view.ActiveLed.SetColor(state.Active ? ledOn : ledOff);
+                }
             }
 #endif
         }

@@ -61,12 +61,19 @@ namespace ModularFlightPanel.UI.Widgets
         private double _overrideWarning = double.NaN;
         private string _overrideLimitMode = null;
 
-        // 运行时脏检查缓存
+        // 运行时脏检查缓存与双轨快照
         private double _lastValue = double.NaN;
         private string _lastFormattedVal = string.Empty;
         private string _lastTitleStr = string.Empty;
         private string _lastUnitStr = string.Empty;
         private int _lastAlertState = -1; // 0=Normal, 1=Caution, 2=Warning
+
+        private string _pendingTitleStr = string.Empty;
+        private string _pendingUnitStr = string.Empty;
+        private string _pendingFormattedVal = string.Empty;
+        private float _pendingVisualFraction = 0f;
+        private int _pendingAlertState = 0;
+        private bool _hasPendingVisual = false;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -264,24 +271,15 @@ namespace ModularFlightPanel.UI.Widgets
             _meterMaterial.SetColor("_BorderColor", borderColor);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel) return;
 
             // 1. 动态标题与单位求值
-            string evalTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-            if (evalTitle != _lastTitleStr)
-            {
-                _lastTitleStr = evalTitle;
-                if (_titleText != null) _titleText.text = evalTitle;
-            }
-
-            string evalUnit = TelemetryTokenEngine.Evaluate(_unitTemplate, telemetry);
-            if (evalUnit != _lastUnitStr)
-            {
-                _lastUnitStr = evalUnit;
-                if (_unitText != null) _unitText.text = evalUnit;
-            }
+            _pendingTitleStr = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
+            _pendingUnitStr = TelemetryTokenEngine.Evaluate(_unitTemplate, telemetry);
 
             // 2. 数值通道求值
             double currentVal = TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
@@ -313,22 +311,49 @@ namespace ModularFlightPanel.UI.Widgets
             double warningThresh = GetEffectiveWarning();
             bool isWarning = isOverflow || (limitMode != "none" && currentVal >= warningThresh);
             bool isCaution = !isWarning && (currentVal >= cautionThresh);
-            int alertState = isWarning ? 2 : (isCaution ? 1 : 0);
+            _pendingAlertState = isWarning ? 2 : (isCaution ? 1 : 0);
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+            // 4. 几何与指针角度更新 (脏标记保护)
+            double deltaThreshold = Config != null && Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
+            if (double.IsNaN(_lastValue) || Math.Abs(currentVal - _lastValue) > deltaThreshold)
+            {
+                _lastValue = currentVal;
+                _pendingVisualFraction = visualFraction;
+                _pendingFormattedVal = FormatDisplayText(displayValue);
+                _hasPendingVisual = true;
+            }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (_pendingTitleStr != _lastTitleStr)
+            {
+                _lastTitleStr = _pendingTitleStr;
+                if (_titleText != null) _titleText.text = _pendingTitleStr;
+            }
+
+            if (_pendingUnitStr != _lastUnitStr)
+            {
+                _lastUnitStr = _pendingUnitStr;
+                if (_unitText != null) _unitText.text = _pendingUnitStr;
+            }
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 状态变更或初次运行时更新语义色彩
-            if (alertState != _lastAlertState)
+            if (_pendingAlertState != _lastAlertState)
             {
-                _lastAlertState = alertState;
-                if (isWarning)
+                _lastAlertState = _pendingAlertState;
+                if (_pendingAlertState == 2)
                 {
                     ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Danger, theme);
                     ApplyText(_valueText, TextStyleRole.Danger, theme);
                     if (_needleImage != null) _needleImage.color = WidgetStyleManager.Meter(MeterStyleRole.Danger, theme);
                 }
-                else if (isCaution)
+                else if (_pendingAlertState == 1)
                 {
                     ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Warning, theme);
                     ApplyText(_valueText, TextStyleRole.Warning, theme);
@@ -342,58 +367,40 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 4. 几何与指针角度更新 (脏标记保护)
-            double deltaThreshold = Config != null && Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (double.IsNaN(_lastValue) || Math.Abs(currentVal - _lastValue) > deltaThreshold)
+            if (_hasPendingVisual)
             {
-                _lastValue = currentVal;
+                _hasPendingVisual = false;
 
                 if (_meterMaterial != null)
                 {
-                    Color activeMeterCol = isWarning ? style.GetMeterColor(MeterStyleRole.Danger, theme)
-                        : (isCaution ? style.GetMeterColor(MeterStyleRole.Warning, theme)
+                    Color activeMeterCol = _lastAlertState == 2 ? style.GetMeterColor(MeterStyleRole.Danger, theme)
+                        : (_lastAlertState == 1 ? style.GetMeterColor(MeterStyleRole.Warning, theme)
                         : style.GetMeterColor(MeterStyleRole.Primary, theme));
 
-                    _meterMaterial.SetFloat("_FillAmount", visualFraction);
+                    _meterMaterial.SetFloat("_FillAmount", _pendingVisualFraction);
                     _meterMaterial.SetColor("_ActiveColor", activeMeterCol);
                 }
 
                 if (_needlePivot != null)
                 {
-                    float needleAngle = START_ANGLE - visualFraction * ANGLE_SPAN - 90f;
+                    float needleAngle = START_ANGLE - _pendingVisualFraction * ANGLE_SPAN - 90f;
                     _needlePivot.localEulerAngles = new Vector3(0f, 0f, needleAngle);
                 }
 
-                // 5. 更新中央数字显示
-                UpdateDisplayText(displayValue);
+                if (_pendingFormattedVal != _lastFormattedVal)
+                {
+                    _lastFormattedVal = _pendingFormattedVal;
+                    if (_valueText != null) _valueText.text = _pendingFormattedVal;
+                }
             }
         }
 
-        private void UpdateDisplayText(double val)
+        private static string FormatDisplayText(double val)
         {
-            string formatted;
-            if (Math.Abs(val) >= 10000.0)
-            {
-                formatted = $"{val / 1000.0:F1}k";
-            }
-            else if (Math.Abs(val) >= 100.0)
-            {
-                formatted = $"{val:F1}";
-            }
-            else if (Math.Abs(val) >= 10.0)
-            {
-                formatted = $"{val:F1}";
-            }
-            else
-            {
-                formatted = $"{val:F2}";
-            }
-
-            if (formatted != _lastFormattedVal)
-            {
-                _lastFormattedVal = formatted;
-                if (_valueText != null) _valueText.text = formatted;
-            }
+            if (Math.Abs(val) >= 10000.0) return $"{val / 1000.0:F1}k";
+            if (Math.Abs(val) >= 100.0) return $"{val:F1}";
+            if (Math.Abs(val) >= 10.0) return $"{val:F1}";
+            return $"{val:F2}";
         }
 
         public override void ApplyTheme(ThemeConfig theme)

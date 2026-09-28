@@ -262,6 +262,42 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastSatStr = string.Empty;
         private string _lastFuelTempStr = string.Empty;
 
+        // 双轨架构快照字段
+        private bool _cachedHasVessel;
+        private int _cachedDetectedEngineCount = 2;
+        private string _cachedTatStr = string.Empty;
+        private string _cachedModeStr = string.Empty;
+
+        private readonly string[] _cachedColN1Str = new string[MAX_ENGINES];
+        private readonly float[] _cachedColN1NeedleAngle = new float[MAX_ENGINES];
+        private readonly string[] _cachedColEgtStr = new string[MAX_ENGINES];
+        private readonly float[] _cachedColEgtNeedleAngle = new float[MAX_ENGINES];
+        private readonly string[] _cachedColN2Str = new string[MAX_ENGINES];
+        private readonly float[] _cachedColN2NeedleAngle = new float[MAX_ENGINES];
+        private readonly string[] _cachedColFfStr = new string[MAX_ENGINES];
+        private readonly string[] _cachedColOilPStr = new string[MAX_ENGINES];
+        private readonly float[] _cachedColOilPFrac = new float[MAX_ENGINES];
+        private readonly string[] _cachedColOilTStr = new string[MAX_ENGINES];
+        private readonly float[] _cachedColOilTFrac = new float[MAX_ENGINES];
+        private readonly string[] _cachedColOilQStr = new string[MAX_ENGINES];
+        private readonly string[] _cachedColVibStr = new string[MAX_ENGINES];
+        private readonly float[] _cachedColVibFrac = new float[MAX_ENGINES];
+
+        private string _cachedGearStr = string.Empty;
+        private string _cachedFlapStr = string.Empty;
+        private float _cachedFlapRatio;
+        private string _cachedStabStr = string.Empty;
+        private float _cachedStabFrac;
+        private string _cachedRudderStr = string.Empty;
+        private float _cachedRudderFrac;
+        private string _cachedCabAltStr = string.Empty;
+        private string _cachedCabRateStr = string.Empty;
+        private string _cachedDeltaPStr = string.Empty;
+        private string _cachedGrossWtStr = string.Empty;
+        private string _cachedTotalFuelStr = string.Empty;
+        private string _cachedSatStr = string.Empty;
+        private string _cachedFuelTempStr = string.Empty;
+
         private static readonly string[] EngAliases = new[] { "ENGINES", "ENG" };
         private static readonly string[] OilPAliases = new[] { "OILP", "OIL_P" };
         private static readonly string[] OilTAliases = new[] { "OILT", "OIL_T" };
@@ -1173,83 +1209,70 @@ namespace ModularFlightPanel.UI.Widgets
             if (dial.RevText != null) ApplyText(dial.RevText, TextStyleRole.Accent, theme);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            float s = CurrentDpiScale;
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
 
-            // 1. 动态发动机数量感知与自动长宽比重排
+            _cachedHasVessel = true;
+
+            // 1. 动态发动机数量感知
             if (_configuredEngineCount == 0)
             {
-                int active = telemetry.ActiveEngines;
-                int stage = telemetry.TotalStageEngines;
+                int active = context.Telemetry.ActiveEngines;
+                int stage = context.Telemetry.TotalStageEngines;
                 int detected = active > 0 ? active : (stage > 0 ? stage : 2);
-                detected = Mathf.Clamp(detected, 1, MAX_ENGINES);
-                if (detected != _currentEngineCount)
-                {
-                    LayoutEngineColumns(detected, s);
-                }
+                _cachedDetectedEngineCount = Mathf.Clamp(detected, 1, MAX_ENGINES);
             }
 
             // 2. 顶端 TAT 与推力模式 (真实大气环境总温与油门解算)
-            string evalTat = TelemetryTokenEngine.Evaluate(_tatTemplate, telemetry);
+            string evalTat = TelemetryTokenEngine.Evaluate(_tatTemplate, context.Telemetry);
             if (string.IsNullOrEmpty(evalTat) || evalTat.Contains("{"))
             {
-                double temp = TelemetryTokenEngine.EvaluateNumeric("{TEMP}", telemetry);
-                if (double.IsNaN(temp)) temp = telemetry.CabinTemp;
+                double temp = TelemetryTokenEngine.EvaluateNumeric("{TEMP}", context.Telemetry);
+                if (double.IsNaN(temp)) temp = context.Telemetry.CabinTemp;
                 evalTat = string.Format(CultureInfo.InvariantCulture, "TAT {0:+0;-0;+0}c", double.IsNaN(temp) ? 0.0 : temp);
             }
-            if (evalTat != _lastTatStr)
-            {
-                _lastTatStr = evalTat;
-                if (_tatText != null) _tatText.text = evalTat;
-            }
+            _cachedTatStr = evalTat;
 
-            string evalMode = TelemetryTokenEngine.Evaluate(_thrustModeTemplate, telemetry);
+            string evalMode = TelemetryTokenEngine.Evaluate(_thrustModeTemplate, context.Telemetry);
             if (string.IsNullOrEmpty(evalMode) || evalMode.Contains("{"))
             {
-                evalMode = telemetry.Throttle > 0.85f ? "D-TO" : (telemetry.VerticalSpeed > 6.0 ? "CLB" : "CRZ");
+                evalMode = context.Telemetry.Throttle > 0.85f ? "D-TO" : (context.Telemetry.VerticalSpeed > 6.0 ? "CLB" : "CRZ");
             }
-            if (evalMode != _lastModeStr)
-            {
-                _lastModeStr = evalMode;
-                if (_thrustModeText != null) _thrustModeText.text = evalMode;
-            }
+            _cachedModeStr = evalMode;
 
             // 3. 多发主发动机真实输入接入
-            double baseN1 = TelemetryTokenEngine.EvaluateNumeric(_n1Token, telemetry);
-            double baseN2 = TelemetryTokenEngine.EvaluateNumeric(_n2Token, telemetry);
-            double baseEgt = TelemetryTokenEngine.EvaluateNumeric(_egtToken, telemetry);
-            double baseFf = TelemetryTokenEngine.EvaluateNumeric(_ffToken, telemetry);
-            double baseOilP = TelemetryTokenEngine.EvaluateNumeric(_oilPToken, telemetry);
-            double baseOilT = TelemetryTokenEngine.EvaluateNumeric(_oilTToken, telemetry);
-            double baseOilQ = TelemetryTokenEngine.EvaluateNumeric(_oilQToken, telemetry);
-            double baseVib = TelemetryTokenEngine.EvaluateNumeric(_vibToken, telemetry);
+            double baseN1 = TelemetryTokenEngine.EvaluateNumeric(_n1Token, context.Telemetry);
+            double baseN2 = TelemetryTokenEngine.EvaluateNumeric(_n2Token, context.Telemetry);
+            double baseEgt = TelemetryTokenEngine.EvaluateNumeric(_egtToken, context.Telemetry);
+            double baseFf = TelemetryTokenEngine.EvaluateNumeric(_ffToken, context.Telemetry);
+            double baseOilP = TelemetryTokenEngine.EvaluateNumeric(_oilPToken, context.Telemetry);
+            double baseOilT = TelemetryTokenEngine.EvaluateNumeric(_oilTToken, context.Telemetry);
+            double baseOilQ = TelemetryTokenEngine.EvaluateNumeric(_oilQToken, context.Telemetry);
+            double baseVib = TelemetryTokenEngine.EvaluateNumeric(_vibToken, context.Telemetry);
 
             // 真实物理遥测回退解算
-            if (double.IsNaN(baseN1)) baseN1 = 20.0 + telemetry.Throttle * 80.0;
-            if (double.IsNaN(baseN2)) baseN2 = 45.0 + telemetry.Throttle * 53.0;
-            if (double.IsNaN(baseEgt)) baseEgt = 320.0 + telemetry.Throttle * 410.0;
-            if (double.IsNaN(baseFf)) baseFf = telemetry.Throttle * 4.8;
-            if (double.IsNaN(baseOilP)) baseOilP = telemetry.Throttle > 0.05f ? 48.0 + telemetry.Throttle * 12.0 : 25.0;
-            if (double.IsNaN(baseOilT)) baseOilT = 55.0 + telemetry.Throttle * 30.0;
+            if (double.IsNaN(baseN1)) baseN1 = 20.0 + context.Telemetry.Throttle * 80.0;
+            if (double.IsNaN(baseN2)) baseN2 = 45.0 + context.Telemetry.Throttle * 53.0;
+            if (double.IsNaN(baseEgt)) baseEgt = 320.0 + context.Telemetry.Throttle * 410.0;
+            if (double.IsNaN(baseFf)) baseFf = context.Telemetry.Throttle * 4.8;
+            if (double.IsNaN(baseOilP)) baseOilP = context.Telemetry.Throttle > 0.05f ? 48.0 + context.Telemetry.Throttle * 12.0 : 25.0;
+            if (double.IsNaN(baseOilT)) baseOilT = 55.0 + context.Telemetry.Throttle * 30.0;
             if (double.IsNaN(baseOilQ)) baseOilQ = 18.0;
             if (double.IsNaN(baseVib))
             {
-                double gShock = Math.Max(0.0, telemetry.GForce - 1.0) * 0.2;
-                baseVib = 0.2 + telemetry.Throttle * 0.4 + gShock;
+                double gShock = Math.Max(0.0, context.Telemetry.GForce - 1.0) * 0.2;
+                baseVib = 0.2 + context.Telemetry.Throttle * 0.4 + gShock;
             }
 
-            float tapeHalfH = 9f * s;
-
-            for (int i = 0; i < _currentEngineCount; i++)
+            for (int i = 0; i < MAX_ENGINES; i++)
             {
-                EngineColumnUI col = _engineCols[i];
-                if (col == null) continue;
-
                 float vFactor = s_Variances[i % s_Variances.Length];
                 double curN1 = Math.Max(0.0, baseN1 + vFactor * 0.8);
                 double curN2 = Math.Max(0.0, baseN2 + vFactor * 0.5);
@@ -1260,139 +1283,213 @@ namespace ModularFlightPanel.UI.Widgets
                 double curOilQ = Math.Max(0.0, baseOilQ);
                 double curVib = Math.Max(0.0, baseVib + vFactor * 0.02);
 
-                // N1 仪表 (0% ~ 105% 映射至 0° ~ -215°)
-                if (double.IsNaN(col.LastN1Val) || Math.Abs(curN1 - col.LastN1Val) > 0.05)
+                _cachedColN1Str[i] = curN1.ToString("0.0", CultureInfo.InvariantCulture);
+                float n1Frac = Mathf.Clamp01((float)(curN1 / 105.0));
+                _cachedColN1NeedleAngle[i] = -n1Frac * 215f;
+
+                _cachedColEgtStr[i] = Mathf.RoundToInt((float)curEgt).ToString(CultureInfo.InvariantCulture);
+                float egtFrac = Mathf.Clamp01((float)(curEgt / 800.0));
+                _cachedColEgtNeedleAngle[i] = -egtFrac * 215f;
+
+                _cachedColN2Str[i] = curN2.ToString("0.0", CultureInfo.InvariantCulture);
+                float n2Frac = Mathf.Clamp01((float)(curN2 / 105.0));
+                _cachedColN2NeedleAngle[i] = -n2Frac * 215f;
+
+                _cachedColFfStr[i] = curFf.ToString("0.0", CultureInfo.InvariantCulture);
+
+                _cachedColOilPStr[i] = Mathf.RoundToInt((float)curOilP).ToString(CultureInfo.InvariantCulture);
+                _cachedColOilPFrac[i] = Mathf.Clamp01((float)(curOilP / 80.0));
+
+                _cachedColOilTStr[i] = Mathf.RoundToInt((float)curOilT).ToString(CultureInfo.InvariantCulture);
+                _cachedColOilTFrac[i] = Mathf.Clamp01((float)(curOilT / 120.0));
+
+                _cachedColOilQStr[i] = Mathf.RoundToInt((float)curOilQ).ToString(CultureInfo.InvariantCulture);
+
+                _cachedColVibStr[i] = curVib.ToString("0.0", CultureInfo.InvariantCulture);
+                _cachedColVibFrac[i] = Mathf.Clamp01((float)(curVib / 4.0));
+            }
+
+            // 4. 右侧起落架状态 (GEAR)
+            string evalGear = TelemetryTokenEngine.Evaluate(_gearToken, context.Telemetry);
+            if (string.IsNullOrEmpty(evalGear) || evalGear.Contains("{"))
+            {
+                evalGear = (context.Telemetry.AltitudeAGL < 80.0 || context.Telemetry.VerticalSpeed < -1.0) ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
+            }
+            _cachedGearStr = evalGear;
+
+            // 5. 右侧襟翼 (FLAPS)
+            string evalFlap = TelemetryTokenEngine.Evaluate(_flapToken, context.Telemetry);
+            if (string.IsNullOrEmpty(evalFlap) || evalFlap.Contains("{"))
+            {
+                evalFlap = context.Telemetry.SurfaceSpeed < 70.0 ? "20" : (context.Telemetry.SurfaceSpeed < 90.0 ? "5" : "0");
+            }
+            _cachedFlapStr = evalFlap;
+            float flapRatio = 0f;
+            if (evalFlap == "1") flapRatio = 0.2f;
+            else if (evalFlap == "5") flapRatio = 0.4f;
+            else if (evalFlap == "15") flapRatio = 0.6f;
+            else if (evalFlap == "20") flapRatio = 0.8f;
+            else if (evalFlap == "30") flapRatio = 1.0f;
+            _cachedFlapRatio = flapRatio;
+
+            // 6. 安定面配平 (STAB TRIM)
+            double pitchTrim = TelemetryTokenEngine.EvaluateNumeric(_stabToken, context.Telemetry);
+            if (double.IsNaN(pitchTrim)) pitchTrim = context.Telemetry.PitchTrim;
+            if (double.IsNaN(pitchTrim)) pitchTrim = 0.0;
+
+            double stabUnits = 10.25 + pitchTrim * 4.0;
+            _cachedStabStr = stabUnits.ToString("0.00", CultureInfo.InvariantCulture);
+            _cachedStabFrac = Mathf.Clamp01((float)((stabUnits - 4.0) / 12.0));
+
+            // 7. 方向舵配平 (RUDDER TRIM)
+            double yawTrim = TelemetryTokenEngine.EvaluateNumeric(_rudderToken, context.Telemetry);
+            if (double.IsNaN(yawTrim)) yawTrim = context.Telemetry.YawTrim;
+            if (double.IsNaN(yawTrim)) yawTrim = 0.0;
+
+            double rudderDeg = yawTrim * 10.0;
+            _cachedRudderStr = rudderDeg.ToString("0.0", CultureInfo.InvariantCulture);
+            _cachedRudderFrac = Mathf.Clamp((float)(rudderDeg / 10.0), -1f, 1f);
+
+            // 8. ECS 客舱增压系统
+            double cabAlt = context.Telemetry.AltitudeASL * 3.28084 * 0.35;
+            if (cabAlt < 0.0) cabAlt = 0.0;
+            if (cabAlt > 8000.0) cabAlt = 8000.0;
+            _cachedCabAltStr = Mathf.RoundToInt((float)cabAlt).ToString(CultureInfo.InvariantCulture);
+
+            double cabRate = context.Telemetry.VerticalSpeed * 196.85 * 0.25;
+            _cachedCabRateStr = string.Format(CultureInfo.InvariantCulture, "{0:+0;-0;0}", Mathf.RoundToInt((float)cabRate));
+
+            double deltaP = Math.Max(0.0, (14.7 - (context.Telemetry.AtmosphericPressure * 14.7)) * 0.55);
+            _cachedDeltaPStr = deltaP.ToString("0.0", CultureInfo.InvariantCulture);
+
+            // 9. 全机总重与燃油统计 (GROSS WT / TOTAL FUEL)
+            double fuelFrac = context.Telemetry.StagePropellantFraction;
+            double fuelLbs = 102.6 * (fuelFrac > 0.001 ? fuelFrac : 0.85);
+            double grossWtLbs = 210.0 + fuelLbs;
+            _cachedGrossWtStr = grossWtLbs.ToString("0.0", CultureInfo.InvariantCulture);
+            _cachedTotalFuelStr = fuelLbs.ToString("0.0", CultureInfo.InvariantCulture);
+
+            double satVal = TelemetryTokenEngine.EvaluateNumeric("{TEMP:ATM}", context.Telemetry);
+            if (double.IsNaN(satVal)) satVal = context.Telemetry.CabinTemp;
+            _cachedSatStr = string.Format(CultureInfo.InvariantCulture, "SAT {0:+0;-0;0}", double.IsNaN(satVal) ? 0.0 : satVal);
+
+            double fuelTempVal = satVal + 5.0;
+            _cachedFuelTempStr = string.Format(CultureInfo.InvariantCulture, "FUEL TEMP {0:+0;-0;0}", fuelTempVal);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+            float s = CurrentDpiScale;
+
+            // 1. 动态发动机数量感知与自动长宽比重排
+            if (_configuredEngineCount == 0 && _cachedDetectedEngineCount != _currentEngineCount)
+            {
+                LayoutEngineColumns(_cachedDetectedEngineCount, s);
+            }
+
+            // 2. 顶端 TAT 与推力模式
+            if (_cachedTatStr != _lastTatStr)
+            {
+                _lastTatStr = _cachedTatStr;
+                if (_tatText != null) _tatText.text = _cachedTatStr;
+            }
+
+            if (_cachedModeStr != _lastModeStr)
+            {
+                _lastModeStr = _cachedModeStr;
+                if (_thrustModeText != null) _thrustModeText.text = _cachedModeStr;
+            }
+
+            // 3. 多发主发动机仪表绘制
+            float tapeHalfH = 9f * s;
+            for (int i = 0; i < _currentEngineCount; i++)
+            {
+                EngineColumnUI col = _engineCols[i];
+                if (col == null) continue;
+
+                if (_cachedColN1Str[i] != col.LastN1Str)
                 {
-                    col.LastN1Val = curN1;
-                    string n1Str = curN1.ToString("0.0", CultureInfo.InvariantCulture);
-                    if (n1Str != col.LastN1Str)
-                    {
-                        col.LastN1Str = n1Str;
-                        if (col.N1Dial.BoxText != null) col.N1Dial.BoxText.text = n1Str;
-                    }
-                    float frac = Mathf.Clamp01((float)(curN1 / 105.0));
-                    float needleAngle = -frac * 215f;
-                    if (col.N1Dial.NeedlePivot != null)
-                        col.N1Dial.NeedlePivot.localEulerAngles = new Vector3(0f, 0f, needleAngle);
+                    col.LastN1Str = _cachedColN1Str[i];
+                    if (col.N1Dial.BoxText != null) col.N1Dial.BoxText.text = _cachedColN1Str[i];
+                }
+                if (col.N1Dial.NeedlePivot != null)
+                    col.N1Dial.NeedlePivot.localEulerAngles = new Vector3(0f, 0f, _cachedColN1NeedleAngle[i]);
+
+                if (_cachedColEgtStr[i] != col.LastEgtStr)
+                {
+                    col.LastEgtStr = _cachedColEgtStr[i];
+                    if (col.EgtDial.BoxText != null) col.EgtDial.BoxText.text = _cachedColEgtStr[i];
+                }
+                if (col.EgtDial.NeedlePivot != null)
+                    col.EgtDial.NeedlePivot.localEulerAngles = new Vector3(0f, 0f, _cachedColEgtNeedleAngle[i]);
+
+                if (_cachedColN2Str[i] != col.LastN2Str)
+                {
+                    col.LastN2Str = _cachedColN2Str[i];
+                    if (col.N2Dial.BoxText != null) col.N2Dial.BoxText.text = _cachedColN2Str[i];
+                }
+                if (col.N2Dial.NeedlePivot != null)
+                    col.N2Dial.NeedlePivot.localEulerAngles = new Vector3(0f, 0f, _cachedColN2NeedleAngle[i]);
+
+                if (_cachedColFfStr[i] != col.LastFfStr)
+                {
+                    col.LastFfStr = _cachedColFfStr[i];
+                    if (col.FfText != null) col.FfText.text = _cachedColFfStr[i];
                 }
 
-                // EGT 仪表 (0 ~ 800 °C 映射至 0° ~ -215°)
-                if (double.IsNaN(col.LastEgtVal) || Math.Abs(curEgt - col.LastEgtVal) > 0.5)
+                if (_cachedColOilPStr[i] != col.LastOilPStr)
                 {
-                    col.LastEgtVal = curEgt;
-                    string egtStr = Mathf.RoundToInt((float)curEgt).ToString(CultureInfo.InvariantCulture);
-                    if (egtStr != col.LastEgtStr)
-                    {
-                        col.LastEgtStr = egtStr;
-                        if (col.EgtDial.BoxText != null) col.EgtDial.BoxText.text = egtStr;
-                    }
-                    float frac = Mathf.Clamp01((float)(curEgt / 800.0));
-                    float needleAngle = -frac * 215f;
-                    if (col.EgtDial.NeedlePivot != null)
-                        col.EgtDial.NeedlePivot.localEulerAngles = new Vector3(0f, 0f, needleAngle);
+                    col.LastOilPStr = _cachedColOilPStr[i];
+                    if (col.OilPText != null) col.OilPText.text = _cachedColOilPStr[i];
+                }
+                if (col.OilPPointerPivot != null)
+                {
+                    float ptrY = (_cachedColOilPFrac[i] - 0.5f) * tapeHalfH * 2f;
+                    col.OilPPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
                 }
 
-                // N2 仪表 (0% ~ 105% 映射至 0° ~ -215°)
-                if (double.IsNaN(col.LastN2Val) || Math.Abs(curN2 - col.LastN2Val) > 0.05)
+                if (_cachedColOilTStr[i] != col.LastOilTStr)
                 {
-                    col.LastN2Val = curN2;
-                    string n2Str = curN2.ToString("0.0", CultureInfo.InvariantCulture);
-                    if (n2Str != col.LastN2Str)
-                    {
-                        col.LastN2Str = n2Str;
-                        if (col.N2Dial.BoxText != null) col.N2Dial.BoxText.text = n2Str;
-                    }
-                    float frac = Mathf.Clamp01((float)(curN2 / 105.0));
-                    float needleAngle = -frac * 215f;
-                    if (col.N2Dial.NeedlePivot != null)
-                        col.N2Dial.NeedlePivot.localEulerAngles = new Vector3(0f, 0f, needleAngle);
+                    col.LastOilTStr = _cachedColOilTStr[i];
+                    if (col.OilTText != null) col.OilTText.text = _cachedColOilTStr[i];
+                }
+                if (col.OilTPointerPivot != null)
+                {
+                    float ptrY = (_cachedColOilTFrac[i] - 0.5f) * tapeHalfH * 2f;
+                    col.OilTPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
                 }
 
-                // FF 燃油流量 (0.0 ~ 10.0)
-                if (double.IsNaN(col.LastFfVal) || Math.Abs(curFf - col.LastFfVal) > 0.05)
+                if (_cachedColOilQStr[i] != col.LastOilQStr)
                 {
-                    col.LastFfVal = curFf;
-                    string ffStr = curFf.ToString("0.0", CultureInfo.InvariantCulture);
-                    if (ffStr != col.LastFfStr)
-                    {
-                        col.LastFfStr = ffStr;
-                        if (col.FfText != null) col.FfText.text = ffStr;
-                    }
+                    col.LastOilQStr = _cachedColOilQStr[i];
+                    if (col.OilQText != null) col.OilQText.text = _cachedColOilQStr[i];
                 }
 
-                // OIL PRESS (0 ~ 100 psi)
-                if (double.IsNaN(col.LastOilPVal) || Math.Abs(curOilP - col.LastOilPVal) > 0.5)
+                if (_cachedColVibStr[i] != col.LastVibStr)
                 {
-                    col.LastOilPVal = curOilP;
-                    string opStr = Mathf.RoundToInt((float)curOilP).ToString(CultureInfo.InvariantCulture);
-                    if (opStr != col.LastOilPStr)
-                    {
-                        col.LastOilPStr = opStr;
-                        if (col.OilPText != null) col.OilPText.text = opStr;
-                    }
-                    float frac = Mathf.Clamp01((float)(curOilP / 80.0));
-                    float ptrY = (frac - 0.5f) * tapeHalfH * 2f;
-                    if (col.OilPPointerPivot != null)
-                        col.OilPPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    col.LastVibStr = _cachedColVibStr[i];
+                    if (col.VibText != null) col.VibText.text = _cachedColVibStr[i];
                 }
-
-                // OIL TEMP (0 ~ 150 °C)
-                if (double.IsNaN(col.LastOilTVal) || Math.Abs(curOilT - col.LastOilTVal) > 0.5)
+                if (col.VibPointerPivot != null)
                 {
-                    col.LastOilTVal = curOilT;
-                    string otStr = Mathf.RoundToInt((float)curOilT).ToString(CultureInfo.InvariantCulture);
-                    if (otStr != col.LastOilTStr)
-                    {
-                        col.LastOilTStr = otStr;
-                        if (col.OilTText != null) col.OilTText.text = otStr;
-                    }
-                    float frac = Mathf.Clamp01((float)(curOilT / 120.0));
-                    float ptrY = (frac - 0.5f) * tapeHalfH * 2f;
-                    if (col.OilTPointerPivot != null)
-                        col.OilTPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
-                }
-
-                // OIL QTY (0 ~ 25)
-                if (double.IsNaN(col.LastOilQVal) || Math.Abs(curOilQ - col.LastOilQVal) > 0.1)
-                {
-                    col.LastOilQVal = curOilQ;
-                    string oqStr = Mathf.RoundToInt((float)curOilQ).ToString(CultureInfo.InvariantCulture);
-                    if (oqStr != col.LastOilQStr)
-                    {
-                        col.LastOilQStr = oqStr;
-                        if (col.OilQText != null) col.OilQText.text = oqStr;
-                    }
-                }
-
-                // VIB (0.0 ~ 5.0)
-                if (double.IsNaN(col.LastVibVal) || Math.Abs(curVib - col.LastVibVal) > 0.05)
-                {
-                    col.LastVibVal = curVib;
-                    string vibStr = curVib.ToString("0.0", CultureInfo.InvariantCulture);
-                    if (vibStr != col.LastVibStr)
-                    {
-                        col.LastVibStr = vibStr;
-                        if (col.VibText != null) col.VibText.text = vibStr;
-                    }
-                    float frac = Mathf.Clamp01((float)(curVib / 4.0));
-                    float ptrY = (frac - 0.5f) * tapeHalfH * 2f;
-                    if (col.VibPointerPivot != null)
-                        col.VibPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    float ptrY = (_cachedColVibFrac[i] - 0.5f) * tapeHalfH * 2f;
+                    col.VibPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
                 }
             }
 
             // 4. 右侧起落架状态 (GEAR)
-            string evalGear = TelemetryTokenEngine.Evaluate(_gearToken, telemetry);
-            if (string.IsNullOrEmpty(evalGear) || evalGear.Contains("{"))
+            if (_cachedGearStr != _lastGearStr)
             {
-                evalGear = (telemetry.AltitudeAGL < 80.0 || telemetry.VerticalSpeed < -1.0) ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
-            }
-            if (evalGear != _lastGearStr)
-            {
-                _lastGearStr = evalGear;
-                if (_gearStatusText != null) _gearStatusText.text = evalGear;
-                if (evalGear.IndexOf("DOWN", StringComparison.OrdinalIgnoreCase) >= 0
-                    || evalGear.IndexOf(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase) >= 0)
+                _lastGearStr = _cachedGearStr;
+                if (_gearStatusText != null) _gearStatusText.text = _cachedGearStr;
+                if (_cachedGearStr.IndexOf("DOWN", StringComparison.OrdinalIgnoreCase) >= 0
+                    || _cachedGearStr.IndexOf(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     if (_gearBoxOutline != null) _gearBoxOutline.effectColor = style.GetTextColor(TextStyleRole.Accent, theme);
                     if (_gearStatusText != null) ApplyText(_gearStatusText, TextStyleRole.Accent, theme);
@@ -1405,125 +1502,81 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 右侧襟翼 (FLAPS)
-            string evalFlap = TelemetryTokenEngine.Evaluate(_flapToken, telemetry);
-            if (string.IsNullOrEmpty(evalFlap) || evalFlap.Contains("{"))
+            if (_cachedFlapStr != _lastFlapStr)
             {
-                evalFlap = telemetry.SurfaceSpeed < 70.0 ? "20" : (telemetry.SurfaceSpeed < 90.0 ? "5" : "0");
-            }
-            if (evalFlap != _lastFlapStr)
-            {
-                _lastFlapStr = evalFlap;
-                if (_flapPositionText != null) _flapPositionText.text = evalFlap;
-                float flapRatio = 0f;
-                if (evalFlap == "1") flapRatio = 0.2f;
-                else if (evalFlap == "5") flapRatio = 0.4f;
-                else if (evalFlap == "15") flapRatio = 0.6f;
-                else if (evalFlap == "20") flapRatio = 0.8f;
-                else if (evalFlap == "30") flapRatio = 1.0f;
-
+                _lastFlapStr = _cachedFlapStr;
+                if (_flapPositionText != null) _flapPositionText.text = _cachedFlapStr;
                 float travelH = 36f * s;
-                float ptrY = -flapRatio * travelH;
+                float ptrY = -_cachedFlapRatio * travelH;
                 if (_flapPointerPivot != null)
                     _flapPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
             }
 
             // 6. 安定面配平 (STAB TRIM)
-            double pitchTrim = TelemetryTokenEngine.EvaluateNumeric(_stabToken, telemetry);
-            if (double.IsNaN(pitchTrim)) pitchTrim = telemetry.PitchTrim;
-            if (double.IsNaN(pitchTrim)) pitchTrim = 0.0;
-
-            double stabUnits = 10.25 + pitchTrim * 4.0;
-            string stabStr = stabUnits.ToString("0.00", CultureInfo.InvariantCulture);
-            if (stabStr != _lastStabStr)
+            if (_cachedStabStr != _lastStabStr)
             {
-                _lastStabStr = stabStr;
-                if (_stabValueText != null) _stabValueText.text = stabStr;
-                if (_stabTargetText != null) _stabTargetText.text = stabStr;
+                _lastStabStr = _cachedStabStr;
+                if (_stabValueText != null) _stabValueText.text = _cachedStabStr;
+                if (_stabTargetText != null) _stabTargetText.text = _cachedStabStr;
 
-                float stabFrac = Mathf.Clamp01((float)((stabUnits - 4.0) / 12.0));
-                float ptrY = (stabFrac - 0.5f) * 30f * s;
+                float ptrY = (_cachedStabFrac - 0.5f) * 30f * s;
                 if (_stabPointerRt != null)
                     _stabPointerRt.anchoredPosition = new Vector2(0f, ptrY);
             }
 
             // 7. 方向舵配平 (RUDDER TRIM)
-            double yawTrim = TelemetryTokenEngine.EvaluateNumeric(_rudderToken, telemetry);
-            if (double.IsNaN(yawTrim)) yawTrim = telemetry.YawTrim;
-            if (double.IsNaN(yawTrim)) yawTrim = 0.0;
-
-            double rudderDeg = yawTrim * 10.0;
-            string rudStr = rudderDeg.ToString("0.0", CultureInfo.InvariantCulture);
-            if (rudStr != _lastRudderStr)
+            if (_cachedRudderStr != _lastRudderStr)
             {
-                _lastRudderStr = rudStr;
-                if (_rudderValueText != null) _rudderValueText.text = rudStr;
+                _lastRudderStr = _cachedRudderStr;
+                if (_rudderValueText != null) _rudderValueText.text = _cachedRudderStr;
 
-                float rudFrac = Mathf.Clamp((float)(rudderDeg / 10.0), -1f, 1f);
-                float ptrX = rudFrac * 14f * s;
+                float ptrX = _cachedRudderFrac * 14f * s;
                 if (_rudderPointerRt != null)
                     _rudderPointerRt.anchoredPosition = new Vector2(ptrX, 4f * s);
             }
 
             // 8. ECS 客舱增压系统
-            double cabAlt = telemetry.AltitudeASL * 3.28084 * 0.35;
-            if (cabAlt < 0.0) cabAlt = 0.0;
-            if (cabAlt > 8000.0) cabAlt = 8000.0;
-            string cabAltStr = Mathf.RoundToInt((float)cabAlt).ToString(CultureInfo.InvariantCulture);
-            if (cabAltStr != _lastCabAltStr)
+            if (_cachedCabAltStr != _lastCabAltStr)
             {
-                _lastCabAltStr = cabAltStr;
-                if (_cabAltValue != null) _cabAltValue.text = cabAltStr;
+                _lastCabAltStr = _cachedCabAltStr;
+                if (_cabAltValue != null) _cabAltValue.text = _cachedCabAltStr;
             }
 
-            double cabRate = telemetry.VerticalSpeed * 196.85 * 0.25;
-            string cabRateStr = string.Format(CultureInfo.InvariantCulture, "{0:+0;-0;0}", Mathf.RoundToInt((float)cabRate));
-            if (cabRateStr != _lastCabRateStr)
+            if (_cachedCabRateStr != _lastCabRateStr)
             {
-                _lastCabRateStr = cabRateStr;
-                if (_cabRateValue != null) _cabRateValue.text = cabRateStr;
+                _lastCabRateStr = _cachedCabRateStr;
+                if (_cabRateValue != null) _cabRateValue.text = _cachedCabRateStr;
             }
 
-            double deltaP = Math.Max(0.0, (14.7 - (telemetry.AtmosphericPressure * 14.7)) * 0.55);
-            string deltaPStr = deltaP.ToString("0.0", CultureInfo.InvariantCulture);
-            if (deltaPStr != _lastDeltaPStr)
+            if (_cachedDeltaPStr != _lastDeltaPStr)
             {
-                _lastDeltaPStr = deltaPStr;
-                if (_deltaPValue != null) _deltaPValue.text = deltaPStr;
+                _lastDeltaPStr = _cachedDeltaPStr;
+                if (_deltaPValue != null) _deltaPValue.text = _cachedDeltaPStr;
             }
 
             // 9. 全机总重与燃油统计 (GROSS WT / TOTAL FUEL)
-            double fuelFrac = telemetry.StagePropellantFraction;
-            double fuelLbs = 102.6 * (fuelFrac > 0.001 ? fuelFrac : 0.85);
-            double grossWtLbs = 210.0 + fuelLbs;
-            string gwStr = grossWtLbs.ToString("0.0", CultureInfo.InvariantCulture);
-            if (gwStr != _lastGrossWtStr)
+            if (_cachedGrossWtStr != _lastGrossWtStr)
             {
-                _lastGrossWtStr = gwStr;
-                if (_grossWtText != null) _grossWtText.text = gwStr;
+                _lastGrossWtStr = _cachedGrossWtStr;
+                if (_grossWtText != null) _grossWtText.text = _cachedGrossWtStr;
             }
 
-            string fuelStr = fuelLbs.ToString("0.0", CultureInfo.InvariantCulture);
-            if (fuelStr != _lastTotalFuelStr)
+            if (_cachedTotalFuelStr != _lastTotalFuelStr)
             {
-                _lastTotalFuelStr = fuelStr;
-                if (_totalFuelText != null) _totalFuelText.text = fuelStr;
+                _lastTotalFuelStr = _cachedTotalFuelStr;
+                if (_totalFuelText != null) _totalFuelText.text = _cachedTotalFuelStr;
             }
 
-            double satVal = TelemetryTokenEngine.EvaluateNumeric("{TEMP:ATM}", telemetry);
-            if (double.IsNaN(satVal)) satVal = telemetry.CabinTemp;
-            string satStr = string.Format(CultureInfo.InvariantCulture, "SAT {0:+0;-0;0}", double.IsNaN(satVal) ? 0.0 : satVal);
-            if (satStr != _lastSatStr)
+            if (_cachedSatStr != _lastSatStr)
             {
-                _lastSatStr = satStr;
-                if (_satText != null) _satText.text = satStr;
+                _lastSatStr = _cachedSatStr;
+                if (_satText != null) _satText.text = _cachedSatStr;
             }
 
-            double fuelTempVal = satVal + 5.0;
-            string ftStr = string.Format(CultureInfo.InvariantCulture, "FUEL TEMP {0:+0;-0;0}", fuelTempVal);
-            if (ftStr != _lastFuelTempStr)
+            if (_cachedFuelTempStr != _lastFuelTempStr)
             {
-                _lastFuelTempStr = ftStr;
-                if (_fuelTempText != null) _fuelTempText.text = ftStr;
+                _lastFuelTempStr = _cachedFuelTempStr;
+                if (_fuelTempText != null) _fuelTempText.text = _cachedFuelTempStr;
             }
         }
 

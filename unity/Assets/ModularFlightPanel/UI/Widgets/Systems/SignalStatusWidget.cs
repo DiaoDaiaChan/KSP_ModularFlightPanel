@@ -410,52 +410,52 @@ namespace ModularFlightPanel.UI.Widgets
         // ==========================================
         // 5. 遥测业务求值与平滑光度动画 (OnUpdateTelemetry)
         // ==========================================
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        private struct AntennaRowSnapshot
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            public string Name;
+            public string Status;
+            public bool IsActive;
+        }
+        private readonly AntennaRowSnapshot[] _cachedAntennaSnapshots = new AntennaRowSnapshot[MaxExpandedRows];
+        private int _cachedAntennaCount;
+        private bool _cachedHasVessel;
+        private bool _cachedIsConnected;
+        private double _cachedSignalStrength;
+        private bool _cachedIsPartial;
+        private string _cachedTargetName;
+        private string _cachedRouteDesc;
+        private string _cachedRateStr;
+        private bool _cachedHasTx;
+        private bool _cachedHasRx;
+        private int _cachedActiveRfBars;
+        private string _cachedHwSummary;
 
-            ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
 
-            bool isConnected = telemetry.IsConnected;
-            double signalStrength = Mathf.Clamp01((float)telemetry.CommSignal);
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _cachedHasVessel = false;
+                return;
+            }
 
-            // 1. 顶栏控制权徽章与温和心跳呼吸
-            string ctrlLevel = telemetry.ControlLevelStr
+            _cachedHasVessel = true;
+
+            bool isConnected = context.Telemetry.IsConnected;
+            _cachedIsConnected = isConnected;
+            double signalStrength = Mathf.Clamp01((float)context.Telemetry.CommSignal);
+            _cachedSignalStrength = signalStrength;
+
+            string ctrlLevel = context.Telemetry.ControlLevelStr
                 ?? (isConnected ? I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制") : I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路"));
             bool isPartial = ctrlLevel.IndexOf("PART", StringComparison.OrdinalIgnoreCase) >= 0 || (isConnected && signalStrength < 0.35);
+            _cachedIsPartial = isPartial;
 
-            StatusSurfaceRole statusRole = !isConnected ? StatusSurfaceRole.Danger : (isPartial ? StatusSurfaceRole.Caution : StatusSurfaceRole.Success);
-            TextStyleRole textRole = !isConnected ? TextStyleRole.Danger : (isPartial ? TextStyleRole.Warning : TextStyleRole.Accent);
-
-            _ctrlBadgeBg.SetColor(WidgetStyleManager.StatusPanel(statusRole));
-
-            string displayCtrl;
-            float currentW = RectTransform != null ? RectTransform.sizeDelta.x : BaseSize.x * CurrentDpiScale;
-            if (currentW < 200f * CurrentDpiScale)
-            {
-                displayCtrl = !isConnected
-                    ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_COMM", "无通信")
-                    : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
-            }
-            else
-            {
-                displayCtrl = !isConnected
-                    ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路")
-                    : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
-            }
-            _ctrlBadgeText.SetTextSafe(displayCtrl);
-
-            // 心跳微光动画 (0.82 ~ 1.0)
-            Color ctrlCol = style.GetTextColor(textRole, theme);
-            float animAlpha = isConnected ? (0.82f + 0.18f * Mathf.Sin(Time.time * 2.8f)) : (0.72f + 0.28f * Mathf.Sin(Time.time * 2.0f));
-            _ctrlBadgeText.SetColor(WidgetStyleManager.WithAlpha(ctrlCol, animAlpha));
-
-            // 2. 目标测控站与拓扑
-            string rawTarget = telemetry.DirectLinkTarget;
+            string rawTarget = context.Telemetry.DirectLinkTarget;
             string targetName;
             string routeDesc;
-            var links = telemetry.ActiveCommLinks;
+            var links = context.Telemetry.ActiveCommLinks;
             bool hasRealLinks = links != null && links.Count > 0;
 
             if (isConnected)
@@ -483,17 +483,10 @@ namespace ModularFlightPanel.UI.Widgets
                 targetName = I18n.Tr("WIDGET_SIG_NO_STATION_LINK", "无测控站链路");
                 routeDesc = I18n.Tr("WIDGET_SIG_SEARCHING_LINK", "搜索链路中");
             }
+            _cachedTargetName = targetName;
+            _cachedRouteDesc = routeDesc;
 
-            _targetNameText.SetTextSafe(targetName);
-            _routeTypeText.SetTextSafe(routeDesc);
-            if (isConnected != _lastConnectedState)
-            {
-                _lastConnectedState = isConnected;
-                ApplyText(_targetNameText, isConnected ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
-            }
-
-            // 3. 速率与 TX/RX 遥测收发微光动画
-            double bps = telemetry.DataRateBps;
+            double bps = context.Telemetry.DataRateBps;
             string rateStr;
             if (!isConnected)
             {
@@ -507,17 +500,132 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 rateStr = CommLinkInfo.FormatRate(100000.0 * signalStrength);
             }
-            _rateText.SetTextSafe(rateStr);
+            _cachedRateStr = rateStr;
+
+            _cachedHasTx = context.Telemetry.SignalTx > 0.01;
+            _cachedHasRx = context.Telemetry.SignalRx > 0.01;
+
+            _cachedActiveRfBars = isConnected ? Mathf.Clamp(Mathf.CeilToInt((float)signalStrength * RfBarCount), 1, RfBarCount) : 0;
+
+            var antennas = context.Telemetry.Antennas;
+            int totalAnts = (antennas != null && antennas.Count > 0) ? antennas.Count : (context.Telemetry.AntennaCount > 0 ? context.Telemetry.AntennaCount : 1);
+            int activeAnts = 0;
+            string primaryAntName = I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线");
+
+            if (antennas != null && antennas.Count > 0)
+            {
+                for (int a = 0; a < antennas.Count; a++)
+                {
+                    if (antennas[a].IsOperational && antennas[a].Status == "LINKED")
+                    {
+                        activeAnts++;
+                        if (primaryAntName == I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线"))
+                        {
+                            primaryAntName = CleanAntennaName(antennas[a].Name, a);
+                        }
+                    }
+                }
+            }
+            if (activeAnts == 0 && isConnected) activeAnts = 1;
+
+            _cachedHwSummary = isConnected
+                ? I18n.TrFormat("WIDGET_SIG_HW_SUMMARY", primaryAntName, activeAnts, totalAnts)
+                : I18n.TrFormat("WIDGET_SIG_HW_NOLINK", totalAnts);
+
+            int antCount = (antennas != null) ? antennas.Count : 0;
+            _cachedAntennaCount = antCount;
+            for (int i = 0; i < MaxExpandedRows; i++)
+            {
+                if (antennas != null && i < antCount)
+                {
+                    var ant = antennas[i];
+                    _cachedAntennaSnapshots[i] = new AntennaRowSnapshot
+                    {
+                        Name = CleanAntennaName(ant.Name, i),
+                        Status = ant.Status,
+                        IsActive = true
+                    };
+                }
+                else if (i == 0)
+                {
+                    _cachedAntennaSnapshots[i] = new AntennaRowSnapshot
+                    {
+                        Name = I18n.Tr("WIDGET_SIG_INTERNAL_POD_ANTENNA", "内置舱段天线"),
+                        Status = isConnected ? "LINKED" : "OFFLINE",
+                        IsActive = true
+                    };
+                }
+                else
+                {
+                    _cachedAntennaSnapshots[i] = new AntennaRowSnapshot
+                    {
+                        IsActive = false
+                    };
+                }
+            }
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_cachedHasVessel) return;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            bool isConnected = _cachedIsConnected;
+            double signalStrength = _cachedSignalStrength;
+            bool isPartial = _cachedIsPartial;
+
+            // 1. 顶栏控制权徽章与温和心跳呼吸
+            StatusSurfaceRole statusRole = !isConnected ? StatusSurfaceRole.Danger : (isPartial ? StatusSurfaceRole.Caution : StatusSurfaceRole.Success);
+            TextStyleRole textRole = !isConnected ? TextStyleRole.Danger : (isPartial ? TextStyleRole.Warning : TextStyleRole.Accent);
+
+            _ctrlBadgeBg.SetColor(WidgetStyleManager.StatusPanel(statusRole));
+
+            string displayCtrl;
+            float currentW = RectTransform != null ? RectTransform.sizeDelta.x : BaseSize.x * CurrentDpiScale;
+            if (currentW < 200f * CurrentDpiScale)
+            {
+                displayCtrl = !isConnected
+                    ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_COMM", "无通信")
+                    : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
+            }
+            else
+            {
+                displayCtrl = !isConnected
+                    ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路")
+                    : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
+            }
+            _ctrlBadgeText.SetTextSafe(displayCtrl);
+
+            // 心跳微光动画 (0.82 ~ 1.0)
+            Color ctrlCol = style.GetTextColor(textRole, theme);
+            float animAlpha = isConnected ? (0.82f + 0.18f * Mathf.Sin(Time.time * 2.8f)) : (0.72f + 0.28f * Mathf.Sin(Time.time * 2.0f));
+            _ctrlBadgeText.SetColor(WidgetStyleManager.WithAlpha(ctrlCol, animAlpha));
+
+            // 2. 目标测控站与拓扑
+            _targetNameText.SetTextSafe(_cachedTargetName);
+            _routeTypeText.SetTextSafe(_cachedRouteDesc);
+            if (isConnected != _lastConnectedState)
+            {
+                _lastConnectedState = isConnected;
+                ApplyText(_targetNameText, isConnected ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+            }
+
+            // 3. 速率与 TX/RX 遥测收发微光动画
+            _rateText.SetTextSafe(_cachedRateStr);
 
             if (_txText != null && _rxText != null && _txText.gameObject.activeSelf)
             {
                 Color txBase = style.GetTextColor(TextStyleRole.Accent, theme);
                 Color rxBase = style.GetTextColor(TextStyleRole.Cardinal, theme);
 
-                if (isConnected && (bps > 0.0 || signalStrength > 0.01))
+                if (isConnected && (_cachedRateStr != "0.0 bps" || signalStrength > 0.01))
                 {
-                    float txA = (telemetry.SignalTx > 0.01) ? (0.60f + 0.40f * Mathf.Sin(Time.time * 6.5f)) : 0.30f;
-                    float rxA = (telemetry.SignalRx > 0.01) ? (0.60f + 0.40f * Mathf.Cos(Time.time * 6.5f)) : 0.30f;
+                    float txA = _cachedHasTx ? (0.60f + 0.40f * Mathf.Sin(Time.time * 6.5f)) : 0.30f;
+                    float rxA = _cachedHasRx ? (0.60f + 0.40f * Mathf.Cos(Time.time * 6.5f)) : 0.30f;
                     _txText.SetColor(WidgetStyleManager.WithAlpha(txBase, txA));
                     _rxText.SetColor(WidgetStyleManager.WithAlpha(rxBase, rxA));
                 }
@@ -529,7 +637,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 5 阶主射频光柱
-            int activeRfBars = isConnected ? Mathf.Clamp(Mathf.CeilToInt((float)signalStrength * RfBarCount), 1, RfBarCount) : 0;
+            int activeRfBars = _cachedActiveRfBars;
             MeterStyleRole barRole = !isConnected ? MeterStyleRole.Track : (signalStrength < 0.35 ? MeterStyleRole.Warning : MeterStyleRole.Primary);
             Color activeCol = style.GetMeterColor(barRole, theme);
             Color trackCol = style.GetMeterColor(MeterStyleRole.Track, theme);
@@ -557,35 +665,10 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 5. 硬件信息求值 (单行摘要 vs 展开清单)
-            var antennas = telemetry.Antennas;
-            int totalAnts = (antennas != null && antennas.Count > 0) ? antennas.Count : (telemetry.AntennaCount > 0 ? telemetry.AntennaCount : 1);
-            int activeAnts = 0;
-            string primaryAntName = I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线");
-
-            if (antennas != null && antennas.Count > 0)
-            {
-                for (int a = 0; a < antennas.Count; a++)
-                {
-                    if (antennas[a].IsOperational && antennas[a].Status == "LINKED")
-                    {
-                        activeAnts++;
-                        if (primaryAntName == I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线"))
-                        {
-                            primaryAntName = CleanAntennaName(antennas[a].Name, a);
-                        }
-                    }
-                }
-            }
-            if (activeAnts == 0 && isConnected) activeAnts = 1;
-
-            // 紧凑模式：单行摘要
+            // 5. 硬件信息
             if (_hardwareSummaryText != null && _hardwareSummaryText.gameObject.activeSelf)
             {
-                string hwStr = isConnected
-                    ? I18n.TrFormat("WIDGET_SIG_HW_SUMMARY", primaryAntName, activeAnts, totalAnts)
-                    : I18n.TrFormat("WIDGET_SIG_HW_NOLINK", totalAnts);
-                _hardwareSummaryText.SetTextSafe(hwStr);
+                _hardwareSummaryText.SetTextSafe(_cachedHwSummary);
             }
 
             // 展开模式：清单
@@ -594,24 +677,17 @@ namespace ModularFlightPanel.UI.Widgets
                 var row = _expandedRows[i];
                 if (row == null || row.Root == null || !row.Root.activeSelf) continue;
 
-                if (antennas != null && i < antennas.Count)
+                var snapshot = _cachedAntennaSnapshots[i];
+                if (snapshot.IsActive)
                 {
-                    var ant = antennas[i];
-                    row.NameText.SetTextSafe(CleanAntennaName(ant.Name, i));
-                    row.StatusText.SetTextSafe(LocalizeAntennaStatus(ant.Status));
+                    row.NameText.SetTextSafe(snapshot.Name);
+                    row.StatusText.SetTextSafe(LocalizeAntennaStatus(snapshot.Status));
 
-                    TextStyleRole sRole = (ant.Status == "LINKED") ? TextStyleRole.Accent :
-                        (ant.Status == "STANDBY" ? TextStyleRole.Cardinal : TextStyleRole.SecondaryValue);
+                    TextStyleRole sRole = (snapshot.Status == "LINKED") ? TextStyleRole.Accent :
+                        (snapshot.Status == "STANDBY" ? TextStyleRole.Cardinal : TextStyleRole.SecondaryValue);
 
                     ApplyText(row.StatusText, sRole, theme);
                     ApplyText(row.DotText, sRole, theme);
-                }
-                else if (i == 0)
-                {
-                    row.NameText.SetTextSafe(I18n.Tr("WIDGET_SIG_INTERNAL_POD_ANTENNA", "内置舱段天线"));
-                    row.StatusText.SetTextSafe(isConnected ? I18n.Tr("WIDGET_SIG_LINKED", "已链接") : I18n.Tr("WIDGET_SIG_OFFLINE", "离线"));
-                    ApplyText(row.StatusText, isConnected ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
-                    ApplyText(row.DotText, isConnected ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                 }
                 else
                 {

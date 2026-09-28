@@ -26,6 +26,45 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
+        private NavballRenderMode _cachedRenderMode;
+        private Texture _cachedStockTex;
+        private Vector2 _cachedTexScale = Vector2.one;
+        private Vector2 _cachedTexOffset = Vector2.zero;
+        private string _cachedRefCategory = "SURFACE";
+        private string _cachedHookHeadingText;
+        private float _cachedHeading;
+        private string _cachedFrameName;
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+
+            _cachedRenderMode = ThemeManager.Instance.GlobalRenderMode;
+            if (_cachedRenderMode == NavballRenderMode.ProceduralBake) _cachedRenderMode = NavballRenderMode.ProceduralVector;
+
+            var hook = NavBallHookService.Provider;
+            if (hook != null)
+            {
+                _cachedStockTex = hook.BallTexture;
+                _cachedTexScale = hook.TextureScale;
+                _cachedTexOffset = hook.TextureOffset;
+                _cachedRefCategory = hook.ReferenceFrameCategory ?? "SURFACE";
+                _cachedHookHeadingText = hook.HeadingText;
+                _cachedFrameName = hook.FrameName;
+            }
+            else
+            {
+                _cachedStockTex = null;
+                _cachedTexScale = Vector2.one;
+                _cachedTexOffset = Vector2.zero;
+                _cachedRefCategory = "SURFACE";
+                _cachedHookHeadingText = null;
+                _cachedFrameName = null;
+            }
+
+            _cachedHeading = (context.Telemetry != null) ? context.Telemetry.Heading : 0f;
+        }
+
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
@@ -37,6 +76,121 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_sphereMaterial.shader != targetShader && targetShader != null)
                 {
                     _sphereMaterial.shader = targetShader;
+                }
+            }
+
+            var mode = _cachedRenderMode;
+            if (mode == NavballRenderMode.StockDirect)
+            {
+                if (_displayImage != null && _displayImage.enabled) _displayImage.enabled = false;
+                if (_crosshair != null && _crosshair.activeSelf) _crosshair.SetActive(false);
+                if (_bezelRing != null && _bezelRing.activeSelf) _bezelRing.SetActive(false);
+                foreach (var kvp in _markerImages)
+                {
+                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf)
+                    {
+                        kvp.Value.gameObject.SetActive(false);
+                    }
+                }
+                NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
+                return;
+            }
+
+            if (_displayImage != null && !_displayImage.enabled) _displayImage.enabled = true;
+            if (_crosshair != null && !_crosshair.activeSelf) _crosshair.SetActive(true);
+            if (_bezelRing != null && !_bezelRing.activeSelf) _bezelRing.SetActive(true);
+
+            if (mode == NavballRenderMode.StockTexture)
+            {
+                Texture stockTex = _cachedStockTex;
+                if (stockTex != null && _displayImage != null && _displayImage.texture != stockTex)
+                {
+                    _displayImage.texture = stockTex;
+                    _sphereMaterial.mainTexture = stockTex;
+                    _sphereMaterial.SetTextureScale("_MainTex", _cachedTexScale);
+                    _sphereMaterial.SetTextureOffset("_MainTex", _cachedTexOffset);
+                }
+            }
+
+            // 更新航向读数盒与参考系模式显示
+            string category = _cachedRefCategory;
+            if (_headingText != null)
+            {
+                if (!string.IsNullOrEmpty(_cachedHookHeadingText))
+                {
+                    if (_lastHeadingCategory != _cachedHookHeadingText)
+                    {
+                        _headingText.text = _cachedHookHeadingText;
+                        _lastHeadingCategory = _cachedHookHeadingText;
+                    }
+                }
+                else
+                {
+                    float hdg = _cachedHeading;
+                    int iHdg = Mathf.RoundToInt(hdg) % 360;
+                    if (iHdg < 0) iHdg += 360;
+                    string catUpper = category.ToUpperInvariant();
+
+                    if (iHdg != _lastHeadingValue || catUpper != _lastHeadingCategory)
+                    {
+                        _lastHeadingValue = iHdg;
+                        _lastHeadingCategory = catUpper;
+
+                        switch (catUpper)
+                        {
+                            case "INERTIAL":
+                                int raH = Mathf.FloorToInt((iHdg % 360) / 15f);
+                                int raM = Mathf.FloorToInt(((iHdg % 15) / 15f) * 60f);
+                                _headingText.text = $"RA {raH:D2}h{raM:D2}m";
+                                break;
+                            case "BODY_FIXED":
+                            case "BODY_SURFACE":
+                                _headingText.text = CacheManager.FastLon(iHdg);
+                                break;
+                            case "ORBIT":
+                            case "ORBITAL":
+                                _headingText.text = CacheManager.FastObt(iHdg);
+                                break;
+                            case "TARGET":
+                                _headingText.text = CacheManager.FastTgt(iHdg);
+                                break;
+                            case "LAGRANGE":
+                            case "BARYCENTRIC":
+                                _headingText.text = $"LAG {iHdg:D3}°";
+                                break;
+                            default:
+                                _headingText.text = CacheManager.FastHdg(iHdg);
+                                break;
+                        }
+                    }
+                }
+            }
+
+            if (_frameText != null)
+            {
+                string frame = _cachedFrameName;
+                if (string.IsNullOrEmpty(frame))
+                {
+                    switch (category.ToUpperInvariant())
+                    {
+                        case "INERTIAL": frame = "INERT"; break;
+                        case "BODY_FIXED":
+                        case "BODY_SURFACE": frame = "FIXED"; break;
+                        case "ORBIT":
+                        case "ORBITAL": frame = "ORBIT"; break;
+                        case "TARGET": frame = "TARGT"; break;
+                        case "LAGRANGE":
+                        case "BARYCENTRIC": frame = "LAGRN"; break;
+                        default: frame = "SURF"; break;
+                    }
+                }
+                _frameText.text = frame.Length > 5 ? frame.Substring(0, 5).ToUpperInvariant() : frame.ToUpperInvariant();
+
+                // 参考系角标切变颜色同步
+                ThemeConfig curTheme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
+                if (_frameBadgeAnimTimer >= 0.40f)
+                {
+                    _frameText.color = GetFrameAccentColor(category, curTheme);
                 }
             }
         }
@@ -553,129 +707,7 @@ namespace ModularFlightPanel.UI.Widgets
             tipObj.SetActive(false);
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
-        {
-            base.OnUpdateTelemetry(telemetry);
 
-            var mode = ThemeManager.Instance.GlobalRenderMode;
-            if (mode == NavballRenderMode.ProceduralBake) mode = NavballRenderMode.ProceduralVector;
-
-            if (mode == NavballRenderMode.StockDirect)
-            {
-                if (_displayImage != null && _displayImage.enabled) _displayImage.enabled = false;
-                if (_crosshair != null && _crosshair.activeSelf) _crosshair.SetActive(false);
-                if (_bezelRing != null && _bezelRing.activeSelf) _bezelRing.SetActive(false);
-                foreach (var kvp in _markerImages)
-                {
-                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf)
-                    {
-                        kvp.Value.gameObject.SetActive(false);
-                    }
-                }
-                NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
-                return;
-            }
-
-            if (_displayImage != null && !_displayImage.enabled) _displayImage.enabled = true;
-            if (_crosshair != null && !_crosshair.activeSelf) _crosshair.SetActive(true);
-            if (_bezelRing != null && !_bezelRing.activeSelf) _bezelRing.SetActive(true);
-
-            var hook = NavBallHookService.Provider;
-
-            if (mode == NavballRenderMode.StockTexture)
-            {
-                Texture stockTex = hook?.BallTexture;
-                if (stockTex != null && _displayImage != null && _displayImage.texture != stockTex)
-                {
-                    _displayImage.texture = stockTex;
-                    _sphereMaterial.mainTexture = stockTex;
-                    _sphereMaterial.SetTextureScale("_MainTex", hook.TextureScale);
-                    _sphereMaterial.SetTextureOffset("_MainTex", hook.TextureOffset);
-                }
-            }
-
-            // 更新航向读数盒与参考系模式显示
-            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
-            if (_headingText != null)
-            {
-                if (hook != null && !string.IsNullOrEmpty(hook.HeadingText))
-                {
-                    if (_lastHeadingCategory != hook.HeadingText)
-                    {
-                        _headingText.text = hook.HeadingText;
-                        _lastHeadingCategory = hook.HeadingText;
-                    }
-                }
-                else
-                {
-                    float hdg = (telemetry != null) ? telemetry.Heading : 0f;
-                    int iHdg = Mathf.RoundToInt(hdg) % 360;
-                    if (iHdg < 0) iHdg += 360;
-                    string catUpper = category.ToUpperInvariant();
-
-                    if (iHdg != _lastHeadingValue || catUpper != _lastHeadingCategory)
-                    {
-                        _lastHeadingValue = iHdg;
-                        _lastHeadingCategory = catUpper;
-
-                        switch (catUpper)
-                        {
-                            case "INERTIAL":
-                                int raH = Mathf.FloorToInt((iHdg % 360) / 15f);
-                                int raM = Mathf.FloorToInt(((iHdg % 15) / 15f) * 60f);
-                                _headingText.text = $"RA {raH:D2}h{raM:D2}m";
-                                break;
-                            case "BODY_FIXED":
-                            case "BODY_SURFACE":
-                                _headingText.text = CacheManager.FastLon(iHdg);
-                                break;
-                            case "ORBIT":
-                            case "ORBITAL":
-                                _headingText.text = CacheManager.FastObt(iHdg);
-                                break;
-                            case "TARGET":
-                                _headingText.text = CacheManager.FastTgt(iHdg);
-                                break;
-                            case "LAGRANGE":
-                            case "BARYCENTRIC":
-                                _headingText.text = $"LAG {iHdg:D3}°";
-                                break;
-                            default:
-                                _headingText.text = CacheManager.FastHdg(iHdg);
-                                break;
-                        }
-                    }
-                }
-            }
-
-            if (_frameText != null)
-            {
-                string frame = hook?.FrameName;
-                if (string.IsNullOrEmpty(frame))
-                {
-                    switch (category.ToUpperInvariant())
-                    {
-                        case "INERTIAL": frame = "INERT"; break;
-                        case "BODY_FIXED":
-                        case "BODY_SURFACE": frame = "FIXED"; break;
-                        case "ORBIT":
-                        case "ORBITAL": frame = "ORBIT"; break;
-                        case "TARGET": frame = "TARGT"; break;
-                        case "LAGRANGE":
-                        case "BARYCENTRIC": frame = "LAGRN"; break;
-                        default: frame = "SURF"; break;
-                    }
-                }
-                _frameText.text = frame.Length > 5 ? frame.Substring(0, 5).ToUpperInvariant() : frame.ToUpperInvariant();
-
-                // 参考系角标切变颜色同步
-                ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
-                if (_frameBadgeAnimTimer >= 0.40f)
-                {
-                    _frameText.color = GetFrameAccentColor(category, curTheme);
-                }
-            }
-        }
 
         private bool _detailScaleDirty = true;
 
