@@ -954,8 +954,8 @@ namespace ModularFlightPanel.UI.HUD
                 {
                     w.MinValue = (float)paramMeta.DefaultMin;
                     w.MaxValue = (float)paramMeta.DefaultMax;
-                    w.CautionThreshold = (float)meta.DefaultCaution;
-                    w.WarningThreshold = (float)meta.DefaultWarning;
+                    w.CautionThreshold = (float)paramMeta.DefaultCaution;
+                    w.WarningThreshold = (float)paramMeta.DefaultWarning;
                     w.UnitLabel = paramMeta.DefaultUnit;
                     if (w.WidgetType == "tape") w.StepInterval = paramMeta.DefaultStep;
                     WidgetLayoutManager.Instance.SaveLayout();
