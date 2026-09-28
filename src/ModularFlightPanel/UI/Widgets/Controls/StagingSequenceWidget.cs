@@ -1300,10 +1300,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             int hash = partIcons.Count;
             for (int k = 0; k < partIcons.Count; k++)
             {
-                hash = unchecked((hash * 31) ^ (int)partIcons[k].PartFlightId ^ (partIcons[k].Multiplier << 16));
+                hash = unchecked((hash * 31) ^ (int)partIcons[k].PartFlightId ^ (partIcons[k].Count << 16));
             }
             return hash;
-        }
         }
 
         private void ArrangeIconChipsGrid(StageItemUI item, StageDeltaVInfo stg, Texture currentAtlas, bool isUsingStockAtlas, bool isActive, ThemeConfig theme, WidgetStyleManager style, float s, float containerWidth, float containerHeight, float chipSize, float chipGap, int chipsPerRow)

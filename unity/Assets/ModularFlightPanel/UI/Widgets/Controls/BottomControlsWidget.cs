@@ -33,7 +33,7 @@ namespace ModularFlightPanel.UI.Widgets
     public class BottomControlsWidget : BaseFlightWidget
     {
         // ── 头部集中声明区：尺寸、刷新率与全部交互微控件 (一屏之内尽收眼底) ──
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
         public override Vector2 BaseSize => new Vector2(184f, 22f);
         protected override bool AutoCreateCardFrame => false; // 紧凑型浮动药丸底控栏，微控件自带胶囊插槽
 
@@ -115,11 +115,12 @@ namespace ModularFlightPanel.UI.Widgets
             if (telem == null) return;
 
             // 1. RCS / SAS 状态同步 (内置脏检查，仅物理状态改变时触发视觉重绘)
-            Rcs.IsActive = telem.IsRCSEnabled;
-            Sas.IsActive = telem.IsSASEnabled;
+            if (Rcs.IsActive != telem.IsRCSEnabled)
+                Rcs.IsActive = telem.IsRCSEnabled;
+            if (Sas.IsActive != telem.IsSASEnabled)
+                Sas.IsActive = telem.IsSASEnabled;
 
             // 2. 参考系模式状态同步 (支持 Principia 权威参考系与原生 KSP 模式)
-            _frameUpdateTimer += Time.deltaTime;
             string curSpeedMode = telem.SpeedModeName;
             var navHook = NavBallHookService.Provider;
             string curHookCat = navHook != null ? navHook.ReferenceFrameCategory : null;
@@ -127,12 +128,10 @@ namespace ModularFlightPanel.UI.Widgets
 
             bool frameDirty = curSpeedMode != _lastSpeedModeName 
                 || curHookCat != _lastNavHookCategory 
-                || curHookTitle != _lastNavHookTitle
-                || _frameUpdateTimer >= 0.2f;
+                || curHookTitle != _lastNavHookTitle;
 
             if (frameDirty)
             {
-                _frameUpdateTimer = 0f;
                 _lastSpeedModeName = curSpeedMode;
                 _lastNavHookCategory = curHookCat;
                 _lastNavHookTitle = curHookTitle;
