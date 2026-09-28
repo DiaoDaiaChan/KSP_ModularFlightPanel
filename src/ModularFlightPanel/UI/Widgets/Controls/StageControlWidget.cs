@@ -27,6 +27,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(DefaultPanelWidth, DefaultPanelHeight);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Critical;
 
         private const float DefaultPanelWidth = 204f;
         private const float DefaultPanelHeight = 186f;
@@ -148,6 +149,25 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _lastLockedState = false;
         private bool _lastPrecState = false;
         private bool _lastDockState = false;
+
+        // ── 数据心跳与 UI 绘制解耦状态缓存 ──
+        private bool _dataHasVessel = false;
+        private bool _dataIsLocked = false;
+        private int _dataCurrentStage = 0;
+        private double _dataStageDeltaV = 0.0;
+        private double _dataStageBurnTime = 0.0;
+        private float _dataTwr = 0f;
+        private int _dataActiveEngines = 0;
+        private float _dataPitchInput = 0f;
+        private float _dataPitchTrim = 0f;
+        private float _dataRollInput = 0f;
+        private float _dataRollTrim = 0f;
+        private float _dataYawInput = 0f;
+        private float _dataYawTrim = 0f;
+        private float _dataStagePropellantFraction = 0f;
+        private string _dataPropName = "PROPELLANT";
+        private bool _dataIsPrecisionControl = false;
+        private bool _dataIsDockingMode = false;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -731,12 +751,56 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telem)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telem == null || !telem.HasVessel) return;
-            float s = CurrentDpiScale;
+            base.OnDataHeartBeat(in context);
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                return;
+            }
+
+            _dataHasVessel = true;
+            IFlightTelemetry telem = context.Telemetry;
+
+            _dataIsLocked = telem.IsStageLocked || StockStageActionService.IsStagingLocked;
+            _dataCurrentStage = telem.CurrentStage;
+            _dataStageDeltaV = telem.StageDeltaV;
+            _dataStageBurnTime = telem.StageBurnTime;
+            _dataTwr = (float)telem.TWR;
+            _dataActiveEngines = telem.ActiveEngines;
+            _dataPitchInput = telem.PitchInput;
+            _dataPitchTrim = telem.PitchTrim;
+            _dataRollInput = telem.RollInput;
+            _dataRollTrim = telem.RollTrim;
+            _dataYawInput = telem.YawInput;
+            _dataYawTrim = telem.YawTrim;
+            _dataStagePropellantFraction = Mathf.Clamp01((float)telem.StagePropellantFraction);
+
+            string rawName = telem.StagePropellantName;
+            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
+            if (rawName.StartsWith("PROP:", StringComparison.OrdinalIgnoreCase))
+                rawName = rawName.Substring(5).Trim();
+            else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
+                rawName = rawName.Substring(4).Trim();
+            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
+            _dataPropName = rawName.ToUpperInvariant();
+
+            _dataIsPrecisionControl = telem.IsPrecisionControl;
+            _dataIsDockingMode = telem.IsDockingMode;
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_dataHasVessel) return;
+
+            float s = CurrentDpiScale;
+            float dt = context.DeltaTime;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(_cachedTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 自适应排版重算
@@ -745,7 +809,7 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyLayout(currentW, currentH);
 
             // 2. 分级安全锁与就绪联动
-            bool isLocked = telem.IsStageLocked || StockStageActionService.IsStagingLocked;
+            bool isLocked = _dataIsLocked;
             if (isLocked != _lastLockedState)
             {
                 _lastLockedState = isLocked;
@@ -783,7 +847,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 按键微回弹动效
             if (_fireBtnRecoilTimer > 0f)
             {
-                _fireBtnRecoilTimer -= 0.033f;
+                _fireBtnRecoilTimer -= dt;
                 float recoilScale = 1f - Mathf.Clamp01(_fireBtnRecoilTimer * 0.4f);
                 if (_fireBtn != null) _fireBtn.transform.localScale = new Vector3(recoilScale, recoilScale, 1f);
             }
@@ -793,14 +857,14 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 分级数字读数与性能参数 (Dirty Checking)
-            string sNumStr = $"{telem.CurrentStage:D2}";
+            string sNumStr = $"{_dataCurrentStage:D2}";
             if (sNumStr != _lastStageNumStr)
             {
                 _lastStageNumStr = sNumStr;
                 SetTextIfChanged(_stageNumText, sNumStr);
             }
 
-            double dv = telem.StageDeltaV;
+            double dv = _dataStageDeltaV;
             string dvStr = dv > 0.1 ? $"{dv:N0} m/s" : "0 m/s";
             if (dvStr != _lastStageDvStr)
             {
@@ -808,12 +872,12 @@ namespace ModularFlightPanel.UI.Widgets
                 SetTextIfChanged(_stageDvText, dvStr);
             }
 
-            int burnSec = Mathf.Max(0, (int)telem.StageBurnTime);
+            int burnSec = Mathf.Max(0, (int)_dataStageBurnTime);
             int m = burnSec / 60;
             int sec = burnSec % 60;
-            string twrStr = telem.TWR > 0.01 
-                ? $"⏱ {m:00}:{sec:00} · {telem.TWR:F2} TWR · ⚙ {telem.ActiveEngines} ENG" 
-                : $"⏱ {m:00}:{sec:00} · ⚙ {telem.ActiveEngines} ENG";
+            string twrStr = _dataTwr > 0.01f 
+                ? $"⏱ {m:00}:{sec:00} · {_dataTwr:F2} TWR · ⚙ {_dataActiveEngines} ENG" 
+                : $"⏱ {m:00}:{sec:00} · ⚙ {_dataActiveEngines} ENG";
             if (twrStr != _lastStageTwrStr)
             {
                 _lastStageTwrStr = twrStr;
@@ -822,28 +886,20 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_stageAccentBar != null)
             {
-                _stageAccentBar.color = telem.ActiveEngines > 0 ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _stageAccentBar.color = _dataActiveEngines > 0 ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             }
 
             // 4. 三轴舵面偏转与配平
             float curTrackW = _cachedTrackWidth * s;
-            UpdateAxisVisuals(_pitchMeter, telem.PitchInput, telem.PitchTrim, curTrackW, s, theme);
-            UpdateAxisVisuals(_rollMeter, telem.RollInput, telem.RollTrim, curTrackW, s, theme);
-            UpdateAxisVisuals(_yawMeter, telem.YawInput, telem.YawTrim, curTrackW, s, theme);
+            UpdateAxisVisuals(_pitchMeter, _dataPitchInput, _dataPitchTrim, curTrackW, s, theme);
+            UpdateAxisVisuals(_rollMeter, _dataRollInput, _dataRollTrim, curTrackW, s, theme);
+            UpdateAxisVisuals(_yawMeter, _dataYawInput, _dataYawTrim, curTrackW, s, theme);
 
             // 5. 分级推进剂指示条 (100% 语义驱动)
-            float targetPropFrac = Mathf.Clamp01(telem.StagePropellantFraction);
+            float targetPropFrac = _dataStagePropellantFraction;
             _currentPropFrac = Mathf.Lerp(_currentPropFrac < 0f ? targetPropFrac : _currentPropFrac, targetPropFrac, 0.25f);
 
-            string rawName = telem.StagePropellantName;
-            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
-            if (rawName.StartsWith("PROP:", StringComparison.OrdinalIgnoreCase))
-                rawName = rawName.Substring(5).Trim();
-            else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
-                rawName = rawName.Substring(4).Trim();
-            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
-
-            string pNameStr = rawName.ToUpperInvariant();
+            string pNameStr = _dataPropName;
             if (pNameStr != _lastPropNameStr)
             {
                 _lastPropNameStr = pNameStr;
@@ -877,7 +933,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 6. 底部模式按键
-            bool isPrec = telem.IsPrecisionControl;
+            bool isPrec = _dataIsPrecisionControl;
             if (isPrec != _lastPrecState)
             {
                 _lastPrecState = isPrec;
@@ -888,7 +944,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_precOutline != null) _precOutline.effectColor = isPrec ? WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             }
 
-            bool isDock = telem.IsDockingMode;
+            bool isDock = _dataIsDockingMode;
             if (isDock != _lastDockState)
             {
                 _lastDockState = isDock;
