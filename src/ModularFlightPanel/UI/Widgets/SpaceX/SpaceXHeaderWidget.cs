@@ -545,82 +545,31 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     if (slot.Id == "vel" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{SPD}"))
                     {
                         double spd = telemetry.OrbitalSpeed > 10.0 ? telemetry.OrbitalSpeed : telemetry.CurrentSpeed;
-                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(spd - slot.LastNumeric) >= 0.5)
-                        {
-                            slot.LastNumeric = spd;
-                            string val = FormatMetricSpeed(spd);
-                            if (val != slot.LastValue)
-                            {
-                                slot.LastValue = val;
-                                slot.ValueText.text = val;
-                            }
-                        }
+                        slot.Control?.SetMetricSpeed(spd, 0.5);
                     }
                     else if (slot.Id == "alt" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{ALT:ASL:DIST}"))
                     {
-                        double alt = telemetry.AltitudeASL;
-                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(alt - slot.LastNumeric) >= 1.0)
-                        {
-                            slot.LastNumeric = alt;
-                            string val = FormatMetricDistance(alt);
-                            if (val != slot.LastValue)
-                            {
-                                slot.LastValue = val;
-                                slot.ValueText.text = val;
-                            }
-                        }
+                        slot.Control?.SetMetricDistance(telemetry.AltitudeASL, 1.0);
                     }
                     else if ((slot.Id == "ap" || slot.Id == "apo") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{AP:DIST}"))
                     {
-                        double ap = telemetry.Apoapsis;
-                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(ap - slot.LastNumeric) >= 5.0)
-                        {
-                            slot.LastNumeric = ap;
-                            string val = FormatMetricDistance(ap);
-                            if (val != slot.LastValue)
-                            {
-                                slot.LastValue = val;
-                                slot.ValueText.text = val;
-                            }
-                        }
+                        slot.Control?.SetMetricDistance(telemetry.Apoapsis, 5.0);
                     }
                     else if ((slot.Id == "pe" || slot.Id == "peri") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{PE:DIST}"))
                     {
                         double pe = telemetry.Periapsis;
-                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(pe - slot.LastNumeric) >= 5.0)
-                        {
-                            slot.LastNumeric = pe;
-                            string val = pe < -100000.0 ? "IMPACT" : FormatMetricDistance(pe);
-                            if (val != slot.LastValue)
-                            {
-                                slot.LastValue = val;
-                                slot.ValueText.text = val;
-                            }
-                        }
+                        if (pe < -100000.0) slot.Control?.SetValue("IMPACT");
+                        else slot.Control?.SetMetricDistance(pe, 5.0);
                     }
                     else if (slot.Id == "inc" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{INC}"))
                     {
-                        double inc = telemetry.Inclination;
-                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(inc - slot.LastNumeric) >= 0.05)
-                        {
-                            slot.LastNumeric = inc;
-                            string val = $"{inc:F2}°";
-                            if (val != slot.LastValue)
-                            {
-                                slot.LastValue = val;
-                                slot.ValueText.text = val;
-                            }
-                        }
+                        slot.Control?.SetNumeric(telemetry.Inclination, "F2", 0.05, "°");
                     }
                     else
                     {
                         string tok = !string.IsNullOrEmpty(slot.Token) ? slot.Token : "{ALT:ASL:DIST}";
                         string val = TelemetryTokenEngine.Evaluate(tok, telemetry);
-                        if (val != slot.LastValue)
-                        {
-                            slot.LastValue = val;
-                            slot.ValueText.text = val;
-                        }
+                        slot.Control?.SetValue(val);
                     }
                 }
             }

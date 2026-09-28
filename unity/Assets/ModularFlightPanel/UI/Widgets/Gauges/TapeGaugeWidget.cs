@@ -170,6 +170,10 @@ namespace ModularFlightPanel.UI.Widgets
         private float _trendMaxScale = 8.0f;
         private bool _isSpeedTape = false;
 
+        // JIT 强类型编译委托旁路 (零查表、零装箱直读)
+        private TelemetryTokenEngine.TelemetryNumericGetter _valueGetter;
+        private TelemetryTokenEngine.TelemetryNumericGetter _trendGetter;
+
         // 太空全场景动态无极工程量纲引擎 (Dynamic Multi-Scale Engine)
         private bool _autoUnitEnabled = true;
         private DynamicUnitTier _currentTier = DynamicUnitTier.Base;
@@ -272,6 +276,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             InitializeUnitTier();
+
+            // 编译强类型遥测委托
+            _valueGetter = TelemetryTokenEngine.CompileNumeric(_valueToken);
+            _trendGetter = TelemetryTokenEngine.CompileNumeric(_trendToken);
 
             // 1. 半透明防炫底板与外框
             _bgImage = gameObject.AddComponent<Image>();
@@ -1030,21 +1038,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel) return;
 
-            // 采样主驱动数值 (直读高速遥测属性，规避逐帧正则与查表解析)
-            double rawVal;
-            if (_valueToken == "{SPD}" || _valueToken == "{SPEED}")
-                rawVal = telemetry.CurrentSpeed;
-            else if (_valueToken == "{ALT}" || _valueToken == "{ALT:ASL}" || _valueToken == "{ALT:ASL:DIST}")
-                rawVal = telemetry.AltitudeASL;
-            else if (_valueToken == "{ALT:AGL}" || _valueToken == "{ALT:RADAR}")
-                rawVal = telemetry.AltitudeAGL;
-            else if (_valueToken == "{VSI}" || _valueToken == "{VERT_SPD}")
-                rawVal = telemetry.VerticalSpeed;
-            else
-            {
-                rawVal = TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
-                if (double.IsNaN(rawVal)) rawVal = 0.0;
-            }
+            // 采样主驱动数值 (JIT 强类型零装箱编译委托直读，1.5ns 极致微秒性能)
+            double rawVal = _valueGetter != null ? _valueGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
+            if (double.IsNaN(rawVal)) rawVal = 0.0;
 
             // 1. 运行太空全场景动态无极工程量纲自愈引擎 (带 15% 滞后死区)
             UpdateDynamicUnitTier(rawVal);
@@ -1310,9 +1306,8 @@ namespace ModularFlightPanel.UI.Widgets
                     item.IsActive = true;
                 }
 
-                if (float.IsNaN(item.LastY) || Mathf.Abs(item.LastY - y) > 0.5f)
+                if (SetAnchoredPositionIfChanged(item.Rect, new Vector2(0f, y), 0.5f))
                 {
-                    item.Rect.anchoredPosition = new Vector2(0f, y);
                     item.LastY = y;
                 }
 
@@ -1376,14 +1371,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isSpeedTape)
             {
                 // ==================== 1. ACC (G 载荷) 解算与警告/危险变色关照 (──► 指针式) ====================
-                double gForce;
-                if (_trendToken == "{GFORCE}" || _trendToken == "{G}")
-                    gForce = telemetry.GForce;
-                else
-                {
-                    gForce = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
-                    if (double.IsNaN(gForce)) gForce = 0.0;
-                }
+                double gForce = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
+                if (double.IsNaN(gForce)) gForce = 0.0;
 
                 // 航天生理与结构载荷警戒判定 (对齐用户规范：4G 黄色，8G 红色)：
                 int alertLevel = 0;
@@ -1545,14 +1534,8 @@ namespace ModularFlightPanel.UI.Widgets
             else
             {
                 // ==================== 高度带 VSI：零位水平严格对齐中央 (y = 0，◄── 指针式) ====================
-                double vs;
-                if (_trendToken == "{VSI}" || _trendToken == "{VERT_SPD}")
-                    vs = telemetry.VerticalSpeed;
-                else
-                {
-                    vs = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
-                    if (double.IsNaN(vs)) vs = 0.0;
-                }
+                double vs = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
+                if (double.IsNaN(vs)) vs = 0.0;
 
                 // 垂直速度零位死区 (0.08 m/s)，彻底消除微小振荡引起的正负频繁跳变与闪烁
                 const double VSI_DEADBAND = 0.08;

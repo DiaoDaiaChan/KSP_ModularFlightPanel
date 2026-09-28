@@ -47,9 +47,6 @@ namespace ModularFlightPanel.UI.Widgets
 
         // ── 性能节流与状态缓存 ──
         private float _lastMeshRebuildTime = -1f;
-        private string _lastTitleText = null;
-        private string _lastBadgeText = null;
-        private TextStyleRole _lastBadgeRole = (TextStyleRole)(-1);
 
         // ── 尺寸规格：精简模式 290×116，完整模式 340×380 ──
         private static readonly Vector2 CompactSize = new Vector2(290f, 116f);
@@ -279,30 +276,27 @@ namespace ModularFlightPanel.UI.Widgets
             _diagramGraphic.Widget = this;
             _diagramGraphic.raycastTarget = false;
 
-            // 动静分离：航天器矢径 r、速度矢量 v 与航天器标志 SC 使用 UGUI 硬件 Transform 独立覆盖层 (0 CPU 网格重建)
-            GameObject rLineGo = UIFactory.CreatePanel(globeBox.transform, "SC_Radius_Line", new Vector2(1f, 1.2f * s), Vector2.zero, _cVectorR);
-            _scRadiusLine = rLineGo;
-            _scRadiusLineRt = rLineGo.GetComponent<RectTransform>();
+            // 动静分离：使用 BaseFlightWidget 标准硬件覆盖层图元 (0 CPU 网格重建，纯 Transform 偏移)
+            _scRadiusLineImg = CreateHardwareMarker(globeBox.transform, "SC_Radius_Line", new Vector2(1f, 1.2f * s), _cVectorR);
+            _scRadiusLine = _scRadiusLineImg.gameObject;
+            _scRadiusLineRt = _scRadiusLineImg.rectTransform;
             _scRadiusLineRt.pivot = new Vector2(0.5f, 0.5f);
-            _scRadiusLineImg = rLineGo.GetComponent<Image>();
             _scRadiusLineImg.raycastTarget = false;
             _scRadiusLine.SetActive(false);
 
-            GameObject vArrowGo = UIFactory.CreatePanel(globeBox.transform, "SC_Velocity_Arrow", new Vector2(1f, 1.5f * s), Vector2.zero, _cVectorV);
-            _scVelocityArrow = vArrowGo;
-            _scVelocityArrowRt = vArrowGo.GetComponent<RectTransform>();
+            _scVelocityArrowImg = CreateHardwareMarker(globeBox.transform, "SC_Velocity_Arrow", new Vector2(1f, 1.5f * s), _cVectorV);
+            _scVelocityArrow = _scVelocityArrowImg.gameObject;
+            _scVelocityArrowRt = _scVelocityArrowImg.rectTransform;
             _scVelocityArrowRt.pivot = new Vector2(0.5f, 0.5f);
-            _scVelocityArrowImg = vArrowGo.GetComponent<Image>();
             _scVelocityArrowImg.raycastTarget = false;
             _scVelocityArrow.SetActive(false);
 
-            GameObject scGo = UIFactory.CreatePanel(globeBox.transform, "SC_Marker", new Vector2(7f * s, 7f * s), Vector2.zero, _cVessel);
-            _scMarker = scGo;
-            _scMarkerRt = scGo.GetComponent<RectTransform>();
+            _scMarkerImg = CreateHardwareMarker(globeBox.transform, "SC_Marker", new Vector2(7f * s, 7f * s), _cVessel);
+            _scMarker = _scMarkerImg.gameObject;
+            _scMarkerRt = _scMarkerImg.rectTransform;
             _scMarkerRt.pivot = new Vector2(0.5f, 0.5f);
-            _scMarkerImg = scGo.GetComponent<Image>();
             _scMarkerImg.raycastTarget = false;
-            Outline scOutline = scGo.AddComponent<Outline>();
+            Outline scOutline = _scMarker.AddComponent<Outline>();
             scOutline.effectDistance = new Vector2(1f * s, 1f * s);
             scOutline.effectColor = _cVesselGlow;
             _scMarker.SetActive(false);
@@ -567,7 +561,8 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel)
             {
-                SetBadge(I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL"), TextStyleRole.Muted);
+                OrbitBadge.Text = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
+                OrbitBadge.SetRole(TextStyleRole.Muted);
                 return;
             }
 
@@ -680,23 +675,13 @@ namespace ModularFlightPanel.UI.Widgets
                     prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
                 if (!string.IsNullOrEmpty(prinFrame) && prinFrame != "---")
                 {
-                    string newTitle = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
-                    if (_lastTitleText != newTitle)
-                    {
-                        _lastTitleText = newTitle;
-                        Title.Text = newTitle;
-                    }
+                    Title.Text = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
                     hasPrinFrame = true;
                 }
             }
             if (!hasPrinFrame)
             {
-                string defaultTitle = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
-                if (_lastTitleText != defaultTitle)
-                {
-                    _lastTitleText = defaultTitle;
-                    Title.Text = defaultTitle;
-                }
+                Title.Text = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
             }
 
             // 3. 轨道能量状态胶囊 (Principia 描述优先)
@@ -726,20 +711,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void SetBadge(string text, TextStyleRole role)
-        {
-            if (_lastBadgeText != text)
-            {
-                _lastBadgeText = text;
-                OrbitBadge.Text = text;
-            }
-            if (_lastBadgeRole != role)
-            {
-                _lastBadgeRole = role;
-                OrbitBadge.SetRole(role);
-            }
-        }
-
         private void UpdateOrbitStateBadge(double ap, double pe, double ecc, IFlightTelemetry telemetry, bool isPrincipia)
         {
             // 优先接入 Principia 轨道分析高阶物理描述
@@ -750,7 +721,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     string clean = pDesc.Replace("\n", " ").Trim();
                     if (clean.Length > 15) clean = clean.Substring(0, 15).Trim();
-                    SetBadge(clean.ToUpperInvariant(), TextStyleRole.Accent);
+                    OrbitBadge.Text = clean.ToUpperInvariant();
+                    OrbitBadge.SetRole(TextStyleRole.Accent);
                     return;
                 }
             }
@@ -798,7 +770,8 @@ namespace ModularFlightPanel.UI.Widgets
                 badgeText = $"{badgeText} ({bodyName.ToUpperInvariant()})";
             }
 
-            SetBadge(badgeText, badgeRole);
+            OrbitBadge.Text = badgeText;
+            OrbitBadge.SetRole(badgeRole);
         }
 
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,

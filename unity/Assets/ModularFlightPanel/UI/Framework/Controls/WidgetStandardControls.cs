@@ -185,12 +185,25 @@ namespace ModularFlightPanel.UI.Framework
             if (UnitLabel != null) style.ApplyTextStyle(UnitLabel, UnitRole, theme);
         }
 
+        private double _lastNumericValue = double.NaN;
+
+        public void SetRole(TextStyleRole role)
+        {
+            if (StyleRole == role) return;
+            StyleRole = role;
+            if (ValueText != null)
+            {
+                WidgetStyleManager.Instance.ApplyTextStyle(ValueText, role, null);
+            }
+        }
+
         public void SetValue(string val, string unit = null)
         {
             if (ValueText != null && val != _lastRawValue)
             {
                 _lastRawValue = val;
-                BaseFlightWidget.SetTextIfChanged(ValueText, UIFactory.FormatTabular(val ?? Fallback));
+                string displayStr = (unit != null && UnitLabel == null) ? (val + unit) : val;
+                BaseFlightWidget.SetTextIfChanged(ValueText, UIFactory.FormatTabular(displayStr ?? Fallback));
             }
             if (unit != null && UnitLabel != null && unit != _lastUnit)
             {
@@ -203,6 +216,36 @@ namespace ModularFlightPanel.UI.Framework
         {
             string str = double.IsNaN(val) ? Fallback : CacheManager.Instance.FastDouble(Id ?? "readout", val, format, 0.05);
             SetValue(str, unit);
+        }
+
+        public bool SetNumeric(double val, string format = "F1", double deadband = 0.05, string unit = null)
+        {
+            if (!double.IsNaN(_lastNumericValue) && !double.IsNaN(val) && Math.Abs(val - _lastNumericValue) < deadband)
+                return false;
+
+            _lastNumericValue = val;
+            SetFormattedValue(val, format, unit);
+            return true;
+        }
+
+        public bool SetMetricDistance(double meters, double deadband = 1.0, string unit = null)
+        {
+            if (!double.IsNaN(_lastNumericValue) && !double.IsNaN(meters) && Math.Abs(meters - _lastNumericValue) < deadband)
+                return false;
+
+            _lastNumericValue = meters;
+            SetValue(BaseFlightWidget.FormatMetricDistance(meters), unit);
+            return true;
+        }
+
+        public bool SetMetricSpeed(double mps, double deadband = 0.5, string unit = null)
+        {
+            if (!double.IsNaN(_lastNumericValue) && !double.IsNaN(mps) && Math.Abs(mps - _lastNumericValue) < deadband)
+                return false;
+
+            _lastNumericValue = mps;
+            SetValue(BaseFlightWidget.FormatMetricSpeed(mps), unit);
+            return true;
         }
 
         public override void UpdateTelemetry(IFlightTelemetry telemetry)

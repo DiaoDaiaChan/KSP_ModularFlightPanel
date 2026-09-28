@@ -847,6 +847,42 @@ namespace ModularFlightPanel.UI
             return true;
         }
 
+        #region Hardware Overlay & Static-Dynamic Decoupling Helpers
+
+        /// <summary>
+        /// 创建标准硬件覆盖层容器（用于动态指针、航天器图元、轨迹线等动态图元）。
+        /// 隔离底层静态几何网格，所有动态移动纯靠硬件 Transform 偏移驱动，0 CPU 网格重建与 Canvas 脏化。
+        /// </summary>
+        public GameObject CreateHardwareOverlayLayer(string name = "HardwareOverlay")
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.sizeDelta = Vector2.zero;
+            rt.anchoredPosition = Vector2.zero;
+            return go;
+        }
+
+        /// <summary>
+        /// 创建标准硬件动态标记图元 (Image + RectTransform)
+        /// </summary>
+        public Image CreateHardwareMarker(Transform parent, string name, Vector2 size, Color color, Sprite sprite = null)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = size;
+            var img = go.GetComponent<Image>();
+            img.material = WidgetStyleManager.Instance?.GetUiMaterial(isText: false);
+            img.color = color;
+            if (sprite != null) img.sprite = sprite;
+            return img;
+        }
+
+        #endregion
+
         /// <summary>
         /// P1: 浮点数死区量化格式化（调用 CacheManager 统一中枢，避免每帧分配新 string 产生 GC 垃圾）
         /// </summary>

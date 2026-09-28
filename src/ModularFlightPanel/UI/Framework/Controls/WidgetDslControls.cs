@@ -29,6 +29,9 @@ namespace ModularFlightPanel.UI.Framework
         public Text TextComponent { get; private set; }
 
         private string _text = string.Empty;
+        private double _lastNumericValue = double.NaN;
+        public double Deadband { get; set; } = 0.05;
+
         public string Text
         {
             get => TextComponent != null ? TextComponent.text : _text;
@@ -50,11 +53,66 @@ namespace ModularFlightPanel.UI.Framework
 
         public void SetRole(TextStyleRole role)
         {
+            if (StyleRole == role && TextComponent != null) return;
             StyleRole = role;
             if (TextComponent != null)
             {
                 WidgetStyleManager.Instance.ApplyTextStyle(TextComponent, role, null);
             }
+        }
+
+        /// <summary>
+        /// 原生强类型数值写入（自动死区防抖 + 格式化 + UGUI 脏化拦截）
+        /// 子类直接传值，0 行多余防抖代码
+        /// </summary>
+        public bool SetValue(double val, string format = "F1", double? customDeadband = null, string prefix = null, string suffix = null)
+        {
+            double db = customDeadband ?? Deadband;
+            if (!double.IsNaN(_lastNumericValue) && !double.IsNaN(val) && Math.Abs(val - _lastNumericValue) < db)
+                return false;
+
+            _lastNumericValue = val;
+            string formatted;
+            if (double.IsNaN(val))
+            {
+                formatted = "---";
+            }
+            else
+            {
+                string numStr = val.ToString(format);
+                if (!string.IsNullOrEmpty(prefix) || !string.IsNullOrEmpty(suffix))
+                    formatted = (prefix ?? "") + numStr + (suffix ?? "");
+                else
+                    formatted = numStr;
+            }
+            Text = formatted;
+            return true;
+        }
+
+        public bool SetMetricDistance(double meters, double deadband = 1.0, string prefix = null, string suffix = null)
+        {
+            if (!double.IsNaN(_lastNumericValue) && !double.IsNaN(meters) && Math.Abs(meters - _lastNumericValue) < deadband)
+                return false;
+
+            _lastNumericValue = meters;
+            string dist = BaseFlightWidget.FormatMetricDistance(meters);
+            if (!string.IsNullOrEmpty(prefix) || !string.IsNullOrEmpty(suffix))
+                dist = (prefix ?? "") + dist + (suffix ?? "");
+            Text = dist;
+            return true;
+        }
+
+        public bool SetMetricSpeed(double mps, double deadband = 0.5, string prefix = null, string suffix = null)
+        {
+            if (!double.IsNaN(_lastNumericValue) && !double.IsNaN(mps) && Math.Abs(mps - _lastNumericValue) < deadband)
+                return false;
+
+            _lastNumericValue = mps;
+            string spd = BaseFlightWidget.FormatMetricSpeed(mps);
+            if (!string.IsNullOrEmpty(prefix) || !string.IsNullOrEmpty(suffix))
+                spd = (prefix ?? "") + spd + (suffix ?? "");
+            Text = spd;
+            return true;
         }
 
         public TextWidget(TextStyleRole role = TextStyleRole.PrimaryValue,
