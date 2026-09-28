@@ -270,6 +270,18 @@ namespace ModularFlightPanel.UI
         public static readonly IReadOnlyList<string> HotLoopMethodNames = Array.AsReadOnly(new[] { "LateUpdate", "Update", "OnUpdateTelemetry", "FixedUpdate" });
         public static readonly IReadOnlyList<string> HotLoopUguiProperties = Array.AsReadOnly(new[] { "anchoredPosition", "localScale", "color" });
 
+        /// <summary>
+        /// 触发 UGUI Canvas 网格或布局全量重建的高危 API（反模式：禁止在高频生命周期热路径内无节制调用）
+        /// </summary>
+        public static readonly IReadOnlyList<string> HotLoopMeshRebuildApis = Array.AsReadOnly(new[]
+        {
+            "SetVerticesDirty",
+            "SetAllDirty",
+            "SetLayoutDirty",
+            "SetMaterialDirty",
+            "MarkLayoutForRebuild"
+        });
+
         // ==========================================================================================
         // 契约成员名：反射级校验器与源码级审计器共用的唯一名字来源。
         // 别名常量（Rule_*）已在 WidgetSpecificationValidator 里声明，那里禁止再写裸字面量。

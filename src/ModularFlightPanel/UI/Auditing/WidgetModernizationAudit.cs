@@ -57,6 +57,8 @@ namespace ModularFlightPanel.UI.Auditing
         public bool HasBannedDockSyncCall { get; set; }
         public int HotLoopHeapAllocations { get; set; }
         public int HotLoopUguiSetters { get; set; }
+        public int HotLoopMeshRebuilds { get; set; }
+        public bool HasCustomVertexHelperMesh { get; set; }
         public bool HasUnmanagedCore3DUgui { get; set; }
         public int RawGameObjectAllocs { get; set; }
         public int ReachableHotMethodCount { get; set; }
@@ -93,6 +95,7 @@ namespace ModularFlightPanel.UI.Auditing
         public int SmartUIExtensionAdoptionCount => Items.Count(i => i.UsesSmartUIExtensions);
         public int BannedDockSyncCallCount => Items.Count(i => i.HasBannedDockSyncCall);
         public int HotLoopHeapAllocationCount => Items.Count(i => i.HotLoopHeapAllocations > 0);
+        public int HotLoopMeshRebuildCount => Items.Count(i => i.HotLoopMeshRebuilds > 0);
         public int UnmanagedCore3DUguiCount => Items.Count(i => i.HasUnmanagedCore3DUgui);
         public int HotLoopUguiSetterAbuseCount => Items.Count(i => i.HotLoopUguiSetters > 5);
         public int TotalReachableHotMethodsScanned => Items.Sum(i => i.ReachableHotMethodCount);
@@ -115,6 +118,7 @@ namespace ModularFlightPanel.UI.Auditing
                              i.RedundantFormattingMethods.Count > 0 || 
                              i.RedundantDirtyTrackingFields > 3 ||
                              i.HotLoopHeapAllocations > 0 ||
+                             i.HotLoopMeshRebuilds > 0 ||
                              i.HasUnmanagedCore3DUgui ||
                              i.HotLoopUguiSetters > 5 ||
                              i.HasBannedDockSyncCall ||
@@ -395,7 +399,13 @@ namespace ModularFlightPanel.UI.Auditing
                     item.StandardizationSuggestions.Add($"存在 {rawGoAllocs} 处裸 new GameObject 视觉拼装 (建议改用 BaseFlightWidget 语义节点工厂或 MicroControls DSL)");
                 }
 
-                // 11. 高频生命周期帧循环调用图可达闭包 (Call Graph Reachability Closure)
+                // 11. CPU 重型矢量网格反模式侦测 (定义或引用 VertexHelper 逐顶点生成网格)
+                bool hasCustomVertexHelperMesh = widgetClass.DescendantNodes()
+                    .OfType<ParameterSyntax>()
+                    .Any(p => p.Type != null && p.Type.ToString().Contains("VertexHelper"));
+                item.HasCustomVertexHelperMesh = hasCustomVertexHelperMesh;
+
+                // 12. 高频生命周期帧循环调用图可达闭包 (Call Graph Reachability Closure)
                 // 从 HotLoop 入口方法出发，递归跟踪所有被调用的内部私有方法/局部函数连通闭包，
                 // 彻底杜绝违规堆分配与裸 UGUI 逃逸到私有方法中。
                 var allClassMethods = widgetClass.Members.OfType<MethodDeclarationSyntax>().ToList();
@@ -492,11 +502,27 @@ namespace ModularFlightPanel.UI.Auditing
 
                 int hotArrayAllocs = 0;
                 int hotUguiSetters = 0;
+                int hotMeshRebuilds = 0;
                 foreach (var body in reachableHotBodies)
                 {
                     // 纳管显式数组与隐式类型数组 new[] { ... }
                     hotArrayAllocs += body.DescendantNodes().OfType<ArrayCreationExpressionSyntax>().Count();
                     hotArrayAllocs += body.DescendantNodes().OfType<ImplicitArrayCreationExpressionSyntax>().Count();
+
+                    // 纳管 Canvas 网格与布局脏重建调用 (SetVerticesDirty / SetLayoutDirty 等)
+                    var invocations = body.DescendantNodes().OfType<InvocationExpressionSyntax>();
+                    foreach (var inv in invocations)
+                    {
+                        string mName = RoslynAstHelper.GetInvokedMethodName(inv);
+                        for (int m = 0; m < WidgetSpecRules.HotLoopMeshRebuildApis.Count; m++)
+                        {
+                            if (string.Equals(mName, WidgetSpecRules.HotLoopMeshRebuildApis[m], StringComparison.Ordinal))
+                            {
+                                hotMeshRebuilds++;
+                                break;
+                            }
+                        }
+                    }
 
                     var assignments = body.DescendantNodes().OfType<AssignmentExpressionSyntax>();
                     foreach (var assign in assignments)
@@ -531,10 +557,22 @@ namespace ModularFlightPanel.UI.Auditing
                 }
                 item.HotLoopHeapAllocations = hotArrayAllocs;
                 item.HotLoopUguiSetters = hotUguiSetters;
+                item.HotLoopMeshRebuilds = hotMeshRebuilds;
 
                 if (hotArrayAllocs > 0)
                 {
                     item.StandardizationSuggestions.Add($"高频受染闭包存在 {hotArrayAllocs} 处运行时堆数组分配 (new T[]; 增加 GC 停顿压力)");
+                }
+                if (hotMeshRebuilds > 0)
+                {
+                    if (hasCustomVertexHelperMesh)
+                    {
+                        item.StandardizationSuggestions.Add($"高频受染闭包存在 {hotMeshRebuilds} 处 CPU 重型矢量网格全量重建调用 (SetVerticesDirty; 命中 VertexHelper 纯代码重度网格生成反模式，必须动静分离或做严格防抖节流)");
+                    }
+                    else
+                    {
+                        item.StandardizationSuggestions.Add($"高频受染闭包存在 {hotMeshRebuilds} 处 UGUI 网格/布局脏标记调用 (SetVerticesDirty/SetLayoutDirty; 触发 Canvas 频繁重建，建议动静分离或建立防抖)");
+                    }
                 }
                 if (hotUguiSetters > 5)
                 {
@@ -604,6 +642,14 @@ namespace ModularFlightPanel.UI.Auditing
                 }
             }
 
+            if (report.HotLoopMeshRebuildCount > 0)
+            {
+                foreach (var item in report.Items.Where(i => i.HotLoopMeshRebuilds > 0))
+                {
+                    sb.AppendLine($"{item.FilePath}(1,1): warning MFP_HOT_LOOP_MESH_REBUILD: [Anti-Pattern] {item.WidgetName}: Calls SetVerticesDirty/SetLayoutDirty in hot loop call graph ({item.HotLoopMeshRebuilds} times); triggers CPU mesh rebuild / Canvas invalidation");
+                }
+            }
+
             return sb.ToString();
         }
 
@@ -651,6 +697,7 @@ namespace ModularFlightPanel.UI.Auditing
             sb.AppendLine($"智能脏检扩展 (SmartUI):       {report.SmartUIExtensionAdoptionCount}/{report.TotalCount} 个组件已接入 SmartUIExtensions 安全赋值");
             sb.AppendLine($"手工脏标记字段全面纳管率:     {report.Items.Count(i => i.RedundantDirtyTrackingFields <= 3)}/{report.TotalCount} 个组件已消除字段级脏标记膨胀");
             sb.AppendLine($"零高频循环堆分配达成率:       {(report.TotalCount - report.HotLoopHeapAllocationCount)}/{report.TotalCount} 个组件已消除帧循环 new T[]");
+            sb.AppendLine($"零高频网格重建达成率:         {(report.TotalCount - report.HotLoopMeshRebuildCount)}/{report.TotalCount} 个组件已消除高频网格/布局脏标记");
             sb.AppendLine($"集中调度合规率 (零私自Sync):  {(report.TotalCount - report.BannedDockSyncCallCount)}/{report.TotalCount} 个组件符合集中停靠调度");
             sb.AppendLine($"高频调用图连通闭包覆盖:       {report.TotalReachableHotMethodsScanned} 个方法已纳入高频生命周期穿透审计");
             sb.AppendLine($"3D 引擎 UGUI 纯净度:          {(report.Core3DCount - report.UnmanagedCore3DUguiCount)}/{Math.Max(1, report.Core3DCount)} 个 3D 组件无裸 UGUI 逃逸");
@@ -670,6 +717,156 @@ namespace ModularFlightPanel.UI.Auditing
 
             sb.AppendLine("=======================================================================");
             return sb.ToString();
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════════════════════
+        // 自检：高频帧循环调用图闭包与网格脏标记反模式规则正反用例
+        // ══════════════════════════════════════════════════════════════════════════════════════════
+
+        public static int LastSelfTestCaseCount { get; private set; }
+
+        public static List<string> SelfTest()
+        {
+            var failures = new List<string>();
+            int cases = 0;
+
+            Action<bool, string> check = (ok, message) =>
+            {
+                cases++;
+                if (!ok) failures.Add(message);
+            };
+
+            // 1. 合规组件在热路径中无网格重建
+            string cleanSrc = @"
+using System;
+using UnityEngine;
+namespace N {
+    enum WidgetRefreshTier { Standard }
+    [FlightWidget(""clean_widget"")]
+    public class CleanWidget : BaseFlightWidget {
+        public override Vector2 BaseSize => new Vector2(100, 100);
+        public override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override void ApplyTheme(ThemeConfig theme) {}
+        public override void OnUpdateTelemetry(IFlightTelemetry t) {}
+        protected override void OnDestroy() { base.OnDestroy(); }
+    }
+}";
+            var cleanFiles = new List<WidgetSourceFile> { new WidgetSourceFile { Name = "CleanWidget.cs", Path = "CleanWidget.cs", Text = cleanSrc } };
+            var cleanGraph = WidgetClassGraph.Build(cleanFiles);
+            var cleanReport = Scan(new WidgetDiscoveryResult { Status = WidgetDiscoveryStatus.Ok, Graph = cleanGraph });
+            check(cleanReport.Items.Count == 1 && cleanReport.Items[0].HotLoopMeshRebuilds == 0, "合规组件不应误报 HotLoopMeshRebuilds");
+
+            // 2. 在 OnUpdateTelemetry 中直接调用 SetVerticesDirty 应被捕获
+            string dirtySrc = @"
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+namespace N {
+    enum WidgetRefreshTier { Standard }
+    [FlightWidget(""dirty_widget"")]
+    public class DirtyWidget : BaseFlightWidget {
+        public override Vector2 BaseSize => new Vector2(100, 100);
+        public override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override void ApplyTheme(ThemeConfig theme) {}
+        private Graphic _g;
+        public override void OnUpdateTelemetry(IFlightTelemetry t) {
+            if (_g != null) _g.SetVerticesDirty();
+        }
+        protected override void OnDestroy() { base.OnDestroy(); }
+    }
+}";
+            var dirtyFiles = new List<WidgetSourceFile> { new WidgetSourceFile { Name = "DirtyWidget.cs", Path = "DirtyWidget.cs", Text = dirtySrc } };
+            var dirtyGraph = WidgetClassGraph.Build(dirtyFiles);
+            var dirtyReport = Scan(new WidgetDiscoveryResult { Status = WidgetDiscoveryStatus.Ok, Graph = dirtyGraph });
+            check(dirtyReport.Items.Count == 1 && dirtyReport.Items[0].HotLoopMeshRebuilds == 1, "OnUpdateTelemetry 直接调用 SetVerticesDirty 漏检");
+
+            // 3. 在受染私有方法中调用 SetVerticesDirty 应被调用图闭包捕获
+            string closureDirtySrc = @"
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+namespace N {
+    enum WidgetRefreshTier { Standard }
+    [FlightWidget(""closure_dirty"")]
+    public class ClosureDirtyWidget : BaseFlightWidget {
+        public override Vector2 BaseSize => new Vector2(100, 100);
+        public override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override void ApplyTheme(ThemeConfig theme) {}
+        private Graphic _g;
+        public override void OnUpdateTelemetry(IFlightTelemetry t) {
+            InternalUpdate();
+        }
+        private void InternalUpdate() {
+            _g.SetVerticesDirty();
+        }
+        protected override void OnDestroy() { base.OnDestroy(); }
+    }
+}";
+            var closureFiles = new List<WidgetSourceFile> { new WidgetSourceFile { Name = "ClosureDirtyWidget.cs", Path = "ClosureDirtyWidget.cs", Text = closureDirtySrc } };
+            var closureGraph = WidgetClassGraph.Build(closureFiles);
+            var closureReport = Scan(new WidgetDiscoveryResult { Status = WidgetDiscoveryStatus.Ok, Graph = closureGraph });
+            check(closureReport.Items.Count == 1 && closureReport.Items[0].HotLoopMeshRebuilds == 1, "调用图闭包私有方法调用 SetVerticesDirty 漏检");
+
+            // 4. VertexHelper 矢量网格生成特征识别与重型网格全量重建告警
+            string vhDirtySrc = @"
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+namespace N {
+    enum WidgetRefreshTier { Standard }
+    [FlightWidget(""vh_dirty"")]
+    public class VhDirtyWidget : BaseFlightWidget {
+        public override Vector2 BaseSize => new Vector2(100, 100);
+        public override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override void ApplyTheme(ThemeConfig theme) {}
+        private Graphic _g;
+        public override void OnUpdateTelemetry(IFlightTelemetry t) {
+            _g.SetVerticesDirty();
+        }
+        private void PopulateCustomMesh(VertexHelper vh) {
+            vh.Clear();
+        }
+        protected override void OnDestroy() { base.OnDestroy(); }
+    }
+}";
+            var vhFiles = new List<WidgetSourceFile> { new WidgetSourceFile { Name = "VhDirtyWidget.cs", Path = "VhDirtyWidget.cs", Text = vhDirtySrc } };
+            var vhGraph = WidgetClassGraph.Build(vhFiles);
+            var vhReport = Scan(new WidgetDiscoveryResult { Status = WidgetDiscoveryStatus.Ok, Graph = vhGraph });
+            check(vhReport.Items.Count == 1 && vhReport.Items[0].HasCustomVertexHelperMesh, "VertexHelper 参数特征漏检");
+            check(vhReport.Items.Count == 1 && vhReport.Items[0].StandardizationSuggestions.Any(s => s.Contains("CPU 重型矢量网格全量重建")), "重型矢量网格反模式告警未触发");
+
+            // 5. 冷路径 OnInitialize 调用 SetVerticesDirty 不应算入高频受染热路径
+            string coldSrc = @"
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+namespace N {
+    enum WidgetRefreshTier { Standard }
+    [FlightWidget(""cold_dirty"")]
+    public class ColdDirtyWidget : BaseFlightWidget {
+        public override Vector2 BaseSize => new Vector2(100, 100);
+        public override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        protected override void OnInitialize(WidgetConfig c, ThemeConfig t) {
+            _g.SetVerticesDirty();
+        }
+        public override void ApplyTheme(ThemeConfig theme) {}
+        private Graphic _g;
+        public override void OnUpdateTelemetry(IFlightTelemetry t) {}
+        protected override void OnDestroy() { base.OnDestroy(); }
+    }
+}";
+            var coldFiles = new List<WidgetSourceFile> { new WidgetSourceFile { Name = "ColdDirtyWidget.cs", Path = "ColdDirtyWidget.cs", Text = coldSrc } };
+            var coldGraph = WidgetClassGraph.Build(coldFiles);
+            var coldReport = Scan(new WidgetDiscoveryResult { Status = WidgetDiscoveryStatus.Ok, Graph = coldGraph });
+            check(coldReport.Items.Count == 1 && coldReport.Items[0].HotLoopMeshRebuilds == 0, "冷路径 OnInitialize 中的 SetVerticesDirty 不应被误报为热循环违规");
+
+            LastSelfTestCaseCount = cases;
+            return failures;
         }
     }
 }

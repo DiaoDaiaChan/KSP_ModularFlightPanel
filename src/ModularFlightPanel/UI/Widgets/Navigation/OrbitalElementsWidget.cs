@@ -45,9 +45,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
         protected override bool AutoCreateCardFrame => true;
 
-        // ── 尺寸规格：精简模式 290×116，完整模式 300×320 ──
+        // ── 尺寸规格：精简模式 290×116，完整模式 340×380 ──
         private static readonly Vector2 CompactSize = new Vector2(290f, 116f);
-        private static readonly Vector2 FullSize = new Vector2(300f, 320f);
+        private static readonly Vector2 FullSize = new Vector2(340f, 380f);
         public override Vector2 BaseSize => _isFullMode ? FullSize : CompactSize;
 
         // ── DSL 声明式微控件 (基类全自动构建与主题纳管) ──
@@ -226,10 +226,10 @@ namespace ModularFlightPanel.UI.Widgets
             _fullRoot.SetActive(false);
 
             // 中央全息球视口 (UGUI 矢量网格渲染，大幅拓宽中央视口占比)
-            float globeBoxW = 286f * s;
-            float globeBoxH = 268f * s;
+            float globeBoxW = 326f * s;
+            float globeBoxH = 320f * s;
             GameObject globeBox = CreateAvionicsSlot(_fullRoot.transform, "Globe_Viewport_Frame",
-                new Vector2(globeBoxW, globeBoxH), new Vector2(0f, -10f * s),
+                new Vector2(globeBoxW, globeBoxH), new Vector2(0f, -14f * s),
                 WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme), slotBorder, s);
 
             _diagramGraphic = CreateChild<OrbitalDiagramGraphic>("Globe_Graphic", globeBox.transform,
@@ -241,12 +241,12 @@ namespace ModularFlightPanel.UI.Widgets
             _diagramGraphic.raycastTarget = false;
 
             // 四角 HUD 读数卡槽 (紧凑贴角排布，充分留出中央 3D 全息轨道展示空间)
-            float badgeW = 74f * s;
-            float badgeHTop = 34f * s;
-            float badgeHBot = 24f * s;
-            float cornerX = 104f * s;
-            float cornerTopY = 105f * s;
-            float cornerBottomY = -128f * s;
+            float badgeW = 80f * s;
+            float badgeHTop = 36f * s;
+            float badgeHBot = 26f * s;
+            float cornerX = 120f * s;
+            float cornerTopY = 128f * s;
+            float cornerBottomY = -154f * s;
 
             // [左上角] 拱点与时钟
             GameObject bTopL = CreateAvionicsSlot(_fullRoot.transform, "Badge_TopLeft",
@@ -815,14 +815,14 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 观察视角配置 (正交轴测相机，对齐教科书经典定义图视角：X 向左下，Y 向右，Z 向上)
             float cx = 0f;
-            float cy = -6f;
-            double camPitch = 22.0 * Math.PI / 180.0;
+            float cy = -8f;
+            double camPitch = 25.0 * Math.PI / 180.0;     // 25° 俯仰角：比 22° 更立体，轨道面倾角更直观
             double camYaw = -115.0 * Math.PI / 180.0;
             double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
             double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
 
-            double diskR = 98.0;                 // 赤道参考盘半径基准 (从 68.0 扩增至 98.0，大幅提升视口面积利用率)
-            double maxOrbitR = diskR * 1.15;
+            double diskR = 118.0;                // 赤道参考盘半径基准 (扩增至 118，充分利用 340×380 视口)
+            double maxOrbitR = diskR * 1.20;     // 轨道最大径 = 赤道盘 × 1.20 (确保轨道视觉主导)
 
             // 轨道形状：闭合椭圆 / 开放双曲线·抛物线 双路径解算
             bool closed = ecc < 1.0;
@@ -851,46 +851,46 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 绘制底座：赤道参考面 (Equatorial Plane Disk)
             // ─────────────────────────────────────────────────────────────
             DrawEquatorialDiskFilled(vh, cx, cy, diskR, cosCp, sinCp, cosCy, sinCy);
-            ProjectWorldToScreenFloat(diskR * 0.35, diskR * 0.70, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float eqP0X, out float eqP0Y, out _);
-            float eqP1X = eqP0X + 16f;
-            float eqP1Y = eqP0Y + 7f;
+            ProjectWorldToScreenFloat(diskR * 0.40, diskR * 0.75, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float eqP0X, out float eqP0Y, out _);
+            float eqP1X = eqP0X + 18f;
+            float eqP1Y = eqP0Y + 8f;
             DrawFilledCircle(vh, eqP0X, eqP0Y, 1.6f, _cAxis);
             DrawAALine(vh, eqP0X, eqP0Y, eqP1X, eqP1Y, _cAxis, 0.9f);
             DrawGlyphString(vh, eqP1X + 4f, eqP1Y + 3f, "EQ", _cLabelText);
 
             // ─────────────────────────────────────────────────────────────
-            // 2. 绘制惯性参考坐标轴 X, Y, Z (各轴差异化延展，增强空间纵深感)
+            // 2. 绘制惯性参考坐标轴 X, Y, Z (与轨道等比协调，不超压轨道视觉权重)
             // ─────────────────────────────────────────────────────────────
-            double axisLenX = diskR * 1.50;    // X 轴：春分点方向，充分延伸
-            double axisLenY = diskR * 1.42;    // Y 轴：赤道正交
-            double axisLenZ = diskR * 1.60;    // Z 轴：自转极轴，最长以强化垂直参考
+            double axisLenX = diskR * 1.35;    // X 轴：春分点方向
+            double axisLenY = diskR * 1.30;    // Y 轴：赤道正交
+            double axisLenZ = diskR * 1.40;    // Z 轴：自转极轴，稍长以强调垂直参考
 
             ProjectWorldToScreenFloat(axisLenX, 0.0, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float xEndX, out float xEndY, out _);
-            DrawArrow(vh, cx, cy, xEndX, xEndY, _cAxis, 1.0f, 6.0f);
-            DrawGlyphChar(vh, xEndX - 10f, xEndY - 7f, 'X', _cLabelText);
+            DrawArrow(vh, cx, cy, xEndX, xEndY, _cAxis, 1.0f, 7.0f);
+            DrawGlyphChar(vh, xEndX - 10f, xEndY - 8f, 'X', _cLabelText);
 
             ProjectWorldToScreenFloat(0.0, axisLenY, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float yEndX, out float yEndY, out _);
-            DrawArrow(vh, cx, cy, yEndX, yEndY, _cAxis, 1.0f, 6.0f);
-            DrawGlyphChar(vh, yEndX + 5f, yEndY - 2f, 'Y', _cLabelText);
+            DrawArrow(vh, cx, cy, yEndX, yEndY, _cAxis, 1.0f, 7.0f);
+            DrawGlyphChar(vh, yEndX + 6f, yEndY - 3f, 'Y', _cLabelText);
 
             ProjectWorldToScreenFloat(0.0, 0.0, axisLenZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out float zEndX, out float zEndY, out _);
-            DrawArrow(vh, cx, cy, zEndX, zEndY, _cAxis, 1.0f, 6.0f);
-            DrawGlyphChar(vh, zEndX - 10f, zEndY - 2f, 'Z', _cLabelText);
+            DrawArrow(vh, cx, cy, zEndX, zEndY, _cAxis, 1.0f, 7.0f);
+            DrawGlyphChar(vh, zEndX - 10f, zEndY + 4f, 'Z', _cLabelText);
 
             // ─────────────────────────────────────────────────────────────
             // 3. 升交线与 Ω 弧
             // ─────────────────────────────────────────────────────────────
-            double nodeLen = diskR * 1.25;
+            double nodeLen = diskR * 1.20;
             double nx = Math.Cos(oRad), ny = Math.Sin(oRad);
             ProjectWorldToScreenFloat(nodeLen * nx, nodeLen * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float anEndX, out float anEndY, out _);
-            DrawArrow(vh, cx, cy, anEndX, anEndY, _cNode, 1.2f, 6.0f);
+            DrawArrow(vh, cx, cy, anEndX, anEndY, _cNode, 1.2f, 7.0f);
 
-            ProjectWorldToScreenFloat(-diskR * nx, -diskR * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float dnEndX, out float dnEndY, out _);
+            ProjectWorldToScreenFloat(-diskR * 0.95 * nx, -diskR * 0.95 * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float dnEndX, out float dnEndY, out _);
             DrawDashedLine(vh, cx, cy, dnEndX, dnEndY, _cNode, 0.9f);
 
-            double lanArcR = diskR * 0.65;
+            double lanArcR = diskR * 0.55;
             DrawEquatorialArc(vh, cx, cy, lanArcR, 0.0, oRad, cosCp, sinCp, cosCy, sinCy, _cElemLan, out float omegaMidX, out float omegaMidY);
-            DrawGlyphChar(vh, omegaMidX - 4f, omegaMidY - 7f, 'Ω', _cElemLan);
+            DrawGlyphChar(vh, omegaMidX - 4f, omegaMidY - 8f, 'Ω', _cElemLan);
 
             // ─────────────────────────────────────────────────────────────
             // 4. 空间开普勒轨道三维单位基底解算
@@ -914,24 +914,24 @@ namespace ModularFlightPanel.UI.Widgets
             // ─────────────────────────────────────────────────────────────
             // 5. 轨道角动量矢量 h 与 倾角 i 空间夹角弧
             // ─────────────────────────────────────────────────────────────
-            double hLen = diskR * 1.25;
+            double hLen = diskR * 1.15;
             ProjectWorldToScreenFloat(hLen * hx, hLen * hy, hLen * hz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float hEndX, out float hEndY, out _);
-            DrawArrow(vh, cx, cy, hEndX, hEndY, _cVectorH, 1.3f, 6.5f);
-            DrawGlyphChar(vh, hEndX - 9f, hEndY - 2f, 'h', _cVectorH);
+            DrawArrow(vh, cx, cy, hEndX, hEndY, _cVectorH, 1.3f, 7.0f);
+            DrawGlyphChar(vh, hEndX - 10f, hEndY + 3f, 'h', _cVectorH);
 
-            DrawPlanarSweepArc(vh, 0.0, 0.0, 1.0, hx, hy, hz, iRad, diskR * 0.70, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemI, out float iMidX, out float iMidY);
-            DrawGlyphChar(vh, iMidX - 8f, iMidY, 'i', _cElemI);
+            DrawPlanarSweepArc(vh, 0.0, 0.0, 1.0, hx, hy, hz, iRad, diskR * 0.55, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemI, out float iMidX, out float iMidY);
+            DrawGlyphChar(vh, iMidX - 9f, iMidY + 1f, 'i', _cElemI);
 
             // ─────────────────────────────────────────────────────────────
             // 6. 偏心率/近拱点矢量 e 与 近拱点辐角 ω 弧
             // ─────────────────────────────────────────────────────────────
-            double eLen = maxOrbitR + 24.0;
+            double eLen = maxOrbitR + 20.0;
             ProjectWorldToScreenFloat(eLen * edirX, eLen * edirY, eLen * edirZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out float eEndX, out float eEndY, out _);
-            DrawArrow(vh, cx, cy, eEndX, eEndY, _cVectorE, 1.2f, 6.0f);
-            DrawGlyphChar(vh, eEndX + 5f, eEndY + 1f, 'e', _cVectorE);
+            DrawArrow(vh, cx, cy, eEndX, eEndY, _cVectorE, 1.2f, 7.0f);
+            DrawGlyphChar(vh, eEndX + 6f, eEndY + 2f, 'e', _cVectorE);
 
-            DrawPlanarSweepArc(vh, nx, ny, 0.0, hCrossNx, hCrossNy, hCrossNz, wRad, diskR * 0.48, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemAop, out float wMidX, out float wMidY);
-            DrawGlyphChar(vh, wMidX + 3f, wMidY - 3f, 'ω', _cElemAop);
+            DrawPlanarSweepArc(vh, nx, ny, 0.0, hCrossNx, hCrossNy, hCrossNz, wRad, diskR * 0.40, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemAop, out float wMidX, out float wMidY);
+            DrawGlyphChar(vh, wMidX + 4f, wMidY - 4f, 'ω', _cElemAop);
 
             // ─────────────────────────────────────────────────────────────
             // 7. 空间轨道曲线采样 (超高精 384 步亚像素采样)
@@ -1006,8 +1006,8 @@ namespace ModularFlightPanel.UI.Widgets
             float peTdy = peTanY - peY;
             float peTlen = Mathf.Sqrt(peTdx * peTdx + peTdy * peTdy);
             if (peTlen > 0.001f) { peTdx /= peTlen; peTdy /= peTlen; } else { peTdx = 0f; peTdy = 1f; }
-            float peLblX = peX + peTdx * 14f - 4f;
-            float peLblY = peY + peTdy * 14f + 3f;
+            float peLblX = peX + peTdx * 18f - 4f;
+            float peLblY = peY + peTdy * 18f + 3f;
             DrawGlyphString(vh, peLblX, peLblY, "PE", _cApPe);
 
             if (closed)
@@ -1028,30 +1028,30 @@ namespace ModularFlightPanel.UI.Widgets
                 float apTdy = apTanY - apY;
                 float apTlen = Mathf.Sqrt(apTdx * apTdx + apTdy * apTdy);
                 if (apTlen > 0.001f) { apTdx /= apTlen; apTdy /= apTlen; } else { apTdx = -1f; apTdy = 0f; }
-                float apLblX = apX + apTdx * 14f - 5f;
-                float apLblY = apY + apTdy * 14f - 3f;
+                float apLblX = apX + apTdx * 18f - 5f;
+                float apLblY = apY + apTdy * 18f - 3f;
                 DrawGlyphString(vh, apLblX, apLblY, "AP", _cApPe);
 
                 double rAn = pScale / (1.0 + eDraw * Math.Cos(-wRad));
                 ProjectWorldToScreenFloat(rAn * nx, rAn * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float anNodeX, out float anNodeY, out _);
                 DrawHollowCircle(vh, anNodeX, anNodeY, 3.4f, _cNode, 1.1f);
 
-                float anL1X = anNodeX + 14f;
-                float anL1Y = anNodeY - 10f;
+                float anL1X = anNodeX + 18f;
+                float anL1Y = anNodeY - 12f;
                 DrawAALine(vh, anNodeX, anNodeY, anL1X, anL1Y, _cNode, 0.9f);
                 DrawGlyphString(vh, anL1X + 4f, anL1Y + 3f, "AN", _cNode);
 
                 DrawDihedralInclinationArc(vh, nx, ny, rAn * 0.88, iRad, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemI, out float iDihX, out float iDihY);
-                DrawGlyphChar(vh, iDihX + 4f, iDihY - 2f, 'i', _cElemI);
+                DrawGlyphChar(vh, iDihX + 5f, iDihY - 2f, 'i', _cElemI);
 
                 double rDn = pScale / (1.0 + eDraw * Math.Cos(Math.PI - wRad));
                 ProjectWorldToScreenFloat(-rDn * nx, -rDn * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float dnNodeX, out float dnNodeY, out _);
                 DrawHollowCircle(vh, dnNodeX, dnNodeY, 3.4f, _cNode, 1.1f);
 
-                float dnL1X = dnNodeX - 12f;
-                float dnL1Y = dnNodeY + 8f;
+                float dnL1X = dnNodeX - 14f;
+                float dnL1Y = dnNodeY + 10f;
                 DrawAALine(vh, dnNodeX, dnNodeY, dnL1X, dnL1Y, _cNode, 0.9f);
-                DrawGlyphString(vh, dnL1X - 15f, dnL1Y + 3f, "DN", _cNode);
+                DrawGlyphString(vh, dnL1X - 16f, dnL1Y + 3f, "DN", _cNode);
             }
 
             // 9. 航天器、位置矢量 r、速度矢量 v 与 真近点角 ν
@@ -1076,19 +1076,19 @@ namespace ModularFlightPanel.UI.Widgets
             if (vMag > 0.001)
             {
                 dThetaX /= vMag; dThetaY /= vMag; dThetaZ /= vMag;
-                double vLen = 26.0;
+                double vLen = 32.0;
                 ProjectWorldToScreenFloat(scWx + vLen * dThetaX, scWy + vLen * dThetaY, scWz + vLen * dThetaZ,
                     cosCp, sinCp, cosCy, sinCy, cx, cy, out float vEndX, out float vEndY, out _);
-                DrawArrow(vh, scX, scY, vEndX, vEndY, _cVectorV, 1.2f, 5.5f);
+                DrawArrow(vh, scX, scY, vEndX, vEndY, _cVectorV, 1.2f, 6.0f);
                 DrawGlyphChar(vh, vEndX - 8f, vEndY - 2f, 'v', _cVectorV);
             }
 
-            DrawPlanarSweepArc(vh, edirX, edirY, edirZ, qdirX, qdirY, qdirZ, vRad, diskR * 0.38, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemTa, out float phiMidX, out float phiMidY);
-            DrawGlyphChar(vh, phiMidX + 3f, phiMidY - 3f, 'ν', _cElemTa);
+            DrawPlanarSweepArc(vh, edirX, edirY, edirZ, qdirX, qdirY, qdirZ, vRad, diskR * 0.32, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemTa, out float phiMidX, out float phiMidY);
+            DrawGlyphChar(vh, phiMidX + 4f, phiMidY - 4f, 'ν', _cElemTa);
 
-            DrawFilledCircle(vh, scX, scY, 4.2f, _cVesselGlow);
-            DrawFilledCircle(vh, scX, scY, 2.0f, _cVessel);
-            DrawGlyphString(vh, scX - 7f, scY + 10f, "SC", _cLabelText);
+            DrawFilledCircle(vh, scX, scY, 4.8f, _cVesselGlow);
+            DrawFilledCircle(vh, scX, scY, 2.2f, _cVessel);
+            DrawGlyphString(vh, scX - 7f, scY + 12f, "SC", _cLabelText);
         }
 
         // ═════════════════════════════════════════════════════════════════
