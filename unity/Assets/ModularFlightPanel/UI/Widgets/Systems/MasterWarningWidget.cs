@@ -37,6 +37,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(184f, 42f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
 
         // 模块数量：2 (经典聚拢) 或 3 (金字塔型)
         private int _modulesCount = 3;
@@ -243,6 +244,13 @@ namespace ModularFlightPanel.UI.Widgets
         private static float _clock = 0f;
         private static bool _blink1Hz = true;
         private static bool _blink2Hz = true;
+
+        // ── 数据心跳与 UI 绘制解耦状态缓存 ──
+        private bool _dataHasVessel = false;
+        private string _dataNominalTitle = string.Empty;
+        private string _dataNominalSub = string.Empty;
+        private string _dataNominalIcon = string.Empty;
+        private EventColorRole _dataNominalRole = EventColorRole.AccentPrimary;
 
         // 脏检查保护 (减少 GC 与 Canvas 重绘)
         private string _lastCautTitleStr = string.Empty;
@@ -880,20 +888,6 @@ namespace ModularFlightPanel.UI.Widgets
                 _currentEvent = newItem;
                 _bannerState = BannerDisplayState.MergedHolding;
                 _bannerTimer = 0.12f;
-
-                if (_modulesCount == 2)
-                {
-                    if (_centerDivider != null) _centerDivider.gameObject.SetActive(false);
-                    if (_cautCell != null) _cautCell.SetActive(false);
-                    if (_warnCell != null) _warnCell.SetActive(false);
-                    if (_bannerCell != null) _bannerCell.SetActive(true);
-                }
-                else
-                {
-                    if (_cautCell != null) _cautCell.SetActive(true);
-                    if (_warnCell != null) _warnCell.SetActive(true);
-                    if (_bannerCell != null) _bannerCell.SetActive(true);
-                }
                 return;
             }
 
@@ -909,12 +903,6 @@ namespace ModularFlightPanel.UI.Widgets
                 _currentEvent = newItem;
                 _bannerState = BannerDisplayState.MergedHolding;
                 _bannerTimer = 0.12f;
-                if (_bannerCell != null) _bannerCell.SetActive(true);
-                if (_modulesCount == 2)
-                {
-                    if (_cautCell != null) _cautCell.SetActive(false);
-                    if (_warnCell != null) _warnCell.SetActive(false);
-                }
             }
             else
             {
@@ -943,12 +931,21 @@ namespace ModularFlightPanel.UI.Widgets
             _warnAcknowledged = true;
         }
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (telemetry == null || !telemetry.HasVessel) return;
+            base.OnDataHeartBeat(in context);
 
-            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
-            float dt = Time.unscaledDeltaTime;
+            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            {
+                _dataHasVessel = false;
+                _cautAlerts.Clear();
+                _warnAlerts.Clear();
+                return;
+            }
+
+            _dataHasVessel = true;
+            IFlightTelemetry telemetry = context.Telemetry;
+            float dt = context.DeltaTime;
 
             // 判定降频与瞬态事件侦测 (10Hz 判定节拍器，分级/引擎状态变化时立即触发)
             bool stateChanged = telemetry.CurrentStage != _lastStage ||
@@ -976,15 +973,28 @@ namespace ModularFlightPanel.UI.Widgets
                 EvaluateTelemetryAlerts(telemetry, dt);
             }
 
-            // 3. 更新座舱全局同步时钟
+            // 3. 告警数量变动与防抖消警保护
+            UpdateAlertIndicesAndAcknowledge();
+
+            // 4. 计算巡航工况数据 (供 3 模块下层底座渲染)
+            ComputeNominalFlightPhaseData(telemetry);
+        }
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            if (!_dataHasVessel) return;
+
+            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
+            float dt = context.DeltaTime;
+
+            // 1. 更新座舱全局同步时钟与闪烁节拍
             _clock += dt;
             _blink1Hz = ((int)(_clock * 2f) % 2) == 0;
             _blink2Hz = ((int)(_clock * 4f) % 2) == 0;
 
-            // 4. 告警数量变动与防抖消警保护
-            UpdateAlertIndicesAndAcknowledge();
-
-            // 5. 定时交替轮播推进
+            // 2. 定时交替轮播推进
             _rotateTimer += dt;
             if (_rotateTimer >= _switchInterval)
             {
@@ -993,12 +1003,12 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_warnAlerts.Count > 1) _warnIndex = (_warnIndex + 1) % _warnAlerts.Count;
             }
 
-            // 6. 依据 2 模块或 3 模块架构分流驱动
+            // 3. 依据 2 模块或 3 模块架构分流驱动视觉
             if (_modulesCount == 3)
             {
                 // 3模块 金字塔形态：
                 // 上层甲板：Caution 与 Warning 光字牌永不遮挡，全天候独立工作
-                RenderVisualCells();
+                RenderVisualCells(theme);
 
                 // 下层底座：若有瞬态事件由状态机驱动展示，无事件时展示巡航工况
                 if (_bannerState != BannerDisplayState.Normal)
@@ -1007,7 +1017,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else
                 {
-                    RenderNominalFlightPhase(telemetry, theme);
+                    RenderNominalFlightPhaseUI(theme);
                 }
             }
             else
@@ -1020,7 +1030,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return;
                 }
 
-                RenderVisualCells();
+                RenderVisualCells(theme);
             }
         }
 
@@ -1317,6 +1327,20 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _bannerTimer += dt;
 
+                if (_modulesCount == 2)
+                {
+                    if (_centerDivider != null && _centerDivider.gameObject.activeSelf) _centerDivider.gameObject.SetActive(false);
+                    if (_cautCell != null && _cautCell.activeSelf) _cautCell.SetActive(false);
+                    if (_warnCell != null && _warnCell.activeSelf) _warnCell.SetActive(false);
+                    if (_bannerCell != null && !_bannerCell.activeSelf) _bannerCell.SetActive(true);
+                }
+                else
+                {
+                    if (_cautCell != null && !_cautCell.activeSelf) _cautCell.SetActive(true);
+                    if (_warnCell != null && !_warnCell.activeSelf) _warnCell.SetActive(true);
+                    if (_bannerCell != null && !_bannerCell.activeSelf) _bannerCell.SetActive(true);
+                }
+
                 SetTextIfChanged(_bannerTitle, _currentEvent.Title);
                 SetTextIfChanged(_bannerSub, _currentEvent.Sub);
                 SetTextIfChanged(_bannerLeftIcon, _currentEvent.LeftIcon);
@@ -1395,7 +1419,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                         _bannerState = BannerDisplayState.Normal;
                         _bannerTimer = 0f;
-                        RenderVisualCells();
+                        RenderVisualCells(theme);
                     }
                 }
                 else
@@ -1410,9 +1434,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void RenderNominalFlightPhase(IFlightTelemetry telem, ThemeConfig theme)
+        private void ComputeNominalFlightPhaseData(IFlightTelemetry telem)
         {
-            if (_bannerCell == null || !_bannerCell.activeSelf) return;
+            if (telem == null) return;
 
             double atmoCutoff = _cachedAtmoCutoff;
             double effectivePe = _cachedEffectivePe;
@@ -1421,21 +1445,21 @@ namespace ModularFlightPanel.UI.Widgets
             string title;
             string sub;
             string icon;
-            Color phaseColor;
+            EventColorRole role;
 
             if (telem.HasManeuverNode)
             {
                 title = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命");
                 sub = $"Δv {telem.ManeuverDeltaV:F0}";
                 icon = "◆";
-                phaseColor = theme.AccentPrimary;
+                role = EventColorRole.AccentPrimary;
             }
             else if (telem.FlightSituation == "LANDED" || telem.FlightSituation == "PRELAUNCH" || telem.FlightSituation == "SPLASHED")
             {
                 title = I18n.Tr("WIDGET_STATUS_READY", "发射就绪");
                 sub = "READY";
                 icon = "●";
-                phaseColor = theme.AccentPositive;
+                role = EventColorRole.Success;
             }
             else if (telem.FlightSituation == "ESCAPING" || (effectiveAp < 0 && effectiveAp > -9000000.0))
             {
@@ -1447,7 +1471,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 sub = _cachedPeSub ?? ($"Pe {FormatKm(effectivePe)}");
                 icon = "▲";
-                phaseColor = theme.AccentPositive;
+                role = EventColorRole.Success;
             }
             else if (effectivePe < atmoCutoff && telem.AltitudeASL >= atmoCutoff && effectivePe > -9000000.0)
             {
@@ -1462,13 +1486,13 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     title = I18n.Tr("WIDGET_STATUS_BALLISTIC", "弹道再入撞击");
                     icon = "▼";
-                    phaseColor = theme.WarningColor;
+                    role = EventColorRole.WarningColor;
                 }
                 else
                 {
                     title = I18n.Tr("WIDGET_STATUS_DEORBIT", "离轨再入走廊");
                     icon = "▼";
-                    phaseColor = theme.WarningColor;
+                    role = EventColorRole.WarningColor;
                 }
             }
             else if (telem.FlightSituation == "ORBITING" || (effectivePe >= atmoCutoff && telem.AltitudeASL >= atmoCutoff))
@@ -1481,7 +1505,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 sub = _cachedApSub ?? ($"Ap {FormatKm(effectiveAp)}");
                 icon = "●";
-                phaseColor = theme.AccentSecondary;
+                role = EventColorRole.AccentSecondary;
             }
             else if (atmoCutoff > 0.0 && telem.AltitudeASL < atmoCutoff && telem.VerticalSpeed > 10.0)
             {
@@ -1494,7 +1518,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 sub = _cachedMachSub ?? ($"M {mach:F1}");
                 icon = "▲";
-                phaseColor = theme.WarningColor;
+                role = EventColorRole.WarningColor;
             }
             else if (telem.VerticalSpeed < -10.0 && (atmoCutoff > 0.0 ? telem.AltitudeASL < atmoCutoff * 0.5 : telem.AltitudeAGL < 3000.0))
             {
@@ -1507,20 +1531,32 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 sub = _cachedVsiSub ?? ($"VSI {Mathf.RoundToInt(vsi)}");
                 icon = "▼";
-                phaseColor = theme.WarningColor;
+                role = EventColorRole.WarningColor;
             }
             else
             {
                 title = I18n.Tr("WIDGET_STATUS_SUBORBITAL", "亚轨道飞行");
                 sub = "SUB-ORB";
                 icon = "◈";
-                phaseColor = theme.AccentPrimary;
+                role = EventColorRole.AccentPrimary;
             }
 
-            SetTextIfChanged(_bannerTitle, title);
-            SetTextIfChanged(_bannerSub, sub);
-            SetTextIfChanged(_bannerLeftIcon, icon);
-            SetTextIfChanged(_bannerRightIcon, icon);
+            _dataNominalTitle = title;
+            _dataNominalSub = sub;
+            _dataNominalIcon = icon;
+            _dataNominalRole = role;
+        }
+
+        private void RenderNominalFlightPhaseUI(ThemeConfig theme)
+        {
+            if (_bannerCell == null || !_bannerCell.activeSelf) return;
+
+            Color phaseColor = ResolveEventColor(_dataNominalRole, theme);
+
+            SetTextIfChanged(_bannerTitle, _dataNominalTitle);
+            SetTextIfChanged(_bannerSub, _dataNominalSub);
+            SetTextIfChanged(_bannerLeftIcon, _dataNominalIcon);
+            SetTextIfChanged(_bannerRightIcon, _dataNominalIcon);
 
             if (_lastNominalPhaseColor != phaseColor || _nominalStyleNeedsUpdate)
             {
@@ -1683,9 +1719,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void RenderVisualCells()
+        private void RenderVisualCells(ThemeConfig theme = null)
         {
-            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
+            if (theme == null) theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             if (theme == null) return;
 
             // ── A. 渲染左舱：CAUTION ──
