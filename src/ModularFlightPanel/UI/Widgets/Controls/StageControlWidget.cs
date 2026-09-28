@@ -27,7 +27,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(DefaultPanelWidth, DefaultPanelHeight);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
-        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Critical;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
 
         private const float DefaultPanelWidth = 204f;
         private const float DefaultPanelHeight = 186f;
@@ -168,6 +168,14 @@ namespace ModularFlightPanel.UI.Widgets
         private string _dataPropName = "PROPELLANT";
         private bool _dataIsPrecisionControl = false;
         private bool _dataIsDockingMode = false;
+
+        // UI 绘制层 10Hz 数据->满帧平滑补间
+        private float _smoothedPitchInput = 0f;
+        private float _smoothedPitchTrim = 0f;
+        private float _smoothedRollInput = 0f;
+        private float _smoothedRollTrim = 0f;
+        private float _smoothedYawInput = 0f;
+        private float _smoothedYawTrim = 0f;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -889,11 +897,19 @@ namespace ModularFlightPanel.UI.Widgets
                 _stageAccentBar.color = _dataActiveEngines > 0 ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             }
 
-            // 4. 三轴舵面偏转与配平
+            // 4. 三轴舵面偏转与配平 (10Hz 数据平滑插值至满帧绘制)
+            float lerpT = Mathf.Clamp01(dt * 20f);
+            _smoothedPitchInput = Mathf.Lerp(_smoothedPitchInput, _dataPitchInput, lerpT);
+            _smoothedPitchTrim = Mathf.Lerp(_smoothedPitchTrim, _dataPitchTrim, lerpT);
+            _smoothedRollInput = Mathf.Lerp(_smoothedRollInput, _dataRollInput, lerpT);
+            _smoothedRollTrim = Mathf.Lerp(_smoothedRollTrim, _dataRollTrim, lerpT);
+            _smoothedYawInput = Mathf.Lerp(_smoothedYawInput, _dataYawInput, lerpT);
+            _smoothedYawTrim = Mathf.Lerp(_smoothedYawTrim, _dataYawTrim, lerpT);
+
             float curTrackW = _cachedTrackWidth * s;
-            UpdateAxisVisuals(_pitchMeter, _dataPitchInput, _dataPitchTrim, curTrackW, s, theme);
-            UpdateAxisVisuals(_rollMeter, _dataRollInput, _dataRollTrim, curTrackW, s, theme);
-            UpdateAxisVisuals(_yawMeter, _dataYawInput, _dataYawTrim, curTrackW, s, theme);
+            UpdateAxisVisuals(_pitchMeter, _smoothedPitchInput, _smoothedPitchTrim, curTrackW, s, theme);
+            UpdateAxisVisuals(_rollMeter, _smoothedRollInput, _smoothedRollTrim, curTrackW, s, theme);
+            UpdateAxisVisuals(_yawMeter, _smoothedYawInput, _smoothedYawTrim, curTrackW, s, theme);
 
             // 5. 分级推进剂指示条 (100% 语义驱动)
             float targetPropFrac = _dataStagePropellantFraction;
