@@ -53,6 +53,7 @@ namespace ModularFlightPanel.UI
         public WidgetLifecycleState State;
         public float LastUpdateTime;
         public int PhaseOffset;
+        public int ConsecutiveErrors;
 
         public float CustomInterval
         {
@@ -256,6 +257,25 @@ namespace ModularFlightPanel.UI
             for (int i = 0; i < _registrations.Count; i++)
             {
                 _registrations[i].State = targetState;
+            }
+        }
+
+        /// <summary>
+        /// 恢复所有被安全沙箱挂起隔离的组件（在用户重载布局、切换预设或故障自愈恢复时调用）
+        /// </summary>
+        public void ResetQuarantinedWidgets()
+        {
+            for (int i = 0; i < _registrations.Count; i++)
+            {
+                var reg = _registrations[i];
+                if (reg != null)
+                {
+                    reg.ConsecutiveErrors = 0;
+                    if (reg.State == WidgetLifecycleState.Suspended && reg.Widget != null && reg.Widget.gameObject.activeSelf)
+                    {
+                        reg.State = WidgetLifecycleState.Active;
+                    }
+                }
             }
         }
 
@@ -502,6 +522,8 @@ namespace ModularFlightPanel.UI
 
         private void ExecuteWidgetUpdate(WidgetRegistration reg, IFlightTelemetry telem, bool profileWidgets, bool wasSliced = false)
         {
+            if (reg == null || reg.Widget == null) return;
+
             if (profileWidgets)
             {
                 try
@@ -509,10 +531,11 @@ namespace ModularFlightPanel.UI
                     int drawOrder = reg.Widget?.Config?.DrawOrder ?? 0;
                     MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId, reg.Widget.DisplayName, drawOrder, reg.Tier, wasSliced);
                     reg.Widget.MasterUpdateTelemetry(telem);
+                    reg.ConsecutiveErrors = 0;
                 }
                 catch (Exception ex)
                 {
-                    UnityEngine.Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
+                    HandleWidgetError(reg, ex);
                 }
                 finally
                 {
@@ -524,11 +547,42 @@ namespace ModularFlightPanel.UI
                 try
                 {
                     reg.Widget.MasterUpdateTelemetry(telem);
+                    reg.ConsecutiveErrors = 0;
                 }
                 catch (Exception ex)
                 {
-                    UnityEngine.Debug.LogWarning($"[ModularFlightPanel] Error in {reg.Widget.WidgetId}.MasterUpdateTelemetry: {ex.Message}");
+                    HandleWidgetError(reg, ex);
                 }
+            }
+        }
+
+        private void HandleWidgetError(WidgetRegistration reg, Exception ex)
+        {
+            reg.ConsecutiveErrors++;
+            string widgetId = reg.Widget != null ? reg.Widget.WidgetId : "unknown";
+            string displayName = reg.Widget != null ? reg.Widget.DisplayName : widgetId;
+
+            if (reg.ConsecutiveErrors >= 5 && reg.State == WidgetLifecycleState.Active)
+            {
+                reg.State = WidgetLifecycleState.Suspended;
+                MFPLogger.Error(MFPLogger.CatUI, $"[WidgetRenderManager] 组件 '{displayName}' ({widgetId}) 连续抛出 {reg.ConsecutiveErrors} 次未捕获异常，已自动实施安全隔离挂起 (Quarantined/Suspended)，保障整体航电面板平稳运行！异常: {ex.Message}");
+#if KSP_RUNTIME
+                try
+                {
+                    ScreenMessages.PostScreenMessage(
+                        new ScreenMessage(
+                            $"[MFP 航电自愈] 组件 '{displayName}' 出现连续异常，已自动沙箱隔离。其余航电保持满帧运行。",
+                            5.0f,
+                            ScreenMessageStyle.UPPER_CENTER
+                        )
+                    );
+                }
+                catch { }
+#endif
+            }
+            else if (reg.ConsecutiveErrors == 1)
+            {
+                MFPLogger.Warn(MFPLogger.CatUI, $"[WidgetRenderManager] 组件 '{displayName}' ({widgetId}) UpdateTelemetry 发生异常: {ex.Message}");
             }
         }
 

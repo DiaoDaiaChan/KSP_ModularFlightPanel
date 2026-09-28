@@ -4,12 +4,6 @@ using ModularFlightPanel.Core.Probes;
 
 namespace ModularFlightPanel.Core
 {
-    public enum SpeedDisplayMode
-    {
-        Surface,
-        Orbit,
-        Target
-    }
 
     /// <summary>
     /// 统一机载遥测中枢 (Demand-Driven Reactive Telemetry Hub)

@@ -278,6 +278,18 @@ namespace ModularFlightPanel.UI
 
         public void BuildHUD()
         {
+            if (_modularWidgets != null && _modularWidgets.Count > 0)
+            {
+                for (int i = 0; i < _modularWidgets.Count; i++)
+                {
+                    var w = _modularWidgets[i];
+                    if (w != null)
+                    {
+                        try { w.Teardown(); } catch { }
+                    }
+                }
+            }
+
             if (_hudRoot != null)
             {
                 _hudRoot.SetActive(false);
@@ -452,6 +464,8 @@ namespace ModularFlightPanel.UI
             WidgetSelectionManager.Deselect(oldWidget);
             WidgetRenderManager.Instance?.UnregisterWidget(oldWidget);
             _modularWidgets.Remove(oldWidget);
+
+            try { oldWidget.Teardown(); } catch { }
 
             WidgetConfig cfg = oldWidget.Config;
             if (Application.isPlaying) Destroy(oldWidget.gameObject);

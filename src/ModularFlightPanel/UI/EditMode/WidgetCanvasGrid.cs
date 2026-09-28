@@ -110,6 +110,7 @@ namespace ModularFlightPanel.UI
 
         private void HandleEditModeChanged(bool active)
         {
+            if (this == null) return;
             UpdateVisibility();
         }
 

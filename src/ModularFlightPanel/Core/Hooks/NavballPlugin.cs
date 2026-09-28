@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI;
+using ModularFlightPanel.Core.Diagnostics;
 
 namespace ModularFlightPanel.Core
 {
@@ -15,6 +16,7 @@ namespace ModularFlightPanel.Core
 
         private void Awake()
         {
+            GlobalExceptionSentinel.Install();
             MFPLogger.Info(MFPLogger.CatCore, "Initializing Modular Flight Panel (模块化飞行面板)...");
 
             try
@@ -83,13 +85,21 @@ namespace ModularFlightPanel.Core
         {
             MFPLogger.Info(MFPLogger.CatCore, "Shutting down Modular Flight Panel...");
 
-            HarmonyPatches.RemovePatches();
-            AssetLoader.UnloadBundle();
+            try
+            {
+                ModularFlightPanel.UI.Settings.MFPInputLock.ReleaseAllLocks();
+            }
+            catch { }
 
-            if (_toolbarButton != null) Destroy(_toolbarButton);
-            if (_hud != null) Destroy(_hud);
-            if (_telemetry != null) Destroy(_telemetry);
-            if (_settings != null) Destroy(_settings);
+            try { HarmonyPatches.RemovePatches(); } catch (Exception ex) { MFPLogger.Warn(MFPLogger.CatCore, $"Error removing patches: {ex.Message}"); }
+            try { AssetLoader.UnloadBundle(); } catch (Exception ex) { MFPLogger.Warn(MFPLogger.CatCore, $"Error unloading bundle: {ex.Message}"); }
+
+            try { if (_toolbarButton != null) Destroy(_toolbarButton); } catch { }
+            try { if (_hud != null) Destroy(_hud); } catch { }
+            try { if (_telemetry != null) Destroy(_telemetry); } catch { }
+            try { if (_settings != null) Destroy(_settings); } catch { }
+
+            GlobalExceptionSentinel.Uninstall();
         }
     }
 }

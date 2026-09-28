@@ -307,7 +307,7 @@ namespace ModularFlightPanel.Editor
                 else
                     simEngine.ApplyScenario(FlightScenario.AscentTransonic);
             }
-            else if (!string.IsNullOrEmpty(targetWidgetId) && targetWidgetId.IndexOf("maneuver", StringComparison.OrdinalIgnoreCase) >= 0)
+            else if (!string.IsNullOrEmpty(targetWidgetId) && (targetWidgetId.IndexOf("maneuver", StringComparison.OrdinalIgnoreCase) >= 0 || targetWidgetId.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0))
             {
                 simEngine.ApplyScenario(FlightScenario.OrbitalCruise);
             }
@@ -610,7 +610,12 @@ namespace ModularFlightPanel.Editor
                         ecamWidget.ToggleStatusPage();
                     }
                 }
-                w.OnUpdateTelemetry(simEngine);
+                if (w is OrbitalElementsWidget oew && !string.IsNullOrEmpty(targetWidgetId) && targetWidgetId.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    var toggle = oew.GetType().GetMethod("OnModeToggle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                    toggle?.Invoke(oew, null);
+                }
+                w.MasterUpdateTelemetry(simEngine);
                 var update = w.GetType().GetMethod("Update", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
                 if (update != null)
                 {
@@ -1249,6 +1254,7 @@ namespace ModularFlightPanel.Editor
                     cfg = new WidgetConfig("nav.orbital_elements", "ORBITAL ELEMENTS 轨道六根数面板", x, y, 1.0f)
                     {
                         WidgetType = "orbital_elements",
+                        CustomTemplate = "full",
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);

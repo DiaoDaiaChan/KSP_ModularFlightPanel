@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.Settings;
 using ModularFlightPanel.UI.Widgets.Controls;
 
@@ -123,30 +124,73 @@ namespace ModularFlightPanel.UI
 
         public void ToggleWindow()
         {
-            _isOpen = !_isOpen;
-            if (_drawer != null && _drawer.enabled != _isOpen)
+            try
             {
-                _drawer.enabled = _isOpen;
-            }
+                _isOpen = !_isOpen;
+                if (_drawer != null && _drawer.enabled != _isOpen)
+                {
+                    _drawer.enabled = _isOpen;
+                }
 
-            if (!_isOpen)
-            {
-                // 关闭窗口时退出拖拽编辑模式、释放输入锁、提交暂存并持久化几何布局
-                _isResizing = false;
-                WidgetDragHandler.IsEditModeActive = false;
-                WidgetSelectionManager.ClearSelection();
-                TabAssembler.CommitPendingSaves();
-                WidgetLayoutManager.Instance.SaveLayout();
-                SaveWindowSettings();
-                MFPInputLock.ReleaseAllLocks();
+                if (!_isOpen)
+                {
+                    // 关闭窗口时退出拖拽编辑模式、释放输入锁、提交暂存并持久化几何布局
+                    _isResizing = false;
+                    try
+                    {
+                        WidgetDragHandler.IsEditModeActive = false;
+                        WidgetSelectionManager.ClearSelection();
+                    }
+                    catch (Exception ex)
+                    {
+                        MFPLogger.Warn(MFPLogger.CatUI, $"Error deactivating edit mode: {ex.Message}");
+                    }
+
+                    try
+                    {
+                        TabAssembler.CommitPendingSaves();
+                        WidgetLayoutManager.Instance.SaveLayout();
+                        SaveWindowSettings();
+                    }
+                    catch (Exception ex)
+                    {
+                        MFPLogger.Warn(MFPLogger.CatUI, $"Error committing layout saves: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    EnsureWindowRect();
+                    // 进入工作台时默认开启自由拖拽编辑模式
+                    try
+                    {
+                        WidgetDragHandler.IsEditModeActive = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        MFPLogger.Warn(MFPLogger.CatUI, $"Error activating edit mode: {ex.Message}");
+                    }
+                }
+
+                try
+                {
+                    OnWindowStateChanged?.Invoke(_isOpen);
+                }
+                catch (Exception ex)
+                {
+                    MFPLogger.Warn(MFPLogger.CatUI, $"Error invoking OnWindowStateChanged: {ex.Message}");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                EnsureWindowRect();
-                // 进入工作台时默认开启自由拖拽编辑模式
-                WidgetDragHandler.IsEditModeActive = true;
+                MFPLogger.Error(MFPLogger.CatUI, $"Error in ToggleWindow: {ex.Message}");
             }
-            OnWindowStateChanged?.Invoke(_isOpen);
+            finally
+            {
+                if (!_isOpen)
+                {
+                    MFPInputLock.ReleaseAllLocks();
+                }
+            }
         }
 
         private void EnsureWindowRect()
@@ -317,6 +361,11 @@ namespace ModularFlightPanel.UI
         }
 
         private void DrawWindowContent(int id)
+        {
+            SafeGUIGateway.ExecuteWindowContent(id, () => DrawWindowContentInternal(id), () => SwitchTab(0), "SettingsWindow");
+        }
+
+        private void DrawWindowContentInternal(int id)
         {
             GUILayout.BeginVertical();
 
@@ -618,7 +667,7 @@ namespace ModularFlightPanel.UI
             {
                 if (Owner != null && Owner.IsOpen)
                 {
-                    Owner.RenderGUI();
+                    SafeGUIGateway.ExecuteRoot(() => Owner.RenderGUI(), "SettingsGUI");
                 }
             }
         }

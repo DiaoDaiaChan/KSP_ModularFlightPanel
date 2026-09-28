@@ -83,11 +83,13 @@ namespace ModularFlightPanel.UI
 
         private void HandleEditModeChanged(bool isEdit)
         {
+            if (this == null) return;
             UpdateRaycastState();
         }
 
         public void UpdateRaycastState()
         {
+            if (this == null) return;
             bool editActive = WidgetDragHandler.IsEditModeActive && (FlightHUDManager.Instance == null || FlightHUDManager.Instance.IsUIVisible);
             if (_bgRaycastCatcher != null && _bgRaycastCatcher.raycastTarget != editActive)
             {

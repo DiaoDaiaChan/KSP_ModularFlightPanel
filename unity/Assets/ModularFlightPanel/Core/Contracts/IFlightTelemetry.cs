@@ -24,6 +24,13 @@ namespace ModularFlightPanel.Core
         Sea     // ASL 绝对海拔
     }
 
+    public enum SpeedDisplayMode
+    {
+        Surface,
+        Orbit,
+        Target
+    }
+
     /// <summary>
     /// 标准化机载遥测数据接口 (Pure Unity / C# 契约)
     /// 彻底剥离对 KSP 游戏内部类 (Vessel, FlightGlobals, Part, ModuleEngines) 的依赖。

@@ -52,8 +52,8 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _horizDivider;
         private Button _horizDividerBtn;
 
-        // 告警单元结构体
-        private struct AlertItem
+        // 告警单元结构体 (支持零 GC 判等与分桶脏检查)
+        private struct AlertItem : IEquatable<AlertItem>
         {
             public string MainTitle;
             public string TelemetryAffix;
@@ -64,6 +64,29 @@ namespace ModularFlightPanel.UI.Widgets
                 MainTitle = title;
                 TelemetryAffix = affix;
                 IsWarning = isWarning;
+            }
+
+            public bool Equals(AlertItem other)
+            {
+                return IsWarning == other.IsWarning &&
+                       string.Equals(MainTitle, other.MainTitle, StringComparison.Ordinal) &&
+                       string.Equals(TelemetryAffix, other.TelemetryAffix, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is AlertItem other && Equals(other);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = (MainTitle != null ? StringComparer.Ordinal.GetHashCode(MainTitle) : 0);
+                    hash = (hash * 397) ^ (TelemetryAffix != null ? StringComparer.Ordinal.GetHashCode(TelemetryAffix) : 0);
+                    hash = (hash * 397) ^ IsWarning.GetHashCode();
+                    return hash;
+                }
             }
         }
 
@@ -221,9 +244,155 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _warnSub;
         private Button _warnBtn;
 
-        // 告警队列
+        // 告警队列与分频分桶 (Staggered Sub-bucket Alert Architecture)
         private readonly List<AlertItem> _cautAlerts = new List<AlertItem>(8);
         private readonly List<AlertItem> _warnAlerts = new List<AlertItem>(8);
+        private readonly List<AlertItem> _urgentCautAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _urgentWarnAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _subsysCautAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _subsysWarnAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _apprCautAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _apprWarnAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _slowCautAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _slowWarnAlerts = new List<AlertItem>(4);
+        private readonly List<AlertItem> _tempCaut = new List<AlertItem>(4);
+        private readonly List<AlertItem> _tempWarn = new List<AlertItem>(4);
+        private uint _heartbeatTick = 0;
+        private bool _alertsDirty = false;
+
+        // 遥测数据死区量化格式缓存 (Zero-GC Telemetry Affix Deadbands)
+        private string _cachedAglStr = "0m";
+        private int _lastAglMeters = -9999;
+        private string _cachedVsiStr = "0m/s";
+        private int _lastVsiVal = -9999;
+        private string _cachedGForceStr = "1.0G";
+        private double _lastGForceVal = -999.0;
+        private string _cachedTempStr = "0°C";
+        private int _lastTempInt = -9999;
+        private string _cachedTtiStr = "0s";
+        private int _lastTtiSec = -9999;
+        private string _cachedClosureRateStr = "0.0m/s";
+        private double _lastClosureRateVal = -999.0;
+        private string _cachedVMassStr = "0.0t";
+        private double _lastVMassVal = -999.0;
+        private string _cachedRadStr = "0.00r/h";
+        private double _lastRadVal = -999.0;
+        private string _cachedPressStr = "0.00a";
+        private double _lastPressVal = -999.0;
+        private string _cachedDbsSecStr = "0s";
+        private int _lastDbsSec = -9999;
+        private string _cachedDbsMinStr = "0m";
+        private int _lastDbsMin = -9999;
+
+        private string FormatAglM(int agl)
+        {
+            if (Math.Abs(agl - _lastAglMeters) >= 5)
+            {
+                _lastAglMeters = agl;
+                _cachedAglStr = CacheManager.FastInt(agl) + "m";
+            }
+            return _cachedAglStr;
+        }
+
+        private string FormatVsiMps(int vsi)
+        {
+            if (Math.Abs(vsi - _lastVsiVal) >= 2)
+            {
+                _lastVsiVal = vsi;
+                _cachedVsiStr = CacheManager.FastInt(vsi) + "m/s";
+            }
+            return _cachedVsiStr;
+        }
+
+        private string FormatGForce(double g)
+        {
+            if (Math.Abs(g - _lastGForceVal) >= 0.1)
+            {
+                _lastGForceVal = g;
+                _cachedGForceStr = $"{g:F1}G";
+            }
+            return _cachedGForceStr;
+        }
+
+        private string FormatTemp(int temp)
+        {
+            if (Math.Abs(temp - _lastTempInt) >= 2)
+            {
+                _lastTempInt = temp;
+                _cachedTempStr = CacheManager.FastInt(temp) + "°C";
+            }
+            return _cachedTempStr;
+        }
+
+        private string FormatTtiSec(int tti)
+        {
+            if (Math.Abs(tti - _lastTtiSec) >= 1)
+            {
+                _lastTtiSec = tti;
+                _cachedTtiStr = CacheManager.FastInt(tti) + "s";
+            }
+            return _cachedTtiStr;
+        }
+
+        private string FormatClosureRate(double rate)
+        {
+            if (Math.Abs(rate - _lastClosureRateVal) >= 0.1)
+            {
+                _lastClosureRateVal = rate;
+                _cachedClosureRateStr = $"{rate:F1}m/s";
+            }
+            return _cachedClosureRateStr;
+        }
+
+        private string FormatVMass(double mass)
+        {
+            if (Math.Abs(mass - _lastVMassVal) >= 0.2)
+            {
+                _lastVMassVal = mass;
+                _cachedVMassStr = $"{mass:F1}t";
+            }
+            return _cachedVMassStr;
+        }
+
+        private string FormatRadiation(double rad)
+        {
+            if (Math.Abs(rad - _lastRadVal) >= 0.02)
+            {
+                _lastRadVal = rad;
+                _cachedRadStr = $"{rad:F2}r/h";
+            }
+            return _cachedRadStr;
+        }
+
+        private string FormatPressure(double press)
+        {
+            if (Math.Abs(press - _lastPressVal) >= 0.02)
+            {
+                _lastPressVal = press;
+                _cachedPressStr = $"{press:F2}a";
+            }
+            return _cachedPressStr;
+        }
+
+        private string FormatDbsSec(int sec)
+        {
+            if (Math.Abs(sec - _lastDbsSec) >= 2)
+            {
+                _lastDbsSec = sec;
+                _cachedDbsSecStr = CacheManager.FastInt(sec) + "s";
+            }
+            return _cachedDbsSecStr;
+        }
+
+        private string FormatDbsMin(int min)
+        {
+            if (Math.Abs(min - _lastDbsMin) >= 1)
+            {
+                _lastDbsMin = min;
+                _cachedDbsMinStr = CacheManager.FastInt(min) + "m";
+            }
+            return _cachedDbsMinStr;
+        }
 
         // 轮播计时器
         private float _rotateTimer = 0f;
@@ -268,8 +437,41 @@ namespace ModularFlightPanel.UI.Widgets
         private int _lastRenderedWarnIdx = -1;
         private int _lastRenderedWarnTotal = -1;
 
+        // 国际化文本高速缓存 (彻底消除字典查表与堆分配)
+        private string _cachedStrCaution;
+        private string _cachedStrWarning;
+        private string _cachedStrNorm;
+        private string _cachedStrArmed;
+        private string _cachedStrNodeArmed;
+        private string _cachedStrReady;
+        private string _cachedStrEscape;
+        private string _cachedStrBallistic;
+        private string _cachedStrDeorbit;
+        private string _cachedStrOrbitCruise;
+        private string _cachedStrAscent;
+        private string _cachedStrApproach;
+        private string _cachedStrSuborbital;
+
+        private void InitCachedI18n()
+        {
+            _cachedStrCaution = I18n.Tr("WIDGET_ALERT_CAUTION", "注意");
+            _cachedStrWarning = I18n.Tr("WIDGET_ALERT_WARNING", "警告");
+            _cachedStrNorm = I18n.Tr("WIDGET_ALERT_NORM", "NORM");
+            _cachedStrArmed = I18n.Tr("WIDGET_ALERT_ARMED", "待发");
+            _cachedStrNodeArmed = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命");
+            _cachedStrReady = I18n.Tr("WIDGET_STATUS_READY", "发射就绪");
+            _cachedStrEscape = I18n.Tr("WIDGET_STATUS_ESCAPE", "深空逃逸");
+            _cachedStrBallistic = I18n.Tr("WIDGET_STATUS_BALLISTIC", "弹道再入撞击");
+            _cachedStrDeorbit = I18n.Tr("WIDGET_STATUS_DEORBIT", "离轨再入走廊");
+            _cachedStrOrbitCruise = I18n.Tr("WIDGET_STATUS_ORBIT_CRUISE", "轨道巡航");
+            _cachedStrAscent = I18n.Tr("WIDGET_STATUS_ASCENT", "大气爬升");
+            _cachedStrApproach = I18n.Tr("WIDGET_STATUS_APPROACH", "降落进近");
+            _cachedStrSuborbital = I18n.Tr("WIDGET_STATUS_SUBORBITAL", "亚轨道飞行");
+        }
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
+            InitCachedI18n();
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
 
@@ -1037,14 +1239,15 @@ namespace ModularFlightPanel.UI.Widgets
             if (context.Telemetry == null || !context.Telemetry.HasVessel)
             {
                 _dataHasVessel = false;
-                _cautAlerts.Clear();
-                _warnAlerts.Clear();
+                if (_cautAlerts.Count > 0) _cautAlerts.Clear();
+                if (_warnAlerts.Count > 0) _warnAlerts.Clear();
                 return;
             }
 
             _dataHasVessel = true;
             IFlightTelemetry telemetry = context.Telemetry;
             float dt = context.DeltaTime;
+            _heartbeatTick++;
 
             // 1. 标准化接入独立飞行瞬态事件检测器与 CacheManager 统一快送
             float now = Time.unscaledTime;
@@ -1059,21 +1262,22 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedEffectivePe = snapshot.EffectivePeriapsis;
             _cachedEffectiveAp = snapshot.EffectiveApoapsis;
 
-            // 2. 持续评估当前所有活跃警报 (10Hz 判定节拍，发生瞬态事件或首次评估时立即触发)
+            // 2. 错峰分频评估当前告警 (10Hz/5Hz/2Hz 分级判定，发生瞬态事件或首次评估时立即触发全量)
             _alertEvalTimer += dt;
-            if (_alertEvalTimer >= ALERT_EVAL_INTERVAL || _forceImmediateAlertEval || snapshot.TriggeredEvent != FlightTransientEventType.None)
+            bool forceAll = _forceImmediateAlertEval || snapshot.TriggeredEvent != FlightTransientEventType.None;
+            if (_alertEvalTimer >= ALERT_EVAL_INTERVAL || forceAll)
             {
                 _alertEvalTimer = 0f;
                 _forceImmediateAlertEval = false;
 
-                EvaluateTelemetryAlerts(telemetry, dt);
+                EvaluateTelemetryAlertsStaggered(telemetry, dt, forceAll);
             }
 
-            // 3. 告警数量变动与防抖消警保护
-            UpdateAlertIndicesAndAcknowledge();
-
-            // 4. 计算巡航工况数据 (供 3 模块下层底座渲染)
-            ComputeNominalFlightPhaseData(telemetry);
+            // 3. 计算巡航工况数据 (5Hz 采样或瞬态事件触发时立即更新)
+            if ((_heartbeatTick % 2 == 0) || forceAll || string.IsNullOrEmpty(_dataNominalTitle))
+            {
+                ComputeNominalFlightPhaseData(telemetry);
+            }
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -1212,35 +1416,35 @@ namespace ModularFlightPanel.UI.Widgets
                 if (!object.ReferenceEquals(_lastRenderedEventTitle, _currentEvent.Title) && _lastRenderedEventTitle != _currentEvent.Title)
                 {
                     _lastRenderedEventTitle = _currentEvent.Title;
-                    if (_bannerTitle != null) _bannerTitle.text = _currentEvent.Title;
+                    if (_bannerTitle != null) _bannerTitle.SetTextSafe(_currentEvent.Title);
                 }
                 if (!object.ReferenceEquals(_lastRenderedEventSub, _currentEvent.Sub) && _lastRenderedEventSub != _currentEvent.Sub)
                 {
                     _lastRenderedEventSub = _currentEvent.Sub;
-                    if (_bannerSub != null) _bannerSub.text = _currentEvent.Sub;
+                    if (_bannerSub != null) _bannerSub.SetTextSafe(_currentEvent.Sub);
                 }
                 if (!object.ReferenceEquals(_lastRenderedEventLeftIcon, _currentEvent.LeftIcon) && _lastRenderedEventLeftIcon != _currentEvent.LeftIcon)
                 {
                     _lastRenderedEventLeftIcon = _currentEvent.LeftIcon;
-                    if (_bannerLeftIcon != null) _bannerLeftIcon.text = _currentEvent.LeftIcon;
+                    if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_currentEvent.LeftIcon);
                 }
                 if (!object.ReferenceEquals(_lastRenderedEventRightIcon, _currentEvent.RightIcon) && _lastRenderedEventRightIcon != _currentEvent.RightIcon)
                 {
                     _lastRenderedEventRightIcon = _currentEvent.RightIcon;
-                    if (_bannerRightIcon != null) _bannerRightIcon.text = _currentEvent.RightIcon;
+                    if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_currentEvent.RightIcon);
                 }
 
-                // 航电高光微脉冲 (呼吸感)
+                // 航电高光微脉冲仅作用于 Pip 细条 (避免 Outline/Text 每帧触发顶点重建)
                 float pulse = 0.82f + 0.18f * Mathf.Sin(_bannerTimer * 12f);
                 Color activeCol = WidgetStyleManager.WithAlpha(eventColor, pulse);
 
                 if (_bannerBg != null) SetColorIfChanged(_bannerBg, WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
-                if (_bannerOutline != null) SetOutlineColorIfChanged(_bannerOutline, activeCol);
+                if (_bannerOutline != null) SetOutlineColorIfChanged(_bannerOutline, eventColor);
                 if (_bannerPipBar != null) SetColorIfChanged(_bannerPipBar, activeCol);
                 if (_bannerTitle != null) SetColorIfChanged(_bannerTitle, eventColor);
                 if (_bannerSub != null) SetColorIfChanged(_bannerSub, WidgetStyleManager.WithAlpha(eventColor, 0.75f));
-                if (_bannerLeftIcon != null) SetColorIfChanged(_bannerLeftIcon, activeCol);
-                if (_bannerRightIcon != null) SetColorIfChanged(_bannerRightIcon, activeCol);
+                if (_bannerLeftIcon != null) SetColorIfChanged(_bannerLeftIcon, eventColor);
+                if (_bannerRightIcon != null) SetColorIfChanged(_bannerRightIcon, eventColor);
 
                 // 若有排队连击事件，单事件展示时长适度收紧 (0.95s)，保持紧凑利落的航电节奏感
                 float targetDuration = (_bannerQueue.Count > 0) ? Mathf.Min(_currentEvent.Duration, 0.95f) : _currentEvent.Duration;
@@ -1268,22 +1472,22 @@ namespace ModularFlightPanel.UI.Widgets
                 if (!object.ReferenceEquals(_lastRenderedEventTitle, _currentEvent.Title) && _lastRenderedEventTitle != _currentEvent.Title)
                 {
                     _lastRenderedEventTitle = _currentEvent.Title;
-                    if (_bannerTitle != null) _bannerTitle.text = _currentEvent.Title;
+                    if (_bannerTitle != null) _bannerTitle.SetTextSafe(_currentEvent.Title);
                 }
                 if (!object.ReferenceEquals(_lastRenderedEventSub, _currentEvent.Sub) && _lastRenderedEventSub != _currentEvent.Sub)
                 {
                     _lastRenderedEventSub = _currentEvent.Sub;
-                    if (_bannerSub != null) _bannerSub.text = _currentEvent.Sub;
+                    if (_bannerSub != null) _bannerSub.SetTextSafe(_currentEvent.Sub);
                 }
                 if (!object.ReferenceEquals(_lastRenderedEventLeftIcon, _currentEvent.LeftIcon) && _lastRenderedEventLeftIcon != _currentEvent.LeftIcon)
                 {
                     _lastRenderedEventLeftIcon = _currentEvent.LeftIcon;
-                    if (_bannerLeftIcon != null) _bannerLeftIcon.text = _currentEvent.LeftIcon;
+                    if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_currentEvent.LeftIcon);
                 }
                 if (!object.ReferenceEquals(_lastRenderedEventRightIcon, _currentEvent.RightIcon) && _lastRenderedEventRightIcon != _currentEvent.RightIcon)
                 {
                     _lastRenderedEventRightIcon = _currentEvent.RightIcon;
-                    if (_bannerRightIcon != null) _bannerRightIcon.text = _currentEvent.RightIcon;
+                    if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_currentEvent.RightIcon);
                 }
 
                 Color switchColor = ResolveEventColor(_currentEvent.ColorRole, theme);
@@ -1357,7 +1561,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (telem.HasManeuverNode)
             {
-                title = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命");
+                title = _cachedStrNodeArmed ?? (_cachedStrNodeArmed = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命"));
                 double dv = telem.ManeuverDeltaV;
                 if (Math.Abs(dv - _lastRenderedDv) > 0.5)
                 {
@@ -1370,14 +1574,14 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else if (telem.FlightSituation == "LANDED" || telem.FlightSituation == "PRELAUNCH" || telem.FlightSituation == "SPLASHED")
             {
-                title = I18n.Tr("WIDGET_STATUS_READY", "发射就绪");
+                title = _cachedStrReady ?? (_cachedStrReady = I18n.Tr("WIDGET_STATUS_READY", "发射就绪"));
                 sub = "READY";
                 icon = "●";
                 role = EventColorRole.Success;
             }
             else if (telem.FlightSituation == "ESCAPING" || (effectiveAp < 0 && effectiveAp > -9000000.0))
             {
-                title = I18n.Tr("WIDGET_STATUS_ESCAPE", "深空逃逸");
+                title = _cachedStrEscape ?? (_cachedStrEscape = I18n.Tr("WIDGET_STATUS_ESCAPE", "深空逃逸"));
                 if (Math.Abs(effectivePe - _lastRenderedPe) > 500.0)
                 {
                     _lastRenderedPe = effectivePe;
@@ -1398,20 +1602,20 @@ namespace ModularFlightPanel.UI.Widgets
                 sub = _cachedPeSub ?? ($"Pe {FormatKm(effectivePe)}");
                 if (effectivePe < 0)
                 {
-                    title = I18n.Tr("WIDGET_STATUS_BALLISTIC", "弹道再入撞击");
+                    title = _cachedStrBallistic ?? (_cachedStrBallistic = I18n.Tr("WIDGET_STATUS_BALLISTIC", "弹道再入撞击"));
                     icon = "▼";
                     role = EventColorRole.WarningColor;
                 }
                 else
                 {
-                    title = I18n.Tr("WIDGET_STATUS_DEORBIT", "离轨再入走廊");
+                    title = _cachedStrDeorbit ?? (_cachedStrDeorbit = I18n.Tr("WIDGET_STATUS_DEORBIT", "离轨再入走廊"));
                     icon = "▼";
                     role = EventColorRole.WarningColor;
                 }
             }
             else if (telem.FlightSituation == "ORBITING" || (effectivePe >= atmoCutoff && telem.AltitudeASL >= atmoCutoff))
             {
-                title = I18n.Tr("WIDGET_STATUS_ORBIT_CRUISE", "轨道巡航");
+                title = _cachedStrOrbitCruise ?? (_cachedStrOrbitCruise = I18n.Tr("WIDGET_STATUS_ORBIT_CRUISE", "轨道巡航"));
                 if (Math.Abs(effectiveAp - _lastRenderedAp) > 500.0)
                 {
                     _lastRenderedAp = effectiveAp;
@@ -1423,7 +1627,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else if (atmoCutoff > 0.0 && telem.AltitudeASL < atmoCutoff && telem.VerticalSpeed > 10.0)
             {
-                title = I18n.Tr("WIDGET_STATUS_ASCENT", "大气爬升");
+                title = _cachedStrAscent ?? (_cachedStrAscent = I18n.Tr("WIDGET_STATUS_ASCENT", "大气爬升"));
                 float mach = (float)telem.Mach;
                 if (Math.Abs(mach - _lastRenderedMach) > 0.05f)
                 {
@@ -1436,7 +1640,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else if (telem.VerticalSpeed < -10.0 && (atmoCutoff > 0.0 ? telem.AltitudeASL < atmoCutoff * 0.5 : telem.AltitudeAGL < 3000.0))
             {
-                title = I18n.Tr("WIDGET_STATUS_APPROACH", "降落进近");
+                title = _cachedStrApproach ?? (_cachedStrApproach = I18n.Tr("WIDGET_STATUS_APPROACH", "降落进近"));
                 float vsi = (float)telem.VerticalSpeed;
                 if (Math.Abs(vsi - _lastRenderedVsi) > 1.0f)
                 {
@@ -1449,7 +1653,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                title = I18n.Tr("WIDGET_STATUS_SUBORBITAL", "亚轨道飞行");
+                title = _cachedStrSuborbital ?? (_cachedStrSuborbital = I18n.Tr("WIDGET_STATUS_SUBORBITAL", "亚轨道飞行"));
                 sub = "SUB-ORB";
                 icon = "◈";
                 role = EventColorRole.AccentPrimary;
@@ -1470,18 +1674,18 @@ namespace ModularFlightPanel.UI.Widgets
             if (!object.ReferenceEquals(_lastRenderedNominalTitle, _dataNominalTitle) && _lastRenderedNominalTitle != _dataNominalTitle)
             {
                 _lastRenderedNominalTitle = _dataNominalTitle;
-                if (_bannerTitle != null) _bannerTitle.text = _dataNominalTitle;
+                if (_bannerTitle != null) _bannerTitle.SetTextSafe(_dataNominalTitle);
             }
             if (!object.ReferenceEquals(_lastRenderedNominalSub, _dataNominalSub) && _lastRenderedNominalSub != _dataNominalSub)
             {
                 _lastRenderedNominalSub = _dataNominalSub;
-                if (_bannerSub != null) _bannerSub.text = _dataNominalSub;
+                if (_bannerSub != null) _bannerSub.SetTextSafe(_dataNominalSub);
             }
             if (!object.ReferenceEquals(_lastRenderedNominalIcon, _dataNominalIcon) && _lastRenderedNominalIcon != _dataNominalIcon)
             {
                 _lastRenderedNominalIcon = _dataNominalIcon;
-                if (_bannerLeftIcon != null) _bannerLeftIcon.text = _dataNominalIcon;
-                if (_bannerRightIcon != null) _bannerRightIcon.text = _dataNominalIcon;
+                if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_dataNominalIcon);
+                if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_dataNominalIcon);
             }
 
             if (_lastNominalPhaseColor != phaseColor || _nominalStyleNeedsUpdate)
@@ -1504,16 +1708,97 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void EvaluateTelemetryAlerts(IFlightTelemetry telem, float dt)
+        private void EvaluateTelemetryAlertsStaggered(IFlightTelemetry telem, float dt, bool forceAll)
+        {
+            // ── Tier 1: 极度危急与生存安全 (10Hz 判定，每拍必测) ──
+            _tempCaut.Clear();
+            _tempWarn.Clear();
+            EvaluateUrgentSafetyAlerts(telem, dt, _tempCaut, _tempWarn);
+            if (UpdateAlertBucket(_urgentCautAlerts, _tempCaut)) _alertsDirty = true;
+            if (UpdateAlertBucket(_urgentWarnAlerts, _tempWarn)) _alertsDirty = true;
+
+            // ── Tier 2: 飞船资源与子系统状态 (5Hz 判定，偶数拍执行) ──
+            if (forceAll || (_heartbeatTick % 2 == 0))
+            {
+                _tempCaut.Clear();
+                _tempWarn.Clear();
+                EvaluateSubsystemAlerts(telem, _tempCaut, _tempWarn);
+                if (UpdateAlertBucket(_subsysCautAlerts, _tempCaut)) _alertsDirty = true;
+                if (UpdateAlertBucket(_subsysWarnAlerts, _tempWarn)) _alertsDirty = true;
+            }
+
+            // ── Tier 3: 进近、气动与姿轨导航安全 (5Hz 判定，奇数拍执行) ──
+            if (forceAll || (_heartbeatTick % 2 == 1))
+            {
+                _tempCaut.Clear();
+                _tempWarn.Clear();
+                EvaluateApproachAlerts(telem, _tempCaut, _tempWarn);
+                if (UpdateAlertBucket(_apprCautAlerts, _tempCaut)) _alertsDirty = true;
+                if (UpdateAlertBucket(_apprWarnAlerts, _tempWarn)) _alertsDirty = true;
+            }
+
+            // ── Tier 4: 慢速外围环境与深度诊断探针 (2Hz 判定，每 5 拍执行) ──
+            if (forceAll || (_heartbeatTick % 5 == 0))
+            {
+                _tempCaut.Clear();
+                _tempWarn.Clear();
+                EvaluateSlowDiagnosticAlerts(telem, _tempCaut, _tempWarn);
+                if (UpdateAlertBucket(_slowCautAlerts, _tempCaut)) _alertsDirty = true;
+                if (UpdateAlertBucket(_slowWarnAlerts, _tempWarn)) _alertsDirty = true;
+            }
+
+            // 若任何子桶发生状态改变，原子重建合并列表并重置消警
+            if (_alertsDirty)
+            {
+                RebuildMergedAlerts();
+            }
+        }
+
+        private static bool AlertListsEqual(List<AlertItem> a, List<AlertItem> b)
+        {
+            if (a.Count != b.Count) return false;
+            for (int i = 0; i < a.Count; i++)
+            {
+                if (!a[i].Equals(b[i])) return false;
+            }
+            return true;
+        }
+
+        private static bool UpdateAlertBucket(List<AlertItem> target, List<AlertItem> temp)
+        {
+            if (AlertListsEqual(target, temp))
+            {
+                return false;
+            }
+            target.Clear();
+            target.AddRange(temp);
+            return true;
+        }
+
+        private void RebuildMergedAlerts()
         {
             _cautAlerts.Clear();
-            _warnAlerts.Clear();
+            _cautAlerts.AddRange(_urgentCautAlerts);
+            _cautAlerts.AddRange(_subsysCautAlerts);
+            _cautAlerts.AddRange(_apprCautAlerts);
+            _cautAlerts.AddRange(_slowCautAlerts);
 
-            // ── 1. 推进剂与沉底 (FUEL / ULLAGE) ──
+            _warnAlerts.Clear();
+            _warnAlerts.AddRange(_urgentWarnAlerts);
+            _warnAlerts.AddRange(_subsysWarnAlerts);
+            _warnAlerts.AddRange(_apprWarnAlerts);
+            _warnAlerts.AddRange(_slowWarnAlerts);
+
+            _alertsDirty = false;
+            UpdateAlertIndicesAndAcknowledge();
+        }
+
+        private void EvaluateUrgentSafetyAlerts(IFlightTelemetry telem, float dt, List<AlertItem> cautOut, List<AlertItem> warnOut)
+        {
+            // 1. 低油量持续防抖安全判定
             float prop = telem.StagePropellantFraction;
             bool engineArmed = telem.ActiveEngines > 0 || (telem.TotalStageEngines > 0 && telem.Throttle > 0.001f);
 
-            // 航电标准低油量安全门限 (Strict Safety Bounds: Warning <= 5%, Caution <= 15%)
             float warnThresh = 0.05f;
             float cautThresh = 0.15f;
             if (_customWarnThresh > 0.001f) warnThresh = _customWarnThresh;
@@ -1524,7 +1809,6 @@ namespace ModularFlightPanel.UI.Widgets
             else if (Config != null && Config.CautionThreshold > 0.01 && Config.CautionThreshold <= 40.0)
                 cautThresh = (float)Config.CautionThreshold / 100f;
 
-            // 绝对安全熔断器：若油量在 40% 以上，物理上绝对属于正常或充足，立即清空低油量防抖计数器，杜绝误报
             if (prop >= 0.40f || !engineArmed)
             {
                 _lowFuelPersistentTimer = 0f;
@@ -1534,9 +1818,10 @@ namespace ModularFlightPanel.UI.Widgets
                 _lowFuelPersistentTimer += dt;
                 if (_lowFuelPersistentTimer >= LOW_FUEL_PERSISTENCE)
                 {
-                    int propPct = Mathf.RoundToInt(prop * 100f);
-                    if (prop <= warnThresh) _warnAlerts.Add(new AlertItem("MIN FUEL!", $"{propPct}%", true));
-                    else _cautAlerts.Add(new AlertItem("LOW FUEL", $"{propPct}%", false));
+                    int propPct = Mathf.Clamp(Mathf.RoundToInt(prop * 100f), 0, 100);
+                    string affix = CacheManager.FastPercent(propPct);
+                    if (prop <= warnThresh) warnOut.Add(new AlertItem("MIN FUEL!", affix, true));
+                    else cautOut.Add(new AlertItem("LOW FUEL", affix, false));
                 }
             }
             else
@@ -1544,251 +1829,165 @@ namespace ModularFlightPanel.UI.Widgets
                 _lowFuelPersistentTimer = 0f;
             }
 
-            // RealFuels 探针沉底状态 (物理门控：仅在引擎处于武装状态且推力请求大于 0 时查询)
-            if (engineArmed && telem.Throttle > 0.001f && ExternalProbeRegistry.StringResolver != null)
+            // 2. 近地危险下沉与拉起
+            if (telem.VerticalSpeed < -12.0 && telem.AltitudeAGL < 2000.0)
+            {
+                bool severePullUp = (telem.VerticalSpeed < -25.0 && telem.AltitudeAGL < 600.0 && telem.AltitudeAGL > 3.0) ||
+                                    (telem.VerticalSpeed < -12.0 && telem.AltitudeAGL < 150.0 && telem.AltitudeAGL > 3.0);
+                if (severePullUp)
+                {
+                    int aglInt = Mathf.RoundToInt((float)telem.AltitudeAGL);
+                    warnOut.Add(new AlertItem("PULL UP!", FormatAglM(aglInt), true));
+                }
+                else if (telem.AltitudeAGL > 10.0)
+                {
+                    int vsiInt = Mathf.RoundToInt((float)telem.VerticalSpeed);
+                    cautOut.Add(new AlertItem("SINK RATE", FormatVsiMps(vsiInt), false));
+                }
+            }
+
+            // 3. 过载极限 (G-FORCE)
+            double g = telem.GForce;
+            if (g > 6.0)
+            {
+                string gStr = FormatGForce(g);
+                if (g > 9.0) warnOut.Add(new AlertItem("EXCESS G!", gStr, true));
+                else cautOut.Add(new AlertItem("HIGH G", gStr, false));
+            }
+
+            // 4. 气动失速 (STALL / FAR)
+            if (ExternalProbeRegistry.HasFar && telem.AtmosphericPressure > 0.001 && telem.DynamicPressure > 0.5)
+            {
+                double farStall = ExternalProbeRegistry.ResolveNumeric("FAR", "STALL");
+                if (!double.IsNaN(farStall))
+                {
+                    int stallPct = Mathf.Clamp(Mathf.RoundToInt((float)(farStall * 100.0)), 0, 100);
+                    string stallStr = CacheManager.FastPercent(stallPct);
+                    if (farStall > 0.70) warnOut.Add(new AlertItem("STALL!", stallStr, true));
+                    else if (farStall > 0.30) cautOut.Add(new AlertItem("STALL WARN", stallStr, false));
+                }
+            }
+        }
+
+        private void EvaluateSubsystemAlerts(IFlightTelemetry telem, List<AlertItem> cautOut, List<AlertItem> warnOut)
+        {
+            bool engineArmed = telem.ActiveEngines > 0 || (telem.TotalStageEngines > 0 && telem.Throttle > 0.001f);
+
+            // RealFuels 探针沉底状态
+            if (ExternalProbeRegistry.HasRealFuels && engineArmed && telem.Throttle > 0.001f)
             {
                 string rfUllage = ExternalProbeRegistry.ResolveString("RF", "ULLAGE", "");
                 if (!string.IsNullOrEmpty(rfUllage) &&
                     (rfUllage.IndexOf("Unstable", StringComparison.OrdinalIgnoreCase) >= 0 ||
                      rfUllage.IndexOf("Very", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
-                    _cautAlerts.Add(new AlertItem("ULLAGE", "UNSTB", false));
+                    cautOut.Add(new AlertItem("ULLAGE", "UNSTB", false));
                 }
             }
 
-            // ── 2. 电气能量平衡 (ELECTRIC CHARGE / DBS) ──
+            // 电气能量平衡 (ELECTRIC CHARGE)
             double ecPct = telem.EcPercent;
             if (ecPct >= 0.0)
             {
-                int ecInt = Mathf.RoundToInt((float)ecPct);
-                if (ecPct <= 5.0) _warnAlerts.Add(new AlertItem("EC CRIT!", $"{ecInt}%", true));
-                else if (ecPct <= 20.0) _cautAlerts.Add(new AlertItem("LOW EC", $"{ecInt}%", false));
+                int ecInt = Mathf.Clamp(Mathf.RoundToInt((float)ecPct), 0, 100);
+                string ecStr = CacheManager.FastPercent(ecInt);
+                if (ecPct <= 5.0) warnOut.Add(new AlertItem("EC CRIT!", ecStr, true));
+                else if (ecPct <= 20.0) cautOut.Add(new AlertItem("LOW EC", ecStr, false));
             }
 
-            // ── 3. 近地危险下沉与地形拉起 (PULL UP! / SINK RATE) ──
-            bool severePullUp = (telem.VerticalSpeed < -25.0 && telem.AltitudeAGL < 600.0 && telem.AltitudeAGL > 3.0) ||
-                                (telem.VerticalSpeed < -12.0 && telem.AltitudeAGL < 150.0 && telem.AltitudeAGL > 3.0);
-            if (severePullUp)
-            {
-                int aglInt = Mathf.RoundToInt((float)telem.AltitudeAGL);
-                _warnAlerts.Add(new AlertItem("PULL UP!", $"{aglInt}m", true));
-            }
-            else if (telem.VerticalSpeed < -15.0 && telem.AltitudeAGL < 1500.0 && telem.AltitudeAGL > 10.0)
-            {
-                int vsiInt = Mathf.RoundToInt((float)telem.VerticalSpeed);
-                _cautAlerts.Add(new AlertItem("SINK RATE", $"{vsiInt}m/s", false));
-            }
-
-            // ── 4. 气动失速 (STALL / FAR / GPWS) (物理门控：仅在大气层内且有可观动压时查询) ──
-            double farStall = double.NaN;
-            if (telem.AtmosphericPressure > 0.001 && telem.DynamicPressure > 0.5 && ExternalProbeRegistry.NumericResolver != null)
-            {
-                farStall = ExternalProbeRegistry.ResolveNumeric("FAR", "STALL");
-            }
-            if (!double.IsNaN(farStall))
-            {
-                int stallPct = Mathf.RoundToInt((float)(farStall * 100.0));
-                if (farStall > 0.70) _warnAlerts.Add(new AlertItem("STALL!", $"{stallPct}%", true));
-                else if (farStall > 0.30) _cautAlerts.Add(new AlertItem("STALL WARN", $"{stallPct}%", false));
-            }
-
-            // ── 5. 维生系统与氧气 (O2 / KERBALISM) ──
+            // 维生系统与氧气 (O2 / KERBALISM)
             if (telem.CrewCapacity > 0)
             {
                 float o2 = telem.OxygenPercent;
                 if (o2 >= 0f)
                 {
-                    int o2Int = Mathf.RoundToInt(o2);
-                    if (o2 <= 5.0f) _warnAlerts.Add(new AlertItem("O2 CRIT!", $"{o2Int}%", true));
-                    else if (o2 <= 20.0f) _cautAlerts.Add(new AlertItem("LOW O2", $"{o2Int}%", false));
+                    int o2Int = Mathf.Clamp(Mathf.RoundToInt(o2), 0, 100);
+                    string o2Str = CacheManager.FastPercent(o2Int);
+                    if (o2 <= 5.0f) warnOut.Add(new AlertItem("O2 CRIT!", o2Str, true));
+                    else if (o2 <= 20.0f) cautOut.Add(new AlertItem("LOW O2", o2Str, false));
                 }
             }
 
-            // ── 6. 舱温与超温 (OVERHEAT / SYSTEMHEAT) ──
+            // 舱温与超温 (OVERHEAT)
             double cabinTemp = telem.CabinTemp;
-            if (cabinTemp > 120.0)
+            if (cabinTemp > 80.0)
             {
                 int tempInt = Mathf.RoundToInt((float)cabinTemp);
-                _warnAlerts.Add(new AlertItem("OVERHEAT!", $"{tempInt}°C", true));
-            }
-            else if (cabinTemp > 80.0)
-            {
-                int tempInt = Mathf.RoundToInt((float)cabinTemp);
-                _cautAlerts.Add(new AlertItem("HIGH TEMP", $"{tempInt}°C", false));
+                string tempStr = FormatTemp(tempInt);
+                if (cabinTemp > 120.0) warnOut.Add(new AlertItem("OVERHEAT!", tempStr, true));
+                else cautOut.Add(new AlertItem("HIGH TEMP", tempStr, false));
             }
 
-            // ── 7. 过载极限 (G-FORCE) ──
-            double g = telem.GForce;
-            if (g > 9.0)
+            // 通信网络断开 (NO COMM)
+            if (!telem.IsConnected && (telem.CrewCount == 0 || telem.CrewCapacity == 0))
             {
-                _warnAlerts.Add(new AlertItem("EXCESS G!", $"{g:F1}G", true));
-            }
-            else if (g > 6.0)
-            {
-                _cautAlerts.Add(new AlertItem("HIGH G", $"{g:F1}G", false));
+                cautOut.Add(new AlertItem("NO COMM", "OFF", false));
             }
 
-            // ── 8. 发动机故障 (TESTFLIGHT) (物理门控：仅在活跃引擎数 > 0 时查询) ──
-            if (telem.ActiveEngines > 0 && ExternalProbeRegistry.NumericResolver != null)
+            // RealFuels 剩余点火次数 (RF)
+            if (ExternalProbeRegistry.HasRealFuels && engineArmed)
+            {
+                double ignitions = ExternalProbeRegistry.ResolveNumeric("RF", "IGNITIONS");
+                if (ignitions == 1.0)
+                {
+                    cautOut.Add(new AlertItem("LAST IGN", "1 LEFT", false));
+                }
+                else if (ignitions == 0.0 && telem.Throttle <= 0.001f)
+                {
+                    warnOut.Add(new AlertItem("NO IGNITIONS", "0 LEFT", true));
+                }
+            }
+
+            // RealAntennas 链路裕度不足 (RA)
+            if (ExternalProbeRegistry.HasRealAntennas && (telem.CrewCapacity == 0 || telem.CrewCount == 0))
+            {
+                double sig = ExternalProbeRegistry.ResolveNumeric("RA", "SIGNALSTRENGTH");
+                if (!double.IsNaN(sig) && sig > 0.0001 && sig < 0.15)
+                {
+                    int sigPct = Mathf.Clamp(Mathf.RoundToInt((float)sig * 100f), 0, 100);
+                    cautOut.Add(new AlertItem("WEAK SIGNAL", CacheManager.FastPercent(sigPct), false));
+                }
+            }
+        }
+
+        private void EvaluateApproachAlerts(IFlightTelemetry telem, List<AlertItem> cautOut, List<AlertItem> warnOut)
+        {
+            // 发动机故障 (TESTFLIGHT)
+            if (ExternalProbeRegistry.HasTestFlight && telem.ActiveEngines > 0)
             {
                 double tfFailed = ExternalProbeRegistry.ResolveNumeric("TF", "FAILED");
                 if (tfFailed > 0.5)
                 {
-                    _warnAlerts.Add(new AlertItem("ENG FAIL!", "FAIL", true));
+                    warnOut.Add(new AlertItem("ENG FAIL!", "FAIL", true));
                 }
             }
 
-            // ── 9. 通信网络断开 (NO COMM) ──
-            if (!telem.IsConnected && (telem.CrewCount == 0 || telem.CrewCapacity == 0))
-            {
-                _cautAlerts.Add(new AlertItem("NO COMM", "OFF", false));
-            }
-
-            // ── 10. RP-1 航电负荷与深空锁控 (RP1) ──
-            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RP1"))
-            {
-                double lockLevel = ExternalProbeRegistry.ResolveNumeric("RP1", "LOCK_LEVEL");
-                if (lockLevel == 0.0)
-                {
-                    double massMargin = ExternalProbeRegistry.ResolveNumeric("RP1", "MASS_MARGIN");
-                    if (massMargin < -0.01)
-                    {
-                        double vMass = ExternalProbeRegistry.ResolveNumeric("RP1", "VESSEL_MASS");
-                        _warnAlerts.Add(new AlertItem("AVION OVER!", $"{vMass:F1}t", true));
-                    }
-                    else
-                    {
-                        double ipLock = ExternalProbeRegistry.ResolveNumeric("RP1", "INTERPLANETARY_LOCKED");
-                        if (ipLock > 0.5) _warnAlerts.Add(new AlertItem("INTERPLAN LCK", "DEEP", true));
-                        else _warnAlerts.Add(new AlertItem("AVION LOCK!", "LOST", true));
-                    }
-                }
-                double deadAvionics = ExternalProbeRegistry.ResolveNumeric("RP1", "DEAD_COUNT");
-                if (deadAvionics > 0.5)
-                {
-                    _cautAlerts.Add(new AlertItem("AVION DEAD", $"{Mathf.RoundToInt((float)deadAvionics)}", false));
-                }
-            }
-
-            // ── 11. SystemHeat 热回路过热与散热 (SH) ──
-            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("SH"))
-            {
-                double overheatRatio = ExternalProbeRegistry.ResolveNumeric("SH", "OVERHEATRATIO");
-                if (!double.IsNaN(overheatRatio) && overheatRatio > 50.0)
-                {
-                    int ohInt = Mathf.RoundToInt((float)overheatRatio);
-                    if (overheatRatio >= 100.0)
-                    {
-                        _warnAlerts.Add(new AlertItem("LOOP OVERHEAT!", $"{ohInt}%", true));
-                    }
-                    else if (overheatRatio >= 85.0)
-                    {
-                        _cautAlerts.Add(new AlertItem("LOOP TEMP HI", $"{ohInt}%", false));
-                    }
-                }
-            }
-
-            // ── 12. DynamicBatteryStorage 快速亏电放电 (DBS) ──
-            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("DBS"))
-            {
-                double isDepleting = ExternalProbeRegistry.ResolveNumeric("DBS", "ISDEPLETING");
-                if (isDepleting > 0.5)
-                {
-                    double timeSec = ExternalProbeRegistry.ResolveNumeric("DBS", "DEPLETIONSECONDS");
-                    if (!double.IsNaN(timeSec) && timeSec > 0.0)
-                    {
-                        if (timeSec <= 120.0)
-                        {
-                            _warnAlerts.Add(new AlertItem("BATT DRAIN!", $"{Mathf.RoundToInt((float)timeSec)}s", true));
-                        }
-                        else if (timeSec <= 300.0)
-                        {
-                            _cautAlerts.Add(new AlertItem("DISCHARGING", $"{Mathf.RoundToInt((float)(timeSec / 60.0))}m", false));
-                        }
-                    }
-                }
-            }
-
-            // ── 13. Kerbalism 空间天气、深空辐射与舱内中毒 (KERBALISM) ──
-            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("KERBALISM"))
-            {
-                double inStorm = ExternalProbeRegistry.ResolveNumeric("KLSM", "INSTORM");
-                if (inStorm > 0.5)
-                {
-                    _warnAlerts.Add(new AlertItem("SOLAR STORM!", "CME", true));
-                }
-
-                double habRad = ExternalProbeRegistry.ResolveNumeric("KLSM", "HABITATRADIATION");
-                if (!double.IsNaN(habRad) && habRad > 0.05)
-                {
-                    if (habRad > 0.20)
-                    {
-                        _warnAlerts.Add(new AlertItem("RAD DANGER!", $"{habRad:F2}r/h", true));
-                    }
-                    else
-                    {
-                        _cautAlerts.Add(new AlertItem("HIGH RAD", $"{habRad:F2}r/h", false));
-                    }
-                }
-
-                if (telem.CrewCapacity > 0)
-                {
-                    double poisoning = ExternalProbeRegistry.ResolveNumeric("KLSM", "POISONING");
-                    if (!double.IsNaN(poisoning) && poisoning > 0.30)
-                    {
-                        int co2Pct = Mathf.RoundToInt((float)(poisoning * 100.0));
-                        if (poisoning > 0.70)
-                        {
-                            _warnAlerts.Add(new AlertItem("CO2 CRIT!", $"{co2Pct}%", true));
-                        }
-                        else
-                        {
-                            _cautAlerts.Add(new AlertItem("HIGH CO2", $"{co2Pct}%", false));
-                        }
-                    }
-
-                    double habPress = ExternalProbeRegistry.ResolveNumeric("KLSM", "PRESSURE");
-                    if (!double.IsNaN(habPress) && habPress > 0.001 && habPress < 0.40)
-                    {
-                        _warnAlerts.Add(new AlertItem("CABIN PRESS!", $"{habPress:F2}a", true));
-                    }
-                }
-            }
-
-            // ── 14. Trajectories 预测地形撞击 (TRAJ) ──
-            if (telem.VerticalSpeed < -5.0 && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("TRAJ"))
+            // Trajectories 预测地形撞击 (TRAJ)
+            if (ExternalProbeRegistry.HasTrajectories && telem.VerticalSpeed < -5.0 && telem.AltitudeAGL < 20000.0)
             {
                 double tti = ExternalProbeRegistry.ResolveNumeric("TRAJ", "TIMETOIMPACT");
                 if (!double.IsNaN(tti) && tti > 0.0 && tti <= 60.0)
                 {
                     int ttiSec = Mathf.RoundToInt((float)tti);
-                    if (tti <= 30.0)
-                    {
-                        _warnAlerts.Add(new AlertItem("IMPACT!", $"{ttiSec}s", true));
-                    }
-                    else
-                    {
-                        _cautAlerts.Add(new AlertItem("TERR CLOSE", $"{ttiSec}s", false));
-                    }
+                    string ttiStr = FormatTtiSec(ttiSec);
+                    if (tti <= 30.0) warnOut.Add(new AlertItem("IMPACT!", ttiStr, true));
+                    else cautOut.Add(new AlertItem("TERR CLOSE", ttiStr, false));
                 }
             }
 
-            // ── 15. GPWS 进近未放起落架告警 (GPWS) ──
-            if (telem.VerticalSpeed < -2.0 && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("GPWS"))
+            // GPWS 进近未放起落架告警 (GPWS)
+            if (ExternalProbeRegistry.HasGPWS && telem.VerticalSpeed < -2.0 && telem.AltitudeAGL > 5.0 && telem.AltitudeAGL < 250.0 && telem.FlightSituation != "LANDED")
             {
-                double rAlt = ExternalProbeRegistry.ResolveNumeric("GPWS", "RADARALT");
-                if (!double.IsNaN(rAlt) && rAlt > 5.0 && rAlt < 250.0)
+                double gearDown = ExternalProbeRegistry.ResolveNumeric("GPWS", "GEARDOWN");
+                if (gearDown < 0.5)
                 {
-                    double gearDown = ExternalProbeRegistry.ResolveNumeric("GPWS", "GEARDOWN");
-                    if (gearDown < 0.5 && telem.FlightSituation != "LANDED")
-                    {
-                        _warnAlerts.Add(new AlertItem("GEAR UP!", $"{Mathf.RoundToInt((float)rAlt)}m", true));
-                    }
+                    int aglInt = Mathf.RoundToInt((float)telem.AltitudeAGL);
+                    warnOut.Add(new AlertItem("GEAR UP!", FormatAglM(aglInt), true));
                 }
             }
 
-            // ── 16. DPAI 进近过速告警 (DPAI) ──
-            if ((telem.IsDockingMode || telem.TargetDistance < 100.0) && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("DOCK"))
+            // DPAI 进近过速告警 (DPAI)
+            if (ExternalProbeRegistry.HasDocking && (telem.IsDockingMode || telem.TargetDistance < 100.0))
             {
                 double dockDist = ExternalProbeRegistry.ResolveNumeric("DOCK", "DISTANCE");
                 if (!double.IsNaN(dockDist) && dockDist > 0.5 && dockDist < 50.0)
@@ -1796,13 +1995,13 @@ namespace ModularFlightPanel.UI.Widgets
                     double closureRate = ExternalProbeRegistry.ResolveNumeric("DOCK", "CLOSURERATE");
                     if (!double.IsNaN(closureRate) && closureRate > 2.0)
                     {
-                        _cautAlerts.Add(new AlertItem("RATE HIGH", $"{closureRate:F1}m/s", false));
+                        cautOut.Add(new AlertItem("RATE HIGH", FormatClosureRate(closureRate), false));
                     }
                 }
             }
 
-            // ── 17. AtmosphereAutopilot 限制器介入保护告警 (AA) ──
-            if (telem.AtmosphericPressure > 0.001 && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("AA"))
+            // AtmosphereAutopilot 限制器保护 (AA)
+            if (ExternalProbeRegistry.HasAtmosphereAutopilot && telem.AtmosphericPressure > 0.001 && telem.DynamicPressure > 0.5)
             {
                 double modAoA = ExternalProbeRegistry.ResolveNumeric("AA", "MODERATE_AOA");
                 if (modAoA > 0.5)
@@ -1811,7 +2010,7 @@ namespace ModularFlightPanel.UI.Widgets
                     double curAoA = ExternalProbeRegistry.ResolveNumeric("AA", "AOA");
                     if (maxAoA > 1.0 && Math.Abs(curAoA) >= maxAoA * 0.92)
                     {
-                        _cautAlerts.Add(new AlertItem("AOA LIMIT", $"{Mathf.RoundToInt((float)Math.Abs(curAoA))}°", false));
+                        cautOut.Add(new AlertItem("AOA LIMIT", CacheManager.FastDegree(Mathf.RoundToInt((float)Math.Abs(curAoA))), false));
                     }
                 }
 
@@ -1821,32 +2020,98 @@ namespace ModularFlightPanel.UI.Widgets
                     double maxG = ExternalProbeRegistry.ResolveNumeric("AA", "MAX_G");
                     if (maxG > 1.0 && telem.GForce >= maxG * 0.90)
                     {
-                        _cautAlerts.Add(new AlertItem("G LIMIT", $"{telem.GForce:F1}G", false));
+                        cautOut.Add(new AlertItem("G LIMIT", FormatGForce(telem.GForce), false));
+                    }
+                }
+            }
+        }
+
+        private void EvaluateSlowDiagnosticAlerts(IFlightTelemetry telem, List<AlertItem> cautOut, List<AlertItem> warnOut)
+        {
+            // RP-1 航电负荷
+            if (ExternalProbeRegistry.HasRP1)
+            {
+                double lockLevel = ExternalProbeRegistry.ResolveNumeric("RP1", "LOCK_LEVEL");
+                if (lockLevel == 0.0)
+                {
+                    double massMargin = ExternalProbeRegistry.ResolveNumeric("RP1", "MASS_MARGIN");
+                    if (massMargin < -0.01)
+                    {
+                        double vMass = ExternalProbeRegistry.ResolveNumeric("RP1", "VESSEL_MASS");
+                        warnOut.Add(new AlertItem("AVION OVER!", FormatVMass(vMass), true));
+                    }
+                    else
+                    {
+                        double ipLock = ExternalProbeRegistry.ResolveNumeric("RP1", "INTERPLANETARY_LOCKED");
+                        if (ipLock > 0.5) warnOut.Add(new AlertItem("INTERPLAN LCK", "DEEP", true));
+                        else warnOut.Add(new AlertItem("AVION LOCK!", "LOST", true));
+                    }
+                }
+                double deadAvionics = ExternalProbeRegistry.ResolveNumeric("RP1", "DEAD_COUNT");
+                if (deadAvionics > 0.5)
+                {
+                    cautOut.Add(new AlertItem("AVION DEAD", CacheManager.FastInt(Mathf.RoundToInt((float)deadAvionics)), false));
+                }
+            }
+
+            // SystemHeat 热回路过热
+            if (ExternalProbeRegistry.HasSystemHeat)
+            {
+                double overheatRatio = ExternalProbeRegistry.ResolveNumeric("SH", "OVERHEATRATIO");
+                if (!double.IsNaN(overheatRatio) && overheatRatio > 50.0)
+                {
+                    int ohInt = Mathf.Clamp(Mathf.RoundToInt((float)overheatRatio), 0, 100);
+                    string ohStr = CacheManager.FastPercent(ohInt);
+                    if (overheatRatio >= 100.0) warnOut.Add(new AlertItem("LOOP OVERHEAT!", ohStr, true));
+                    else if (overheatRatio >= 85.0) cautOut.Add(new AlertItem("LOOP TEMP HI", ohStr, false));
+                }
+            }
+
+            // DynamicBatteryStorage 快速放电 (仅在低电量或放电工况下关注)
+            if (ExternalProbeRegistry.HasDynamicBatteryStorage && telem.EcPercent <= 35.0)
+            {
+                double isDepleting = ExternalProbeRegistry.ResolveNumeric("DBS", "ISDEPLETING");
+                if (isDepleting > 0.5)
+                {
+                    double timeSec = ExternalProbeRegistry.ResolveNumeric("DBS", "DEPLETIONSECONDS");
+                    if (!double.IsNaN(timeSec) && timeSec > 0.0)
+                    {
+                        if (timeSec <= 120.0) warnOut.Add(new AlertItem("BATT DRAIN!", FormatDbsSec(Mathf.RoundToInt((float)timeSec)), true));
+                        else if (timeSec <= 300.0) cautOut.Add(new AlertItem("DISCHARGING", FormatDbsMin(Mathf.RoundToInt((float)(timeSec / 60.0))), false));
                     }
                 }
             }
 
-            // ── 18. RealFuels 剩余点火次数 (RF) ──
-            if (engineArmed && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RF"))
+            // Kerbalism 空间天气与舱压/CO2
+            if (ExternalProbeRegistry.HasKerbalism)
             {
-                double ignitions = ExternalProbeRegistry.ResolveNumeric("RF", "IGNITIONS");
-                if (ignitions == 1.0)
-                {
-                    _cautAlerts.Add(new AlertItem("LAST IGN", "1 LEFT", false));
-                }
-                else if (ignitions == 0.0 && telem.Throttle <= 0.001f)
-                {
-                    _warnAlerts.Add(new AlertItem("NO IGNITIONS", "0 LEFT", true));
-                }
-            }
+                double inStorm = ExternalProbeRegistry.ResolveNumeric("KLSM", "INSTORM");
+                if (inStorm > 0.5) warnOut.Add(new AlertItem("SOLAR STORM!", "CME", true));
 
-            // ── 19. RealAntennas 链路裕度不足 (RA) ──
-            if ((telem.CrewCapacity == 0 || telem.CrewCount == 0) && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RA"))
-            {
-                double sig = ExternalProbeRegistry.ResolveNumeric("RA", "SIGNALSTRENGTH");
-                if (!double.IsNaN(sig) && sig > 0.0001 && sig < 0.15)
+                double habRad = ExternalProbeRegistry.ResolveNumeric("KLSM", "HABITATRADIATION");
+                if (!double.IsNaN(habRad) && habRad > 0.05)
                 {
-                    _cautAlerts.Add(new AlertItem("WEAK SIGNAL", $"{Mathf.RoundToInt((float)sig * 100f)}%", false));
+                    string radStr = FormatRadiation(habRad);
+                    if (habRad > 0.20) warnOut.Add(new AlertItem("RAD DANGER!", radStr, true));
+                    else cautOut.Add(new AlertItem("HIGH RAD", radStr, false));
+                }
+
+                if (telem.CrewCapacity > 0 && telem.CrewCount > 0)
+                {
+                    double poisoning = ExternalProbeRegistry.ResolveNumeric("KLSM", "POISONING");
+                    if (!double.IsNaN(poisoning) && poisoning > 0.30)
+                    {
+                        int co2Pct = Mathf.Clamp(Mathf.RoundToInt((float)(poisoning * 100.0)), 0, 100);
+                        string co2Str = CacheManager.FastPercent(co2Pct);
+                        if (poisoning > 0.70) warnOut.Add(new AlertItem("CO2 CRIT!", co2Str, true));
+                        else cautOut.Add(new AlertItem("HIGH CO2", co2Str, false));
+                    }
+
+                    double habPress = ExternalProbeRegistry.ResolveNumeric("KLSM", "PRESSURE");
+                    if (!double.IsNaN(habPress) && habPress > 0.001 && habPress < 0.40)
+                    {
+                        warnOut.Add(new AlertItem("CABIN PRESS!", FormatPressure(habPress), true));
+                    }
                 }
             }
         }
@@ -1865,10 +2130,9 @@ namespace ModularFlightPanel.UI.Widgets
                 AlertItem item = _cautAlerts[_cautIndex];
 
                 bool blink = _cautAcknowledged || _blink1Hz;
-                bool cautDirty = blink != _lastCautBlink || _cautIndex != _lastRenderedCautIdx || _cautAlerts.Count != _lastRenderedCautTotal || _cellsStyleNeedsUpdate;
-                if (cautDirty)
+                bool itemChanged = _cautIndex != _lastRenderedCautIdx || _cautAlerts.Count != _lastRenderedCautTotal;
+                if (itemChanged || _cellsStyleNeedsUpdate)
                 {
-                    _lastCautBlink = blink;
                     _lastRenderedCautIdx = _cautIndex;
                     _lastRenderedCautTotal = _cautAlerts.Count;
 
@@ -1876,7 +2140,11 @@ namespace ModularFlightPanel.UI.Widgets
                     _cautTitle.SetTextSafe(item.MainTitle);
                     _cautSub.SetTextSafe(pagination);
                     _cautIcon.SetTextSafe("▲");
+                }
 
+                if (blink != _lastCautBlink || _cellsStyleNeedsUpdate)
+                {
+                    _lastCautBlink = blink;
                     if (blink)
                     {
                         _cautBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution, theme));
@@ -1903,8 +2171,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _cautWasDeadFront = true;
                     // 暗态待命 (Dead-Front Nominal)
-                    _cautTitle.SetTextSafe(I18n.Tr("WIDGET_ALERT_CAUTION", "CAUTION"));
-                    _cautSub.SetTextSafe(I18n.Tr("WIDGET_ALERT_NORM", "NORM"));
+                    _cautTitle.SetTextSafe(_cachedStrCaution ?? "CAUTION");
+                    _cautSub.SetTextSafe(_cachedStrNorm ?? "NORM");
                     _cautIcon.SetTextSafe("●");
 
                     _cautBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
@@ -1925,10 +2193,9 @@ namespace ModularFlightPanel.UI.Widgets
                 AlertItem item = _warnAlerts[_warnIndex];
 
                 bool blink = _warnAcknowledged || _blink2Hz;
-                bool warnDirty = blink != _lastWarnBlink || _warnIndex != _lastRenderedWarnIdx || _warnAlerts.Count != _lastRenderedWarnTotal || _cellsStyleNeedsUpdate;
-                if (warnDirty)
+                bool itemChanged = _warnIndex != _lastRenderedWarnIdx || _warnAlerts.Count != _lastRenderedWarnTotal;
+                if (itemChanged || _cellsStyleNeedsUpdate)
                 {
-                    _lastWarnBlink = blink;
                     _lastRenderedWarnIdx = _warnIndex;
                     _lastRenderedWarnTotal = _warnAlerts.Count;
 
@@ -1936,7 +2203,11 @@ namespace ModularFlightPanel.UI.Widgets
                     _warnTitle.SetTextSafe(item.MainTitle);
                     _warnSub.SetTextSafe(pagination);
                     _warnIcon.SetTextSafe("▲");
+                }
 
+                if (blink != _lastWarnBlink || _cellsStyleNeedsUpdate)
+                {
+                    _lastWarnBlink = blink;
                     if (blink)
                     {
                         _warnBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger, theme));
@@ -1963,8 +2234,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _warnWasDeadFront = true;
                     // 暗态待命 (Dead-Front Nominal)
-                    _warnTitle.SetTextSafe(I18n.Tr("WIDGET_ALERT_WARNING", "WARNING"));
-                    _warnSub.SetTextSafe(I18n.Tr("WIDGET_ALERT_ARMED", "ARMED"));
+                    _warnTitle.SetTextSafe(_cachedStrWarning ?? "WARNING");
+                    _warnSub.SetTextSafe(_cachedStrArmed ?? "ARMED");
                     _warnIcon.SetTextSafe("●");
 
                     _warnBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
@@ -1995,6 +2266,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             base.ApplyTheme(theme);
             theme = WidgetStyleManager.ResolveTheme(theme);
+            InitCachedI18n();
 
             _outerBezel?.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
             _outerOutline?.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost));

@@ -86,15 +86,25 @@ namespace ModularFlightPanel.Core.Probes
             Reg(AtmosphereAutopilotProbe.IsAvailable, "AA", "ATMOSPHEREAUTOPILOT");
             Reg(RP1AvionicsProbe.IsAvailable, "RP1", "RP0", "AVIONICS");
 
-            _anyExternalProbeAvailable = false;
-            foreach (var kvp in _probeAvailabilityByTag)
-            {
-                if (kvp.Value)
-                {
-                    _anyExternalProbeAvailable = true;
-                    break;
-                }
-            }
+            ProbeTagFlags flags = ProbeTagFlags.None;
+            if (FarProbe.IsAvailable) flags |= ProbeTagFlags.FAR;
+            if (KerbalEngineerProbe.IsAvailable) flags |= ProbeTagFlags.KER;
+            if (MechJebProbe.IsAvailable) flags |= ProbeTagFlags.MJ;
+            if (PrincipiaProbe.IsAvailable) flags |= ProbeTagFlags.Principia;
+            if (RealAntennasProbe.IsAvailable) flags |= ProbeTagFlags.RealAntennas;
+            if (KerbalismProbe.IsAvailable) flags |= ProbeTagFlags.Kerbalism;
+            if (TrajectoriesProbe.IsAvailable) flags |= ProbeTagFlags.Trajectories;
+            if (DockingAlignmentProbe.IsAvailable) flags |= ProbeTagFlags.Docking;
+            if (GPWSProbe.IsAvailable) flags |= ProbeTagFlags.GPWS;
+            if (RealFuelsProbe.IsAvailable) flags |= ProbeTagFlags.RealFuels;
+            if (TestFlightProbe.IsAvailable) flags |= ProbeTagFlags.TestFlight;
+            if (DynamicBatteryStorageProbe.IsAvailable) flags |= ProbeTagFlags.DynamicBatteryStorage;
+            if (SystemHeatProbe.IsAvailable) flags |= ProbeTagFlags.SystemHeat;
+            if (AtmosphereAutopilotProbe.IsAvailable) flags |= ProbeTagFlags.AtmosphereAutopilot;
+            if (RP1AvionicsProbe.IsAvailable) flags |= ProbeTagFlags.RP1;
+            ExternalProbeRegistry.AvailableFlags = flags;
+
+            _anyExternalProbeAvailable = flags != ProbeTagFlags.None;
         }
 
         public static bool IsProbeTagAvailable(string tag)

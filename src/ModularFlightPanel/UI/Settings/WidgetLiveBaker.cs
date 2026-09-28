@@ -83,6 +83,7 @@ namespace ModularFlightPanel.UI.Settings
             rootRt.anchoredPosition = Vector2.zero;
 
             Texture2D resultTex = null;
+            BaseFlightWidget widget = null;
 
             try
             {
@@ -92,7 +93,7 @@ namespace ModularFlightPanel.UI.Settings
                 cfg.PositionY = 0f;
                 ThemeConfig theme = ThemeManager.Instance.CurrentTheme;
 
-                BaseFlightWidget widget = WidgetRegistry.Spawn(cfg, theme, rootObj.transform, canvas, 1.0f);
+                widget = WidgetRegistry.Spawn(cfg, theme, rootObj.transform, canvas, 1.0f);
                 if (widget != null)
                 {
                     // 5. 驱动遥测数据仿真 (确保仪表具备饱满的度数、指针与指示灯状态)
@@ -135,6 +136,11 @@ namespace ModularFlightPanel.UI.Settings
             finally
             {
                 // 10. 资源清理
+                if (widget != null)
+                {
+                    try { widget.Teardown(); } catch { }
+                    if (widget.gameObject != null) UnityEngine.Object.DestroyImmediate(widget.gameObject);
+                }
                 if (canvasObj != null) UnityEngine.Object.DestroyImmediate(canvasObj);
                 if (camObj != null) UnityEngine.Object.DestroyImmediate(camObj);
                 if (rt != null)

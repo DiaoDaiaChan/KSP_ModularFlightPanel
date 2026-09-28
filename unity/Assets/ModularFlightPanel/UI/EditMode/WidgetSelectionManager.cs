@@ -124,7 +124,7 @@ namespace ModularFlightPanel.UI
         public static void NotifySelectionChanged()
         {
             CleanSelection();
-            OnSelectionChanged?.Invoke();
+            OnSelectionChanged.SafeInvoke("OnSelectionChanged");
         }
 
         private static int CleanSelection()

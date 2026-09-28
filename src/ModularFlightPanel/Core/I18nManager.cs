@@ -198,7 +198,7 @@ namespace ModularFlightPanel.Core
 
             if (notify)
             {
-                OnLanguageChanged?.Invoke(_currentLanguage);
+                OnLanguageChanged.SafeInvoke(_currentLanguage, "OnLanguageChanged");
                 MFPLogger.Info(MFPLogger.CatUI, $"Language switched to: {_currentLanguage}");
             }
 

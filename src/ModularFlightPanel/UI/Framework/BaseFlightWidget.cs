@@ -367,12 +367,21 @@ namespace ModularFlightPanel.UI
             WidgetDragHandler.OnEditModeChanged += HandleEditModeChanged;
         }
 
-        protected virtual void OnDestroy()
+        public virtual void Teardown()
         {
             this.Controls.UnregisterAll();
             WidgetDragHandler.OnEditModeChanged -= HandleEditModeChanged;
+            if (DragHandler != null)
+            {
+                DragHandler.Teardown();
+            }
             WidgetRenderManager.Instance?.UnregisterWidget(this);
             I18nManager.OnLanguageChanged -= HandleLanguageChanged;
+        }
+
+        protected virtual void OnDestroy()
+        {
+            Teardown();
         }
 
         private void HandleLanguageChanged(string newLang)
@@ -387,6 +396,7 @@ namespace ModularFlightPanel.UI
 
         private void HandleEditModeChanged(bool isEdit)
         {
+            if (this == null) return;
             UpdateRaycasterState();
         }
 
@@ -481,7 +491,7 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public void UpdateRaycasterState()
         {
-            if (SubCanvas == null) return;
+            if (this == null || gameObject == null || SubCanvas == null) return;
             bool needsRaycaster = IsInteractive || WidgetDragHandler.IsEditModeActive;
             if (SubRaycaster == null)
             {

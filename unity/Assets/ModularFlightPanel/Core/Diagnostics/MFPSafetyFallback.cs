@@ -47,6 +47,21 @@ namespace ModularFlightPanel.Core
                 // 1. 全局 Master Bypass 开启，旁路所有 Harmony Hook 并让原版 Update/LateUpdate 正常运行
                 MFPProfiler.IsMasterBypassed = true;
 
+                // 1.5. 退出自由拖拽编辑模式、清理框选与变换手柄
+                try
+                {
+                    WidgetDragHandler.IsEditModeActive = false;
+                    WidgetSelectionManager.ClearSelection();
+                }
+                catch { }
+
+                // 1.6. 彻底解除全部键盘与鼠标控制锁，确保玩家操作绝不被挂死
+                try
+                {
+                    ModularFlightPanel.UI.Settings.MFPInputLock.ReleaseAllLocks();
+                }
+                catch { }
+
                 // 2. 停用 MFP HUD 与画布，切断所有 Widget 渲染与射线拾取
                 if (FlightHUDManager.Instance != null)
                 {
@@ -93,7 +108,7 @@ namespace ModularFlightPanel.Core
                 MFPLogger.Error(MFPLogger.CatCore, $"[MFPSafetyFallback] Critical error during fallback execution: {fallbackEx.Message}");
             }
 
-            OnFaultStateChanged?.Invoke(true);
+            OnFaultStateChanged.SafeInvoke(true, "OnFaultStateChanged");
         }
 
         /// <summary>
@@ -111,8 +126,9 @@ namespace ModularFlightPanel.Core
                 FaultReason = string.Empty;
                 FaultDetails = string.Empty;
 
-                // 1. 解除 Master Bypass
+                // 1. 解除 Master Bypass 与重置隔离组件
                 MFPProfiler.IsMasterBypassed = false;
+                WidgetRenderManager.Instance?.ResetQuarantinedWidgets();
 
                 // 2. 重新构建并显示 HUD
                 if (FlightHUDManager.Instance != null)
@@ -121,7 +137,7 @@ namespace ModularFlightPanel.Core
                     FlightHUDManager.Instance.RebuildHUD();
                 }
 
-                OnFaultStateChanged?.Invoke(false);
+                OnFaultStateChanged.SafeInvoke(false, "OnFaultStateChanged");
 
 #if KSP_RUNTIME
                 try

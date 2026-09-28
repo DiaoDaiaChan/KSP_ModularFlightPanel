@@ -33,6 +33,11 @@ namespace ModularFlightPanel.UI.HUD
         {
             if (!WidgetDragHandler.IsEditModeActive || MFPProfiler.IsMasterBypassed) return;
 
+            SafeGUIGateway.ExecuteRoot(DrawFloatingToolbarContent, "HUDEditModeToolbar");
+        }
+
+        private void DrawFloatingToolbarContent()
+        {
             MFPGuiSkin.EnsureInitialized();
 
             FlightHUDManager.IsMouseOverFloatingToolbar = false;

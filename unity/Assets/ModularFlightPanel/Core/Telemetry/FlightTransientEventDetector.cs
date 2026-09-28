@@ -19,7 +19,7 @@ namespace ModularFlightPanel.Core.Telemetry
         private static FlightTransientEventDetector _instance;
         public static FlightTransientEventDetector Instance => _instance ?? (_instance = new FlightTransientEventDetector());
 
-        private const float EVAL_INTERVAL = 0.10f; // 10Hz 判定基准节拍器
+        private const float EVAL_INTERVAL = 0.20f; // 5Hz 稳态巡航节拍器 (状态突变时 0 延迟即时触发)
         private float _lastEvalTime = -10f;
 
         // 历史遥测状态机缓存 (用于边沿触发判定)
@@ -85,15 +85,26 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // 2. 物理粗筛前置守卫：分级、引擎点火、油门跳变或机动 T-60s 边沿判定
+            string curBody = telem.CelestialBodyName;
+            bool bodyChanged = !string.IsNullOrEmpty(curBody) && !object.ReferenceEquals(curBody, _lastCelestialBody) && !curBody.Equals(_lastCelestialBody, StringComparison.OrdinalIgnoreCase);
+
             bool stateChanged = telem.CurrentStage != _lastStage ||
                                 telem.ActiveEngines != _lastActiveEngines ||
                                 telem.IsStageSeparating != _lastIsStageSeparating ||
                                 telem.IsEngineIgniting != _lastIsEngineIgniting ||
                                 (telem.Throttle > 0.05f != _lastThrottle > 0.05f) ||
-                                (telem.HasManeuverNode && telem.ManeuverTimeToNode <= 60.0 && (_lastTimeToNode > 60.0 || _lastTimeToNode < 0.0));
+                                (telem.HasManeuverNode && telem.ManeuverTimeToNode <= 60.0 && (_lastTimeToNode > 60.0 || _lastTimeToNode < 0.0)) ||
+                                (telem.FlightSituation != _lastFlightSituation) ||
+                                bodyChanged;
 
-            // 若未到 10Hz 评估周期且无物理突变，直接复用上一次快照（阻断 90% 无谓推演）
-            if ((now - _lastEvalTime) < EVAL_INTERVAL && !stateChanged && _currentSnapshot.HasVessel)
+            // 稳态静默旁路 (Quiescent Steady-State Fast-Path)：
+            // 在巡航轨道或发射台静止待命且无发动机动力学扰动时，瞬态事件物理不可能发生，直接复用快照（0.001ms 纳秒级直通）
+            bool isSteadyOrbit = telem.FlightSituation == "ORBITING" && !telem.HasManeuverNode && telem.ActiveEngines == 0 && telem.Throttle <= 0.001f;
+            bool isSteadyPad = (telem.FlightSituation == "LANDED" || telem.FlightSituation == "PRELAUNCH") && telem.SurfaceSpeed < 0.5 && telem.ActiveEngines == 0 && telem.Throttle <= 0.001f;
+            bool isQuiescent = (isSteadyOrbit || isSteadyPad) && !stateChanged && _currentSnapshot.HasVessel;
+
+            // 若处于稳态静默期，或未到 10Hz 判定节拍且无状态突变，直接复用快照
+            if (isQuiescent || ((now - _lastEvalTime) < EVAL_INTERVAL && !stateChanged && _currentSnapshot.HasVessel))
             {
                 _currentSnapshot.Frame = frame;
                 _currentSnapshot.Timestamp = now;
@@ -273,9 +284,8 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // ── Q. 起飞决断速度 V1 / 抬轮 ROTATE 判定 (GPWS) ──
-            if (triggeredEvent == FlightTransientEventType.None &&
-                (telem.FlightSituation == "LANDED" || telem.AltitudeAGL < 8.0) && telem.SurfaceSpeed > 10.0 && telem.Throttle > 0.40f &&
-                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("GPWS"))
+            if (ExternalProbeRegistry.HasGPWS && triggeredEvent == FlightTransientEventType.None &&
+                (telem.FlightSituation == "LANDED" || telem.AltitudeAGL < 8.0) && telem.SurfaceSpeed > 10.0 && telem.Throttle > 0.40f)
             {
                 double v1 = ExternalProbeRegistry.ResolveNumeric("GPWS", "V1Speed");
                 if (!double.IsNaN(v1) && v1 > 10.0 && _lastSurfaceSpeed < v1 && telem.SurfaceSpeed >= v1)
@@ -285,8 +295,7 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // ── R. 发动机故障失效 (TestFlight) ──
-            if (triggeredEvent == FlightTransientEventType.None && telem.ActiveEngines > 0 &&
-                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("TF"))
+            if (ExternalProbeRegistry.HasTestFlight && triggeredEvent == FlightTransientEventType.None && telem.ActiveEngines > 0)
             {
                 double tfFailed = ExternalProbeRegistry.ResolveNumeric("TF", "FAILED");
                 bool isFailed = tfFailed > 0.5;
@@ -302,8 +311,7 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // ── S. 航电失控锁定 (RP-1 Avionics) ──
-            if (triggeredEvent == FlightTransientEventType.None &&
-                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RP1"))
+            if (ExternalProbeRegistry.HasRP1 && triggeredEvent == FlightTransientEventType.None)
             {
                 double lockLevel = ExternalProbeRegistry.ResolveNumeric("RP1", "LOCK_LEVEL");
                 if (!double.IsNaN(lockLevel))
@@ -318,8 +326,8 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // ── T. 预测地表撞击告警 (Trajectories) ──
-            if (triggeredEvent == FlightTransientEventType.None && telem.VerticalSpeed < -10.0 && telem.AltitudeAGL > 100.0 &&
-                telem.FlightSituation != "LANDED" && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("TRAJ"))
+            if (ExternalProbeRegistry.HasTrajectories && triggeredEvent == FlightTransientEventType.None &&
+                telem.VerticalSpeed < -10.0 && telem.AltitudeAGL > 100.0 && telem.AltitudeAGL < 25000.0 && telem.FlightSituation != "LANDED")
             {
                 double tti = ExternalProbeRegistry.ResolveNumeric("TRAJ", "TIMETOIMPACT");
                 if (!double.IsNaN(tti) && tti > 0.0 && tti <= 30.0 && (_lastTti > 30.0 || _lastTti < 0.0))
@@ -334,8 +342,8 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // ── U. 太阳风暴/日冕物质抛射冲击 (Kerbalism) ──
-            if (triggeredEvent == FlightTransientEventType.None && (telem.AltitudeASL >= atmoCutoff || atmoCutoff <= 0.0) &&
-                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("KERBALISM"))
+            if (ExternalProbeRegistry.HasKerbalism && triggeredEvent == FlightTransientEventType.None &&
+                (telem.AltitudeASL >= atmoCutoff || atmoCutoff <= 0.0))
             {
                 double inStorm = ExternalProbeRegistry.ResolveNumeric("KLSM", "INSTORM");
                 bool isStorm = inStorm > 0.5;
@@ -351,8 +359,8 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // ── V. 端口对接锁扣捕获 (DPAI) ──
-            if (triggeredEvent == FlightTransientEventType.None && (telem.IsDockingMode || telem.TargetDistance < 50.0) &&
-                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("DOCK"))
+            if (ExternalProbeRegistry.HasDocking && triggeredEvent == FlightTransientEventType.None &&
+                (telem.IsDockingMode || telem.TargetDistance < 50.0))
             {
                 double dockDist = ExternalProbeRegistry.ResolveNumeric("DOCK", "DISTANCE");
                 if (!double.IsNaN(dockDist) && dockDist > 0.0 && dockDist <= 0.25 && _lastDockDist > 0.25)
@@ -367,8 +375,7 @@ namespace ModularFlightPanel.Core.Telemetry
             }
 
             // ── W. 热回路超温紧急告警 (SystemHeat) ──
-            if (triggeredEvent == FlightTransientEventType.None &&
-                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("SH"))
+            if (ExternalProbeRegistry.HasSystemHeat && triggeredEvent == FlightTransientEventType.None)
             {
                 double shRatio = ExternalProbeRegistry.ResolveNumeric("SH", "OVERHEATRATIO");
                 if (!double.IsNaN(shRatio))
@@ -421,7 +428,7 @@ namespace ModularFlightPanel.Core.Telemetry
 
         private double ResolveEffectivePeriapsis(IFlightTelemetry telem, int frame)
         {
-            if (ExternalProbeRegistry.NumericResolver != null)
+            if (ExternalProbeRegistry.HasPrincipia)
             {
                 if (CacheManager.Instance.TryGetCachedProbeNumeric("PRINCIPIA_PE", frame, out double cachedPe))
                 {
@@ -443,7 +450,7 @@ namespace ModularFlightPanel.Core.Telemetry
 
         private double ResolveEffectiveApoapsis(IFlightTelemetry telem, int frame)
         {
-            if (ExternalProbeRegistry.NumericResolver != null)
+            if (ExternalProbeRegistry.HasPrincipia)
             {
                 if (CacheManager.Instance.TryGetCachedProbeNumeric("PRINCIPIA_AP", frame, out double cachedAp))
                 {
@@ -470,28 +477,6 @@ namespace ModularFlightPanel.Core.Telemetry
             if (curBody != null && curBody == _cachedAtmoBody) return _cachedAtmoVal;
 
             _cachedAtmoBody = curBody;
-
-            if (ExternalProbeRegistry.NumericResolver != null)
-            {
-                if (CacheManager.Instance.TryGetCachedProbeNumeric("ENV_ATMO", frame, out double cachedAtmo))
-                {
-                    if (!double.IsNaN(cachedAtmo) && cachedAtmo >= 0.0)
-                    {
-                        _cachedAtmoVal = cachedAtmo;
-                        return _cachedAtmoVal;
-                    }
-                }
-                else
-                {
-                    double probeDepth = ExternalProbeRegistry.ResolveNumeric("ENV", "AtmosphereDepth");
-                    CacheManager.Instance.SetCachedProbeNumeric("ENV_ATMO", frame, probeDepth);
-                    if (!double.IsNaN(probeDepth) && probeDepth >= 0.0)
-                    {
-                        _cachedAtmoVal = probeDepth;
-                        return _cachedAtmoVal;
-                    }
-                }
-            }
 
             if (telem.AtmosphereDepth > 0.0)
             {

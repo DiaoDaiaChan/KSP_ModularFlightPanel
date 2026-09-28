@@ -32,7 +32,7 @@ namespace ModularFlightPanel.UI
                 if (_isEditModeActive != value)
                 {
                     _isEditModeActive = value;
-                    OnEditModeChanged?.Invoke(_isEditModeActive);
+                    OnEditModeChanged.SafeInvoke(_isEditModeActive, "OnEditModeChanged");
                     if (!_isEditModeActive)
                     {
                         WidgetSmartGuides.Instance?.HideAllGuides();
@@ -113,14 +113,26 @@ namespace ModularFlightPanel.UI
             this.enabled = IsEditModeActive;
         }
 
-        private void OnDestroy()
+        public void Teardown()
         {
             WidgetSelectionManager.OnSelectionChanged -= UpdateSelectionAppearance;
             OnEditModeChanged -= HandleEditModeChanged;
+            if (_editOverlay != null)
+            {
+                if (Application.isPlaying) Destroy(_editOverlay);
+                else DestroyImmediate(_editOverlay);
+                _editOverlay = null;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            Teardown();
         }
 
         private void HandleEditModeChanged(bool isEdit)
         {
+            if (this == null) return;
             this.enabled = isEdit;
             UpdateEditVisuals();
         }
@@ -186,6 +198,7 @@ namespace ModularFlightPanel.UI
 
         private void UpdateEditVisuals()
         {
+            if (this == null) return;
             if (_editOverlay != null)
             {
                 if (_editOverlay.activeSelf != IsEditModeActive)
@@ -198,7 +211,7 @@ namespace ModularFlightPanel.UI
 
         public void UpdateSelectionAppearance()
         {
-            if (_ownerWidget == null || _editOverlay == null || !IsEditModeActive) return;
+            if (this == null || _ownerWidget == null || _editOverlay == null || !IsEditModeActive) return;
 
             bool isSelected = WidgetSelectionManager.IsSelected(_ownerWidget);
             bool isLocked = _ownerWidget.Config?.IsLocked == true;

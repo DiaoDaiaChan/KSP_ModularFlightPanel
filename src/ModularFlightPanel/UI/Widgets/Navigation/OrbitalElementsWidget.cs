@@ -451,6 +451,11 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyReadoutColors(theme);   // 读数先着色 (与划线同色)
             CacheThemeColors(theme);
             _cachedDpiScale = s;
+
+            if (config != null && (config.CustomTemplate == "full" || config.WidgetType == "orbital_3d"))
+            {
+                OnModeToggle();
+            }
         }
 
         private static GameObject CreateAvionicsSlot(Transform parent, string name, Vector2 size, Vector2 pos, Color fill, Color border, float scale)
