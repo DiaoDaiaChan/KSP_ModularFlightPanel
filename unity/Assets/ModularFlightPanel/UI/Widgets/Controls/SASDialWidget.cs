@@ -419,9 +419,12 @@ namespace ModularFlightPanel.UI.Widgets
         private double _lastHeading = -9999.0;
         private FlightSASMode _lastMode = (FlightSASMode)(-1);
         private bool _lastSasOn = false;
-        private bool _lastDirectorLocked = false;
         private string _lastStatusText;
         private bool _hasInitializedState = false;
+        private FlightSASMode _lastBadgeMode = (FlightSASMode)(-99);
+        private bool _lastBadgeSasOn = false;
+        private bool _lastBadgeLocked = false;
+        private bool _hasInitializedBadge = false;
 
         // ── 平滑阻尼状态 (消除跳变) ──
         private float _smoothedRotZ = 0f;
@@ -445,7 +448,7 @@ namespace ModularFlightPanel.UI.Widgets
             bool modeChanged = !_hasInitializedState || currentMode != _lastMode || sasOn != _lastSasOn;
 
             // 1. 动态 3D 人造地平仪与俯仰阶梯解算 (仅在 3D 模式下激活)
-            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.02 || Math.Abs(telemetry.Pitch - _lastPitch) > 0.02 || Math.Abs(telemetry.Heading - _lastHeading) > 0.02;
+            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.05 || Math.Abs(telemetry.Pitch - _lastPitch) > 0.05 || Math.Abs(telemetry.Heading - _lastHeading) > 0.05;
             if (_displayMode == SASDialDisplayMode.Mode3D)
             {
                 if (_horizonRoot != null)
@@ -618,14 +621,17 @@ namespace ModularFlightPanel.UI.Widgets
             FlightSASMode mode = telemetry.CurrentSASMode;
             if (mode == FlightSASMode.StabilityAssist)
             {
-                _isDirectorLocked = true;
-                _currentMarkerHasDir = true;
-                _currentMarkerVisible = false;
-                _currentMarkerAngleDeg = 0f;
-                _sasDirectorRoot.SetAnchoredPositionSafe(Vector2.zero);
-                _sasDirectorRoot.SetLocalRotationSafe(Quaternion.identity);
-                _sasDirectorRawImage.SetColor(theme.AccentPrimary);
-                _sasDirectorRoot.SetActiveSafe(false);
+                if (!_isDirectorLocked || (_sasDirectorRoot != null && _sasDirectorRoot.gameObject.activeSelf))
+                {
+                    _isDirectorLocked = true;
+                    _currentMarkerHasDir = true;
+                    _currentMarkerVisible = false;
+                    _currentMarkerAngleDeg = 0f;
+                    _sasDirectorRoot.SetAnchoredPositionSafe(Vector2.zero);
+                    _sasDirectorRoot.SetLocalRotationSafe(Quaternion.identity);
+                    _sasDirectorRawImage.SetColor(theme.AccentPrimary);
+                    _sasDirectorRoot.SetActiveSafe(false);
+                }
                 return;
             }
 
@@ -729,6 +735,15 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_statusLabel == null) return;
 
+            if (_hasInitializedBadge && currentMode == _lastBadgeMode && sasOn == _lastBadgeSasOn && _isDirectorLocked == _lastBadgeLocked)
+            {
+                return;
+            }
+            _hasInitializedBadge = true;
+            _lastBadgeMode = currentMode;
+            _lastBadgeSasOn = sasOn;
+            _lastBadgeLocked = _isDirectorLocked;
+
             string statusText;
             TextStyleRole textRole;
             if (!sasOn)
@@ -745,10 +760,9 @@ namespace ModularFlightPanel.UI.Widgets
                 textRole = _isDirectorLocked ? TextStyleRole.Accent : TextStyleRole.PrimaryValue;
             }
 
-            if (statusText != _lastStatusText || _isDirectorLocked != _lastDirectorLocked)
+            if (statusText != _lastStatusText)
             {
                 _lastStatusText = statusText;
-                _lastDirectorLocked = _isDirectorLocked;
                 _statusLabel.SetTextSafe(statusText);
                 ApplyText(_statusLabel, textRole, theme);
                 if (_statusOutline != null)

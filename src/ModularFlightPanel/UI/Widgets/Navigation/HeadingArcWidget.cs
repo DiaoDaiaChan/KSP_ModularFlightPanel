@@ -87,6 +87,25 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _isHeadingInitialized = false;
         private float _lastRenderedHeading = -999f;
         private int _lastBubbleDeg = -1;
+        private Color _cachedTextCol;
+        private Color _cachedSubTickCol;
+        private Color _cachedNorthCol;
+        private Color _cachedEastCol;
+        private Color _cachedSouthCol;
+        private Color _cachedWestCol;
+        private bool _hasCachedArcColors = false;
+
+        private Color GetCachedCardinalColor(int deg)
+        {
+            switch (deg)
+            {
+                case 0: return _cachedNorthCol;
+                case 90: return _cachedEastCol;
+                case 180: return _cachedSouthCol;
+                case 270: return _cachedWestCol;
+                default: return _cachedTextCol;
+            }
+        }
 
         public static Action OnCycleHeadingModeAction;
         public static Action OnToggleReferenceFrameWindowAction;
@@ -471,6 +490,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             float angleDiff = Mathf.DeltaAngle(_displayedHeading, _targetHeading);
+            if (Mathf.Abs(angleDiff) < 0.015f && Mathf.Abs(_headingVelocity) < 0.005f)
+            {
+                return;
+            }
+
             if (Mathf.Abs(angleDiff) > 120f)
             {
                 _displayedHeading = _targetHeading;
@@ -516,10 +540,20 @@ namespace ModularFlightPanel.UI.Widgets
             int centerTickDeg = Mathf.RoundToInt(currentHeading / 5f) * 5;
             int tickIdx = 0;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            Color textCol = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
-            Color subTickCol = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
+            if (!_hasCachedArcColors)
+            {
+                ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+                WidgetStyleManager style = WidgetStyleManager.Instance;
+                _cachedTextCol = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                _cachedSubTickCol = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
+                _cachedNorthCol = style.GetCardinalColor(0, theme);
+                _cachedEastCol = style.GetCardinalColor(90, theme);
+                _cachedSouthCol = style.GetCardinalColor(180, theme);
+                _cachedWestCol = style.GetCardinalColor(270, theme);
+                _hasCachedArcColors = true;
+            }
+            Color textCol = _cachedTextCol;
+            Color subTickCol = _cachedSubTickCol;
 
             for (int offsetDeg = -50; offsetDeg <= 50; offsetDeg += 5)
             {
@@ -562,7 +596,7 @@ namespace ModularFlightPanel.UI.Widgets
                             case 180: cardStr = "S"; break;
                             case 270: cardStr = "W"; break;
                         }
-                        Color cardCol = style.GetCardinalColor(normalizedDeg, theme);
+                        Color cardCol = GetCachedCardinalColor(normalizedDeg);
                         item.BaseLineColor = cardCol;
                         item.BaseColor = cardCol;
                         item.LineRt.sizeDelta = new Vector2(2f * s, 8f * s);
@@ -622,6 +656,14 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             base.ApplyTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            _cachedTextCol = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+            _cachedSubTickCol = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
+            _cachedNorthCol = style.GetCardinalColor(0, theme);
+            _cachedEastCol = style.GetCardinalColor(90, theme);
+            _cachedSouthCol = style.GetCardinalColor(180, theme);
+            _cachedWestCol = style.GetCardinalColor(270, theme);
+            _hasCachedArcColors = true;
 
             ApplyCard(_bubbleBg, _bubbleOutline, CardStyleRole.Emphasized, theme);
             if (_bubblePointerTip != null)

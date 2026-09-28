@@ -199,6 +199,10 @@ namespace ModularFlightPanel.UI.Widgets
         private double _lastRenderedAccel = double.NaN;
         private bool _showingIntegerReadout = false;
         private float _currentHalfTrackH = 58f;
+        private float _lastTerrainEvalTime = -1f;
+        private Color _cachedMajorCol;
+        private Color _cachedHalfCol;
+        private bool _hasCachedTapeColors = false;
 
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
@@ -1230,10 +1234,16 @@ namespace ModularFlightPanel.UI.Widgets
 
             double startTick = Math.Floor((currentDisplayVal - visibleHalfSpan) / subStep) * subStep;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
-            Color borderCol = theme.FrameBorderColor.ToColor();
-            Color majorCol = WidgetStyleManager.WithAlpha(borderCol, 0.60f);
-            Color halfCol = WidgetStyleManager.WithAlpha(borderCol, 0.30f);
+            if (!_hasCachedTapeColors)
+            {
+                ThemeConfig t = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
+                Color bCol = t.FrameBorderColor.ToColor();
+                _cachedMajorCol = WidgetStyleManager.WithAlpha(bCol, 0.60f);
+                _cachedHalfCol = WidgetStyleManager.WithAlpha(bCol, 0.30f);
+                _hasCachedTapeColors = true;
+            }
+            Color majorCol = _cachedMajorCol;
+            Color halfCol = _cachedHalfCol;
 
             float s = CurrentDpiScale;
             float halfViewportPlusMargin = (_viewportRt.sizeDelta.y * 0.5f) + 12f * s;
@@ -1357,26 +1367,10 @@ namespace ModularFlightPanel.UI.Widgets
                 double gForce = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
                 if (double.IsNaN(gForce)) gForce = 0.0;
 
-                string accStr = UIFactory.FormatTabular($"{gForce:F1}G");
-                if (accStr != _lastAccText)
-                {
-                    _lastAccText = accStr;
-                    if (_accValText != null) _accValText.text = accStr;
-                }
-
                 // 航天生理与结构载荷警戒判定 (对齐用户规范：4G 黄色，8G 红色)：
-                // 正常 (Level 0): < 4.0G 且 > -1.5G (绿色/主读数色)
-                // 警告 (Level 1): 4.0G ~ 8.0G 或 -1.5G ~ -3.0G (琥珀金 Warning)
-                // 危险 (Level 2): >= 8.0G 或 <= -3.0G (珊瑚红 Danger 晕厥/过载)
                 int alertLevel = 0;
-                if (gForce >= 8.0 || gForce <= -3.0)
-                {
-                    alertLevel = 2; // 极危 (8G 红色)
-                }
-                else if (gForce >= 4.0 || gForce <= -1.5)
-                {
-                    alertLevel = 1; // 告警 (4G 黄色)
-                }
+                if (gForce >= 8.0 || gForce <= -3.0) alertLevel = 2;
+                else if (gForce >= 4.0 || gForce <= -1.5) alertLevel = 1;
 
                 if (alertLevel != _lastAccAlertLevel)
                 {
@@ -1399,7 +1393,6 @@ namespace ModularFlightPanel.UI.Widgets
                         float traceAlpha = alertLevel == 2 ? 0.60f : alertLevel == 1 ? 0.50f : 0.40f;
                         SetColorIfChanged(_accTraceImg, WidgetStyleManager.WithAlpha(pointerCol, traceAlpha));
                     }
-
                     if (_accTagOutline != null)
                     {
                         Color outlineCol = alertLevel == 2 ? WidgetStyleManager.Meter(MeterStyleRole.Danger, theme) :
@@ -1410,27 +1403,23 @@ namespace ModularFlightPanel.UI.Widgets
                     if (_accTagBg != null)
                     {
                         Color baseBg = theme.FrameBgColor;
-                        Color targetBg;
-                        if (alertLevel == 2)
-                        {
-                            targetBg = Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Danger, theme), 0.22f);
-                        }
-                        else if (alertLevel == 1)
-                        {
-                            targetBg = Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Warning, theme), 0.16f);
-                        }
-                        else
-                        {
-                            targetBg = baseBg;
-                        }
+                        Color targetBg = alertLevel == 2 ? Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Danger, theme), 0.22f) :
+                                         alertLevel == 1 ? Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Warning, theme), 0.16f) : baseBg;
                         SetColorIfChanged(_accTagBg, targetBg);
                     }
                 }
 
                 // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-_currentHalfTrackH 至 +_currentHalfTrackH)
-                if (double.IsNaN(_lastGForce) || Math.Abs(gForce - _lastGForce) > 0.02)
+                if (double.IsNaN(_lastGForce) || Math.Abs(gForce - _lastGForce) > 0.03)
                 {
                     _lastGForce = gForce;
+                    string accStr = UIFactory.FormatTabular($"{gForce:F1}G");
+                    if (accStr != _lastAccText)
+                    {
+                        _lastAccText = accStr;
+                        if (_accValText != null) _accValText.text = accStr;
+                    }
+
                     float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
                     float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
                     _accPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, pointerY));
@@ -1462,32 +1451,33 @@ namespace ModularFlightPanel.UI.Widgets
                 const double RATE_DEADBAND = 0.08;
                 bool isRateDeadband = Math.Abs(_calculatedAccelMps2) < RATE_DEADBAND;
 
-                string rateStr;
-                if (isRateDeadband)
-                {
-                    rateStr = "0.0";
-                }
-                else
-                {
-                    rateStr = _calculatedAccelMps2 > 0 ? $"+{_calculatedAccelMps2:F1}" : $"{_calculatedAccelMps2:F1}";
-                }
-
-                rateStr = UIFactory.FormatTabular(rateStr);
-
-                if (rateStr != _lastRateText)
-                {
-                    _lastRateText = rateStr;
-                    if (_rateValText != null)
-                    {
-                        _rateValText.text = rateStr;
-                        TextStyleRole rateRole = isRateDeadband || _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
-                        ApplyText(_rateValText, rateRole, theme);
-                    }
-                }
-
-                if (rateStr != _lastRateText || Math.Abs(_calculatedAccelMps2 - _lastRenderedAccel) > 0.05)
+                if (double.IsNaN(_lastRenderedAccel) || Math.Abs(_calculatedAccelMps2 - _lastRenderedAccel) > 0.05)
                 {
                     _lastRenderedAccel = _calculatedAccelMps2;
+
+                    string rateStr;
+                    if (isRateDeadband)
+                    {
+                        rateStr = "0.0";
+                    }
+                    else
+                    {
+                        rateStr = _calculatedAccelMps2 > 0 ? $"+{_calculatedAccelMps2:F1}" : $"{_calculatedAccelMps2:F1}";
+                    }
+
+                    rateStr = UIFactory.FormatTabular(rateStr);
+
+                    if (rateStr != _lastRateText)
+                    {
+                        _lastRateText = rateStr;
+                        if (_rateValText != null)
+                        {
+                            _rateValText.text = rateStr;
+                            TextStyleRole rateRole = isRateDeadband || _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
+                            ApplyText(_rateValText, rateRole, theme);
+                        }
+                    }
+
                     float maxScale = 20.0f;
                     float rateFraction;
                     bool isRatePositive;
@@ -1623,6 +1613,17 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_groundRibbonObj == null || _isSpeedTape || telemetry == null) return;
 
+            // 高于 10km (包括入轨阶段) 地形警戒条必然不显示，无需高频解析 Token
+            if (currentAlt > 10000.0)
+            {
+                if (_groundRibbonObj.activeSelf) _groundRibbonObj.SetActiveSafe(false);
+                return;
+            }
+
+            float now = Time.time;
+            if (now - _lastTerrainEvalTime < 0.1f) return; // 10Hz 节流
+            _lastTerrainEvalTime = now;
+
             double agl = TelemetryTokenEngine.EvaluateNumeric(_terrainToken, telemetry);
             if (double.IsNaN(agl)) agl = currentAlt;
 
@@ -1655,6 +1656,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
+
+            Color bCol = resolved.FrameBorderColor.ToColor();
+            _cachedMajorCol = WidgetStyleManager.WithAlpha(bCol, 0.60f);
+            _cachedHalfCol = WidgetStyleManager.WithAlpha(bCol, 0.30f);
+            _hasCachedTapeColors = true;
 
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
             ApplyCard(_centerBoxBg, _centerBoxOutline, CardStyleRole.Normal, theme);
