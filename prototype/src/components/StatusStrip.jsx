@@ -1,1 +1,0 @@
-import { Panel } from './shared.jsx'; export function StatusStrip() { return <Panel className="status-strip" title="SYSTEM STATUS"><div><span>SYSTEM STATUS</span><strong><i /> NOMINAL</strong></div><div><span>RCS</span><b>OFF</b></div><div><span>PROP</span><b className="good">78.4%</b></div><div><span>FRAME</span><b>SURFACE</b></div></Panel>; }

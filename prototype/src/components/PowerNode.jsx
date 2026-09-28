@@ -1,1 +1,0 @@
-export function PowerNode({ title, values, type = 'source', x, y }) { return <div className={`power-node ${type}`} style={{ left: x, top: y }}><span>{title}</span>{values.map((value, index) => <strong key={index}>{value}</strong>)}</div>; }

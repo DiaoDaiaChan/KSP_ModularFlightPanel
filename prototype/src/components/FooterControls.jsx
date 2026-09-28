@@ -1,1 +1,0 @@
-import { Panel } from './shared.jsx'; export function FooterControls() { return <footer className="footer"><button className="footer-btn">RCS</button><div className="footer-state"><span>FLIGHT STATUS</span><strong>SYSTEMS NOMINAL</strong></div><button className="footer-btn active">SAS</button></footer>; }

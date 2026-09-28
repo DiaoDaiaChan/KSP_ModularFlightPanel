@@ -33,9 +33,6 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Prototype artifacts
-prototype/node_modules/
-prototype/dist/
 
 # Scratch & Temporary Renders
 scratch/
