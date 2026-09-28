@@ -329,7 +329,7 @@ namespace ModularFlightPanel.UI
             // 规则 1: 必须重写 OnInitialize(WidgetConfig, ThemeConfig) 装配方法
             // （继承关系由类型集合本身保证，并由源码级 SPEC-001 反向不变量兜住"声明了元数据却没继承"的情形）
             report.TotalChecksPerformed++;
-            var initMethod = type.GetMethod("OnInitialize", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(WidgetConfig), typeof(ThemeConfig) }, null);
+            var initMethod = type.GetMethod(WidgetSpecRules.InitializeMethod, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(WidgetConfig), typeof(ThemeConfig) }, null);
             if (initMethod == null || initMethod.DeclaringType == typeof(BaseFlightWidget))
             {
                 report.Violations.Add(new WidgetViolation
@@ -344,7 +344,7 @@ namespace ModularFlightPanel.UI
 
             // 规则 2: 必须显式声明/重写 RefreshTier (与源码规范对齐，缺失即判 ERROR)
             report.TotalChecksPerformed++;
-            var tierProp = type.GetProperty("RefreshTier", BindingFlags.Public | BindingFlags.Instance);
+            var tierProp = type.GetProperty(WidgetSpecRules.TierProperty, BindingFlags.Public | BindingFlags.Instance);
             if (tierProp == null || tierProp.DeclaringType == typeof(BaseFlightWidget))
             {
                 report.Violations.Add(new WidgetViolation
@@ -359,7 +359,7 @@ namespace ModularFlightPanel.UI
 
             // 规则 3: 必须重写 ApplyTheme(ThemeConfig) 接入样式管道
             report.TotalChecksPerformed++;
-            var applyThemeMethod = type.GetMethod("ApplyTheme", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(ThemeConfig) }, null);
+            var applyThemeMethod = type.GetMethod(WidgetSpecRules.ThemeMethod, BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(ThemeConfig) }, null);
             if (applyThemeMethod == null || applyThemeMethod.DeclaringType == typeof(BaseFlightWidget) || !applyThemeMethod.IsVirtual || applyThemeMethod.GetBaseDefinition().DeclaringType != typeof(BaseFlightWidget))
             {
                 report.Violations.Add(new WidgetViolation
@@ -374,7 +374,7 @@ namespace ModularFlightPanel.UI
 
             // 规则 4: 遥测解耦规则 - 必须重写 OnUpdateTelemetry(IFlightTelemetry) 且不得私自持有 Vessel/Part 强引用
             report.TotalChecksPerformed++;
-            var updateTelemetryMethod = type.GetMethod("OnUpdateTelemetry", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(IFlightTelemetry) }, null);
+            var updateTelemetryMethod = type.GetMethod(WidgetSpecRules.TelemetryMethod, BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(IFlightTelemetry) }, null);
             if (updateTelemetryMethod == null || updateTelemetryMethod.DeclaringType == typeof(BaseFlightWidget) || !updateTelemetryMethod.IsVirtual || updateTelemetryMethod.GetBaseDefinition().DeclaringType != typeof(BaseFlightWidget))
             {
                 report.Violations.Add(new WidgetViolation
@@ -390,7 +390,7 @@ namespace ModularFlightPanel.UI
             // 检查组件是否直接持有名为 Vessel、Part、CelestialBody 的字段（破坏解耦，导致场景切换泄漏）
             report.TotalChecksPerformed++;
             var rogueFields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static)
-                .Where(f => f.FieldType.Name == "Vessel" || f.FieldType.Name == "Part" || f.FieldType.Name == "CelestialBody")
+                .Where(f => WidgetSpecRules.BannedStrongReferenceTypes.Contains(f.FieldType.Name))
                 .ToList();
             foreach (var f in rogueFields)
             {
@@ -406,7 +406,7 @@ namespace ModularFlightPanel.UI
 
             // 规则 5: 安全生命周期检查 - 检查是否存在非 override 的 OnDestroy 与 Update
             report.TotalChecksPerformed++;
-            var onDestroyMethod = type.GetMethod("OnDestroy", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var onDestroyMethod = type.GetMethod(WidgetSpecRules.LifecycleMethod, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (onDestroyMethod != null && onDestroyMethod.DeclaringType == type)
             {
                 var baseDefinition = onDestroyMethod.GetBaseDefinition();
@@ -424,7 +424,7 @@ namespace ModularFlightPanel.UI
             }
 
             report.TotalChecksPerformed++;
-            var updateMethod = type.GetMethod("Update", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var updateMethod = type.GetMethod(WidgetSpecRules.FrameUpdateMethod, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             if (updateMethod != null && updateMethod.DeclaringType == type)
             {
                 var baseDefinition = updateMethod.GetBaseDefinition();

@@ -260,6 +260,19 @@ namespace ModularFlightPanel.UI.Widgets
         private int _lastLitBars = -1;
         private int _lastCtrlState = -1;
 
+        private string _targetFallback;
+        private string _rateTemplate;
+        private string _summaryTemplate;
+        private float _rateUpdateTimer = 1f;
+        private float _matrixUpdateTimer = 1f;
+
+        private void RefreshTemplateChannels()
+        {
+            _targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
+            _rateTemplate = GetTemplateChannel("RATE_TEMPLATE", "{COMM} | {COMM:RATE}");
+            _summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
+        }
+
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !telemetry.HasVessel) return;
@@ -276,7 +289,8 @@ namespace ModularFlightPanel.UI.Widgets
                 : ((sig > 0.1) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
             Color sigColor = WidgetStyleManager.Meter(barRole, theme);
 
-            if (litBars != _lastLitBars)
+            bool sigStateChanged = litBars != _lastLitBars;
+            if (sigStateChanged)
             {
                 _lastLitBars = litBars;
                 for (int i = 0; i < MainBarCount; i++)
@@ -319,69 +333,78 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 主站点名称与综合速率 (CustomTemplate 驱动与 Dirty Cache)
-            string targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
             string tgt = telemetry.DirectLinkTarget;
-            string newTgtName = string.IsNullOrEmpty(tgt) ? targetFallback : tgt;
+            string newTgtName = string.IsNullOrEmpty(tgt) ? (_targetFallback ?? (_targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络")))) : tgt;
             if (_targetNameText != null && newTgtName != _lastTargetName)
             {
                 _lastTargetName = newTgtName;
                 _targetNameText.text = newTgtName;
             }
 
-            string rateTemplate = GetTemplateChannel("RATE_TEMPLATE", "{COMM} | {COMM:RATE}");
-            string newRateSummary = TelemetryTokenEngine.Evaluate(rateTemplate, telemetry);
-            if (_rateSummaryText != null && newRateSummary != _lastRateSummary)
+            _rateUpdateTimer += Time.deltaTime;
+            if (_rateUpdateTimer >= 0.25f || sigStateChanged)
             {
-                _lastRateSummary = newRateSummary;
-                _rateSummaryText.text = newRateSummary;
+                _rateUpdateTimer = 0f;
+                if (_rateTemplate == null) _rateTemplate = GetTemplateChannel("RATE_TEMPLATE", "{COMM} | {COMM:RATE}");
+                string newRateSummary = TelemetryTokenEngine.Evaluate(_rateTemplate, telemetry);
+                if (_rateSummaryText != null && newRateSummary != _lastRateSummary)
+                {
+                    _lastRateSummary = newRateSummary;
+                    _rateSummaryText.text = newRateSummary;
+                }
             }
 
-            // 4. 抽屉矩阵更新
+            // 4. 抽屉矩阵更新 (4Hz 降频解算)
             if (_dropdownPanel != null && _dropdownPanel.activeSelf)
             {
-                string summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
-                string newMatrixSummary = TelemetryTokenEngine.Evaluate(summaryTemplate, telemetry);
-                if (_matrixSummaryText != null && newMatrixSummary != _lastMatrixSummary)
+                _matrixUpdateTimer += Time.deltaTime;
+                if (_matrixUpdateTimer >= 0.25f || sigStateChanged)
                 {
-                    _lastMatrixSummary = newMatrixSummary;
-                    _matrixSummaryText.text = newMatrixSummary;
-                }
-
-                var links = telemetry.ActiveCommLinks;
-                int linkCount = (links != null) ? links.Count : 0;
-
-                for (int r = 0; r < MaxPeerRows; r++)
-                {
-                    if (r < linkCount)
+                    _matrixUpdateTimer = 0f;
+                    if (_summaryTemplate == null) _summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
+                    string newMatrixSummary = TelemetryTokenEngine.Evaluate(_summaryTemplate, telemetry);
+                    if (_matrixSummaryText != null && newMatrixSummary != _lastMatrixSummary)
                     {
-                        var info = links[r];
-                        _peerRows[r].RowObj.SetActive(true);
-                        _peerRows[r].NameText.text = info.PeerName;
-                        _peerRows[r].TagText.text = info.IsDirectHome ? I18n.Tr("WIDGET_SIGNAL_DSN", "DSN") : I18n.Tr("WIDGET_SIGNAL_RELAY", "RELAY");
-                        _peerRows[r].RateText.text = info.FormattedDataRate;
+                        _lastMatrixSummary = newMatrixSummary;
+                        _matrixSummaryText.text = newMatrixSummary;
+                    }
 
-                        int peerBars = Mathf.RoundToInt((float)info.SignalStrength * 5f);
-                        for (int b = 0; b < 5; b++)
+                    var links = telemetry.ActiveCommLinks;
+                    int linkCount = (links != null) ? links.Count : 0;
+
+                    for (int r = 0; r < MaxPeerRows; r++)
+                    {
+                        if (r < linkCount)
                         {
-                            if (_peerRows[r].MiniBars[b] != null)
+                            var info = links[r];
+                            _peerRows[r].RowObj.SetActive(true);
+                            _peerRows[r].NameText.text = info.PeerName;
+                            _peerRows[r].TagText.text = info.IsDirectHome ? I18n.Tr("WIDGET_SIGNAL_DSN", "DSN") : I18n.Tr("WIDGET_SIGNAL_RELAY", "RELAY");
+                            _peerRows[r].RateText.text = info.FormattedDataRate;
+
+                            int peerBars = Mathf.RoundToInt((float)info.SignalStrength * 5f);
+                            for (int b = 0; b < 5; b++)
                             {
-                                _peerRows[r].MiniBars[b].color = (b < peerBars)
-                                    ? sigColor
-                                    : WidgetStyleManager.WithAlpha(sigColor, style.GetLineAlpha(LineWeight.Ghost, theme));
+                                if (_peerRows[r].MiniBars[b] != null)
+                                {
+                                    _peerRows[r].MiniBars[b].color = (b < peerBars)
+                                        ? sigColor
+                                        : WidgetStyleManager.WithAlpha(sigColor, style.GetLineAlpha(LineWeight.Ghost, theme));
+                                }
                             }
                         }
+                        else
+                        {
+                            _peerRows[r].RowObj.SetActive(false);
+                        }
                     }
-                    else
-                    {
-                        _peerRows[r].RowObj.SetActive(false);
-                    }
-                }
 
-                string newFooter = I18n.TrFormat("WIDGET_SIGNAL_FOOTER", "● {0} ACTIVE LINKS  |  REALANTENNAS PROBE", linkCount);
-                if (_matrixFooterText != null && newFooter != _lastMatrixFooter)
-                {
-                    _lastMatrixFooter = newFooter;
-                    _matrixFooterText.text = newFooter;
+                    string newFooter = I18n.TrFormat("WIDGET_SIGNAL_FOOTER", "● {0} ACTIVE LINKS  |  REALANTENNAS PROBE", linkCount);
+                    if (_matrixFooterText != null && newFooter != _lastMatrixFooter)
+                    {
+                        _lastMatrixFooter = newFooter;
+                        _matrixFooterText.text = newFooter;
+                    }
                 }
             }
 
@@ -401,6 +424,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             _currentTheme = theme;
+            RefreshTemplateChannels();
             if (theme == null) return;
             theme = WidgetStyleManager.ResolveTheme(theme);
 
@@ -429,6 +453,7 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnLanguageChanged()
         {
             base.OnLanguageChanged();
+            RefreshTemplateChannels();
             _lastCtrlState = -1;
             _lastMatrixFooter = null;
             if (_matrixTitleText != null)

@@ -373,6 +373,54 @@ namespace ModularFlightPanel.HeadlessValidator
         /// <summary>
         /// 语法树遍历访问器
         /// </summary>
+        /// <summary>
+        /// I18n 查表调用名集合 —— 本文件内的唯一声明点。
+        /// 源码里出现这些调用时，其"键名 / 兜底文案"实参属于合法的本地化输入；
+        /// 规则体不再重复写这些字符串，避免调用名变更时两处漂移。
+        /// </summary>
+        private static class I18nCalls
+        {
+            public const string Tr = "I18n.Tr";
+            public const string TrFormat = "I18n.TrFormat";
+            public const string ManagerTr = "I18nManager.Tr";
+            public const string ManagerTrFormat = "I18nManager.TrFormat";
+            public const string GetWidgetName = "I18n.GetWidgetName";
+            public const string ManagerGetWidgetName = "I18nManager.GetWidgetName";
+
+            /// <summary>Tr 家族：Tr(key, fallback)，前两个槽位都是查表输入</summary>
+            public static bool IsKeyLookup(string expr)
+            {
+                return expr == Tr || expr == ManagerTr;
+            }
+
+            /// <summary>GetWidgetName 家族：GetWidgetName(widgetId, defaultDisplayName)</summary>
+            public static bool IsWidgetNameLookup(string expr)
+            {
+                return expr == GetWidgetName || expr == ManagerGetWidgetName;
+            }
+
+            /// <summary>TrFormat 家族：TrFormat(key, params args)，仅第 0 槽是键名</summary>
+            public static bool IsKeyLookupFormat(string expr)
+            {
+                return expr == TrFormat || expr == ManagerTrFormat;
+            }
+
+            /// <summary>实参槽位豁免判定宿主：任一 I18n 查表调用</summary>
+            public static bool IsSlotHost(string expr)
+            {
+                return IsKeyLookup(expr) || IsWidgetNameLookup(expr) || IsKeyLookupFormat(expr);
+            }
+
+            /// <summary>
+            /// 需要校验"键名存在于词典"的调用。
+            /// GetWidgetName 家族不在此列 —— 它的首参是组件注册 id，不是词典键。
+            /// </summary>
+            public static bool IsDictionaryKeyLookup(string expr)
+            {
+                return IsKeyLookup(expr) || IsKeyLookupFormat(expr);
+            }
+        }
+
         private class I18nAstWalker : CSharpSyntaxWalker
         {
             private readonly string _filePath;
@@ -499,7 +547,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 _report.ScannedAstNodesCount++;
 
                 string expr = node.Expression.ToString();
-                if (expr == "I18n.Tr" || expr == "I18n.TrFormat" || expr == "I18nManager.Tr" || expr == "I18nManager.TrFormat")
+                if (I18nCalls.IsDictionaryKeyLookup(expr))
                 {
                     if (node.ArgumentList.Arguments.Count > 0)
                     {
@@ -557,13 +605,12 @@ namespace ModularFlightPanel.HeadlessValidator
                     string expr = inv.Expression.ToString();
                     int index = argList.Arguments.IndexOf(arg);
 
-                    if (expr == "I18n.Tr" || expr == "I18nManager.Tr" ||
-                        expr == "I18n.GetWidgetName" || expr == "I18nManager.GetWidgetName")
+                    if (I18nCalls.IsKeyLookup(expr) || I18nCalls.IsWidgetNameLookup(expr))
                     {
                         // Tr(key, fallback) / GetWidgetName(widgetId, defaultDisplayName)：前两个槽位都是查表输入
                         return index <= 1;
                     }
-                    if (expr == "I18n.TrFormat" || expr == "I18nManager.TrFormat")
+                    if (I18nCalls.IsKeyLookupFormat(expr))
                     {
                         // TrFormat(key, params args)：仅键名槽位豁免，格式化实参必须本地化
                         return index == 0;
@@ -612,58 +659,96 @@ namespace ModularFlightPanel.HeadlessValidator
                 return false;
             }
 
+            /// <summary>日志 / 诊断调用前缀与裸调用名（唯一声明点）</summary>
+            private static readonly string[] LogCallPrefixes =
+            {
+                "MFPLogger.", "Debug.", "Console.", "KSPLog."
+            };
+
+            private const string BarePrintCall = "print";
+
             private static bool IsLogOrDiagnosticCall(string expr)
             {
-                return expr.StartsWith("MFPLogger.", StringComparison.Ordinal)
-                    || expr.StartsWith("Debug.", StringComparison.Ordinal)
-                    || expr.StartsWith("Console.", StringComparison.Ordinal)
-                    || expr.StartsWith("KSPLog.", StringComparison.Ordinal)
-                    || expr == "print";
+                for (int i = 0; i < LogCallPrefixes.Length; i++)
+                {
+                    if (expr.StartsWith(LogCallPrefixes[i], StringComparison.Ordinal)) return true;
+                }
+                return expr == BarePrintCall;
             }
 
+            /// <summary>
+            /// 引擎资源 / 路径类调用判定。
+            /// 判定口径同样是"最近的外层调用"：旧实现遍历整条祖先链，只要链上任何一层出现过
+            /// Path./File./Regex. 就整段豁免 —— 于是 Path.Combine(dir, Helper("中文")) 里
+            /// 嵌套调用中的中文被静默放过。现在只有"字面量直接挂在被豁免调用的实参位置"才放行。
+            /// </summary>
             private static bool IsInsideEngineResourceOrPathCall(SyntaxNode node)
             {
                 foreach (var ancestor in node.Ancestors())
                 {
-                    if (ancestor is InvocationExpressionSyntax inv)
-                    {
-                        string expr = inv.Expression.ToString();
-                        if (expr.StartsWith("Path.", StringComparison.Ordinal) ||
-                            expr.StartsWith("Directory.", StringComparison.Ordinal) ||
-                            expr.StartsWith("File.", StringComparison.Ordinal) ||
-                            expr.StartsWith("Shader.Find", StringComparison.Ordinal) ||
-                            expr.StartsWith("AssetBundle.", StringComparison.Ordinal) ||
-                            expr.StartsWith("Resources.Load", StringComparison.Ordinal) ||
-                            expr.StartsWith("GameDatabase.", StringComparison.Ordinal) ||
-                            expr.StartsWith("Regex.", StringComparison.Ordinal))
-                        {
-                            return true;
-                        }
-                    }
+                    if (!(ancestor is InvocationExpressionSyntax inv)) continue;
+
+                    string expr = inv.Expression.ToString();
+                    if (IsEngineResourceOrPathCall(expr)) return true;
+                    if (StringAssemblyPassThroughCalls.Contains(expr)) continue;
+
+                    // 最近的外层调用既不是路径/资源类调用，也不是纯字符串组装 → 不外扩
+                    return false;
                 }
                 return false;
             }
 
+            private static bool IsEngineResourceOrPathCall(string expr)
+            {
+                return expr.StartsWith("Path.", StringComparison.Ordinal)
+                    || expr.StartsWith("Directory.", StringComparison.Ordinal)
+                    || expr.StartsWith("File.", StringComparison.Ordinal)
+                    || expr.StartsWith("Shader.Find", StringComparison.Ordinal)
+                    || expr.StartsWith("AssetBundle.", StringComparison.Ordinal)
+                    || expr.StartsWith("Resources.Load", StringComparison.Ordinal)
+                    || expr.StartsWith("GameDatabase.", StringComparison.Ordinal)
+                    || expr.StartsWith("Regex.", StringComparison.Ordinal);
+            }
+
+            /// <summary>
+            /// 字符串比对 / 匹配调用判定。
+            /// 判定口径同样是"最近的外层调用"：旧实现遍历整条祖先链，任何一层出现
+            /// .Contains/.Equals/... 就整段豁免 —— 于是 Helper("中文").Contains(x) 与
+            /// Foo(a.Contains(b) ? "中文" : "x") 这类写法会把嵌套的真实文案一并放过。
+            /// </summary>
             private static bool IsInsideStringComparison(SyntaxNode node)
             {
                 foreach (var ancestor in node.Ancestors())
                 {
-                    if (ancestor is InvocationExpressionSyntax inv)
-                    {
-                        string expr = inv.Expression.ToString();
-                        if (expr.EndsWith(".Contains") ||
-                            expr.EndsWith(".Equals") ||
-                            expr.EndsWith(".IndexOf") ||
-                            expr.EndsWith(".StartsWith") ||
-                            expr.EndsWith(".EndsWith"))
-                        {
-                            return true;
-                        }
-                    }
+                    if (!(ancestor is InvocationExpressionSyntax inv)) continue;
+
+                    string expr = inv.Expression.ToString();
+                    if (IsStringComparisonCall(expr)) return true;
+                    if (StringAssemblyPassThroughCalls.Contains(expr)) continue;
+
+                    // 最近的外层调用不是字符串比对 → 不外扩
+                    return false;
                 }
                 return false;
             }
 
+            private static bool IsStringComparisonCall(string expr)
+            {
+                return expr.EndsWith(".Contains", StringComparison.Ordinal)
+                    || expr.EndsWith(".Equals", StringComparison.Ordinal)
+                    || expr.EndsWith(".IndexOf", StringComparison.Ordinal)
+                    || expr.EndsWith(".StartsWith", StringComparison.Ordinal)
+                    || expr.EndsWith(".EndsWith", StringComparison.Ordinal);
+            }
+
+            /// <summary>
+            /// 微控件 / 内部组件注册描述符判定。
+            /// 判定口径同样是"最近的外层调用"：旧实现遍历整条祖先链，只要外面套着任意一层
+            /// new *Widget*Control(...) 或 Controls.Register(...) 就整段豁免 ——
+            /// 于是 new WidgetReadoutControl(null, null, r, "N", Helper("中文")) 里
+            /// 嵌套调用中的中文被静默放过（与用例 8 修掉的是同一类洞）。
+            /// 现在只豁免"字面量直接作为注册描述符的实参"这一层。
+            /// </summary>
             private static bool IsInsideMicroControlRegistration(SyntaxNode node)
             {
                 foreach (var ancestor in node.Ancestors())
@@ -671,15 +756,38 @@ namespace ModularFlightPanel.HeadlessValidator
                     if (ancestor is ObjectCreationExpressionSyntax oce)
                     {
                         string type = oce.Type.ToString();
-                        if (type.EndsWith("Control", StringComparison.Ordinal) && type.Contains("Widget")) return true;
+                        if (IsMicroControlType(type)) return true;
+
+                        // 其它对象构造不是注册描述符 → 不外扩
+                        return false;
                     }
+
                     if (ancestor is InvocationExpressionSyntax inv)
                     {
                         string expr = inv.Expression.ToString();
-                        if (expr.Contains("WrapElement") || expr.Contains("Controls.Wrap") || expr.Contains("Controls.Register")) return true;
+                        if (IsMicroControlRegistrationCall(expr)) return true;
+                        if (StringAssemblyPassThroughCalls.Contains(expr)) continue;
+
+                        // 最近的外层调用不是注册入口 → 不外扩
+                        return false;
                     }
                 }
                 return false;
+            }
+
+            private static bool IsMicroControlType(string typeName)
+            {
+                if (string.IsNullOrEmpty(typeName)) return false;
+                return typeName.EndsWith("Control", StringComparison.Ordinal)
+                    && typeName.Contains("Widget");
+            }
+
+            private static bool IsMicroControlRegistrationCall(string expr)
+            {
+                if (string.IsNullOrEmpty(expr)) return false;
+                return expr.Contains("WrapElement")
+                    || expr.Contains("Controls.Wrap")
+                    || expr.Contains("Controls.Register");
             }
 
             /// <summary>
@@ -922,7 +1030,32 @@ namespace ModularFlightPanel.HeadlessValidator
                 failures.Add($"[用例 13 失败] 日志与 I18n 兜底槽中的英文不应计为源码文案，实际 {rep13.UntranslatedEnglishCount}");
             }
 
-            // 用例 14: 棘轮完整性（基线必须登记冻结上限）
+            // 用例 14: 豁免判定必须按"最近宿主"生效 —— 嵌套调用里的中文不得被外层豁免规则整段放过
+            //         （微控件注册 / 字符串比对 / 路径调用三条路径与用例 8 修掉的是同一类洞）
+            cases++;
+            string case14 = "class C { void M() { "
+                          + "Controls.Register(new WidgetReadoutControl(null, null, r, \"N\", Helper(\"中文\"))); "
+                          + "var b = s.Contains(Helper(\"中文\")); "
+                          + "var p = Path.Combine(dir, Helper(\"中文\")); } }";
+            var rep14 = AuditSnippet(case14, validKeys);
+            if (rep14.HardcodedChineseCount != 3)
+            {
+                failures.Add($"[用例 14 失败] 微控件注册 / 字符串比对 / 路径调用中嵌套调用内的中文应各检出 1 处（共 3），实际 {rep14.HardcodedChineseCount}");
+            }
+
+            // 用例 15: 三类豁免的正向对照 —— 字面量"直接"作为被豁免调用的实参时必须放过
+            cases++;
+            string case15 = "class C { void M() { "
+                          + "Controls.Register(new WidgetReadoutControl(null, null, r, \"N\", \"未绑读音\")); "
+                          + "var b = s.Contains(\"中文比较\"); "
+                          + "var p = Path.Combine(dir, \"中文路径\"); } }";
+            var rep15 = AuditSnippet(case15, validKeys);
+            if (rep15.HardcodedChineseCount != 0)
+            {
+                failures.Add($"[用例 15 失败] 字面量直接作为豁免调用实参时应放过，实际检出 {rep15.HardcodedChineseCount}: {rep15.Issues.FirstOrDefault()}");
+            }
+
+            // 用例 16: 棘轮完整性（基线必须登记冻结上限）
             cases++;
             var ratchetFailures = ValidateEnglishRatchet();
             if (ratchetFailures.Count != 0)

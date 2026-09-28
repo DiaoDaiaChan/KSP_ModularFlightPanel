@@ -54,6 +54,67 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
+        /// 带诊断的解析入口：解析失败时通过 errors 回传可读的"行:列 错误信息"列表。
+        ///
+        /// 【为什么必须有这个入口】坏语法会让 ClassDeclarationSyntax 部分或全部从语法树中消失，
+        /// 组件因此脱离审计作用域 —— 报告会给出"零违规"的全绿结论。
+        /// 这是审计工具唯一无法自证的一类失效，必须在调用侧显式拦下。
+        /// </summary>
+        public static SyntaxTree ParseTreeChecked(string sourceCode, out List<string> errors)
+        {
+            errors = new List<string>();
+            SyntaxTree tree = ParseTree(sourceCode);
+            if (tree == null)
+            {
+                errors.Add("解析器返回空语法树");
+                return null;
+            }
+
+            foreach (Diagnostic diagnostic in tree.GetDiagnostics())
+            {
+                if (diagnostic.Severity != DiagnosticSeverity.Error) continue;
+                FileLinePositionSpan span = diagnostic.Location.GetLineSpan();
+                errors.Add($"L{span.StartLinePosition.Line + 1}:C{span.StartLinePosition.Character + 1} {diagnostic.Id} {diagnostic.GetMessage()}");
+            }
+
+            return tree;
+        }
+
+        /// <summary>
+        /// 取类声明所在的完整命名空间（无命名空间返回空串）。
+        /// 用于跨命名空间同名类的消歧：优先用全限定名匹配基类，而不是"后声明者胜出"。
+        /// </summary>
+        public static string GetNamespaceName(ClassDeclarationSyntax classDecl)
+        {
+            if (classDecl == null) return string.Empty;
+
+            var parts = new List<string>();
+            for (SyntaxNode current = classDecl.Parent; current != null; current = current.Parent)
+            {
+                if (current is NamespaceDeclarationSyntax ns) parts.Insert(0, ns.Name.ToString());
+                else if (current is FileScopedNamespaceDeclarationSyntax fns) parts.Insert(0, fns.Name.ToString());
+            }
+            return string.Join(".", parts);
+        }
+
+        /// <summary>
+        /// 取基类型列表的"全限定写法"（原样返回源码里写的限定名，未限定则不补命名空间）。
+        /// 与 GetBaseTypeNames 一一对应同序，供消歧时按索引比对。
+        /// </summary>
+        public static List<string> GetQualifiedBaseTypeNames(ClassDeclarationSyntax classDecl)
+        {
+            var list = new List<string>();
+            if (classDecl?.BaseList == null) return list;
+
+            foreach (var baseType in classDecl.BaseList.Types)
+            {
+                string raw = baseType.Type?.ToString();
+                if (!string.IsNullOrEmpty(raw)) list.Add(raw.Trim());
+            }
+            return list;
+        }
+
+        /// <summary>
         /// 获取语法节点的 1 起起始行号
         /// </summary>
         public static int GetLine(SyntaxNode node)

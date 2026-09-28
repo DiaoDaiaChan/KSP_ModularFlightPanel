@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Probes;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
@@ -181,9 +182,9 @@ namespace ModularFlightPanel.UI.Widgets
                 new Vector2(132f * s, 54f * s), new Vector2(-69f * s, 9f * s), slotBg, slotBorder, s);
 
             CreateLabelValPair(leftSlot.transform, "AP", -42f * s, 14f * s, 32f * s, 14f * s,
-                22f * s, 14f * s, 76f * s, 14f * s, "AP", "---", fsLbl, fsVal, labelCol, primCol, out _, out _apVal);
+                22f * s, 14f * s, 76f * s, 14f * s, I18n.Tr("ORBIT_LABEL_AP", "AP"), "---", fsLbl, fsVal, labelCol, primCol, out _, out _apVal);
             CreateLabelValPair(leftSlot.transform, "PE", -42f * s, -1f * s, 32f * s, 14f * s,
-                22f * s, -1f * s, 76f * s, 14f * s, "PE", "---", fsLbl, fsVal, labelCol, primCol, out _, out _peVal);
+                22f * s, -1f * s, 76f * s, 14f * s, I18n.Tr("ORBIT_LABEL_PE", "PE"), "---", fsLbl, fsVal, labelCol, primCol, out _, out _peVal);
 
             _tApPeReadout = UIFactory.CreateText(leftSlot.transform, "T_ApPe", I18n.Tr("WIDGET_NAV_T_AP_PE_PLACEHOLDER", "T-AP --:--  PE --:--"),
                 fsSmall, TextAnchor.MiddleCenter, secCol);
@@ -194,11 +195,11 @@ namespace ModularFlightPanel.UI.Widgets
                 new Vector2(132f * s, 54f * s), new Vector2(69f * s, 9f * s), slotBg, slotBorder, s);
 
             CreateLabelValPair(rightSlot.transform, "SMA", -42f * s, 14f * s, 32f * s, 14f * s,
-                22f * s, 14f * s, 76f * s, 14f * s, "SMA", "---", fsLbl, fsVal, labelCol, primCol, out _, out _smaVal);
+                22f * s, 14f * s, 76f * s, 14f * s, I18n.Tr("ORBIT_LABEL_SMA", "SMA"), "---", fsLbl, fsVal, labelCol, primCol, out _, out _smaVal);
             CreateLabelValPair(rightSlot.transform, "ECC", -42f * s, -1f * s, 32f * s, 14f * s,
-                22f * s, -1f * s, 76f * s, 14f * s, "ECC", "0.000", fsLbl, fsVal, labelCol, primCol, out _, out _eccVal);
+                22f * s, -1f * s, 76f * s, 14f * s, I18n.Tr("ORBIT_LABEL_ECC", "ECC"), "0.000", fsLbl, fsVal, labelCol, primCol, out _, out _eccVal);
             CreateLabelValPair(rightSlot.transform, "INC", -42f * s, -17f * s, 32f * s, 14f * s,
-                10f * s, -17f * s, 50f * s, 14f * s, "INC", "0.0°", fsLbl, fsVal, labelCol, primCol, out _, out _incVal);
+                10f * s, -17f * s, 50f * s, 14f * s, I18n.Tr("ORBIT_LABEL_INC", "INC"), "0.0°", fsLbl, fsVal, labelCol, primCol, out _, out _incVal);
 
             _incDirVal = UIFactory.CreateText(rightSlot.transform, "INC_DIR", I18n.Tr("ORBIT_DIR_PRO", "顺行"), fsSmall, TextAnchor.MiddleRight, unitCol);
             SetRect(_incDirVal.rectTransform, 48f * s, -17f * s, 24f * s, 13f * s);
@@ -208,13 +209,13 @@ namespace ModularFlightPanel.UI.Widgets
                 new Vector2(270f * s, 22f * s), new Vector2(0f, -38f * s), slotBg, slotBorder, s);
 
             CreateLabelValPair(bottomSlot.transform, "LAN", -120f * s, 0f, 16f * s, 14f * s,
-                -92f * s, 0f, 40f * s, 14f * s, "Ω", "---°", fsSmall, fsSmall, labelCol, secCol, out _, out _lanVal);
+                -92f * s, 0f, 40f * s, 14f * s, I18n.Tr("ORBIT_ELEM_LAN", "Ω"), "---°", fsSmall, fsSmall, labelCol, secCol, out _, out _lanVal);
             CreateLabelValPair(bottomSlot.transform, "AOP", -53f * s, 0f, 16f * s, 14f * s,
-                -25f * s, 0f, 40f * s, 14f * s, "ω", "---°", fsSmall, fsSmall, labelCol, secCol, out _, out _aopVal);
+                -25f * s, 0f, 40f * s, 14f * s, I18n.Tr("ORBIT_ELEM_AOP", "ω"), "---°", fsSmall, fsSmall, labelCol, secCol, out _, out _aopVal);
             CreateLabelValPair(bottomSlot.transform, "TA", 15f * s, 0f, 16f * s, 14f * s,
-                43f * s, 0f, 40f * s, 14f * s, "ν", "---°", fsSmall, fsSmall, labelCol, primCol, out _, out _taVal);
+                43f * s, 0f, 40f * s, 14f * s, I18n.Tr("ORBIT_ELEM_TA", "ν"), "---°", fsSmall, fsSmall, labelCol, primCol, out _, out _taVal);
             CreateLabelValPair(bottomSlot.transform, "PER", 80f * s, 0f, 22f * s, 14f * s,
-                110f * s, 0f, 38f * s, 14f * s, "PER", "--:--", fsSmall, fsSmall, labelCol, unitCol, out _, out _perVal);
+                110f * s, 0f, 38f * s, 14f * s, I18n.Tr("ORBIT_LABEL_PER", "PER"), "--:--", fsSmall, fsSmall, labelCol, unitCol, out _, out _perVal);
 
             // ═════════════════════════════════════════════════════════════════
             // 3. 完整模式容器 (Full Mode: 全息 3D 轨道球 + 四角悬浮卡槽)
@@ -250,37 +251,37 @@ namespace ModularFlightPanel.UI.Widgets
             // [左上角] 拱点与时钟
             GameObject bTopL = CreateAvionicsSlot(_fullRoot.transform, "Badge_TopLeft",
                 new Vector2(badgeW, badgeHTop), new Vector2(-cornerX, cornerTopY), slotBg, slotBorder, s);
-            _fApVal = UIFactory.CreateText(bTopL.transform, "F_AP", "AP ---", fsSmall, TextAnchor.MiddleLeft, primCol);
+            _fApVal = UIFactory.CreateText(bTopL.transform, "F_AP", $"{I18n.Tr("ORBIT_LABEL_AP", "AP")} ---", fsSmall, TextAnchor.MiddleLeft, primCol);
             SetRect(_fApVal.rectTransform, 0f, 7f * s, badgeW - 12f * s, 12f * s);
-            _fPeVal = UIFactory.CreateText(bTopL.transform, "F_PE", "PE ---", fsSmall, TextAnchor.MiddleLeft, primCol);
+            _fPeVal = UIFactory.CreateText(bTopL.transform, "F_PE", $"{I18n.Tr("ORBIT_LABEL_PE", "PE")} ---", fsSmall, TextAnchor.MiddleLeft, primCol);
             SetRect(_fPeVal.rectTransform, 0f, -4f * s, badgeW - 12f * s, 12f * s);
-            _fTimeVal = UIFactory.CreateText(bTopL.transform, "F_TIME", I18n.Tr("WIDGET_NAV_T_AP_PLACEHOLDER", "T-AP --:--"), Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleLeft, secCol);
+            _fTimeVal = UIFactory.CreateText(bTopL.transform, "F_TIME", $"{I18n.Tr("ORBIT_FMT_T_AP", "T-AP")} --:--", Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleLeft, secCol);
             SetRect(_fTimeVal.rectTransform, 0f, -14f * s, badgeW - 12f * s, 10f * s);
 
             // [右上角] 轨道尺度与周期
             GameObject bTopR = CreateAvionicsSlot(_fullRoot.transform, "Badge_TopRight",
                 new Vector2(badgeW, badgeHTop), new Vector2(cornerX, cornerTopY), slotBg, slotBorder, s);
-            _fSmaVal = UIFactory.CreateText(bTopR.transform, "F_SMA", "a ---", fsSmall, TextAnchor.MiddleRight, secCol);
+            _fSmaVal = UIFactory.CreateText(bTopR.transform, "F_SMA", $"{I18n.Tr("ORBIT_ELEM_SMA", "a")} ---", fsSmall, TextAnchor.MiddleRight, secCol);
             SetRect(_fSmaVal.rectTransform, 0f, 7f * s, badgeW - 12f * s, 12f * s);
-            _fEccVal = UIFactory.CreateText(bTopR.transform, "F_ECC", "e 0.000", fsSmall, TextAnchor.MiddleRight, secCol);
+            _fEccVal = UIFactory.CreateText(bTopR.transform, "F_ECC", $"{I18n.Tr("ORBIT_ELEM_ECC", "e")} 0.0000", fsSmall, TextAnchor.MiddleRight, secCol);
             SetRect(_fEccVal.rectTransform, 0f, -4f * s, badgeW - 12f * s, 12f * s);
-            _fPeriodVal = UIFactory.CreateText(bTopR.transform, "F_PER", I18n.Tr("WIDGET_NAV_PERIOD_PLACEHOLDER", "P --:--"), Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleRight, unitCol);
+            _fPeriodVal = UIFactory.CreateText(bTopR.transform, "F_PER", $"{I18n.Tr("ORBIT_LABEL_PERIOD", "P")} --:--", Mathf.Max(5, fsSmall - 1), TextAnchor.MiddleRight, unitCol);
             SetRect(_fPeriodVal.rectTransform, 0f, -14f * s, badgeW - 12f * s, 10f * s);
 
             // [左下角] 赤道参考面要素
             GameObject bBotL = CreateAvionicsSlot(_fullRoot.transform, "Badge_BotLeft",
                 new Vector2(badgeW, badgeHBot), new Vector2(-cornerX, cornerBottomY), slotBg, slotBorder, s);
-            _fLanVal = UIFactory.CreateText(bBotL.transform, "F_LAN", "Ω 0.0°", fsSmall, TextAnchor.MiddleLeft, unitCol);
+            _fLanVal = UIFactory.CreateText(bBotL.transform, "F_LAN", $"{I18n.Tr("ORBIT_ELEM_LAN", "Ω")} 0.0°", fsSmall, TextAnchor.MiddleLeft, unitCol);
             SetRect(_fLanVal.rectTransform, 0f, 4f * s, badgeW - 12f * s, 12f * s);
-            _fAopVal = UIFactory.CreateText(bBotL.transform, "F_AOP", "ω 0.0°", fsSmall, TextAnchor.MiddleLeft, unitCol);
+            _fAopVal = UIFactory.CreateText(bBotL.transform, "F_AOP", $"{I18n.Tr("ORBIT_ELEM_AOP", "ω")} 0.0°", fsSmall, TextAnchor.MiddleLeft, unitCol);
             SetRect(_fAopVal.rectTransform, 0f, -6f * s, badgeW - 12f * s, 12f * s);
 
             // [右下角] 空间倾角与当前真近点角
             GameObject bBotR = CreateAvionicsSlot(_fullRoot.transform, "Badge_BotRight",
                 new Vector2(badgeW, badgeHBot), new Vector2(cornerX, cornerBottomY), slotBg, slotBorder, s);
-            _fIncVal = UIFactory.CreateText(bBotR.transform, "F_INC", I18n.Tr("WIDGET_NAV_INC_PLACEHOLDER", "i 0.0°"), fsSmall, TextAnchor.MiddleRight, secCol);
+            _fIncVal = UIFactory.CreateText(bBotR.transform, "F_INC", $"{I18n.Tr("ORBIT_ELEM_INC", "i")} 0.0°", fsSmall, TextAnchor.MiddleRight, secCol);
             SetRect(_fIncVal.rectTransform, 0f, 4f * s, badgeW - 12f * s, 12f * s);
-            _fTaVal = UIFactory.CreateText(bBotR.transform, "F_TA", "ν 0.0°", fsSmall, TextAnchor.MiddleRight, primCol);
+            _fTaVal = UIFactory.CreateText(bBotR.transform, "F_TA", $"{I18n.Tr("ORBIT_ELEM_TA", "ν")} 0.0°", fsSmall, TextAnchor.MiddleRight, primCol);
             SetRect(_fTaVal.rectTransform, 0f, -6f * s, badgeW - 12f * s, 12f * s);
 
             // 纳管至基类标准管理器
@@ -485,6 +486,16 @@ namespace ModularFlightPanel.UI.Widgets
         // ═════════════════════════════════════════════════════════════════
         // SPEC-004: 遥测驱动更新 (直接对接 IFlightTelemetry 真实开普勒要素)
         // ═════════════════════════════════════════════════════════════════
+        private float _orbitMathTimer = 0f;
+        private const float ORBIT_MATH_INTERVAL = 0.1f;
+        private double _cachedSma = double.NaN;
+        private double _cachedEcc = double.NaN;
+        private double _cachedInc = double.NaN;
+        private double _cachedLan = double.NaN;
+        private double _cachedAop = double.NaN;
+        private double _cachedPeriod = double.NaN;
+        private bool _cachedIsPrincipia = false;
+
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !telemetry.HasVessel)
@@ -500,93 +511,114 @@ namespace ModularFlightPanel.UI.Widgets
             double tAp = telemetry.TimeToAp;
             double tPe = telemetry.TimeToPe;
 
-            // 2. 开普勒六根数：优先 IFlightTelemetry 接口直连，其次外部探针，最后几何回退
-            double sma = telemetry.SemiMajorAxis;
-            double ecc = telemetry.Eccentricity;
-            double inc = telemetry.Inclination;
-            double lan = telemetry.LongitudeOfAscendingNode;
-            double aop = telemetry.ArgumentOfPeriapsis;
-            double tra = telemetry.TrueAnomaly;
-            double period = telemetry.OrbitalPeriod;
+            // 2. 开普勒六根数：稳态两体节拍守卫与外部探针按需查询 (Microsecond Performance Tuning)
+            float dt = Time.unscaledDeltaTime;
+            _orbitMathTimer += dt;
+            bool isManeuvering = telemetry.Throttle > 0.001f || telemetry.DynamicPressure > 0.1 || telemetry.HasManeuverNode;
+            bool needKeplerianRecalc = isManeuvering || _orbitMathTimer >= ORBIT_MATH_INTERVAL || double.IsNaN(_cachedSma);
 
-            // 2. 开普勒六根数：优先 Principia 权威摄动分析 -> 其次机载遥测 -> 其次通用探针 -> 最后几何回退
-            bool isPrincipia = false;
-            double pSma = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SMA");
-            if (!double.IsNaN(pSma) && pSma > 0.0) { sma = pSma; isPrincipia = true; }
-            double pEcc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "ECC");
-            if (!double.IsNaN(pEcc) && pEcc >= 0.0) { ecc = pEcc; isPrincipia = true; }
-            double pInc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "INC");
-            if (!double.IsNaN(pInc)) { inc = pInc; isPrincipia = true; }
-            double pLan = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LAN");
-            if (!double.IsNaN(pLan)) { lan = pLan; isPrincipia = true; }
-            double pAop = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LPE");
-            if (!double.IsNaN(pAop)) { aop = pAop; isPrincipia = true; }
-            double pTra = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "TRA");
-            if (!double.IsNaN(pTra)) { tra = pTra; isPrincipia = true; }
+            double sma, ecc, inc, lan, aop, period;
+            bool isPrincipia;
 
-            // 优先接入 Principia 高精度交点/恒星周期
-            double pNodal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "NODALPERIOD");
-            if (!double.IsNaN(pNodal) && pNodal > 0.0) { period = pNodal; isPrincipia = true; }
+            if (needKeplerianRecalc)
+            {
+                _orbitMathTimer = 0f;
+                sma = telemetry.SemiMajorAxis;
+                ecc = telemetry.Eccentricity;
+                inc = telemetry.Inclination;
+                lan = telemetry.LongitudeOfAscendingNode;
+                aop = telemetry.ArgumentOfPeriapsis;
+                period = telemetry.OrbitalPeriod;
+                isPrincipia = false;
+
+                bool prinAvail = TelemetryProbeManager.IsProbeTagAvailable("PRINCIPIA");
+                if (prinAvail && ExternalProbeRegistry.NumericResolver != null)
+                {
+                    double pSma = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SMA");
+                    if (!double.IsNaN(pSma) && pSma > 0.0) { sma = pSma; isPrincipia = true; }
+                    double pEcc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "ECC");
+                    if (!double.IsNaN(pEcc) && pEcc >= 0.0) { ecc = pEcc; isPrincipia = true; }
+                    double pInc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "INC");
+                    if (!double.IsNaN(pInc)) { inc = pInc; isPrincipia = true; }
+                    double pLan = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LAN");
+                    if (!double.IsNaN(pLan)) { lan = pLan; isPrincipia = true; }
+                    double pAop = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LPE");
+                    if (!double.IsNaN(pAop)) { aop = pAop; isPrincipia = true; }
+
+                    double pNodal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "NODALPERIOD");
+                    if (!double.IsNaN(pNodal) && pNodal > 0.0) { period = pNodal; isPrincipia = true; }
+                    else
+                    {
+                        double pSidereal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SIDEREALPERIOD");
+                        if (!double.IsNaN(pSidereal) && pSidereal > 0.0) { period = pSidereal; isPrincipia = true; }
+                    }
+                }
+
+                lan = NormalizeDegrees(lan);
+                aop = NormalizeDegrees(aop);
+                if (double.IsNaN(inc) || double.IsInfinity(inc)) inc = 0.0;
+                inc = Math.Min(180.0, Math.Max(0.0, inc));
+
+                // 几何回退
+                if (double.IsNaN(ecc) || ecc < 0.0)
+                {
+                    double rA = Math.Max(10000.0, DefaultKerbinRadius + ap);
+                    double rP = DefaultKerbinRadius + pe;
+                    ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
+                }
+
+                if (double.IsNaN(sma) || sma <= 0.0)
+                {
+                    double rA = DefaultKerbinRadius + ap;
+                    double rP = DefaultKerbinRadius + pe;
+                    sma = (rA + rP) * 0.5;
+                }
+
+                if (double.IsNaN(period) || period <= 0.0)
+                    period = ecc < 1.0 ? Math.Abs(tAp - tPe) * 2.0 : 0.0;
+
+                _cachedSma = sma;
+                _cachedEcc = ecc;
+                _cachedInc = inc;
+                _cachedLan = lan;
+                _cachedAop = aop;
+                _cachedPeriod = period;
+                _cachedIsPrincipia = isPrincipia;
+            }
             else
             {
-                double pSidereal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SIDEREALPERIOD");
-                if (!double.IsNaN(pSidereal) && pSidereal > 0.0) { period = pSidereal; isPrincipia = true; }
+                sma = _cachedSma;
+                ecc = _cachedEcc;
+                inc = _cachedInc;
+                lan = _cachedLan;
+                aop = _cachedAop;
+                period = _cachedPeriod;
+                isPrincipia = _cachedIsPrincipia;
             }
 
-            // 角度归一化：外部探针（Principia 等）可能返回负值或超 360° 的等价写法，
-            // 若不归一化，Ω 夹角弧会被画成反向长弧，且与精简模式读数口径不一致。
-            // 倾角 i 定义域为 [0, 180]（>90° 即逆行轨道），只做有限性保护与区间钳制。
-            lan = NormalizeDegrees(lan);
-            aop = NormalizeDegrees(aop);
+            // 真近点角（连续平滑演进）
+            double tra = telemetry.TrueAnomaly;
+            if (isPrincipia && ExternalProbeRegistry.NumericResolver != null)
+            {
+                double pTra = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "TRA");
+                if (!double.IsNaN(pTra)) tra = pTra;
+            }
             tra = NormalizeDegrees(tra);
-            if (double.IsNaN(inc) || double.IsInfinity(inc)) inc = 0.0;
-            inc = Math.Min(180.0, Math.Max(0.0, inc));
-
-            // 探针或几何度回退
-            if (double.IsNaN(ecc) || ecc < 0.0)
-                ecc = ExternalProbeRegistry.ResolveNumeric("ORBIT", "ECC");
-            if (double.IsNaN(ecc) || ecc < 0.0)
-            {
-                double rA = Math.Max(10000.0, DefaultKerbinRadius + ap);
-                double rP = DefaultKerbinRadius + pe;
-                ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
-            }
-
-            if (double.IsNaN(sma) || sma <= 0.0)
-                sma = ExternalProbeRegistry.ResolveNumeric("ORBIT", "SMA");
-            if (double.IsNaN(sma) || sma <= 0.0)
-            {
-                double rA = DefaultKerbinRadius + ap;
-                double rP = DefaultKerbinRadius + pe;
-                sma = (rA + rP) * 0.5;
-            }
-
-            if (double.IsNaN(inc)) inc = ExternalProbeRegistry.ResolveNumeric("ORBIT", "INC");
-            if (double.IsNaN(inc)) inc = 0.0;
-
-            if (double.IsNaN(lan)) lan = ExternalProbeRegistry.ResolveNumeric("ORBIT", "LAN");
-            if (double.IsNaN(lan)) lan = 0.0;
-
-            if (double.IsNaN(aop)) aop = ExternalProbeRegistry.ResolveNumeric("ORBIT", "LPE");
-            if (double.IsNaN(aop)) aop = 0.0;
-
-            if (double.IsNaN(tra)) tra = ExternalProbeRegistry.ResolveNumeric("ORBIT", "TRA");
-            if (double.IsNaN(tra)) tra = 0.0;
-
-            if (double.IsNaN(period) || period <= 0.0)
-                period = ExternalProbeRegistry.ResolveNumeric("ORBIT", "PERIOD");
-            if (double.IsNaN(period) || period <= 0.0)
-                period = ecc < 1.0 ? Math.Abs(tAp - tPe) * 2.0 : 0.0;
 
             // Principia 参考系标题联动
-            string prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "NAVBALLNAME", "");
-            if (string.IsNullOrEmpty(prinFrame) || prinFrame == "---")
-                prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
-            if (!string.IsNullOrEmpty(prinFrame) && prinFrame != "---")
+            bool hasPrinFrame = false;
+            if (isPrincipia && ExternalProbeRegistry.StringResolver != null)
             {
-                Title.Text = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
+                string prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "NAVBALLNAME", "");
+                if (string.IsNullOrEmpty(prinFrame) || prinFrame == "---")
+                    prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
+                if (!string.IsNullOrEmpty(prinFrame) && prinFrame != "---")
+                {
+                    Title.Text = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
+                    hasPrinFrame = true;
+                }
             }
-            else
+            if (!hasPrinFrame)
             {
                 Title.Text = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
             }
@@ -632,30 +664,40 @@ namespace ModularFlightPanel.UI.Widgets
             bool hasAtm = telemetry.HasAtmosphere;
             double safeAlt = hasAtm ? atmDepth : 0.0;
 
+            // 获取天体名称用于标题增强 (通过探针查表，SPEC-007 禁止场景查询)
+            string bodyName = ExternalProbeRegistry.ResolveString("ORBIT", "BODY", "");
+            bool hasBodyName = !string.IsNullOrEmpty(bodyName) && bodyName != "---";
+
             if (ecc >= 1.0)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE 逃逸");
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE");
                 OrbitBadge.SetRole(TextStyleRole.Danger);
             }
             else if (pe < 0.0)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC 弹道");
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC");
                 OrbitBadge.SetRole(TextStyleRole.Danger);
             }
             else if (pe < safeAlt)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBIT 亚轨道");
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBIT");
                 OrbitBadge.SetRole(TextStyleRole.Warning);
             }
             else if (ecc < 0.015)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR 圆轨");
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR");
                 OrbitBadge.SetRole(TextStyleRole.Accent);
             }
             else
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC 椭圆轨");
+                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC");
                 OrbitBadge.SetRole(TextStyleRole.PrimaryValue);
+            }
+
+            // 天体名称联动到 OrbitBadge 后缀 (如 "圆轨道 EARTH" → 增强态势感知)
+            if (hasBodyName)
+            {
+                OrbitBadge.Text = $"{OrbitBadge.Text} ({bodyName.ToUpperInvariant()})";
             }
         }
 
@@ -664,39 +706,61 @@ namespace ModularFlightPanel.UI.Widgets
         {
             SetTextIfChanged(_apVal, FormatMetricDistance(ap));
             SetTextIfChanged(_peVal, pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe));
-            SetTextIfChanged(_tApPeReadout, $"T-AP {FormatDurationCompact(tAp)}  PE {FormatDurationCompact(tPe)}");
+
+            // 优化倒计时：使用 i18n 标签与紧凑格式
+            string tApLabel = I18n.Tr("ORBIT_FMT_T_AP", "T-AP");
+            string tPeLabel = I18n.Tr("ORBIT_FMT_T_PE", "T-PE");
+            SetTextIfChanged(_tApPeReadout, $"{tApLabel} {FormatDurationCompact(tAp)}  {tPeLabel} {FormatDurationCompact(tPe)}");
 
             SetTextIfChanged(_smaVal, FormatMetricDistance(sma));
-            SetTextIfChanged(_eccVal, ecc.ToString("F4"));
-            SetTextIfChanged(_incVal, $"{inc:F1}°");
+
+            // 优化离心率显示：F4 精度，圆轨道极低离心率用科学计数法
+            if (ecc < 0.0001 && ecc > 0.0)
+                SetTextIfChanged(_eccVal, ecc.ToString("E2"));
+            else
+                SetTextIfChanged(_eccVal, ecc.ToString("F4"));
+
+            // 优化倾角显示：高精度角度 + 逆行标识联动
+            SetTextIfChanged(_incVal, FormatAngleSmart(inc));
             if (_incDirVal != null)
             {
                 _incDirVal.text = inc > 90.0 ? I18n.Tr("ORBIT_DIR_RET", "RET") : I18n.Tr("ORBIT_DIR_PRO", "PRO");
                 _incDirVal.color = inc > 90.0 ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Warning, null) : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, null);
             }
 
-            SetTextIfChanged(_lanVal, $"{lan:F1}°");
-            SetTextIfChanged(_aopVal, $"{aop:F1}°");
-            SetTextIfChanged(_taVal, $"{tra:F1}°");
+            // 优化角度显示精度
+            SetTextIfChanged(_lanVal, FormatAngleSmart(lan));
+            SetTextIfChanged(_aopVal, FormatAngleSmart(aop));
+            SetTextIfChanged(_taVal, FormatAngleSmart(tra));
             SetTextIfChanged(_perVal, FormatPeriodCompact(period));
         }
 
         private void UpdateFullModeReadouts(double ap, double pe, double tAp,
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
-            SetTextIfChanged(_fApVal, $"AP {FormatMetricDistance(ap)}");
-            SetTextIfChanged(_fPeVal, $"PE {FormatMetricDistance(pe)}");
-            SetTextIfChanged(_fTimeVal, $"T-AP {FormatDurationCompact(tAp)}");
+            string apLabel = I18n.Tr("ORBIT_LABEL_AP", "AP");
+            string peLabel = I18n.Tr("ORBIT_LABEL_PE", "PE");
+            SetTextIfChanged(_fApVal, $"{apLabel} {FormatMetricDistance(ap)}");
+            SetTextIfChanged(_fPeVal, $"{peLabel} {FormatMetricDistance(pe)}");
+            SetTextIfChanged(_fTimeVal, $"{I18n.Tr("ORBIT_FMT_T_AP", "T-AP")} {FormatDurationCompact(tAp)}");
 
-            SetTextIfChanged(_fSmaVal, $"a {FormatMetricDistance(sma)}");
-            SetTextIfChanged(_fEccVal, $"e {ecc:F4}");
-            SetTextIfChanged(_fPeriodVal, $"P {FormatPeriodCompact(period)}");
+            string elemA = I18n.Tr("ORBIT_ELEM_SMA", "a");
+            string elemE = I18n.Tr("ORBIT_ELEM_ECC", "e");
+            SetTextIfChanged(_fSmaVal, $"{elemA} {FormatMetricDistance(sma)}");
 
-            SetTextIfChanged(_fLanVal, $"Ω {lan:F1}°");
-            SetTextIfChanged(_fAopVal, $"ω {aop:F1}°");
+            // 优化离心率精度：F4，极低离心率用科学计数法
+            if (ecc < 0.0001 && ecc > 0.0)
+                SetTextIfChanged(_fEccVal, $"{elemE} {ecc:E2}");
+            else
+                SetTextIfChanged(_fEccVal, $"{elemE} {ecc:F4}");
 
-            SetTextIfChanged(_fIncVal, $"i {inc:F1}°");
-            SetTextIfChanged(_fTaVal, $"ν {tra:F1}°");
+            SetTextIfChanged(_fPeriodVal, $"{I18n.Tr("ORBIT_LABEL_PERIOD", "P")} {FormatPeriodCompact(period)}");
+
+            SetTextIfChanged(_fLanVal, $"{I18n.Tr("ORBIT_ELEM_LAN", "Ω")} {FormatAngleSmart(lan)}");
+            SetTextIfChanged(_fAopVal, $"{I18n.Tr("ORBIT_ELEM_AOP", "ω")} {FormatAngleSmart(aop)}");
+
+            SetTextIfChanged(_fIncVal, $"{I18n.Tr("ORBIT_ELEM_INC", "i")} {FormatAngleSmart(inc)}");
+            SetTextIfChanged(_fTaVal, $"{I18n.Tr("ORBIT_ELEM_TA", "ν")} {FormatAngleSmart(tra)}");
         }
 
         /// <summary>
@@ -795,18 +859,21 @@ namespace ModularFlightPanel.UI.Widgets
             DrawGlyphString(vh, eqP1X + 4f, eqP1Y + 3f, "EQ", _cLabelText);
 
             // ─────────────────────────────────────────────────────────────
-            // 2. 绘制惯性参考坐标轴 X, Y, Z
+            // 2. 绘制惯性参考坐标轴 X, Y, Z (各轴差异化延展，增强空间纵深感)
             // ─────────────────────────────────────────────────────────────
-            double axisLen = diskR * 1.30;
-            ProjectWorldToScreenFloat(axisLen, 0.0, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float xEndX, out float xEndY, out _);
+            double axisLenX = diskR * 1.50;    // X 轴：春分点方向，充分延伸
+            double axisLenY = diskR * 1.42;    // Y 轴：赤道正交
+            double axisLenZ = diskR * 1.60;    // Z 轴：自转极轴，最长以强化垂直参考
+
+            ProjectWorldToScreenFloat(axisLenX, 0.0, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float xEndX, out float xEndY, out _);
             DrawArrow(vh, cx, cy, xEndX, xEndY, _cAxis, 1.0f, 6.0f);
             DrawGlyphChar(vh, xEndX - 10f, xEndY - 7f, 'X', _cLabelText);
 
-            ProjectWorldToScreenFloat(0.0, axisLen * 0.95, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float yEndX, out float yEndY, out _);
+            ProjectWorldToScreenFloat(0.0, axisLenY, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float yEndX, out float yEndY, out _);
             DrawArrow(vh, cx, cy, yEndX, yEndY, _cAxis, 1.0f, 6.0f);
             DrawGlyphChar(vh, yEndX + 5f, yEndY - 2f, 'Y', _cLabelText);
 
-            ProjectWorldToScreenFloat(0.0, 0.0, axisLen * 1.15, cosCp, sinCp, cosCy, sinCy, cx, cy, out float zEndX, out float zEndY, out _);
+            ProjectWorldToScreenFloat(0.0, 0.0, axisLenZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out float zEndX, out float zEndY, out _);
             DrawArrow(vh, cx, cy, zEndX, zEndY, _cAxis, 1.0f, 6.0f);
             DrawGlyphChar(vh, zEndX - 10f, zEndY - 2f, 'Z', _cLabelText);
 
@@ -1535,6 +1602,29 @@ namespace ModularFlightPanel.UI.Widgets
             int s = sec % 60;
             if (h > 0) return $"{h}h{m:D2}m";
             return $"{m:D2}:{s:D2}";
+        }
+
+        /// <summary>
+        /// 智能角度格式化：根据角度值自适应精度显示。
+        /// 整数附近 (≤0.05° 偏差) 显示整数度，
+        /// 常规精度显示 1 位小数，
+        /// 精细操控 (≤10°) 显示 2 位小数以支持精确调姿。
+        /// </summary>
+        private static string FormatAngleSmart(double degrees)
+        {
+            if (double.IsNaN(degrees) || double.IsInfinity(degrees)) return "---°";
+
+            // 整数附近自动取整 (避免 "90.0°" 冗余小数)
+            double rounded = Math.Round(degrees);
+            if (Math.Abs(degrees - rounded) < 0.05)
+                return $"{(int)rounded}°";
+
+            // 精细角度 (≤10°)：F2 精度以支持精确调姿
+            if (degrees <= 10.0 && degrees >= -10.0)
+                return $"{degrees:F2}°";
+
+            // 常规精度
+            return $"{degrees:F1}°";
         }
 
         // ═════════════════════════════════════════════════════════════════

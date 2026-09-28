@@ -248,6 +248,7 @@ namespace ModularFlightPanel.Core
         public static string Evaluate(string template, IFlightTelemetry telemetry)
         {
             if (string.IsNullOrEmpty(template) || telemetry == null) return template ?? string.Empty;
+            if (template.IndexOf('{') < 0) return template;
 
             if (!_compiledTemplateCache.TryGetValue(template, out var compiled))
             {

@@ -216,6 +216,8 @@ namespace ModularFlightPanel.UI.Framework
                 }
             }
         }
+
+        public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(Token);
     }
 
     /// <summary>
@@ -719,6 +721,8 @@ namespace ModularFlightPanel.UI.Framework
             string title = TelemetryTokenEngine.Evaluate("{FRAME}", telemetry);
             UpdateFrame(category, title);
         }
+
+        public override bool NeedsTelemetryUpdate => true;
     }
 
     /// <summary>
@@ -891,5 +895,7 @@ namespace ModularFlightPanel.UI.Framework
                 FillAmount = frac;
             }
         }
+
+        public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(NumericToken);
     }
 }

@@ -432,7 +432,7 @@ namespace ModularFlightPanel.Config
 
             // 核心飞行仪表集群 (紧凑人体工学布局：姿态球、速度高度带、航向指示器、全新光柱油门/气压计、一体化底控与SAS控制台)
             CurrentLayout.Widgets.Add(new WidgetConfig("core.navball", I18n.GetWidgetName("core.navball", "姿态球 (Navball)"), 0f, 0f));
-            CurrentLayout.Widgets.Add(new WidgetConfig("core.heading_arc", I18n.GetWidgetName("core.heading_arc", "PFD 航向指示弧 (Set 2)"), 0f, 0f)
+            CurrentLayout.Widgets.Add(new WidgetConfig("core.heading_arc", I18n.GetWidgetName("core.heading_arc", "PFD 航向指示弧 (Set 2)"), 0f, 76f)
             {
                 WidgetType = "heading_arc",
                 IsEnabled = true

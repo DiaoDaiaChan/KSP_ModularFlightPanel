@@ -163,10 +163,42 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private RawImage _dragGhostIcon;
         private Text _dragGhostMult;
 
+        private static readonly string[] _cachedStageBadges = GenerateStageBadges();
+        private static readonly string[] _cachedStageTriggers = GenerateStageTriggers();
+
+        private static string[] GenerateStageBadges()
+        {
+            var arr = new string[100];
+            for (int i = 0; i < 100; i++) arr[i] = $"S{i:00}";
+            return arr;
+        }
+
+        private static string[] GenerateStageTriggers()
+        {
+            var arr = new string[100];
+            for (int i = 0; i < 100; i++) arr[i] = $"STAGE S{i:00}";
+            return arr;
+        }
+
+        private static string GetStageBadge(int stage)
+        {
+            if ((uint)stage < (uint)_cachedStageBadges.Length) return _cachedStageBadges[stage];
+            return $"S{stage:00}";
+        }
+
+        private static string GetStageTriggerText(int stage)
+        {
+            if ((uint)stage < (uint)_cachedStageTriggers.Length) return _cachedStageTriggers[stage];
+            return $"STAGE S{stage:00}";
+        }
+
         // 缓存与脏检查标记
         private ThemeConfig _cachedTheme;
         private bool _lastStageLocked = false;
         private string _lastTotalDvStr = string.Empty;
+        private double _lastTotalDv = double.NaN;
+        private int _lastStageCount = -1;
+        private bool _stageOrderDirty = true;
         private int _highestStageNumber = 0;
         private int _lastActiveStage = -1;
         private float _stageTriggerRecoilTimer = 0f;
@@ -808,11 +840,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             double totalDv = TelemetryTokenEngine.EvaluateNumeric(_totalDvToken, telemetry);
             if (double.IsNaN(totalDv)) totalDv = telemetry.TotalDeltaV;
-            string totalDvStr = $"{totalDv:N0} m/s";
-            if (totalDvStr != _lastTotalDvStr)
+            if (Math.Abs(totalDv - _lastTotalDv) >= 0.5 || string.IsNullOrEmpty(_lastTotalDvStr))
             {
-                _lastTotalDvStr = totalDvStr;
-                SetTextIfChanged(_totalDvText, totalDvStr);
+                _lastTotalDv = totalDv;
+                _lastTotalDvStr = $"{totalDv:N0} m/s";
+                SetTextIfChanged(_totalDvText, _lastTotalDvStr);
             }
 
             // 3. 分级安全锁与状态
@@ -888,7 +920,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 更新触发按键文案与可用状态
-            string trigText = isLocked ? "LOCKED" : (curStage >= 0 ? $"STAGE S{curStage:00}" : "NO STAGE");
+            string trigText = isLocked ? "LOCKED" : (curStage >= 0 ? GetStageTriggerText(curStage) : "NO STAGE");
             SetTextIfChanged(_stageTriggerText, trigText);
             _stageTriggerBtn.interactable = !isLocked && curStage >= 0;
 
@@ -1022,7 +1054,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
 
                 // 行背景高亮与分级徽章
-                SetTextIfChanged(item.BadgeText, $"S{stg.Stage:00}");
+                SetTextIfChanged(item.BadgeText, GetStageBadge(stg.Stage));
                 SetSizeDeltaIfChanged(item.RowHighlightBg.rectTransform, new Vector2(rowW, (itemH - 2f) * s));
                 SetColorIfChanged(item.RowHighlightBg, isActive ? WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.12f) : Color.clear);
 
@@ -1245,10 +1277,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     {
                         uv = StageIconAtlasGenerator.GetIconUv(iconIndex);
                     }
-                    chip.IconRawImage.uvRect = uv;
-                    chip.IconRawImage.SetColor(isActive 
+                    if (chip.IconRawImage.uvRect != uv) chip.IconRawImage.uvRect = uv;
+                    Color targetCol = isActive 
                         ? theme.AccentPrimary 
-                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                    if (chip.IconRawImage.color != targetCol) chip.IconRawImage.color = targetCol;
 
                     if (partData.Count > 1)
                     {
@@ -1324,10 +1357,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     {
                         uv = StageIconAtlasGenerator.GetIconUv(iconIndex);
                     }
-                    chip.IconRawImage.uvRect = uv;
-                    chip.IconRawImage.SetColor(isActive 
+                    if (chip.IconRawImage.uvRect != uv) chip.IconRawImage.uvRect = uv;
+                    Color targetCol = isActive 
                         ? theme.AccentPrimary 
-                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                    if (chip.IconRawImage.color != targetCol) chip.IconRawImage.color = targetCol;
 
                     if (c == displayedChips - 1 && partIconCount > displayedChips)
                     {

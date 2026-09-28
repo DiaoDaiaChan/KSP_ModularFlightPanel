@@ -191,7 +191,7 @@ namespace ModularFlightPanel.Config
     }
 }
 
-#if !KSP_RUNTIME
+#if !KSP_RUNTIME && !UNITY_5_3_OR_NEWER && !UNITY_EDITOR
 namespace UnityEngine
 {
     public struct Vector2

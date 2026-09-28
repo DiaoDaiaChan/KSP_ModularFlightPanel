@@ -20,6 +20,16 @@ namespace ModularFlightPanel.UI
         public string FilePath;
         public ClassDeclarationSyntax Decl;
         public List<string> BaseNames = new List<string>();
+
+        /// <summary>与 BaseNames 同序：源码里的原始写法（可能带命名空间限定），用于同名类消歧</summary>
+        public List<string> QualifiedBaseNames = new List<string>();
+
+        /// <summary>完整命名空间（无命名空间为空串）</summary>
+        public string Namespace = string.Empty;
+
+        /// <summary>全限定类名（Namespace.Name）</summary>
+        public string FullName = string.Empty;
+
         public WidgetClassNode Base;              // 解析后的直接基类（若声明在本次扫描集合内）
 
         public bool IsAbstract;
@@ -52,12 +62,43 @@ namespace ModularFlightPanel.UI
     }
 
     /// <summary>
+    /// 继承链消歧失败记录。存在此类记录时，该类的 Base 会保持为 null，
+    /// 依赖继承链的判定（SPEC-002/003/004/008）应视为不可靠并显式上报。
+    /// </summary>
+    public sealed class BaseResolutionIssue
+    {
+        public string FileName;
+        public int Line;
+        public string Description;
+
+        public override string ToString() =>
+            Line > 0 ? $"{FileName}:L{Line} {Description}" : $"{FileName} {Description}";
+    }
+
+    /// <summary>
     /// 组件继承图：全部规则判定都基于这份结构模型，而不是文件名 / 目录 / 文本包含关系。
     /// </summary>
     public sealed class WidgetClassGraph
     {
         public readonly List<WidgetClassNode> All = new List<WidgetClassNode>();
-        public readonly Dictionary<string, WidgetClassNode> ByName = new Dictionary<string, WidgetClassNode>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// 类简名 → 全部同名声明。
+        /// 旧实现是 Dictionary&lt;string, WidgetClassNode&gt;，跨命名空间同名类会"后声明者胜出"被静默覆盖，
+        /// 导致继承链解析错位、依赖继承链的 SPEC-001/002/003/004/008 全部错判 —— 而合成用例只有单一
+        /// 命名空间，永远测不到这条路径。现在保留全部候选，消歧交给 ResolveBase。
+        /// </summary>
+        public readonly Dictionary<string, List<WidgetClassNode>> ByName = new Dictionary<string, List<WidgetClassNode>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>全限定名 → 类节点（跨命名空间同名类消歧的唯一索引）</summary>
+        public readonly Dictionary<string, WidgetClassNode> ByFullName = new Dictionary<string, WidgetClassNode>(StringComparer.Ordinal);
+
+        /// <summary>出现多个同名声明的简名集合（报告用）</summary>
+        public readonly HashSet<string> AmbiguousTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>继承链消歧失败记录：无法唯一确定基类时显式上报，绝不静默取一个</summary>
+        public readonly List<BaseResolutionIssue> BaseResolutionIssues = new List<BaseResolutionIssue>();
+
         public readonly Dictionary<string, CompilationUnitSyntax> Roots = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>刷新阶梯合法取值集合 —— 直接从源码里的枚举声明派生（不再写死成员名）</summary>
@@ -89,6 +130,7 @@ namespace ModularFlightPanel.UI
 
                 foreach (var cd in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
+                    string ns = RoslynAstHelper.GetNamespaceName(cd);
                     var node = new WidgetClassNode
                     {
                         Name = cd.Identifier.Text,
@@ -96,6 +138,9 @@ namespace ModularFlightPanel.UI
                         FilePath = file.Path,
                         Decl = cd,
                         BaseNames = RoslynAstHelper.GetBaseTypeNames(cd),
+                        QualifiedBaseNames = RoslynAstHelper.GetQualifiedBaseTypeNames(cd),
+                        Namespace = ns,
+                        FullName = string.IsNullOrEmpty(ns) ? cd.Identifier.Text : ns + "." + cd.Identifier.Text,
                         IsAbstract = RoslynAstHelper.HasModifier(cd, SyntaxKind.AbstractKeyword),
                         IsContractRoot = string.Equals(cd.Identifier.Text, WidgetSpecRules.ContractRootType, StringComparison.Ordinal)
                     };
@@ -112,19 +157,30 @@ namespace ModularFlightPanel.UI
                     node.OnDestroyMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.LifecycleMethod);
 
                     graph.All.Add(node);
-                    graph.ByName[node.Name] = node;
+                    graph.AddToNameIndex(node);
                 }
             }
 
-            // ── 2. 解析继承链（同类名跨命名空间时后声明者胜出，与旧实现一致）──
+            // ── 2. 解析继承链（同名类按全限定名消歧；无法唯一确定时显式上报，不再"后声明者胜出"）──
             for (int i = 0; i < graph.All.Count; i++)
             {
                 WidgetClassNode node = graph.All[i];
                 for (int b = 0; b < node.BaseNames.Count; b++)
                 {
-                    if (graph.ByName.TryGetValue(node.BaseNames[b], out WidgetClassNode baseNode) && baseNode != node)
+                    WidgetClassNode resolved = graph.ResolveBase(node, b, out string issue);
+                    if (issue != null)
                     {
-                        node.Base = baseNode;
+                        graph.BaseResolutionIssues.Add(new BaseResolutionIssue
+                        {
+                            FileName = node.FileName,
+                            Line = RoslynAstHelper.GetLine(node.Decl),
+                            Description = issue
+                        });
+                        continue;
+                    }
+                    if (resolved != null && resolved != node)
+                    {
+                        node.Base = resolved;
                         break;
                     }
                 }
@@ -153,6 +209,77 @@ namespace ModularFlightPanel.UI
             }
 
             return graph;
+        }
+
+        /// <summary>把类节点登记进简名索引与全限定名索引，并标记同名多候选</summary>
+        private void AddToNameIndex(WidgetClassNode node)
+        {
+            if (node == null || string.IsNullOrEmpty(node.Name)) return;
+
+            if (!ByName.TryGetValue(node.Name, out List<WidgetClassNode> list))
+            {
+                list = new List<WidgetClassNode>();
+                ByName[node.Name] = list;
+            }
+            list.Add(node);
+            if (list.Count > 1) AmbiguousTypeNames.Add(node.Name);
+
+            if (!string.IsNullOrEmpty(node.FullName) && !ByFullName.ContainsKey(node.FullName))
+            {
+                ByFullName[node.FullName] = node;
+            }
+        }
+
+        /// <summary>取某个基类名的全部候选声明</summary>
+        public List<WidgetClassNode> CandidatesOf(string simpleTypeName)
+        {
+            if (string.IsNullOrEmpty(simpleTypeName)) return new List<WidgetClassNode>();
+            return ByName.TryGetValue(simpleTypeName, out List<WidgetClassNode> list)
+                ? list
+                : new List<WidgetClassNode>();
+        }
+
+        /// <summary>
+        /// 解析 node 的第 baseIndex 个基类。返回 null 且 issue 为 null 表示"该基类声明在扫描集合之外"（正常，如 Unity 基类）。
+        /// issue 非空表示同名多候选且无法唯一消歧 —— 调用方必须显式上报，不得静默取一个。
+        /// </summary>
+        private WidgetClassNode ResolveBase(WidgetClassNode node, int baseIndex, out string issue)
+        {
+            issue = null;
+            if (node == null || baseIndex < 0 || baseIndex >= node.BaseNames.Count) return null;
+
+            string simpleName = node.BaseNames[baseIndex];
+            List<WidgetClassNode> candidates = CandidatesOf(simpleName);
+            if (candidates.Count == 0) return null;                       // 声明在扫描集合外
+            if (candidates.Count == 1) return candidates[0];
+
+            // 同一类内自引用（部分类拆分声明）不算歧义
+            List<WidgetClassNode> distinct = candidates.Where(c => !ReferenceEquals(c, node)).ToList();
+            if (distinct.Count == 0) return node;
+            if (distinct.Count == 1) return distinct[0];
+
+            // 多候选：优先用源码里的全限定写法消歧
+            string qualified = baseIndex < node.QualifiedBaseNames.Count ? node.QualifiedBaseNames[baseIndex] : null;
+            if (!string.IsNullOrEmpty(qualified))
+            {
+                List<WidgetClassNode> qualifiedMatches = distinct
+                    .Where(c => string.Equals(c.FullName, qualified, StringComparison.Ordinal)
+                             || c.FullName.EndsWith("." + qualified, StringComparison.Ordinal))
+                    .ToList();
+                if (qualifiedMatches.Count == 1) return qualifiedMatches[0];
+            }
+
+            // 再尝试用"候选自身所在命名空间与派生类相同"消歧（同命名空间优先）
+            List<WidgetClassNode> sameNs = distinct
+                .Where(c => string.Equals(c.Namespace, node.Namespace, StringComparison.Ordinal))
+                .ToList();
+            if (sameNs.Count == 1) return sameNs[0];
+
+            issue = "基类名 '" + simpleName + "' 在扫描集合内有 "
+                  + distinct.Count + " 个同名声明（"
+                  + string.Join(" / ", distinct.Select(c => c.FullName).Distinct())
+                  + "），无法唯一确定继承链。请改用全限定基类名，否则依赖继承链的规则判定不可靠";
+            return null;
         }
 
         private static bool IsObsoleteClass(WidgetClassNode node) =>
@@ -251,6 +378,13 @@ namespace ModularFlightPanel.UI
         /// <summary>部分源文件读取失败（扫描集合不完整）</summary>
         SourceReadFailed,
 
+        /// <summary>
+        /// 部分源文件解析失败（语法错误 → 类声明从语法树中丢失，审计作用域不完整）。
+        /// 这一状态是审计工具唯一无法自证的一类失效：坏语法会让组件"凭空消失"，
+        /// 若放行就会得到"零违规"的全绿结论。因此它与读取失败同级，一律判 ERROR。
+        /// </summary>
+        SourceParseFailed,
+
         /// <summary>扫描完成但未发现任何组件类</summary>
         NoWidgetClasses
     }
@@ -263,6 +397,9 @@ namespace ModularFlightPanel.UI
         public WidgetClassGraph Graph;
         public readonly List<WidgetSourceFile> Sources = new List<WidgetSourceFile>();
         public readonly List<string> ReadErrors = new List<string>();
+
+        /// <summary>语法级失败明细（"文件 行:列 错误码 信息"）；非空即代表审计作用域不可信</summary>
+        public readonly List<string> ParseErrors = new List<string>();
 
         public bool CanAuditSource => Status == WidgetDiscoveryStatus.Ok;
 
@@ -292,9 +429,10 @@ namespace ModularFlightPanel.UI
                 if (string.IsNullOrEmpty(asmPath)) return null;
 
                 var dir = new DirectoryInfo(Path.GetDirectoryName(asmPath) ?? string.Empty);
-                for (int i = 0; i < 10 && dir != null; i++)
+                for (int i = 0; i < WidgetSpecRules.RepositoryRootProbeDepth && dir != null; i++)
                 {
-                    string probe = Path.Combine(dir.FullName, "src", "ModularFlightPanel", "UI", "Widgets");
+                    string probe = Path.Combine(dir.FullName,
+                        WidgetSpecRules.RepositoryRootProbeRelative.Replace('/', Path.DirectorySeparatorChar));
                     if (Directory.Exists(probe)) return dir.FullName;
                     dir = dir.Parent;
                 }
@@ -318,7 +456,7 @@ namespace ModularFlightPanel.UI
                 return result;
             }
 
-            string sourceRoot = Path.Combine(repoRoot, "src", "ModularFlightPanel");
+            string sourceRoot = Path.Combine(repoRoot, WidgetSpecRules.SourceRootFolder, WidgetSpecRules.PluginProjectFolder);
             if (!Directory.Exists(sourceRoot))
             {
                 result.Status = WidgetDiscoveryStatus.SourceScopeMissing;
@@ -331,12 +469,23 @@ namespace ModularFlightPanel.UI
                 if (IsBuildArtifactPath(path)) continue;
                 try
                 {
+                    string text = File.ReadAllText(path);
                     result.Sources.Add(new WidgetSourceFile
                     {
                         Name = Path.GetFileName(path),
                         Path = path,
-                        Text = File.ReadAllText(path)
+                        Text = text
                     });
+
+                    // 语法级守卫：坏语法会让 ClassDeclarationSyntax 从语法树中消失，
+                    // 组件随之脱离审计作用域，报告会给出"零违规"的全绿结论。
+                    // 注意这里只取语法诊断（不建 Compilation），因此"找不到类型/缺少引用"
+                    // 这类语义错误不会误触发，只有真正的语法损坏才会进入 ParseErrors。
+                    RoslynAstHelper.ParseTreeChecked(text, out List<string> parseErrors);
+                    for (int i = 0; i < parseErrors.Count; i++)
+                    {
+                        result.ParseErrors.Add(Path.GetFileName(path) + " " + parseErrors[i]);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -351,6 +500,13 @@ namespace ModularFlightPanel.UI
             {
                 result.Status = WidgetDiscoveryStatus.SourceReadFailed;
                 result.Detail = result.ReadErrors.Count + " 个源文件读取失败，扫描集合不完整";
+            }
+            else if (result.ParseErrors.Count > 0)
+            {
+                // 解析失败与读取失败同级：扫描集合不可信时绝不允许给出合规结论。
+                result.Status = WidgetDiscoveryStatus.SourceParseFailed;
+                result.Detail = result.ParseErrors.Count + " 处语法解析失败，类声明可能从语法树中丢失，"
+                              + "审计作用域不可信（首例: " + result.ParseErrors[0] + "）";
             }
             else if (result.Graph.ContractClasses.Count == 0)
             {
@@ -368,7 +524,11 @@ namespace ModularFlightPanel.UI
         private static bool IsBuildArtifactPath(string path)
         {
             string norm = path.Replace('\\', '/');
-            return norm.Contains("/obj/") || norm.Contains("/bin/");
+            for (int i = 0; i < WidgetSpecRules.BuildArtifactPathFragments.Length; i++)
+            {
+                if (norm.Contains(WidgetSpecRules.BuildArtifactPathFragments[i])) return true;
+            }
+            return false;
         }
 
         /// <summary>主入口：对发现层结果执行 SPEC-001..008 全量审计</summary>
@@ -402,6 +562,18 @@ namespace ModularFlightPanel.UI
                 });
             }
 
+            // ── 内核级守卫 1：继承链消歧失败必须显式上报 ──
+            // 否则依赖继承链的 SPEC-001/002/003/004/008 会基于错位的基类给出看似合理的结论。
+            for (int i = 0; i < graph.BaseResolutionIssues.Count; i++)
+            {
+                BaseResolutionIssue issue = graph.BaseResolutionIssues[i];
+                Add(report, issue.FileName, WidgetSpecRules.KernelInheritanceAmbiguity, "ERROR", issue.Line, issue.Description);
+            }
+
+            // ── 内核级守卫 2：微控件构造函数签名表必须与真实源码声明一致 ──
+            // 这是把"重构构造函数后审计规则静默翻转"变成"门禁显式报错"的那道锁。
+            VerifyControlCtorShapes(graph, report);
+
             // ── SPEC-001 继承契约（全局不变量：声明了组件元数据的类必须是契约真后代）──
             foreach (var node in graph.All)
             {
@@ -432,6 +604,102 @@ namespace ModularFlightPanel.UI
             return report;
         }
 
+        /// <summary>
+        /// 交叉校验：从被扫描源码里派生微控件构造函数的真实声明，与 WidgetSpecRules.ControlCtorShapes 逐条比对。
+        ///
+        /// 这道锁的意义：旧实现把"哪一参是遥测 Token"以参数下标形式写死在规则体里，等于对另一个文件里
+        /// 构造函数签名的人肉镜像。重载一增删，判定就会静默翻转（违规被放过，或合规被全量误报）。
+        /// 现在签名表是显式数据，本方法负责证明它与真实源码一致。
+        ///
+        /// 三个方向都要拦：
+        ///   1. 表里登记的形状在源码里找不到对应参数个数的构造函数 → 表已过期；
+        ///   2. 表中标了 TokenIndex 的形状，该位置形参名不再是 ControlTokenParameterName → 索引失效；
+        ///   3. 源码里出现"带 Token 形参"的重载但表中未登记 → 新重载会静默落进未登记分支。
+        /// </summary>
+        private static void VerifyControlCtorShapes(WidgetClassGraph graph, WidgetSourceAuditReport report)
+        {
+            for (int t = 0; t < WidgetSpecRules.AuditedControlTypes.Length; t++)
+            {
+                string controlType = WidgetSpecRules.AuditedControlTypes[t];
+                List<WidgetSpecRules.ControlCtorShape> shapes = WidgetSpecRules.ShapesOfControlType(controlType);
+
+                var ctors = new List<ConstructorDeclarationSyntax>();
+                for (int i = 0; i < graph.All.Count; i++)
+                {
+                    WidgetClassNode node = graph.All[i];
+                    if (!string.Equals(node.Name, controlType, StringComparison.Ordinal)) continue;
+                    ctors.AddRange(node.Decl.Members.OfType<ConstructorDeclarationSyntax>());
+                }
+
+                // 该控件不在被扫描源码集合内（合成用例场景）→ 无可比对，交由签名表独立承担判定
+                if (ctors.Count == 0) continue;
+
+                for (int s = 0; s < shapes.Count; s++)
+                {
+                    WidgetSpecRules.ControlCtorShape shape = shapes[s];
+                    var match = ctors.FirstOrDefault(c => c.ParameterList.Parameters.Count == shape.ParameterCount);
+
+                    if (match == null)
+                    {
+                        Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelContractDrift, "ERROR", 0,
+                            "微控件构造函数签名表已过期：" + controlType + " 在表中登记了 " + shape.ParameterCount
+                            + " 参重载，但源码里找不到对应声明。请同步 " + nameof(WidgetSpecRules.ControlCtorShapes));
+                        continue;
+                    }
+
+                    if (shape.TokenIndex < 0) continue;
+
+                    if (shape.TokenIndex >= match.ParameterList.Parameters.Count)
+                    {
+                        Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelContractDrift, "ERROR",
+                            RoslynAstHelper.GetLine(match),
+                            controlType + " 的 " + shape.ParameterCount + " 参重载：签名表 TokenIndex=" + shape.TokenIndex
+                            + " 越界（实际形参仅 " + match.ParameterList.Parameters.Count + " 个）");
+                        continue;
+                    }
+
+                    string actualName = match.ParameterList.Parameters[shape.TokenIndex].Identifier.Text;
+                    if (!string.Equals(actualName, WidgetSpecRules.ControlTokenParameterName, StringComparison.Ordinal))
+                    {
+                        Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelContractDrift, "ERROR",
+                            RoslynAstHelper.GetLine(match),
+                            controlType + " 的 " + shape.ParameterCount + " 参重载第 " + (shape.TokenIndex + 1)
+                            + " 个形参现在是 '" + actualName + "'，不再是 '" + WidgetSpecRules.ControlTokenParameterName
+                            + "'。签名表的 TokenIndex 已失效，遥测装配倒查会给出错误判定。请同步 "
+                            + nameof(WidgetSpecRules.ControlCtorShapes));
+                    }
+                }
+
+                // 反向：源码里凡带 Token 形参的重载，都必须在表中登记
+                for (int c = 0; c < ctors.Count; c++)
+                {
+                    ConstructorDeclarationSyntax ctor = ctors[c];
+                    var parameters = ctor.ParameterList.Parameters;
+
+                    int tokenIndex = -1;
+                    for (int p = 0; p < parameters.Count; p++)
+                    {
+                        if (string.Equals(parameters[p].Identifier.Text, WidgetSpecRules.ControlTokenParameterName, StringComparison.Ordinal))
+                        {
+                            tokenIndex = p;
+                            break;
+                        }
+                    }
+                    if (tokenIndex < 0) continue;
+
+                    bool registered = shapes.Any(d => d.ParameterCount == parameters.Count && d.TokenIndex == tokenIndex);
+                    if (registered) continue;
+
+                    Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelContractDrift, "ERROR",
+                        RoslynAstHelper.GetLine(ctor),
+                        controlType + " 存在带 '" + WidgetSpecRules.ControlTokenParameterName + "' 形参的 "
+                        + parameters.Count + " 参重载（Token 位于第 " + (tokenIndex + 1)
+                        + " 参），但审计签名表未登记。不登记的话，调用该重载的未绑 Token 控件会被静默放过。"
+                        + "请补登 " + nameof(WidgetSpecRules.ControlCtorShapes));
+                }
+            }
+        }
+
         private static void ScanWidgetClass(WidgetClassNode node, WidgetClassGraph graph, WidgetSourceAuditReport report)
         {
             // ── SPEC-002 刷新阶梯（形状 + 取值 + 声明式满帧依据）──
@@ -445,6 +713,9 @@ namespace ModularFlightPanel.UI
 
             // ── SPEC-005 安全生命周期（仅约束组件类，Unity 助手类的消息式 OnDestroy 不在契约内）──
             ScanLifecycle(node, report);
+
+            // ── 遥测装配警告：扫描未接入标准化遥测装配的微控件 ──
+            ScanTelemetryAssembly(node, report);
 
             // ── SPEC-008 自动注册元数据（本类或继承链上已声明即可）──
             if (!node.IsAbstract && WidgetClassGraph.FindDeclarer(node, n => n.HasMetadataAttribute) == null)
@@ -575,6 +846,133 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        private static void ScanTelemetryAssembly(WidgetClassNode node, WidgetSourceAuditReport report)
+        {
+            if (node.IsAbstract) return;
+
+            // ── 1. 声明式 DSL 微控件字段：public TextWidget Value = TextWidget.Value("token"); ──
+            foreach (var field in node.Decl.Members.OfType<FieldDeclarationSyntax>())
+            {
+                string typeName = RoslynAstHelper.GetSimpleTypeName(field.Declaration.Type);
+                if (!WidgetSpecRules.IsTelemetryTokenDslType(typeName)) continue;
+
+                foreach (var v in field.Declaration.Variables)
+                {
+                    if (!(v.Initializer?.Value is InvocationExpressionSyntax inv)) continue;
+                    if (!WidgetSpecRules.IsDslTokenFactory(inv.Expression.ToString())) continue;
+
+                    var dslArgs = inv.ArgumentList.Arguments;
+                    bool dslHasToken = dslArgs.Count > 0 && IsTokenArgumentProvided(dslArgs[0].Expression);
+                    if (!dslHasToken)
+                    {
+                        AddAssemblyWarning(report, node, RoslynAstHelper.GetLine(v), v.Identifier.Text);
+                    }
+                }
+            }
+
+            // ── 2. 方法体中的 Controls.Register / WidgetControlManager.Register（收集式微控件注册）──
+            foreach (var inv in node.Decl.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                string expr = inv.Expression.ToString();
+                bool isRegisterCall = expr == WidgetSpecRules.ControlsRegisterMethod
+                    || expr.EndsWith("." + WidgetSpecRules.ControlsRegisterMethod, StringComparison.Ordinal);
+                if (!isRegisterCall) continue;
+
+                var args = inv.ArgumentList.Arguments;
+                if (args.Count == 0) continue;
+
+                ExpressionSyntax ctrlExpr = null;
+                if (args.Count == 1) ctrlExpr = args[0].Expression;
+                else if (args.Count >= 2 && IsSelfOrWidgetArgument(args[0].Expression)) ctrlExpr = args[1].Expression;
+                if (ctrlExpr == null) continue;
+                if (!(ctrlExpr is ObjectCreationExpressionSyntax objCreation)) continue;
+
+                string createdType = RoslynAstHelper.GetSimpleTypeName(objCreation.Type);
+                if (!WidgetSpecRules.IsAuditedControlType(createdType)) continue;
+                if (objCreation.ArgumentList == null) continue;
+
+                var cArgs = objCreation.ArgumentList.Arguments;
+
+                // 形状查表：判定依据全部来自 WidgetSpecRules.ControlCtorShapes，规则体里不再出现参数下标。
+                // 该表由 VerifyControlCtorShapes 与真实构造函数声明双向交叉校验。
+                WidgetSpecRules.ControlCtorShape shape = WidgetSpecRules.FindControlCtorShape(createdType, cArgs.Count);
+
+                if (shape == null)
+                {
+                    // 未登记的重载形状：旧实现在这里直接落空（isMissingToken 保持 false）→ 静默放过。
+                    // 现在显式上报，让"签名表过期"变得可见。
+                    Add(report, node.FileName, WidgetSpecRules.TelemetryAssemblyWarning, "WARNING",
+                        RoslynAstHelper.GetLine(objCreation),
+                        $"{node.Name}组件调用了 {createdType} 的 {cArgs.Count} 参构造重载，但审计签名表 "
+                        + nameof(WidgetSpecRules.ControlCtorShapes) + " 未登记该形状，无法判定遥测 Token 装配情况。"
+                        + "请先登记形状，否则此类调用不会被审计");
+                    continue;
+                }
+
+                // TokenIndex < 0 表示该重载本身就没有 Token 绑定形参 → 直接判定为未装配
+                bool isMissingToken = shape.TokenIndex < 0
+                    || !IsTokenArgumentProvided(cArgs[shape.TokenIndex].Expression);
+
+                if (isMissingToken)
+                {
+                    AddAssemblyWarning(report, node, RoslynAstHelper.GetLine(objCreation),
+                        ResolveControlDisplayName(objCreation.ArgumentList, shape, createdType));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Token 实参是否确实提供了绑定：null 字面量与空字符串视为未提供，其余表达式（含变量）视为已提供。
+        /// 与旧实现口径一致，仅把判定集中到一处，避免两处各写一遍。
+        /// </summary>
+        private static bool IsTokenArgumentProvided(ExpressionSyntax expression)
+        {
+            if (expression == null) return false;
+            if (expression is LiteralExpressionSyntax literal)
+            {
+                if (literal.IsKind(SyntaxKind.NullLiteralExpression)) return false;
+                if (literal.IsKind(SyntaxKind.StringLiteralExpression)) return !string.IsNullOrEmpty(literal.Token.ValueText);
+                return true;
+            }
+            return true;
+        }
+
+        /// <summary>Register 调用第一参是否为"注册主体"（this 或 xxxWidget），用于定位真正的控件实参</summary>
+        private static bool IsSelfOrWidgetArgument(ExpressionSyntax expression)
+        {
+            if (expression == null) return false;
+            string s = expression.ToString();
+            return s == "this" || s.EndsWith("widget", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>按签名表登记的 NameIndex 取控件显示名，取不到则回落到类型兜底名</summary>
+        private static string ResolveControlDisplayName(ArgumentListSyntax argList, WidgetSpecRules.ControlCtorShape shape, string controlType)
+        {
+            var args = argList.Arguments;
+            int index = shape.NameIndex;
+
+            if (index >= 0 && index < args.Count)
+            {
+                ExpressionSyntax expr = args[index].Expression;
+                if (expr is LiteralExpressionSyntax lit
+                    && lit.IsKind(SyntaxKind.StringLiteralExpression)
+                    && !string.IsNullOrEmpty(lit.Token.ValueText))
+                {
+                    return lit.Token.ValueText;
+                }
+                if (expr is IdentifierNameSyntax id) return id.Identifier.Text;
+                if (expr is MemberAccessExpressionSyntax ma) return ma.Name.Identifier.Text;
+            }
+
+            return WidgetSpecRules.DefaultControlDisplayName(controlType);
+        }
+
+        private static void AddAssemblyWarning(WidgetSourceAuditReport report, WidgetClassNode node, int line, string ctrlName)
+        {
+            Add(report, node.FileName, WidgetSpecRules.TelemetryAssemblyWarning, "WARNING", line,
+                $"{node.Name}组件'{ctrlName}'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约)");
+        }
+
         // ══════════════════════════════════════════════════════════════════════════════════════════
         // 文件级规则：SPEC-006 颜色字面量 / SPEC-007 场景查询
         // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -605,15 +1003,19 @@ namespace ModularFlightPanel.UI
                     "禁止 using static（" + u.Name + "）：它会让裸名场景查询调用绕过 SPEC-007 黑名单表，必须改由 ProbeManager 统一纳管");
             }
 
-            int lastReportedLine = -1;
+            // 去重键 = 行号 + 表达式文本，而不是"行号相同就丢弃"。
+            // 旧实现用一个跨两次遍历共享的 lastReportedLine：同一行上两个不同的场景查询只会报一个
+            // （例如 `var a = Camera.main; var b = FindObjectOfType<Camera>();` 写在同行时漏报其一），
+            // 且行为还依赖遍历顺序。现在按"同一处调用"去重，语义明确且与遍历顺序无关。
+            var reportedSceneQueries = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var inv in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
                 string expr = inv.Expression.ToString();
                 if (!WidgetSpecRules.IsSceneQueryApi(expr, true)) continue;
 
                 int line = RoslynAstHelper.GetLine(inv);
-                if (line == lastReportedLine) continue;
-                lastReportedLine = line;
+                if (!reportedSceneQueries.Add(line + "|" + expr)) continue;
                 Add(report, file.Name, WidgetSpecRules.NoSceneQueries, "ERROR", line,
                     "组件内出现场景查询 API (" + expr + ")，必须改由 ProbeManager 全局排队节流调度器统一纳管");
             }
@@ -624,8 +1026,7 @@ namespace ModularFlightPanel.UI
                 if (!WidgetSpecRules.IsSceneQueryApi(expr, false)) continue;
 
                 int line = RoslynAstHelper.GetLine(ma);
-                if (line == lastReportedLine) continue;
-                lastReportedLine = line;
+                if (!reportedSceneQueries.Add(line + "|" + expr)) continue;
                 Add(report, file.Name, WidgetSpecRules.NoSceneQueries, "ERROR", line,
                     "组件内出现场景查询 API (" + expr + ")，必须改由 ProbeManager 全局排队节流调度器统一纳管");
             }
@@ -847,6 +1248,89 @@ namespace ModularFlightPanel.UI
             check(WidgetSourceAudit.Discover(null).Status == WidgetDiscoveryStatus.RepositoryRootUnresolved, "发现层护栏失效: repoRoot 为空必须报不可解析");
             check(WidgetSourceAudit.Discover(@"C:\nonexistent-repo-root").Status == WidgetDiscoveryStatus.RepositoryRootUnresolved, "发现层护栏失效: 仓库根不存在必须报不可解析");
             check(WidgetSourceAudit.Discover(null).IsEnvironmentDegradation, "发布环境降级标记失效");
+
+            // ── 14. 遥测装配倒查验证（反例精准捕获、正例放行、非数据控件豁免）──
+            string unboundReadoutSrc = BuildSyntheticWidget(
+                "        public void InitControls() {\n" +
+                "            this.Controls.Register(new WidgetReadoutControl(null, null, TextStyleRole.PrimaryValue, \"UnboundSpeed\", \"未绑读数\"));\n" +
+                "        }");
+            var unboundReport = Scan(new[] { MakeFile("UnboundReadout.cs", unboundReadoutSrc) });
+            check(unboundReport.CountByRule(WidgetSpecRules.TelemetryAssemblyWarning) == 1, "未装配遥测 Token 的 WidgetReadoutControl 倒查未触发警告");
+            check(unboundReport.Violations.Any(v => v.Description.Contains("UnboundSpeed") && v.Description.Contains("未支持标准化遥测装配")), "未装配警告文案未包含微控件名或未命中标准文案");
+
+            string boundReadoutSrc = BuildSyntheticWidget(
+                "        public void InitControls() {\n" +
+                "            this.Controls.Register(new WidgetReadoutControl(\"spd\", \"Speed\", null, null, null, TextStyleRole.PrimaryValue, \"{SPD}\"));\n" +
+                "        }");
+            var boundReport = Scan(new[] { MakeFile("BoundReadout.cs", boundReadoutSrc) });
+            check(boundReport.CountByRule(WidgetSpecRules.TelemetryAssemblyWarning) == 0, "已装配有效 Token 的微控件被误报警告 (假阳性)");
+
+            string unboundDslSrc = BuildSyntheticWidget("        public TextWidget Value = TextWidget.Value();");
+            var unboundDslReport = Scan(new[] { MakeFile("UnboundDsl.cs", unboundDslSrc) });
+            check(unboundDslReport.CountByRule(WidgetSpecRules.TelemetryAssemblyWarning) == 1, "未指定 Token 的 TextWidget.Value() 倒查未触发警告");
+
+            string nonDataSrc = BuildSyntheticWidget(
+                "        public void InitControls() {\n" +
+                "            this.Controls.Register(WidgetControlManager.WrapElement(this, \"card_bg\", \"Background\", null));\n" +
+                "        }");
+            var nonDataReport = Scan(new[] { MakeFile("NonData.cs", nonDataSrc) });
+            check(nonDataReport.CountByRule(WidgetSpecRules.TelemetryAssemblyWarning) == 0, "非数据驱动型底板图元控件被误报警告 (假阳性)");
+
+            // ── 15. 语法级守卫：坏语法必须被捕获（否则类声明从语法树消失 → 组件脱离作用域 → 假绿）──
+            RoslynAstHelper.ParseTreeChecked("class A { void M() { var x = ; } }", out List<string> brokenErrors);
+            check(brokenErrors.Count > 0, "语法错误未被 ParseTreeChecked 捕获（解析失败会被静默放行，审计结论不可信）");
+
+            RoslynAstHelper.ParseTreeChecked("class A { void M() { var x = 1; } }", out List<string> cleanErrors);
+            check(cleanErrors.Count == 0, "合法源码被 ParseTreeChecked 误判为语法错误");
+
+            // ── 16. 继承链消歧：跨命名空间同名基类无法唯一确定时必须显式上报 ──
+            string dupA = "namespace A { public class Dup : BaseFlightWidget { } }";
+            string dupB = "namespace B { public class Dup : BaseFlightWidget { } }";
+            string leafUnresolvable = "namespace C { [FlightWidget(\"leaf_c\")] public class LeafC : Dup { } }";
+            var ambiguousReport = Scan(new[]
+            {
+                MakeFile("DupA.cs", dupA),
+                MakeFile("DupB.cs", dupB),
+                MakeFile("LeafC.cs", leafUnresolvable)
+            });
+            check(ambiguousReport.CountByRule(WidgetSpecRules.KernelInheritanceAmbiguity) >= 1,
+                "跨命名空间同名基类未被显式上报（继承链会静默错位，SPEC-001..008 全部不可靠）");
+
+            // 反向：写了全限定基类名时可唯一消歧，不得误报歧义
+            string leafResolvable = "namespace C { [FlightWidget(\"leaf_d\")] public class LeafD : A.Dup { } }";
+            var resolvedReport = Scan(new[]
+            {
+                MakeFile("DupA2.cs", dupA),
+                MakeFile("DupB2.cs", dupB),
+                MakeFile("LeafD.cs", leafResolvable)
+            });
+            check(resolvedReport.CountByRule(WidgetSpecRules.KernelInheritanceAmbiguity) == 0,
+                "全限定基类名可唯一消歧时被误报为歧义");
+
+            // ── 17. 构造函数签名表交叉校验：源码出现未登记的带 token 重载必须报内核错误 ──
+            string ctorDrift = "namespace N { public class WidgetReadoutControl { "
+                             + "public WidgetReadoutControl(string id, string token) { } } }";
+            var driftReport = Scan(new[] { MakeFile("CtorDrift.cs", ctorDrift) });
+            check(driftReport.CountByRule(WidgetSpecRules.KernelContractDrift) > 0,
+                "构造函数签名表与实际声明不一致时未报内核错误（重载变更会让遥测判定静默翻转）");
+
+            // ── 18. 未登记的构造重载形状必须显式上报，不得静默放过 ──
+            string unknownOverload = BuildSyntheticWidget(
+                "        public void InitControls() {\n"
+                + "            this.Controls.Register(new WidgetReadoutControl(null, null, null, null, null, null, null, null, null, null, null, null, null));\n"
+                + "        }");
+            var unknownOverloadReport = Scan(new[] { MakeFile("UnknownOverload.cs", unknownOverload) });
+            check(unknownOverloadReport.CountByRule(WidgetSpecRules.TelemetryAssemblyWarning) == 1
+                  && unknownOverloadReport.Violations.Any(v => v.Description.Contains("未登记")),
+                "未登记的构造重载形状未被显式上报（旧实现在此处静默落空 → 漏洞）");
+
+            // ── 19. 同行去重修复：同一行上两个不同的场景查询必须各报一条 ──
+            string sameLineSrc = BuildSyntheticWidget(
+                "        private void Q() { var a = Camera.main; var b = FindObjectOfType<Camera>(); }");
+            var sameLineReport = Scan(new[] { MakeFile("SameLine.cs", sameLineSrc) });
+            check(sameLineReport.CountByRule(WidgetSpecRules.NoSceneQueries) == 2,
+                "同一行上的两个不同场景查询应各报一条（旧实现的 lastReportedLine 会丢掉第二条），实际 "
+                + sameLineReport.CountByRule(WidgetSpecRules.NoSceneQueries));
 
             LastSelfTestCaseCount = cases;
             return failures;

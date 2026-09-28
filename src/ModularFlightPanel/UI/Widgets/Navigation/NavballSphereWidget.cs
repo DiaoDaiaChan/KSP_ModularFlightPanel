@@ -990,8 +990,8 @@ namespace ModularFlightPanel.UI.Widgets
 
                         // 根据角距离远近变淡加深：-currentDir.z 从 0 (地平) 到 1.0 (正后方 180°)
                         float tDepth = Mathf.Clamp01(-currentDir.z);
-                        alpha = Mathf.Lerp(0.88f, 0.26f, tDepth);
-                        targetScale = Mathf.Lerp(0.90f, 0.58f, tDepth);
+                        alpha = Mathf.Lerp(0.88f, 0.55f, tDepth);
+                        targetScale = Mathf.Lerp(0.90f, 0.70f, tDepth);
                     }
 
                     // 机动节点脉冲呼吸特效

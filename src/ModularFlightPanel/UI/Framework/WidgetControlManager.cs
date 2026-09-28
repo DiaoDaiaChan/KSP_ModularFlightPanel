@@ -329,6 +329,8 @@ namespace ModularFlightPanel.UI.Framework
     {
         private readonly BaseFlightWidget _owner;
         private readonly List<IWidgetControl> _directList = new List<IWidgetControl>();
+        private readonly List<IWidgetControl> _activeTelemetryControls = new List<IWidgetControl>();
+        private bool _activeControlsDirty = true;
 
         public WidgetControlContainer(BaseFlightWidget owner)
         {
@@ -340,6 +342,7 @@ namespace ModularFlightPanel.UI.Framework
             if (control != null && !_directList.Contains(control))
             {
                 _directList.Add(control);
+                _activeControlsDirty = true;
             }
         }
 
@@ -350,21 +353,48 @@ namespace ModularFlightPanel.UI.Framework
         }
 
         public void ApplyThemeToControls(ThemeConfig theme) => WidgetControlManager.ApplyThemeToControls(_owner, theme);
-        public void BindConfigToControls(WidgetConfig config) => WidgetControlManager.BindConfigToControls(_owner, config);
+        public void BindConfigToControls(WidgetConfig config)
+        {
+            WidgetControlManager.BindConfigToControls(_owner, config);
+            _activeControlsDirty = true;
+        }
+
+        public void InvalidateActiveControls()
+        {
+            _activeControlsDirty = true;
+        }
+
+        private void EnsureActiveControlsCached()
+        {
+            if (!_activeControlsDirty) return;
+            _activeTelemetryControls.Clear();
+            for (int i = 0; i < _directList.Count; i++)
+            {
+                var c = _directList[i];
+                if (c != null && c.NeedsTelemetryUpdate)
+                {
+                    _activeTelemetryControls.Add(c);
+                }
+            }
+            _activeControlsDirty = false;
+        }
 
         public void UpdateControls(IFlightTelemetry telemetry)
         {
             if (telemetry == null) return;
-            int count = _directList.Count;
+            EnsureActiveControlsCached();
+            int count = _activeTelemetryControls.Count;
             for (int i = 0; i < count; i++)
             {
-                _directList[i].UpdateTelemetry(telemetry);
+                _activeTelemetryControls[i].UpdateTelemetry(telemetry);
             }
         }
 
         public void UnregisterAll()
         {
             _directList.Clear();
+            _activeTelemetryControls.Clear();
+            _activeControlsDirty = false;
             WidgetControlManager.UnregisterAll(_owner);
         }
 

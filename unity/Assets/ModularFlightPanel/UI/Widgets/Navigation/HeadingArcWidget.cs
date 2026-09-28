@@ -16,18 +16,16 @@ namespace ModularFlightPanel.UI.Widgets
     /// 顶部气泡框 (Speech-bubble) 权威数显标牌以及翡翠绿反T型基准游标。
     /// 严格继承 BaseFlightWidget，所有视觉样式与数值全生命周期数据驱动。
     /// </summary>
-    [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 120f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.heading_arc" })]
+    [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 76f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.heading_arc" })]
     public class HeadingArcWidget : BaseFlightWidget
     {
-        public override Vector2 BaseSize => new Vector2(202f, 78f);
+        public override Vector2 BaseSize => new Vector2(202f, 82f);
         protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
-        // 声明式微控件
-        public TextWidget HeadingText = TextWidget.Title("000°");
-
         private const int MAX_VISIBLE_TICKS = 24;
         private const float ARC_RADIUS = 92f;
+        private const float ARC_Y_CENTER_OFFSET = 76f;
         private const float MAX_ANGULAR_SPAN = 55f; // 可见视口半角范围 (±55°)
 
         private struct HeadingTickUI
@@ -87,9 +85,10 @@ namespace ModularFlightPanel.UI.Widgets
 
             float s = CurrentDpiScale;
             float arcRadius = ARC_RADIUS * s;
+            float yCenterOffset = ARC_Y_CENTER_OFFSET * s;
 
             // 根尺寸设定，包裹顶部弧度区域
-            Vector2 widgetSize = new Vector2(arcRadius * 2.2f, arcRadius * 0.85f);
+            Vector2 widgetSize = new Vector2(BaseSize.x * s, BaseSize.y * s);
             RectTransform.sizeDelta = widgetSize;
             if (config != null && !string.IsNullOrEmpty(config.NumericToken))
             {
@@ -98,16 +97,16 @@ namespace ModularFlightPanel.UI.Widgets
             _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN", "HDG" }, _valueToken);
 
             // 1. 构建弧形暗色玻璃背景带
-            BuildArcBand(arcRadius, s, theme);
+            BuildArcBand(arcRadius, yCenterOffset, s, theme);
 
             // 2. 初始化刻度对象池
             BuildTickPool(arcRadius, s, theme);
 
             // 3. 构建顶部气泡框数显标牌
-            BuildSpeechBubble(arcRadius, s, theme);
+            BuildSpeechBubble(arcRadius, yCenterOffset, s, theme);
 
             // 4. 构建翡翠绿反T型基准游标
-            BuildLubberMark(arcRadius, s, theme);
+            BuildLubberMark(arcRadius, yCenterOffset, s, theme);
 
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_band", "罗盘弧底带", _arcBandRoot, (t) => {
@@ -136,7 +135,7 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyTheme(theme);
         }
 
-        private void BuildArcBand(float radius, float s, ThemeConfig theme)
+        private void BuildArcBand(float radius, float yCenterOffset, float s, ThemeConfig theme)
         {
             _arcBandRoot = CreateContainer("Arc_Band_Root", transform).gameObject;
 
@@ -159,21 +158,21 @@ namespace ModularFlightPanel.UI.Widgets
                 float cos = Mathf.Cos(rad);
 
                 // 1. 半透明暗色玻璃遮光弧板
-                Vector2 platePos = new Vector2(sin * (radius - 5f * s), cos * (radius - 5f * s));
+                Vector2 platePos = new Vector2(sin * (radius - 5f * s), cos * (radius - 5f * s) - yCenterOffset);
                 GameObject plate = UIFactory.CreatePanel(_arcBandRoot.transform, $"BandPlate_{i}",
                     new Vector2(arcSegW, bandThickness), platePos, bandCol);
                 plate.transform.localEulerAngles = new Vector3(0f, 0f, -ang);
                 _bandBgImages.Add(plate.GetComponent<Image>());
 
                 // 2. 外缘极细发光轮廓
-                Vector2 outerRimPos = new Vector2(sin * (radius + 6f * s), cos * (radius + 6f * s));
+                Vector2 outerRimPos = new Vector2(sin * (radius + 6f * s), cos * (radius + 6f * s) - yCenterOffset);
                 GameObject outerRim = UIFactory.CreatePanel(_arcBandRoot.transform, $"OuterRim_{i}",
                     new Vector2(arcSegW, 1.2f * s), outerRimPos, WidgetStyleManager.Weighted(borderCol, LineWeight.Strong));
                 outerRim.transform.localEulerAngles = new Vector3(0f, 0f, -ang);
                 _bandRimImages.Add(outerRim.GetComponent<Image>());
 
                 // 3. 内缘细弱辅助线
-                Vector2 innerRimPos = new Vector2(sin * (radius - 16f * s), cos * (radius - 16f * s));
+                Vector2 innerRimPos = new Vector2(sin * (radius - 16f * s), cos * (radius - 16f * s) - yCenterOffset);
                 GameObject innerRim = UIFactory.CreatePanel(_arcBandRoot.transform, $"InnerRim_{i}",
                     new Vector2(arcSegW, 1.0f * s), innerRimPos, WidgetStyleManager.Weighted(borderCol, LineWeight.Subtle));
                 innerRim.transform.localEulerAngles = new Vector3(0f, 0f, -ang);
@@ -226,10 +225,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void BuildSpeechBubble(float radius, float s, ThemeConfig theme)
+        private void BuildSpeechBubble(float radius, float yCenterOffset, float s, ThemeConfig theme)
         {
             Vector2 boxSize = new Vector2(50f * s, 20f * s);
-            Vector2 bubblePos = new Vector2(0f, radius + 15f * s);
+            Vector2 bubblePos = new Vector2(0f, radius + 15f * s - yCenterOffset);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             _bubbleBtn = CreateButton("Heading_SpeechBubble", transform, out _speechBubbleRt, out _bubbleBg,
@@ -285,9 +284,9 @@ namespace ModularFlightPanel.UI.Widgets
             textRt.anchoredPosition = Vector2.zero;
         }
 
-        private void BuildLubberMark(float radius, float s, ThemeConfig theme)
+        private void BuildLubberMark(float radius, float yCenterOffset, float s, ThemeConfig theme)
         {
-            Vector2 lubberPos = new Vector2(0f, radius);
+            Vector2 lubberPos = new Vector2(0f, radius - yCenterOffset);
 
             RectTransform lubRt = CreateContainer("Lubber_Line_Root", transform,
                 new Vector2(16f * s, 12f * s), lubberPos);
@@ -395,7 +394,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             float s = CurrentDpiScale;
             float radius = ARC_RADIUS * s;
-            float yCenterOffset = 0f;
+            float yCenterOffset = ARC_Y_CENTER_OFFSET * s;
 
             int centerTickDeg = Mathf.RoundToInt(currentHeading / 5f) * 5;
             int tickIdx = 0;

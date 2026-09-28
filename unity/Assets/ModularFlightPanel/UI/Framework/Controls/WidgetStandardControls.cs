@@ -84,6 +84,11 @@ namespace ModularFlightPanel.UI.Framework
             }
         }
 
+        public override bool NeedsTelemetryUpdate =>
+            (!string.IsNullOrEmpty(TitleTemplate) && TitleTemplate.IndexOf('{') >= 0) ||
+            (!string.IsNullOrEmpty(SubtitleTemplate) && SubtitleTemplate.IndexOf('{') >= 0) ||
+            (!string.IsNullOrEmpty(StatusBadgeTemplate) && StatusBadgeTemplate.IndexOf('{') >= 0);
+
         public override void BindConfig(WidgetConfig config)
         {
             base.BindConfig(config);
@@ -227,6 +232,8 @@ namespace ModularFlightPanel.UI.Framework
                 BaseFlightWidget.SetTextIfChanged(UnitLabel, Unit);
             }
         }
+
+        public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(Token);
 
         public override void BindConfig(WidgetConfig config)
         {
@@ -392,6 +399,8 @@ namespace ModularFlightPanel.UI.Framework
                 }
             }
         }
+
+        public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(NumericToken);
 
         public override void BindConfig(WidgetConfig config)
         {
@@ -590,7 +599,7 @@ namespace ModularFlightPanel.UI.Framework
 
         public override void UpdateTelemetry(IFlightTelemetry telemetry)
         {
-            if (LampLabel != null && LampLabel.text != Label)
+            if (!string.IsNullOrEmpty(Label) && LampLabel != null && LampLabel.text != Label)
             {
                 LampLabel.text = Label;
             }
@@ -658,6 +667,8 @@ namespace ModularFlightPanel.UI.Framework
                 MeterMaterial.SetFloat("_FillAmount", frac);
             }
         }
+
+        public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(NumericToken);
     }
 
     /// <summary>
@@ -718,6 +729,8 @@ namespace ModularFlightPanel.UI.Framework
                 BaseFlightWidget.SetLocalRotationIfChanged(PivotRt, Quaternion.Euler(0f, 0f, angle), 0.05f);
             }
         }
+
+        public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(NumericToken);
     }
 
     /// <summary>
@@ -789,5 +802,7 @@ namespace ModularFlightPanel.UI.Framework
             if (!IsVisible) return;
             OnUpdateTelemetryAction?.Invoke(telemetry);
         }
+
+        public override bool NeedsTelemetryUpdate => OnUpdateTelemetryAction != null;
     }
 }

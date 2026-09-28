@@ -91,10 +91,22 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        // ── 字段缓存与脏检查 ──
+        private string _typeToken = "{FRAME:TYPE}";
+        private string _frameToken = "{FRAME}";
+        private string _framePrefix = "";
+        private string _lastSpeedModeName = null;
+        private string _lastNavHookCategory = null;
+        private string _lastNavHookTitle = null;
+        private float _frameUpdateTimer = 1f; // 初始触发
+
         // ── 视图初始化钩子：绑定多语言悬浮提示 ──
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             ApplyTooltips();
+            _typeToken = GetTemplateChannel("TYPE_TOKEN", "{FRAME:TYPE}");
+            _frameToken = GetTemplateChannel("FRAME_TOKEN", "{FRAME}");
+            _framePrefix = GetTemplateChannel("FRAME_PREFIX", "");
         }
 
         // ── 遥测数据动态刷新：自包装属性写入自动触发内置脏检查 ──
@@ -107,47 +119,66 @@ namespace ModularFlightPanel.UI.Widgets
             Sas.IsActive = telem.IsSASEnabled;
 
             // 2. 参考系模式状态同步 (支持 Principia 权威参考系与原生 KSP 模式)
-            string categoryToken = GetTemplateChannel("TYPE_TOKEN", "{FRAME:TYPE}");
-            string category = TelemetryTokenEngine.Evaluate(categoryToken, telem);
-            if (string.IsNullOrEmpty(category) || category == "---")
+            _frameUpdateTimer += Time.deltaTime;
+            string curSpeedMode = telem.SpeedModeName;
+            var navHook = NavBallHookService.Provider;
+            string curHookCat = navHook != null ? navHook.ReferenceFrameCategory : null;
+            string curHookTitle = navHook != null ? navHook.FrameName : null;
+
+            bool frameDirty = curSpeedMode != _lastSpeedModeName 
+                || curHookCat != _lastNavHookCategory 
+                || curHookTitle != _lastNavHookTitle
+                || _frameUpdateTimer >= 0.2f;
+
+            if (frameDirty)
             {
-                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.ReferenceFrameCategory))
+                _frameUpdateTimer = 0f;
+                _lastSpeedModeName = curSpeedMode;
+                _lastNavHookCategory = curHookCat;
+                _lastNavHookTitle = curHookTitle;
+
+                string category = TelemetryTokenEngine.Evaluate(_typeToken, telem);
+                if (string.IsNullOrEmpty(category) || category == "---")
                 {
-                    category = NavBallHookService.Provider.ReferenceFrameCategory;
+                    if (!string.IsNullOrEmpty(curHookCat))
+                    {
+                        category = curHookCat;
+                    }
+                    else
+                    {
+                        category = !string.IsNullOrEmpty(curSpeedMode) ? curSpeedMode.ToUpperInvariant() : "ORBIT";
+                    }
                 }
-                else
+
+                string title = TelemetryTokenEngine.Evaluate(_frameToken, telem);
+                if (string.IsNullOrEmpty(title) || title == "---")
                 {
-                    category = !string.IsNullOrEmpty(telem.SpeedModeName) ? telem.SpeedModeName.ToUpperInvariant() : "ORBIT";
+                    if (!string.IsNullOrEmpty(curHookTitle))
+                    {
+                        title = curHookTitle;
+                    }
+                    else
+                    {
+                        title = curSpeedMode ?? category;
+                    }
                 }
+
+                string displayTitle = !string.IsNullOrEmpty(_framePrefix) ? $"{_framePrefix}{title}" : title;
+                Ref.UpdateFrame(category, displayTitle, ThemeManager.Instance?.CurrentTheme);
             }
-
-            string frameToken = GetTemplateChannel("FRAME_TOKEN", "{FRAME}");
-            string title = TelemetryTokenEngine.Evaluate(frameToken, telem);
-            if (string.IsNullOrEmpty(title) || title == "---")
-            {
-                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.FrameName))
-                {
-                    title = NavBallHookService.Provider.FrameName;
-                }
-                else
-                {
-                    title = telem.SpeedModeName ?? category;
-                }
-            }
-
-            string prefix = GetTemplateChannel("FRAME_PREFIX", "");
-            string displayTitle = !string.IsNullOrEmpty(prefix) ? $"{prefix}{title}" : title;
-
-            Ref.UpdateFrame(category, displayTitle, ThemeManager.Instance?.CurrentTheme);
         }
 
         // ── 视觉主题与通道文本应用 ──
         public override void ApplyTheme(ThemeConfig theme)
         {
             base.ApplyTheme(theme);
+            _typeToken = GetTemplateChannel("TYPE_TOKEN", "{FRAME:TYPE}");
+            _frameToken = GetTemplateChannel("FRAME_TOKEN", "{FRAME}");
+            _framePrefix = GetTemplateChannel("FRAME_PREFIX", "");
             Rcs.Text = GetTemplateChannel("RCS_LABEL", "RCS");
             Sas.Text = GetTemplateChannel("SAS_LABEL", "SAS");
             Ref.ApplyTheme(theme);
+            _frameUpdateTimer = 1f;
         }
 
         // ── 国际化与悬浮提示系统 ──

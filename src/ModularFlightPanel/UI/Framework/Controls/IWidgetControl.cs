@@ -77,6 +77,7 @@ namespace ModularFlightPanel.UI.Framework
         void ApplyTheme(ThemeConfig theme);
         void UpdateTelemetry(IFlightTelemetry telemetry);
         void BindConfig(WidgetConfig config);
+        bool NeedsTelemetryUpdate { get; }
     }
 
     /// <summary>
@@ -172,6 +173,7 @@ namespace ModularFlightPanel.UI.Framework
 
         public abstract void ApplyTheme(ThemeConfig theme);
         public abstract void UpdateTelemetry(IFlightTelemetry telemetry);
+        public virtual bool NeedsTelemetryUpdate => false;
 
         public virtual void BindConfig(WidgetConfig config)
         {
@@ -184,7 +186,7 @@ namespace ModularFlightPanel.UI.Framework
                 }
                 else
                 {
-                    IsVisible = true;
+                    _isVisible = true;
                 }
                 Vector2 offset = config.GetSubElementOffset(Id);
                 ApplyOffset(offset);

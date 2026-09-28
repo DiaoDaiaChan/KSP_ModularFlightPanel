@@ -246,6 +246,33 @@ namespace ModularFlightPanel.HeadlessValidator
                 {
                     return ConfigRoundtripTestSuite.Run(repoRoot) == 0 ? 0 : 1;
                 }
+                else if (args[i] == "--self-test")
+                {
+                    // 审计内核自检的独立入口：不加载布局、不做渲染、不做镜像校验，
+                    // 只跑规则正反用例。改规则时用它做快速回归，不必跑完整 10 步链路。
+                    Console.OutputEncoding = Encoding.UTF8;
+                    var stRuleFailures = WidgetSourceAudit.SelfTest();
+                    var stColorFailures = WidgetColorLiteralAudit.SelfTest();
+                    var stI18nFailures = I18nSyntaxAuditor.SelfTest();
+                    var stI18nDictFailures = I18nDictionaryValueAudit.SelfTest();
+                    int stTotalFailures = stRuleFailures.Count + stColorFailures.Count + stI18nFailures.Count + stI18nDictFailures.Count;
+
+                    if (stTotalFailures == 0)
+                    {
+                        PrintSuccess($"审计内核自检通过: 规则 {WidgetSourceAudit.LastSelfTestCaseCount} 条"
+                                   + $" + 颜色字面量 {WidgetColorLiteralAudit.LastSelfTestCaseCount} 条"
+                                   + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条"
+                                   + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条 全部符合预期。");
+                    }
+                    else
+                    {
+                        foreach (var f in stRuleFailures) PrintError("规则自检失败: " + f);
+                        foreach (var f in stColorFailures) PrintError("颜色字面量自检失败: " + f);
+                        foreach (var f in stI18nFailures) PrintError("I18n 语法树自检失败: " + f);
+                        foreach (var f in stI18nDictFailures) PrintError("I18n 词典值自检失败: " + f);
+                    }
+                    return stTotalFailures == 0 ? 0 : 1;
+                }
             }
 
             int overallErrors = 0;
@@ -1229,7 +1256,7 @@ namespace ModularFlightPanel.HeadlessValidator
         {
             if (widgetId == "core.navball") return (154f, 154f);
             if (widgetId == "nav.vessel_navball" || widgetId == "nav.vessel_attitude_sphere" || widgetType == "vessel_navball" || widgetType == "vessel_attitude_sphere") return (150f, 178f);
-            if (widgetId == "core.heading_arc" || widgetId == "nav.heading_arc" || widgetType == "heading_arc") return (180f, 60f);
+            if (widgetId == "core.heading_arc" || widgetId == "nav.heading_arc" || widgetType == "heading_arc") return (202f, 82f);
             if (widgetId == "core.master_warning" || widgetType == "master_warning" || widgetType == "warning_annunciator" || widgetType == "annunciator" || widgetType == "cws") return (184f, 20f);
             if (widgetId == "core.bottom_controls" || widgetId == "core.ref_rcs_sas" || widgetId == "core.rcs_ref_sas" || widgetType == "bottom_controls" || widgetType == "bottom_bar_controls" || widgetType == "rcs_ref_sas" || widgetType == "ref_rcs_sas") return (184f, 22f);
             if (widgetId == "core.orbital_info") return (320f, 36f);

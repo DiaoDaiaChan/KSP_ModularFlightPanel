@@ -60,7 +60,7 @@ namespace ModularFlightPanel.UI.Settings
             _onParamSelected = null;
         }
 
-        public static void Draw()
+        public static void Draw(float customContentHeight = -1f)
         {
             MFPGuiSkin.EnsureInitialized();
             UpdateFilter();
@@ -89,7 +89,8 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(6f);
 
             // 3. 主体分栏：左侧垂直分类栏 (180px) + 右侧参数表格
-            float drawerContentH = Mathf.Max(260f, SettingsGUI.ContentHeight - 110f);
+            float baseH = customContentHeight > 0f ? customContentHeight : (SettingsGUI.ContentHeight - 110f);
+            float drawerContentH = Mathf.Max(260f, baseH);
             GUILayout.BeginHorizontal(GUILayout.Height(drawerContentH));
 
             // ==========================================

@@ -69,6 +69,7 @@ namespace ModularFlightPanel.UI.Widgets
             public RectTransform LabelRt;
             public bool IsActive;
             public bool IsMajor;
+            public bool HasInitializedVisual;
             public double LastTickVal = double.NaN;
             public float LastY = float.NaN;
         }
@@ -194,6 +195,8 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastRateText = string.Empty;
         private bool _lastTrendPositive = true;
         private int _lastAccAlertLevel = -1;
+        private double _lastGForce = double.NaN;
+        private double _lastRenderedAccel = double.NaN;
         private bool _showingIntegerReadout = false;
         private float _currentHalfTrackH = 58f;
 
@@ -297,6 +300,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 视口端部镜面反光线与羽化遮罩 (Gloss Horizon Rim & Fade)
             BuildGlossRimsAndFades(theme);
+
+            if (_tickContainer != null)
+            {
+                _tickContainer.SetAsLastSibling();
+            }
 
             // 3. 中央高对比度实体读数窗口 (数值与单位直接合并并排展示)
             BuildCenterReadoutBox(theme);
@@ -1280,7 +1288,7 @@ namespace ModularFlightPanel.UI.Widgets
                     item.IsActive = true;
                 }
 
-                if (Mathf.Abs(item.LastY - y) > 0.05f)
+                if (float.IsNaN(item.LastY) || Mathf.Abs(item.LastY - y) > 0.05f)
                 {
                     item.Rect.anchoredPosition = new Vector2(0f, y);
                     item.LastY = y;
@@ -1289,8 +1297,9 @@ namespace ModularFlightPanel.UI.Widgets
                 double majorRemainder = Math.Abs(tickVal - Math.Round(tickVal / step) * step);
                 bool isMajor = majorRemainder < (subStep * 0.25);
 
-                if (item.IsMajor != isMajor)
+                if (!item.HasInitializedVisual || item.IsMajor != isMajor)
                 {
+                    item.HasInitializedVisual = true;
                     item.IsMajor = isMajor;
                     if (isMajor)
                     {
@@ -1419,13 +1428,17 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-_currentHalfTrackH 至 +_currentHalfTrackH)
-                float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
-                float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
-                _accPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, pointerY));
-                if (_accTraceRt != null)
+                if (double.IsNaN(_lastGForce) || Math.Abs(gForce - _lastGForce) > 0.02)
                 {
-                    float traceLen = pointerY - (-_currentHalfTrackH);
-                    _accTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, traceLen)));
+                    _lastGForce = gForce;
+                    float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
+                    float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
+                    _accPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, pointerY));
+                    if (_accTraceRt != null)
+                    {
+                        float traceLen = pointerY - (-_currentHalfTrackH);
+                        _accTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, traceLen)));
+                    }
                 }
 
                 // ==================== 2. dV/dt (速度变化率) 微分采样与 ──► 指针式指示 ====================
@@ -1472,48 +1485,52 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                float maxScale = 20.0f;
-                float rateFraction;
-                bool isRatePositive;
-                MeterStyleRole rateMeterRole;
-
-                if (isRateDeadband)
+                if (rateStr != _lastRateText || Math.Abs(_calculatedAccelMps2 - _lastRenderedAccel) > 0.05)
                 {
-                    rateFraction = 0f;
-                    isRatePositive = true;
-                    rateMeterRole = MeterStyleRole.Primary;
-                }
-                else
-                {
-                    rateFraction = Mathf.Clamp((float)(_calculatedAccelMps2 / maxScale), -1f, 1f);
-                    isRatePositive = rateFraction >= 0f;
-                    rateMeterRole = isRatePositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
-                }
+                    _lastRenderedAccel = _calculatedAccelMps2;
+                    float maxScale = 20.0f;
+                    float rateFraction;
+                    bool isRatePositive;
+                    MeterStyleRole rateMeterRole;
 
-                Color rateCol = WidgetStyleManager.Meter(rateMeterRole, theme);
-                _ratePointerHead?.SetColor(rateCol);
-                _ratePointerStem?.SetColor(rateCol);
-                _rateTraceImg?.SetColor(WidgetStyleManager.WithAlpha(rateCol, 0.40f));
-
-                float ratePointerY = rateFraction * _currentHalfTrackH;
-                _ratePointerRt?.SetAnchoredPositionSafe(new Vector2(0f, ratePointerY));
-                if (_rateTraceRt != null)
-                {
                     if (isRateDeadband)
                     {
-                        _rateTraceRt.SetSizeDeltaSafe(Vector2.zero);
-                    }
-                    else if (isRatePositive)
-                    {
-                        if (_rateTraceRt.pivot.y != 0f) _rateTraceRt.pivot = new Vector2(0.5f, 0f);
-                        _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                        _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, ratePointerY)));
+                        rateFraction = 0f;
+                        isRatePositive = true;
+                        rateMeterRole = MeterStyleRole.Primary;
                     }
                     else
                     {
-                        if (_rateTraceRt.pivot.y != 1f) _rateTraceRt.pivot = new Vector2(0.5f, 1f);
-                        _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                        _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -ratePointerY)));
+                        rateFraction = Mathf.Clamp((float)(_calculatedAccelMps2 / maxScale), -1f, 1f);
+                        isRatePositive = rateFraction >= 0f;
+                        rateMeterRole = isRatePositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
+                    }
+
+                    Color rateCol = WidgetStyleManager.Meter(rateMeterRole, theme);
+                    _ratePointerHead?.SetColor(rateCol);
+                    _ratePointerStem?.SetColor(rateCol);
+                    _rateTraceImg?.SetColor(WidgetStyleManager.WithAlpha(rateCol, 0.40f));
+
+                    float ratePointerY = rateFraction * _currentHalfTrackH;
+                    _ratePointerRt?.SetAnchoredPositionSafe(new Vector2(0f, ratePointerY));
+                    if (_rateTraceRt != null)
+                    {
+                        if (isRateDeadband)
+                        {
+                            _rateTraceRt.SetSizeDeltaSafe(Vector2.zero);
+                        }
+                        else if (isRatePositive)
+                        {
+                            if (_rateTraceRt.pivot.y != 0f) _rateTraceRt.pivot = new Vector2(0.5f, 0f);
+                            _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                            _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, ratePointerY)));
+                        }
+                        else
+                        {
+                            if (_rateTraceRt.pivot.y != 1f) _rateTraceRt.pivot = new Vector2(0.5f, 1f);
+                            _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                            _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -ratePointerY)));
+                        }
                     }
                 }
             }
@@ -1576,27 +1593,27 @@ namespace ModularFlightPanel.UI.Widgets
                         _lastTrendRateText = formattedRate;
                         if (_vsiRateText != null) _vsiRateText.text = formattedRate;
                     }
-                }
 
-                float vsiPointerY = rateFraction * _currentHalfTrackH;
-                _vsiPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, vsiPointerY));
-                if (_vsiTraceRt != null)
-                {
-                    if (isVsiDeadband)
+                    float vsiPointerY = rateFraction * _currentHalfTrackH;
+                    _vsiPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, vsiPointerY));
+                    if (_vsiTraceRt != null)
                     {
-                        _vsiTraceRt.SetSizeDeltaSafe(Vector2.zero);
-                    }
-                    else if (isPositive)
-                    {
-                        if (_vsiTraceRt.pivot.y != 0f) _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
-                        _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                        _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, vsiPointerY)));
-                    }
-                    else
-                    {
-                        if (_vsiTraceRt.pivot.y != 1f) _vsiTraceRt.pivot = new Vector2(0.5f, 1f);
-                        _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                        _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -vsiPointerY)));
+                        if (isVsiDeadband)
+                        {
+                            _vsiTraceRt.SetSizeDeltaSafe(Vector2.zero);
+                        }
+                        else if (isPositive)
+                        {
+                            if (_vsiTraceRt.pivot.y != 0f) _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
+                            _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                            _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, vsiPointerY)));
+                        }
+                        else
+                        {
+                            if (_vsiTraceRt.pivot.y != 1f) _vsiTraceRt.pivot = new Vector2(0.5f, 1f);
+                            _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                            _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -vsiPointerY)));
+                        }
                     }
                 }
             }

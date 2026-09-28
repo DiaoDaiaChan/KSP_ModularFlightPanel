@@ -126,11 +126,13 @@ namespace ModularFlightPanel.UI.Auditing
     /// </summary>
     public static class WidgetModernizationAudit
     {
-        private static readonly HashSet<string> MicroControlTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "TextWidget", "GaugeWidget", "LinearBarWidget", "TapeWidget",
-            "StateWidget", "IconWidget", "ToggleButtonWidget", "ActionButtonWidget"
-        };
+        /// <summary>
+        /// 微控件 DSL 类型集合。
+        /// 唯一数据源在 WidgetSpecRules.MicroControlDslTypes —— 此处不再重写名单，
+        /// 否则新增 DSL 控件时会出现"框架能创建、审计看不见"的静默失配。
+        /// </summary>
+        private static readonly HashSet<string> MicroControlTypes =
+            new HashSet<string>(WidgetSpecRules.MicroControlDslTypes, StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// 执行全量组件现代化合规性扫描（复用 WidgetSourceAudit 的组件继承图，与文件所在目录无关）
@@ -176,12 +178,12 @@ namespace ModularFlightPanel.UI.Auditing
                 // ── 语法树 AST 深度特征检测 ──
                 // 1. BaseSize 属性重写检测
                 var baseSizeProp = widgetClass.Members.OfType<PropertyDeclarationSyntax>()
-                    .FirstOrDefault(p => p.Identifier.Text == "BaseSize" && RoslynAstHelper.HasModifier(p, SyntaxKind.OverrideKeyword));
+                    .FirstOrDefault(p => p.Identifier.Text == WidgetSpecRules.BaseSizeProperty && RoslynAstHelper.HasModifier(p, SyntaxKind.OverrideKeyword));
                 item.HasBaseSize = baseSizeProp != null;
 
                 // 2. AutoCreateCardFrame 属性重写检测
                 var cardFrameProp = widgetClass.Members.OfType<PropertyDeclarationSyntax>()
-                    .FirstOrDefault(p => p.Identifier.Text == "AutoCreateCardFrame");
+                    .FirstOrDefault(p => p.Identifier.Text == WidgetSpecRules.AutoCardFrameProperty);
                 item.HasAutoCardFrame = cardFrameProp != null;
 
                 // 3. 微控件 DSL 字段与声明检测
@@ -199,26 +201,20 @@ namespace ModularFlightPanel.UI.Auditing
 
                 // 也检测方法体中是否调用了 Controls.Add / TextWidget.* / LinearBarWidget.*
                 bool hasControlsInvocation = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                    .Any(inv =>
-                    {
-                        string expr = inv.Expression.ToString();
-                        return expr.StartsWith("Controls.Add", StringComparison.Ordinal) ||
-                               expr.StartsWith("TextWidget.", StringComparison.Ordinal) ||
-                               expr.StartsWith("LinearBarWidget.", StringComparison.Ordinal);
-                    });
+                    .Any(inv => IsMicroControlsDslInvocation(inv.Expression.ToString()));
 
                 item.UsesMicroControlsDsl = microControlFields > 0 || hasControlsInvocation;
 
                 // 4. 命令式 UIFactory 调用检测
                 int uiFactoryCalls = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                    .Count(inv => inv.Expression.ToString().StartsWith("UIFactory.", StringComparison.Ordinal));
+                    .Count(inv => inv.Expression.ToString().StartsWith(WidgetSpecRules.UiFactoryCallPrefix, StringComparison.Ordinal));
                 item.UsesImperativeUiFactory = uiFactoryCalls > 0;
 
                 // 5. 运行时 CPU 像素级软光栅化反模式侦测 (SetPixels32 / _texPixels 动态贴图)
                 bool hasCpuRasterizer = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                    .Any(inv => inv.Expression.ToString().EndsWith(".SetPixels32", StringComparison.Ordinal)) ||
+                    .Any(inv => inv.Expression.ToString().EndsWith(WidgetSpecRules.CpuRasterizerApiSuffix, StringComparison.Ordinal)) ||
                     widgetClass.Members.OfType<FieldDeclarationSyntax>()
-                    .Any(f => f.Declaration.Variables.Any(v => v.Identifier.Text == "_texPixels"));
+                    .Any(f => f.Declaration.Variables.Any(v => v.Identifier.Text == WidgetSpecRules.CpuRasterizerPixelField));
 
                 // 6. 刷新率阶梯滥用侦测：生效取值 + 声明式满帧依据与 SPEC-002 复用同一份判定
                 //    （旧实现自带一份类名名单，与 SPEC-002 的文件名名单各说各话，两处都可能漂移）
@@ -230,10 +226,12 @@ namespace ModularFlightPanel.UI.Auditing
                 {
                     item.Status = WidgetModernizationStatus.Core3D;
                     // 深度审查 Core3D 内部是否混入了命令式裸 UGUI 或未受管图元
+                    // 注意：此处按"类型文本包含 Image"匹配（覆盖 RawImage / UnityEngine.UI.Image 等限定写法），
+                    // 与旧口径保持一致；本项只做常量回收，不改变判定行为。
                     int rawImageAllocs = widgetClass.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
-                        .Count(obj => obj.Type.ToString().Contains("Image"));
+                        .Count(obj => obj.Type.ToString().Contains(WidgetSpecRules.UguiImageType));
                     bool usesUiMaterial = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                        .Any(inv => inv.ToString().Contains("GetUiMaterial"));
+                        .Any(inv => inv.ToString().Contains(WidgetSpecRules.UiMaterialApi));
                     if (!usesUiMaterial && (item.UsesImperativeUiFactory || rawImageAllocs > 0))
                     {
                         item.HasUnmanagedCore3DUgui = true;
@@ -286,8 +284,8 @@ namespace ModularFlightPanel.UI.Auditing
                     .Any(inv =>
                     {
                         string expr = inv.Expression.ToString();
-                        return expr.EndsWith(".Split", StringComparison.Ordinal) &&
-                               inv.ToString().Contains("CustomTemplate");
+                        return expr.EndsWith(WidgetSpecRules.CustomTemplateSplitSuffix, StringComparison.Ordinal) &&
+                               inv.ToString().Contains(WidgetSpecRules.CustomTemplateNameFragment);
                     });
                 item.HasRedundantTemplateParser = hasRedundantParser || hasSplitCustomTemplate;
                 if (item.HasRedundantTemplateParser)
@@ -316,14 +314,7 @@ namespace ModularFlightPanel.UI.Auditing
                 {
                     foreach (var v in field.Declaration.Variables)
                     {
-                        string vName = v.Identifier.Text;
-                        if (vName.StartsWith("_last", StringComparison.OrdinalIgnoreCase) &&
-                            (vName.EndsWith("Text", StringComparison.OrdinalIgnoreCase) ||
-                             vName.EndsWith("Str", StringComparison.OrdinalIgnoreCase) ||
-                             vName.EndsWith("Val", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            dirtyFields++;
-                        }
+                        if (IsManualDirtyTrackingField(v.Identifier.Text)) dirtyFields++;
                     }
                 }
                 item.RedundantDirtyTrackingFields = dirtyFields;
@@ -400,7 +391,7 @@ namespace ModularFlightPanel.UI.Auditing
                     .Count(oce =>
                     {
                         string t = oce.Type.ToString();
-                        return t == "GameObject" || t == "UnityEngine.GameObject";
+                        return t == WidgetSpecRules.RawGameObjectType || t == WidgetSpecRules.RawGameObjectFullType;
                     });
                 item.RawGameObjectAllocs = rawGoAllocs;
                 if (rawGoAllocs > 0)
@@ -426,7 +417,7 @@ namespace ModularFlightPanel.UI.Auditing
 
                 var entryMethods = allClassMethods
                     .Where(m => WidgetSpecRules.HotLoopMethodNames.Contains(m.Identifier.Text) ||
-                                m.Identifier.Text.StartsWith("Sync", StringComparison.OrdinalIgnoreCase))
+                                m.Identifier.Text.StartsWith(WidgetSpecRules.HotSyncMethodPrefix, StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
                 var reachableHotMethods = new HashSet<MethodDeclarationSyntax>();
@@ -520,6 +511,32 @@ namespace ModularFlightPanel.UI.Auditing
             });
 
             return report;
+        }
+
+        /// <summary>微控件 DSL 工厂调用形态：Controls.Add 或 已登记的 DSL 类型名 + "." 限定调用</summary>
+        private static bool IsMicroControlsDslInvocation(string expression)
+        {
+            if (string.IsNullOrEmpty(expression)) return false;
+            if (expression.StartsWith(WidgetSpecRules.ControlsAddPrefix, StringComparison.Ordinal)) return true;
+
+            for (int i = 0; i < WidgetSpecRules.DslFactoryInvocationTypes.Length; i++)
+            {
+                if (expression.StartsWith(WidgetSpecRules.DslFactoryInvocationTypes[i] + ".", StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>手工脏标记字段命名判定：_last* 前缀 + 已登记后缀之一</summary>
+        private static bool IsManualDirtyTrackingField(string fieldName)
+        {
+            if (string.IsNullOrEmpty(fieldName)) return false;
+            if (!fieldName.StartsWith(WidgetSpecRules.DirtyTrackingFieldPrefix, StringComparison.OrdinalIgnoreCase)) return false;
+
+            for (int i = 0; i < WidgetSpecRules.DirtyTrackingFieldSuffixes.Length; i++)
+            {
+                if (fieldName.EndsWith(WidgetSpecRules.DirtyTrackingFieldSuffixes[i], StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
         }
 
         /// <summary>

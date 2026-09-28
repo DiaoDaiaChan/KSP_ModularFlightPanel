@@ -50,8 +50,56 @@ namespace ModularFlightPanel.Core.Probes
             ExternalProbeRegistry.NumericResolver = ResolveNumericProbe;
             ExternalProbeRegistry.StringResolver = ResolveStringProbe;
 
+            // 刷新全量探针可用性位图缓存 (Zero-Allocation Fast Path)
+            RefreshAvailability();
+
             // 将所有探针遍历得出的所有遥测成员动态注入 TelemetryCatalog 词典
             SyncTraversedMembersToCatalog();
+        }
+
+        private static bool _anyExternalProbeAvailable = false;
+        private static readonly Dictionary<string, bool> _probeAvailabilityByTag = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        public static void RefreshAvailability()
+        {
+            _probeAvailabilityByTag.Clear();
+            void Reg(bool avail, params string[] tags)
+            {
+                for (int i = 0; i < tags.Length; i++)
+                    _probeAvailabilityByTag[tags[i]] = avail;
+            }
+
+            Reg(FarProbe.IsAvailable, "FAR", "FARC");
+            Reg(KerbalEngineerProbe.IsAvailable, "KER", "ENGINEER");
+            Reg(MechJebProbe.IsAvailable, "MJ", "MECHJEB");
+            Reg(PrincipiaProbe.IsAvailable, "PRINCIPIA", "PRINCIA", "PRIN");
+            Reg(RealAntennasProbe.IsAvailable, "RA", "REALANTENNAS", "REALANTENNA");
+            Reg(KerbalismProbe.IsAvailable, "KERBALISM", "KLSM");
+            Reg(TrajectoriesProbe.IsAvailable, "TRAJ", "TRAJECTORIES");
+            Reg(DockingAlignmentProbe.IsAvailable, "DOCK", "DPAI", "NAVYFISH");
+            Reg(GPWSProbe.IsAvailable, "GPWS", "TAWS");
+            Reg(RealFuelsProbe.IsAvailable, "RF", "REALFUELS", "REALFUEL");
+            Reg(TestFlightProbe.IsAvailable, "TF", "TESTFLIGHT");
+            Reg(DynamicBatteryStorageProbe.IsAvailable, "DBS", "DYNAMICBATTERYSTORAGE");
+            Reg(SystemHeatProbe.IsAvailable, "SH", "SYSTEMHEAT");
+            Reg(AtmosphereAutopilotProbe.IsAvailable, "AA", "ATMOSPHEREAUTOPILOT");
+            Reg(RP1AvionicsProbe.IsAvailable, "RP1", "RP0", "AVIONICS");
+
+            _anyExternalProbeAvailable = false;
+            foreach (var kvp in _probeAvailabilityByTag)
+            {
+                if (kvp.Value)
+                {
+                    _anyExternalProbeAvailable = true;
+                    break;
+                }
+            }
+        }
+
+        public static bool IsProbeTagAvailable(string tag)
+        {
+            if (!_anyExternalProbeAvailable || string.IsNullOrEmpty(tag)) return false;
+            return _probeAvailabilityByTag.TryGetValue(tag, out bool avail) && avail;
         }
 
         private static void SafeInit(string probeName, Action initAction)
@@ -172,6 +220,7 @@ namespace ModularFlightPanel.Core.Probes
         private static double ResolveNumericProbe(string tag, string subTag)
         {
             if (string.IsNullOrEmpty(tag) || string.IsNullOrEmpty(subTag)) return double.NaN;
+            if (!IsProbeTagAvailable(tag)) return double.NaN;
 
             string probeKey = tag + ":" + subTag;
             int frame = Time.frameCount;
@@ -293,6 +342,7 @@ namespace ModularFlightPanel.Core.Probes
         {
             if (string.IsNullOrEmpty(tag)) return "---";
             if (string.IsNullOrEmpty(subTag)) return tag;
+            if (!IsProbeTagAvailable(tag)) return "---";
 
             string probeKey = tag + ":" + subTag + ":" + (format ?? string.Empty);
             int frame = Time.frameCount;

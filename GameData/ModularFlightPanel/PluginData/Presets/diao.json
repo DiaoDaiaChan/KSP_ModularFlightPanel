@@ -26,7 +26,7 @@
       "DisplayName": "PFD 航向指示弧 (Set 2)",
       "IsEnabled": true,
       "PositionX": 0,
-      "PositionY": 0,
+      "PositionY": 76,
       "Scale": 1.0,
       "CustomTemplate": "",
       "WidgetType": "heading_arc",

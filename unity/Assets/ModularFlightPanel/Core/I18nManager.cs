@@ -308,6 +308,29 @@ namespace ModularFlightPanel.Core
             BuiltinZhCN["WIDGET_ALERT_ARMED"] = "待命";
             BuiltinZhCN["WIDGET_ALERT_NORM"] = "正常";
 
+            // 轨道六根数 i18n 键
+            BuiltinZhCN["ORBIT_ELEM_SMA"] = "a";
+            BuiltinZhCN["ORBIT_ELEM_SMA_FULL"] = "半长轴";
+            BuiltinZhCN["ORBIT_ELEM_ECC"] = "e";
+            BuiltinZhCN["ORBIT_ELEM_ECC_FULL"] = "离心率";
+            BuiltinZhCN["ORBIT_ELEM_INC"] = "𝑖";
+            BuiltinZhCN["ORBIT_ELEM_INC_FULL"] = "轨道倾角";
+            BuiltinZhCN["ORBIT_ELEM_LAN"] = "Ω";
+            BuiltinZhCN["ORBIT_ELEM_LAN_FULL"] = "升交点赤经";
+            BuiltinZhCN["ORBIT_ELEM_AOP"] = "ω";
+            BuiltinZhCN["ORBIT_ELEM_AOP_FULL"] = "近拱点辐角";
+            BuiltinZhCN["ORBIT_ELEM_TA"] = "ν";
+            BuiltinZhCN["ORBIT_ELEM_TA_FULL"] = "真近点角";
+            BuiltinZhCN["ORBIT_LABEL_AP"] = "AP";
+            BuiltinZhCN["ORBIT_LABEL_PE"] = "PE";
+            BuiltinZhCN["ORBIT_LABEL_PER"] = "周期";
+            BuiltinZhCN["ORBIT_LABEL_SMA"] = "半长轴";
+            BuiltinZhCN["ORBIT_LABEL_ECC"] = "离心率";
+            BuiltinZhCN["ORBIT_LABEL_INC"] = "倾角";
+            BuiltinZhCN["ORBIT_LABEL_PERIOD"] = "周";
+            BuiltinZhCN["ORBIT_FMT_T_AP"] = "至远";
+            BuiltinZhCN["ORBIT_FMT_T_PE"] = "至近";
+
             // ==========================================
             // 英文内置核心字典 (Built-in en-US)
             // ==========================================
@@ -335,6 +358,29 @@ namespace ModularFlightPanel.Core
             BuiltinEnUS["WIDGET_ALERT_READY"] = "READY";
             BuiltinEnUS["WIDGET_ALERT_ARMED"] = "ARMED";
             BuiltinEnUS["WIDGET_ALERT_NORM"] = "NORM";
+
+            // Orbital elements i18n keys
+            BuiltinEnUS["ORBIT_ELEM_SMA"] = "a";
+            BuiltinEnUS["ORBIT_ELEM_SMA_FULL"] = "Semi-Major Axis";
+            BuiltinEnUS["ORBIT_ELEM_ECC"] = "e";
+            BuiltinEnUS["ORBIT_ELEM_ECC_FULL"] = "Eccentricity";
+            BuiltinEnUS["ORBIT_ELEM_INC"] = "i";
+            BuiltinEnUS["ORBIT_ELEM_INC_FULL"] = "Inclination";
+            BuiltinEnUS["ORBIT_ELEM_LAN"] = "Ω";
+            BuiltinEnUS["ORBIT_ELEM_LAN_FULL"] = "Longitude of Ascending Node";
+            BuiltinEnUS["ORBIT_ELEM_AOP"] = "ω";
+            BuiltinEnUS["ORBIT_ELEM_AOP_FULL"] = "Argument of Periapsis";
+            BuiltinEnUS["ORBIT_ELEM_TA"] = "ν";
+            BuiltinEnUS["ORBIT_ELEM_TA_FULL"] = "True Anomaly";
+            BuiltinEnUS["ORBIT_LABEL_AP"] = "AP";
+            BuiltinEnUS["ORBIT_LABEL_PE"] = "PE";
+            BuiltinEnUS["ORBIT_LABEL_PER"] = "PER";
+            BuiltinEnUS["ORBIT_LABEL_SMA"] = "SMA";
+            BuiltinEnUS["ORBIT_LABEL_ECC"] = "ECC";
+            BuiltinEnUS["ORBIT_LABEL_INC"] = "INC";
+            BuiltinEnUS["ORBIT_LABEL_PERIOD"] = "P";
+            BuiltinEnUS["ORBIT_FMT_T_AP"] = "T-AP";
+            BuiltinEnUS["ORBIT_FMT_T_PE"] = "T-PE";
         }
     }
 

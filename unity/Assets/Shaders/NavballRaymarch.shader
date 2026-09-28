@@ -380,17 +380,18 @@ Shader "ModularFlightPanel/NavballRaymarch"
             }
 
             // ── 方案 1: 解析线宽物理保底与能量守恒抗闪烁 (Screen-Space Minimum Width Clamping & Alpha Conservation) ──
-            // 彻底解决亚像素欠采样导致的断线与跳动频闪，同时收紧过渡带实现手术刀般极致锐利
+            // 彻底解决亚像素欠采样导致的断线与跳动频闪，同时平滑过滤过渡带消除锯齿
             float EvalConservativeLine(float dist, float nominalHalfWidth, float pixelDeriv)
             {
                 float pixelRadius = max(pixelDeriv * 0.5, 0.0001);
-                // 物理保底：有效线宽在屏幕上不低于 1.05 个像素半径（整宽永不低于 1.05 像素）
-                float minHalfWidth = pixelRadius * 1.05;
+                // 物理保底：有效线宽在屏幕上不低于 1.15 个像素半径（整宽永不低于 1.15 像素）
+                float minHalfWidth = pixelRadius * 1.15;
                 float effectiveHalfWidth = max(nominalHalfWidth, minHalfWidth);
-                // 能量守恒：当由于保底被拉宽时，等比削减 Alpha，保持光子积分总能量守恒
-                float energyAlpha = min(1.0, nominalHalfWidth / effectiveHalfWidth);
-                // 超锐利微过渡带：过渡宽度收窄至 0.35 像素，彻底消除模糊发虚
-                float aa = pixelRadius * 0.70;
+                // 感知能量守恒：使用非线性平滑衰减保持视网膜对比度，防止极端角度或小尺寸下断线发虚
+                float widthRatio = nominalHalfWidth / effectiveHalfWidth;
+                float energyAlpha = min(1.0, pow(max(widthRatio, 0.001), 0.62));
+                // 1.25 像素半宽 Nyquist 滤波过渡带，平滑覆盖亚像素移动，彻底消除时间性闪烁
+                float aa = pixelRadius * 1.25;
                 float edge = 1.0 - smoothstep(effectiveHalfWidth - aa, effectiveHalfWidth + aa, dist);
                 return edge * energyAlpha;
             }
@@ -400,15 +401,16 @@ Shader "ModularFlightPanel/NavballRaymarch"
             {
                 float pixelRadius = max(pixelDeriv * 0.5, 0.0001);
                 float nominalRadius = 0.34;
-                float minRadius = pixelRadius * 1.05;
+                float minRadius = pixelRadius * 1.15;
                 float effectiveRadius = max(nominalRadius, minRadius);
-                float energyAlpha = min(1.0, nominalRadius / effectiveRadius);
+                float widthRatio = nominalRadius / effectiveRadius;
+                float energyAlpha = min(1.0, pow(max(widthRatio, 0.001), 0.62));
 
                 // 补偿笔画微径扩展，保证极小尺寸下笔画不消失
                 float radiusExpand = effectiveRadius - nominalRadius;
                 float adjustedDist = dist - radiusExpand;
 
-                float aa = pixelRadius * 0.70;
+                float aa = pixelRadius * 1.25;
                 fill = (1.0 - smoothstep(-aa, aa, adjustedDist)) * energyAlpha;
                 outline = (1.0 - smoothstep(-aa, aa, adjustedDist - outlineThick)) * energyAlpha;
             }
@@ -440,7 +442,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     // 地面微细等高线/板块微纹理
                     float groundRings = abs(frac(p.y * 12.0) - 0.5);
-                    float ringAA = clamp(fwidth(p.y) * 1.5, 0.001, 0.10);
+                    float ringAA = clamp(fwidth(p.y) * 1.5, 0.0005, 0.25);
                     float groundGrid = (1.0 - smoothstep(0.04, 0.04 + ringAA, groundRings)) * 0.10 * smoothstep(0.1, 0.5, _DetailScale);
                     col.rgb = lerp(col.rgb, _GroundHorizonColor.rgb, groundGrid);
 
@@ -449,7 +451,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     {
                         float rollSpeed = _Time.y * (6.0 + _GroundHazardAlert * 8.0);
                         float stripe = sin((p.x * 16.0 + p.y * 24.0 + p.z * 16.0) + rollSpeed);
-                        float stripeAA = clamp(fwidth(stripe) * 0.75, 0.001, 0.15);
+                        float stripeAA = clamp(fwidth(stripe) * 0.75, 0.001, 0.50);
                         float isStripe = smoothstep(-stripeAA, stripeAA, stripe - 0.10) * _GroundHazardAlert;
                         fixed3 hazardCol = fixed3(1.0, 0.78, 0.08); // 琥珀黄警戒色
                         col.rgb = lerp(col.rgb, hazardCol, isStripe * 0.65);
@@ -466,7 +468,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     float cardMod90 = abs(fmod(headDeg + 45.0, 90.0) - 45.0);
                     if (cardMod90 < 5.0 && absPitch < 1.6)
                     {
-                        float wingAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.15);
+                        float wingAA = clamp(fwidth(absPitch) * 0.75, 0.005, 1.5);
                         float wingMask = (1.0 - smoothstep(0.28 - wingAA, 0.28 + wingAA, absPitch)) *
                                          smoothstep(1.5, 4.5, cardMod90);
                         frameDetail += wingMask * 0.75;
@@ -475,7 +477,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (p.y < 0.0)
                     {
                         float srfContour = abs(frac((absPitch + 7.5) / 15.0 + 0.5) - 0.5);
-                        float contourAA = clamp(fwidth(srfContour) * 0.75, 0.001, 0.05);
+                        float contourAA = clamp(fwidth(srfContour) * 0.75, 0.001, 0.25);
                         frameDetail += (1.0 - smoothstep(0.015 - contourAA, 0.015 + contourAA, srfContour)) * 0.22;
                     }
                 }
@@ -528,7 +530,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         float d0 = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
                         float d180 = abs(headDeg - 180.0);
                         float diskDist = min(sqrt(d0 * d0 + pitchDeg * pitchDeg), sqrt(d180 * d180 + pitchDeg * pitchDeg));
-                        float diskAA = clamp(fwidth(diskDist) * 0.75, 0.01, 0.25);
+                        float diskAA = clamp(fwidth(diskDist) * 0.75, 0.005, 1.2);
                         float isDiskCore = 1.0 - smoothstep(4.0 - diskAA, 4.0 + diskAA, diskDist);
                         float isDiskRing = (1.0 - smoothstep(0.40 - diskAA, 0.40 + diskAA, abs(diskDist - 4.0))) * 0.85;
                         col.rgb = lerp(col.rgb, fixed3(0.08, 0.05, 0.15), isDiskCore * 0.75);
@@ -556,7 +558,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (p.z < -0.15)
                     {
                         float rearStripe = frac((p.x + p.y) * 8.0);
-                        float rearAA = clamp(fwidth(rearStripe) * 0.75, 0.001, 0.12);
+                        float rearAA = clamp(fwidth(rearStripe) * 0.75, 0.001, 0.35);
                         float isRearWarning = (1.0 - smoothstep(0.40 - rearAA, 0.40 + rearAA, abs(rearStripe - 0.5))) * 0.25 * smoothstep(-0.15, -0.65, p.z);
                         frameDetail += isRearWarning;
                     }
@@ -571,13 +573,13 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     frameDetail += isChevron;
 
                     // 轨道面双导轨 (Dual Orbital Rails) at pitch ±1.4°
-                    float railAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.12);
+                    float railAA = clamp(fwidth(absPitch) * 0.75, 0.005, 1.5);
                     float isRail = (1.0 - smoothstep(0.22 - railAA, 0.22 + railAA, abs(absPitch - 1.4))) * 0.65;
                     frameDetail += isRail;
 
                     // 离心 (上半球 Radial Out) 与向心 (下半球 Radial In) 导轨引力线
                     float radLines = abs(frac(headDeg / 30.0 + 0.5) - 0.5);
-                    float radLineAA = clamp(fwidth(radLines) * 0.75, 0.001, 0.05);
+                    float radLineAA = clamp(fwidth(radLines) * 0.75, 0.001, 0.25);
                     frameDetail += (1.0 - smoothstep(0.015 - radLineAA, 0.015 + radLineAA, radLines)) * 0.22;
                 }
                 // Mode 5: BODY-FIXED (星体体固系) - 15° 大地经纬十字准星、0° 本初子午线平行双轨与基准脉冲
@@ -614,8 +616,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 col.rgb = lerp(float3(baseLuma, baseLuma, baseLuma), col.rgb, 0.84);
 
                 // 2. 复合赤道腰带系统 (Equatorial Belt System: pitch in [-4.8°, +4.8°])
-                float eqAA = clamp(fwidth(p.y) * 0.75, 0.0003, 0.012);
-                float beltPitchAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.15);
+                float eqAA = clamp(fwidth(p.y) * 0.75, 0.0003, 0.06);
+                float beltPitchAA = clamp(fwidth(absPitch) * 0.75, 0.005, 2.5);
                 float beltHalfWidth = 4.8;
                 float inBelt = 1.0 - smoothstep(beltHalfWidth - beltPitchAA, beltHalfWidth + beltPitchAA, absPitch);
 
@@ -741,8 +743,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 }
 
                 // 5. 标尺骨架与纬线圈 (Continuous Ruler Backbone & Latitude Parallels)
-                float pAA = clamp(fwidth(pitchDeg) * 0.75, 0.001, 0.15);
-                float mAA = clamp(fwidth(absMainArc) * 0.75, 0.001, 0.15);
+                float pAA = clamp(fwidth(pitchDeg) * 0.75, 0.005, 2.5);
+                float mAA = clamp(fwidth(absMainArc) * 0.75, 0.005, 2.5);
 
                 // 5.1 主经线连续标尺骨架 (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
                 bool isCardinalMeridian = (fmod(normMainH + 1.0, 90.0) < 2.0);
@@ -786,7 +788,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 }
 
                 // 5.2 次级中间经线 (22.5° Sub-Meridians: 在 54° 以下呈现精细点虚线)
-                float colAA = clamp(fwidth(absColArc) * 0.75, 0.001, 0.15);
+                float colAA = clamp(fwidth(absColArc) * 0.75, 0.005, 2.5);
                 float isSubMeridian = EvalConservativeLine(absColArc, 0.18, colAA) * 
                                       (1.0 - smoothstep(46.0, 56.0, absPitch)) * 0.32;
                 float dashSub = frac(absPitch / 3.0);
@@ -834,7 +836,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         if (pitchDeg < 0.0)
                         {
                             float dashVal = fmod(absColArc - 4.0, 2.0);
-                            float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.15);
+                            float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.50);
                             combinedParallel *= (1.0 - smoothstep(1.05 - dashAA, 1.05 + dashAA, dashVal));
                         }
                     }
@@ -862,7 +864,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float headingGlyphDistance = 100.0;
                 float headingTextEnabled = 0.0;
                 float headingGap = 0.0;
-                float headingGlyphAA = 0.15;
+                float headingGlyphAA = 0.45;
 
                 // 6.1 赤道航向/时角检测 (pitch ~ 3.8°)
                 bool isEqHeadingZone = (absPitch < 8.5 && abs(pitchDeg - 3.8) < 4.2 && absMainArc < 9.0);
@@ -949,12 +951,17 @@ Shader "ModularFlightPanel/NavballRaymarch"
                                     DigitDistance(rotHeadOffset - float2(3.6, 0.0), hOnes)));
                         }
                     }
-                    headingGlyphAA = clamp(max(fwidth(mainHeadArc * tangentAspect), fwidth(pitchDeg)) * 0.75, 0.001, 0.18);
+                    headingGlyphAA = clamp(max(fwidth(mainHeadArc * tangentAspect), fwidth(pitchDeg)) * 0.75, 0.005, 2.5);
                 }
 
                 // 数字区域清空标尺线条，保持高反差整洁性
                 combinedRulerAndLadder *= (1.0 - max(pitchLabelGap, headingGap));
-                col = lerp(col, _PitchLadderColor, saturate(combinedRulerAndLadder * _PitchLadderColor.a * 0.92));
+
+                // 高反差微暗衬 (Subtle Dark Backing): 消除标线在浅蓝天穹或明亮地平带上的发虚感
+                fixed4 ladderOutlineCol = (_LabelOutlineColor.a > 0.01) ? _LabelOutlineColor : fixed4(0.015, 0.025, 0.04, 0.78);
+                float ladderUnderlay = smoothstep(0.01, 0.60, combinedRulerAndLadder) * 0.40;
+                col.rgb = lerp(col.rgb, ladderOutlineCol.rgb, ladderUnderlay * ladderOutlineCol.a);
+                col = lerp(col, _PitchLadderColor, saturate(combinedRulerAndLadder * _PitchLadderColor.a * 0.95));
 
                 // 7. 0° (Prime) 与 180° (Anti) 醒目全周子午分界线 (Red & Green Dividers: 对标 Principia 规范)
                 float primeAngle = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
@@ -965,7 +972,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     float primeArc = primeAngle * cosP;
                     float antiArc  = antiAngle * cosP;
 
-                    float splitAA = clamp(fwidth(primeArc) * 0.75, 0.001, 0.15);
+                    float splitAA = clamp(fwidth(primeArc) * 0.75, 0.005, 2.0);
                     float isPrimeCore = EvalConservativeLine(primeArc, 0.65, splitAA);
                     float isPrimeHalo = (1.0 - smoothstep(1.50 - splitAA, 1.50 + splitAA, primeArc)) * 0.40;
                     float isPrime = max(isPrimeCore, isPrimeHalo);
@@ -1014,17 +1021,17 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 8. 赤道航向微刻度线 (Equator Minor Ticks at pitch < 1.8°)
                 if (absPitch < 1.8)
                 {
-                    float eqPitchAA = clamp(fwidth(absPitch) * 0.75, 0.001, 0.15);
+                    float eqPitchAA = clamp(fwidth(absPitch) * 0.75, 0.005, 2.0);
                     float eqPitchMask45 = 1.0 - smoothstep(1.7 - eqPitchAA, 1.7 + eqPitchAA, absPitch);
                     float eqTick45 = EvalConservativeLine(absMainArc, 0.32, mAA) * 0.90 * eqPitchMask45;
                     float eqSubMod = abs(pitchColOffset);
-                    float eqSubAA = clamp(fwidth(eqSubMod) * 0.75, 0.001, 0.15);
+                    float eqSubAA = clamp(fwidth(eqSubMod) * 0.75, 0.005, 2.0);
                     float eqTickSub = EvalConservativeLine(eqSubMod, 0.24, eqSubAA) * 0.60 * (1.0 - smoothstep(1.0 - eqPitchAA, 1.0 + eqPitchAA, absPitch));
                     col = lerp(col, _EquatorColor, saturate(max(eqTick45, eqTickSub)));
                 }
 
                 // 9. 字符描边与填充合成 (俯仰数字 + 航向数字，应用 SDF 笔画物理保底与超锐利边缘)
-                float glyphAA = clamp(max(fwidth(pitchColArc * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.001, 0.18);
+                float glyphAA = clamp(max(fwidth(pitchColArc * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.005, 2.5);
                 float pitchTextFill, pitchTextOutline;
                 EvalConservativeSDF(pitchGlyphDistance, 0.45, glyphAA, pitchTextFill, pitchTextOutline);
                 pitchTextOutline *= pitchGlyphEnabled;
@@ -1050,7 +1057,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 if (absY > 0.985)
                 {
                     float poleR = sqrt(p.x * p.x + p.z * p.z);
-                    float poleAA = clamp(fwidth(poleR) * 0.75, 0.0004, 0.015);
+                    float poleAA = clamp(fwidth(poleR) * 0.75, 0.0004, 0.06);
 
                     // 主十字与对角十字标
                     float armX = (abs(p.x) < 0.0028 && abs(p.z) < 0.082) ? 1.0 : 0.0;
@@ -1134,7 +1141,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float r = sqrt(r2);
 
                 // 2. 硬件导数亚像素完美抗锯齿边缘 (Subpixel Silhouette AA)
-                float edgeAA = clamp(fwidth(r) * 0.75, 0.0004, 0.015);
+                float edgeAA = clamp(fwidth(r) * 0.75, 0.0004, 0.05);
                 float circleAlpha = saturate((1.0 - r) / edgeAA);
                 if (circleAlpha <= 0.0) discard;
 
@@ -1236,7 +1243,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         if (wingNormalR.y < 0.0) wingNormalR = -wingNormalR;
                         float2 fenceTopR = ro2D + wingNormalR * 0.024;
 
-                        float aa = clamp(fwidth(coord.x) * 0.85, 0.0008, 0.012);
+                        float aa = clamp(fwidth(coord.x) * 0.85, 0.0008, 0.05);
 
                         // 3. 计算片元到前瞻机翼线段与翼尖小翼的精确距离
                         float dWingL = DistanceToSegment2D(coord, li2D, lo2D);

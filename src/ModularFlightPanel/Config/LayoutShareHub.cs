@@ -353,7 +353,7 @@ namespace ModularFlightPanel.Config
 
             // 核心基础组件
             data.Widgets.Add(new WidgetConfig("core.navball", I18n.GetWidgetName("core.navball", "姿态球 (Navball)"), 0f, 0f) { IsEnabled = true });
-            data.Widgets.Add(new WidgetConfig("core.heading_arc", I18n.GetWidgetName("core.heading_arc", "PFD 航向指示弧 (Set 2)"), 0f, 0f) { WidgetType = "heading_arc", IsEnabled = true });
+            data.Widgets.Add(new WidgetConfig("core.heading_arc", I18n.GetWidgetName("core.heading_arc", "PFD 航向指示弧 (Set 2)"), 0f, 76f) { WidgetType = "heading_arc", IsEnabled = true });
             data.Widgets.Add(new WidgetConfig("core.bottom_controls", I18n.GetWidgetName("core.bottom_controls", "RCS与SAS底控台"), 0f, -88f) { IsEnabled = true });
             data.Widgets.Add(new WidgetConfig("core.sas_dial", I18n.GetWidgetName("core.sas_dial", "环形 SAS 罗盘"), 0f, -150f) { IsEnabled = true });
 

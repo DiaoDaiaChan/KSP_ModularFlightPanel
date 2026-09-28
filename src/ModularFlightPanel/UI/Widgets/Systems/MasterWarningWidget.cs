@@ -252,6 +252,17 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastBannerTitleStr = string.Empty;
         private string _lastBannerSubStr = string.Empty;
 
+        // 10Hz 判定降频节拍器与告警渲染脏检查守卫 (Microsecond Performance Tuning)
+        private float _alertEvalTimer = 0f;
+        private const float ALERT_EVAL_INTERVAL = 0.1f;
+        private bool _forceImmediateAlertEval = true;
+        private bool _lastCautBlink = false;
+        private int _lastRenderedCautIdx = -1;
+        private int _lastRenderedCautTotal = -1;
+        private bool _lastWarnBlink = false;
+        private int _lastRenderedWarnIdx = -1;
+        private int _lastRenderedWarnTotal = -1;
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
@@ -325,8 +336,8 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_outerBezel != null) _outerBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, t);
                 if (_outerOutline != null) _outerOutline.effectColor = WidgetStyleManager.Weighted(t.AccentSecondary, LineWeight.Ghost);
             }));
-            this.Controls.Register(new WidgetAnnunciatorControl(_cautTitle, _cautSub, _cautBg, _cautOutline, "CAUTION Annunciator", "注意告警指示光字牌"));
-            this.Controls.Register(new WidgetAnnunciatorControl(_warnTitle, _warnSub, _warnBg, _warnOutline, "WARNING Annunciator", "危急告警指示光字牌"));
+            this.Controls.Register(new WidgetAnnunciatorControl("caution_annunciator", "CAUTION Annunciator", _cautCell, _cautTitle, _cautSub, _cautBg, _cautOutline));
+            this.Controls.Register(new WidgetAnnunciatorControl("warning_annunciator", "WARNING Annunciator", _warnCell, _warnTitle, _warnSub, _warnBg, _warnOutline));
             this.Controls.Register(WidgetControlManager.WrapElement(this, "banner_cell", "Banner Cell", _bannerCell, "瞬态事件一体横幅光字牌"));
             if (_centerDivider != null)
             {
@@ -947,8 +958,14 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 侦测分级分离、引擎点火与机动巡航等全景瞬态事件
             DetectTransientEvents(telemetry);
 
-            // 2. 持续评估当前所有活跃警报 (驱动双室光字牌)
-            EvaluateTelemetryAlerts(telemetry, dt);
+            // 2. 持续评估当前所有活跃警报 (10Hz 判定降频节拍器，事件触发时立即响应)
+            _alertEvalTimer += dt;
+            if (_alertEvalTimer >= ALERT_EVAL_INTERVAL || _forceImmediateAlertEval)
+            {
+                _alertEvalTimer = 0f;
+                _forceImmediateAlertEval = false;
+                EvaluateTelemetryAlerts(telemetry, dt);
+            }
 
             // 3. 更新座舱全局同步时钟
             _clock += dt;
@@ -1670,29 +1687,37 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_cautIndex >= _cautAlerts.Count) _cautIndex = 0;
                 AlertItem item = _cautAlerts[_cautIndex];
 
-                string pagination = _cautAlerts.Count > 1 ? $"{_cautIndex + 1}/{_cautAlerts.Count}" : item.TelemetryAffix;
-                _cautTitle.SetTextSafe(item.MainTitle);
-                _cautSub.SetTextSafe(pagination);
-                _cautIcon.SetTextSafe("▲");
-
                 bool blink = _cautAcknowledged || _blink1Hz;
-                if (blink)
+                bool cautDirty = blink != _lastCautBlink || _cautIndex != _lastRenderedCautIdx || _cautAlerts.Count != _lastRenderedCautTotal || _cellsStyleNeedsUpdate;
+                if (cautDirty)
                 {
-                    _cautBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution, theme));
-                    _cautOutline.SetColor(theme.WarningColor);
-                    _cautPipBar.SetColor(theme.WarningColor);
-                    _cautTitle.SetColor(theme.WarningColor);
-                    _cautSub.SetColor(theme.WarningColor);
-                    _cautIcon.SetColor(theme.WarningColor);
-                }
-                else
-                {
-                    _cautBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
-                    _cautOutline.SetColor(WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Faint));
-                    _cautPipBar.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.30f));
-                    _cautTitle.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
-                    _cautSub.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
-                    _cautIcon.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
+                    _lastCautBlink = blink;
+                    _lastRenderedCautIdx = _cautIndex;
+                    _lastRenderedCautTotal = _cautAlerts.Count;
+
+                    string pagination = _cautAlerts.Count > 1 ? $"{_cautIndex + 1}/{_cautAlerts.Count}" : item.TelemetryAffix;
+                    _cautTitle.SetTextSafe(item.MainTitle);
+                    _cautSub.SetTextSafe(pagination);
+                    _cautIcon.SetTextSafe("▲");
+
+                    if (blink)
+                    {
+                        _cautBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution, theme));
+                        _cautOutline.SetColor(theme.WarningColor);
+                        _cautPipBar.SetColor(theme.WarningColor);
+                        _cautTitle.SetColor(theme.WarningColor);
+                        _cautSub.SetColor(theme.WarningColor);
+                        _cautIcon.SetColor(theme.WarningColor);
+                    }
+                    else
+                    {
+                        _cautBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
+                        _cautOutline.SetColor(WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Faint));
+                        _cautPipBar.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.30f));
+                        _cautTitle.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
+                        _cautSub.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
+                        _cautIcon.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
+                    }
                 }
             }
             else
@@ -1722,29 +1747,37 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_warnIndex >= _warnAlerts.Count) _warnIndex = 0;
                 AlertItem item = _warnAlerts[_warnIndex];
 
-                string pagination = _warnAlerts.Count > 1 ? $"{_warnIndex + 1}/{_warnAlerts.Count}" : item.TelemetryAffix;
-                _warnTitle.SetTextSafe(item.MainTitle);
-                _warnSub.SetTextSafe(pagination);
-                _warnIcon.SetTextSafe("▲");
-
                 bool blink = _warnAcknowledged || _blink2Hz;
-                if (blink)
+                bool warnDirty = blink != _lastWarnBlink || _warnIndex != _lastRenderedWarnIdx || _warnAlerts.Count != _lastRenderedWarnTotal || _cellsStyleNeedsUpdate;
+                if (warnDirty)
                 {
-                    _warnBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger, theme));
-                    _warnOutline.SetColor(theme.DangerColor);
-                    _warnPipBar.SetColor(theme.DangerColor);
-                    _warnTitle.SetColor(theme.DangerColor);
-                    _warnSub.SetColor(theme.DangerColor);
-                    _warnIcon.SetColor(theme.DangerColor);
-                }
-                else
-                {
-                    _warnBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
-                    _warnOutline.SetColor(WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Faint));
-                    _warnPipBar.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.30f));
-                    _warnTitle.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
-                    _warnSub.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
-                    _warnIcon.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
+                    _lastWarnBlink = blink;
+                    _lastRenderedWarnIdx = _warnIndex;
+                    _lastRenderedWarnTotal = _warnAlerts.Count;
+
+                    string pagination = _warnAlerts.Count > 1 ? $"{_warnIndex + 1}/{_warnAlerts.Count}" : item.TelemetryAffix;
+                    _warnTitle.SetTextSafe(item.MainTitle);
+                    _warnSub.SetTextSafe(pagination);
+                    _warnIcon.SetTextSafe("▲");
+
+                    if (blink)
+                    {
+                        _warnBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger, theme));
+                        _warnOutline.SetColor(theme.DangerColor);
+                        _warnPipBar.SetColor(theme.DangerColor);
+                        _warnTitle.SetColor(theme.DangerColor);
+                        _warnSub.SetColor(theme.DangerColor);
+                        _warnIcon.SetColor(theme.DangerColor);
+                    }
+                    else
+                    {
+                        _warnBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme));
+                        _warnOutline.SetColor(WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Faint));
+                        _warnPipBar.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.30f));
+                        _warnTitle.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
+                        _warnSub.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
+                        _warnIcon.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
+                    }
                 }
             }
             else

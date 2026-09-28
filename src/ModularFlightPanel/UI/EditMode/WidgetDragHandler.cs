@@ -5,6 +5,8 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
+using ModularFlightPanel.UI.HUD;
 using ModularFlightPanel.UI.Widgets.Controls;
 
 namespace ModularFlightPanel.UI
@@ -59,6 +61,43 @@ namespace ModularFlightPanel.UI
         public bool IsHovered => _isHovered;
         private bool _isDragging = false;
         private Vector2 _dragTotalDelta = Vector2.zero;
+
+        private IWidgetControl _draggedControl = null;
+        private Vector2 _controlStartOffset = Vector2.zero;
+        private Vector2 _controlTotalDelta = Vector2.zero;
+        private bool _isDraggingControl = false;
+
+        private IWidgetControl FindSubControlAtScreenPoint(Vector2 screenPoint)
+        {
+            if (_ownerWidget?.Controls?.All == null) return null;
+            var list = _ownerWidget.Controls.All;
+            Camera cam = (_canvas == null || _canvas.renderMode == RenderMode.ScreenSpaceOverlay) ? null : _canvas.worldCamera;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var ctrl = list[i];
+                if (ctrl == null || !ctrl.IsVisible) continue;
+                var rt = ctrl.RectTransform;
+                if (rt == null || !rt.gameObject.activeInHierarchy) continue;
+                if (RectTransformUtility.RectangleContainsScreenPoint(rt, screenPoint, cam))
+                {
+                    return ctrl;
+                }
+            }
+            return null;
+        }
+
+        private void Update()
+        {
+            if (!IsEditModeActive) return;
+            if (_isHovered && !_isDragging && !_isDraggingControl && HUDEditModeToolbar.IsSubControlCustomizerOpen && WidgetSelectionManager.IsSelected(_ownerWidget))
+            {
+                var hit = FindSubControlAtScreenPoint(Input.mousePosition);
+                if (hit != null)
+                {
+                    WidgetControlHighlighter.HighlightedControl = hit;
+                }
+            }
+        }
 
         public void Initialize(BaseFlightWidget owner, Canvas canvas)
         {
@@ -254,6 +293,25 @@ namespace ModularFlightPanel.UI
         {
             if (!IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar) return;
 
+            // 优先拦截：处于微控件精细定制态且命中下属微控件
+            if (HUDEditModeToolbar.IsSubControlCustomizerOpen && _ownerWidget != null && _ownerWidget.Controls != null && WidgetSelectionManager.IsSelected(_ownerWidget))
+            {
+                var hitControl = FindSubControlAtScreenPoint(eventData.position);
+                if (hitControl != null)
+                {
+                    _draggedControl = hitControl;
+                    _isDraggingControl = true;
+                    _controlStartOffset = hitControl.CurrentOffset;
+                    _controlTotalDelta = Vector2.zero;
+                    WidgetControlHighlighter.HighlightedControl = hitControl;
+                    _isDragging = false;
+                    WidgetEditHistory.BeginAction();
+                    return;
+                }
+            }
+            _isDraggingControl = false;
+            _draggedControl = null;
+
             // 锁定图层拦截：禁止画布直接拖拽，引导用户按 L 或在图层面板解锁
             if (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked)
             {
@@ -295,6 +353,45 @@ namespace ModularFlightPanel.UI
         {
             if (!IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar || _rectTransform == null || _canvas == null) return;
             if (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked) return;
+
+            // 1. 微控件直接平移与磁吸拖拽
+            if (_isDraggingControl && _draggedControl != null)
+            {
+                Vector2 subDelta = eventData.delta / _canvas.scaleFactor;
+                _controlTotalDelta += subDelta;
+
+                Vector2 rawOffset = _controlStartOffset + _controlTotalDelta;
+
+                // Shift 轴向锁定 (纯水平或纯垂直)
+                bool shiftKey = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+                if (shiftKey)
+                {
+                    if (Mathf.Abs(_controlTotalDelta.x) > Mathf.Abs(_controlTotalDelta.y))
+                    {
+                        rawOffset.y = _controlStartOffset.y;
+                    }
+                    else
+                    {
+                        rawOffset.x = _controlStartOffset.x;
+                    }
+                }
+
+                // 原点磁吸贴合 (Snap to Origin, 6px 阈值)
+                if (Mathf.Abs(rawOffset.x) < 6f) rawOffset.x = 0f;
+                if (Mathf.Abs(rawOffset.y) < 6f) rawOffset.y = 0f;
+
+                // 基础 5px 网格吸附 (如果启用了磁吸)
+                if (EnableMagneticSnap)
+                {
+                    rawOffset.x = Mathf.Round(rawOffset.x / 5f) * 5f;
+                    rawOffset.y = Mathf.Round(rawOffset.y / 5f) * 5f;
+                }
+
+                _draggedControl.ApplyOffset(rawOffset);
+                _ownerWidget.Config?.SetSubElementOffset(_draggedControl.Id, rawOffset);
+                WidgetControlHighlighter.HighlightedControl = _draggedControl;
+                return;
+            }
 
             _isDragging = true;
             Vector2 delta = eventData.delta / _canvas.scaleFactor;
@@ -358,6 +455,15 @@ namespace ModularFlightPanel.UI
         public void OnEndDrag(PointerEventData eventData)
         {
             if (!IsEditModeActive || (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked)) return;
+
+            if (_isDraggingControl)
+            {
+                _isDraggingControl = false;
+                _draggedControl = null;
+                WidgetLayoutManager.Instance.SaveLayout();
+                WidgetEditHistory.CommitAction(I18n.TrFormat("DRAG_HIST_MOVE_FMT", _ownerWidget?.DisplayName ?? ""));
+                return;
+            }
 
             WidgetSmartGuides.Instance?.HideAllGuides();
 

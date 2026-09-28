@@ -416,6 +416,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private double _lastRoll = -9999.0;
         private double _lastPitch = -9999.0;
+        private double _lastHeading = -9999.0;
         private FlightSASMode _lastMode = (FlightSASMode)(-1);
         private bool _lastSasOn = false;
         private bool _lastDirectorLocked = false;
@@ -438,8 +439,13 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
 
+            // 6. 当前 SAS 模式与开关高亮指示 (提前判断 modeChanged 以驱动几何稳态剪枝)
+            FlightSASMode currentMode = telemetry.CurrentSASMode;
+            bool sasOn = telemetry.IsSASEnabled;
+            bool modeChanged = !_hasInitializedState || currentMode != _lastMode || sasOn != _lastSasOn;
+
             // 1. 动态 3D 人造地平仪与俯仰阶梯解算 (仅在 3D 模式下激活)
-            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.05 || Math.Abs(telemetry.Pitch - _lastPitch) > 0.05;
+            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.02 || Math.Abs(telemetry.Pitch - _lastPitch) > 0.02 || Math.Abs(telemetry.Heading - _lastHeading) > 0.02;
             if (_displayMode == SASDialDisplayMode.Mode3D)
             {
                 if (_horizonRoot != null)
@@ -464,7 +470,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 2. 目标航向导引计算 (2D 与 3D 模式均实时解算锁定状态与误差矢量)
             if (telemetry.IsSASEnabled)
             {
-                UpdateSASFlightDirector(telemetry, s, theme);
+                UpdateSASFlightDirector(telemetry, s, theme, attDirty, modeChanged);
             }
             else
             {
@@ -479,10 +485,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 飞船云台旋转与 3D 俯仰透视收缩 (2D/3D 模式统一由当前姿态与导引状态权威驱动)
-            UpdateSilhouetteAttitude(telemetry, s);
+            UpdateSilhouetteAttitude(telemetry, s, attDirty, modeChanged);
 
             _lastRoll = telemetry.Roll;
             _lastPitch = telemetry.Pitch;
+            _lastHeading = telemetry.Heading;
 
             // 4. 纹理保底检查
             if (_silhouetteRawImage != null && _silhouetteRawImage.texture == null)
@@ -515,9 +522,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 6. 当前 SAS 模式与开关高亮指示 (Dirty Checking + 100% 语义化驱动)
-            FlightSASMode currentMode = telemetry.CurrentSASMode;
-            bool sasOn = telemetry.IsSASEnabled;
-
             if (!_hasInitializedState || currentMode != _lastMode || sasOn != _lastSasOn)
             {
                 _lastMode = currentMode;
@@ -538,7 +542,7 @@ namespace ModularFlightPanel.UI.Widgets
             UpdateStatusBadge(currentMode, sasOn, theme);
         }
 
-        private void UpdateSilhouetteAttitude(IFlightTelemetry telemetry, float s)
+        private void UpdateSilhouetteAttitude(IFlightTelemetry telemetry, float s, bool attDirty, bool modeChanged)
         {
             if (_shipSilhouette == null) return;
 
@@ -577,24 +581,27 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 平滑阻尼过渡 (角度域，自动处理 360° 回绕)
+            // 平滑阻尼过渡 (稳态死区保护，消除平稳巡航时的三角函数与四元数开销)
             float dt = Time.unscaledDeltaTime;
-            _smoothedRotZ = Mathf.SmoothDampAngle(_smoothedRotZ, targetRotZ, ref _rotZVelocity, kSilhouetteSmoothTime, Mathf.Infinity, dt);
-            _shipSilhouette.transform.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _smoothedRotZ), 0.05f);
+            if (attDirty || modeChanged || Mathf.Abs(_rotZVelocity) > 0.001f || Mathf.Abs(Mathf.DeltaAngle(_smoothedRotZ, targetRotZ)) > 0.02f)
+            {
+                _smoothedRotZ = Mathf.SmoothDampAngle(_smoothedRotZ, targetRotZ, ref _rotZVelocity, kSilhouetteSmoothTime, Mathf.Infinity, dt);
+                _shipSilhouette.transform.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _smoothedRotZ), 0.05f);
 
-            if (_displayMode == SASDialDisplayMode.Mode3D)
-            {
-                float pitchRad = (float)telemetry.Pitch * Mathf.Deg2Rad;
-                float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.6f), 0.76f, 1.0f);
-                _shipSilhouette.transform.SetLocalScaleSafe(new Vector3(1.0f, foreshortenY, 1.0f), 0.005f);
-            }
-            else
-            {
-                _shipSilhouette.transform.SetLocalScaleSafe(Vector3.one, 0.005f);
+                if (_displayMode == SASDialDisplayMode.Mode3D)
+                {
+                    float pitchRad = (float)telemetry.Pitch * Mathf.Deg2Rad;
+                    float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.6f), 0.76f, 1.0f);
+                    _shipSilhouette.transform.SetLocalScaleSafe(new Vector3(1.0f, foreshortenY, 1.0f), 0.005f);
+                }
+                else
+                {
+                    _shipSilhouette.transform.SetLocalScaleSafe(Vector3.one, 0.005f);
+                }
             }
         }
 
-        private void UpdateSASFlightDirector(IFlightTelemetry telemetry, float s, ThemeConfig theme)
+        private void UpdateSASFlightDirector(IFlightTelemetry telemetry, float s, ThemeConfig theme, bool attDirty, bool modeChanged)
         {
             if (_sasDirectorRoot == null || _sasDirectorRawImage == null) return;
 
@@ -619,6 +626,12 @@ namespace ModularFlightPanel.UI.Widgets
                 _sasDirectorRoot.SetLocalRotationSafe(Quaternion.identity);
                 _sasDirectorRawImage.SetColor(theme.AccentPrimary);
                 _sasDirectorRoot.SetActiveSafe(false);
+                return;
+            }
+
+            // 稳态锁定早期退出：已处于精准锁定且姿态无扰动时直接跳过向量检索与平滑阻尼
+            if (_isDirectorLocked && !attDirty && !modeChanged && _directorPosVelocity.sqrMagnitude < 0.0001f && _smoothedDirectorPos.sqrMagnitude < 0.0001f)
+            {
                 return;
             }
 
