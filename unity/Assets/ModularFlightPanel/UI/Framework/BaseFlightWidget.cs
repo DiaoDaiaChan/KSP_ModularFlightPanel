@@ -9,31 +9,13 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI
 {
     /// <summary>
-    /// 航电数据心跳上下文参数包（强类型只读传递，零 GC）
-    /// </summary>
-    public struct FlightHeartbeatContext
-    {
-        public IFlightTelemetry Telemetry;
-        public float DeltaTime;
-        public bool IsManeuvering;
-        public double UniversalTime;
-
-        public FlightHeartbeatContext(IFlightTelemetry telem, float dt)
-        {
-            Telemetry = telem;
-            DeltaTime = dt;
-            IsManeuvering = telem != null && (telem.Throttle > 0.01f || telem.DynamicPressure > 0.1 || telem.HasManeuverNode);
-            UniversalTime = telem != null ? telem.UniversalTime : 0.0;
-        }
-    }
-
-    /// <summary>
     /// 所有模块化飞行小组件必须继承的统一基类
     /// 自动提供：自由拖拽句柄绑定、分辨率响应、主题与着色器样式管道 (WidgetStyleManager)、
     /// 独立画布渲染隔离 (Sub-Canvas Isolation)、生命周期与阶梯 Tick 刷新率管控 (WidgetRenderManager)、
-    /// 全自动化交互侦测与 EventSystem 射线按需裁剪 (Raycast Target Pruning)
+    /// 全自动化交互侦测与 EventSystem 射线按需裁剪 (Raycast Target Pruning)、
+    /// 集中式数据心跳驱动与物理步长解算 (IDataHeartBeat)
     /// </summary>
-    public abstract class BaseFlightWidget : MonoBehaviour
+    public abstract class BaseFlightWidget : MonoBehaviour, IDataHeartBeat
     {
         public WidgetConfig Config { get; set; }
         public string WidgetId => Config?.WidgetId ?? "unknown";
@@ -648,7 +630,7 @@ namespace ModularFlightPanel.UI
         /// 专用于执行遥测参数计算、物理量解算、状态机轮询与微控件赋值。
         /// 默认实现自动回退调用 OnUpdateTelemetry(context.Telemetry)，确保全库 46 个存量组件 100% 向后兼容。
         /// </summary>
-        protected virtual void OnDataHeartBeat(in FlightHeartbeatContext context)
+        public virtual void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             OnUpdateTelemetry(context.Telemetry);
         }
