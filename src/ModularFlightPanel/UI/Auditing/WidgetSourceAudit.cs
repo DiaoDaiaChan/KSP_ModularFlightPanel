@@ -1212,16 +1212,17 @@ namespace ModularFlightPanel.UI
                         + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType + " context)）");
                 }
 
-                // 2. DataHeartBeat 纯净性检查：严禁在数据心跳或其调用的类内辅助方法中混写 UI 绘制与图元操作
-                var reachableFromHeartbeat = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.DataHeartBeatMethod);
-                foreach (var method in reachableFromHeartbeat)
+                // 2. DataHeartBeat 纯净性检查：严禁在数据心跳或其调用的类内辅助方法/属性中混写 UI 绘制与图元操作
+                var reachableFromHeartbeat = RoslynAstHelper.CollectReachableLocalMembers(node.Decl, node.DataHeartBeatMethod);
+                foreach (var member in reachableFromHeartbeat)
                 {
-                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(method);
+                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(member);
                     if (drawOps.Count > 0)
                     {
                         var firstOp = drawOps[0];
                         int line = RoslynAstHelper.GetLine(firstOp.Node);
-                        string locDesc = method == node.DataHeartBeatMethod ? "OnDataHeartBeat 数据心跳中" : $"OnDataHeartBeat 调用的辅助方法 {method.Identifier.ValueText} 中";
+                        string memberName = (member is MethodDeclarationSyntax m) ? m.Identifier.ValueText : ((member is PropertyDeclarationSyntax p) ? p.Identifier.ValueText : "辅助成员");
+                        string locDesc = member == node.DataHeartBeatMethod ? "OnDataHeartBeat 数据心跳中" : $"OnDataHeartBeat 调用的辅助成员 {memberName} 中";
                         Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
                             $"{locDesc}检测到 UI 绘制与图元操作 ({firstOp.MatchedText})。根据架构收拢规范，数据心跳专注于物理解算与遥测采样，UI 绘制必须收拢至 OnUIDrawLoop 里面");
                         break;
@@ -1232,16 +1233,17 @@ namespace ModularFlightPanel.UI
             // 3. 遥测数据更新收拢检查：遥测数据更新必须写在 DataHeartBeat 里面，禁止在旧版 OnUpdateTelemetry 中编写遥测逻辑
             if (node.TelemetryMethod != null)
             {
-                var reachableFromTelem = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.TelemetryMethod);
+                var reachableFromTelem = RoslynAstHelper.CollectReachableLocalMembers(node.Decl, node.TelemetryMethod);
                 bool foundTelemOp = false;
-                foreach (var method in reachableFromTelem)
+                foreach (var member in reachableFromTelem)
                 {
-                    var telemOps = RoslynAstHelper.FindTelemetryUpdateExpressions(method);
+                    var telemOps = RoslynAstHelper.FindTelemetryUpdateExpressions(member);
                     if (telemOps.Count > 0)
                     {
                         var firstOp = telemOps[0];
                         int line = RoslynAstHelper.GetLine(firstOp.Node);
-                        string locDesc = method == node.TelemetryMethod ? "OnUpdateTelemetry 中" : $"OnUpdateTelemetry 调用的辅助方法 {method.Identifier.ValueText} 中";
+                        string memberName = (member is MethodDeclarationSyntax m) ? m.Identifier.ValueText : ((member is PropertyDeclarationSyntax p) ? p.Identifier.ValueText : "辅助成员");
+                        string locDesc = member == node.TelemetryMethod ? "OnUpdateTelemetry 中" : $"OnUpdateTelemetry 调用的辅助成员 {memberName} 中";
                         Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
                             $"{locDesc}检测到遥测数据更新 ({firstOp.MatchedText})。根据架构收拢规范，遥测数据更新必须全部收拢至 OnDataHeartBeat 里面，禁止在旧版 OnUpdateTelemetry 中更新遥测");
                         foundTelemOp = true;
@@ -1257,22 +1259,37 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            // 4. 禁止在 UIDrawLoop 内部或其调用的类内辅助方法中采样遥测数据
+            // 4. 禁止在 UIDrawLoop 内部或其调用的类内辅助方法/属性中采样遥测数据
             if (node.UIDrawLoopMethod != null)
             {
-                var reachableFromDraw = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.UIDrawLoopMethod);
-                foreach (var method in reachableFromDraw)
+                var reachableFromDraw = RoslynAstHelper.CollectReachableLocalMembers(node.Decl, node.UIDrawLoopMethod);
+                foreach (var member in reachableFromDraw)
                 {
-                    var telemOpsInDraw = RoslynAstHelper.FindTelemetryUpdateExpressions(method);
+                    var telemOpsInDraw = RoslynAstHelper.FindTelemetryUpdateExpressions(member);
                     if (telemOpsInDraw.Count > 0)
                     {
                         var firstOp = telemOpsInDraw[0];
                         int line = RoslynAstHelper.GetLine(firstOp.Node);
-                        string locDesc = method == node.UIDrawLoopMethod ? "OnUIDrawLoop 内部" : $"OnUIDrawLoop 调用的辅助方法 {method.Identifier.ValueText} 内部";
+                        string memberName = (member is MethodDeclarationSyntax m) ? m.Identifier.ValueText : ((member is PropertyDeclarationSyntax p) ? p.Identifier.ValueText : "辅助成员");
+                        string locDesc = member == node.UIDrawLoopMethod ? "OnUIDrawLoop 内部" : $"OnUIDrawLoop 调用的辅助成员 {memberName} 内部";
                         Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
                             $"{locDesc}禁止执行遥测数据采样或物理解算 ({firstOp.MatchedText})。根据架构收拢规范，遥测数据更新必须写在 OnDataHeartBeat 里面，UI 绘制循环仅负责视觉呈现");
                         break;
                     }
+                }
+            }
+
+            // 5. 时间步长规范化：数据心跳必须使用 context.DeltaTime，禁止直接使用 Time.deltaTime / Time.unscaledDeltaTime
+            if (node.DataHeartBeatMethod != null)
+            {
+                var dtMatches = node.DataHeartBeatMethod.DescendantNodes().OfType<MemberAccessExpressionSyntax>()
+                    .Where(ma => ma.ToString() == "Time.deltaTime" || ma.ToString() == "Time.unscaledDeltaTime")
+                    .ToList();
+                if (dtMatches.Count > 0)
+                {
+                    int line = RoslynAstHelper.GetLine(dtMatches[0]);
+                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                        $"OnDataHeartBeat 中检测到直接读取帧率时间步长 ({dtMatches[0]})。数据心跳受 HeartBeatTier 独立节流，必须使用 context.DeltaTime 确保物理积分与心跳步长精确对齐");
                 }
             }
         }
@@ -1307,15 +1324,16 @@ namespace ModularFlightPanel.UI
             // 2. UI 绘制收拢检查：所有 UI 绘制必须写在 UIDrawLoop 里面，禁止在旧版 OnUpdateTelemetry 中执行绘制
             if (node.TelemetryMethod != null)
             {
-                var reachableFromTelem = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.TelemetryMethod);
-                foreach (var method in reachableFromTelem)
+                var reachableFromTelem = RoslynAstHelper.CollectReachableLocalMembers(node.Decl, node.TelemetryMethod);
+                foreach (var member in reachableFromTelem)
                 {
-                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(method);
+                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(member);
                     if (drawOps.Count > 0)
                     {
                         var firstOp = drawOps[0];
                         int line = RoslynAstHelper.GetLine(firstOp.Node);
-                        string locDesc = method == node.TelemetryMethod ? "OnUpdateTelemetry 中" : $"OnUpdateTelemetry 调用的辅助方法 {method.Identifier.ValueText} 中";
+                        string memberName = (member is MethodDeclarationSyntax m) ? m.Identifier.ValueText : ((member is PropertyDeclarationSyntax p) ? p.Identifier.ValueText : "辅助成员");
+                        string locDesc = member == node.TelemetryMethod ? "OnUpdateTelemetry 中" : $"OnUpdateTelemetry 调用的辅助成员 {memberName} 中";
                         Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", line,
                             $"{locDesc}检测到 UI 绘制与图元操作 ({firstOp.MatchedText})。根据架构收拢规范，所有 UI 绘制、文本更新与材质着色器提交必须收拢至 OnUIDrawLoop 里面");
                         break;
@@ -1742,6 +1760,26 @@ namespace ModularFlightPanel.UI
                 "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { var v = DoProbeHelper(); }\n        private double DoProbeHelper() { return ExternalProbeRegistry.ResolveNumeric(\"TAG\", \"KEY\"); }");
             var drawLoopIndirectProbeReport = Scan(new[] { MakeFile("DrawIndirectProbe.cs", drawLoopIndirectProbeSrc) });
             check(drawLoopIndirectProbeReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnUIDrawLoop 间接调用辅助方法查询外部探针未拦下");
+
+            // 属性访问逃逸测试：通过属性 Getter/Setter 隐蔽执行 UI 绘制或遥测采样必须被访问图穿透拦截
+            string dhbPropertyDrawSrc = compliant.Replace(
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { }",
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { DrawProp = \"123\"; }\n        private string DrawProp { set { Value.Text = value; } }");
+            var dhbPropertyDrawReport = Scan(new[] { MakeFile("DhbPropDraw.cs", dhbPropertyDrawSrc) });
+            check(dhbPropertyDrawReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnDataHeartBeat 属性 Setter 混写 UI 绘制未拦下");
+
+            string drawLoopPropertyTelemSrc = compliant.Replace(
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }",
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { var v = ProbeProp; }\n        private double ProbeProp => ExternalProbeRegistry.ResolveNumeric(\"TAG\", \"KEY\");");
+            var drawLoopPropertyTelemReport = Scan(new[] { MakeFile("DrawPropTelem.cs", drawLoopPropertyTelemSrc) });
+            check(drawLoopPropertyTelemReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnUIDrawLoop 属性 Getter 采样遥测未拦下");
+
+            // 时间步长直接读取阻断测试：OnDataHeartBeat 禁止直接使用 Time.deltaTime
+            string dhbTimeDeltaSrc = compliant.Replace(
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { }",
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { float dt = Time.deltaTime; }");
+            var dhbTimeDeltaReport = Scan(new[] { MakeFile("DhbTimeDelta.cs", dhbTimeDeltaSrc) });
+            check(dhbTimeDeltaReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnDataHeartBeat 直接使用 Time.deltaTime 未拦下");
 
 
             // ── 6. SPEC-002 阶梯：缺失 / 强转 / 注释伪造 / 块状 get / 字段回填 / 满帧声明 ──

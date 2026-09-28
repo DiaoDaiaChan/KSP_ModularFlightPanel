@@ -584,12 +584,12 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
-        /// 从指定入口方法出发，沿类内方法调用图（Call Graph）递归收集所有可达的本类成员方法（含入口方法自身）。
-        /// 专用于穿透审计包装在私有/内部 helper 方法中的违规操作。
+        /// 从指定入口方法出发，沿类内成员调用与访问图（Call & Access Graph）递归收集所有可达的本类成员（包含方法与属性，含入口方法自身）。
+        /// 专用于穿透审计包装在私有 helper 方法或属性 Getter/Setter 中的违规操作。
         /// </summary>
-        public static List<MethodDeclarationSyntax> CollectReachableLocalMethods(ClassDeclarationSyntax classDecl, MethodDeclarationSyntax entryMethod)
+        public static List<MemberDeclarationSyntax> CollectReachableLocalMembers(ClassDeclarationSyntax classDecl, MethodDeclarationSyntax entryMethod)
         {
-            var result = new List<MethodDeclarationSyntax>();
+            var result = new List<MemberDeclarationSyntax>();
             if (classDecl == null || entryMethod == null) return result;
 
             var methodsByName = new Dictionary<string, List<MethodDeclarationSyntax>>(StringComparer.Ordinal);
@@ -604,8 +604,20 @@ namespace ModularFlightPanel.UI.Auditing
                 list.Add(m);
             }
 
-            var visited = new HashSet<MethodDeclarationSyntax>();
-            var queue = new Queue<MethodDeclarationSyntax>();
+            var propertiesByName = new Dictionary<string, List<PropertyDeclarationSyntax>>(StringComparer.Ordinal);
+            foreach (var p in classDecl.Members.OfType<PropertyDeclarationSyntax>())
+            {
+                string name = p.Identifier.ValueText;
+                if (!propertiesByName.TryGetValue(name, out var list))
+                {
+                    list = new List<PropertyDeclarationSyntax>();
+                    propertiesByName[name] = list;
+                }
+                list.Add(p);
+            }
+
+            var visited = new HashSet<MemberDeclarationSyntax>();
+            var queue = new Queue<MemberDeclarationSyntax>();
 
             visited.Add(entryMethod);
             queue.Enqueue(entryMethod);
@@ -614,12 +626,13 @@ namespace ModularFlightPanel.UI.Auditing
             while (queue.Count > 0)
             {
                 var current = queue.Dequeue();
+
+                // 1. 方法调用
                 foreach (var inv in current.DescendantNodes().OfType<InvocationExpressionSyntax>())
                 {
                     string invokedName = GetInvokedMethodName(inv);
                     if (string.IsNullOrEmpty(invokedName)) continue;
 
-                    // 仅对裸调用 DoHelper() 或 this.DoHelper() 追踪类内方法
                     var receiver = GetInvocationReceiver(inv);
                     if (receiver != null && !(receiver is ThisExpressionSyntax))
                     {
@@ -638,9 +651,43 @@ namespace ModularFlightPanel.UI.Auditing
                         }
                     }
                 }
+
+                // 2. 属性访问 (裸标识符或 this.Prop)
+                foreach (var id in current.DescendantNodes().OfType<IdentifierNameSyntax>())
+                {
+                    string name = id.Identifier.ValueText;
+                    if (propertiesByName.TryGetValue(name, out var matchingProps))
+                    {
+                        if (id.Parent is MemberAccessExpressionSyntax ma && ma.Name == id)
+                        {
+                            if (!(ma.Expression is ThisExpressionSyntax)) continue;
+                        }
+                        else if (id.Parent is InvocationExpressionSyntax)
+                        {
+                            continue; // 已由方法调用处理
+                        }
+
+                        foreach (var target in matchingProps)
+                        {
+                            if (visited.Add(target))
+                            {
+                                queue.Enqueue(target);
+                                result.Add(target);
+                            }
+                        }
+                    }
+                }
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 向后兼容的方法级收集包装器
+        /// </summary>
+        public static List<MethodDeclarationSyntax> CollectReachableLocalMethods(ClassDeclarationSyntax classDecl, MethodDeclarationSyntax entryMethod)
+        {
+            return CollectReachableLocalMembers(classDecl, entryMethod).OfType<MethodDeclarationSyntax>().ToList();
         }
 
         /// <summary>
