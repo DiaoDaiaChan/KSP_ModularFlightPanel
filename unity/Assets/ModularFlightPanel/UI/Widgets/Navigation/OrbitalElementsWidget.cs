@@ -733,7 +733,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isFullMode)
             {
                 UpdateFullModeReadouts(_dataAp, _dataPe, _dataTAp, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
-                float now = Time.unscaledTime;
+                float now = context.UnscaledTime;
                 if ((now - _lastMeshRebuildTime >= 0.25f || _lastMeshRebuildTime < 0f) && CheckDirty(_dataSma, _dataEcc, _dataInc, _dataLan, _dataAop))
                 {
                     _lastMeshRebuildTime = now;

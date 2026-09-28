@@ -486,7 +486,11 @@ namespace ModularFlightPanel.UI.Auditing
                     text.StartsWith("_telemetry.", StringComparison.Ordinal) ||
                     text.StartsWith("context.Telemetry.", StringComparison.Ordinal) ||
                     text.StartsWith("ctx.Telemetry.", StringComparison.Ordinal) ||
-                    text.StartsWith("FlightGlobals.", StringComparison.Ordinal))
+                    text.StartsWith("FlightGlobals.", StringComparison.Ordinal) ||
+                    text.StartsWith("ExternalProbeRegistry.", StringComparison.Ordinal) ||
+                    text.StartsWith("TelemetryProbeManager.", StringComparison.Ordinal) ||
+                    text.StartsWith("TelemetryTokenEngine.", StringComparison.Ordinal) ||
+                    text.StartsWith("Planetarium.", StringComparison.Ordinal))
                 {
                     matchedText = text;
                     return true;
@@ -497,7 +501,11 @@ namespace ModularFlightPanel.UI.Auditing
                 string expr = inv.Expression.ToString();
                 if (expr.EndsWith("EvalNumeric", StringComparison.Ordinal) ||
                     expr.EndsWith("EvalToken", StringComparison.Ordinal) ||
-                    expr.Contains("GetTemplateChannel"))
+                    expr.Contains("GetTemplateChannel") ||
+                    expr.EndsWith("TryGetPublishedChannel", StringComparison.Ordinal) ||
+                    expr.EndsWith("ResolveNumeric", StringComparison.Ordinal) ||
+                    expr.EndsWith("ResolveString", StringComparison.Ordinal) ||
+                    expr.EndsWith("IsProbeTagAvailable", StringComparison.Ordinal))
                 {
                     matchedText = expr + "(...)";
                     return true;
@@ -544,12 +552,21 @@ namespace ModularFlightPanel.UI.Auditing
                     expr.EndsWith("SetAlpha", StringComparison.Ordinal) ||
                     expr.EndsWith("SetFillAmountSafe", StringComparison.Ordinal) ||
                     expr.EndsWith("SetImageFillIfChanged", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetBarFill", StringComparison.Ordinal) ||
                     expr.EndsWith(".SetFloat", StringComparison.Ordinal) ||
                     expr.EndsWith(".SetColor", StringComparison.Ordinal) ||
                     expr.EndsWith(".SetVector", StringComparison.Ordinal) ||
                     expr.EndsWith(".SetTexture", StringComparison.Ordinal) ||
                     expr.EndsWith("ApplyUiMaterial", StringComparison.Ordinal) ||
                     expr.EndsWith("GetUiMaterial", StringComparison.Ordinal) ||
+                    expr.EndsWith("ApplyCard", StringComparison.Ordinal) ||
+                    expr.EndsWith("ApplyText", StringComparison.Ordinal) ||
+                    expr.EndsWith("ApplyButton", StringComparison.Ordinal) ||
+                    expr.EndsWith("ApplyMeter", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetVerticesDirty", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetLayoutDirty", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetMaterialDirty", StringComparison.Ordinal) ||
+                    expr.EndsWith("SetAllDirty", StringComparison.Ordinal) ||
                     expr.EndsWith("SetAnchoredPositionSafe", StringComparison.Ordinal) ||
                     expr.EndsWith("SetSizeDeltaSafe", StringComparison.Ordinal) ||
                     expr.EndsWith("SetLocalScaleSafe", StringComparison.Ordinal) ||
@@ -564,6 +581,66 @@ namespace ModularFlightPanel.UI.Auditing
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// 从指定入口方法出发，沿类内方法调用图（Call Graph）递归收集所有可达的本类成员方法（含入口方法自身）。
+        /// 专用于穿透审计包装在私有/内部 helper 方法中的违规操作。
+        /// </summary>
+        public static List<MethodDeclarationSyntax> CollectReachableLocalMethods(ClassDeclarationSyntax classDecl, MethodDeclarationSyntax entryMethod)
+        {
+            var result = new List<MethodDeclarationSyntax>();
+            if (classDecl == null || entryMethod == null) return result;
+
+            var methodsByName = new Dictionary<string, List<MethodDeclarationSyntax>>(StringComparer.Ordinal);
+            foreach (var m in classDecl.Members.OfType<MethodDeclarationSyntax>())
+            {
+                string name = m.Identifier.ValueText;
+                if (!methodsByName.TryGetValue(name, out var list))
+                {
+                    list = new List<MethodDeclarationSyntax>();
+                    methodsByName[name] = list;
+                }
+                list.Add(m);
+            }
+
+            var visited = new HashSet<MethodDeclarationSyntax>();
+            var queue = new Queue<MethodDeclarationSyntax>();
+
+            visited.Add(entryMethod);
+            queue.Enqueue(entryMethod);
+            result.Add(entryMethod);
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                foreach (var inv in current.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    string invokedName = GetInvokedMethodName(inv);
+                    if (string.IsNullOrEmpty(invokedName)) continue;
+
+                    // 仅对裸调用 DoHelper() 或 this.DoHelper() 追踪类内方法
+                    var receiver = GetInvocationReceiver(inv);
+                    if (receiver != null && !(receiver is ThisExpressionSyntax))
+                    {
+                        continue;
+                    }
+
+                    if (methodsByName.TryGetValue(invokedName, out var matchingMethods))
+                    {
+                        foreach (var target in matchingMethods)
+                        {
+                            if (visited.Add(target))
+                            {
+                                queue.Enqueue(target);
+                                result.Add(target);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return result;
         }
 
         /// <summary>

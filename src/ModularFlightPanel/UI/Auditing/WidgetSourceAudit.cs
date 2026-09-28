@@ -1212,31 +1212,44 @@ namespace ModularFlightPanel.UI
                         + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType + " context)）");
                 }
 
-                // 2. DataHeartBeat 纯净性检查：严禁在数据心跳中混写 UI 绘制与图元操作
-                var drawOps = RoslynAstHelper.FindUIDrawExpressions(node.DataHeartBeatMethod);
-                if (drawOps.Count > 0)
+                // 2. DataHeartBeat 纯净性检查：严禁在数据心跳或其调用的类内辅助方法中混写 UI 绘制与图元操作
+                var reachableFromHeartbeat = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.DataHeartBeatMethod);
+                foreach (var method in reachableFromHeartbeat)
                 {
-                    var firstOp = drawOps[0];
-                    int line = RoslynAstHelper.GetLine(firstOp.Node);
-                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
-                        "OnDataHeartBeat 数据心跳中检测到 UI 绘制与图元操作 (" + firstOp.MatchedText
-                        + ")。根据架构收拢规范，数据心跳专注于物理解算与遥测采样，UI 绘制必须收拢至 OnUIDrawLoop 里面");
+                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(method);
+                    if (drawOps.Count > 0)
+                    {
+                        var firstOp = drawOps[0];
+                        int line = RoslynAstHelper.GetLine(firstOp.Node);
+                        string locDesc = method == node.DataHeartBeatMethod ? "OnDataHeartBeat 数据心跳中" : $"OnDataHeartBeat 调用的辅助方法 {method.Identifier.ValueText} 中";
+                        Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                            $"{locDesc}检测到 UI 绘制与图元操作 ({firstOp.MatchedText})。根据架构收拢规范，数据心跳专注于物理解算与遥测采样，UI 绘制必须收拢至 OnUIDrawLoop 里面");
+                        break;
+                    }
                 }
             }
 
             // 3. 遥测数据更新收拢检查：遥测数据更新必须写在 DataHeartBeat 里面，禁止在旧版 OnUpdateTelemetry 中编写遥测逻辑
             if (node.TelemetryMethod != null)
             {
-                var telemOps = RoslynAstHelper.FindTelemetryUpdateExpressions(node.TelemetryMethod);
-                if (telemOps.Count > 0)
+                var reachableFromTelem = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.TelemetryMethod);
+                bool foundTelemOp = false;
+                foreach (var method in reachableFromTelem)
                 {
-                    var firstOp = telemOps[0];
-                    int line = RoslynAstHelper.GetLine(firstOp.Node);
-                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
-                        "OnUpdateTelemetry 中检测到遥测数据更新 (" + firstOp.MatchedText
-                        + ")。根据架构收拢规范，遥测数据更新必须全部收拢至 OnDataHeartBeat 里面，禁止在旧版 OnUpdateTelemetry 中更新遥测");
+                    var telemOps = RoslynAstHelper.FindTelemetryUpdateExpressions(method);
+                    if (telemOps.Count > 0)
+                    {
+                        var firstOp = telemOps[0];
+                        int line = RoslynAstHelper.GetLine(firstOp.Node);
+                        string locDesc = method == node.TelemetryMethod ? "OnUpdateTelemetry 中" : $"OnUpdateTelemetry 调用的辅助方法 {method.Identifier.ValueText} 中";
+                        Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                            $"{locDesc}检测到遥测数据更新 ({firstOp.MatchedText})。根据架构收拢规范，遥测数据更新必须全部收拢至 OnDataHeartBeat 里面，禁止在旧版 OnUpdateTelemetry 中更新遥测");
+                        foundTelemOp = true;
+                        break;
+                    }
                 }
-                else if (node.TelemetryMethod.Body != null && node.TelemetryMethod.Body.Statements.Count > 0)
+
+                if (!foundTelemOp && node.TelemetryMethod.Body != null && node.TelemetryMethod.Body.Statements.Count > 0)
                 {
                     int line = RoslynAstHelper.GetLine(node.TelemetryMethod);
                     Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
@@ -1244,17 +1257,22 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            // 4. 禁止在 UIDrawLoop 内部采样遥测数据
+            // 4. 禁止在 UIDrawLoop 内部或其调用的类内辅助方法中采样遥测数据
             if (node.UIDrawLoopMethod != null)
             {
-                var telemOpsInDraw = RoslynAstHelper.FindTelemetryUpdateExpressions(node.UIDrawLoopMethod);
-                if (telemOpsInDraw.Count > 0)
+                var reachableFromDraw = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.UIDrawLoopMethod);
+                foreach (var method in reachableFromDraw)
                 {
-                    var firstOp = telemOpsInDraw[0];
-                    int line = RoslynAstHelper.GetLine(firstOp.Node);
-                    Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
-                        "OnUIDrawLoop 内部禁止执行遥测数据采样或物理解算 (" + firstOp.MatchedText
-                        + ")。根据架构收拢规范，遥测数据更新必须写在 OnDataHeartBeat 里面，UI 绘制循环仅负责视觉呈现");
+                    var telemOpsInDraw = RoslynAstHelper.FindTelemetryUpdateExpressions(method);
+                    if (telemOpsInDraw.Count > 0)
+                    {
+                        var firstOp = telemOpsInDraw[0];
+                        int line = RoslynAstHelper.GetLine(firstOp.Node);
+                        string locDesc = method == node.UIDrawLoopMethod ? "OnUIDrawLoop 内部" : $"OnUIDrawLoop 调用的辅助方法 {method.Identifier.ValueText} 内部";
+                        Add(report, node.FileName, WidgetSpecRules.DataHeartBeatContract, "ERROR", line,
+                            $"{locDesc}禁止执行遥测数据采样或物理解算 ({firstOp.MatchedText})。根据架构收拢规范，遥测数据更新必须写在 OnDataHeartBeat 里面，UI 绘制循环仅负责视觉呈现");
+                        break;
+                    }
                 }
             }
         }
@@ -1289,14 +1307,19 @@ namespace ModularFlightPanel.UI
             // 2. UI 绘制收拢检查：所有 UI 绘制必须写在 UIDrawLoop 里面，禁止在旧版 OnUpdateTelemetry 中执行绘制
             if (node.TelemetryMethod != null)
             {
-                var drawOps = RoslynAstHelper.FindUIDrawExpressions(node.TelemetryMethod);
-                if (drawOps.Count > 0)
+                var reachableFromTelem = RoslynAstHelper.CollectReachableLocalMethods(node.Decl, node.TelemetryMethod);
+                foreach (var method in reachableFromTelem)
                 {
-                    var firstOp = drawOps[0];
-                    int line = RoslynAstHelper.GetLine(firstOp.Node);
-                    Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", line,
-                        "OnUpdateTelemetry 中检测到 UI 绘制与图元操作 (" + firstOp.MatchedText
-                        + ")。根据架构收拢规范，所有 UI 绘制、文本更新与材质着色器提交必须收拢至 OnUIDrawLoop 里面");
+                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(method);
+                    if (drawOps.Count > 0)
+                    {
+                        var firstOp = drawOps[0];
+                        int line = RoslynAstHelper.GetLine(firstOp.Node);
+                        string locDesc = method == node.TelemetryMethod ? "OnUpdateTelemetry 中" : $"OnUpdateTelemetry 调用的辅助方法 {method.Identifier.ValueText} 中";
+                        Add(report, node.FileName, WidgetSpecRules.UIDrawLoopContract, "ERROR", line,
+                            $"{locDesc}检测到 UI 绘制与图元操作 ({firstOp.MatchedText})。根据架构收拢规范，所有 UI 绘制、文本更新与材质着色器提交必须收拢至 OnUIDrawLoop 里面");
+                        break;
+                    }
                 }
             }
         }
@@ -1706,6 +1729,19 @@ namespace ModularFlightPanel.UI
                 "public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { Value.Text = \"123\"; }");
             var telemDrawReport = Scan(new[] { MakeFile("TelemDraw.cs", telemDrawSrc) });
             check(telemDrawReport.CountByRule(WidgetSpecRules.UIDrawLoopContract) == 1, "SPEC-004D OnUpdateTelemetry 混写 UI 绘制未拦下");
+
+            // 间接辅助方法逃逸测试：调用私有辅助方法执行 UI 绘制或遥测采样必须被调用图穿透拦截
+            string dhbIndirectDrawSrc = compliant.Replace(
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { }",
+                "public override void OnDataHeartBeat(in FlightHeartbeatContext context) { DoDrawHelper(); }\n        private void DoDrawHelper() { Value.Text = \"123\"; }");
+            var dhbIndirectDrawReport = Scan(new[] { MakeFile("DhbIndirectDraw.cs", dhbIndirectDrawSrc) });
+            check(dhbIndirectDrawReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnDataHeartBeat 间接调用辅助方法混写 UI 绘制未拦下");
+
+            string drawLoopIndirectProbeSrc = compliant.Replace(
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }",
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { var v = DoProbeHelper(); }\n        private double DoProbeHelper() { return ExternalProbeRegistry.ResolveNumeric(\"TAG\", \"KEY\"); }");
+            var drawLoopIndirectProbeReport = Scan(new[] { MakeFile("DrawIndirectProbe.cs", drawLoopIndirectProbeSrc) });
+            check(drawLoopIndirectProbeReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnUIDrawLoop 间接调用辅助方法查询外部探针未拦下");
 
 
             // ── 6. SPEC-002 阶梯：缺失 / 强转 / 注释伪造 / 块状 get / 字段回填 / 满帧声明 ──
