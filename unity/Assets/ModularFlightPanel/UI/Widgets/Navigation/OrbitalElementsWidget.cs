@@ -101,12 +101,38 @@ namespace ModularFlightPanel.UI.Widgets
         private GameObject _scMarker;
         private RectTransform _scMarkerRt;
         private Image _scMarkerImg;
+        private Image _scMarkerDotImg;
+        private Outline _scOutline;
         private GameObject _scRadiusLine;
         private RectTransform _scRadiusLineRt;
         private Image _scRadiusLineImg;
         private GameObject _scVelocityArrow;
         private RectTransform _scVelocityArrowRt;
         private Image _scVelocityArrowImg;
+        private GameObject _scVelocityHead;
+        private RectTransform _scVelocityHeadRt;
+        private Image _scVelocityHeadImg;
+
+        // ── 3D 开普勒权威拓扑 UGUI 矢量标注层 (0 模糊，硬件 Outline 描边防背景重叠) ──
+        private GameObject _labelsRoot;
+        private Text _lblAxisX;
+        private Text _lblAxisY;
+        private Text _lblAxisZ;
+        private Text _lblEquator;
+        private Text _lblOrigin;
+        private Text _lblNodeAn;
+        private Text _lblNodeDn;
+        private Text _lblArcOmega;
+        private Text _lblArcInc;
+        private Text _lblVectorH;
+        private Text _lblVectorE;
+        private Text _lblArcAop;
+        private Text _lblApoapsis;
+        private Text _lblPeriapsis;
+        private Text _lblArcTa;
+        private Text _lblVectorR;
+        private Text _lblVectorV;
+        private Text _lblSpacecraft;
 
         // ── 读数防抖与字符串缓存 (避免逐帧 GC 与 Text 网格脏化) ──
         private double _lastCompactAp = double.NaN;
@@ -177,6 +203,7 @@ namespace ModularFlightPanel.UI.Widgets
         private double _lastDrawnInc = double.NaN;
         private double _lastDrawnLan = double.NaN;
         private double _lastDrawnAop = double.NaN;
+        private double _lastDrawnTra = double.NaN;
 
         private const double DefaultKerbinRadius = 600000.0;
 
@@ -184,7 +211,11 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
+            _cachedDpiScale = s;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            // 尽早烘焙语义色缓存 (确保后续微标与硬件图元初始化时获得有效色彩)
+            CacheThemeColors(theme);
 
             RectTransform.sizeDelta = CompactSize * s;
 
@@ -223,7 +254,7 @@ namespace ModularFlightPanel.UI.Widgets
             Color slotBg = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
             Color slotBorder = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost, theme);
             Color labelCol = style.GetTextColor(TextStyleRole.Label, theme);
-            Color primCol = style.GetTextColor(TextStyleRole.PrimaryValue, theme);  // 仅作构建期占位色，OnInitialize 末尾由 ApplyReadoutColors 覆盖为六根数语义色
+            Color primCol = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
             Color secCol = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
             Color unitCol = style.GetTextColor(TextStyleRole.Unit, theme);
 
@@ -289,34 +320,80 @@ namespace ModularFlightPanel.UI.Widgets
             _diagramGraphic = CreateChild<OrbitalDiagramGraphic>("Globe_Graphic", globeBox.transform,
                 new Vector2(globeBoxW - 4f * s, globeBoxH - 4f * s), Vector2.zero);
             _globeRoot = _diagramGraphic.gameObject;
-            RectTransform gRt = _diagramGraphic.rectTransform;
-
             _diagramGraphic.Widget = this;
             _diagramGraphic.raycastTarget = false;
 
+            // 3D 权威开普勒拓扑 UGUI 矢量标注层 (挂载在网格上方，带背景描边防重叠)
+            _labelsRoot = new GameObject("Diagram_Labels", typeof(RectTransform));
+            _labelsRoot.transform.SetParent(globeBox.transform, false);
+            var lblRt = _labelsRoot.GetComponent<RectTransform>();
+            lblRt.anchorMin = Vector2.zero;
+            lblRt.anchorMax = Vector2.one;
+            lblRt.sizeDelta = Vector2.zero;
+            lblRt.anchoredPosition = Vector2.zero;
+
+            _lblAxisX = CreateDiagramLabel(_labelsRoot.transform, "Lbl_AxisX", I18n.Tr("ORBIT_DIAG_X", "X (春分点)"), _cAxis, s, 9);
+            _lblAxisY = CreateDiagramLabel(_labelsRoot.transform, "Lbl_AxisY", I18n.Tr("ORBIT_DIAG_Y", "Y"), _cAxis, s, 9);
+            _lblAxisZ = CreateDiagramLabel(_labelsRoot.transform, "Lbl_AxisZ", I18n.Tr("ORBIT_DIAG_Z", "Z"), _cAxis, s, 9);
+            _lblEquator = CreateDiagramLabel(_labelsRoot.transform, "Lbl_Equator", I18n.Tr("ORBIT_DIAG_EQ", "赤道面"), _cAxis, s, 8);
+            _lblOrigin = CreateDiagramLabel(_labelsRoot.transform, "Lbl_Origin", I18n.Tr("ORBIT_DIAG_ORIGIN", "O"), _cAxis, s, 9);
+            _lblNodeAn = CreateDiagramLabel(_labelsRoot.transform, "Lbl_NodeAN", I18n.Tr("ORBIT_DIAG_AN", "AN (升交点)"), _cNode, s, 9);
+            _lblNodeDn = CreateDiagramLabel(_labelsRoot.transform, "Lbl_NodeDN", I18n.Tr("ORBIT_DIAG_DN", "DN (降交点)"), _cNode, s, 8);
+            _lblArcOmega = CreateDiagramLabel(_labelsRoot.transform, "Lbl_ArcOmega", I18n.Tr("ORBIT_ELEM_LAN", "Ω"), _cElemLan, s, 11);
+            _lblArcInc = CreateDiagramLabel(_labelsRoot.transform, "Lbl_ArcInc", I18n.Tr("ORBIT_ELEM_INC", "i"), _cElemI, s, 11);
+            _lblVectorH = CreateDiagramLabel(_labelsRoot.transform, "Lbl_VectorH", "h", _cVectorH, s, 9);
+            _lblVectorE = CreateDiagramLabel(_labelsRoot.transform, "Lbl_VectorE", "e", _cVectorE, s, 9);
+            _lblArcAop = CreateDiagramLabel(_labelsRoot.transform, "Lbl_ArcAop", I18n.Tr("ORBIT_ELEM_AOP", "ω"), _cElemAop, s, 11);
+            _lblPeriapsis = CreateDiagramLabel(_labelsRoot.transform, "Lbl_PE", I18n.Tr("ORBIT_DIAG_PE", "PE (近拱点)"), _cApPe, s, 9);
+            _lblApoapsis = CreateDiagramLabel(_labelsRoot.transform, "Lbl_AP", I18n.Tr("ORBIT_DIAG_AP", "AP (远拱点)"), _cApPe, s, 9);
+            _lblArcTa = CreateDiagramLabel(_labelsRoot.transform, "Lbl_ArcTa", I18n.Tr("ORBIT_ELEM_TA", "ν"), _cElemTa, s, 11);
+            _lblVectorR = CreateDiagramLabel(_labelsRoot.transform, "Lbl_VectorR", "r", _cVectorR, s, 9);
+            _lblVectorV = CreateDiagramLabel(_labelsRoot.transform, "Lbl_VectorV", "v", _cVectorV, s, 9);
+            _lblSpacecraft = CreateDiagramLabel(_labelsRoot.transform, "Lbl_Spacecraft", I18n.Tr("ORBIT_DIAG_SC", "SC (航天器)"), _cVessel, s, 9);
+
             // 动静分离：使用 BaseFlightWidget 标准硬件覆盖层图元 (0 CPU 网格重建，纯 Transform 偏移)
-            _scRadiusLineImg = CreateHardwareMarker(globeBox.transform, "SC_Radius_Line", new Vector2(1f, 1.2f * s), _cVectorR);
+            _scRadiusLineImg = CreateHardwareMarker(globeBox.transform, "SC_Radius_Line", new Vector2(1f, 1.5f * s), _cVectorR);
             _scRadiusLine = _scRadiusLineImg.gameObject;
             _scRadiusLineRt = _scRadiusLineImg.rectTransform;
-            _scRadiusLineRt.pivot = new Vector2(0.5f, 0.5f);
+            _scRadiusLineRt.pivot = new Vector2(0f, 0.5f);
             _scRadiusLineImg.raycastTarget = false;
             _scRadiusLine.SetActive(false);
 
-            _scVelocityArrowImg = CreateHardwareMarker(globeBox.transform, "SC_Velocity_Arrow", new Vector2(1f, 1.5f * s), _cVectorV);
+            _scVelocityArrowImg = CreateHardwareMarker(globeBox.transform, "SC_Velocity_Arrow", new Vector2(1f, 2.0f * s), _cVectorV);
             _scVelocityArrow = _scVelocityArrowImg.gameObject;
             _scVelocityArrowRt = _scVelocityArrowImg.rectTransform;
-            _scVelocityArrowRt.pivot = new Vector2(0.5f, 0.5f);
+            _scVelocityArrowRt.pivot = new Vector2(0f, 0.5f);
             _scVelocityArrowImg.raycastTarget = false;
             _scVelocityArrow.SetActive(false);
 
-            _scMarkerImg = CreateHardwareMarker(globeBox.transform, "SC_Marker", new Vector2(8f * s, 8f * s), _cVessel);
+            _scVelocityHead = new GameObject("SC_VelocityHead", typeof(RectTransform), typeof(Image));
+            _scVelocityHead.transform.SetParent(_scVelocityArrow.transform, false);
+            _scVelocityHeadRt = _scVelocityHead.GetComponent<RectTransform>();
+            _scVelocityHeadRt.sizeDelta = new Vector2(6f * s, 6f * s);
+            _scVelocityHeadRt.pivot = new Vector2(0.5f, 0.5f);
+            _scVelocityHeadImg = _scVelocityHead.GetComponent<Image>();
+            _scVelocityHeadImg.material = style.GetUiMaterial(isText: false);
+            _scVelocityHeadImg.color = _cVectorV;
+            _scVelocityHeadImg.raycastTarget = false;
+
+            _scMarkerImg = CreateHardwareMarker(globeBox.transform, "SC_Marker", new Vector2(10f * s, 10f * s), _cVessel);
             _scMarker = _scMarkerImg.gameObject;
             _scMarkerRt = _scMarkerImg.rectTransform;
             _scMarkerRt.pivot = new Vector2(0.5f, 0.5f);
             _scMarkerImg.raycastTarget = false;
-            Outline scOutline = _scMarker.AddComponent<Outline>();
-            scOutline.effectDistance = new Vector2(1.2f * s, 1.2f * s);
-            scOutline.effectColor = _cVesselGlow;
+            _scOutline = _scMarker.AddComponent<Outline>();
+            _scOutline.effectDistance = new Vector2(1.5f * s, 1.5f * s);
+            _scOutline.effectColor = _cVesselGlow;
+
+            var scDotGo = new GameObject("SC_Dot", typeof(RectTransform), typeof(Image));
+            scDotGo.transform.SetParent(_scMarker.transform, false);
+            var scDotRt = scDotGo.GetComponent<RectTransform>();
+            scDotRt.sizeDelta = new Vector2(4f * s, 4f * s);
+            scDotRt.anchoredPosition = Vector2.zero;
+            _scMarkerDotImg = scDotGo.GetComponent<Image>();
+            _scMarkerDotImg.material = style.GetUiMaterial(isText: false);
+            _scMarkerDotImg.color = _cVessel;
+            _scMarkerDotImg.raycastTarget = false;
             _scMarker.SetActive(false);
 
             // 四角 HUD 读数卡槽 (增大卡槽尺寸与字号，让六根数一目了然)
@@ -383,6 +460,18 @@ namespace ModularFlightPanel.UI.Widgets
             ol.effectDistance = new Vector2(0.8f * scale, 0.8f * scale);
             ol.effectColor = border;
             return slot;
+        }
+
+        private static Text CreateDiagramLabel(Transform parent, string name, string text, Color color, float scale, int fontSize = 9)
+        {
+            Text txt = UIFactory.CreateText(parent, name, text, Mathf.Max(8, Mathf.RoundToInt(fontSize * scale)), TextAnchor.MiddleCenter, color);
+            txt.rectTransform.sizeDelta = new Vector2(80f * scale, 18f * scale);
+            txt.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            txt.raycastTarget = false;
+            var ol = txt.gameObject.AddComponent<Outline>();
+            ol.effectColor = WidgetStyleManager.Instance.GetSurfaceColor(SurfaceStyleRole.PanelDeep);
+            ol.effectDistance = new Vector2(1f * scale, -1f * scale);
+            return txt;
         }
 
         private static void CreateLabelValPair(Transform parent, string prefix,
@@ -564,6 +653,34 @@ namespace ModularFlightPanel.UI.Widgets
             // 中性参考系 (坐标轴 / 标签)
             _cAxis = (Color32)WidgetStyleManager.WithAlpha(theme.FrameBorderColor, 0.85f);
             _cLabelText = (Color32)WidgetStyleManager.WithAlpha(WidgetStyleManager.Instance.GetTextColor(TextStyleRole.PrimaryValue, theme), 1.0f);
+
+            // 动态航天器覆盖层硬件图元着色 (根治图元透明隐形缺陷)
+            if (_scRadiusLineImg != null) _scRadiusLineImg.color = _cVectorR;
+            if (_scVelocityArrowImg != null) _scVelocityArrowImg.color = _cVectorV;
+            if (_scVelocityHeadImg != null) _scVelocityHeadImg.color = _cVectorV;
+            if (_scMarkerImg != null) _scMarkerImg.color = _cVessel;
+            if (_scMarkerDotImg != null) _scMarkerDotImg.color = _cVessel;
+            if (_scOutline != null) _scOutline.effectColor = _cVesselGlow;
+
+            // 3D 权威开普勒拓扑 UGUI 矢量标注着色 (与几何要素严格同色同族)
+            if (_lblAxisX != null) _lblAxisX.color = _cAxis;
+            if (_lblAxisY != null) _lblAxisY.color = _cAxis;
+            if (_lblAxisZ != null) _lblAxisZ.color = _cAxis;
+            if (_lblEquator != null) _lblEquator.color = _cAxis;
+            if (_lblOrigin != null) _lblOrigin.color = _cAxis;
+            if (_lblNodeAn != null) _lblNodeAn.color = _cNode;
+            if (_lblNodeDn != null) _lblNodeDn.color = _cNode;
+            if (_lblArcOmega != null) _lblArcOmega.color = _cElemLan;
+            if (_lblArcInc != null) _lblArcInc.color = _cElemI;
+            if (_lblVectorH != null) _lblVectorH.color = _cVectorH;
+            if (_lblVectorE != null) _lblVectorE.color = _cVectorE;
+            if (_lblArcAop != null) _lblArcAop.color = _cElemAop;
+            if (_lblApoapsis != null) _lblApoapsis.color = _cApPe;
+            if (_lblPeriapsis != null) _lblPeriapsis.color = _cApPe;
+            if (_lblArcTa != null) _lblArcTa.color = _cElemTa;
+            if (_lblVectorR != null) _lblVectorR.color = _cVectorR;
+            if (_lblVectorV != null) _lblVectorV.color = _cVectorV;
+            if (_lblSpacecraft != null) _lblSpacecraft.color = _cVessel;
         }
 
         // ═════════════════════════════════════════════════════════════════
@@ -736,14 +853,21 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_isFullMode)
             {
+                if (_labelsRoot != null && !_labelsRoot.activeSelf) _labelsRoot.SetActive(true);
                 UpdateFullModeReadouts(_dataAp, _dataPe, _dataTAp, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
                 float now = context.UnscaledTime;
-                if ((now - _lastMeshRebuildTime >= 0.25f || _lastMeshRebuildTime < 0f) && CheckDirty(_dataSma, _dataEcc, _dataInc, _dataLan, _dataAop))
+                bool geomDirty = CheckDirty(_dataSma, _dataEcc, _dataInc, _dataLan, _dataAop);
+                bool traDirty = double.IsNaN(_lastDrawnTra) || Math.Abs(NormalizeDegrees(_dataTra) - NormalizeDegrees(_lastDrawnTra)) > 1.5;
+
+                if ((now - _lastMeshRebuildTime >= 0.25f || _lastMeshRebuildTime < 0f) && (geomDirty || traDirty))
                 {
                     _lastMeshRebuildTime = now;
                     _lastDrawnSma = _dataSma; _lastDrawnEcc = _dataEcc; _lastDrawnInc = _dataInc;
                     _lastDrawnLan = _dataLan; _lastDrawnAop = _dataAop;
                     _lastDrawnAp = _dataAp; _lastDrawnPe = _dataPe;
+                    _lastDrawnTra = _dataTra;
+
+                    UpdateDiagramLabels(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataAp, _dataPe);
                     if (_diagramGraphic != null) _diagramGraphic.SetVerticesDirty();
                 }
                 UpdateSpacecraftOverlay(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop);
@@ -753,6 +877,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_scMarker != null && _scMarker.activeSelf) _scMarker.SetActive(false);
                 if (_scRadiusLine != null && _scRadiusLine.activeSelf) _scRadiusLine.SetActive(false);
                 if (_scVelocityArrow != null && _scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(false);
+                if (_labelsRoot != null && _labelsRoot.activeSelf) _labelsRoot.SetActive(false);
                 UpdateCompactModeReadouts(_dataAp, _dataPe, _dataTAp, _dataTPe, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
             }
         }
@@ -975,7 +1100,7 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         /// <summary>
-        /// 动静分离：以 UGUI 硬件 Transform 独立更新航天器空间投影位点与瞬时速度矢量 (0 CPU 网格重建)
+        /// 动静分离：以 UGUI 硬件 Transform 独立更新航天器空间投影位点与瞬时速度矢量 (0 CPU 网格重建，60FPS 满帧运行)
         /// </summary>
         private void UpdateSpacecraftOverlay(double tra, double sma, double ecc, double inc, double lan, double aop)
         {
@@ -984,10 +1109,13 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_scMarker != null && _scMarker.activeSelf) _scMarker.SetActive(false);
                 if (_scRadiusLine != null && _scRadiusLine.activeSelf) _scRadiusLine.SetActive(false);
                 if (_scVelocityArrow != null && _scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(false);
+                if (_lblSpacecraft != null && _lblSpacecraft.gameObject.activeSelf) _lblSpacecraft.gameObject.SetActive(false);
+                if (_lblVectorV != null && _lblVectorV.gameObject.activeSelf) _lblVectorV.gameObject.SetActive(false);
+                if (_lblVectorR != null && _lblVectorR.gameObject.activeSelf) _lblVectorR.gameObject.SetActive(false);
                 return;
             }
 
-            float s = _cachedDpiScale;
+            float s = _cachedDpiScale > 0.01f ? _cachedDpiScale : 1f;
             float cx = 0f;
             float cy = -8f * s;
             double camPitch = 25.0 * Math.PI / 180.0;
@@ -995,8 +1123,8 @@ namespace ModularFlightPanel.UI.Widgets
             double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
             double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
 
-            double diskR = 140.0 * s;
-            double maxOrbitR = diskR * 1.20;
+            double diskR = 135.0 * s;
+            double maxOrbitR = diskR * 1.25;
             bool closed = ecc < 1.0;
             double eDraw = closed ? Math.Min(Math.Max(0.0, ecc), 0.96) : Math.Min(Math.Max(1.0, ecc), 4.0);
             double pShp = sma * (1.0 - eDraw * eDraw);
@@ -1039,7 +1167,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (!_scMarker.activeSelf) _scMarker.SetActive(true);
             SetAnchoredPositionIfChanged(_scMarkerRt, new Vector2(scX, scY));
 
-            // 半径矢量线
+            // 半径矢量线 (原点 -> 航天器)
             if (_scRadiusLine != null)
             {
                 if (!_scRadiusLine.activeSelf) _scRadiusLine.SetActive(true);
@@ -1047,33 +1175,216 @@ namespace ModularFlightPanel.UI.Widgets
                 float rDy = scY - cy;
                 float rLen = Mathf.Sqrt(rDx * rDx + rDy * rDy);
                 float rAngle = Mathf.Atan2(rDy, rDx) * Mathf.Rad2Deg;
-                SetAnchoredPositionIfChanged(_scRadiusLineRt, new Vector2((cx + scX) * 0.5f, (cy + scY) * 0.5f));
-                SetSizeDeltaIfChanged(_scRadiusLineRt, new Vector2(rLen, 1.2f * s));
+                SetAnchoredPositionIfChanged(_scRadiusLineRt, new Vector2(cx, cy));
+                SetSizeDeltaIfChanged(_scRadiusLineRt, new Vector2(rLen, 1.5f * s));
                 _scRadiusLineRt.localRotation = Quaternion.Euler(0f, 0f, rAngle);
             }
 
-            // 速度矢量箭头
+            // 速度矢量箭头 (航天器 -> 切线动量)
             double dThetaX = -Math.Sin(vRad) * edirX + (eDraw + Math.Cos(vRad)) * qdirX;
             double dThetaY = -Math.Sin(vRad) * edirY + (eDraw + Math.Cos(vRad)) * qdirY;
             double dThetaZ = -Math.Sin(vRad) * edirZ + (eDraw + Math.Cos(vRad)) * qdirZ;
             double vMag = Math.Sqrt(dThetaX * dThetaX + dThetaY * dThetaY + dThetaZ * dThetaZ);
+            float vEndX = scX, vEndY = scY;
             if (vMag > 0.001 && _scVelocityArrow != null)
             {
                 if (!_scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(true);
                 dThetaX /= vMag; dThetaY /= vMag; dThetaZ /= vMag;
-                double vLen = 28.0 * s;
+                double vLen = 30.0 * s;
                 ProjectWorldToScreenFloat(scWx + vLen * dThetaX, scWy + vLen * dThetaY, scWz + vLen * dThetaZ,
-                    cosCp, sinCp, cosCy, sinCy, cx, cy, out float vEndX, out float vEndY, out _);
+                    cosCp, sinCp, cosCy, sinCy, cx, cy, out vEndX, out vEndY, out _);
 
                 float dx = vEndX - scX;
                 float dy = vEndY - scY;
                 float len = Mathf.Sqrt(dx * dx + dy * dy);
                 float angle = Mathf.Atan2(dy, dx) * Mathf.Rad2Deg;
 
-                SetAnchoredPositionIfChanged(_scVelocityArrowRt, new Vector2((scX + vEndX) * 0.5f, (scY + vEndY) * 0.5f));
-                SetSizeDeltaIfChanged(_scVelocityArrowRt, new Vector2(len, 1.5f * s));
+                SetAnchoredPositionIfChanged(_scVelocityArrowRt, new Vector2(scX, scY));
+                SetSizeDeltaIfChanged(_scVelocityArrowRt, new Vector2(len, 2.0f * s));
                 _scVelocityArrowRt.localRotation = Quaternion.Euler(0f, 0f, angle);
+
+                if (_scVelocityHeadRt != null)
+                {
+                    SetAnchoredPositionIfChanged(_scVelocityHeadRt, new Vector2(len, 0f));
+                    _scVelocityHeadRt.localRotation = Quaternion.Euler(0f, 0f, -45f);
+                }
             }
+
+            // 联动标注航天器、速度矢量与径向矢量文本
+            if (_lblSpacecraft != null)
+            {
+                if (!_lblSpacecraft.gameObject.activeSelf) _lblSpacecraft.gameObject.SetActive(true);
+                float scLblX = scX + (scX >= cx ? 14f : -26f) * s;
+                float scLblY = scY + 8f * s;
+                SetAnchoredPositionIfChanged(_lblSpacecraft.rectTransform, new Vector2(scLblX, scLblY));
+            }
+            if (_lblVectorV != null)
+            {
+                if (!_lblVectorV.gameObject.activeSelf) _lblVectorV.gameObject.SetActive(true);
+                float vLblX = vEndX + (vEndX >= scX ? 8f : -12f) * s;
+                float vLblY = vEndY + 4f * s;
+                SetAnchoredPositionIfChanged(_lblVectorV.rectTransform, new Vector2(vLblX, vLblY));
+            }
+            if (_lblVectorR != null)
+            {
+                if (!_lblVectorR.gameObject.activeSelf) _lblVectorR.gameObject.SetActive(true);
+                float rMidX = (cx + scX) * 0.5f - 8f * s;
+                float rMidY = (cy + scY) * 0.5f + 8f * s;
+                SetAnchoredPositionIfChanged(_lblVectorR.rectTransform, new Vector2(rMidX, rMidY));
+            }
+        }
+
+        /// <summary>
+        /// 权威开普勒拓扑 UGUI 矢量标注位置智能更新与防重叠解算 (仅在轨道几何要素变动或 ν 扫掠时调用)
+        /// </summary>
+        private void UpdateDiagramLabels(double tra, double sma, double ecc, double inc, double lan, double aop, double ap, double pe)
+        {
+            if (_labelsRoot == null || double.IsNaN(sma) || sma <= 0.0) return;
+
+            float s = _cachedDpiScale > 0.01f ? _cachedDpiScale : 1f;
+            float cx = 0f;
+            float cy = -8f * s;
+            double camPitch = 25.0 * Math.PI / 180.0;
+            double camYaw = -115.0 * Math.PI / 180.0;
+            double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
+            double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
+
+            double diskR = 135.0 * s;
+            double maxOrbitR = diskR * 1.25;
+            bool closed = ecc < 1.0;
+            double eDraw = closed ? Math.Min(Math.Max(0.0, ecc), 0.96) : Math.Min(Math.Max(1.0, ecc), 4.0);
+            double pShp = sma * (1.0 - eDraw * eDraw);
+            double scale = closed
+                ? ((sma > 1.0) ? (maxOrbitR / (sma * (1.0 + eDraw))) : 1.0)
+                : ((diskR * 0.55) * (1.0 + eDraw) / Math.Max(1.0, pShp));
+            double pScale = pShp * scale;
+
+            double iRad = inc * Math.PI / 180.0;
+            double oRad = lan * Math.PI / 180.0;
+            double wRad = aop * Math.PI / 180.0;
+            double vRad = tra * Math.PI / 180.0;
+
+            double nx = Math.Cos(oRad), ny = Math.Sin(oRad);
+            double hx = Math.Sin(iRad) * Math.Sin(oRad);
+            double hy = -Math.Sin(iRad) * Math.Cos(oRad);
+            double hz = Math.Cos(iRad);
+
+            double hCrossNx = hy * 0.0 - hz * ny;
+            double hCrossNy = hz * nx - hx * 0.0;
+            double hCrossNz = hx * ny - hy * nx;
+
+            double edirX = Math.Cos(wRad) * nx + Math.Sin(wRad) * hCrossNx;
+            double edirY = Math.Cos(wRad) * ny + Math.Sin(wRad) * hCrossNy;
+            double edirZ = Math.Cos(wRad) * 0.0 + Math.Sin(wRad) * hCrossNz;
+
+            double qdirX = hy * edirZ - hz * edirY;
+            double qdirY = hz * edirX - hx * edirZ;
+            double qdirZ = hx * edirY - hy * edirX;
+
+            // 1. 惯性坐标系 X, Y, Z 与原点 O
+            ProjectWorldToScreenFloat(diskR * 1.35, 0.0, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float xX, out float xY, out _);
+            if (_lblAxisX != null) SetAnchoredPositionIfChanged(_lblAxisX.rectTransform, new Vector2(xX - 12f * s, xY - 14f * s));
+
+            ProjectWorldToScreenFloat(0.0, diskR * 1.30, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float yX, out float yY, out _);
+            if (_lblAxisY != null) SetAnchoredPositionIfChanged(_lblAxisY.rectTransform, new Vector2(yX + 14f * s, yY - 2f * s));
+
+            ProjectWorldToScreenFloat(0.0, 0.0, diskR * 1.40, cosCp, sinCp, cosCy, sinCy, cx, cy, out float zX, out float zY, out _);
+            if (_lblAxisZ != null) SetAnchoredPositionIfChanged(_lblAxisZ.rectTransform, new Vector2(zX, zY + 14f * s));
+
+            if (_lblOrigin != null) SetAnchoredPositionIfChanged(_lblOrigin.rectTransform, new Vector2(cx - 16f * s, cy - 14f * s));
+
+            // 2. 赤道参考面标注 (位于盘边缘)
+            ProjectWorldToScreenFloat(diskR * 0.75, diskR * 0.55, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float eqX, out float eqY, out _);
+            if (_lblEquator != null) SetAnchoredPositionIfChanged(_lblEquator.rectTransform, new Vector2(eqX + 14f * s, eqY + 8f * s));
+
+            // 3. 升交点与降交点
+            double rAn = pScale / (1.0 + eDraw * Math.Cos(-wRad));
+            ProjectWorldToScreenFloat(rAn * nx, rAn * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float anX, out float anY, out _);
+
+            double rDn = pScale / (1.0 + eDraw * Math.Cos(Math.PI - wRad));
+            ProjectWorldToScreenFloat(-rDn * nx, -rDn * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float dnX, out float dnY, out _);
+
+            // 4. 拱点 PE 与 AP
+            double rPe = pScale / (1.0 + eDraw);
+            ProjectWorldToScreenFloat(rPe * edirX, rPe * edirY, rPe * edirZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out float peX, out float peY, out _);
+
+            float apX = 0f, apY = 0f;
+            if (closed)
+            {
+                double rAp = pScale / (1.0 - eDraw);
+                ProjectWorldToScreenFloat(-rAp * edirX, -rAp * edirY, -rAp * edirZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out apX, out apY, out _);
+                if (_lblApoapsis != null && !_lblApoapsis.gameObject.activeSelf) _lblApoapsis.gameObject.SetActive(true);
+            }
+            else
+            {
+                if (_lblApoapsis != null && _lblApoapsis.gameObject.activeSelf) _lblApoapsis.gameObject.SetActive(false);
+            }
+
+            // 智能防重叠偏移：升交点 AN vs 远拱点 AP / 近拱点 PE
+            float anOffX = 16f * s, anOffY = -12f * s;
+            float apOffX = -16f * s, apOffY = 12f * s;
+            float peOffX = 16f * s, peOffY = 10f * s;
+
+            if (closed && Vector2.Distance(new Vector2(anX, anY), new Vector2(apX, apY)) < 36f * s)
+            {
+                anOffY = -22f * s;
+                apOffY = 22f * s;
+            }
+            if (Vector2.Distance(new Vector2(anX, anY), new Vector2(peX, peY)) < 36f * s)
+            {
+                anOffX = -20f * s;
+                peOffX = 20f * s;
+            }
+
+            if (_lblNodeAn != null) SetAnchoredPositionIfChanged(_lblNodeAn.rectTransform, new Vector2(anX + anOffX, anY + anOffY));
+            if (_lblNodeDn != null) SetAnchoredPositionIfChanged(_lblNodeDn.rectTransform, new Vector2(dnX - 16f * s, dnY + 10f * s));
+            if (_lblPeriapsis != null) SetAnchoredPositionIfChanged(_lblPeriapsis.rectTransform, new Vector2(peX + peOffX, peY + peOffY));
+            if (closed && _lblApoapsis != null) SetAnchoredPositionIfChanged(_lblApoapsis.rectTransform, new Vector2(apX + apOffX, apY + apOffY));
+
+            // 5. Ω 升交点赤经弧中点
+            double lanArcR = diskR * 0.55;
+            double oMidAng = oRad * 0.5;
+            ProjectWorldToScreenFloat(lanArcR * Math.Cos(oMidAng), lanArcR * Math.Sin(oMidAng), 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float oMidX, out float oMidY, out _);
+            if (_lblArcOmega != null) SetAnchoredPositionIfChanged(_lblArcOmega.rectTransform, new Vector2(oMidX - 6f * s, oMidY - 12f * s));
+
+            // 6. i 轨道倾角二面角弧中点 (位于升交点处)
+            double baseDist = rAn * 0.88;
+            double baseX = baseDist * nx, baseY = baseDist * ny;
+            double uxDih = -ny, uyDih = nx;
+            double arcRDih = 14.0 * s;
+            double halfI = iRad * 0.5;
+            double iMidWx = baseX + arcRDih * uxDih * Math.Cos(halfI);
+            double iMidWy = baseY + arcRDih * uyDih * Math.Cos(halfI);
+            double iMidWz = arcRDih * Math.Sin(halfI);
+            ProjectWorldToScreenFloat(iMidWx, iMidWy, iMidWz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float iMidX, out float iMidY, out _);
+            if (_lblArcInc != null) SetAnchoredPositionIfChanged(_lblArcInc.rectTransform, new Vector2(iMidX + 14f * s, iMidY + 2f * s));
+
+            // 7. h 轨道角动量矢量与 e 近拱点矢量
+            double hLen = diskR * 1.15;
+            ProjectWorldToScreenFloat(hLen * hx, hLen * hy, hLen * hz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float hX, out float hY, out _);
+            if (_lblVectorH != null) SetAnchoredPositionIfChanged(_lblVectorH.rectTransform, new Vector2(hX - 12f * s, hY + 6f * s));
+
+            double eLen = maxOrbitR + 22.0 * s;
+            ProjectWorldToScreenFloat(eLen * edirX, eLen * edirY, eLen * edirZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out float eX, out float eY, out _);
+            if (_lblVectorE != null) SetAnchoredPositionIfChanged(_lblVectorE.rectTransform, new Vector2(eX + 12f * s, eY + 4f * s));
+
+            // 8. ω 近拱点辐角弧中点 (在轨道面内从 AN 指向 e)
+            double aopArcR = diskR * 0.40;
+            double halfW = wRad * 0.5;
+            double wMidWx = aopArcR * (Math.Cos(halfW) * nx + Math.Sin(halfW) * hCrossNx);
+            double wMidWy = aopArcR * (Math.Cos(halfW) * ny + Math.Sin(halfW) * hCrossNy);
+            double wMidWz = aopArcR * (Math.Cos(halfW) * 0.0 + Math.Sin(halfW) * hCrossNz);
+            ProjectWorldToScreenFloat(wMidWx, wMidWy, wMidWz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float wMidX, out float wMidY, out _);
+            if (_lblArcAop != null) SetAnchoredPositionIfChanged(_lblArcAop.rectTransform, new Vector2(wMidX + 10f * s, wMidY - 6f * s));
+
+            // 9. ν 真近点角弧中点 (在轨道面内从 e 指向航天器矢径)
+            double taArcR = diskR * 0.32;
+            double halfV = vRad * 0.5;
+            double taMidWx = taArcR * (Math.Cos(halfV) * edirX + Math.Sin(halfV) * qdirX);
+            double taMidWy = taArcR * (Math.Cos(halfV) * edirY + Math.Sin(halfV) * qdirY);
+            double taMidWz = taArcR * (Math.Cos(halfV) * edirZ + Math.Sin(halfV) * qdirZ);
+            ProjectWorldToScreenFloat(taMidWx, taMidWy, taMidWz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float taMidX, out float taMidY, out _);
+            if (_lblArcTa != null) SetAnchoredPositionIfChanged(_lblArcTa.rectTransform, new Vector2(taMidX + 10f * s, taMidY - 6f * s));
         }
 
         // ═════════════════════════════════════════════════════════════════
@@ -1105,18 +1416,19 @@ namespace ModularFlightPanel.UI.Widgets
             double aop = _lastDrawnAop;
             double ap = _lastDrawnAp;
             double pe = _lastDrawnPe;
+            double tra = double.IsNaN(_lastDrawnTra) ? 0.0 : _lastDrawnTra;
 
             // 观察视角配置 (正交轴测相机，对齐教科书经典定义图视角：X 向左下，Y 向右，Z 向上)
-            float s = _cachedDpiScale;
+            float s = _cachedDpiScale > 0.01f ? _cachedDpiScale : 1f;
             float cx = 0f;
             float cy = -8f * s;
-            double camPitch = 25.0 * Math.PI / 180.0;     // 25° 俯仰角：比 22° 更立体，轨道面倾角更直观
+            double camPitch = 25.0 * Math.PI / 180.0;     // 25° 俯仰角：立体且直观
             double camYaw = -115.0 * Math.PI / 180.0;
             double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
             double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
 
-            double diskR = 140.0 * s;                // 赤道参考盘半径基准 (增大至 140，DPI 缩放后充分利用 388×376 视口)
-            double maxOrbitR = diskR * 1.20;     // 轨道最大径 = 赤道盘 × 1.20 (确保轨道视觉主导)
+            double diskR = 140.0 * s;            // 赤道参考盘半径基准
+            double maxOrbitR = diskR * 1.20;     // 轨道最大径
 
             // 轨道形状：闭合椭圆 / 开放双曲线·抛物线 双路径解算
             bool closed = ecc < 1.0;
@@ -1139,18 +1451,17 @@ namespace ModularFlightPanel.UI.Widgets
             double iRad = inc * Math.PI / 180.0;
             double oRad = lan * Math.PI / 180.0;
             double wRad = aop * Math.PI / 180.0;
+            double vRad = tra * Math.PI / 180.0;
 
             // 矢量图元尺寸 (随 DPI 等比缩放，确保高分屏锐利可辨)
-            float glyphSpacing = 7f * s;
             float arrowHead = 7f * s;
             float lineW = 1.0f * s;
-            float lineWThick = 1.2f * s;
+            float lineWThick = 1.25f * s;
             float lineWGlow = 2.6f * s;
             float dotR = 1.6f * s;
-            float markerR = 3.4f * s;
+            float markerR = 3.6f * s;
             float markerW = 1.1f * s;
-            float planetR = 13.0f * s;
-            float labelOffset = 18f * s;
+            float planetR = 20.0f * s;
 
             // ─────────────────────────────────────────────────────────────
             // 1. 绘制底座：赤道参考面 (Equatorial Plane Disk)
@@ -1161,26 +1472,22 @@ namespace ModularFlightPanel.UI.Widgets
             float eqP1Y = eqP0Y + 8f * s;
             DrawFilledCircle(vh, eqP0X, eqP0Y, dotR, _cAxis);
             DrawAALine(vh, eqP0X, eqP0Y, eqP1X, eqP1Y, _cAxis, 0.9f * s);
-            DrawGlyphString(vh, eqP1X + 4f * s, eqP1Y + 3f * s, "EQ", _cLabelText, s);
 
             // ─────────────────────────────────────────────────────────────
-            // 2. 绘制惯性参考坐标轴 X, Y, Z (与轨道等比协调，不超压轨道视觉权重)
+            // 2. 绘制惯性参考坐标轴 X, Y, Z
             // ─────────────────────────────────────────────────────────────
             double axisLenX = diskR * 1.35;    // X 轴：春分点方向
             double axisLenY = diskR * 1.30;    // Y 轴：赤道正交
-            double axisLenZ = diskR * 1.40;    // Z 轴：自转极轴，稍长以强调垂直参考
+            double axisLenZ = diskR * 1.40;    // Z 轴：自转极轴
 
             ProjectWorldToScreenFloat(axisLenX, 0.0, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float xEndX, out float xEndY, out _);
             DrawArrow(vh, cx, cy, xEndX, xEndY, _cAxis, lineW, arrowHead);
-            DrawGlyphChar(vh, xEndX - 10f * s, xEndY - 8f * s, 'X', _cLabelText, s);
 
             ProjectWorldToScreenFloat(0.0, axisLenY, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float yEndX, out float yEndY, out _);
             DrawArrow(vh, cx, cy, yEndX, yEndY, _cAxis, lineW, arrowHead);
-            DrawGlyphChar(vh, yEndX + 6f * s, yEndY - 3f * s, 'Y', _cLabelText, s);
 
             ProjectWorldToScreenFloat(0.0, 0.0, axisLenZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out float zEndX, out float zEndY, out _);
             DrawArrow(vh, cx, cy, zEndX, zEndY, _cAxis, lineW, arrowHead);
-            DrawGlyphChar(vh, zEndX - 10f * s, zEndY + 4f * s, 'Z', _cLabelText, s);
 
             // ─────────────────────────────────────────────────────────────
             // 3. 升交线与 Ω 弧
@@ -1194,8 +1501,7 @@ namespace ModularFlightPanel.UI.Widgets
             DrawDashedLine(vh, cx, cy, dnEndX, dnEndY, _cNode, 0.9f * s);
 
             double lanArcR = diskR * 0.55;
-            DrawEquatorialArc(vh, cx, cy, lanArcR, 0.0, oRad, cosCp, sinCp, cosCy, sinCy, _cElemLan, lineW, out float omegaMidX, out float omegaMidY);
-            DrawGlyphChar(vh, omegaMidX - 4f * s, omegaMidY - 8f * s, 'Ω', _cElemLan, s);
+            DrawEquatorialArc(vh, cx, cy, lanArcR, 0.0, oRad, cosCp, sinCp, cosCy, sinCy, _cElemLan, lineW);
 
             // ─────────────────────────────────────────────────────────────
             // 4. 空间开普勒轨道三维单位基底解算
@@ -1217,15 +1523,15 @@ namespace ModularFlightPanel.UI.Widgets
             double qdirZ = hx * edirY - hy * edirX;
 
             // ─────────────────────────────────────────────────────────────
-            // 5. 轨道角动量矢量 h 与 倾角 i 空间夹角弧
+            // 5. 轨道角动量矢量 h 与 倾角 i 空间二面角弧
             // ─────────────────────────────────────────────────────────────
             double hLen = diskR * 1.15;
             ProjectWorldToScreenFloat(hLen * hx, hLen * hy, hLen * hz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float hEndX, out float hEndY, out _);
             DrawArrow(vh, cx, cy, hEndX, hEndY, _cVectorH, 1.3f * s, arrowHead);
-            DrawGlyphChar(vh, hEndX - 10f * s, hEndY + 3f * s, 'h', _cVectorH, s);
 
-            DrawPlanarSweepArc(vh, 0.0, 0.0, 1.0, hx, hy, hz, iRad, diskR * 0.55, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemI, lineW, out float iMidX, out float iMidY);
-            DrawGlyphChar(vh, iMidX - 9f * s, iMidY + 1f * s, 'i', _cElemI, s);
+            // 二面角 i 弧线 (在升交点处，赤道平面向轨道平面扫掠)
+            double rAnArc = diskR * 0.85;
+            DrawDihedralInclinationArc(vh, nx, ny, rAnArc, iRad, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemI, lineW, s);
 
             // ─────────────────────────────────────────────────────────────
             // 6. 偏心率/近拱点矢量 e 与 近拱点辐角 ω 弧
@@ -1233,15 +1539,21 @@ namespace ModularFlightPanel.UI.Widgets
             double eLen = maxOrbitR + 20.0 * s;
             ProjectWorldToScreenFloat(eLen * edirX, eLen * edirY, eLen * edirZ, cosCp, sinCp, cosCy, sinCy, cx, cy, out float eEndX, out float eEndY, out _);
             DrawArrow(vh, cx, cy, eEndX, eEndY, _cVectorE, lineWThick, arrowHead);
-            DrawGlyphChar(vh, eEndX + 6f * s, eEndY + 2f * s, 'e', _cVectorE, s);
 
-            DrawPlanarSweepArc(vh, nx, ny, 0.0, hCrossNx, hCrossNy, hCrossNz, wRad, diskR * 0.40, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemAop, lineW, out float wMidX, out float wMidY);
-            DrawGlyphChar(vh, wMidX + 4f * s, wMidY - 4f * s, 'ω', _cElemAop, s);
+            DrawPlanarSweepArc(vh, nx, ny, 0.0, hCrossNx, hCrossNy, hCrossNz, wRad, diskR * 0.40, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemAop, lineW);
 
             // ─────────────────────────────────────────────────────────────
-            // 7. 空间轨道曲线采样 (超高精 384 步亚像素采样)
+            // 6.5 真近点角 ν 弧 (轨道面内从近地点方向 e 扫向当前航天器矢量)
             // ─────────────────────────────────────────────────────────────
-            int segments = closed ? 384 : 256;
+            if (vRad > 0.05 || vRad < -0.05)
+            {
+                DrawPlanarSweepArc(vh, edirX, edirY, edirZ, qdirX, qdirY, qdirZ, vRad, diskR * 0.28, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemTa, lineW);
+            }
+
+            // ─────────────────────────────────────────────────────────────
+            // 7. 空间轨道曲线采样 (192 步高效平滑采样)
+            // ─────────────────────────────────────────────────────────────
+            int segments = closed ? 192 : 128;
             double nuStart, nuEnd;
             if (closed)
             {
@@ -1282,7 +1594,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 8. 原点微型实体引力天体 (小行星球，适度放大显眼度)
+            // 8. 原点实体引力天体 (小行星球，遮挡远侧半周)
             DrawMiniPlanetSphere(vh, cx, cy, planetR, s);
 
             // 近侧高亮发光轨道段
@@ -1305,16 +1617,6 @@ namespace ModularFlightPanel.UI.Widgets
             DrawHollowCircle(vh, peX, peY, markerR, _cApPe, markerW);
             DrawFilledCircle(vh, peX, peY, dotR, _cApPe);
 
-            ProjectWorldToScreenFloat(peWx + 20.0 * s * qdirX, peWy + 20.0 * s * qdirY, peWz + 20.0 * s * qdirZ,
-                cosCp, sinCp, cosCy, sinCy, cx, cy, out float peTanX, out float peTanY, out _);
-            float peTdx = peTanX - peX;
-            float peTdy = peTanY - peY;
-            float peTlen = Mathf.Sqrt(peTdx * peTdx + peTdy * peTdy);
-            if (peTlen > 0.001f) { peTdx /= peTlen; peTdy /= peTlen; } else { peTdx = 0f; peTdy = 1f; }
-            float peLblX = peX + peTdx * labelOffset - 4f * s;
-            float peLblY = peY + peTdy * labelOffset + 3f * s;
-            DrawGlyphString(vh, peLblX, peLblY, "PE", _cApPe, s);
-
             if (closed)
             {
                 double rAp = pScale / (1.0 - eDraw);
@@ -1327,36 +1629,13 @@ namespace ModularFlightPanel.UI.Widgets
                 DrawHollowCircle(vh, apX, apY, markerR, _cApPe, markerW);
                 DrawFilledCircle(vh, apX, apY, dotR, _cApPe);
 
-                ProjectWorldToScreenFloat(apWx - 20.0 * s * qdirX, apWy - 20.0 * s * qdirY, apWz - 20.0 * s * qdirZ,
-                    cosCp, sinCp, cosCy, sinCy, cx, cy, out float apTanX, out float apTanY, out _);
-                float apTdx = apTanX - apX;
-                float apTdy = apTanY - apY;
-                float apTlen = Mathf.Sqrt(apTdx * apTdx + apTdy * apTdy);
-                if (apTlen > 0.001f) { apTdx /= apTlen; apTdy /= apTlen; } else { apTdx = -1f; apTdy = 0f; }
-                float apLblX = apX + apTdx * labelOffset - 5f * s;
-                float apLblY = apY + apTdy * labelOffset - 3f * s;
-                DrawGlyphString(vh, apLblX, apLblY, "AP", _cApPe, s);
-
                 double rAn = pScale / (1.0 + eDraw * Math.Cos(-wRad));
                 ProjectWorldToScreenFloat(rAn * nx, rAn * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float anNodeX, out float anNodeY, out _);
                 DrawHollowCircle(vh, anNodeX, anNodeY, markerR, _cNode, markerW);
 
-                float anL1X = anNodeX + labelOffset;
-                float anL1Y = anNodeY - 12f * s;
-                DrawAALine(vh, anNodeX, anNodeY, anL1X, anL1Y, _cNode, 0.9f * s);
-                DrawGlyphString(vh, anL1X + 4f * s, anL1Y + 3f * s, "AN", _cNode, s);
-
-                DrawDihedralInclinationArc(vh, nx, ny, rAn * 0.88, iRad, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemI, lineW, s, out float iDihX, out float iDihY);
-                DrawGlyphChar(vh, iDihX + 5f * s, iDihY - 2f * s, 'i', _cElemI, s);
-
                 double rDn = pScale / (1.0 + eDraw * Math.Cos(Math.PI - wRad));
                 ProjectWorldToScreenFloat(-rDn * nx, -rDn * ny, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float dnNodeX, out float dnNodeY, out _);
                 DrawHollowCircle(vh, dnNodeX, dnNodeY, markerR, _cNode, markerW);
-
-                float dnL1X = dnNodeX - 14f * s;
-                float dnL1Y = dnNodeY + 10f * s;
-                DrawAALine(vh, dnNodeX, dnNodeY, dnL1X, dnL1Y, _cNode, 0.9f * s);
-                DrawGlyphString(vh, dnL1X - 16f * s, dnL1Y + 3f * s, "DN", _cNode, s);
             }
         }
 
@@ -1531,9 +1810,17 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        private static void DrawFilledTriangle(VertexHelper vh, Vector2 p0, Vector2 p1, Vector2 p2, Color32 c)
+        {
+            int idx = vh.currentVertCount;
+            vh.AddVert(new Vector3(p0.x, p0.y, 0f), c, Vector2.zero);
+            vh.AddVert(new Vector3(p1.x, p1.y, 0f), c, Vector2.zero);
+            vh.AddVert(new Vector3(p2.x, p2.y, 0f), c, Vector2.zero);
+            vh.AddTriangle(idx, idx + 1, idx + 2);
+        }
+
         private static void DrawArrow(VertexHelper vh, float x0, float y0, float x1, float y1, Color32 c, float width, float arrowHeadSize)
         {
-            DrawAALine(vh, x0, y0, x1, y1, c, width);
             float dx = x1 - x0;
             float dy = y1 - y0;
             float len = Mathf.Sqrt(dx * dx + dy * dy);
@@ -1541,17 +1828,22 @@ namespace ModularFlightPanel.UI.Widgets
 
             float udx = dx / len;
             float udy = dy / len;
-            float wingLen = arrowHeadSize;
-            float cosA = 0.866f;
-            float sinA = 0.500f;
 
-            float w1x = x1 - wingLen * (udx * cosA - udy * sinA);
-            float w1y = y1 - wingLen * (udy * cosA + udx * sinA);
-            float w2x = x1 - wingLen * (udx * cosA + udy * sinA);
-            float w2y = y1 - wingLen * (udy * cosA - udx * sinA);
+            float stemEndX = x1 - udx * (arrowHeadSize * 0.7f);
+            float stemEndY = y1 - udy * (arrowHeadSize * 0.7f);
+            DrawAALine(vh, x0, y0, stemEndX, stemEndY, c, width);
 
-            DrawAALine(vh, x1, y1, w1x, w1y, c, width);
-            DrawAALine(vh, x1, y1, w2x, w2y, c, width);
+            float halfBase = arrowHeadSize * 0.42f;
+            float baseCenterX = x1 - udx * arrowHeadSize;
+            float baseCenterY = y1 - udy * arrowHeadSize;
+            float perpX = -udy * halfBase;
+            float perpY = udx * halfBase;
+
+            Vector2 tip = new Vector2(x1, y1);
+            Vector2 b0 = new Vector2(baseCenterX + perpX, baseCenterY + perpY);
+            Vector2 b1 = new Vector2(baseCenterX - perpX, baseCenterY - perpY);
+
+            DrawFilledTriangle(vh, tip, b0, b1, c);
         }
 
         private static void DrawDashedLine(VertexHelper vh, float x0, float y0, float x1, float y1, Color32 c, float width = 0.9f, float dash = 3.5f, float gap = 2.5f)
@@ -1603,8 +1895,11 @@ namespace ModularFlightPanel.UI.Widgets
                     vh.AddTriangle(centerIdx, centerIdx + i, centerIdx + i + 1);
                 }
             }
-            DrawAALine(vh, cx - r * 0.9f, cy, cx + r * 0.9f, cy, _cPlanetGrid, 0.8f * dpiScale);
+            // 赤道与极轴网格线
+            DrawAALine(vh, cx - r * 0.95f, cy, cx + r * 0.95f, cy, _cPlanetGrid, 0.9f * dpiScale);
             DrawAALine(vh, cx, cy - r - 2f * dpiScale, cx, cy + r + 2f * dpiScale, _cPlanetGrid, 0.9f * dpiScale);
+            // 原点实心标记
+            DrawFilledCircle(vh, cx, cy, 1.8f * dpiScale, _cAxis);
         }
 
         private void DrawEquatorialDiskFilled(VertexHelper vh, float cx, float cy, double diskR,
@@ -1613,7 +1908,7 @@ namespace ModularFlightPanel.UI.Widgets
             int centerIdx = vh.currentVertCount;
             vh.AddVert(new Vector3(cx, cy, 0f), _cEquatorPlane, Vector2.zero);
 
-            int segs = 128;
+            int segs = 96;
             for (int i = 0; i <= segs; i++)
             {
                 double th = (i / (double)segs) * Math.PI * 2.0;
@@ -1643,9 +1938,8 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         private static void DrawEquatorialArc(VertexHelper vh, float cx, float cy, double r, double startAng, double endAng,
-            double cosCp, double sinCp, double cosCy, double sinCy, Color32 c, float lineWidth, out float midX, out float midY)
+            double cosCp, double sinCp, double cosCy, double sinCy, Color32 c, float lineWidth)
         {
-            midX = cx; midY = cy;
             double diff = endAng - startAng;
             while (diff < 0) diff += 2.0 * Math.PI;
             while (diff > 2.0 * Math.PI) diff -= 2.0 * Math.PI;
@@ -1660,18 +1954,31 @@ namespace ModularFlightPanel.UI.Widgets
                 double wy = r * Math.Sin(cur);
                 ProjectWorldToScreenFloat(wx, wy, 0.0, cosCp, sinCp, cosCy, sinCy, cx, cy, out float sx, out float sy, out _);
 
-                if (k == steps / 2) { midX = sx; midY = sy; }
                 if (k > 0) DrawAALine(vh, prevX, prevY, sx, sy, c, lineWidth);
+                if (k == steps && prevX >= 0f)
+                {
+                    float adx = sx - prevX;
+                    float ady = sy - prevY;
+                    float alen = Mathf.Sqrt(adx * adx + ady * ady);
+                    if (alen > 0.001f)
+                    {
+                        adx /= alen; ady /= alen;
+                        float ah = 6.0f * (lineWidth > 1f ? lineWidth : 1.2f);
+                        float hb = ah * 0.42f;
+                        DrawFilledTriangle(vh,
+                            new Vector2(sx, sy),
+                            new Vector2(sx - adx * ah - ady * hb, sy - ady * ah + adx * hb),
+                            new Vector2(sx - adx * ah + ady * hb, sy - ady * ah - adx * hb),
+                            c);
+                    }
+                }
                 prevX = sx; prevY = sy;
             }
         }
 
         private static void DrawPlanarSweepArc(VertexHelper vh, double ux, double uy, double uz, double vx, double vy, double vz,
-            double sweep, double r, double cosCp, double sinCp, double cosCy, double sinCy, float cx, float cy, Color32 c, float lineWidth,
-            out float midX, out float midY)
+            double sweep, double r, double cosCp, double sinCp, double cosCy, double sinCy, float cx, float cy, Color32 c, float lineWidth)
         {
-            midX = cx; midY = cy;
-
             double ul = Math.Sqrt(ux * ux + uy * uy + uz * uz);
             if (ul < 1e-9) return;
             ux /= ul; uy /= ul; uz /= ul;
@@ -1682,7 +1989,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (wl < 1e-9) return;
             wx /= wl; wy /= wl; wz /= wl;
 
-            int steps = Mathf.Clamp((int)(Math.Abs(sweep) * 36.0), 24, 256);
+            int steps = Mathf.Clamp((int)(Math.Abs(sweep) * 36.0), 24, 192);
             float prevX = -1f, prevY = -1f;
 
             for (int k = 0; k <= steps; k++)
@@ -1694,23 +2001,37 @@ namespace ModularFlightPanel.UI.Widgets
                 double pz = r * (ca * uz + sa * wz);
 
                 ProjectWorldToScreenFloat(px, py, pz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float sx, out float sy, out _);
-                if (k == steps / 2) { midX = sx; midY = sy; }
                 if (k > 0) DrawAALine(vh, prevX, prevY, sx, sy, c, lineWidth);
+                if (k == steps && prevX >= 0f)
+                {
+                    float adx = sx - prevX;
+                    float ady = sy - prevY;
+                    float alen = Mathf.Sqrt(adx * adx + ady * ady);
+                    if (alen > 0.001f)
+                    {
+                        adx /= alen; ady /= alen;
+                        float ah = 6.0f * (lineWidth > 1f ? lineWidth : 1.2f);
+                        float hb = ah * 0.42f;
+                        DrawFilledTriangle(vh,
+                            new Vector2(sx, sy),
+                            new Vector2(sx - adx * ah - ady * hb, sy - ady * ah + adx * hb),
+                            new Vector2(sx - adx * ah + ady * hb, sy - ady * ah - adx * hb),
+                            c);
+                    }
+                }
                 prevX = sx; prevY = sy;
             }
         }
 
         private static void DrawDihedralInclinationArc(VertexHelper vh, double nx, double ny, double baseDist, double iRad,
-            double cosCp, double sinCp, double cosCy, double sinCy, float cx, float cy, Color32 c, float lineWidth, float dpiScale,
-            out float midX, out float midY)
+            double cosCp, double sinCp, double cosCy, double sinCy, float cx, float cy, Color32 c, float lineWidth, float dpiScale)
         {
-            midX = cx; midY = cy;
             double baseX = baseDist * nx;
             double baseY = baseDist * ny;
 
             double ux = -ny, uy = nx;
             double arcR = 14.0 * dpiScale;
-            int steps = Mathf.Clamp((int)(Math.Abs(iRad) * 36.0), 24, 128);
+            int steps = Mathf.Clamp((int)(Math.Abs(iRad) * 36.0), 24, 96);
             float prevX = -1f, prevY = -1f;
 
             for (int k = 0; k <= steps; k++)
@@ -1722,131 +2043,25 @@ namespace ModularFlightPanel.UI.Widgets
                 double wz = arcR * sa;
 
                 ProjectWorldToScreenFloat(wx, wy, wz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float sx, out float sy, out _);
-                if (k == steps / 2) { midX = sx; midY = sy; }
                 if (k > 0) DrawAALine(vh, prevX, prevY, sx, sy, c, lineWidth);
+                if (k == steps && prevX >= 0f)
+                {
+                    float adx = sx - prevX;
+                    float ady = sy - prevY;
+                    float alen = Mathf.Sqrt(adx * adx + ady * ady);
+                    if (alen > 0.001f)
+                    {
+                        adx /= alen; ady /= alen;
+                        float ah = 6.0f * (lineWidth > 1f ? lineWidth : 1.2f);
+                        float hb = ah * 0.42f;
+                        DrawFilledTriangle(vh,
+                            new Vector2(sx, sy),
+                            new Vector2(sx - adx * ah - ady * hb, sy - ady * ah + adx * hb),
+                            new Vector2(sx - adx * ah + ady * hb, sy - ady * ah - adx * hb),
+                            c);
+                    }
+                }
                 prevX = sx; prevY = sy;
-            }
-        }
-
-        private static void DrawGlyphChar(VertexHelper vh, float x, float y, char ch, Color32 c, float s)
-        {
-            float lw = 1.0f * s; // glyph stroke width
-            switch (ch)
-            {
-                case 'X':
-                    DrawAALine(vh, x, y - 7f * s, x + 5f * s, y, c, lw);
-                    DrawAALine(vh, x, y, x + 5f * s, y - 7f * s, c, lw);
-                    break;
-                case 'Y':
-                    DrawAALine(vh, x, y, x + 2.5f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x + 5f * s, y, x + 2.5f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x + 2.5f * s, y - 3.5f * s, x + 2.5f * s, y - 7f * s, c, lw);
-                    break;
-                case 'Z':
-                    DrawAALine(vh, x, y, x + 5f * s, y, c, lw);
-                    DrawAALine(vh, x + 5f * s, y, x, y - 7f * s, c, lw);
-                    DrawAALine(vh, x, y - 7f * s, x + 5f * s, y - 7f * s, c, lw);
-                    break;
-                case 'h':
-                    DrawAALine(vh, x, y + 2f * s, x, y - 7f * s, c, lw);
-                    DrawAALine(vh, x, y - 2.5f * s, x + 4f * s, y - 2.5f * s, c, lw);
-                    DrawAALine(vh, x + 4f * s, y - 2.5f * s, x + 4f * s, y - 7f * s, c, lw);
-                    break;
-                case 'e':
-                    DrawAALine(vh, x, y - 3.5f * s, x + 4.5f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x + 4.5f * s, y - 3.5f * s, x + 4.5f * s, y - 1f * s, c, lw);
-                    DrawAALine(vh, x + 4.5f * s, y - 1f * s, x, y - 1f * s, c, lw);
-                    DrawAALine(vh, x, y - 1f * s, x, y - 7f * s, c, lw);
-                    DrawAALine(vh, x, y - 7f * s, x + 4.5f * s, y - 7f * s, c, lw);
-                    break;
-                case 'r':
-                    DrawAALine(vh, x, y - 2f * s, x, y - 7f * s, c, lw);
-                    DrawAALine(vh, x, y - 3.5f * s, x + 3.5f * s, y - 2f * s, c, lw);
-                    break;
-                case 'v':
-                    DrawAALine(vh, x, y - 2f * s, x + 2.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 2.5f * s, y - 7f * s, x + 5f * s, y - 2f * s, c, lw);
-                    break;
-                case 'i':
-                    DrawAALine(vh, x + 1f * s, y - 2f * s, x + 1f * s, y - 7f * s, c, lw);
-                    DrawFilledCircle(vh, x + 1f * s, y, 0.7f * s, c);
-                    break;
-                case 'Ω':
-                    DrawAALine(vh, x, y - 7f * s, x + 1.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 1.5f * s, y - 7f * s, x + 1.5f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x + 1.5f * s, y - 3.5f * s, x + 3.5f * s, y - 1f * s, c, lw);
-                    DrawAALine(vh, x + 3.5f * s, y - 1f * s, x + 5.5f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x + 5.5f * s, y - 3.5f * s, x + 5.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 5.5f * s, y - 7f * s, x + 7f * s, y - 7f * s, c, lw);
-                    break;
-                case 'ω':
-                    DrawAALine(vh, x, y - 3.5f * s, x + 1.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 1.5f * s, y - 7f * s, x + 3f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x + 3f * s, y - 3.5f * s, x + 4.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 4.5f * s, y - 7f * s, x + 6f * s, y - 3.5f * s, c, lw);
-                    break;
-                case 'ν':
-                    DrawAALine(vh, x, y - 2f * s, x + 2.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 2.5f * s, y - 7f * s, x + 5.5f * s, y, c, lw);
-                    break;
-                case 'A':
-                    DrawAALine(vh, x, y - 7f * s, x + 2.5f * s, y, c, lw);
-                    DrawAALine(vh, x + 2.5f * s, y, x + 5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 1f * s, y - 4f * s, x + 4f * s, y - 4f * s, c, lw);
-                    break;
-                case 'D':
-                    DrawAALine(vh, x, y, x, y - 7f * s, c, lw);
-                    DrawAALine(vh, x, y, x + 2.5f * s, y, c, lw);
-                    DrawAALine(vh, x + 2.5f * s, y, x + 4.5f * s, y - 2f * s, c, lw);
-                    DrawAALine(vh, x + 4.5f * s, y - 2f * s, x + 4.5f * s, y - 5f * s, c, lw);
-                    DrawAALine(vh, x + 4.5f * s, y - 5f * s, x + 2.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 2.5f * s, y - 7f * s, x, y - 7f * s, c, lw);
-                    break;
-                case 'P':
-                    DrawAALine(vh, x, y, x, y - 7f * s, c, lw);
-                    DrawAALine(vh, x, y, x + 4f * s, y, c, lw);
-                    DrawAALine(vh, x + 4f * s, y, x + 4f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x + 4f * s, y - 3.5f * s, x, y - 3.5f * s, c, lw);
-                    break;
-                case 'E':
-                    DrawAALine(vh, x, y, x, y - 7f * s, c, lw);
-                    DrawAALine(vh, x, y, x + 4f * s, y, c, lw);
-                    DrawAALine(vh, x, y - 3.5f * s, x + 3f * s, y - 3.5f * s, c, lw);
-                    DrawAALine(vh, x, y - 7f * s, x + 4f * s, y - 7f * s, c, lw);
-                    break;
-                case 'N':
-                    DrawAALine(vh, x, y - 7f * s, x, y, c, lw);
-                    DrawAALine(vh, x, y, x + 4.5f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 4.5f * s, y - 7f * s, x + 4.5f * s, y, c, lw);
-                    break;
-                case 'S':
-                    DrawAALine(vh, x + 4f * s, y, x + 1f * s, y, c, lw);
-                    DrawAALine(vh, x + 1f * s, y, x, y - 3f * s, c, lw);
-                    DrawAALine(vh, x, y - 3f * s, x + 4f * s, y - 4f * s, c, lw);
-                    DrawAALine(vh, x + 4f * s, y - 4f * s, x + 4f * s, y - 7f * s, c, lw);
-                    DrawAALine(vh, x + 4f * s, y - 7f * s, x, y - 7f * s, c, lw);
-                    break;
-                case 'C':
-                    DrawAALine(vh, x + 4f * s, y, x + 1f * s, y, c, lw);
-                    DrawAALine(vh, x, y - 1.5f * s, x, y - 5.5f * s, c, lw);
-                    DrawAALine(vh, x + 1f * s, y - 7f * s, x + 4f * s, y - 7f * s, c, lw);
-                    break;
-                case 'Q':
-                    DrawHollowCircle(vh, x + 2.5f * s, y - 3.5f * s, 2.5f * s, c, lw);
-                    DrawAALine(vh, x + 2.5f * s, y - 4f * s, x + 4.5f * s, y - 7f * s, c, lw);
-                    break;
-            }
-        }
-
-        /// <summary>逐字绘制微矢量标签 (字距 7px 逻辑单位，随 DPI 缩放)</summary>
-        private static void DrawGlyphString(VertexHelper vh, float x, float y, string str, Color32 c, float s)
-        {
-            if (string.IsNullOrEmpty(str)) return;
-            float curX = x;
-            for (int i = 0; i < str.Length; i++)
-            {
-                DrawGlyphChar(vh, curX, y, str[i], c, s);
-                curX += 7f * s;
             }
         }
 

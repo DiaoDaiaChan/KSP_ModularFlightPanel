@@ -42,6 +42,17 @@ namespace ModularFlightPanel.Core.Telemetry
         private string _lastFlightSituation = string.Empty;
         private bool _lastManeuverBurnTriggered = false;
 
+        // 外部探针与高阶动力学边缘触发历史
+        private double _peakDynamicPressure = 0.0;
+        private bool _maxQTriggered = false;
+        private double _lastSurfaceSpeed = 0.0;
+        private bool _lastInStorm = false;
+        private int _lastLockLevel = -1;
+        private double _lastTti = -1.0;
+        private double _lastDockDist = -1.0;
+        private bool _lastTfFailed = false;
+        private double _lastShOverheat = 0.0;
+
         // 大气边界缓存
         private string _cachedAtmoBody = null;
         private double _cachedAtmoVal = 70000.0;
@@ -238,7 +249,140 @@ namespace ModularFlightPanel.Core.Telemetry
                 triggeredEvent = FlightTransientEventType.Touchdown;
             }
 
+            // ── P. 突破最大动压 MAX Q 判定 ──
+            if (atmoCutoff > 0.0 && telem.AltitudeASL < atmoCutoff && telem.VerticalSpeed > 10.0 &&
+                (telem.FlightSituation == "FLYING" || telem.FlightSituation == "SUB_ORBITAL"))
+            {
+                if (telem.DynamicPressure > _peakDynamicPressure)
+                {
+                    _peakDynamicPressure = telem.DynamicPressure;
+                }
+                else if (!_maxQTriggered && _peakDynamicPressure >= 10.0 && telem.DynamicPressure <= (_peakDynamicPressure - 1.2) && telem.DynamicPressure > 2.0)
+                {
+                    _maxQTriggered = true;
+                    if (triggeredEvent == FlightTransientEventType.None)
+                    {
+                        triggeredEvent = FlightTransientEventType.MaxQ;
+                    }
+                }
+            }
+            else if (telem.FlightSituation == "LANDED" || telem.FlightSituation == "PRELAUNCH" || telem.AltitudeASL >= atmoCutoff)
+            {
+                _maxQTriggered = false;
+                _peakDynamicPressure = 0.0;
+            }
+
+            // ── Q. 起飞决断速度 V1 / 抬轮 ROTATE 判定 (GPWS) ──
+            if (triggeredEvent == FlightTransientEventType.None &&
+                (telem.FlightSituation == "LANDED" || telem.AltitudeAGL < 8.0) && telem.SurfaceSpeed > 10.0 && telem.Throttle > 0.40f &&
+                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("GPWS"))
+            {
+                double v1 = ExternalProbeRegistry.ResolveNumeric("GPWS", "V1Speed");
+                if (!double.IsNaN(v1) && v1 > 10.0 && _lastSurfaceSpeed < v1 && telem.SurfaceSpeed >= v1)
+                {
+                    triggeredEvent = FlightTransientEventType.V1Rotate;
+                }
+            }
+
+            // ── R. 发动机故障失效 (TestFlight) ──
+            if (triggeredEvent == FlightTransientEventType.None && telem.ActiveEngines > 0 &&
+                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("TF"))
+            {
+                double tfFailed = ExternalProbeRegistry.ResolveNumeric("TF", "FAILED");
+                bool isFailed = tfFailed > 0.5;
+                if (isFailed && !_lastTfFailed)
+                {
+                    triggeredEvent = FlightTransientEventType.EngineFailure;
+                }
+                _lastTfFailed = isFailed;
+            }
+            else
+            {
+                _lastTfFailed = false;
+            }
+
+            // ── S. 航电失控锁定 (RP-1 Avionics) ──
+            if (triggeredEvent == FlightTransientEventType.None &&
+                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RP1"))
+            {
+                double lockLevel = ExternalProbeRegistry.ResolveNumeric("RP1", "LOCK_LEVEL");
+                if (!double.IsNaN(lockLevel))
+                {
+                    int lvl = (int)lockLevel;
+                    if (lvl == 0 && _lastLockLevel > 0)
+                    {
+                        triggeredEvent = FlightTransientEventType.AvionicsLock;
+                    }
+                    _lastLockLevel = lvl;
+                }
+            }
+
+            // ── T. 预测地表撞击告警 (Trajectories) ──
+            if (triggeredEvent == FlightTransientEventType.None && telem.VerticalSpeed < -10.0 && telem.AltitudeAGL > 100.0 &&
+                telem.FlightSituation != "LANDED" && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("TRAJ"))
+            {
+                double tti = ExternalProbeRegistry.ResolveNumeric("TRAJ", "TIMETOIMPACT");
+                if (!double.IsNaN(tti) && tti > 0.0 && tti <= 30.0 && (_lastTti > 30.0 || _lastTti < 0.0))
+                {
+                    triggeredEvent = FlightTransientEventType.TerrainImpact;
+                }
+                _lastTti = tti;
+            }
+            else
+            {
+                _lastTti = -1.0;
+            }
+
+            // ── U. 太阳风暴/日冕物质抛射冲击 (Kerbalism) ──
+            if (triggeredEvent == FlightTransientEventType.None && (telem.AltitudeASL >= atmoCutoff || atmoCutoff <= 0.0) &&
+                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("KERBALISM"))
+            {
+                double inStorm = ExternalProbeRegistry.ResolveNumeric("KLSM", "INSTORM");
+                bool isStorm = inStorm > 0.5;
+                if (isStorm && !_lastInStorm)
+                {
+                    triggeredEvent = FlightTransientEventType.SolarStorm;
+                }
+                _lastInStorm = isStorm;
+            }
+            else
+            {
+                _lastInStorm = false;
+            }
+
+            // ── V. 端口对接锁扣捕获 (DPAI) ──
+            if (triggeredEvent == FlightTransientEventType.None && (telem.IsDockingMode || telem.TargetDistance < 50.0) &&
+                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("DOCK"))
+            {
+                double dockDist = ExternalProbeRegistry.ResolveNumeric("DOCK", "DISTANCE");
+                if (!double.IsNaN(dockDist) && dockDist > 0.0 && dockDist <= 0.25 && _lastDockDist > 0.25)
+                {
+                    triggeredEvent = FlightTransientEventType.DockingCapture;
+                }
+                _lastDockDist = dockDist;
+            }
+            else
+            {
+                _lastDockDist = -1.0;
+            }
+
+            // ── W. 热回路超温紧急告警 (SystemHeat) ──
+            if (triggeredEvent == FlightTransientEventType.None &&
+                ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("SH"))
+            {
+                double shRatio = ExternalProbeRegistry.ResolveNumeric("SH", "OVERHEATRATIO");
+                if (!double.IsNaN(shRatio))
+                {
+                    if (shRatio >= 100.0 && _lastShOverheat < 100.0)
+                    {
+                        triggeredEvent = FlightTransientEventType.ThermalOverheat;
+                    }
+                    _lastShOverheat = shRatio;
+                }
+            }
+
             // 更新历史遥测缓存
+            _lastSurfaceSpeed = telem.SurfaceSpeed;
             _lastStage = telem.CurrentStage;
             _lastActiveEngines = telem.ActiveEngines;
             _lastThrottle = telem.Throttle;
@@ -394,6 +538,15 @@ namespace ModularFlightPanel.Core.Telemetry
             _lastCelestialBody = string.Empty;
             _lastFlightSituation = string.Empty;
             _lastManeuverBurnTriggered = false;
+            _peakDynamicPressure = 0.0;
+            _maxQTriggered = false;
+            _lastSurfaceSpeed = 0.0;
+            _lastInStorm = false;
+            _lastLockLevel = -1;
+            _lastTti = -1.0;
+            _lastDockDist = -1.0;
+            _lastTfFailed = false;
+            _lastShOverheat = 0.0;
             _cachedAtmoBody = null;
             _currentSnapshot = default;
             _lastEvalTime = -10f;

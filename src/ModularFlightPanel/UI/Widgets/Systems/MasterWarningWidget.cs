@@ -95,7 +95,15 @@ namespace ModularFlightPanel.UI.Widgets
             ApoapsisPass = FlightTransientEventType.ApoapsisPass,     // 通过远拱点
             PeriapsisPass = FlightTransientEventType.PeriapsisPass,   // 通过近拱点
             DockingMode = FlightTransientEventType.DockingMode,       // 进入对接模式
-            Touchdown = FlightTransientEventType.Touchdown            // 着陆接地成功
+            Touchdown = FlightTransientEventType.Touchdown,           // 着陆接地成功
+            MaxQ = FlightTransientEventType.MaxQ,                     // 突破最大动压
+            V1Rotate = FlightTransientEventType.V1Rotate,             // 起飞决断/抬轮速度
+            SolarStorm = FlightTransientEventType.SolarStorm,         // 太阳风暴冲击
+            AvionicsLock = FlightTransientEventType.AvionicsLock,     // 航电失控锁定
+            TerrainImpact = FlightTransientEventType.TerrainImpact,   // 地表撞击告警
+            DockingCapture = FlightTransientEventType.DockingCapture, // 对接锁扣捕获
+            EngineFailure = FlightTransientEventType.EngineFailure,   // 发动机故障失效
+            ThermalOverheat = FlightTransientEventType.ThermalOverheat // 热回路过热告警
         }
 
         private enum EventColorRole
@@ -802,6 +810,102 @@ namespace ModularFlightPanel.UI.Widgets
                         Mathf.Max(2.0f, _bannerDuration),
                         30,
                         EventColorRole.Success
+                    );
+
+                case BannerEventType.MaxQ:
+                    return new BannerEventItem(
+                        BannerEventType.MaxQ,
+                        I18n.Tr("WIDGET_ALERT_MAX_Q", "突破最大动压"),
+                        "MAX-Q",
+                        "⚡",
+                        "⚡",
+                        Mathf.Max(1.8f, _bannerDuration),
+                        23,
+                        EventColorRole.AccentPrimary
+                    );
+
+                case BannerEventType.V1Rotate:
+                    return new BannerEventItem(
+                        BannerEventType.V1Rotate,
+                        I18n.Tr("WIDGET_ALERT_V1_ROTATE", "起飞决断速度"),
+                        "ROTATE",
+                        "▲",
+                        "▲",
+                        Mathf.Max(1.5f, _bannerDuration),
+                        21,
+                        EventColorRole.AccentPrimary
+                    );
+
+                case BannerEventType.SolarStorm:
+                    return new BannerEventItem(
+                        BannerEventType.SolarStorm,
+                        I18n.Tr("WIDGET_ALERT_SOLAR_STORM", "太阳风暴冲击"),
+                        "CME",
+                        "☢",
+                        "☢",
+                        Mathf.Max(2.2f, _bannerDuration),
+                        32,
+                        EventColorRole.DangerColor
+                    );
+
+                case BannerEventType.AvionicsLock:
+                    return new BannerEventItem(
+                        BannerEventType.AvionicsLock,
+                        I18n.Tr("WIDGET_ALERT_AVIONICS_LOCK", "航电失控锁定"),
+                        "LOCK",
+                        "⚠",
+                        "⚠",
+                        Mathf.Max(2.5f, _bannerDuration),
+                        35,
+                        EventColorRole.DangerColor
+                    );
+
+                case BannerEventType.TerrainImpact:
+                    return new BannerEventItem(
+                        BannerEventType.TerrainImpact,
+                        I18n.Tr("WIDGET_ALERT_TERRAIN_IMPACT", "地表撞击告警"),
+                        "IMPACT",
+                        "▼",
+                        "▼",
+                        Mathf.Max(2.0f, _bannerDuration),
+                        33,
+                        EventColorRole.DangerColor
+                    );
+
+                case BannerEventType.DockingCapture:
+                    return new BannerEventItem(
+                        BannerEventType.DockingCapture,
+                        I18n.Tr("WIDGET_ALERT_DOCKING_CAPTURE", "对接锁扣捕获"),
+                        "LATCH",
+                        "⚓",
+                        "⚓",
+                        Mathf.Max(2.0f, _bannerDuration),
+                        28,
+                        EventColorRole.Success
+                    );
+
+                case BannerEventType.EngineFailure:
+                    return new BannerEventItem(
+                        BannerEventType.EngineFailure,
+                        I18n.Tr("WIDGET_ALERT_ENGINE_FAIL", "发动机故障失效"),
+                        "FAIL",
+                        "✕",
+                        "✕",
+                        Mathf.Max(2.5f, _bannerDuration),
+                        34,
+                        EventColorRole.DangerColor
+                    );
+
+                case BannerEventType.ThermalOverheat:
+                    return new BannerEventItem(
+                        BannerEventType.ThermalOverheat,
+                        I18n.Tr("WIDGET_ALERT_THERMAL_OVERHEAT", "热回路超温"),
+                        "SCRAM",
+                        "♨",
+                        "♨",
+                        Mathf.Max(2.0f, _bannerDuration),
+                        31,
+                        EventColorRole.DangerColor
                     );
 
                 default:
@@ -1538,6 +1642,212 @@ namespace ModularFlightPanel.UI.Widgets
             if (!telem.IsConnected && (telem.CrewCount == 0 || telem.CrewCapacity == 0))
             {
                 _cautAlerts.Add(new AlertItem("NO COMM", "OFF", false));
+            }
+
+            // ── 10. RP-1 航电负荷与深空锁控 (RP1) ──
+            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RP1"))
+            {
+                double lockLevel = ExternalProbeRegistry.ResolveNumeric("RP1", "LOCK_LEVEL");
+                if (lockLevel == 0.0)
+                {
+                    double massMargin = ExternalProbeRegistry.ResolveNumeric("RP1", "MASS_MARGIN");
+                    if (massMargin < -0.01)
+                    {
+                        double vMass = ExternalProbeRegistry.ResolveNumeric("RP1", "VESSEL_MASS");
+                        _warnAlerts.Add(new AlertItem("AVION OVER!", $"{vMass:F1}t", true));
+                    }
+                    else
+                    {
+                        double ipLock = ExternalProbeRegistry.ResolveNumeric("RP1", "INTERPLANETARY_LOCKED");
+                        if (ipLock > 0.5) _warnAlerts.Add(new AlertItem("INTERPLAN LCK", "DEEP", true));
+                        else _warnAlerts.Add(new AlertItem("AVION LOCK!", "LOST", true));
+                    }
+                }
+                double deadAvionics = ExternalProbeRegistry.ResolveNumeric("RP1", "DEAD_COUNT");
+                if (deadAvionics > 0.5)
+                {
+                    _cautAlerts.Add(new AlertItem("AVION DEAD", $"{Mathf.RoundToInt((float)deadAvionics)}", false));
+                }
+            }
+
+            // ── 11. SystemHeat 热回路过热与散热 (SH) ──
+            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("SH"))
+            {
+                double overheatRatio = ExternalProbeRegistry.ResolveNumeric("SH", "OVERHEATRATIO");
+                if (!double.IsNaN(overheatRatio) && overheatRatio > 50.0)
+                {
+                    int ohInt = Mathf.RoundToInt((float)overheatRatio);
+                    if (overheatRatio >= 100.0)
+                    {
+                        _warnAlerts.Add(new AlertItem("LOOP OVERHEAT!", $"{ohInt}%", true));
+                    }
+                    else if (overheatRatio >= 85.0)
+                    {
+                        _cautAlerts.Add(new AlertItem("LOOP TEMP HI", $"{ohInt}%", false));
+                    }
+                }
+            }
+
+            // ── 12. DynamicBatteryStorage 快速亏电放电 (DBS) ──
+            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("DBS"))
+            {
+                double isDepleting = ExternalProbeRegistry.ResolveNumeric("DBS", "ISDEPLETING");
+                if (isDepleting > 0.5)
+                {
+                    double timeSec = ExternalProbeRegistry.ResolveNumeric("DBS", "DEPLETIONSECONDS");
+                    if (!double.IsNaN(timeSec) && timeSec > 0.0)
+                    {
+                        if (timeSec <= 120.0)
+                        {
+                            _warnAlerts.Add(new AlertItem("BATT DRAIN!", $"{Mathf.RoundToInt((float)timeSec)}s", true));
+                        }
+                        else if (timeSec <= 300.0)
+                        {
+                            _cautAlerts.Add(new AlertItem("DISCHARGING", $"{Mathf.RoundToInt((float)(timeSec / 60.0))}m", false));
+                        }
+                    }
+                }
+            }
+
+            // ── 13. Kerbalism 空间天气、深空辐射与舱内中毒 (KERBALISM) ──
+            if (ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("KERBALISM"))
+            {
+                double inStorm = ExternalProbeRegistry.ResolveNumeric("KLSM", "INSTORM");
+                if (inStorm > 0.5)
+                {
+                    _warnAlerts.Add(new AlertItem("SOLAR STORM!", "CME", true));
+                }
+
+                double habRad = ExternalProbeRegistry.ResolveNumeric("KLSM", "HABITATRADIATION");
+                if (!double.IsNaN(habRad) && habRad > 0.05)
+                {
+                    if (habRad > 0.20)
+                    {
+                        _warnAlerts.Add(new AlertItem("RAD DANGER!", $"{habRad:F2}r/h", true));
+                    }
+                    else
+                    {
+                        _cautAlerts.Add(new AlertItem("HIGH RAD", $"{habRad:F2}r/h", false));
+                    }
+                }
+
+                if (telem.CrewCapacity > 0)
+                {
+                    double poisoning = ExternalProbeRegistry.ResolveNumeric("KLSM", "POISONING");
+                    if (!double.IsNaN(poisoning) && poisoning > 0.30)
+                    {
+                        int co2Pct = Mathf.RoundToInt((float)(poisoning * 100.0));
+                        if (poisoning > 0.70)
+                        {
+                            _warnAlerts.Add(new AlertItem("CO2 CRIT!", $"{co2Pct}%", true));
+                        }
+                        else
+                        {
+                            _cautAlerts.Add(new AlertItem("HIGH CO2", $"{co2Pct}%", false));
+                        }
+                    }
+
+                    double habPress = ExternalProbeRegistry.ResolveNumeric("KLSM", "PRESSURE");
+                    if (!double.IsNaN(habPress) && habPress > 0.001 && habPress < 0.40)
+                    {
+                        _warnAlerts.Add(new AlertItem("CABIN PRESS!", $"{habPress:F2}a", true));
+                    }
+                }
+            }
+
+            // ── 14. Trajectories 预测地形撞击 (TRAJ) ──
+            if (telem.VerticalSpeed < -5.0 && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("TRAJ"))
+            {
+                double tti = ExternalProbeRegistry.ResolveNumeric("TRAJ", "TIMETOIMPACT");
+                if (!double.IsNaN(tti) && tti > 0.0 && tti <= 60.0)
+                {
+                    int ttiSec = Mathf.RoundToInt((float)tti);
+                    if (tti <= 30.0)
+                    {
+                        _warnAlerts.Add(new AlertItem("IMPACT!", $"{ttiSec}s", true));
+                    }
+                    else
+                    {
+                        _cautAlerts.Add(new AlertItem("TERR CLOSE", $"{ttiSec}s", false));
+                    }
+                }
+            }
+
+            // ── 15. GPWS 进近未放起落架告警 (GPWS) ──
+            if (telem.VerticalSpeed < -2.0 && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("GPWS"))
+            {
+                double rAlt = ExternalProbeRegistry.ResolveNumeric("GPWS", "RADARALT");
+                if (!double.IsNaN(rAlt) && rAlt > 5.0 && rAlt < 250.0)
+                {
+                    double gearDown = ExternalProbeRegistry.ResolveNumeric("GPWS", "GEARDOWN");
+                    if (gearDown < 0.5 && telem.FlightSituation != "LANDED")
+                    {
+                        _warnAlerts.Add(new AlertItem("GEAR UP!", $"{Mathf.RoundToInt((float)rAlt)}m", true));
+                    }
+                }
+            }
+
+            // ── 16. DPAI 进近过速告警 (DPAI) ──
+            if ((telem.IsDockingMode || telem.TargetDistance < 100.0) && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("DOCK"))
+            {
+                double dockDist = ExternalProbeRegistry.ResolveNumeric("DOCK", "DISTANCE");
+                if (!double.IsNaN(dockDist) && dockDist > 0.5 && dockDist < 50.0)
+                {
+                    double closureRate = ExternalProbeRegistry.ResolveNumeric("DOCK", "CLOSURERATE");
+                    if (!double.IsNaN(closureRate) && closureRate > 2.0)
+                    {
+                        _cautAlerts.Add(new AlertItem("RATE HIGH", $"{closureRate:F1}m/s", false));
+                    }
+                }
+            }
+
+            // ── 17. AtmosphereAutopilot 限制器介入保护告警 (AA) ──
+            if (telem.AtmosphericPressure > 0.001 && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("AA"))
+            {
+                double modAoA = ExternalProbeRegistry.ResolveNumeric("AA", "MODERATE_AOA");
+                if (modAoA > 0.5)
+                {
+                    double maxAoA = ExternalProbeRegistry.ResolveNumeric("AA", "MAX_AOA");
+                    double curAoA = ExternalProbeRegistry.ResolveNumeric("AA", "AOA");
+                    if (maxAoA > 1.0 && Math.Abs(curAoA) >= maxAoA * 0.92)
+                    {
+                        _cautAlerts.Add(new AlertItem("AOA LIMIT", $"{Mathf.RoundToInt((float)Math.Abs(curAoA))}°", false));
+                    }
+                }
+
+                double modG = ExternalProbeRegistry.ResolveNumeric("AA", "MODERATE_G");
+                if (modG > 0.5)
+                {
+                    double maxG = ExternalProbeRegistry.ResolveNumeric("AA", "MAX_G");
+                    if (maxG > 1.0 && telem.GForce >= maxG * 0.90)
+                    {
+                        _cautAlerts.Add(new AlertItem("G LIMIT", $"{telem.GForce:F1}G", false));
+                    }
+                }
+            }
+
+            // ── 18. RealFuels 剩余点火次数 (RF) ──
+            if (engineArmed && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RF"))
+            {
+                double ignitions = ExternalProbeRegistry.ResolveNumeric("RF", "IGNITIONS");
+                if (ignitions == 1.0)
+                {
+                    _cautAlerts.Add(new AlertItem("LAST IGN", "1 LEFT", false));
+                }
+                else if (ignitions == 0.0 && telem.Throttle <= 0.001f)
+                {
+                    _warnAlerts.Add(new AlertItem("NO IGNITIONS", "0 LEFT", true));
+                }
+            }
+
+            // ── 19. RealAntennas 链路裕度不足 (RA) ──
+            if ((telem.CrewCapacity == 0 || telem.CrewCount == 0) && ExternalProbeRegistry.NumericResolver != null && ExternalProbeRegistry.IsTagAvailable("RA"))
+            {
+                double sig = ExternalProbeRegistry.ResolveNumeric("RA", "SIGNALSTRENGTH");
+                if (!double.IsNaN(sig) && sig > 0.0001 && sig < 0.15)
+                {
+                    _cautAlerts.Add(new AlertItem("WEAK SIGNAL", $"{Mathf.RoundToInt((float)sig * 100f)}%", false));
+                }
             }
         }
 

@@ -10,6 +10,12 @@ namespace ModularFlightPanel.Core
     {
         public static Func<string, string, double> NumericResolver;
         public static Func<string, string, string, string> StringResolver;
+        public static Func<string, bool> TagAvailabilityResolver;
+
+        public static bool IsTagAvailable(string tag)
+        {
+            return TagAvailabilityResolver != null && TagAvailabilityResolver(tag);
+        }
 
         public static double ResolveNumeric(string tag, string subTag)
         {

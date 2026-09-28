@@ -22,6 +22,14 @@ namespace ModularFlightPanel.Core
         ApoapsisPass,       // 通过远拱点
         PeriapsisPass,      // 通过近拱点
         DockingMode,        // 进入对接模式
-        Touchdown           // 着陆接地成功
+        Touchdown,          // 着陆接地成功
+        MaxQ,               // 突破最大动压 (Max Q Passed)
+        V1Rotate,           // GPWS 起飞决断/抬轮速度 (V1 Decision / Rotate)
+        SolarStorm,         // Kerbalism 太阳风暴冲击 (CME / Solar Storm)
+        AvionicsLock,       // RP-1 航电失控锁定 (Avionics Locked)
+        TerrainImpact,      // Trajectories 预测地表撞击告警 (Ground Impact Imminent)
+        DockingCapture,     // DPAI 端口对接锁扣捕获 (Docking Captured)
+        EngineFailure,      // TestFlight 发动机故障失效 (Engine Failure)
+        ThermalOverheat     // SystemHeat 热回路过热紧急告警 (Thermal Loop Overheat)
     }
 }

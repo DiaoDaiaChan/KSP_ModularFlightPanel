@@ -49,6 +49,7 @@ namespace ModularFlightPanel.Core.Probes
             // 挂载至解耦注册表
             ExternalProbeRegistry.NumericResolver = ResolveNumericProbe;
             ExternalProbeRegistry.StringResolver = ResolveStringProbe;
+            ExternalProbeRegistry.TagAvailabilityResolver = IsProbeTagAvailable;
 
             // 刷新全量探针可用性位图缓存 (Zero-Allocation Fast Path)
             RefreshAvailability();
