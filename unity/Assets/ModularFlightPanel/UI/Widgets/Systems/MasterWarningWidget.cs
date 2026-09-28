@@ -36,7 +36,7 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override Vector2 BaseSize => new Vector2(184f, 42f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 模块数量：2 (经典聚拢) 或 3 (金字塔型)
         private int _modulesCount = 3;

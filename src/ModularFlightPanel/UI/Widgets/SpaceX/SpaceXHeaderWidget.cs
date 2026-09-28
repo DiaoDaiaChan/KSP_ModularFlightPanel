@@ -313,7 +313,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     slot.SeparatorImage = null;
                 }
 
-                // 注册进标准化微控件治理体系
+                // 注册进标准化微控件治理体系 (token 传 null，由 OnUpdateTelemetry 精确直读与死区防抖，杜绝每帧重复解析)
                 slot.Control = new WidgetReadoutControl(
                     slot.Id,
                     slot.Title ?? slot.Id,
@@ -321,7 +321,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     slot.ValueText,
                     slot.TitleLabel,
                     slot.Type == SpaceXSlotType.PhaseBadge ? TextStyleRole.Accent : TextStyleRole.PrimaryValue,
-                    slot.Token ?? "{ALT:ASL:DIST}"
+                    null
                 );
                 this.Controls.Register(slot.Control);
             }
@@ -549,6 +549,48 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                         {
                             slot.LastNumeric = spd;
                             string val = FormatMetricSpeed(spd);
+                            if (val != slot.LastValue)
+                            {
+                                slot.LastValue = val;
+                                slot.ValueText.text = val;
+                            }
+                        }
+                    }
+                    else if (slot.Id == "alt" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{ALT:ASL:DIST}"))
+                    {
+                        double alt = telemetry.AltitudeASL;
+                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(alt - slot.LastNumeric) >= 1.0)
+                        {
+                            slot.LastNumeric = alt;
+                            string val = FormatMetricDistance(alt);
+                            if (val != slot.LastValue)
+                            {
+                                slot.LastValue = val;
+                                slot.ValueText.text = val;
+                            }
+                        }
+                    }
+                    else if ((slot.Id == "ap" || slot.Id == "apo") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{AP:DIST}"))
+                    {
+                        double ap = telemetry.Apoapsis;
+                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(ap - slot.LastNumeric) >= 5.0)
+                        {
+                            slot.LastNumeric = ap;
+                            string val = FormatMetricDistance(ap);
+                            if (val != slot.LastValue)
+                            {
+                                slot.LastValue = val;
+                                slot.ValueText.text = val;
+                            }
+                        }
+                    }
+                    else if ((slot.Id == "pe" || slot.Id == "peri") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{PE:DIST}"))
+                    {
+                        double pe = telemetry.Periapsis;
+                        if (double.IsNaN(slot.LastNumeric) || Math.Abs(pe - slot.LastNumeric) >= 5.0)
+                        {
+                            slot.LastNumeric = pe;
+                            string val = pe < -100000.0 ? "IMPACT" : FormatMetricDistance(pe);
                             if (val != slot.LastValue)
                             {
                                 slot.LastValue = val;

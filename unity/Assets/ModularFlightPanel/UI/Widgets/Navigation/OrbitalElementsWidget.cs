@@ -42,8 +42,14 @@ namespace ModularFlightPanel.UI.Widgets
         ExactIds = new[] { "nav.orbital_elements" })]
     public class OrbitalElementsWidget : BaseFlightWidget
     {
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
         protected override bool AutoCreateCardFrame => true;
+
+        // ── 性能节流与状态缓存 ──
+        private float _lastMeshRebuildTime = -1f;
+        private string _lastTitleText = null;
+        private string _lastBadgeText = null;
+        private TextStyleRole _lastBadgeRole = (TextStyleRole)(-1);
 
         // ── 尺寸规格：精简模式 290×116，完整模式 340×380 ──
         private static readonly Vector2 CompactSize = new Vector2(290f, 116f);
@@ -561,8 +567,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telemetry == null || !telemetry.HasVessel)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
-                OrbitBadge.SetRole(TextStyleRole.Muted);
+                SetBadge(I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL"), TextStyleRole.Muted);
                 return;
             }
 
@@ -675,13 +680,23 @@ namespace ModularFlightPanel.UI.Widgets
                     prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
                 if (!string.IsNullOrEmpty(prinFrame) && prinFrame != "---")
                 {
-                    Title.Text = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
+                    string newTitle = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
+                    if (_lastTitleText != newTitle)
+                    {
+                        _lastTitleText = newTitle;
+                        Title.Text = newTitle;
+                    }
                     hasPrinFrame = true;
                 }
             }
             if (!hasPrinFrame)
             {
-                Title.Text = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
+                string defaultTitle = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
+                if (_lastTitleText != defaultTitle)
+                {
+                    _lastTitleText = defaultTitle;
+                    Title.Text = defaultTitle;
+                }
             }
 
             // 3. 轨道能量状态胶囊 (Principia 描述优先)
@@ -691,8 +706,10 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isFullMode)
             {
                 UpdateFullModeReadouts(ap, pe, tAp, sma, ecc, inc, lan, aop, tra, period);
-                if (CheckDirty(sma, ecc, inc, lan, aop))
+                float now = Time.unscaledTime;
+                if ((now - _lastMeshRebuildTime >= 0.25f || _lastMeshRebuildTime < 0f) && CheckDirty(sma, ecc, inc, lan, aop))
                 {
+                    _lastMeshRebuildTime = now;
                     _lastDrawnSma = sma; _lastDrawnEcc = ecc; _lastDrawnInc = inc;
                     _lastDrawnLan = lan; _lastDrawnAop = aop;
                     _lastDrawnAp = ap; _lastDrawnPe = pe;
@@ -709,6 +726,20 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        private void SetBadge(string text, TextStyleRole role)
+        {
+            if (_lastBadgeText != text)
+            {
+                _lastBadgeText = text;
+                OrbitBadge.Text = text;
+            }
+            if (_lastBadgeRole != role)
+            {
+                _lastBadgeRole = role;
+                OrbitBadge.SetRole(role);
+            }
+        }
+
         private void UpdateOrbitStateBadge(double ap, double pe, double ecc, IFlightTelemetry telemetry, bool isPrincipia)
         {
             // 优先接入 Principia 轨道分析高阶物理描述
@@ -719,8 +750,7 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     string clean = pDesc.Replace("\n", " ").Trim();
                     if (clean.Length > 15) clean = clean.Substring(0, 15).Trim();
-                    OrbitBadge.Text = clean.ToUpperInvariant();
-                    OrbitBadge.SetRole(TextStyleRole.Accent);
+                    SetBadge(clean.ToUpperInvariant(), TextStyleRole.Accent);
                     return;
                 }
             }
@@ -733,37 +763,42 @@ namespace ModularFlightPanel.UI.Widgets
             string bodyName = ExternalProbeRegistry.ResolveString("ORBIT", "BODY", "");
             bool hasBodyName = !string.IsNullOrEmpty(bodyName) && bodyName != "---";
 
+            string badgeText;
+            TextStyleRole badgeRole;
+
             if (ecc >= 1.0)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE");
-                OrbitBadge.SetRole(TextStyleRole.Danger);
+                badgeText = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE");
+                badgeRole = TextStyleRole.Danger;
             }
             else if (pe < 0.0)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC");
-                OrbitBadge.SetRole(TextStyleRole.Danger);
+                badgeText = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC");
+                badgeRole = TextStyleRole.Danger;
             }
             else if (pe < safeAlt)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBIT");
-                OrbitBadge.SetRole(TextStyleRole.Warning);
+                badgeText = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBIT");
+                badgeRole = TextStyleRole.Warning;
             }
             else if (ecc < 0.015)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR");
-                OrbitBadge.SetRole(TextStyleRole.Accent);
+                badgeText = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR");
+                badgeRole = TextStyleRole.Accent;
             }
             else
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC");
-                OrbitBadge.SetRole(TextStyleRole.PrimaryValue);
+                badgeText = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC");
+                badgeRole = TextStyleRole.PrimaryValue;
             }
 
             // 天体名称联动到 OrbitBadge 后缀 (如 "圆轨道 EARTH" → 增强态势感知)
             if (hasBodyName)
             {
-                OrbitBadge.Text = $"{OrbitBadge.Text} ({bodyName.ToUpperInvariant()})";
+                badgeText = $"{badgeText} ({bodyName.ToUpperInvariant()})";
             }
+
+            SetBadge(badgeText, badgeRole);
         }
 
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,
@@ -914,11 +949,17 @@ namespace ModularFlightPanel.UI.Widgets
             if (double.IsNaN(_lastDrawnSma)) return true;
             double relSma = Math.Abs(sma - _lastDrawnSma) / Math.Max(1.0, _lastDrawnSma);
 
-            return relSma > 0.0005
-                || Math.Abs(ecc - _lastDrawnEcc) > 0.0005
-                || Math.Abs(inc - _lastDrawnInc) > 0.2
-                || Math.Abs(lan - _lastDrawnLan) > 0.2
-                || Math.Abs(aop - _lastDrawnAop) > 0.2;
+            bool dirty = relSma > 0.001
+                || Math.Abs(ecc - _lastDrawnEcc) > 0.001
+                || Math.Abs(inc - _lastDrawnInc) > 0.5;
+
+            // 对于近圆轨道 (ecc < 0.02)，近地点辐角 aop 在数学上是奇异点/数值噪音，忽略其高频抖动
+            if (ecc > 0.02 && Math.Abs(aop - _lastDrawnAop) > 0.5) dirty = true;
+
+            // 对于近赤道轨道 (inc < 0.5°)，升交点经度 lan 在数学上是奇异点/数值噪音，忽略其高频抖动
+            if (inc > 0.5 && Math.Abs(lan - _lastDrawnLan) > 0.5) dirty = true;
+
+            return dirty;
         }
 
         /// <summary>
