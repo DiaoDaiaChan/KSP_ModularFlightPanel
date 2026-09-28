@@ -235,6 +235,19 @@ namespace ModularFlightPanel.UI.Framework
 
         public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(Token);
 
+        public override bool HasTelemetryBinding => true;
+        public override string TelemetryToken
+        {
+            get => Token;
+            set => Token = value;
+        }
+        public override string TelemetryUnit
+        {
+            get => Unit;
+            set => Unit = value;
+        }
+        public override bool SupportsRange => false;
+
         public override void BindConfig(WidgetConfig config)
         {
             base.BindConfig(config);
@@ -264,8 +277,15 @@ namespace ModularFlightPanel.UI.Framework
         public RectTransform FillRectTransform => FillImage != null ? FillImage.rectTransform : null;
 
         public string NumericToken { get; set; }
-        public double MinValue { get; set; } = 0.0;
-        public double MaxValue { get; set; } = 100.0;
+        public override bool HasTelemetryBinding => true;
+        public override string TelemetryToken
+        {
+            get => NumericToken;
+            set => NumericToken = value;
+        }
+        public override bool SupportsRange => true;
+        public override double MinValue { get; set; } = 0.0;
+        public override double MaxValue { get; set; } = 100.0;
         public double CautionThreshold { get; set; } = 80.0;
         public double WarningThreshold { get; set; } = 95.0;
         public bool IsVertical { get; set; } = false;
@@ -418,6 +438,14 @@ namespace ModularFlightPanel.UI.Framework
                 {
                     string customToken = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_TOKEN", "");
                     if (!string.IsNullOrEmpty(customToken)) NumericToken = customToken;
+
+                    string minStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MIN", "");
+                    if (double.TryParse(minStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMin))
+                        MinValue = cMin;
+
+                    string maxStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MAX", "");
+                    if (double.TryParse(maxStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMax))
+                        MaxValue = cMax;
                 }
             }
         }
@@ -614,8 +642,15 @@ namespace ModularFlightPanel.UI.Framework
         public Image MeterImage { get; private set; }
         public Material MeterMaterial { get; private set; }
         public string NumericToken { get; set; }
-        public double MinValue { get; set; } = 0.0;
-        public double MaxValue { get; set; } = 100.0;
+        public override bool HasTelemetryBinding => true;
+        public override string TelemetryToken
+        {
+            get => NumericToken;
+            set => NumericToken = value;
+        }
+        public override bool SupportsRange => true;
+        public override double MinValue { get; set; } = 0.0;
+        public override double MaxValue { get; set; } = 100.0;
 
         private double _lastValue = double.NaN;
 
@@ -669,6 +704,24 @@ namespace ModularFlightPanel.UI.Framework
         }
 
         public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(NumericToken);
+
+        public override void BindConfig(WidgetConfig config)
+        {
+            base.BindConfig(config);
+            if (config != null && ParentWidget != null)
+            {
+                string customToken = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_TOKEN", "");
+                if (!string.IsNullOrEmpty(customToken)) NumericToken = customToken;
+
+                string minStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MIN", "");
+                if (double.TryParse(minStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMin))
+                    MinValue = cMin;
+
+                string maxStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MAX", "");
+                if (double.TryParse(maxStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMax))
+                    MaxValue = cMax;
+            }
+        }
     }
 
     /// <summary>
@@ -679,10 +732,17 @@ namespace ModularFlightPanel.UI.Framework
         public RectTransform PivotRt { get; private set; }
         public Image NeedleImage { get; private set; }
         public string NumericToken { get; set; }
+        public override bool HasTelemetryBinding => true;
+        public override string TelemetryToken
+        {
+            get => NumericToken;
+            set => NumericToken = value;
+        }
+        public override bool SupportsRange => true;
         public float StartAngle { get; set; } = 225f;
         public float EndAngle { get; set; } = -45f;
-        public double MinValue { get; set; } = 0.0;
-        public double MaxValue { get; set; } = 100.0;
+        public override double MinValue { get; set; } = 0.0;
+        public override double MaxValue { get; set; } = 100.0;
 
         private double _lastValue = double.NaN;
 
@@ -731,6 +791,24 @@ namespace ModularFlightPanel.UI.Framework
         }
 
         public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(NumericToken);
+
+        public override void BindConfig(WidgetConfig config)
+        {
+            base.BindConfig(config);
+            if (config != null && ParentWidget != null)
+            {
+                string customToken = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_TOKEN", "");
+                if (!string.IsNullOrEmpty(customToken)) NumericToken = customToken;
+
+                string minStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MIN", "");
+                if (double.TryParse(minStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMin))
+                    MinValue = cMin;
+
+                string maxStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MAX", "");
+                if (double.TryParse(maxStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMax))
+                    MaxValue = cMax;
+            }
+        }
     }
 
     /// <summary>

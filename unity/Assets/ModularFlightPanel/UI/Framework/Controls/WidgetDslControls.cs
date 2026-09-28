@@ -218,6 +218,26 @@ namespace ModularFlightPanel.UI.Framework
         }
 
         public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(Token);
+
+        public override bool HasTelemetryBinding => true;
+        public override string TelemetryToken
+        {
+            get => Token;
+            set => Token = value;
+        }
+        public override bool SupportsRange => false;
+
+        public override void BindConfig(WidgetConfig config)
+        {
+            base.BindConfig(config);
+            if (config != null && ParentWidget != null)
+            {
+                string customToken = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_TOKEN", "");
+                if (string.IsNullOrEmpty(customToken)) customToken = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_TPL", "");
+                if (string.IsNullOrEmpty(customToken)) customToken = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant(), "");
+                if (!string.IsNullOrEmpty(customToken)) Token = customToken;
+            }
+        }
     }
 
     /// <summary>
@@ -739,8 +759,15 @@ namespace ModularFlightPanel.UI.Framework
         public bool IsVertical { get; set; }
         public MeterStyleRole MeterRole { get; set; } = MeterStyleRole.Primary;
         public string NumericToken { get; set; }
-        public double MinValue { get; set; } = 0.0;
-        public double MaxValue { get; set; } = 100.0;
+        public override bool HasTelemetryBinding => true;
+        public override string TelemetryToken
+        {
+            get => NumericToken;
+            set => NumericToken = value;
+        }
+        public override bool SupportsRange => true;
+        public override double MinValue { get; set; } = 0.0;
+        public override double MaxValue { get; set; } = 100.0;
 
         public Image TrackImage { get; private set; }
         public Image FillImage { get; private set; }
@@ -897,5 +924,23 @@ namespace ModularFlightPanel.UI.Framework
         }
 
         public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(NumericToken);
+
+        public override void BindConfig(WidgetConfig config)
+        {
+            base.BindConfig(config);
+            if (config != null && ParentWidget != null)
+            {
+                string customToken = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_TOKEN", "");
+                if (!string.IsNullOrEmpty(customToken)) NumericToken = customToken;
+
+                string minStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MIN", "");
+                if (double.TryParse(minStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMin))
+                    MinValue = cMin;
+
+                string maxStr = ParentWidget.GetTemplateChannel(Id.ToUpperInvariant() + "_MAX", "");
+                if (double.TryParse(maxStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double cMax))
+                    MaxValue = cMax;
+            }
+        }
     }
 }

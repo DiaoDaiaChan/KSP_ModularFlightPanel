@@ -441,6 +441,7 @@ namespace ModularFlightPanel.UI.HUD
         private static Vector2 _subControlScrollPos = Vector2.zero;
         private static Vector2 _telemScrollPos = Vector2.zero;
         private static Vector2 _channelScrollPos = Vector2.zero;
+        private static bool _showGlobalTelemetryFoldout = false;
 
         private static float _lastEvalTime = 0f;
         private static readonly Dictionary<string, string> _channelEvalCache = new Dictionary<string, string>();
@@ -542,10 +543,10 @@ namespace ModularFlightPanel.UI.HUD
             var ctrlList = primary.Controls.All;
             WidgetConfig w = primary.Config;
 
-            float subW = _activeInspectorTab == InspectorTab.MicroControls ? 360f : (_activeInspectorTab == InspectorTab.Telemetry ? 400f : 430f);
+            float subW = _activeInspectorTab == InspectorTab.MicroControls ? 360f : 430f;
             float subH = _activeInspectorTab == InspectorTab.MicroControls 
                 ? Mathf.Clamp(80f + ctrlList.Count * 28f, 160f, 320f)
-                : (_activeInspectorTab == InspectorTab.Telemetry ? 310f : 340f);
+                : (_activeInspectorTab == InspectorTab.Telemetry ? Mathf.Clamp(120f + ctrlList.Count * 36f, 300f, 420f) : 340f);
 
             float subX = badgeRect.x;
             float subY = badgeRect.y + badgeRect.height + 6f;
@@ -721,6 +722,154 @@ namespace ModularFlightPanel.UI.HUD
             if (w == null) return;
             _telemScrollPos = GUILayout.BeginScrollView(_telemScrollPos, GUILayout.Height(totalH - 46f));
 
+            var allControls = primary.Controls?.All;
+            var bindableControls = new List<ITelemetryBindableControl>();
+            if (allControls != null)
+            {
+                for (int i = 0; i < allControls.Count; i++)
+                {
+                    if (allControls[i] is ITelemetryBindableControl bindable && bindable.HasTelemetryBinding)
+                    {
+                        bindableControls.Add(bindable);
+                    }
+                }
+            }
+
+            // 1. 微控件多参数独立装配区
+            if (bindableControls.Count > 0)
+            {
+                GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=9>💡 发现 {bindableControls.Count} 处微控件数据源，支持逐项装配与实时取样:</size></color>");
+                for (int i = 0; i < bindableControls.Count; i++)
+                {
+                    var ctrl = bindableControls[i];
+                    MFPGuiSkin.BeginInset();
+                    GUILayout.BeginHorizontal();
+
+                    // 1. 显隐状态点
+                    string led = ctrl.IsVisible ? "<color=#00FF88>●</color>" : "<color=#7088A8>○</color>";
+                    if (GUILayout.Button(led, GUILayout.Width(20f), GUILayout.Height(18f)))
+                    {
+                        primary.Controls.SetControlVisibility(ctrl.Id, !ctrl.IsVisible);
+                        WidgetLayoutManager.Instance.SaveLayout();
+                    }
+
+                    // 2. 类别徽章
+                    string catTag = GetCategoryShortTag(ctrl.Category);
+                    MFPGuiSkin.DrawBadge(catTag, Color.white, GetCategoryColor(ctrl.Category), 34f);
+
+                    // 3. 微控件显示名称
+                    GUILayout.Label($"<b>{ctrl.DisplayName}</b>", GUILayout.Width(86f));
+
+                    // 4. Token 输入框
+                    string curTok = ctrl.TelemetryToken ?? "";
+                    string editedTok = GUILayout.TextField(curTok, GUILayout.Width(100f));
+                    if (editedTok != curTok)
+                    {
+                        ctrl.TelemetryToken = editedTok;
+                        SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_TOKEN", editedTok);
+                    }
+
+                    // 5. 🔍 选参数 按钮
+                    if (GUILayout.Button("🔍", GUILayout.Width(24f), GUILayout.Height(20f)))
+                    {
+                        var targetCtrl = ctrl;
+                        TelemetryParamDrawer.Open($"{primary.DisplayName} - {targetCtrl.DisplayName}", chosenToken =>
+                        {
+                            targetCtrl.TelemetryToken = chosenToken;
+                            SetChannel(w, $"{targetCtrl.Id.ToUpperInvariant()}_TOKEN", chosenToken);
+                            var meta = TelemetryCatalog.FindByToken(chosenToken);
+                            if (meta != null && targetCtrl.SupportsRange)
+                            {
+                                targetCtrl.MinValue = meta.DefaultMin;
+                                targetCtrl.MaxValue = meta.DefaultMax;
+                                SetChannel(w, $"{targetCtrl.Id.ToUpperInvariant()}_MIN", meta.DefaultMin.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                                SetChannel(w, $"{targetCtrl.Id.ToUpperInvariant()}_MAX", meta.DefaultMax.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                            }
+                        });
+                    }
+
+                    // 6. 实时采样值预览
+                    string sampleVal = GetSampledTokenValue(ctrl.TelemetryToken);
+                    GUILayout.Space(2f);
+                    string unitSuffix = !string.IsNullOrEmpty(ctrl.TelemetryUnit) ? $" <size=9>{ctrl.TelemetryUnit}</size>" : "";
+                    GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color>{unitSuffix}", GUILayout.Width(62f));
+
+                    // 7. 解绑/重置
+                    if (!string.IsNullOrEmpty(ctrl.TelemetryToken))
+                    {
+                        if (GUILayout.Button("×", GUILayout.Width(18f), GUILayout.Height(18f)))
+                        {
+                            ctrl.TelemetryToken = "";
+                            SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_TOKEN", "");
+                        }
+                    }
+                    else
+                    {
+                        GUILayout.Space(20f);
+                    }
+
+                    GUILayout.EndHorizontal();
+
+                    // 针对支持量程的微控件 (如微型线性柱条/弧表)，提供独立量程配置行
+                    if (ctrl.SupportsRange)
+                    {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Space(20f);
+                        GUILayout.Label("<size=9>量程:</size>", GUILayout.Width(35f));
+                        string minStr = GUILayout.TextField(ctrl.MinValue.ToString("G"), GUILayout.Width(45f));
+                        if (double.TryParse(minStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pMin) && Math.Abs(pMin - ctrl.MinValue) > 0.001)
+                        {
+                            ctrl.MinValue = pMin;
+                            SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_MIN", pMin.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        }
+                        GUILayout.Label("<size=9>~</size>", GUILayout.Width(10f));
+                        string maxStr = GUILayout.TextField(ctrl.MaxValue.ToString("G"), GUILayout.Width(45f));
+                        if (double.TryParse(maxStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pMax) && Math.Abs(pMax - ctrl.MaxValue) > 0.001)
+                        {
+                            ctrl.MaxValue = pMax;
+                            SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_MAX", pMax.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        }
+                        GUILayout.EndHorizontal();
+                    }
+
+                    MFPGuiSkin.EndInset();
+
+                    // 悬停高亮检测
+                    if (Event.current.type == EventType.Repaint)
+                    {
+                        Rect rowRect = GUILayoutUtility.GetLastRect();
+                        if (rowRect.Contains(Event.current.mousePosition))
+                        {
+                            WidgetControlHighlighter.HighlightedControl = ctrl;
+                        }
+                    }
+
+                    GUILayout.Space(1f);
+                }
+            }
+
+            // 2. 全局主数据源与量程折叠区 (若无微控件则直接展示，否则提供折叠开关)
+            bool showGlobal = bindableControls.Count == 0 || _showGlobalTelemetryFoldout;
+            if (bindableControls.Count > 0)
+            {
+                GUILayout.Space(4f);
+                string foldoutTitle = _showGlobalTelemetryFoldout ? "▼ 折叠全局主数据源与量程" : "▶ 展开全局主数据源与量程";
+                if (GUILayout.Button(foldoutTitle, GUILayout.Height(18f)))
+                {
+                    _showGlobalTelemetryFoldout = !_showGlobalTelemetryFoldout;
+                }
+            }
+
+            if (showGlobal)
+            {
+                DrawGlobalTelemetrySettings(primary, w);
+            }
+
+            GUILayout.EndScrollView();
+        }
+
+        private void DrawGlobalTelemetrySettings(BaseFlightWidget primary, WidgetConfig w)
+        {
             // 1. 主遥测驱动数据源
             MFPGuiSkin.BeginInset();
             GUILayout.BeginHorizontal();
@@ -805,8 +954,8 @@ namespace ModularFlightPanel.UI.HUD
                 {
                     w.MinValue = (float)paramMeta.DefaultMin;
                     w.MaxValue = (float)paramMeta.DefaultMax;
-                    w.CautionThreshold = (float)paramMeta.DefaultCaution;
-                    w.WarningThreshold = (float)paramMeta.DefaultWarning;
+                    w.CautionThreshold = (float)meta.DefaultCaution;
+                    w.WarningThreshold = (float)meta.DefaultWarning;
                     w.UnitLabel = paramMeta.DefaultUnit;
                     if (w.WidgetType == "tape") w.StepInterval = paramMeta.DefaultStep;
                     WidgetLayoutManager.Instance.SaveLayout();
@@ -864,8 +1013,6 @@ namespace ModularFlightPanel.UI.HUD
             GUILayout.EndHorizontal();
 
             MFPGuiSkin.EndInset();
-
-            GUILayout.EndScrollView();
         }
 
         private void DrawChannelsTab(BaseFlightWidget primary, WidgetConfig w, float totalH)

@@ -23,6 +23,15 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public TextWidget PhaseTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_ACTIVE_PHASE", "活动段"));
         public TextWidget PhaseValue = TextWidget.Badge(I18n.Tr("WIDGET_SPX_ORBITAL_COAST", "轨道滑行"));
 
+        // 标准化微控件引用
+        private WidgetReadoutControl _phaseCtrl;
+        private WidgetReadoutControl _timerCtrl;
+        private WidgetReadoutControl _velCtrl;
+        private WidgetReadoutControl _altCtrl;
+        private WidgetReadoutControl _apCtrl;
+        private WidgetReadoutControl _peCtrl;
+        private WidgetReadoutControl _incCtrl;
+
         // UI 视图节点
         private Image _bgImage;
         private Outline _outline;
@@ -186,13 +195,21 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "accent_line", "Bottom Accent Line", _bottomAccentLine.gameObject, "底部电光青色细强调线", t => { if (_bottomAccentLine != null) _bottomAccentLine.color = t.AccentPrimary; }));
             }
-            this.Controls.Register(new WidgetReadoutControl("active_phase", "当前任务飞行阶段徽章", _phaseValue != null ? _phaseValue.gameObject : null, _phaseValue, _phaseLabel, TextStyleRole.Accent, "{SITUATION}"));
-            this.Controls.Register(new WidgetReadoutControl("mission_timer", "任务时钟与溅落倒计时", _timerValue != null ? _timerValue.gameObject : null, _timerValue, _timerLabel, TextStyleRole.PrimaryValue, "{MET}"));
-            this.Controls.Register(new WidgetReadoutControl("inertial_velocity", "惯性速度列", _velValue != null ? _velValue.gameObject : null, _velValue, _velLabel, TextStyleRole.PrimaryValue, "{SPD}"));
-            this.Controls.Register(new WidgetReadoutControl("altitude", "海拔高度列", _altValue != null ? _altValue.gameObject : null, _altValue, _altLabel, TextStyleRole.PrimaryValue, _altToken));
-            this.Controls.Register(new WidgetReadoutControl("apogee", "远地点高度列", _apValue != null ? _apValue.gameObject : null, _apValue, _apLabel, TextStyleRole.PrimaryValue, _apToken));
-            this.Controls.Register(new WidgetReadoutControl("perigee", "近地点高度列", _peValue != null ? _peValue.gameObject : null, _peValue, _peLabel, TextStyleRole.PrimaryValue, _peToken));
-            this.Controls.Register(new WidgetReadoutControl("inclination", "轨道倾角列", _incValue != null ? _incValue.gameObject : null, _incValue, _incLabel, TextStyleRole.PrimaryValue, "{INC}"));
+            _phaseCtrl = new WidgetReadoutControl("active_phase", "当前任务飞行阶段徽章", _phaseValue != null ? _phaseValue.gameObject : null, _phaseValue, _phaseLabel, TextStyleRole.Accent, "{SITUATION}");
+            _timerCtrl = new WidgetReadoutControl("mission_timer", "任务时钟与溅落倒计时", _timerValue != null ? _timerValue.gameObject : null, _timerValue, _timerLabel, TextStyleRole.PrimaryValue, "{MET}");
+            _velCtrl = new WidgetReadoutControl("inertial_velocity", "惯性速度列", _velValue != null ? _velValue.gameObject : null, _velValue, _velLabel, TextStyleRole.PrimaryValue, _velToken ?? "{SPD}");
+            _altCtrl = new WidgetReadoutControl("altitude", "海拔高度列", _altValue != null ? _altValue.gameObject : null, _altValue, _altLabel, TextStyleRole.PrimaryValue, _altToken ?? "{ALT:ASL:DIST}");
+            _apCtrl = new WidgetReadoutControl("apogee", "远地点高度列", _apValue != null ? _apValue.gameObject : null, _apValue, _apLabel, TextStyleRole.PrimaryValue, _apToken ?? "{AP:DIST}");
+            _peCtrl = new WidgetReadoutControl("perigee", "近地点高度列", _peValue != null ? _peValue.gameObject : null, _peValue, _peLabel, TextStyleRole.PrimaryValue, _peToken ?? "{PE:DIST}");
+            _incCtrl = new WidgetReadoutControl("inclination", "轨道倾角列", _incValue != null ? _incValue.gameObject : null, _incValue, _incLabel, TextStyleRole.PrimaryValue, _incToken ?? "{INC}");
+
+            this.Controls.Register(_phaseCtrl);
+            this.Controls.Register(_timerCtrl);
+            this.Controls.Register(_velCtrl);
+            this.Controls.Register(_altCtrl);
+            this.Controls.Register(_apCtrl);
+            this.Controls.Register(_peCtrl);
+            this.Controls.Register(_incCtrl);
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 
@@ -226,59 +243,61 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             if (telemetry == null || !telemetry.HasVessel) return;
 
-            // 1. 飞行阶段推断
-            string phase = InferFlightPhase(telemetry);
-            if (phase != _lastPhase && _phaseValue != null)
+            // 1. 飞行阶段推断 (若未被用户重新绑定，则使用 SpaceX 飞行状态机)
+            if (_phaseCtrl == null || string.IsNullOrEmpty(_phaseCtrl.Token) || _phaseCtrl.Token == "{SITUATION}")
             {
-                _lastPhase = phase;
-                _phaseValue.text = phase;
+                string phase = InferFlightPhase(telemetry);
+                if (phase != _lastPhase && _phaseValue != null)
+                {
+                    _lastPhase = phase;
+                    _phaseValue.text = phase;
+                }
             }
 
-            // 2. 任务时钟
-            string timer;
-            string tLbl;
-            if (telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode > 0)
+            // 2. 任务时钟 (若未被用户重新绑定，则使用机动节点/MET 时钟推断)
+            if (_timerCtrl == null || string.IsNullOrEmpty(_timerCtrl.Token) || _timerCtrl.Token == "{MET}")
             {
-                timer = "T-" + FormatDuration(telemetry.ManeuverTimeToNode);
-                tLbl = "TIME TO NODE";
-            }
-            else
-            {
-                timer = "MET " + FormatDuration(telemetry.MissionTime);
-                tLbl = _timerLabelStr;
+                string timer;
+                string tLbl;
+                if (telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode > 0)
+                {
+                    timer = "T-" + FormatDuration(telemetry.ManeuverTimeToNode);
+                    tLbl = "TIME TO NODE";
+                }
+                else
+                {
+                    timer = "MET " + FormatDuration(telemetry.MissionTime);
+                    tLbl = _timerLabelStr;
+                }
+
+                if (tLbl != _lastTimerLabel && _timerLabel != null)
+                {
+                    _lastTimerLabel = tLbl;
+                    _timerLabel.text = tLbl;
+                }
+
+                if (timer != _lastTimer && _timerValue != null)
+                {
+                    _lastTimer = timer;
+                    _timerValue.text = timer;
+                }
             }
 
-            if (tLbl != _lastTimerLabel && _timerLabel != null)
-            {
-                _lastTimerLabel = tLbl;
-                _timerLabel.text = tLbl;
-            }
-
-            if (timer != _lastTimer && _timerValue != null)
-            {
-                _lastTimer = timer;
-                _timerValue.text = timer;
-            }
-
-            // 3. 惯性速度
-            string velStr;
-            if (!string.IsNullOrEmpty(_velToken))
-            {
-                velStr = TelemetryTokenEngine.Evaluate(_velToken, telemetry);
-            }
-            else
+            // 3. 惯性速度 (若未被用户重新绑定，则使用双段自适应速度单位)
+            if (_velCtrl == null || string.IsNullOrEmpty(_velCtrl.Token) || _velCtrl.Token == "{SPD}")
             {
                 double spd = telemetry.OrbitalSpeed > 10.0 ? telemetry.OrbitalSpeed : telemetry.CurrentSpeed;
-                velStr = FormatMetricSpeed(spd);
-            }
-            if (velStr != _lastVel && _velValue != null)
-            {
-                _lastVel = velStr;
-                _velValue.text = velStr;
+                string velStr = FormatMetricSpeed(spd);
+                if (velStr != _lastVel && _velValue != null)
+                {
+                    _lastVel = velStr;
+                    _velValue.text = velStr;
+                }
             }
 
             // 4. 高度
-            string altStr = TelemetryTokenEngine.Evaluate(_altToken, telemetry);
+            string altTok = _altCtrl?.Token ?? _altToken;
+            string altStr = TelemetryTokenEngine.Evaluate(altTok, telemetry);
             if (altStr != _lastAlt && _altValue != null)
             {
                 _lastAlt = altStr;
@@ -286,14 +305,16 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             // 5. 远地点与近地点
-            string apStr = TelemetryTokenEngine.Evaluate(_apToken, telemetry);
+            string apTok = _apCtrl?.Token ?? _apToken;
+            string apStr = TelemetryTokenEngine.Evaluate(apTok, telemetry);
             if (apStr != _lastAp && _apValue != null)
             {
                 _lastAp = apStr;
                 _apValue.text = apStr;
             }
 
-            string peStr = TelemetryTokenEngine.Evaluate(_peToken, telemetry);
+            string peTok = _peCtrl?.Token ?? _peToken;
+            string peStr = TelemetryTokenEngine.Evaluate(peTok, telemetry);
             if (peStr != _lastPe && _peValue != null)
             {
                 _lastPe = peStr;
@@ -301,19 +322,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             // 6. 倾角 / 航向 (严格对应列标题 INCLINATION 真实天体轨道倾角)
-            string incStr;
-            if (!string.IsNullOrEmpty(_incToken))
+            if (_incCtrl == null || string.IsNullOrEmpty(_incCtrl.Token) || _incCtrl.Token == "{INC}")
             {
-                incStr = TelemetryTokenEngine.Evaluate(_incToken, telemetry);
-            }
-            else
-            {
-                incStr = $"{telemetry.Inclination:F2}°";
-            }
-            if (incStr != _lastInc && _incValue != null)
-            {
-                _lastInc = incStr;
-                _incValue.text = incStr;
+                string incStr = $"{telemetry.Inclination:F2}°";
+                if (incStr != _lastInc && _incValue != null)
+                {
+                    _lastInc = incStr;
+                    _incValue.text = incStr;
+                }
             }
         }
 

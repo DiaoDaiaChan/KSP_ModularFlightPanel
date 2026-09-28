@@ -31,6 +31,10 @@ namespace ModularFlightPanel.UI.Framework
             {
                 list.Add(control);
             }
+            if (control is BaseWidgetControl bwc)
+            {
+                bwc.SetParentWidget(widget);
+            }
             widget.Controls?.AddDirectControl(control);
         }
 

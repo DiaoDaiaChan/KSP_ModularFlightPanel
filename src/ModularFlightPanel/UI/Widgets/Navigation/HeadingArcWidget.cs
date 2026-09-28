@@ -17,16 +17,26 @@ namespace ModularFlightPanel.UI.Widgets
     /// 严格继承 BaseFlightWidget，所有视觉样式与数值全生命周期数据驱动。
     /// </summary>
     [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 76f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.heading_arc" })]
-    public class HeadingArcWidget : BaseFlightWidget
+    public class HeadingArcWidget : BaseFlightWidget, IAdaptiveSizeWidget
     {
         public override Vector2 BaseSize => new Vector2(202f, 82f);
         protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
+        // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget - 允许编辑模式自由拉动长宽比与曲率)
+        public bool AllowNonUniformScale => true;
+        public Vector2 MinBaseSize => new Vector2(140f, 40f);
+        public Vector2 MaxBaseSize => new Vector2(400f, 200f);
+
         private const int MAX_VISIBLE_TICKS = 24;
         private const float ARC_RADIUS = 92f;
         private const float ARC_Y_CENTER_OFFSET = 76f;
         private const float MAX_ANGULAR_SPAN = 55f; // 可见视口半角范围 (±55°)
+
+        // 当前动态自适应尺寸与椭圆几何参数 (Adaptive Radius & Curvature)
+        private float _currentRadiusX = 0f;
+        private float _currentRadiusY = 0f;
+        private float _currentYCenterOffset = 0f;
 
         private struct HeadingTickUI
         {
@@ -63,6 +73,9 @@ namespace ModularFlightPanel.UI.Widgets
         private GameObject _arcBandRoot;
         private readonly List<Image> _bandBgImages = new List<Image>();
         private readonly List<Image> _bandRimImages = new List<Image>();
+        private readonly List<RectTransform> _bandPlateRts = new List<RectTransform>();
+        private readonly List<RectTransform> _outerRimRts = new List<RectTransform>();
+        private readonly List<RectTransform> _innerRimRts = new List<RectTransform>();
 
         // 通配符通道与配置
         private string _valueToken = "{HDG}";
@@ -78,18 +91,57 @@ namespace ModularFlightPanel.UI.Widgets
         public static Action OnCycleHeadingModeAction;
         public static Action OnToggleReferenceFrameWindowAction;
 
+        public void OnAdaptiveResize(Vector2 pixelSize)
+        {
+            float s = CurrentDpiScale;
+            if (s <= 0.001f) s = 1.0f;
+
+            float scaleX = (BaseSize.x > 0f) ? (pixelSize.x / (BaseSize.x * s)) : 1.0f;
+            float scaleY = (BaseSize.y > 0f) ? (pixelSize.y / (BaseSize.y * s)) : 1.0f;
+
+            scaleX = Mathf.Clamp(scaleX, 0.4f, 3.0f);
+            scaleY = Mathf.Clamp(scaleY, 0.4f, 3.0f);
+
+            _currentRadiusX = ARC_RADIUS * s * scaleX;
+            _currentRadiusY = ARC_RADIUS * s * scaleY;
+            _currentYCenterOffset = ARC_Y_CENTER_OFFSET * s * scaleY;
+
+            if (_arcBandRoot == null) return;
+
+            UpdateArcBandLayout(_currentRadiusX, _currentRadiusY, _currentYCenterOffset, s);
+
+            if (_speechBubbleRt != null)
+            {
+                _speechBubbleRt.anchoredPosition = new Vector2(0f, _currentRadiusY + 15f * s - _currentYCenterOffset);
+            }
+
+            if (_lubberLineRoot != null)
+            {
+                var lubRt = _lubberLineRoot.GetComponent<RectTransform>();
+                if (lubRt != null) lubRt.anchoredPosition = new Vector2(0f, _currentRadiusY - _currentYCenterOffset);
+            }
+
+            UpdateRotatingCompassRose(_displayedHeading, force: true);
+        }
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             ApplyCanvasIsolation(true);
 
             float s = CurrentDpiScale;
-            float arcRadius = ARC_RADIUS * s;
-            float yCenterOffset = ARC_Y_CENTER_OFFSET * s;
+            if (_currentRadiusX <= 0.001f || _currentRadiusY <= 0.001f)
+            {
+                float effW = (RectTransform != null && RectTransform.sizeDelta.x > 10f) ? RectTransform.sizeDelta.x : (BaseSize.x * s);
+                float effH = (RectTransform != null && RectTransform.sizeDelta.y > 10f) ? RectTransform.sizeDelta.y : (BaseSize.y * s);
+                float scaleX = Mathf.Clamp(effW / (BaseSize.x * s), 0.4f, 3.0f);
+                float scaleY = Mathf.Clamp(effH / (BaseSize.y * s), 0.4f, 3.0f);
 
-            // 根尺寸设定，包裹顶部弧度区域
-            Vector2 widgetSize = new Vector2(BaseSize.x * s, BaseSize.y * s);
-            RectTransform.sizeDelta = widgetSize;
+                _currentRadiusX = ARC_RADIUS * s * scaleX;
+                _currentRadiusY = ARC_RADIUS * s * scaleY;
+                _currentYCenterOffset = ARC_Y_CENTER_OFFSET * s * scaleY;
+            }
+
             if (config != null && !string.IsNullOrEmpty(config.NumericToken))
             {
                 _valueToken = config.NumericToken;
@@ -97,16 +149,16 @@ namespace ModularFlightPanel.UI.Widgets
             _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN", "HDG" }, _valueToken);
 
             // 1. 构建弧形暗色玻璃背景带
-            BuildArcBand(arcRadius, yCenterOffset, s, theme);
+            BuildArcBand(_currentRadiusX, _currentRadiusY, _currentYCenterOffset, s, theme);
 
             // 2. 初始化刻度对象池
-            BuildTickPool(arcRadius, s, theme);
+            BuildTickPool(s, theme);
 
             // 3. 构建顶部气泡框数显标牌
-            BuildSpeechBubble(arcRadius, yCenterOffset, s, theme);
+            BuildSpeechBubble(_currentRadiusY, _currentYCenterOffset, s, theme);
 
             // 4. 构建翡翠绿反T型基准游标
-            BuildLubberMark(arcRadius, yCenterOffset, s, theme);
+            BuildLubberMark(_currentRadiusY, _currentYCenterOffset, s, theme);
 
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_band", "罗盘弧底带", _arcBandRoot, (t) => {
@@ -135,19 +187,23 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyTheme(theme);
         }
 
-        private void BuildArcBand(float radius, float yCenterOffset, float s, ThemeConfig theme)
+        private void BuildArcBand(float rx, float ry, float yCenterOffset, float s, ThemeConfig theme)
         {
             _arcBandRoot = CreateContainer("Arc_Band_Root", transform).gameObject;
 
             _bandBgImages.Clear();
             _bandRimImages.Clear();
+            _bandPlateRts.Clear();
+            _outerRimRts.Clear();
+            _innerRimRts.Clear();
 
             Color bandCol = WidgetStyleManager.Instance.GetCardBackgroundColor(CardStyleRole.Normal, theme);
             Color borderCol = WidgetStyleManager.Instance.GetCardBorderColor(CardStyleRole.Normal, theme);
 
             const int segCount = 24;
             float step = (MAX_ANGULAR_SPAN * 2f) / segCount;
-            float arcSegW = ((2f * Mathf.PI * radius * (MAX_ANGULAR_SPAN * 2f / 360f)) / segCount) + 1.5f * s;
+            float rAvg = (rx + ry) * 0.5f;
+            float arcSegW = ((2f * Mathf.PI * rAvg * (MAX_ANGULAR_SPAN * 2f / 360f)) / segCount) + 1.5f * s;
             float bandThickness = 22f * s;
 
             for (int i = 0; i <= segCount; i++)
@@ -157,30 +213,87 @@ namespace ModularFlightPanel.UI.Widgets
                 float sin = Mathf.Sin(rad);
                 float cos = Mathf.Cos(rad);
 
+                float nx = ry * sin;
+                float ny = rx * cos;
+                float normLen = Mathf.Sqrt(nx * nx + ny * ny);
+                Vector2 normDir = normLen > 0.0001f ? new Vector2(nx / normLen, ny / normLen) : Vector2.up;
+                float normalAngle = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
+
+                Vector2 basePt = new Vector2(sin * rx, cos * ry - yCenterOffset);
+
                 // 1. 半透明暗色玻璃遮光弧板
-                Vector2 platePos = new Vector2(sin * (radius - 5f * s), cos * (radius - 5f * s) - yCenterOffset);
+                Vector2 platePos = basePt + normDir * (-5f * s);
                 GameObject plate = UIFactory.CreatePanel(_arcBandRoot.transform, $"BandPlate_{i}",
                     new Vector2(arcSegW, bandThickness), platePos, bandCol);
-                plate.transform.localEulerAngles = new Vector3(0f, 0f, -ang);
+                plate.transform.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
                 _bandBgImages.Add(plate.GetComponent<Image>());
+                _bandPlateRts.Add(plate.GetComponent<RectTransform>());
 
                 // 2. 外缘极细发光轮廓
-                Vector2 outerRimPos = new Vector2(sin * (radius + 6f * s), cos * (radius + 6f * s) - yCenterOffset);
+                Vector2 outerRimPos = basePt + normDir * (6f * s);
                 GameObject outerRim = UIFactory.CreatePanel(_arcBandRoot.transform, $"OuterRim_{i}",
                     new Vector2(arcSegW, 1.2f * s), outerRimPos, WidgetStyleManager.Weighted(borderCol, LineWeight.Strong));
-                outerRim.transform.localEulerAngles = new Vector3(0f, 0f, -ang);
+                outerRim.transform.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
                 _bandRimImages.Add(outerRim.GetComponent<Image>());
+                _outerRimRts.Add(outerRim.GetComponent<RectTransform>());
 
                 // 3. 内缘细弱辅助线
-                Vector2 innerRimPos = new Vector2(sin * (radius - 16f * s), cos * (radius - 16f * s) - yCenterOffset);
+                Vector2 innerRimPos = basePt + normDir * (-16f * s);
                 GameObject innerRim = UIFactory.CreatePanel(_arcBandRoot.transform, $"InnerRim_{i}",
                     new Vector2(arcSegW, 1.0f * s), innerRimPos, WidgetStyleManager.Weighted(borderCol, LineWeight.Subtle));
-                innerRim.transform.localEulerAngles = new Vector3(0f, 0f, -ang);
+                innerRim.transform.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
                 _bandRimImages.Add(innerRim.GetComponent<Image>());
+                _innerRimRts.Add(innerRim.GetComponent<RectTransform>());
             }
         }
 
-        private void BuildTickPool(float radius, float s, ThemeConfig theme)
+        private void UpdateArcBandLayout(float rx, float ry, float yCenterOffset, float s)
+        {
+            if (_bandPlateRts.Count == 0) return;
+
+            const int segCount = 24;
+            float step = (MAX_ANGULAR_SPAN * 2f) / segCount;
+            float rAvg = (rx + ry) * 0.5f;
+            float arcSegW = ((2f * Mathf.PI * rAvg * (MAX_ANGULAR_SPAN * 2f / 360f)) / segCount) + 1.5f * s;
+            float bandThickness = 22f * s;
+
+            for (int i = 0; i <= segCount && i < _bandPlateRts.Count; i++)
+            {
+                float ang = -MAX_ANGULAR_SPAN + (i * step);
+                float rad = ang * Mathf.Deg2Rad;
+                float sin = Mathf.Sin(rad);
+                float cos = Mathf.Cos(rad);
+
+                float nx = ry * sin;
+                float ny = rx * cos;
+                float normLen = Mathf.Sqrt(nx * nx + ny * ny);
+                Vector2 normDir = normLen > 0.0001f ? new Vector2(nx / normLen, ny / normLen) : Vector2.up;
+                float normalAngle = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
+
+                Vector2 basePt = new Vector2(sin * rx, cos * ry - yCenterOffset);
+
+                if (_bandPlateRts[i] != null)
+                {
+                    _bandPlateRts[i].anchoredPosition = basePt + normDir * (-5f * s);
+                    _bandPlateRts[i].localEulerAngles = new Vector3(0f, 0f, -normalAngle);
+                    _bandPlateRts[i].sizeDelta = new Vector2(arcSegW, bandThickness);
+                }
+                if (i < _outerRimRts.Count && _outerRimRts[i] != null)
+                {
+                    _outerRimRts[i].anchoredPosition = basePt + normDir * (6f * s);
+                    _outerRimRts[i].localEulerAngles = new Vector3(0f, 0f, -normalAngle);
+                    _outerRimRts[i].sizeDelta = new Vector2(arcSegW, 1.2f * s);
+                }
+                if (i < _innerRimRts.Count && _innerRimRts[i] != null)
+                {
+                    _innerRimRts[i].anchoredPosition = basePt + normDir * (-16f * s);
+                    _innerRimRts[i].localEulerAngles = new Vector3(0f, 0f, -normalAngle);
+                    _innerRimRts[i].sizeDelta = new Vector2(arcSegW, 1.0f * s);
+                }
+            }
+        }
+
+        private void BuildTickPool(float s, ThemeConfig theme)
         {
             _tickPool.Clear();
             WidgetStyleManager style = WidgetStyleManager.Instance;
@@ -225,10 +338,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void BuildSpeechBubble(float radius, float yCenterOffset, float s, ThemeConfig theme)
+        private void BuildSpeechBubble(float ry, float yCenterOffset, float s, ThemeConfig theme)
         {
             Vector2 boxSize = new Vector2(50f * s, 20f * s);
-            Vector2 bubblePos = new Vector2(0f, radius + 15f * s - yCenterOffset);
+            Vector2 bubblePos = new Vector2(0f, ry + 15f * s - yCenterOffset);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             _bubbleBtn = CreateButton("Heading_SpeechBubble", transform, out _speechBubbleRt, out _bubbleBg,
@@ -284,9 +397,9 @@ namespace ModularFlightPanel.UI.Widgets
             textRt.anchoredPosition = Vector2.zero;
         }
 
-        private void BuildLubberMark(float radius, float yCenterOffset, float s, ThemeConfig theme)
+        private void BuildLubberMark(float ry, float yCenterOffset, float s, ThemeConfig theme)
         {
-            Vector2 lubberPos = new Vector2(0f, radius - yCenterOffset);
+            Vector2 lubberPos = new Vector2(0f, ry - yCenterOffset);
 
             RectTransform lubRt = CreateContainer("Lubber_Line_Root", transform,
                 new Vector2(16f * s, 12f * s), lubberPos);
@@ -393,8 +506,9 @@ namespace ModularFlightPanel.UI.Widgets
             _lastRenderedHeading = currentHeading;
 
             float s = CurrentDpiScale;
-            float radius = ARC_RADIUS * s;
-            float yCenterOffset = ARC_Y_CENTER_OFFSET * s;
+            float rx = _currentRadiusX > 0.001f ? _currentRadiusX : (ARC_RADIUS * s);
+            float ry = _currentRadiusY > 0.001f ? _currentRadiusY : (ARC_RADIUS * s);
+            float yCenterOffset = _currentYCenterOffset > 0.001f ? _currentYCenterOffset : (ARC_Y_CENTER_OFFSET * s);
 
             int centerTickDeg = Mathf.RoundToInt(currentHeading / 5f) * 5;
             int tickIdx = 0;
@@ -418,9 +532,14 @@ namespace ModularFlightPanel.UI.Widgets
                 if (!item.Root.activeSelf) item.Root.SetActive(true);
 
                 float rad = deltaAngle * Mathf.Deg2Rad;
-                Vector2 pos = new Vector2(Mathf.Sin(rad) * radius, Mathf.Cos(rad) * radius - yCenterOffset);
+                float sin = Mathf.Sin(rad);
+                float cos = Mathf.Cos(rad);
+
+                Vector2 pos = new Vector2(sin * rx, cos * ry - yCenterOffset);
                 item.Rt.anchoredPosition = pos;
-                item.Rt.localEulerAngles = new Vector3(0f, 0f, -deltaAngle);
+
+                float normalAngle = Mathf.Atan2(ry * sin, rx * cos) * Mathf.Rad2Deg;
+                item.Rt.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
 
                 float edgeAlpha = Mathf.Clamp01((MAX_ANGULAR_SPAN - Mathf.Abs(deltaAngle)) / 10f);
 

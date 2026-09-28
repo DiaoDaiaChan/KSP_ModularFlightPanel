@@ -197,8 +197,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private bool _lastStageLocked = false;
         private string _lastTotalDvStr = string.Empty;
         private double _lastTotalDv = double.NaN;
-        private int _lastStageCount = -1;
-        private bool _stageOrderDirty = true;
+
         private int _highestStageNumber = 0;
         private int _lastActiveStage = -1;
         private float _stageTriggerRecoilTimer = 0f;

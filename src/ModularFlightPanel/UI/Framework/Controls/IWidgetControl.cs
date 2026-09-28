@@ -81,6 +81,20 @@ namespace ModularFlightPanel.UI.Framework
     }
 
     /// <summary>
+    /// 标准化可装配遥测数据源的微控件契约 (Standardized Telemetry-Bindable Control Interface)
+    /// 允许编辑模式动态下钻、自省各子控件的数据源绑定，支持独立选参数、配置量程与实时预览。
+    /// </summary>
+    public interface ITelemetryBindableControl : IWidgetControl
+    {
+        bool HasTelemetryBinding { get; }
+        string TelemetryToken { get; set; }
+        string TelemetryUnit { get; set; }
+        double MinValue { get; set; }
+        double MaxValue { get; set; }
+        bool SupportsRange { get; }
+    }
+
+    /// <summary>
     /// 标准化声明式 DSL 控件契约 (Standardized Declarative DSL Control Interface)
     /// 允许在派生小组件的类头部直接通过 new 声明实例字段，
     /// 由基类 BaseInitialize 通过反射自省自动感知、构建 UGUI 渲染节点并纳管至 Controls。
@@ -94,7 +108,7 @@ namespace ModularFlightPanel.UI.Framework
     /// <summary>
     /// 标准控件抽象基类
     /// </summary>
-    public abstract class BaseWidgetControl : IWidgetControl
+    public abstract class BaseWidgetControl : ITelemetryBindableControl
     {
         public string Id { get; protected set; }
         public string DisplayName { get; protected set; }
@@ -155,6 +169,20 @@ namespace ModularFlightPanel.UI.Framework
         }
 
         public BaseFlightWidget ParentWidget { get; protected set; }
+        public void SetParentWidget(BaseFlightWidget parent)
+        {
+            if (ParentWidget == null && parent != null)
+            {
+                ParentWidget = parent;
+            }
+        }
+
+        public virtual bool HasTelemetryBinding => false;
+        public virtual string TelemetryToken { get => null; set { } }
+        public virtual string TelemetryUnit { get => ""; set { } }
+        public virtual double MinValue { get => 0.0; set { } }
+        public virtual double MaxValue { get => 100.0; set { } }
+        public virtual bool SupportsRange => false;
 
         protected BaseWidgetControl(BaseFlightWidget parent, string id, string displayName, WidgetControlCategory category, GameObject rootGo)
         {

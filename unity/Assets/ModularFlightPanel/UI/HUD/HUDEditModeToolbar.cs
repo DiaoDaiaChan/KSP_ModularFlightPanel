@@ -441,6 +441,7 @@ namespace ModularFlightPanel.UI.HUD
         private static Vector2 _subControlScrollPos = Vector2.zero;
         private static Vector2 _telemScrollPos = Vector2.zero;
         private static Vector2 _channelScrollPos = Vector2.zero;
+        private static bool _showGlobalTelemetryFoldout = false;
 
         private static float _lastEvalTime = 0f;
         private static readonly Dictionary<string, string> _channelEvalCache = new Dictionary<string, string>();
@@ -542,10 +543,10 @@ namespace ModularFlightPanel.UI.HUD
             var ctrlList = primary.Controls.All;
             WidgetConfig w = primary.Config;
 
-            float subW = _activeInspectorTab == InspectorTab.MicroControls ? 360f : (_activeInspectorTab == InspectorTab.Telemetry ? 400f : 430f);
+            float subW = _activeInspectorTab == InspectorTab.MicroControls ? 360f : 430f;
             float subH = _activeInspectorTab == InspectorTab.MicroControls 
                 ? Mathf.Clamp(80f + ctrlList.Count * 28f, 160f, 320f)
-                : (_activeInspectorTab == InspectorTab.Telemetry ? 310f : 340f);
+                : (_activeInspectorTab == InspectorTab.Telemetry ? Mathf.Clamp(120f + ctrlList.Count * 36f, 300f, 420f) : 340f);
 
             float subX = badgeRect.x;
             float subY = badgeRect.y + badgeRect.height + 6f;
