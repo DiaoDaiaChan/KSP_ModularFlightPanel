@@ -61,13 +61,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private float _currentWidth = 960f;
         private float _currentHeight = 42f;
 
-        public void OnAdaptiveResize(Vector2 pixelSize)
-        {
-            _currentWidth = pixelSize.x;
-            _currentHeight = pixelSize.y;
-            ApplyDynamicLayout();
-        }
-
         // UI 视图容器
         private Image _bgImage;
         private Outline _outline;
@@ -337,6 +330,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             this.Controls.BindConfigToControls(Config);
             this.Controls.ApplyThemeToControls(theme);
+        }
+
+        public void OnAdaptiveResize(Vector2 pixelSize)
+        {
+            _currentWidth = pixelSize.x;
+            _currentHeight = pixelSize.y;
+            ApplyDynamicLayout();
         }
 
         public void ApplyDynamicLayout()

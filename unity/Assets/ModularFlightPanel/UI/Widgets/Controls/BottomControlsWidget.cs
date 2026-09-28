@@ -98,7 +98,6 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastSpeedModeName = null;
         private string _lastNavHookCategory = null;
         private string _lastNavHookTitle = null;
-        private float _frameUpdateTimer = 1f; // 初始触发
 
         // ── 视图初始化钩子：绑定多语言悬浮提示 ──
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -177,7 +176,6 @@ namespace ModularFlightPanel.UI.Widgets
             Rcs.Text = GetTemplateChannel("RCS_LABEL", "RCS");
             Sas.Text = GetTemplateChannel("SAS_LABEL", "SAS");
             Ref.ApplyTheme(theme);
-            _frameUpdateTimer = 1f;
         }
 
         // ── 国际化与悬浮提示系统 ──
