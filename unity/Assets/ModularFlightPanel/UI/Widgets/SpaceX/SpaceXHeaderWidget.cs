@@ -47,11 +47,26 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     /// 纯 UGUI 高对比度排版，遵循 MFP 规范，0 颜色字面量，分阶梯低开销刷新。
     /// </summary>
     [FlightWidget("spacex_header", "dragon_header", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 任务遥测顶栏", Description = "SpaceX 顶部贯通式航电状态栏：动态流式槽位架构，支持自由加减列、独立分割线与 736+ 参数灵活装配。", DefaultWidgetId = "spacex.header", DefaultX = 0f, DefaultY = 420f, IsSingleton = false, ExactIds = new[] { "spacex.header" })]
-    public class SpaceXHeaderWidget : BaseFlightWidget
+    public class SpaceXHeaderWidget : BaseFlightWidget, IDynamicSlotWidget, IAdaptiveSizeWidget
     {
         public override Vector2 BaseSize => new Vector2(960f, 42f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget - 允许编辑模式自由拉动长宽比)
+        public bool AllowNonUniformScale => true;
+        public Vector2 MinBaseSize => new Vector2(480f, 36f);
+        public Vector2 MaxBaseSize => new Vector2(2560f, 60f);
+
+        private float _currentWidth = 960f;
+        private float _currentHeight = 42f;
+
+        public void OnAdaptiveResize(Vector2 pixelSize)
+        {
+            _currentWidth = pixelSize.x;
+            _currentHeight = pixelSize.y;
+            ApplyDynamicLayout();
+        }
 
         // UI 视图容器
         private Image _bgImage;
@@ -68,9 +83,18 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
 
-            // 1. 顶栏包围盒 (960px x 42px)
-            Vector2 panelSize = new Vector2(960f * s, 42f * s);
-            RectTransform.sizeDelta = panelSize;
+            // 1. 顶栏包围盒尺寸
+            if (RectTransform.sizeDelta.x > 0.01f && RectTransform.sizeDelta.y > 0.01f)
+            {
+                _currentWidth = RectTransform.sizeDelta.x;
+                _currentHeight = RectTransform.sizeDelta.y;
+            }
+            else
+            {
+                _currentWidth = 960f * s;
+                _currentHeight = 42f * s;
+                RectTransform.sizeDelta = new Vector2(_currentWidth, _currentHeight);
+            }
 
             _bgImage = CardBackground;
             _outline = CardOutline;
@@ -80,7 +104,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 底部电光青色细强调线 (1.5px)
             if (_bottomAccentLine == null)
             {
-                GameObject lineObj = UIFactory.CreatePanel(transform, "BottomAccentLine", new Vector2(panelSize.x, 1.5f * s), new Vector2(0f, -panelSize.y * 0.5f + 0.75f * s), theme.AccentPrimary);
+                GameObject lineObj = UIFactory.CreatePanel(transform, "BottomAccentLine", new Vector2(_currentWidth, 1.5f * s), new Vector2(0f, -_currentHeight * 0.5f + 0.75f * s), theme.AccentPrimary);
                 _bottomAccentLine = lineObj.GetComponent<Image>();
             }
 
@@ -222,10 +246,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             float s = CurrentDpiScale;
-            float panelW = 960f * s;
-            float panelH = 42f * s;
+            float panelW = _currentWidth > 0.01f ? _currentWidth : 960f * s;
+            float panelH = _currentHeight > 0.01f ? _currentHeight : 42f * s;
             float pad = 16f * s;
-            float availW = panelW - pad * 2f;
+            float availW = Mathf.Max(60f * s, panelW - pad * 2f);
 
             int n = _slots.Count;
             if (n == 0) return;
@@ -255,7 +279,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             float remainingForFlex = Mathf.Max(0f, availW - fixedSum - totalSepWidth);
             float flexW = flexCount > 0 ? (remainingForFlex / flexCount) : (100f * s);
-            if (flexW < 60f * s) flexW = 60f * s;
+            if (flexW < 50f * s) flexW = 50f * s;
 
             for (int i = 0; i < n; i++)
             {
@@ -265,7 +289,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 }
             }
 
-            // 2. 从左至右依序排布
+            // 2. 从左至右构建图元
             float curX = -panelW * 0.5f + pad;
             for (int i = 0; i < n; i++)
             {
@@ -309,8 +333,95 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 this.Controls.Register(slot.Control);
             }
 
+            ApplyDynamicLayout();
+
             this.Controls.BindConfigToControls(Config);
             this.Controls.ApplyThemeToControls(theme);
+        }
+
+        public void ApplyDynamicLayout()
+        {
+            float s = CurrentDpiScale;
+            float w = _currentWidth > 0.01f ? _currentWidth : 960f * s;
+            float h = _currentHeight > 0.01f ? _currentHeight : 42f * s;
+
+            // 1. 调整底部细线与尺寸
+            if (_bottomAccentLine != null)
+            {
+                RectTransform lineRt = _bottomAccentLine.rectTransform;
+                lineRt.sizeDelta = new Vector2(w, 1.5f * s);
+                lineRt.anchoredPosition = new Vector2(0f, -h * 0.5f + 0.75f * s);
+            }
+
+            int n = _slots.Count;
+            if (n == 0) return;
+
+            float pad = 16f * s;
+            float availW = Mathf.Max(60f * s, w - pad * 2f);
+            float sepSpacing = 12f * s;
+            float[] widths = new float[n];
+            float fixedSum = 0f;
+            int flexCount = 0;
+            float totalSepWidth = 0f;
+
+            for (int i = 0; i < n; i++)
+            {
+                if (_slots[i].HasSeparator && i < n - 1)
+                {
+                    totalSepWidth += sepSpacing;
+                }
+                if (_slots[i].CustomWidth > 0f)
+                {
+                    widths[i] = _slots[i].CustomWidth * s;
+                    fixedSum += widths[i];
+                }
+                else
+                {
+                    flexCount++;
+                }
+            }
+
+            float remainingForFlex = Mathf.Max(0f, availW - fixedSum - totalSepWidth);
+            float flexW = flexCount > 0 ? (remainingForFlex / flexCount) : (100f * s);
+            if (flexW < 50f * s) flexW = 50f * s;
+
+            for (int i = 0; i < n; i++)
+            {
+                if (_slots[i].CustomWidth <= 0f)
+                {
+                    widths[i] = flexW;
+                }
+            }
+
+            // 2. 依序应用坐标与尺寸
+            float curX = -w * 0.5f + pad;
+            for (int i = 0; i < n; i++)
+            {
+                var slot = _slots[i];
+                float colW = widths[i];
+                float colCenterX = curX + colW * 0.5f;
+
+                if (slot.Root != null)
+                {
+                    RectTransform rt = slot.Root.GetComponent<RectTransform>();
+                    if (rt != null)
+                    {
+                        rt.sizeDelta = new Vector2(colW, slot.Type == SpaceXSlotType.PhaseBadge ? 30f * s : h);
+                        rt.anchoredPosition = new Vector2(colCenterX, 0f);
+                    }
+                }
+
+                curX += colW;
+
+                if (slot.SeparatorImage != null)
+                {
+                    RectTransform sepRt = slot.SeparatorImage.rectTransform;
+                    float sepX = curX + sepSpacing * 0.5f;
+                    sepRt.sizeDelta = new Vector2(1f * s, h * 0.55f);
+                    sepRt.anchoredPosition = new Vector2(sepX, 0f);
+                    curX += sepSpacing;
+                }
+            }
         }
 
         private void CreatePhaseBadge(Transform parent, SpaceXSlotItem slot, float centerX, float width, float s, ThemeConfig theme)
@@ -677,6 +788,34 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             RebuildDynamicSlots();
             WidgetLayoutManager.Instance?.SaveLayout();
         }
+
+        // ==========================================
+        // IDynamicSlotWidget 契约接口显式实现
+        // ==========================================
+        public string SlotOrchestratorTitle => "SpaceX 顶栏动态槽位: 可自由加减数据列、调整顺序与分隔线";
+
+        private readonly List<DynamicSlotDescriptor> _cachedDescriptors = new List<DynamicSlotDescriptor>();
+        public IReadOnlyList<DynamicSlotDescriptor> DynamicSlots
+        {
+            get
+            {
+                _cachedDescriptors.Clear();
+                for (int i = 0; i < _slots.Count; i++)
+                {
+                    var s = _slots[i];
+                    _cachedDescriptors.Add(new DynamicSlotDescriptor(s.Id, s.Title, s.Token, s.HasSeparator, s.CustomWidth, s.Type.ToString().ToLowerInvariant()));
+                }
+                return _cachedDescriptors;
+            }
+        }
+
+        public void AddDynamicSlot(string token, string title = null) => AddSlot(token, title);
+        public void RemoveDynamicSlot(int index) => RemoveSlot(index);
+        public void MoveDynamicSlot(int fromIndex, int toIndex) => MoveSlot(fromIndex, toIndex);
+        public void ToggleDynamicSlotSeparator(int index) => ToggleSlotSeparator(index);
+        public void UpdateDynamicSlotToken(int index, string newToken) => UpdateSlotToken(index, newToken);
+        public void UpdateDynamicSlotTitle(int index, string newTitle) => UpdateSlotTitle(index, newTitle);
+        public void ResetToDefaultDynamicSlots() => ResetToDefaultSlots();
 
         protected override void OnDestroy()
         {

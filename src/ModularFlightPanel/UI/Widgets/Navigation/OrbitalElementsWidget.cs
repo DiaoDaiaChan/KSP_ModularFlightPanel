@@ -76,6 +76,40 @@ namespace ModularFlightPanel.UI.Widgets
         private GameObject _globeRoot;
         private OrbitalDiagramGraphic _diagramGraphic;
 
+        // ── 动静分离：动态航天器图元硬件覆盖层 (0 CPU 网格重建) ──
+        private GameObject _scMarker;
+        private RectTransform _scMarkerRt;
+        private Image _scMarkerImg;
+        private GameObject _scRadiusLine;
+        private RectTransform _scRadiusLineRt;
+        private Image _scRadiusLineImg;
+        private GameObject _scVelocityArrow;
+        private RectTransform _scVelocityArrowRt;
+        private Image _scVelocityArrowImg;
+
+        // ── 读数防抖与字符串缓存 (避免逐帧 GC 与 Text 网格脏化) ──
+        private double _lastCompactAp = double.NaN;
+        private double _lastCompactPe = double.NaN;
+        private int _lastCompactSec = -1;
+        private double _lastCompactSma = double.NaN;
+        private double _lastCompactEcc = double.NaN;
+        private double _lastCompactInc = double.NaN;
+        private double _lastCompactLan = double.NaN;
+        private double _lastCompactAop = double.NaN;
+        private double _lastCompactTa = double.NaN;
+        private double _lastCompactPer = double.NaN;
+
+        private double _lastFullAp = double.NaN;
+        private double _lastFullPe = double.NaN;
+        private int _lastFullSec = -1;
+        private double _lastFullSma = double.NaN;
+        private double _lastFullEcc = double.NaN;
+        private double _lastFullLan = double.NaN;
+        private double _lastFullAop = double.NaN;
+        private double _lastFullInc = double.NaN;
+        private double _lastFullTa = double.NaN;
+        private double _lastFullPer = double.NaN;
+
         // ── 每帧复用的采样缓冲 (几何图元不再逐帧分配数组) ──
         private readonly Vector2[] _orbitPts = new Vector2[385];
         private readonly bool[] _orbitFront = new bool[385];
@@ -122,7 +156,6 @@ namespace ModularFlightPanel.UI.Widgets
         private double _lastDrawnInc = double.NaN;
         private double _lastDrawnLan = double.NaN;
         private double _lastDrawnAop = double.NaN;
-        private double _lastDrawnTa = double.NaN;
 
         private const double DefaultKerbinRadius = 600000.0;
 
@@ -239,6 +272,34 @@ namespace ModularFlightPanel.UI.Widgets
 
             _diagramGraphic.Widget = this;
             _diagramGraphic.raycastTarget = false;
+
+            // 动静分离：航天器矢径 r、速度矢量 v 与航天器标志 SC 使用 UGUI 硬件 Transform 独立覆盖层 (0 CPU 网格重建)
+            GameObject rLineGo = UIFactory.CreatePanel(globeBox.transform, "SC_Radius_Line", new Vector2(1f, 1.2f * s), Vector2.zero, _cVectorR);
+            _scRadiusLine = rLineGo;
+            _scRadiusLineRt = rLineGo.GetComponent<RectTransform>();
+            _scRadiusLineRt.pivot = new Vector2(0.5f, 0.5f);
+            _scRadiusLineImg = rLineGo.GetComponent<Image>();
+            _scRadiusLineImg.raycastTarget = false;
+            _scRadiusLine.SetActive(false);
+
+            GameObject vArrowGo = UIFactory.CreatePanel(globeBox.transform, "SC_Velocity_Arrow", new Vector2(1f, 1.5f * s), Vector2.zero, _cVectorV);
+            _scVelocityArrow = vArrowGo;
+            _scVelocityArrowRt = vArrowGo.GetComponent<RectTransform>();
+            _scVelocityArrowRt.pivot = new Vector2(0.5f, 0.5f);
+            _scVelocityArrowImg = vArrowGo.GetComponent<Image>();
+            _scVelocityArrowImg.raycastTarget = false;
+            _scVelocityArrow.SetActive(false);
+
+            GameObject scGo = UIFactory.CreatePanel(globeBox.transform, "SC_Marker", new Vector2(7f * s, 7f * s), Vector2.zero, _cVessel);
+            _scMarker = scGo;
+            _scMarkerRt = scGo.GetComponent<RectTransform>();
+            _scMarkerRt.pivot = new Vector2(0.5f, 0.5f);
+            _scMarkerImg = scGo.GetComponent<Image>();
+            _scMarkerImg.raycastTarget = false;
+            Outline scOutline = scGo.AddComponent<Outline>();
+            scOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            scOutline.effectColor = _cVesselGlow;
+            _scMarker.SetActive(false);
 
             // 四角 HUD 读数卡槽 (紧凑贴角排布，充分留出中央 3D 全息轨道展示空间)
             float badgeW = 80f * s;
@@ -630,16 +691,20 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isFullMode)
             {
                 UpdateFullModeReadouts(ap, pe, tAp, sma, ecc, inc, lan, aop, tra, period);
-                if (CheckDirty(sma, ecc, inc, lan, aop, tra))
+                if (CheckDirty(sma, ecc, inc, lan, aop))
                 {
                     _lastDrawnSma = sma; _lastDrawnEcc = ecc; _lastDrawnInc = inc;
-                    _lastDrawnLan = lan; _lastDrawnAop = aop; _lastDrawnTa = tra;
+                    _lastDrawnLan = lan; _lastDrawnAop = aop;
                     _lastDrawnAp = ap; _lastDrawnPe = pe;
                     if (_diagramGraphic != null) _diagramGraphic.SetVerticesDirty();
                 }
+                UpdateSpacecraftOverlay(tra, sma, ecc, inc, lan, aop);
             }
             else
             {
+                if (_scMarker != null && _scMarker.activeSelf) _scMarker.SetActive(false);
+                if (_scRadiusLine != null && _scRadiusLine.activeSelf) _scRadiusLine.SetActive(false);
+                if (_scVelocityArrow != null && _scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(false);
                 UpdateCompactModeReadouts(ap, pe, tAp, tPe, sma, ecc, inc, lan, aop, tra, period);
             }
         }
@@ -704,82 +769,257 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
-            SetTextIfChanged(_apVal, FormatMetricDistance(ap));
-            SetTextIfChanged(_peVal, pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe));
-
-            // 优化倒计时：使用 i18n 标签与紧凑格式
-            string tApLabel = I18n.Tr("ORBIT_FMT_T_AP", "T-AP");
-            string tPeLabel = I18n.Tr("ORBIT_FMT_T_PE", "T-PE");
-            SetTextIfChanged(_tApPeReadout, $"{tApLabel} {FormatDurationCompact(tAp)}  {tPeLabel} {FormatDurationCompact(tPe)}");
-
-            SetTextIfChanged(_smaVal, FormatMetricDistance(sma));
-
-            // 优化离心率显示：F4 精度，圆轨道极低离心率用科学计数法
-            if (ecc < 0.0001 && ecc > 0.0)
-                SetTextIfChanged(_eccVal, ecc.ToString("E2"));
-            else
-                SetTextIfChanged(_eccVal, ecc.ToString("F4"));
-
-            // 优化倾角显示：高精度角度 + 逆行标识联动
-            SetTextIfChanged(_incVal, FormatAngleSmart(inc));
-            if (_incDirVal != null)
+            if (double.IsNaN(_lastCompactAp) || Math.Abs(ap - _lastCompactAp) >= 5.0)
             {
-                _incDirVal.text = inc > 90.0 ? I18n.Tr("ORBIT_DIR_RET", "RET") : I18n.Tr("ORBIT_DIR_PRO", "PRO");
-                _incDirVal.color = inc > 90.0 ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Warning, null) : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, null);
+                _lastCompactAp = ap;
+                SetTextIfChanged(_apVal, FormatMetricDistance(ap));
+            }
+            if (double.IsNaN(_lastCompactPe) || Math.Abs(pe - _lastCompactPe) >= 5.0)
+            {
+                _lastCompactPe = pe;
+                SetTextIfChanged(_peVal, pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe));
             }
 
-            // 优化角度显示精度
-            SetTextIfChanged(_lanVal, FormatAngleSmart(lan));
-            SetTextIfChanged(_aopVal, FormatAngleSmart(aop));
-            SetTextIfChanged(_taVal, FormatAngleSmart(tra));
-            SetTextIfChanged(_perVal, FormatPeriodCompact(period));
+            int curSec = (int)tAp;
+            if (curSec != _lastCompactSec)
+            {
+                _lastCompactSec = curSec;
+                string tApLabel = I18n.Tr("ORBIT_FMT_T_AP", "T-AP");
+                string tPeLabel = I18n.Tr("ORBIT_FMT_T_PE", "T-PE");
+                SetTextIfChanged(_tApPeReadout, $"{tApLabel} {FormatDurationCompact(tAp)}  {tPeLabel} {FormatDurationCompact(tPe)}");
+            }
+
+            if (double.IsNaN(_lastCompactSma) || Math.Abs(sma - _lastCompactSma) >= 5.0)
+            {
+                _lastCompactSma = sma;
+                SetTextIfChanged(_smaVal, FormatMetricDistance(sma));
+            }
+
+            if (double.IsNaN(_lastCompactEcc) || Math.Abs(ecc - _lastCompactEcc) >= 0.0001)
+            {
+                _lastCompactEcc = ecc;
+                if (ecc < 0.0001 && ecc > 0.0)
+                    SetTextIfChanged(_eccVal, ecc.ToString("E2"));
+                else
+                    SetTextIfChanged(_eccVal, ecc.ToString("F4"));
+            }
+
+            if (double.IsNaN(_lastCompactInc) || Math.Abs(inc - _lastCompactInc) >= 0.05)
+            {
+                _lastCompactInc = inc;
+                SetTextIfChanged(_incVal, FormatAngleSmart(inc));
+                if (_incDirVal != null)
+                {
+                    _incDirVal.text = inc > 90.0 ? I18n.Tr("ORBIT_DIR_RET", "RET") : I18n.Tr("ORBIT_DIR_PRO", "PRO");
+                    _incDirVal.color = inc > 90.0 ? WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Warning, null) : WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Unit, null);
+                }
+            }
+
+            if (double.IsNaN(_lastCompactLan) || Math.Abs(lan - _lastCompactLan) >= 0.05)
+            {
+                _lastCompactLan = lan;
+                SetTextIfChanged(_lanVal, FormatAngleSmart(lan));
+            }
+            if (double.IsNaN(_lastCompactAop) || Math.Abs(aop - _lastCompactAop) >= 0.05)
+            {
+                _lastCompactAop = aop;
+                SetTextIfChanged(_aopVal, FormatAngleSmart(aop));
+            }
+            if (double.IsNaN(_lastCompactTa) || Math.Abs(tra - _lastCompactTa) >= 0.1)
+            {
+                _lastCompactTa = tra;
+                SetTextIfChanged(_taVal, FormatAngleSmart(tra));
+            }
+            if (double.IsNaN(_lastCompactPer) || Math.Abs(period - _lastCompactPer) >= 1.0)
+            {
+                _lastCompactPer = period;
+                SetTextIfChanged(_perVal, FormatPeriodCompact(period));
+            }
         }
 
         private void UpdateFullModeReadouts(double ap, double pe, double tAp,
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
-            string apLabel = I18n.Tr("ORBIT_LABEL_AP", "AP");
-            string peLabel = I18n.Tr("ORBIT_LABEL_PE", "PE");
-            SetTextIfChanged(_fApVal, $"{apLabel} {FormatMetricDistance(ap)}");
-            SetTextIfChanged(_fPeVal, $"{peLabel} {FormatMetricDistance(pe)}");
-            SetTextIfChanged(_fTimeVal, $"{I18n.Tr("ORBIT_FMT_T_AP", "T-AP")} {FormatDurationCompact(tAp)}");
+            if (double.IsNaN(_lastFullAp) || Math.Abs(ap - _lastFullAp) >= 5.0)
+            {
+                _lastFullAp = ap;
+                string apLabel = I18n.Tr("ORBIT_LABEL_AP", "AP");
+                SetTextIfChanged(_fApVal, $"{apLabel} {FormatMetricDistance(ap)}");
+            }
+            if (double.IsNaN(_lastFullPe) || Math.Abs(pe - _lastFullPe) >= 5.0)
+            {
+                _lastFullPe = pe;
+                string peLabel = I18n.Tr("ORBIT_LABEL_PE", "PE");
+                SetTextIfChanged(_fPeVal, $"{peLabel} {FormatMetricDistance(pe)}");
+            }
 
-            string elemA = I18n.Tr("ORBIT_ELEM_SMA", "a");
-            string elemE = I18n.Tr("ORBIT_ELEM_ECC", "e");
-            SetTextIfChanged(_fSmaVal, $"{elemA} {FormatMetricDistance(sma)}");
+            int curSec = (int)tAp;
+            if (curSec != _lastFullSec)
+            {
+                _lastFullSec = curSec;
+                SetTextIfChanged(_fTimeVal, $"{I18n.Tr("ORBIT_FMT_T_AP", "T-AP")} {FormatDurationCompact(tAp)}");
+            }
 
-            // 优化离心率精度：F4，极低离心率用科学计数法
-            if (ecc < 0.0001 && ecc > 0.0)
-                SetTextIfChanged(_fEccVal, $"{elemE} {ecc:E2}");
-            else
-                SetTextIfChanged(_fEccVal, $"{elemE} {ecc:F4}");
+            if (double.IsNaN(_lastFullSma) || Math.Abs(sma - _lastFullSma) >= 5.0)
+            {
+                _lastFullSma = sma;
+                string elemA = I18n.Tr("ORBIT_ELEM_SMA", "a");
+                SetTextIfChanged(_fSmaVal, $"{elemA} {FormatMetricDistance(sma)}");
+            }
 
-            SetTextIfChanged(_fPeriodVal, $"{I18n.Tr("ORBIT_LABEL_PERIOD", "P")} {FormatPeriodCompact(period)}");
+            if (double.IsNaN(_lastFullEcc) || Math.Abs(ecc - _lastFullEcc) >= 0.0001)
+            {
+                _lastFullEcc = ecc;
+                string elemE = I18n.Tr("ORBIT_ELEM_ECC", "e");
+                if (ecc < 0.0001 && ecc > 0.0)
+                    SetTextIfChanged(_fEccVal, $"{elemE} {ecc:E2}");
+                else
+                    SetTextIfChanged(_fEccVal, $"{elemE} {ecc:F4}");
+            }
 
-            SetTextIfChanged(_fLanVal, $"{I18n.Tr("ORBIT_ELEM_LAN", "Ω")} {FormatAngleSmart(lan)}");
-            SetTextIfChanged(_fAopVal, $"{I18n.Tr("ORBIT_ELEM_AOP", "ω")} {FormatAngleSmart(aop)}");
+            if (double.IsNaN(_lastFullPer) || Math.Abs(period - _lastFullPer) >= 1.0)
+            {
+                _lastFullPer = period;
+                SetTextIfChanged(_fPeriodVal, $"{I18n.Tr("ORBIT_LABEL_PERIOD", "P")} {FormatPeriodCompact(period)}");
+            }
 
-            SetTextIfChanged(_fIncVal, $"{I18n.Tr("ORBIT_ELEM_INC", "i")} {FormatAngleSmart(inc)}");
-            SetTextIfChanged(_fTaVal, $"{I18n.Tr("ORBIT_ELEM_TA", "ν")} {FormatAngleSmart(tra)}");
+            if (double.IsNaN(_lastFullLan) || Math.Abs(lan - _lastFullLan) >= 0.05)
+            {
+                _lastFullLan = lan;
+                SetTextIfChanged(_fLanVal, $"{I18n.Tr("ORBIT_ELEM_LAN", "Ω")} {FormatAngleSmart(lan)}");
+            }
+            if (double.IsNaN(_lastFullAop) || Math.Abs(aop - _lastFullAop) >= 0.05)
+            {
+                _lastFullAop = aop;
+                SetTextIfChanged(_fAopVal, $"{I18n.Tr("ORBIT_ELEM_AOP", "ω")} {FormatAngleSmart(aop)}");
+            }
+            if (double.IsNaN(_lastFullInc) || Math.Abs(inc - _lastFullInc) >= 0.05)
+            {
+                _lastFullInc = inc;
+                SetTextIfChanged(_fIncVal, $"{I18n.Tr("ORBIT_ELEM_INC", "i")} {FormatAngleSmart(inc)}");
+            }
+            if (double.IsNaN(_lastFullTa) || Math.Abs(tra - _lastFullTa) >= 0.1)
+            {
+                _lastFullTa = tra;
+                SetTextIfChanged(_fTaVal, $"{I18n.Tr("ORBIT_ELEM_TA", "ν")} {FormatAngleSmart(tra)}");
+            }
         }
 
         /// <summary>
-        /// 渲染脏标记防抖：任一开普勒要素变化超过阈值才重绘全息图。
-        /// 角度阈值取 0.2°（最外圈轨道点位移约 0.3px，仍在亚像素内），在保证画面连续的前提下压低重绘频率。
+        /// 渲染脏标记防抖：开普勒轨道几何要素 (a, e, i, Ω, ω) 变化超过阈值才重绘静态全息图。
+        /// 动静分离：真近点角 ν (航天器运动) 完全从网格脏标记中剔除，由动态硬件图元独立平滑驱动，彻底根除高频 CPU 网格全量重建。
         /// </summary>
-        private bool CheckDirty(double sma, double ecc, double inc, double lan, double aop, double tra)
+        private bool CheckDirty(double sma, double ecc, double inc, double lan, double aop)
         {
             if (double.IsNaN(_lastDrawnSma)) return true;
             double relSma = Math.Abs(sma - _lastDrawnSma) / Math.Max(1.0, _lastDrawnSma);
-            double dTra = Math.Abs(tra - _lastDrawnTa);
-            if (dTra > 180.0) dTra = 360.0 - dTra;
 
             return relSma > 0.0005
                 || Math.Abs(ecc - _lastDrawnEcc) > 0.0005
                 || Math.Abs(inc - _lastDrawnInc) > 0.2
                 || Math.Abs(lan - _lastDrawnLan) > 0.2
-                || Math.Abs(aop - _lastDrawnAop) > 0.2
-                || dTra > 0.2;
+                || Math.Abs(aop - _lastDrawnAop) > 0.2;
+        }
+
+        /// <summary>
+        /// 动静分离：以 UGUI 硬件 Transform 独立更新航天器空间投影位点与瞬时速度矢量 (0 CPU 网格重建)
+        /// </summary>
+        private void UpdateSpacecraftOverlay(double tra, double sma, double ecc, double inc, double lan, double aop)
+        {
+            if (_scMarker == null || double.IsNaN(sma) || sma <= 0.0)
+            {
+                if (_scMarker != null && _scMarker.activeSelf) _scMarker.SetActive(false);
+                if (_scRadiusLine != null && _scRadiusLine.activeSelf) _scRadiusLine.SetActive(false);
+                if (_scVelocityArrow != null && _scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(false);
+                return;
+            }
+
+            float cx = 0f;
+            float cy = -8f;
+            double camPitch = 25.0 * Math.PI / 180.0;
+            double camYaw = -115.0 * Math.PI / 180.0;
+            double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
+            double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
+
+            double diskR = 118.0;
+            double maxOrbitR = diskR * 1.20;
+            bool closed = ecc < 1.0;
+            double eDraw = closed ? Math.Min(Math.Max(0.0, ecc), 0.96) : Math.Min(Math.Max(1.0, ecc), 4.0);
+            double pShp = sma * (1.0 - eDraw * eDraw);
+            double scale = closed 
+                ? ((sma > 1.0) ? (maxOrbitR / (sma * (1.0 + eDraw))) : 1.0) 
+                : ((diskR * 0.55) * (1.0 + eDraw) / Math.Max(1.0, pShp));
+            double pScale = pShp * scale;
+
+            double iRad = inc * Math.PI / 180.0;
+            double oRad = lan * Math.PI / 180.0;
+            double wRad = aop * Math.PI / 180.0;
+            double vRad = tra * Math.PI / 180.0;
+
+            double nx = Math.Cos(oRad), ny = Math.Sin(oRad);
+            double hx = Math.Sin(iRad) * Math.Sin(oRad);
+            double hy = -Math.Sin(iRad) * Math.Cos(oRad);
+            double hz = Math.Cos(iRad);
+
+            double hCrossNx = hy * 0.0 - hz * ny;
+            double hCrossNy = hz * nx - hx * 0.0;
+            double hCrossNz = hx * ny - hy * nx;
+
+            double edirX = Math.Cos(wRad) * nx + Math.Sin(wRad) * hCrossNx;
+            double edirY = Math.Cos(wRad) * ny + Math.Sin(wRad) * hCrossNy;
+            double edirZ = Math.Cos(wRad) * 0.0 + Math.Sin(wRad) * hCrossNz;
+
+            double qdirX = hy * edirZ - hz * edirY;
+            double qdirY = hz * edirX - hx * edirZ;
+            double qdirZ = hx * edirY - hy * edirX;
+
+            double denSc = 1.0 + eDraw * Math.Cos(vRad);
+            if (denSc < 1e-6) denSc = 1e-6;
+            double rSc = pScale / denSc;
+            double scWx = rSc * (Math.Cos(vRad) * edirX + Math.Sin(vRad) * qdirX);
+            double scWy = rSc * (Math.Cos(vRad) * edirY + Math.Sin(vRad) * qdirY);
+            double scWz = rSc * (Math.Cos(vRad) * edirZ + Math.Sin(vRad) * qdirZ);
+
+            ProjectWorldToScreenFloat(scWx, scWy, scWz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float scX, out float scY, out _);
+
+            if (!_scMarker.activeSelf) _scMarker.SetActive(true);
+            SetAnchoredPositionIfChanged(_scMarkerRt, new Vector2(scX, scY));
+
+            // 半径矢量线
+            if (_scRadiusLine != null)
+            {
+                if (!_scRadiusLine.activeSelf) _scRadiusLine.SetActive(true);
+                float rDx = scX - cx;
+                float rDy = scY - cy;
+                float rLen = Mathf.Sqrt(rDx * rDx + rDy * rDy);
+                float rAngle = Mathf.Atan2(rDy, rDx) * Mathf.Rad2Deg;
+                SetAnchoredPositionIfChanged(_scRadiusLineRt, new Vector2((cx + scX) * 0.5f, (cy + scY) * 0.5f));
+                SetSizeDeltaIfChanged(_scRadiusLineRt, new Vector2(rLen, 1.2f));
+                _scRadiusLineRt.localRotation = Quaternion.Euler(0f, 0f, rAngle);
+            }
+
+            // 速度矢量箭头
+            double dThetaX = -Math.Sin(vRad) * edirX + (eDraw + Math.Cos(vRad)) * qdirX;
+            double dThetaY = -Math.Sin(vRad) * edirY + (eDraw + Math.Cos(vRad)) * qdirY;
+            double dThetaZ = -Math.Sin(vRad) * edirZ + (eDraw + Math.Cos(vRad)) * qdirZ;
+            double vMag = Math.Sqrt(dThetaX * dThetaX + dThetaY * dThetaY + dThetaZ * dThetaZ);
+            if (vMag > 0.001 && _scVelocityArrow != null)
+            {
+                if (!_scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(true);
+                dThetaX /= vMag; dThetaY /= vMag; dThetaZ /= vMag;
+                double vLen = 28.0;
+                ProjectWorldToScreenFloat(scWx + vLen * dThetaX, scWy + vLen * dThetaY, scWz + vLen * dThetaZ,
+                    cosCp, sinCp, cosCy, sinCy, cx, cy, out float vEndX, out float vEndY, out _);
+
+                float dx = vEndX - scX;
+                float dy = vEndY - scY;
+                float len = Mathf.Sqrt(dx * dx + dy * dy);
+                float angle = Mathf.Atan2(dy, dx) * Mathf.Rad2Deg;
+
+                SetAnchoredPositionIfChanged(_scVelocityArrowRt, new Vector2((scX + vEndX) * 0.5f, (scY + vEndY) * 0.5f));
+                SetSizeDeltaIfChanged(_scVelocityArrowRt, new Vector2(len, 1.5f));
+                _scVelocityArrowRt.localRotation = Quaternion.Euler(0f, 0f, angle);
+            }
         }
 
         // ═════════════════════════════════════════════════════════════════
@@ -809,7 +1049,6 @@ namespace ModularFlightPanel.UI.Widgets
             double inc = _lastDrawnInc;
             double lan = _lastDrawnLan;
             double aop = _lastDrawnAop;
-            double tra = _lastDrawnTa;
             double ap = _lastDrawnAp;
             double pe = _lastDrawnPe;
 
@@ -845,7 +1084,6 @@ namespace ModularFlightPanel.UI.Widgets
             double iRad = inc * Math.PI / 180.0;
             double oRad = lan * Math.PI / 180.0;
             double wRad = aop * Math.PI / 180.0;
-            double vRad = tra * Math.PI / 180.0;
 
             // ─────────────────────────────────────────────────────────────
             // 1. 绘制底座：赤道参考面 (Equatorial Plane Disk)
@@ -1053,42 +1291,6 @@ namespace ModularFlightPanel.UI.Widgets
                 DrawAALine(vh, dnNodeX, dnNodeY, dnL1X, dnL1Y, _cNode, 0.9f);
                 DrawGlyphString(vh, dnL1X - 16f, dnL1Y + 3f, "DN", _cNode);
             }
-
-            // 9. 航天器、位置矢量 r、速度矢量 v 与 真近点角 ν
-            double denSc = 1.0 + eDraw * Math.Cos(vRad);
-            if (denSc < 1e-6) denSc = 1e-6;
-            double rSc = pScale / denSc;
-            double scWx = rSc * (Math.Cos(vRad) * edirX + Math.Sin(vRad) * qdirX);
-            double scWy = rSc * (Math.Cos(vRad) * edirY + Math.Sin(vRad) * qdirY);
-            double scWz = rSc * (Math.Cos(vRad) * edirZ + Math.Sin(vRad) * qdirZ);
-
-            ProjectWorldToScreenFloat(scWx, scWy, scWz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float scX, out float scY, out _);
-
-            DrawArrow(vh, cx, cy, scX, scY, _cVectorR, 1.1f, 5.0f);
-            float rMidX = (cx + scX) * 0.5f - 9f;
-            float rMidY = (cy + scY) * 0.5f + 2f;
-            DrawGlyphChar(vh, rMidX, rMidY, 'r', _cVectorR);
-
-            double dThetaX = -Math.Sin(vRad) * edirX + (eDraw + Math.Cos(vRad)) * qdirX;
-            double dThetaY = -Math.Sin(vRad) * edirY + (eDraw + Math.Cos(vRad)) * qdirY;
-            double dThetaZ = -Math.Sin(vRad) * edirZ + (eDraw + Math.Cos(vRad)) * qdirZ;
-            double vMag = Math.Sqrt(dThetaX * dThetaX + dThetaY * dThetaY + dThetaZ * dThetaZ);
-            if (vMag > 0.001)
-            {
-                dThetaX /= vMag; dThetaY /= vMag; dThetaZ /= vMag;
-                double vLen = 32.0;
-                ProjectWorldToScreenFloat(scWx + vLen * dThetaX, scWy + vLen * dThetaY, scWz + vLen * dThetaZ,
-                    cosCp, sinCp, cosCy, sinCy, cx, cy, out float vEndX, out float vEndY, out _);
-                DrawArrow(vh, scX, scY, vEndX, vEndY, _cVectorV, 1.2f, 6.0f);
-                DrawGlyphChar(vh, vEndX - 8f, vEndY - 2f, 'v', _cVectorV);
-            }
-
-            DrawPlanarSweepArc(vh, edirX, edirY, edirZ, qdirX, qdirY, qdirZ, vRad, diskR * 0.32, cosCp, sinCp, cosCy, sinCy, cx, cy, _cElemTa, out float phiMidX, out float phiMidY);
-            DrawGlyphChar(vh, phiMidX + 4f, phiMidY - 4f, 'ν', _cElemTa);
-
-            DrawFilledCircle(vh, scX, scY, 4.8f, _cVesselGlow);
-            DrawFilledCircle(vh, scX, scY, 2.2f, _cVessel);
-            DrawGlyphString(vh, scX - 7f, scY + 12f, "SC", _cLabelText);
         }
 
         // ═════════════════════════════════════════════════════════════════
