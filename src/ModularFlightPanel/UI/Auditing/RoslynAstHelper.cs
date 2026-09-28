@@ -13,17 +13,25 @@ namespace ModularFlightPanel.UI.Auditing
     /// </summary>
     public static class RoslynAstHelper
     {
-        private static readonly CSharpParseOptions DefaultOptions =
+        /// <summary>
+        /// 审计统一解析选项 —— 全仓库唯一的 C# 解析口径。
+        ///
+        /// 【必须共用】语义编译（SemanticCompilationProvider.BuildCompilation）与语法回退解析
+        /// 都要用本实例。历史缺陷：语义编译自建了一套不含 KSP_RUNTIME 的 CSharpParseOptions，
+        /// 结果 `#if` 条件编译把两条路径的可见代码集切开了 ——
+        /// 语义树看不到 `#if KSP_RUNTIME` 内的代码，却看到了 `#if !KSP_RUNTIME` 内的 Vector2 测试垫片。
+        /// </summary>
+        public static CSharpParseOptions UnifiedParseOptions { get; } =
             CSharpParseOptions.Default
                 .WithLanguageVersion(LanguageVersion.Latest)
-                .WithPreprocessorSymbols("KSP_RUNTIME");
+                .WithPreprocessorSymbols(WidgetSpecRules.RuntimePreprocessorSymbol);
 
         /// <summary>
         /// 将 C# 源码解析为 Roslyn 语法树（默认已穿透激活 KSP_RUNTIME 宏）
         /// </summary>
         public static SyntaxTree ParseTree(string sourceCode)
         {
-            return CSharpSyntaxTree.ParseText(sourceCode ?? string.Empty, DefaultOptions);
+            return CSharpSyntaxTree.ParseText(sourceCode ?? string.Empty, UnifiedParseOptions);
         }
 
         /// <summary>
@@ -33,8 +41,16 @@ namespace ModularFlightPanel.UI.Auditing
         {
             var options = preprocessorSymbols != null && preprocessorSymbols.Length > 0
                 ? CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest).WithPreprocessorSymbols(preprocessorSymbols)
-                : DefaultOptions;
+                : UnifiedParseOptions;
             return CSharpSyntaxTree.ParseText(sourceCode ?? string.Empty, options);
+        }
+
+        /// <summary>
+        /// 以统一口径解析指定路径的源码（语义编译建树必须走这里，保证与回退树的可见代码集一致）
+        /// </summary>
+        public static SyntaxTree ParseTree(string sourceCode, string filePath)
+        {
+            return CSharpSyntaxTree.ParseText(sourceCode ?? string.Empty, UnifiedParseOptions, path: filePath);
         }
 
         /// <summary>
@@ -91,9 +107,11 @@ namespace ModularFlightPanel.UI.Auditing
             var parts = new List<string>();
             for (SyntaxNode current = classDecl.Parent; current != null; current = current.Parent)
             {
-                if (current is NamespaceDeclarationSyntax ns) parts.Insert(0, ns.Name.ToString());
-                else if (current is FileScopedNamespaceDeclarationSyntax fns) parts.Insert(0, fns.Name.ToString());
+                if (current is NamespaceDeclarationSyntax ns) parts.Add(ns.Name.ToString().Trim());
+                else if (current is FileScopedNamespaceDeclarationSyntax fns) parts.Add(fns.Name.ToString().Trim());
             }
+            if (parts.Count == 0) return string.Empty;
+            parts.Reverse();
             return string.Join(".", parts);
         }
 
@@ -112,6 +130,39 @@ namespace ModularFlightPanel.UI.Auditing
                 if (!string.IsNullOrEmpty(raw)) list.Add(raw.Trim());
             }
             return list;
+        }
+
+        /// <summary>
+        /// 从语法树提取所有命名空间 using 指令及类型别名映射
+        /// </summary>
+        public static void ExtractUsingDirectives(SyntaxNode root, out List<string> importedNamespaces, out Dictionary<string, string> aliases)
+        {
+            importedNamespaces = new List<string>();
+            aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (root == null) return;
+
+            var usings = root.DescendantNodesAndSelf().OfType<UsingDirectiveSyntax>();
+            foreach (var u in usings)
+            {
+                if (u.Alias != null)
+                {
+                    string aliasName = u.Alias.Name.Identifier.ValueText;
+                    string target = u.Name.ToString().Trim();
+                    aliases[aliasName] = target;
+                }
+                else if (u.StaticKeyword.IsKind(SyntaxKind.StaticKeyword))
+                {
+                    // using static Xxx;
+                }
+                else
+                {
+                    string ns = u.Name.ToString().Trim();
+                    if (!importedNamespaces.Contains(ns))
+                    {
+                        importedNamespaces.Add(ns);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -160,9 +211,92 @@ namespace ModularFlightPanel.UI.Auditing
                     return p.Keyword.Text;
                 case NullableTypeSyntax n:
                     return GetSimpleTypeName(n.ElementType);
+                case ArrayTypeSyntax a:
+                    return GetSimpleTypeName(a.ElementType) + "[]";
+                case TupleTypeSyntax t:
+                    return "(" + string.Join(", ", t.Elements.Select(e => GetSimpleTypeName(e.Type))) + ")";
+                case PointerTypeSyntax pt:
+                    return GetSimpleTypeName(pt.ElementType) + "*";
                 default:
-                    return typeSyntax.ToString().Split('.').Last().Split('<').First().Trim();
+                    string str = typeSyntax.ToString();
+                    int dot = str.LastIndexOf('.');
+                    if (dot >= 0) str = str.Substring(dot + 1);
+                    int angle = str.IndexOf('<');
+                    if (angle >= 0) str = str.Substring(0, angle);
+                    return str.Trim();
             }
+        }
+
+        /// <summary>
+        /// 从表达式中安全解构出最右侧的未限定标识符（例如 从 a.b.MyMethod 中提取 MyMethod，不受注释、空白或换行影响）
+        /// </summary>
+        public static string GetRightmostIdentifier(ExpressionSyntax expr)
+        {
+            if (expr == null) return string.Empty;
+            switch (expr)
+            {
+                case IdentifierNameSyntax id:
+                    return id.Identifier.ValueText;
+                case GenericNameSyntax g:
+                    return g.Identifier.ValueText;
+                case MemberAccessExpressionSyntax ma:
+                    return ma.Name.Identifier.ValueText;
+                case MemberBindingExpressionSyntax mb:
+                    return mb.Name.Identifier.ValueText;
+                default:
+                    return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// 提取调用表达式的目标方法名（无论是直接调用 M() 还是成员访问 a.M()、a?.M()）
+        /// </summary>
+        public static string GetInvokedMethodName(InvocationExpressionSyntax inv)
+        {
+            if (inv == null) return string.Empty;
+            return GetRightmostIdentifier(inv.Expression);
+        }
+
+        /// <summary>
+        /// 获取调用的接收者表达式（例如 expr.Method() 中的 expr；若为裸调用或条件访问则返回对应接收者）
+        /// </summary>
+        public static ExpressionSyntax GetInvocationReceiver(InvocationExpressionSyntax inv)
+        {
+            if (inv == null) return null;
+            if (inv.Expression is MemberAccessExpressionSyntax ma)
+            {
+                return ma.Expression;
+            }
+            if (inv.Expression is MemberBindingExpressionSyntax && inv.Parent is ConditionalAccessExpressionSyntax ca)
+            {
+                return ca.Expression;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 结构化匹配方法调用：比对 methodName，若指定 receiverTypeSimpleName 则进一步比对接收者最右侧标识符
+        /// </summary>
+        public static bool MatchesInvocation(InvocationExpressionSyntax inv, string receiverTypeSimpleName, string methodName)
+        {
+            if (inv == null) return false;
+            if (GetInvokedMethodName(inv) != methodName) return false;
+            if (string.IsNullOrEmpty(receiverTypeSimpleName)) return true;
+
+            var receiver = GetInvocationReceiver(inv);
+            if (receiver == null) return false;
+            return GetRightmostIdentifier(receiver) == receiverTypeSimpleName;
+        }
+
+        /// <summary>
+        /// 结构化匹配成员访问（属性/字段）：比对 memberName，若指定 receiverTypeSimpleName 则比对接收者最右侧标识符
+        /// </summary>
+        public static bool MatchesMemberAccess(MemberAccessExpressionSyntax ma, string receiverTypeSimpleName, string memberName)
+        {
+            if (ma == null) return false;
+            if (ma.Name.Identifier.ValueText != memberName) return false;
+            if (string.IsNullOrEmpty(receiverTypeSimpleName)) return true;
+            return GetRightmostIdentifier(ma.Expression) == receiverTypeSimpleName;
         }
 
         /// <summary>

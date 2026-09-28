@@ -389,7 +389,7 @@ namespace ModularFlightPanel.UI
 
             // 检查组件是否直接持有名为 Vessel、Part、CelestialBody 的字段（破坏解耦，导致场景切换泄漏）
             report.TotalChecksPerformed++;
-            var rogueFields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static)
+            var rogueFields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.FlattenHierarchy)
                 .Where(f => WidgetSpecRules.BannedStrongReferenceTypes.Contains(f.FieldType.Name))
                 .ToList();
             foreach (var f in rogueFields)
@@ -443,7 +443,7 @@ namespace ModularFlightPanel.UI
 
             // 规则 6: 零颜色字面量反射兜底 - 检查是否定义了静态硬编码 Color/Color32 字段
             report.TotalChecksPerformed++;
-            var staticColorFields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)
+            var staticColorFields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy)
                 .Where(f => f.FieldType == typeof(Color) || f.FieldType == typeof(Color32))
                 .ToList();
             foreach (var f in staticColorFields)

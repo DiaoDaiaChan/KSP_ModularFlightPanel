@@ -20,6 +20,7 @@
          保证规则码 / 正则 / 扫描范围 / 颜色基线只有一份定义，杜绝验证器副本漂移。 -->
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetSpecRules.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\RoslynAstHelper.cs" />
+    <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\SemanticCompilationProvider.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetSourceAudit.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetColorLiteralAudit.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetModernizationAudit.cs" />

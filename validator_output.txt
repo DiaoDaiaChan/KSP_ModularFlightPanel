@@ -1,0 +1,212 @@
+╔═════════════════════════════════════════════════════════════════════╗
+║   KSP ModularFlightPanel - Headless UI & Telemetry Validator Hub   ║
+║   [纯 C# / UGUI 引擎架构 - 100% 游戏解耦 - 无需启动 KSP 实时测试]    ║
+╚═════════════════════════════════════════════════════════════════════╝
+
+[1/10] 加载航电布局文件 (AvionicsConfigParser): layout.json
+  ✔ 布局载入成功: 共有 23 个组件配置, 全局缩放 1.00x
+
+[2/10] 验证分享中枢 (LayoutShareHub) GZip+Base64 编解码与无损往返...
+  ├─ 原始 JSON 大小: 22,221 bytes
+  ├─ 压缩分享码大小: 2,047 bytes (体积缩减 90.8%)
+  └─ 分享码样本: MFP:v1:H4sIAAAAAAAACu2be08TWRTAv8pkkk00AbatFCrJ/...
+  ✔ 分享码往返验证通过 (Lossless Roundtrip Passed): 组件数与字段 100% 对齐!
+
+[3/10] 执行空间几何与视口碰撞检测 (AABB Spatial Collision Engine)...
+  ├─ 激活组件数: 1 / 23
+  ✔ 0 碰撞冲突! 所有激活组件空间几何分离合理，无遮挡重叠。
+  ✔ 视口边界检测通过: 所有组件均位于安全视口 [1920x1080] 内。
+
+[4/10] 遥测通配符语法与 Token 引擎静态审计...
+  ✔ Token 审计通过: 所有引用通配符均符合 TelemetryTokenEngine 规范。
+
+[5/10] 运行物理遥测解耦仿真引擎高压测试 (7 个飞行阶段, 700 Ticks)...
+  ✔ 解耦物理引擎压测通过: 7 个飞行阶段全部数值健康 (0 NaN, 0 Inf, 0 越界)! 即使在游戏主菜单亦可无头驱动。
+
+==================== [ 终端无头 HUD 布局效果投影 ] ====================
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                              ###########                               │
+  │                              #         #                               │
+  │                              #         #                               │
+  │                              # NAVBALL #                               │
+  │                              #         #                               │
+  │                              #         #                               │
+  │                              ###########                               │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  │                                                                        │
+  └────────────────────────────────────────────────────────────────────────┘
+=======================================================================
+
+[6/10] 全量飞行仪表组件架构与代码规范合法性校验 (Architecture Compliance Audit)...
+  ├─ 扫描范围: src/ModularFlightPanel 全量源码 164 个文件 → 组件类 46 个 (作用域文件 46 个)
+  ├─ 作用域判定: 继承契约根 BaseFlightWidget 的闭合后代 (内容驱动，组件文件移动目录不会脱离审计)
+  ├─ 语义编译集: 已排除 6 个仅无头侧编译的审计文件 (与插件 csproj 的 <Compile Remove> 逐项一致)
+  ├─ 编译语义模型: 成功链接 17 个外部 Unity/KSP 程序集 (Full L4 真实符号语义与常量折叠激活)
+  ├─ 语义编译体检: 诊断 ERROR 0 (棘轮上限 0)
+  ▲ [WARN] [AvionicsBarGaugeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: AvionicsBarGaugeWidget组件'充填光柱'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L207)
+  ▲ [WARN] [AvionicsBarGaugeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: AvionicsBarGaugeWidget组件'顶部胶囊读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L219)
+  ▲ [WARN] [AvionicsBarGaugeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: AvionicsBarGaugeWidget组件'底部档位标牌'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L223)
+  ▲ [WARN] [B747EicasWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: B747EicasWidget组件'顶端状态栏'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L354)
+  ▲ [WARN] [B747EicasWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: B747EicasWidget组件'机组备忘区'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L358)
+  ▲ [WARN] [B747EicasWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: B747EicasWidget组件'辅助系统读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L360)
+  ▲ [WARN] [CommSignalWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: CommSignalWidget组件'通信对端名称'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L203)
+  ▲ [WARN] [ElectricalSystemWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ElectricalSystemWidget组件'蓄电池组'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L82)
+  ▲ [WARN] [ElectricalSystemWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ElectricalSystemWidget组件'直流总线母线'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L83)
+  ▲ [WARN] [ElectricalSystemWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ElectricalSystemWidget组件'发电与负载监控'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L84)
+  ▲ [WARN] [HeadingArcWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: HeadingArcWidget组件'气泡航向标牌'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L125)
+  ▲ [WARN] [LifeSupportWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: LifeSupportWidget组件'乘员环境摘要'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L104)
+  ▲ [WARN] [LifeSupportWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: LifeSupportWidget组件'氧气余量'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L105)
+  ▲ [WARN] [LifeSupportWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: LifeSupportWidget组件'电力储备'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L106)
+  ▲ [WARN] [LifeSupportWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: LifeSupportWidget组件'RCS姿控'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L107)
+  ▲ [WARN] [LifeSupportWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: LifeSupportWidget组件'水/燃料储备'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L108)
+  ▲ [WARN] [ManeuverNodeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverNodeWidget组件'DeltaV读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L254)
+  ▲ [WARN] [ManeuverNodeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverNodeWidget组件'变轨进度条'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L255)
+  ▲ [WARN] [ManeuverNodeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverNodeWidget组件'节点倒计时'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L256)
+  ▲ [WARN] [ManeuverNodeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverNodeWidget组件'燃烧时长'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L257)
+  ▲ [WARN] [ManeuverNodeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverNodeWidget组件'点火倒计时'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L258)
+  ▲ [WARN] [ManeuverTimelineWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverTimelineWidget组件'倒计时读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L234)
+  ▲ [WARN] [ManeuverTimelineWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverTimelineWidget组件'ΔV 读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L235)
+  ▲ [WARN] [ManeuverTimelineWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ManeuverTimelineWidget组件'三轴矢量副标牌'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L236)
+  ▲ [WARN] [NavballSphereWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: NavballSphereWidget组件'航向盒读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L280)
+  ▲ [WARN] [NDNavigationWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: NDNavigationWidget组件'顶部航向读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L143)
+  ▲ [WARN] [NDNavigationWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: NDNavigationWidget组件'空速地速读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L144)
+  ▲ [WARN] [NDNavigationWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: NDNavigationWidget组件'风向风速读数'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L145)
+  ▲ [WARN] [NDNavigationWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: NDNavigationWidget组件'航点距离ETA'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L146)
+  ▲ [WARN] [NDNavigationWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: NDNavigationWidget组件'无线电导航台'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L147)
+  ▲ [WARN] [PerformanceMonitorWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: PerformanceMonitorWidget组件'FPS Readout'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L179)
+  ▲ [WARN] [PerformanceMonitorWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: PerformanceMonitorWidget组件'MFP Overhead'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L180)
+  ▲ [WARN] [PerformanceMonitorWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: PerformanceMonitorWidget组件'Widgets Meter'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L181)
+  ▲ [WARN] [PerformanceMonitorWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: PerformanceMonitorWidget组件'Probes Meter'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L182)
+  ▲ [WARN] [PerformanceMonitorWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: PerformanceMonitorWidget组件'Telem Meter'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L183)
+  ▲ [WARN] [PerformanceMonitorWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: PerformanceMonitorWidget组件'Core Meter'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L184)
+  ▲ [WARN] [PerformanceMonitorWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: PerformanceMonitorWidget组件'Memory Stats'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L185)
+  ▲ [WARN] [ReferenceFrameWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: ReferenceFrameWidget组件'权威参考系全称'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L147)
+  ▲ [WARN] [Rocket2DWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: Rocket2DWidget组件'TWR与总速度增量'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L155)
+  ▲ [WARN] [SignalStatusWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SignalStatusWidget组件'目标对端与速率'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L188)
+  ▲ [WARN] [SpaceXArcGaugeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXArcGaugeWidget组件'Top Label'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L143)
+  ▲ [WARN] [SpaceXArcGaugeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXArcGaugeWidget组件'Primary Value'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L144)
+  ▲ [WARN] [SpaceXArcGaugeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXArcGaugeWidget组件'Unit Label'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L145)
+  ▲ [WARN] [SpaceXAttitudeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXAttitudeWidget组件'North Mark'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L134)
+  ▲ [WARN] [SpaceXAttitudeWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXAttitudeWidget组件'Attitude Readout'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L143)
+  ▲ [WARN] [SpaceXBottomBarWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXBottomBarWidget组件'Pointing Mode'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L150)
+  ▲ [WARN] [SpaceXBottomBarWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXBottomBarWidget组件'Comm SpaceX'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L151)
+  ▲ [WARN] [SpaceXBottomBarWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXBottomBarWidget组件'Comm TDRS'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L152)
+  ▲ [WARN] [SpaceXBottomBarWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXBottomBarWidget组件'Comm ISS'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L153)
+  ▲ [WARN] [SpaceXDockingReticleWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXDockingReticleWidget组件'Roll Deviation'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L125)
+  ▲ [WARN] [SpaceXDockingReticleWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXDockingReticleWidget组件'Pitch Deviation'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L126)
+  ▲ [WARN] [SpaceXDockingReticleWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXDockingReticleWidget组件'Yaw Deviation'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L127)
+  ▲ [WARN] [SpaceXDockingReticleWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXDockingReticleWidget组件'Range Readout'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L128)
+  ▲ [WARN] [SpaceXDockingReticleWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXDockingReticleWidget组件'Closing Rate'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L129)
+  ▲ [WARN] [SpaceXDockingReticleWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXDockingReticleWidget组件'XYZ Offsets'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L130)
+  ▲ [WARN] [SpaceXEngineWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXEngineWidget组件'Title'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L122)
+  ▲ [WARN] [SpaceXEngineWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXEngineWidget组件'Status Readout'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L127)
+  ▲ [WARN] [SpaceXHeaderWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXHeaderWidget组件'Active Phase'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L189)
+  ▲ [WARN] [SpaceXHeaderWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXHeaderWidget组件'Mission Timer'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L190)
+  ▲ [WARN] [SpaceXHeaderWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXHeaderWidget组件'Inertial Velocity'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L191)
+  ▲ [WARN] [SpaceXHeaderWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXHeaderWidget组件'Altitude'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L192)
+  ▲ [WARN] [SpaceXHeaderWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXHeaderWidget组件'Apogee'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L193)
+  ▲ [WARN] [SpaceXHeaderWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXHeaderWidget组件'Perigee'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L194)
+  ▲ [WARN] [SpaceXHeaderWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXHeaderWidget组件'Inclination'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L195)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'Cabin Pressure'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L154)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'Oxygen Level'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L155)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'Cabin Temperature'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L156)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'Net Power'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L157)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'Airlock Status'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L158)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'RCS Propellant'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L159)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'Thermal Status'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L160)
+  ▲ [WARN] [SpaceXOverviewWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXOverviewWidget组件'Docking Mechanism'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L161)
+  ▲ [WARN] [SpaceXTimelineWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXTimelineWidget组件'Mission Clock'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L133)
+  ▲ [WARN] [SpaceXTimelineWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: SpaceXTimelineWidget组件'Mission Phase'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L134)
+  ▲ [WARN] [StageDeltaVWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: StageDeltaVWidget组件'Total DeltaV'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L126)
+  ▲ [WARN] [StageDeltaVWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: StageDeltaVWidget组件'Total Burn Time'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L127)
+  ▲ [WARN] [VesselAttitudeSphereWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: VesselAttitudeSphereWidget组件'顶部航向参考系标牌'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L178)
+  ▲ [WARN] [VesselAttitudeSphereWidget.cs] 规则 MFP-WARN-TELEM-ASSEMBLY 违规: VesselAttitudeSphereWidget组件'底部俯仰滚转标牌'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约) (L179)
+  ✔ 规范合规审计 100% 通过 (46 个组件类完全合规):
+  ├─ 继承契约: 全部组件统一继承 BaseFlightWidget（含『声明元数据却未继承』的反向不变量）
+  ├─ 刷新率阶梯: 全部组件显式重写 RefreshTier 且取值来自 WidgetRefreshTier 枚举本身（取值集合从源码派生）
+  ├─ 主题与着色管道: 全部组件提供 ApplyTheme(ThemeConfig) 且 0 颜色字面量（零容忍）
+  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry 且 OnDestroy 全量 override 并调用 base
+  ├─ 自动注册与元数据: 全部具体组件沿继承链声明 [FlightWidget] 特性 (MFP-SPEC-008 自动挂载)
+  ├─ 探针与场景调度: 0 组件内场景查询（黑名单表 13 条：Find*ByType / GameObject.Find* / Camera.main·current·allCameras·GetAllCameras / GetRootGameObjects）
+  ├─ 架构现代化进度: 现代微控件 DSL 43 个 | 核心 3D 引擎 2 个 | 待改造旧版 0 个 (架构现代率 100.0%)
+  ⚠ 航电效能与架构雷达侦测到 2 个组件存在高频帧循环堆分配/裸 UGUI 逃逸/非集中调度 (详见 --audit-modernization):
+     • CustomTokenTextWidget.cs => 高频受染闭包存在 2 处运行时堆数组分配 (new T[]; 增加 GC 停顿压力)
+     • VesselAttitudeSphereWidget.cs => Core3D 内部混杂未纳管裸 UGUI (UIFactory 调用: 8 处, Image 图元: 1 处; 未接入 2D UI Shader 材质管线)
+  └─ 审计统计: ERROR 0 / WARNING 78
+
+[7/10] 审计内核自检 (Spec Rules + Color Ledger + I18n AST Self-Test)...
+  ✔ 审计内核自检通过: 规则自检 96 条对照用例 + 颜色字面量 29 条边界用例 + I18n 语法树 16 条用例 + I18n 词典值 3 条用例 全部符合预期。
+
+[8/10] Unity 无头预览工程镜像一致性审计 (Mirror Sync Audit)...
+  ✔ 镜像一致性通过: 114/170 个源码文件在镜像中逐字节一致（56 个 KSP 运行时/工具链文件按清单排除）
+
+[9/10] 全局国际化多语言一致性审计 (I18n Parity + Localizable-English Ratchet Audit)...
+  ├─ 词典未汉化词条: 1 条存量 / 基线 2 条 (zh-CN 与 en-US 逐字相同且非权威缩写，只降不升)
+  │   样本: WIDGET_NAV_WP_NAME = "PP518"   (全量明细: --i18n-ast)
+  ├─ 源码可汉化英文文案: 0 处存量 / 基线 0 处 (扫描 135 个源码文件，只降不升)
+  ├─ [存量] 源码硬编码中文 43 处 / 未登记键名 52 处 (明细: --i18n-ast)
+  ✔ I18n 词典审计 100% 通过: 扫描到 2 个语言包, 共 1175 个词条, zh-CN 与其余 1 个语言包键名与占位符 100% 对齐, I18nJsonParser 零依赖解析器零报警且结果一致!
+  ├─ [en-US] English (English) - 1175 词条
+  ├─ [zh-CN] 简体中文 (简体中文) - 1175 词条
+
+[10/10] 全局配置与预设双向导入导出高保真往返测试 (Avionics Config Bidirectional Roundtrip Suite)...
+
+=======================================================================
+    MFP 航电配置中枢与预设库全量双向导入导出测试套件 (Config Roundtrip Suite)
+=======================================================================
+
+[Sub-Test 1/6] JSON AST 语法引擎与容错解析自检 (Comments / Trailing Commas / Type Cast)...
+✔ AST 容错与类型转换自检通过: 注释剥离、尾逗号、Unicode、宽松类型转换与畸形输入防御 100% 达标。
+
+[Sub-Test 2/6] 出厂预设库全量双向往返保真度 (Preset Roundtrip & Fidelity)...
+  ├─ ✔ 01_Default_Avionics.json: 8 个组件无损往返 (100% 字段保真)
+  ├─ ✔ 02_Modern_Glass_Cockpit.json: 10 个组件无损往返 (100% 字段保真)
+  ├─ ✔ 03_Apollo_Retro_Moon.json: 10 个组件无损往返 (100% 字段保真)
+  ├─ ✔ 04_Deep_Space_Probe.json: 10 个组件无损往返 (100% 字段保真)
+  ├─ ✔ 05_SpaceX_Dragon_Cockpit.json: 8 个组件无损往返 (100% 字段保真)
+  ├─ ✔ 05_SpaceX_Starship_HUD.json: 5 个组件无损往返 (100% 字段保真)
+  ├─ ✔ diao.json: 14 个组件无损往返 (100% 字段保真)
+✔ diao.json 专项验证通过: 14 个小组件全量成功加载与往返，彻底根除游戏内静默清空与回退缺陷!
+
+[Sub-Test 3/6] 运行时布局与历史备份双向往返保真度 (Runtime Layout Roundtrip)...
+  ├─ ✔ layout.json: 23 个组件无损往返 (GlobalScale=1.00)
+  ├─ ✔ layout.backup.json: 23 个组件无损往返 (GlobalScale=1.00)
+✔ 运行时布局与机载个性化布局双向往返验证全部通过。
+
+[Sub-Test 4/6] 主题与色调配置双向往返保真度 (ThemeSettings Roundtrip)...
+  ├─ ✔ 磁盘 theme_settings.json 往返无损 (主题=boeing_787, 语言=zh-CN, 规则数=8)
+  ├─ ✔ 合成高级主题配置双向往返 100% 字段保真 (全 27 个字段与收纳坞子规则)
+✔ 主题与色调配置双向往返保真度验证通过。
+
+[Sub-Test 5/6] 社区分享码 (MFP:v1:) GZip+Base64 编解码往返与模糊防御...
+  ├─ ✔ diao.json 社区分享码无损编解码往返通过 (压缩后长度: 1711 chars)
+✔ 社区分享码编解码与防御测试全部通过: GZip 压缩还原 100% 对齐，非标输入防护周密。
+
+[Sub-Test 6/6] 内存配置对象深拷贝隔离性验证 (Deep Clone Isolation)...
+✔ 深拷贝深度隔离验证通过: CloneLayout 与 CloneThemeSettings 彻底杜绝内存引用交叉污染。
+-----------------------------------------------------------------------
+✔ [CONFIG SUITE PASSED] 航电配置双向导入导出 100% 满分通过! 0 字段漂移, 0 数据丢弃!
+
+[附] 检查预设库目录空间几何: C:\Users\43701\Documents\github\KSP_naviball\GameData\ModularFlightPanel\PluginData\Presets
+  ├─ 扫描 7 个本地预设文件空间碰撞:
+  │   • 01_Default_Avionics.json: 8 激活组件, 0 几何冲突
+  │   • 02_Modern_Glass_Cockpit.json: 10 激活组件, 0 几何冲突
+  │   • 03_Apollo_Retro_Moon.json: 10 激活组件, 0 几何冲突
+  │   • 04_Deep_Space_Probe.json: 10 激活组件, 0 几何冲突
+  │   • 05_SpaceX_Dragon_Cockpit.json: 8 激活组件, 0 几何冲突
+  │   • 05_SpaceX_Starship_HUD.json: 5 激活组件, 0 几何冲突
+  │   • diao.json: 14 激活组件, 5 几何冲突
+
+-----------------------------------------------------------------------
+✔ [ALL CHECKS PASSED] 无头测试全部通过! UI 组件已彻底解耦，随时可用于游戏实装或分享!

@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <Compile Remove="UI\Auditing\RoslynAstHelper.cs" />
+    <Compile Remove="UI\Auditing\SemanticCompilationProvider.cs" />
     <Compile Remove="UI\Auditing\WidgetSourceAudit.cs" />
     <Compile Remove="UI\Auditing\WidgetModernizationAudit.cs" />
     <Compile Remove="UI\Auditing\WidgetColorLiteralAudit.cs" />

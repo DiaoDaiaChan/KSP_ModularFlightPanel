@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using ModularFlightPanel.UI.Auditing;
 
 namespace ModularFlightPanel.HeadlessValidator
 {
@@ -91,14 +92,14 @@ namespace ModularFlightPanel.HeadlessValidator
             "N1", "N2", "EPR", "EGT", "FF", "RPM", "ENG", "VIB", "REV", "MECO", "TO", "GA", "JETT", "ACC",
             "TAS", "IAS", "GS", "RA", "WT", "QTY", "PRESS", "TEMP", "SAT", "TAT", "CAB", "LDG", "RDR", "MON", "CH",
             // 时间 / 机构 / 项目代号
-            "UT", "MET", "MFP", "KSP", "SPX", "TDRS", "ISS", "DSN", "AFT", "FWD", "LO", "HI",
+            "UT", "MET", "MFP", "KSP", "SPX", "TDRS", "ISS", "DSN", "AFT", "FWD", "LO", "HI", "T",
             // 标准告警与状态代号
             "NORM", "CAUT", "WARN", "OK", "ERR", "ON", "OFF",
             // 单位与量纲符号
-            "M", "KM", "S", "MIN", "H", "D", "Y", "KN", "KPA", "ATM", "MS", "HZ", "FPS",
+            "M", "KM", "S", "MIN", "H", "D", "Y", "KN", "KPA", "ATM", "MS", "HZ", "FPS", "PX",
             "KB", "MB", "GB", "V", "A", "W", "k", "KG", "KGS", "C", "F", "PSI", "BPS", "KBPS", "MBPS", "DV",
-            // 坐标 / 罗盘 / 通道 / 界面缩写
-            "X", "Y", "Z", "R", "B", "N", "E", "UI", "GUI", "ID"
+            // 坐标 / 罗盘 / 通道 / 界面缩写 / 航电通用缩写 / 项目标识
+            "X", "Y", "Z", "R", "B", "N", "E", "UI", "GUI", "ID", "OBT", "LAG", "ORBIT", "LOG", "PARTS", "LAYOUT", "CREW", "MODULAR", "FLIGHT", "PANEL"
         };
 
         /// <summary>数字+短单位后缀的读数记号（"0G" / "8K" / "00x" / "3D" / "+15c"），不是可汉化文案</summary>
@@ -110,13 +111,15 @@ namespace ModularFlightPanel.HeadlessValidator
         };
 
         private static readonly Regex TokenHoleRegex = new Regex(@"\{[^{}]*\}", RegexOptions.Compiled);
+        private static readonly Regex RichTextTagRegex = new Regex(@"</?[A-Za-z0-9]+(?:=[^>]*?)?>", RegexOptions.Compiled);
+        private static readonly Regex FileNameRegex = new Regex(@"\b[A-Za-z0-9_\-]+\.(?:json|cfg|png|dds|csv)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex TokenSplitRegex = new Regex(@"[^A-Za-z0-9]+", RegexOptions.Compiled);
         private static readonly Regex NumericOnlyRegex = new Regex(@"^[\d\.\,\+\-\%\s\:\/\#\<\>\=]+(px|%|ms|hz|fps|x)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private static readonly Regex LeadingDecorationRegex = new Regex(
-            @"^[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]]+", RegexOptions.Compiled);
+            @"^[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]\(\)\|]+", RegexOptions.Compiled);
         private static readonly Regex TrailingDecorationRegex = new Regex(
-            @"[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]]+$", RegexOptions.Compiled);
+            @"[\s\u25A0-\u25FF\u2B00-\u2BFF\u2190-\u21FF\u00AB\u00BB\u2022\u25CF\u25CB\u25B6\u25C0\u23F8\u23F5\.\,\-\+\#\:\/\[\]\(\)\|]+$", RegexOptions.Compiled);
 
         private static List<string> Tokenize(string text) =>
             TokenSplitRegex.Split(text).Where(t => t.Length > 0).ToList();
@@ -170,10 +173,24 @@ namespace ModularFlightPanel.HeadlessValidator
         {
             if (string.IsNullOrWhiteSpace(text)) return true;
 
+            // 剔除 Unity 富文本标签 (<b>, </b>, <color=...>, </color>, <size=...>, </size> 等)
+            string withoutTags = RichTextTagRegex.Replace(text, " ");
+
+            // 剔除嵌入的配置文件名与数据资源标识符
+            string withoutFiles = FileNameRegex.Replace(withoutTags, " ");
+
             // 通配符模板洞先剔除：剩下若只是分隔符，说明该串是模板而非文案
-            string core = TokenHoleRegex.Replace(text, " ");
+            string core = TokenHoleRegex.Replace(withoutFiles, " ");
             core = TrimDecorations(core);
             if (core.Length == 0) return true;
+
+            // 配置文件扩展名与数据标识符豁免
+            if (core.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+                core.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase) ||
+                core.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
 
             bool hasLetter = false;
             for (int i = 0; i < core.Length; i++)
@@ -516,7 +533,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 if (IsInsideMicroControlRegistration(node)) return;
                 if (node.Ancestors().OfType<AttributeSyntax>().Any()) return;
 
-                // 仅检查插值字符串中除 {...} 表达式之外的纯文本部分 (InterpolatedStringTextSyntax)
+                // 检查插值字符串中除 {...} 表达式之外的纯文本部分 (InterpolatedStringTextSyntax)
                 foreach (var content in node.Contents.OfType<InterpolatedStringTextSyntax>())
                 {
                     string text = content.TextToken.ValueText;
@@ -537,6 +554,43 @@ namespace ModularFlightPanel.HeadlessValidator
                             Description = $"插值字符串包含硬编码中文文本 \"{text}\"，应使用 I18n.TrFormat(\"KEY\", ...) 包装！"
                         });
                         break;
+                    }
+                }
+
+                if (IsInsideDisplayTextSlot(node, out string channelName))
+                {
+                    var sb = new StringBuilder();
+                    int holeIndex = 0;
+                    foreach (var content in node.Contents)
+                    {
+                        if (content is InterpolatedStringTextSyntax textSyntax)
+                        {
+                            sb.Append(textSyntax.TextToken.ValueText);
+                        }
+                        else
+                        {
+                            sb.Append("{" + (holeIndex++) + "}");
+                        }
+                    }
+                    string templateText = sb.ToString();
+
+                    if (!I18nLexicon.IsExemptDisplayText(templateText))
+                    {
+                        var lineSpan = node.GetLocation().GetLineSpan();
+                        int line = lineSpan.StartLinePosition.Line + 1;
+                        int col = lineSpan.StartLinePosition.Character + 1;
+
+                        _report.Issues.Add(new I18nIssue
+                        {
+                            FilePath = _filePath,
+                            Line = line,
+                            Column = col,
+                            IssueType = I18nIssueType.UntranslatedEnglish,
+                            OffendingText = templateText.Trim(),
+                            CodeSnippet = node.ToString(),
+                            Description = $"UI 文案槽位 ({channelName}) 插值字符串直接传入未汉化英文: \"{templateText.Trim()}\"，"
+                                        + "中文主语言下应使用 I18n.TrFormat(\"KEY\", ...) 接入词典。"
+                        });
                     }
                 }
             }
@@ -688,14 +742,32 @@ namespace ModularFlightPanel.HeadlessValidator
                 {
                     if (!(ancestor is InvocationExpressionSyntax inv)) continue;
 
+                    if (IsEngineResourceOrPathInvocation(inv)) return true;
                     string expr = inv.Expression.ToString();
-                    if (IsEngineResourceOrPathCall(expr)) return true;
                     if (StringAssemblyPassThroughCalls.Contains(expr)) continue;
 
                     // 最近的外层调用既不是路径/资源类调用，也不是纯字符串组装 → 不外扩
                     return false;
                 }
                 return false;
+            }
+
+            private static bool IsEngineResourceOrPathInvocation(InvocationExpressionSyntax inv)
+            {
+                if (inv == null) return false;
+                var receiver = RoslynAstHelper.GetInvocationReceiver(inv);
+                string receiverName = receiver != null ? RoslynAstHelper.GetRightmostIdentifier(receiver) : string.Empty;
+                string methodName = RoslynAstHelper.GetInvokedMethodName(inv);
+
+                if (receiverName == "Path" || receiverName == "Directory" || receiverName == "File" ||
+                    receiverName == "AssetBundle" || receiverName == "GameDatabase" || receiverName == "Regex")
+                {
+                    return true;
+                }
+                if (receiverName == "Shader" && methodName == "Find") return true;
+                if (receiverName == "Resources" && methodName == "Load") return true;
+
+                return IsEngineResourceOrPathCall(inv.Expression.ToString());
             }
 
             private static bool IsEngineResourceOrPathCall(string expr)

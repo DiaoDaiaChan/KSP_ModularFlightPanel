@@ -98,7 +98,7 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        public static readonly SceneQueryApiRule[] SceneQueryApis =
+        public static readonly IReadOnlyList<SceneQueryApiRule> SceneQueryApis = Array.AsReadOnly(new[]
         {
             // UnityEngine.Object 家族（含 Camera / GameObject / Component 等全部派生类的静态查找）
             new SceneQueryApiRule(null, "FindObjectOfType", true, true),
@@ -118,28 +118,28 @@ namespace ModularFlightPanel.UI
             new SceneQueryApiRule("Camera", "current", false, false),
             new SceneQueryApiRule("Camera", "allCameras", false, false),
             new SceneQueryApiRule("Camera", "allCamerasCount", false, false)
-        };
+        });
 
         /// <summary>
         /// 禁止 using static 的 owner 类型：一旦引入，裸名 Find("x") / main 会绕过上面整张表。
         /// 与 SceneQueryApis 的 Owner 集合保持同源，新增 API 家族时只需维护上表。
         /// </summary>
-        public static readonly string[] SceneQueryStaticImportOwners = { "GameObject", "Object", "Resources", "Camera" };
+        public static readonly IReadOnlyList<string> SceneQueryStaticImportOwners = Array.AsReadOnly(new[] { "GameObject", "Object", "Resources", "Camera" });
 
         /// <summary>
         /// 显式豁免的调用前缀：实例子物体查找与项目内的探针门面（ProbeManager）属于合规通道。
         /// </summary>
-        public static readonly string[] SceneQueryExemptPrefixes = { "transform.Find", "Probe." };
+        public static readonly IReadOnlyList<string> SceneQueryExemptPrefixes = Array.AsReadOnly(new[] { "transform.Find", "Probe." });
 
         /// <summary>
         /// 判定一个调用/成员访问表达式是否命中场景查询 API 表。
-        /// expression 形如 "Camera.main" / "UnityEngine.Object.FindObjectsByType&lt;Camera&gt;" / "Find("HUD")"。
+        /// expression 形如 "Camera.main" / "UnityEngine.Object.FindObjectsByType<Camera>" / "Find("HUD")"。
         /// </summary>
         public static bool IsSceneQueryApi(string expression, bool isInvocation)
         {
             if (string.IsNullOrEmpty(expression)) return false;
 
-            for (int i = 0; i < SceneQueryExemptPrefixes.Length; i++)
+            for (int i = 0; i < SceneQueryExemptPrefixes.Count; i++)
             {
                 if (expression.StartsWith(SceneQueryExemptPrefixes[i], StringComparison.Ordinal)) return false;
             }
@@ -148,7 +148,7 @@ namespace ModularFlightPanel.UI
             string member = parts[parts.Length - 1];
             string owner = parts.Length >= 2 ? parts[parts.Length - 2] : null;
 
-            for (int i = 0; i < SceneQueryApis.Length; i++)
+            for (int i = 0; i < SceneQueryApis.Count; i++)
             {
                 SceneQueryApiRule rule = SceneQueryApis[i];
                 if (rule.IsInvocation != isInvocation) continue;
@@ -167,7 +167,7 @@ namespace ModularFlightPanel.UI
         public static bool IsBannedStaticImportOwner(string simpleTypeName)
         {
             if (string.IsNullOrEmpty(simpleTypeName)) return false;
-            for (int i = 0; i < SceneQueryStaticImportOwners.Length; i++)
+            for (int i = 0; i < SceneQueryStaticImportOwners.Count; i++)
             {
                 if (string.Equals(SceneQueryStaticImportOwners[i], simpleTypeName, StringComparison.Ordinal)) return true;
             }
@@ -193,7 +193,7 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 禁止的私有时间/时序/度量格式化方法名（反模式：应统一调用 AvionicsFormatting 或基类 FormatDuration 等方法）
         /// </summary>
-        public static readonly string[] BannedFormattingMethods =
+        public static readonly IReadOnlyList<string> BannedFormattingMethods = Array.AsReadOnly(new[]
         {
             "FormatDuration",
             "FormatDurationCompact",
@@ -201,27 +201,27 @@ namespace ModularFlightPanel.UI
             "FormatSeconds",
             "FormatDistanceMetric",
             "FormatDistanceKm"
-        };
+        });
 
         /// <summary>
         /// 推荐的标准化基类通道检索 API 集合
         /// </summary>
-        public static readonly string[] StandardTemplateChannelApis =
+        public static readonly IReadOnlyList<string> StandardTemplateChannelApis = Array.AsReadOnly(new[]
         {
             "GetTemplateChannel",
             "GetTemplateChannelDouble",
             "GetTemplateChannelFloat",
             "GetTemplateChannelInt",
             "GetTemplateChannelBool"
-        };
+        });
 
         /// <summary>
         /// 推荐的统一格式化套件类名与方法名 (AvionicsFormatting 与 AvionicsFastFormat 零 GC 快速常量池)
         /// </summary>
         public const string StandardFormattingClass = "AvionicsFormatting";
         public const string FastFormatClass = "AvionicsFastFormat";
-        public static readonly string[] StandardFormattingClasses = { "AvionicsFormatting", "AvionicsFastFormat" };
-        public static readonly string[] StandardFormattingApis =
+        public static readonly IReadOnlyList<string> StandardFormattingClasses = Array.AsReadOnly(new[] { "AvionicsFormatting", "AvionicsFastFormat" });
+        public static readonly IReadOnlyList<string> StandardFormattingApis = Array.AsReadOnly(new[]
         {
             "FormatDuration",
             "FormatDurationCompact",
@@ -232,7 +232,7 @@ namespace ModularFlightPanel.UI
             "FastRoundInt",
             "FastPercent",
             "FastTwoDigits"
-        };
+        });
 
         /// <summary>
         /// 推荐的统一防抖与阈值评估 API
@@ -245,7 +245,7 @@ namespace ModularFlightPanel.UI
         /// 推荐的智能 UI 扩展套件 (SmartUIExtensions 零开销链式脏检查)
         /// </summary>
         public const string SmartUIExtensionsClass = "SmartUIExtensions";
-        public static readonly string[] SmartUIExtensionApis =
+        public static readonly IReadOnlyList<string> SmartUIExtensionApis = Array.AsReadOnly(new[]
         {
             "SetTextSafe",
             "SetColor",
@@ -257,7 +257,7 @@ namespace ModularFlightPanel.UI
             "SetLocalEulerAnglesSafe",
             "SetLocalScaleSafe",
             "SetActiveSafe"
-        };
+        });
 
         /// <summary>
         /// 禁止在具体组件帧循环内调用的集中式基础设施 API (应交由 FlightHUDManager.LateUpdateSync 集中调度)
@@ -267,8 +267,8 @@ namespace ModularFlightPanel.UI
         // ==========================================================================================
         // 航电效能与反模式规则：高频生命周期方法与堆分配/裸 UGUI 逃逸
         // ==========================================================================================
-        public static readonly string[] HotLoopMethodNames = { "LateUpdate", "Update", "OnUpdateTelemetry", "FixedUpdate" };
-        public static readonly string[] HotLoopUguiProperties = { "anchoredPosition", "localScale", "color" };
+        public static readonly IReadOnlyList<string> HotLoopMethodNames = Array.AsReadOnly(new[] { "LateUpdate", "Update", "OnUpdateTelemetry", "FixedUpdate" });
+        public static readonly IReadOnlyList<string> HotLoopUguiProperties = Array.AsReadOnly(new[] { "anchoredPosition", "localScale", "color" });
 
         // ==========================================================================================
         // 契约成员名：反射级校验器与源码级审计器共用的唯一名字来源。
@@ -282,7 +282,7 @@ namespace ModularFlightPanel.UI
         public const string FrameUpdateMethod = "Update";
 
         /// <summary>禁止组件直接持有的引擎强引用类型名（破坏 IFlightTelemetry 解耦，跨场景切换易泄漏）</summary>
-        public static readonly string[] BannedStrongReferenceTypes = { "Vessel", "Part", "CelestialBody" };
+        public static readonly IReadOnlyList<string> BannedStrongReferenceTypes = Array.AsReadOnly(new[] { "Vessel", "Part", "CelestialBody" });
 
         // ==========================================================================================
         // 微控件现代化（SPEC-002 效能 / 反模式治理）判定锚点
@@ -295,14 +295,14 @@ namespace ModularFlightPanel.UI
         public const string AutoCardFrameProperty = "AutoCreateCardFrame";
 
         /// <summary>微控件 DSL 类型名集合（唯一数据源：新增 DSL 控件只需在此登记）</summary>
-        public static readonly string[] MicroControlDslTypes =
+        public static readonly IReadOnlyList<string> MicroControlDslTypes = Array.AsReadOnly(new[]
         {
             "TextWidget", "GaugeWidget", "LinearBarWidget", "TapeWidget",
             "StateWidget", "IconWidget", "ToggleButtonWidget", "ActionButtonWidget"
-        };
+        });
 
         /// <summary>承载遥测 Token 形参的 DSL 控件类型（遥测装配倒查的判定范围）</summary>
-        public static readonly string[] TelemetryTokenDslTypes = { "TextWidget", "LinearBarWidget" };
+        public static readonly IReadOnlyList<string> TelemetryTokenDslTypes = Array.AsReadOnly(new[] { "TextWidget", "LinearBarWidget" });
 
         /// <summary>
         /// 微控件 DSL "工厂调用"识别的类型前缀集合（Controls.Add / XxxWidget.Method(...) 形态）。
@@ -313,10 +313,10 @@ namespace ModularFlightPanel.UI
         /// 因此"只在方法体里用工厂方法、没有声明 DSL 字段"的组件可能被判为 LegacyImperative。
         /// 放宽识别范围会改变现有现代化统计结果，属于独立决策，不在常量回收范围内。
         /// </summary>
-        public static readonly string[] DslFactoryInvocationTypes = { "TextWidget", "LinearBarWidget" };
+        public static readonly IReadOnlyList<string> DslFactoryInvocationTypes = Array.AsReadOnly(new[] { "TextWidget", "LinearBarWidget" });
 
         /// <summary>DSL 控件承载 Token 的工厂方法后缀（TextWidget.Value(...) / LinearBarWidget.BottomBar(...)）</summary>
-        public static readonly string[] DslTokenFactorySuffixes = { ".Value", ".BottomBar" };
+        public static readonly IReadOnlyList<string> DslTokenFactorySuffixes = Array.AsReadOnly(new[] { ".Value", ".BottomBar" });
 
         /// <summary>微控件注册入口调用前缀（收集式 DSL）</summary>
         public const string ControlsAddPrefix = "Controls.Add";
@@ -340,7 +340,7 @@ namespace ModularFlightPanel.UI
 
         /// <summary>手工脏标记字段命名约定：_last* 前缀 + 下列后缀</summary>
         public const string DirtyTrackingFieldPrefix = "_last";
-        public static readonly string[] DirtyTrackingFieldSuffixes = { "Text", "Str", "Val" };
+        public static readonly IReadOnlyList<string> DirtyTrackingFieldSuffixes = Array.AsReadOnly(new[] { "Text", "Str", "Val" });
 
         /// <summary>高频方法名判定用的同步入口前缀（Sync* 视为高频受染入口）</summary>
         public const string HotSyncMethodPrefix = "Sync";
@@ -386,15 +386,14 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        /// <summary>被审计的微控件类型名（应与其构造函数形状一并登记）</summary>
-        public static readonly string[] AuditedControlTypes =
+        public static readonly IReadOnlyList<string> AuditedControlTypes = Array.AsReadOnly(new[]
         {
             "WidgetReadoutControl",
             "WidgetLinearBarControl"
-        };
+        });
 
         /// <summary>构造函数形状表（唯一数据源；与源码声明不一致时门禁报错）</summary>
-        public static readonly ControlCtorShape[] ControlCtorShapes =
+        public static readonly IReadOnlyList<ControlCtorShape> ControlCtorShapes = Array.AsReadOnly(new[]
         {
             // WidgetReadoutControl
             // (parent, id, displayName, rootGo, bg, outline, title, value, unit, token, titleStr, unitStr)
@@ -413,7 +412,7 @@ namespace ModularFlightPanel.UI
             new ControlCtorShape("WidgetLinearBarControl", 7, -1, 1),
             // (fill, track, role = ..., isVertical = false, displayName = "Bar Gauge", description = "")
             new ControlCtorShape("WidgetLinearBarControl", 6, -1, 4)
-        };
+        });
 
         /// <summary>控件显示名解析失败时的兜底名（键 = 类型名）</summary>
         public static string DefaultControlDisplayName(string controlType)
@@ -427,7 +426,7 @@ namespace ModularFlightPanel.UI
         public static bool IsTelemetryTokenDslType(string simpleTypeName)
         {
             if (string.IsNullOrEmpty(simpleTypeName)) return false;
-            for (int i = 0; i < TelemetryTokenDslTypes.Length; i++)
+            for (int i = 0; i < TelemetryTokenDslTypes.Count; i++)
             {
                 if (string.Equals(TelemetryTokenDslTypes[i], simpleTypeName, StringComparison.Ordinal)) return true;
             }
@@ -438,7 +437,7 @@ namespace ModularFlightPanel.UI
         public static bool IsDslTokenFactory(string expression)
         {
             if (string.IsNullOrEmpty(expression)) return false;
-            for (int i = 0; i < DslTokenFactorySuffixes.Length; i++)
+            for (int i = 0; i < DslTokenFactorySuffixes.Count; i++)
             {
                 if (expression.EndsWith(DslTokenFactorySuffixes[i], StringComparison.Ordinal)) return true;
             }
@@ -448,7 +447,7 @@ namespace ModularFlightPanel.UI
         public static bool IsAuditedControlType(string simpleTypeName)
         {
             if (string.IsNullOrEmpty(simpleTypeName)) return false;
-            for (int i = 0; i < AuditedControlTypes.Length; i++)
+            for (int i = 0; i < AuditedControlTypes.Count; i++)
             {
                 if (string.Equals(AuditedControlTypes[i], simpleTypeName, StringComparison.Ordinal)) return true;
             }
@@ -459,7 +458,7 @@ namespace ModularFlightPanel.UI
         public static ControlCtorShape FindControlCtorShape(string simpleTypeName, int argumentCount)
         {
             if (string.IsNullOrEmpty(simpleTypeName)) return null;
-            for (int i = 0; i < ControlCtorShapes.Length; i++)
+            for (int i = 0; i < ControlCtorShapes.Count; i++)
             {
                 ControlCtorShape shape = ControlCtorShapes[i];
                 if (shape.ParameterCount == argumentCount &&
@@ -476,7 +475,7 @@ namespace ModularFlightPanel.UI
         {
             var list = new System.Collections.Generic.List<ControlCtorShape>();
             if (string.IsNullOrEmpty(simpleTypeName)) return list;
-            for (int i = 0; i < ControlCtorShapes.Length; i++)
+            for (int i = 0; i < ControlCtorShapes.Count; i++)
             {
                 if (string.Equals(ControlCtorShapes[i].ControlType, simpleTypeName, StringComparison.Ordinal))
                 {
@@ -497,10 +496,127 @@ namespace ModularFlightPanel.UI
         public const string RepositoryRootProbeRelative = "src/ModularFlightPanel/UI/Widgets";
 
         /// <summary>构建产物目录片段（不参与审计）</summary>
-        public static readonly string[] BuildArtifactPathFragments = { "/obj/", "/bin/" };
+        public static readonly IReadOnlyList<string> BuildArtifactPathFragments = Array.AsReadOnly(new[] { "/obj/", "/bin/" });
 
         /// <summary>程序集路径向上探测的最大层数</summary>
         public const int RepositoryRootProbeDepth = 10;
+
+        // ==========================================================================================
+        // 审计解析/编译口径：唯一声明点
+        // ==========================================================================================
+
+        /// <summary>
+        /// 审计侧统一启用的预编译符号。插件本体（ModularFlightPanel.csproj 的 DefineConstants）
+        /// 定义了它，因此两条解析路径（语义编译树 / 语法回退树）必须取同一值。
+        ///
+        /// 【为什么是单点】历史缺陷：语义编译漏了本符号而语法回退带上了它，三处口径两套语义，后果有二 ——
+        ///   1) `#if !KSP_RUNTIME` 包围的 Vector2 测试垫片（Config/WidgetConfig.cs）被单侧激活，
+        ///      与 UnityEngine.CoreModule.dll 的真实 Vector2 冲突（实测 1690 处 CS0029）；
+        ///   2) `#if KSP_RUNTIME` 内的代码在语义树上凭空消失，而 WidgetClassGraph 是"语义树优先"，
+        ///      于是组件内受宏保护的代码整段脱审。
+        /// </summary>
+        public const string RuntimePreprocessorSymbol = "KSP_RUNTIME";
+
+        /// <summary>
+        /// 只由无头验证器编译、不参与插件本体编译的审计文件（与 ModularFlightPanel.csproj 的
+        /// &lt;Compile Remove&gt; 逐项对应）。
+        ///
+        /// 语义编译集必须与插件真实编译集一致：这些文件引用 Microsoft.CodeAnalysis，
+        /// 而 KSP Managed 目录不提供该程序集，混入后会退化为错误类型并污染整张类型图。
+        /// </summary>
+        public static readonly IReadOnlyList<string> PluginExcludedAuditFiles = Array.AsReadOnly(new[]
+        {
+            "RoslynAstHelper.cs",
+            "SemanticCompilationProvider.cs",
+            "WidgetSourceAudit.cs",
+            "WidgetModernizationAudit.cs",
+            "WidgetColorLiteralAudit.cs",
+            "I18nSyntaxAuditor.cs"
+        });
+
+        /// <summary>插件本体的项目文件（用于校验 PluginExcludedAuditFiles 与 csproj 不漂移）</summary>
+        public const string PluginCsprojRelativePath = "src/ModularFlightPanel/ModularFlightPanel.csproj";
+
+        /// <summary>按文件名判定是否属于"仅无头侧编译"的审计文件</summary>
+        public static bool IsPluginExcludedAuditFile(string pathOrName)
+        {
+            if (string.IsNullOrEmpty(pathOrName)) return false;
+
+            string name = pathOrName.Replace('\\', '/');
+            int slash = name.LastIndexOf('/');
+            if (slash >= 0) name = name.Substring(slash + 1);
+
+            for (int i = 0; i < PluginExcludedAuditFiles.Count; i++)
+            {
+                if (string.Equals(PluginExcludedAuditFiles[i], name, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        // ==========================================================================================
+        // 语义编译健康度：错误数棘轮（只降不升）
+        // ==========================================================================================
+
+        /// <summary>内核级规则码：语义编译存在诊断错误 —— 符号决议可能落在错误类型上，L4 权威性不成立</summary>
+        public const string KernelSemanticUnhealthy = "MFP-KERNEL-SEMANTIC-UNHEALTHY";
+
+        /// <summary>内核级规则码：语义层降级 —— 未链接到 Unity/KSP 程序集，判定已退化为语法回退</summary>
+        public const string KernelSemanticDegraded = "MFP-KERNEL-SEMANTIC-DEGRADED";
+
+        /// <summary>
+        /// 全量语义编译允许的诊断错误数上限（棘轮：只允许下调，与颜色基线同规矩）。
+        ///
+        /// 【当前值 0 的来历】修复"语义编译缺 KSP_RUNTIME + 编译集混入仅无头侧编译的审计文件"之前，
+        /// 实测为 2217（其中 CS0029 1690 处全部是影子 UnityEngine.Vector2 与 CoreModule 真实类型的冲突）。
+        /// 两处修复后实测为 0，故钉死在 0 —— 任何新增编译错误都必须先讨论再抬高本值。
+        /// </summary>
+        public const int SemanticCompilationErrorCeiling = 0;
+
+        // ==========================================================================================
+        // 语义编译集一致性守卫：两份清单（本文件 vs 插件 csproj）必须逐项相等
+        // ==========================================================================================
+
+        /// <summary>
+        /// 从插件 csproj 文本中解析 &lt;Compile Remove="..."&gt; 的文件名集合。
+        /// 供自检断言"语义编译集 == 插件真实编译集"，杜绝 C# 清单与 csproj 清单各自漂移。
+        /// </summary>
+        public static List<string> ParseCompileRemoveFileNames(string csprojText)
+        {
+            var names = new List<string>();
+            if (string.IsNullOrEmpty(csprojText)) return names;
+
+            const string tag = "Compile";
+            const string remove = "Remove";
+
+            int cursor = 0;
+            while (true)
+            {
+                int tagAt = csprojText.IndexOf("<" + tag, cursor, StringComparison.OrdinalIgnoreCase);
+                if (tagAt < 0) break;
+                cursor = tagAt + 1;
+
+                int tagEnd = csprojText.IndexOf('>', tagAt);
+                if (tagEnd < 0) break;
+                string element = csprojText.Substring(tagAt, tagEnd - tagAt);
+
+                int removeAt = element.IndexOf(remove, StringComparison.OrdinalIgnoreCase);
+                if (removeAt < 0) continue;
+
+                int quoteStart = element.IndexOf('"', removeAt);
+                if (quoteStart < 0) continue;
+                int quoteEnd = element.IndexOf('"', quoteStart + 1);
+                if (quoteEnd < 0) continue;
+
+                string raw = element.Substring(quoteStart + 1, quoteEnd - quoteStart - 1)
+                                    .Replace('\\', '/');
+                int slash = raw.LastIndexOf('/');
+                if (slash >= 0) raw = raw.Substring(slash + 1);
+                raw = raw.Trim();
+
+                if (!string.IsNullOrEmpty(raw) && !names.Contains(raw)) names.Add(raw);
+            }
+            return names;
+        }
     }
 
     /// <summary>源码级规则违规记录（插件与无头验证器共用的统一 DTO）</summary>
@@ -534,6 +650,24 @@ namespace ModularFlightPanel.UI
     {
         public int WidgetsScanned;
         public readonly List<WidgetSourceViolation> Violations = new List<WidgetSourceViolation>();
+
+        /// <summary>
+        /// 本次审计中语义符号决议被采用（咨询）的次数。
+        /// 覆盖率指标，不是结果指标：语义结论与文本回退结论可能恰好相同，
+        /// 因此"结果对不对"无法证明语义点位还在，"被采用过"才可以。
+        /// 为 0 即表示 L4 语义层已从判定链路中静默消失。
+        /// </summary>
+        public int SemanticVerdictCount;
+
+        /// <summary>
+        /// 语义决议在"调用表达式"分支被采用的次数（SPEC-007 的 InvocationExpression 遍历）。
+        /// 与 MemberAccess 分支分开计数：两个分支能捕获同一处违规且会被去重合并，
+        /// 所以合并计数无法证明"两个分支都还在"。
+        /// </summary>
+        public int SemanticInvocationVerdictCount;
+
+        /// <summary>语义决议在"成员访问"分支被采用的次数（SPEC-007 的 MemberAccessExpression 遍历）</summary>
+        public int SemanticMemberAccessVerdictCount;
 
         public int ErrorCount => Violations.Count(v => v.Severity == "ERROR");
         public int WarningCount => Violations.Count(v => v.Severity == "WARNING");

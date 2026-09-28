@@ -38,6 +38,18 @@ namespace ModularFlightPanel.UI
         public bool IsObsoleteShim;               // 继承链上出现 [Obsolete] 的向后兼容垫片
         internal bool? DescendantCache;           // 契约归属判定缓存（链断裂时需沿已解析基类回溯）
 
+        /// <summary>源文件通过 using 指令导入的命名空间列表，用于跨命名空间继承消歧</summary>
+        public List<string> Usings = new List<string>();
+
+        /// <summary>源文件通过 using 别名定义的类型映射 (别名 -> 目标类型名)</summary>
+        public Dictionary<string, string> UsingAliases = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>Roslyn 语义符号（当已构建 CSharpCompilation 时非空）</summary>
+        public INamedTypeSymbol Symbol;
+
+        /// <summary>所属语法树的语义模型（当已构建 CSharpCompilation 时非空）</summary>
+        public SemanticModel SemanticModel;
+
         public bool HasMetadataAttribute;         // 声明了 [FlightWidget]
         public bool DeclaresHighFrequency;        // [FlightWidget(..., HighFrequency = true)]
         public PropertyDeclarationSyntax TierProperty;
@@ -82,6 +94,9 @@ namespace ModularFlightPanel.UI
     {
         public readonly List<WidgetClassNode> All = new List<WidgetClassNode>();
 
+        /// <summary>全工程语义编译上下文（若激活则提供绝对权威的符号与类型决议）</summary>
+        public SemanticCompilationContext SemanticContext;
+
         /// <summary>
         /// 类简名 → 全部同名声明。
         /// 旧实现是 Dictionary&lt;string, WidgetClassNode&gt;，跨命名空间同名类会"后声明者胜出"被静默覆盖，
@@ -99,6 +114,18 @@ namespace ModularFlightPanel.UI
         /// <summary>继承链消歧失败记录：无法唯一确定基类时显式上报，绝不静默取一个</summary>
         public readonly List<BaseResolutionIssue> BaseResolutionIssues = new List<BaseResolutionIssue>();
 
+        /// <summary>
+        /// 直接基类由语义符号（Symbol.BaseType）决议成功的次数。
+        /// 这是"语义点位 2 还在不在"的覆盖率指标：为 0 说明该点位已被拆除、继承链退化回语法消歧。
+        /// </summary>
+        public int SemanticResolvedBaseCount;
+
+        /// <summary>
+        /// 契约归属判定由语义分支（Symbol != null 时独占）给出的次数。
+        /// 这是"语义点位 3 还在不在"的覆盖率指标。
+        /// </summary>
+        public int SemanticDescendantVerdictCount;
+
         public readonly Dictionary<string, CompilationUnitSyntax> Roots = new Dictionary<string, CompilationUnitSyntax>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>刷新阶梯合法取值集合 —— 直接从源码里的枚举声明派生（不再写死成员名）</summary>
@@ -113,9 +140,10 @@ namespace ModularFlightPanel.UI
         /// <summary>作用域文件名集合（仅文件名，用于计数展示）</summary>
         public readonly HashSet<string> ScopedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        public static WidgetClassGraph Build(IList<WidgetSourceFile> files)
+        public static WidgetClassGraph Build(IList<WidgetSourceFile> files, SemanticCompilationContext semanticContext = null)
         {
             var graph = new WidgetClassGraph();
+            graph.SemanticContext = semanticContext;
             if (files == null) return graph;
 
             // ── 1. 解析全部源文件并建立类节点 ──
@@ -124,9 +152,18 @@ namespace ModularFlightPanel.UI
                 WidgetSourceFile file = files[i];
                 if (file == null || string.IsNullOrEmpty(file.Text)) continue;
 
-                CompilationUnitSyntax root = RoslynAstHelper.ParseRoot(file.Text);
-                graph.Roots[file.Path ?? file.Name ?? string.Empty] = root;
+                string fileKey = file.Path ?? file.Name ?? string.Empty;
+                CompilationUnitSyntax root = semanticContext?.GetRoot(fileKey);
+                if (root == null)
+                {
+                    root = RoslynAstHelper.ParseRoot(file.Text);
+                }
+
+                graph.Roots[fileKey] = root;
                 graph.ExtractTierMembers(root);
+                RoslynAstHelper.ExtractUsingDirectives(root, out List<string> fileUsings, out Dictionary<string, string> fileAliases);
+
+                SemanticModel semanticModel = semanticContext?.GetSemanticModel(fileKey);
 
                 foreach (var cd in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
@@ -142,8 +179,16 @@ namespace ModularFlightPanel.UI
                         Namespace = ns,
                         FullName = string.IsNullOrEmpty(ns) ? cd.Identifier.Text : ns + "." + cd.Identifier.Text,
                         IsAbstract = RoslynAstHelper.HasModifier(cd, SyntaxKind.AbstractKeyword),
-                        IsContractRoot = string.Equals(cd.Identifier.Text, WidgetSpecRules.ContractRootType, StringComparison.Ordinal)
+                        IsContractRoot = string.Equals(cd.Identifier.Text, WidgetSpecRules.ContractRootType, StringComparison.Ordinal),
+                        Usings = fileUsings,
+                        UsingAliases = fileAliases,
+                        SemanticModel = semanticModel
                     };
+
+                    if (semanticModel != null)
+                    {
+                        node.Symbol = semanticModel.GetDeclaredSymbol(cd) as INamedTypeSymbol;
+                    }
 
                     node.HasMetadataAttribute = RoslynAstHelper.HasAttribute(cd, WidgetSpecRules.MetadataAttribute);
                     node.DeclaresHighFrequency = node.HasMetadataAttribute &&
@@ -161,10 +206,27 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            // ── 2. 解析继承链（同名类按全限定名消歧；无法唯一确定时显式上报，不再"后声明者胜出"）──
+            // ── 2. 解析继承链（优先走权威语义符号 BaseType；回退走语法消歧）──
             for (int i = 0; i < graph.All.Count; i++)
             {
                 WidgetClassNode node = graph.All[i];
+
+                // 2.1 语义符号精确决议直接基类
+                if (node.Symbol?.BaseType != null)
+                {
+                    string baseFullName = node.Symbol.BaseType.ToDisplayString();
+                    if (graph.ByFullName.TryGetValue(baseFullName, out WidgetClassNode resolvedBySymbol))
+                    {
+                        if (resolvedBySymbol != node)
+                        {
+                            node.Base = resolvedBySymbol;
+                            graph.SemanticResolvedBaseCount++;
+                            continue;
+                        }
+                    }
+                }
+
+                // 2.2 语法消歧回退
                 for (int b = 0; b < node.BaseNames.Count; b++)
                 {
                     WidgetClassNode resolved = graph.ResolveBase(node, b, out string issue);
@@ -190,7 +252,8 @@ namespace ModularFlightPanel.UI
             for (int i = 0; i < graph.All.Count; i++)
             {
                 WidgetClassNode node = graph.All[i];
-                node.IsWidgetContractClass = !node.IsContractRoot && node.IsDescendantOfContractRoot();
+                node.IsWidgetContractClass = !node.IsContractRoot
+                    && node.IsDescendantOfContractRoot(() => graph.SemanticDescendantVerdictCount++);
                 node.IsObsoleteShim = node.AnyInChain(IsObsoleteClass);
             }
 
@@ -258,6 +321,13 @@ namespace ModularFlightPanel.UI
             if (distinct.Count == 0) return node;
             if (distinct.Count == 1) return distinct[0];
 
+            // 别名消歧：源码顶部 using AliasBase = Target.Full.Name;
+            if (node.UsingAliases != null && node.UsingAliases.TryGetValue(simpleName, out string aliasedTarget))
+            {
+                WidgetClassNode aliasMatch = distinct.FirstOrDefault(c => string.Equals(c.FullName, aliasedTarget, StringComparison.Ordinal));
+                if (aliasMatch != null) return aliasMatch;
+            }
+
             // 多候选：优先用源码里的全限定写法消歧
             string qualified = baseIndex < node.QualifiedBaseNames.Count ? node.QualifiedBaseNames[baseIndex] : null;
             if (!string.IsNullOrEmpty(qualified))
@@ -274,6 +344,15 @@ namespace ModularFlightPanel.UI
                 .Where(c => string.Equals(c.Namespace, node.Namespace, StringComparison.Ordinal))
                 .ToList();
             if (sameNs.Count == 1) return sameNs[0];
+
+            // 再尝试通过文件顶部的 using 声明导入的命名空间消歧
+            if (node.Usings != null && node.Usings.Count > 0)
+            {
+                List<WidgetClassNode> usingMatches = distinct
+                    .Where(c => !string.IsNullOrEmpty(c.Namespace) && node.Usings.Contains(c.Namespace))
+                    .ToList();
+                if (usingMatches.Count == 1) return usingMatches[0];
+            }
 
             issue = "基类名 '" + simpleName + "' 在扫描集合内有 "
                   + distinct.Count + " 个同名声明（"
@@ -327,12 +406,27 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 契约真后代判定：优先沿已解析的继承链回溯；链断裂（基类未在扫描集合内）时回退到基类名匹配，
         /// 并沿"已解析到的基类"继续向上递归，使"只扫描局部文件"的合成场景同样成立。
+        ///
+        /// onSemanticVerdict：语义分支（点位 3）被采用时的回调，仅用于覆盖率计数 ——
+        /// 语义结论与语法回退结论可能恰好相同，所以"结果对不对"测不出这条点位是否还在，
+        /// 必须靠"被采用过"来测。
         /// </summary>
-        public static bool IsDescendantOfContractRoot(this WidgetClassNode node)
+        public static bool IsDescendantOfContractRoot(this WidgetClassNode node, Action onSemanticVerdict = null)
         {
             if (node == null) return false;
             if (node.DescendantCache.HasValue) return node.DescendantCache.Value;
 
+            // 1. 若拥有语义符号，直接使用语义模型进行绝对权威判定
+            if (node.Symbol != null)
+            {
+                onSemanticVerdict?.Invoke();
+                bool semanticResult = SemanticCompilationProvider.InheritsFrom(node.Symbol, "ModularFlightPanel.UI." + WidgetSpecRules.ContractRootType)
+                                   || SemanticCompilationProvider.InheritsFrom(node.Symbol, WidgetSpecRules.ContractRootType);
+                node.DescendantCache = semanticResult;
+                return semanticResult;
+            }
+
+            // 2. 否则降级回退到 AST 继承链回溯
             node.DescendantCache = false;   // 防环护栏：循环继承按非组件处理
             bool result = false;
 
@@ -355,7 +449,7 @@ namespace ModularFlightPanel.UI
 
             if (!result && node.Base != null && node.Base != node)
             {
-                result = IsDescendantOfContractRoot(node.Base);
+                result = IsDescendantOfContractRoot(node.Base, onSemanticVerdict);
             }
 
             node.DescendantCache = result;
@@ -395,8 +489,12 @@ namespace ModularFlightPanel.UI
         public WidgetDiscoveryStatus Status = WidgetDiscoveryStatus.Ok;
         public string Detail = string.Empty;
         public WidgetClassGraph Graph;
+        public SemanticCompilationContext SemanticContext;
         public readonly List<WidgetSourceFile> Sources = new List<WidgetSourceFile>();
         public readonly List<string> ReadErrors = new List<string>();
+
+        /// <summary>被排除在语义编译之外的"仅无头侧编译"审计文件数（用于证明编译集与插件一致）</summary>
+        public int PluginExcludedFileCount;
 
         /// <summary>语法级失败明细（"文件 行:列 错误码 信息"）；非空即代表审计作用域不可信</summary>
         public readonly List<string> ParseErrors = new List<string>();
@@ -464,9 +562,18 @@ namespace ModularFlightPanel.UI
                 return result;
             }
 
-            foreach (string path in Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
+            foreach (string path in SafeEnumerateSourceFiles(sourceRoot, "*.cs", result.ReadErrors))
             {
                 if (IsBuildArtifactPath(path)) continue;
+
+                // 语义编译集必须等于插件的真实编译集：这些文件只由无头验证器编译（csproj 的 <Compile Remove>），
+                // 它们引用 Microsoft.CodeAnalysis，而 KSP Managed 目录不提供该程序集。
+                // 混进来会退化为错误类型并污染整张类型图（历史实测 253 处 CS0246）。
+                if (WidgetSpecRules.IsPluginExcludedAuditFile(path))
+                {
+                    result.PluginExcludedFileCount++;
+                    continue;
+                }
                 try
                 {
                     string text = File.ReadAllText(path);
@@ -494,7 +601,10 @@ namespace ModularFlightPanel.UI
             }
 
             result.Sources.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
-            result.Graph = WidgetClassGraph.Build(result.Sources);
+            
+            // 构建全量 CSharpCompilation 并链接 Unity 与 KSP 程序集
+            result.SemanticContext = SemanticCompilationProvider.BuildCompilation(result.Sources, repoRoot);
+            result.Graph = WidgetClassGraph.Build(result.Sources, result.SemanticContext);
 
             if (result.ReadErrors.Count > 0)
             {
@@ -521,10 +631,59 @@ namespace ModularFlightPanel.UI
             return result;
         }
 
+        private static IEnumerable<string> SafeEnumerateSourceFiles(string root, string pattern, List<string> readErrors)
+        {
+            var stack = new Stack<string>();
+            stack.Push(root);
+
+            while (stack.Count > 0)
+            {
+                string current = stack.Pop();
+                string[] subDirs = null;
+                try
+                {
+                    subDirs = Directory.GetDirectories(current);
+                }
+                catch (Exception ex)
+                {
+                    readErrors?.Add("枚举目录失败 " + current + ": " + ex.Message);
+                }
+
+                if (subDirs != null)
+                {
+                    for (int i = 0; i < subDirs.Length; i++)
+                    {
+                        if (!IsBuildArtifactPath(subDirs[i]))
+                        {
+                            stack.Push(subDirs[i]);
+                        }
+                    }
+                }
+
+                string[] files = null;
+                try
+                {
+                    files = Directory.GetFiles(current, pattern);
+                }
+                catch (Exception ex)
+                {
+                    readErrors?.Add("枚举文件失败 " + current + ": " + ex.Message);
+                }
+
+                if (files != null)
+                {
+                    for (int i = 0; i < files.Length; i++)
+                    {
+                        yield return files[i];
+                    }
+                }
+            }
+        }
+
         private static bool IsBuildArtifactPath(string path)
         {
             string norm = path.Replace('\\', '/');
-            for (int i = 0; i < WidgetSpecRules.BuildArtifactPathFragments.Length; i++)
+            for (int i = 0; i < WidgetSpecRules.BuildArtifactPathFragments.Count; i++)
             {
                 if (norm.Contains(WidgetSpecRules.BuildArtifactPathFragments[i])) return true;
             }
@@ -545,9 +704,23 @@ namespace ModularFlightPanel.UI
             return Scan(WidgetClassGraph.Build(list), list);
         }
 
+        /// <summary>语义通道入口：允许显式传入语义编译上下文（自检用；门禁侧走 Scan(discovery) 已含上下文）</summary>
+        public static WidgetSourceAuditReport Scan(IEnumerable<WidgetSourceFile> files, SemanticCompilationContext semanticContext)
+        {
+            var list = (files ?? Enumerable.Empty<WidgetSourceFile>()).ToList();
+            return Scan(WidgetClassGraph.Build(list, semanticContext), list);
+        }
+
         private static WidgetSourceAuditReport Scan(WidgetClassGraph graph, IList<WidgetSourceFile> files)
         {
             var report = new WidgetSourceAuditReport { WidgetsScanned = graph.ContractClasses.Count };
+
+            // 覆盖率计数：语义点位 1（每类 GetDeclaredSymbol → node.Symbol）被采用。
+            // 为 0 = 语义上下文缺失或该点位被拆除，L4 判定已退化为纯语法。
+            for (int i = 0; i < graph.All.Count; i++)
+            {
+                if (graph.All[i].Symbol != null) report.SemanticVerdictCount++;
+            }
 
             // ── 判定依据自检：存在组件时，阶梯枚举必须能从源码派生，否则取值校验会退化为"全部非法" ──
             if (graph.ContractClasses.Count > 0 && graph.TierMembers.Count == 0)
@@ -573,6 +746,13 @@ namespace ModularFlightPanel.UI
             // ── 内核级守卫 2：微控件构造函数签名表必须与真实源码声明一致 ──
             // 这是把"重构构造函数后审计规则静默翻转"变成"门禁显式报错"的那道锁。
             VerifyControlCtorShapes(graph, report);
+
+            // ── 内核级守卫 3：语义编译集必须与插件真实编译集一致（两份清单不得漂移）──
+            VerifySemanticCompilationSetConsistency(report);
+
+            // ── 内核级守卫 4：语义编译健康度（错误数棘轮 + 组件作用域文件零容忍）──
+            // 没有这道锁时，"成功链接 17 个程序集"会被当成 L4 可用，而编译单元里其实藏着 2217 个错误。
+            VerifySemanticCompilationHealth(graph, report);
 
             // ── SPEC-001 继承契约（全局不变量：声明了组件元数据的类必须是契约真后代）──
             foreach (var node in graph.All)
@@ -605,6 +785,118 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
+        /// 内核级守卫：语义编译集必须等于插件的真实编译集。
+        ///
+        /// 【为什么要对照两份清单】`UI/Auditing` 下有一批文件只由无头验证器编译（它们引用
+        /// Microsoft.CodeAnalysis，而 KSP Managed 目录不提供该程序集，插件 csproj 用
+        /// &lt;Compile Remove&gt; 把它们排除）。语义编译若把它们混进来，就会退化为错误类型并污染
+        /// 整张类型图 —— 而语义图正是 SPEC 规则的判定依据。
+        /// 本方法把"C# 侧清单"与"csproj 侧清单"逐项对照，任何一侧单方面增删都会变成显式 ERROR。
+        ///
+        /// 仓库根不可解析（发布环境）时静默跳过：属于可预期的环境降级，与非语义资源同规矩。
+        /// </summary>
+        private static void VerifySemanticCompilationSetConsistency(WidgetSourceAuditReport report)
+        {
+            string repoRoot = ResolveRepositoryRoot();
+            if (string.IsNullOrEmpty(repoRoot)) return;
+
+            string csproj = Path.Combine(repoRoot,
+                WidgetSpecRules.PluginCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(csproj)) return;
+
+            List<string> fromCsproj;
+            try
+            {
+                fromCsproj = WidgetSpecRules.ParseCompileRemoveFileNames(File.ReadAllText(csproj));
+            }
+            catch (Exception ex)
+            {
+                Add(report, Path.GetFileName(csproj), WidgetSpecRules.KernelSemanticUnhealthy, "ERROR", 0,
+                    "无法读取插件项目文件以校验语义编译集: " + ex.Message);
+                return;
+            }
+
+            var declared = new HashSet<string>(WidgetSpecRules.PluginExcludedAuditFiles, StringComparer.OrdinalIgnoreCase);
+            var built = new HashSet<string>(fromCsproj, StringComparer.OrdinalIgnoreCase);
+
+            foreach (string name in declared)
+            {
+                if (built.Contains(name)) continue;
+                Add(report, Path.GetFileName(csproj), WidgetSpecRules.KernelSemanticUnhealthy, "ERROR", 0,
+                    "语义编译集清单与插件 csproj 分裂：" + name
+                    + " 已声明为『仅无头侧编译』，但 csproj 的 <Compile Remove> 里没有它"
+                    + "（该文件会被插件本体编译，运行期可能报缺程序集）");
+            }
+
+            foreach (string name in built)
+            {
+                if (declared.Contains(name)) continue;
+                Add(report, Path.GetFileName(csproj), WidgetSpecRules.KernelSemanticUnhealthy, "ERROR", 0,
+                    "插件 csproj 排除了 " + name
+                    + "，但语义编译集清单未登记 → 该文件会混入语义编译，把整张类型图污染成错误类型");
+            }
+        }
+
+        /// <summary>
+        /// 内核级守卫：语义编译健康度。
+        ///
+        /// 【为什么必须有】门禁此前只有"成功链接 N 个外部程序集"这一句证据，且从不调用
+        /// GetDiagnostics()。于是语义编译里同时藏着影子 UnityEngine.Vector2（来自
+        /// Config/WidgetConfig.cs 的 `#if !KSP_RUNTIME` 测试垫片）与 2217 个错误时，
+        /// 报告照旧写 "Full L4 真实符号语义与常量折叠激活" —— 这是本次审计发现的最严重问题。
+        ///
+        /// 三道锁：
+        ///   1. 未构建语义上下文 → 显式 WARNING（判定已退化为语法回退，不得宣称 L4 权威）；
+        ///   2. 未链接 Unity/KSP 程序集 → 显式 WARNING（Unity 类型无法决议）；
+        ///   3. 诊断错误数超棘轮上限，或**任一组件作用域文件**自身带错误 → ERROR。
+        ///      第 3 条后半句是关键：作用域文件的符号就是 SPEC-001..007 的判定依据，
+        ///      它一旦不可信，那些"合规"结论就都不成立。
+        /// </summary>
+        private static void VerifySemanticCompilationHealth(WidgetClassGraph graph, WidgetSourceAuditReport report)
+        {
+            SemanticCompilationContext context = graph.SemanticContext;
+
+            if (context == null)
+            {
+                Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelSemanticDegraded, "WARNING", 0,
+                    "未构建语义编译上下文：全部判定已退化为语法回退路径"
+                    + "（无法识别类型别名、无法跨命名空间消歧、无语义常量折叠），结论强度低于 L4");
+                return;
+            }
+
+            if (!context.IsFullSemanticActive)
+            {
+                Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelSemanticDegraded, "WARNING", 0,
+                    "未探测到 KSP_x64_Data/Managed：语义编译仅链接 " + context.ResolvedReferencePaths.Count
+                    + " 个主机基础程序集，Unity 类型无法决议，SPEC-006/SPEC-007 已退化为语法回退路径");
+            }
+
+            if (context.CompilationErrorCount > WidgetSpecRules.SemanticCompilationErrorCeiling)
+            {
+                Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelSemanticUnhealthy, "ERROR", 0,
+                    "语义编译存在 " + context.CompilationErrorCount + " 处诊断 ERROR（棘轮上限 "
+                    + WidgetSpecRules.SemanticCompilationErrorCeiling + "）：符号决议可能落在错误类型上，"
+                    + "L4 权威性不成立，不得据此宣称语义结论");
+            }
+
+            // 组件作用域文件零容忍：逐类去重后按文件统计
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < graph.ContractClasses.Count; i++)
+            {
+                WidgetClassNode node = graph.ContractClasses[i];
+                string key = !string.IsNullOrEmpty(node.FilePath) ? node.FilePath : node.FileName;
+                if (string.IsNullOrEmpty(key) || !seen.Add(key)) continue;
+
+                int errors = context.ErrorCountForFile(key);
+                if (errors <= 0) continue;
+
+                Add(report, node.FileName, WidgetSpecRules.KernelSemanticUnhealthy, "ERROR", 0,
+                    "组件作用域文件在语义编译中有 " + errors + " 处诊断 ERROR：该文件的符号决议不可信，"
+                    + "其 SPEC 判定必须视为失效（先修编译错误，再看合规结论）");
+            }
+        }
+
+        /// <summary>
         /// 交叉校验：从被扫描源码里派生微控件构造函数的真实声明，与 WidgetSpecRules.ControlCtorShapes 逐条比对。
         ///
         /// 这道锁的意义：旧实现把"哪一参是遥测 Token"以参数下标形式写死在规则体里，等于对另一个文件里
@@ -618,7 +910,7 @@ namespace ModularFlightPanel.UI
         /// </summary>
         private static void VerifyControlCtorShapes(WidgetClassGraph graph, WidgetSourceAuditReport report)
         {
-            for (int t = 0; t < WidgetSpecRules.AuditedControlTypes.Length; t++)
+            for (int t = 0; t < WidgetSpecRules.AuditedControlTypes.Count; t++)
             {
                 string controlType = WidgetSpecRules.AuditedControlTypes[t];
                 List<WidgetSpecRules.ControlCtorShape> shapes = WidgetSpecRules.ShapesOfControlType(controlType);
@@ -979,12 +1271,14 @@ namespace ModularFlightPanel.UI
 
         private static void ScanWidgetFile(WidgetSourceFile file, WidgetClassGraph graph, WidgetSourceAuditReport report)
         {
+            SemanticModel semanticModel = graph.SemanticContext?.GetSemanticModel(file.Path ?? file.Name);
+
             // ── SPEC-006 零颜色字面量（棘轮：允许存量只降不升）──
-            int colorOccurrences = WidgetColorLiteralAudit.CountOccurrences(file.Text);
+            int colorOccurrences = WidgetColorLiteralAudit.CountOccurrences(file.Text, semanticModel);
             int allowed = WidgetColorLiteralAudit.GetAllowedOccurrences(file.Name);
             if (colorOccurrences > allowed)
             {
-                var samples = string.Join(" | ", WidgetColorLiteralAudit.CollectOffendingLines(file.Text, 3).ToArray());
+                var samples = string.Join(" | ", WidgetColorLiteralAudit.CollectOffendingLines(file.Text, 3, semanticModel).ToArray());
                 Add(report, file.Name, WidgetSpecRules.NoHardcodedColors, "ERROR", 0,
                     $"新增颜色字面量 {colorOccurrences - allowed} 处 (实测 {colorOccurrences} / 基线 {allowed})。"
                     + "颜色必须取自 WidgetStyleManager 语义角色或 ThemeConfig；占位色用 Color.clear。样本: " + samples);
@@ -1011,24 +1305,68 @@ namespace ModularFlightPanel.UI
 
             foreach (var inv in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                string expr = inv.Expression.ToString();
-                if (!WidgetSpecRules.IsSceneQueryApi(expr, true)) continue;
+                bool isBanned = false;
+                if (semanticModel != null)
+                {
+                    // 覆盖率计数：语义点位 5（场景查询符号决议）· 调用分支
+                    report.SemanticVerdictCount++;
+                    report.SemanticInvocationVerdictCount++;
+                    var symbol = semanticModel.GetSymbolInfo(inv).Symbol;
+                    if (SemanticCompilationProvider.IsSceneQuerySymbol(symbol))
+                    {
+                        isBanned = true;
+                    }
+                }
 
+                if (!isBanned)
+                {
+                    string expr = inv.Expression.ToString();
+                    if (WidgetSpecRules.IsSceneQueryApi(expr, true))
+                    {
+                        isBanned = true;
+                    }
+                }
+
+                if (!isBanned) continue;
+
+                string exprText = inv.Expression.ToString();
                 int line = RoslynAstHelper.GetLine(inv);
-                if (!reportedSceneQueries.Add(line + "|" + expr)) continue;
+                if (!reportedSceneQueries.Add(line + "|" + exprText)) continue;
                 Add(report, file.Name, WidgetSpecRules.NoSceneQueries, "ERROR", line,
-                    "组件内出现场景查询 API (" + expr + ")，必须改由 ProbeManager 全局排队节流调度器统一纳管");
+                    "组件内出现场景查询 API (" + exprText + ")，必须改由 ProbeManager 全局排队节流调度器统一纳管");
             }
 
             foreach (var ma in root.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
             {
-                string expr = ma.ToString();
-                if (!WidgetSpecRules.IsSceneQueryApi(expr, false)) continue;
+                bool isBanned = false;
+                if (semanticModel != null)
+                {
+                    // 覆盖率计数：语义点位 5（场景查询符号决议）· 成员访问分支
+                    report.SemanticVerdictCount++;
+                    report.SemanticMemberAccessVerdictCount++;
+                    var symbol = semanticModel.GetSymbolInfo(ma).Symbol;
+                    if (SemanticCompilationProvider.IsSceneQuerySymbol(symbol))
+                    {
+                        isBanned = true;
+                    }
+                }
 
+                if (!isBanned)
+                {
+                    string expr = ma.ToString();
+                    if (WidgetSpecRules.IsSceneQueryApi(expr, false))
+                    {
+                        isBanned = true;
+                    }
+                }
+
+                if (!isBanned) continue;
+
+                string exprText = ma.ToString();
                 int line = RoslynAstHelper.GetLine(ma);
-                if (!reportedSceneQueries.Add(line + "|" + expr)) continue;
+                if (!reportedSceneQueries.Add(line + "|" + exprText)) continue;
                 Add(report, file.Name, WidgetSpecRules.NoSceneQueries, "ERROR", line,
-                    "组件内出现场景查询 API (" + expr + ")，必须改由 ProbeManager 全局排队节流调度器统一纳管");
+                    "组件内出现场景查询 API (" + exprText + ")，必须改由 ProbeManager 全局排队节流调度器统一纳管");
             }
         }
 
@@ -1307,6 +1645,28 @@ namespace ModularFlightPanel.UI
             check(resolvedReport.CountByRule(WidgetSpecRules.KernelInheritanceAmbiguity) == 0,
                 "全限定基类名可唯一消歧时被误报为歧义");
 
+            // 反向 2：写了 using A; 导入基类命名空间时可唯一消歧，不得误报歧义
+            string leafUsingResolvable = "using A;\nnamespace C { [FlightWidget(\"leaf_e\")] public class LeafE : Dup { } }";
+            var usingResolvedReport = Scan(new[]
+            {
+                MakeFile("DupA3.cs", dupA),
+                MakeFile("DupB3.cs", dupB),
+                MakeFile("LeafE.cs", leafUsingResolvable)
+            });
+            check(usingResolvedReport.CountByRule(WidgetSpecRules.KernelInheritanceAmbiguity) == 0,
+                "文件顶部 using 命名空间可唯一消歧时被误报为歧义");
+
+            // 反向 3：写了 using 别名时可唯一消歧，不得误报歧义
+            string leafAliasResolvable = "using TargetDup = B.Dup;\nnamespace C { [FlightWidget(\"leaf_f\")] public class LeafF : TargetDup { } }";
+            var aliasResolvedReport = Scan(new[]
+            {
+                MakeFile("DupA4.cs", dupA),
+                MakeFile("DupB4.cs", dupB),
+                MakeFile("LeafF.cs", leafAliasResolvable)
+            });
+            check(aliasResolvedReport.CountByRule(WidgetSpecRules.KernelInheritanceAmbiguity) == 0,
+                "文件顶部 using 别名可唯一消歧时被误报为歧义");
+
             // ── 17. 构造函数签名表交叉校验：源码出现未登记的带 token 重载必须报内核错误 ──
             string ctorDrift = "namespace N { public class WidgetReadoutControl { "
                              + "public WidgetReadoutControl(string id, string token) { } } }";
@@ -1331,6 +1691,138 @@ namespace ModularFlightPanel.UI
             check(sameLineReport.CountByRule(WidgetSpecRules.NoSceneQueries) == 2,
                 "同一行上的两个不同场景查询应各报一条（旧实现的 lastReportedLine 会丢掉第二条），实际 "
                 + sameLineReport.CountByRule(WidgetSpecRules.NoSceneQueries));
+
+            // ── 20. 全符号 CSharpCompilation 与 SemanticModel 语义编译自检 ──
+            var semanticFailures = SemanticCompilationProvider.SelfTest();
+            check(semanticFailures.Count == 0,
+                "SemanticCompilationProvider 语义编译自检失败: " + string.Join("; ", semanticFailures));
+
+            // ── 21. 语义继承图通道自证 ──
+            // 【为什么必须有】此前 121 条自检全部走 Scan(IEnumerable) → WidgetClassGraph.Build(list)，
+            // semanticContext 取默认 null —— 也就是说语义判定点位（Symbol 决议 / 语义分支 / GetSymbolInfo）
+            // 被改坏时门禁照样全绿。下面这组用例专门把它们拉进覆盖范围。
+            string semanticWidget =
+                "using System;\n"
+                + "namespace N\n"
+                + "{\n"
+                + SyntheticTierEnumLine
+                + "    public class MidWidget : BaseFlightWidget { }\n"
+                + "    [FlightWidget(\"fake_semantic\")]\n"
+                + "    public class SemanticWidget : MidWidget\n"
+                + "    {\n"
+                + "        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n"
+                + "        public override void ApplyTheme(ThemeConfig theme) { }\n"
+                + "        public override void OnUpdateTelemetry(IFlightTelemetry t) { }\n"
+                + "        public override void OnDestroy() { base.OnDestroy(); }\n"
+                + "    }\n"
+                + "}\n";
+
+            var semanticFiles = new List<WidgetSourceFile> { MakeFile("SemanticWidget.cs", semanticWidget) };
+            var semanticContext = SemanticCompilationProvider.BuildCompilation(semanticFiles);
+            var semanticGraph = WidgetClassGraph.Build(semanticFiles, semanticContext);
+
+            // 21.1 语义通道必须真的被启用：每个类都要解析出 ISymbol。
+            // 否则 IsDescendantOfContractRoot 会静默走语法回退分支，SPEC-001..008 的"语义权威"名不副实。
+            var noSymbol = semanticGraph.All.Where(n => n.Symbol == null).Select(n => n.Name).ToList();
+            check(noSymbol.Count == 0,
+                "语义继承图未启用：以下类未解析出 ISymbol（" + string.Join(", ", noSymbol) + "）→ 语义判定点位已退化为语法回退");
+
+            // 21.2 两层间接继承必须经 Symbol.BaseType 链正确判定为契约真后代
+            var targetNode = semanticGraph.All.FirstOrDefault(n => n.Name == "SemanticWidget");
+            check(targetNode != null && targetNode.IsWidgetContractClass,
+                "语义继承链判定失效：SemanticWidget（经 MidWidget 间接继承 " + WidgetSpecRules.ContractRootType
+                + "）未被识别为契约真后代 → Symbol.BaseType 决议或语义分支已失效");
+
+            // 21.3 语义与语法两条继承判定路径的结论必须一致（任一侧被改坏都会暴露）
+            var syntaxGraph = WidgetClassGraph.Build(semanticFiles);
+            check(semanticGraph.ContractClasses.Count == syntaxGraph.ContractClasses.Count,
+                "语义/语法两条继承判定路径结论不一致：语义=" + semanticGraph.ContractClasses.Count
+                + " / 语法=" + syntaxGraph.ContractClasses.Count);
+
+            // 21.4 语义编译健康度指标必须接上 —— 合成源引用了未定义的 ThemeConfig/IFlightTelemetry，
+            // 编译必然有错误；若计数仍为 0，说明 MFP-KERNEL-SEMANTIC-UNHEALTHY 这道门形同虚设。
+            check(semanticContext.CompilationErrorCount > 0,
+                "语义编译健康度指标未接上：注入未定义类型的合成源后 CompilationErrorCount 仍为 0");
+            check(semanticContext.ErrorCountForFile("SemanticWidget.cs") > 0,
+                "语义编译健康度未按文件归集：ErrorCountForFile 返回 0 → 组件作用域零错误守卫失效");
+
+            // 21.5 语义编译集一致性：csproj 解析器必须与 C# 侧清单逐项一致（任一侧单方面增删都要暴露）
+            string repoRootForParity = ResolveRepositoryRoot();
+            if (!string.IsNullOrEmpty(repoRootForParity))
+            {
+                string csprojPath = Path.Combine(repoRootForParity,
+                    WidgetSpecRules.PluginCsprojRelativePath.Replace('/', Path.DirectorySeparatorChar));
+                check(File.Exists(csprojPath), "语义编译集一致性守卫：找不到插件 csproj: " + csprojPath);
+                if (File.Exists(csprojPath))
+                {
+                    var fromCsproj = WidgetSpecRules.ParseCompileRemoveFileNames(File.ReadAllText(csprojPath));
+                    bool parity = fromCsproj.Count == WidgetSpecRules.PluginExcludedAuditFiles.Count
+                                  && !WidgetSpecRules.PluginExcludedAuditFiles.Any(
+                                        n => !fromCsproj.Contains(n, StringComparer.OrdinalIgnoreCase));
+                    check(parity,
+                        "语义编译集两份清单分裂：csproj <Compile Remove> = [" + string.Join(", ", fromCsproj)
+                        + "] vs PluginExcludedAuditFiles = [" + string.Join(", ", WidgetSpecRules.PluginExcludedAuditFiles) + "]");
+                }
+            }
+
+            // 21.6 降级必须可见：无语义上下文时 MFP-KERNEL-SEMANTIC-DEGRADED 必须出现在报告里，
+            // 而不是只打一行控制台提示（这条是"降级静默"缺陷的回归守卫）。
+            var consistencyReport = Scan(new[] { MakeFile("Consistency.cs", BuildSyntheticWidget(string.Empty)) });
+            check(consistencyReport.CountByRule(WidgetSpecRules.KernelSemanticDegraded) == 1,
+                "语义降级不可见：Scan(IEnumerable) 不构建语义上下文，报告里应出现 1 条 MFP-KERNEL-SEMANTIC-DEGRADED，实测 "
+                + consistencyReport.CountByRule(WidgetSpecRules.KernelSemanticDegraded));
+
+            // ── 22. 五个语义点位的"被采用"覆盖率守卫 ──
+            // 【为什么必须是覆盖率而不是结果】语义结论与语法回退结论可能恰好相同，
+            // 所以"判定结果对不对"无法证明某个语义点位还在。只有"被采用过"能证明。
+            // 把任一语义分支整段删掉时，下面的计数就会归零 → 门禁变红。
+            var semanticScanReport = Scan(semanticFiles, semanticContext);
+
+            check(semanticScanReport.SemanticVerdictCount > 0,
+                "语义点位 1 已失效：语义上下文存在但报告 SemanticVerdictCount = 0（GetDeclaredSymbol → node.Symbol 链路被拆除）");
+            check(semanticGraph.SemanticResolvedBaseCount > 0,
+                "语义点位 2 已失效：直接基类未经 Symbol.BaseType 决议（SemanticResolvedBaseCount = 0），继承链已退化回语法消歧");
+            check(semanticGraph.SemanticDescendantVerdictCount > 0,
+                "语义点位 3 已失效：契约归属判定未走语义分支（SemanticDescendantVerdictCount = 0）");
+
+            // 22.1 语义点位 5（场景查询符号决议）的覆盖率 + 能力增量双断言。
+            // 用类型别名把 GameObject 改名：语法表按"接收者最右标识符 == GameObject"匹配，结构上必然漏检；
+            // 语义符号决议拿到的是真正的 UnityEngine.GameObject，应当捕获。
+            string aliasQuerySrc =
+                "using System;\n"
+                + "using UnityEngine;\n"
+                + "using GO = UnityEngine.GameObject;\n"
+                + "namespace N\n{\n"
+                + SyntheticTierEnumLine
+                + "    [FlightWidget(\"fake_alias_query\")]\n"
+                + "    public class AliasQueryWidget : BaseFlightWidget\n    {\n"
+                + "        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n"
+                + "        public override void ApplyTheme(ThemeConfig theme) { }\n"
+                + "        public override void OnUpdateTelemetry(IFlightTelemetry t) { }\n"
+                + "        public override void OnDestroy() { base.OnDestroy(); }\n"
+                + "        private void Q() { var o = GO.Find(\"HUD\"); }\n"
+                + "    }\n}\n";
+
+            var aliasFiles = new List<WidgetSourceFile> { MakeFile("AliasQueryWidget.cs", aliasQuerySrc) };
+            var aliasContext = SemanticCompilationProvider.BuildCompilation(aliasFiles);
+            var aliasSemanticReport = Scan(aliasFiles, aliasContext);
+            var aliasSyntaxReport = Scan(aliasFiles);
+
+            check(aliasSemanticReport.SemanticVerdictCount > aliasSyntaxReport.SemanticVerdictCount,
+                "SPEC-007 语义点位 5 已失效：带语义上下文与纯语法两次扫描的语义决议计数无差异");
+            check(aliasSemanticReport.SemanticInvocationVerdictCount > 0,
+                "SPEC-007 语义点位 5 · 调用分支已失效：InvocationExpression 遍历未产生语义决议计数");
+            check(aliasSemanticReport.SemanticMemberAccessVerdictCount > 0,
+                "SPEC-007 语义点位 5 · 成员访问分支已失效：MemberAccessExpression 遍历未产生语义决议计数");
+            check(aliasSyntaxReport.CountByRule(WidgetSpecRules.NoSceneQueries) == 0,
+                "SPEC-007 语法回退基线漂移：类型别名 GO.Find(\"HUD\") 本应漏检 —— 若已能捕获，说明别名场景变了，"
+                + "需重新评估语义增量后再更新本用例，实测 " + aliasSyntaxReport.CountByRule(WidgetSpecRules.NoSceneQueries) + " 条");
+            if (aliasContext.IsFullSemanticActive)
+            {
+                check(aliasSemanticReport.CountByRule(WidgetSpecRules.NoSceneQueries) == 1,
+                    "SPEC-007 语义能力退化：类型别名下的场景查询 GO.Find(\"HUD\") 未被语义符号决议捕获，实测 "
+                    + aliasSemanticReport.CountByRule(WidgetSpecRules.NoSceneQueries) + " 条（期望 1 条）");
+            }
 
             LastSelfTestCaseCount = cases;
             return failures;

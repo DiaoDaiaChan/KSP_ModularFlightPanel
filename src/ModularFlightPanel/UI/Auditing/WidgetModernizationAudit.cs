@@ -212,7 +212,8 @@ namespace ModularFlightPanel.UI.Auditing
 
                 // 5. 运行时 CPU 像素级软光栅化反模式侦测 (SetPixels32 / _texPixels 动态贴图)
                 bool hasCpuRasterizer = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                    .Any(inv => inv.Expression.ToString().EndsWith(WidgetSpecRules.CpuRasterizerApiSuffix, StringComparison.Ordinal)) ||
+                    .Any(inv => RoslynAstHelper.GetInvokedMethodName(inv) == "SetPixels32" ||
+                                inv.Expression.ToString().EndsWith(WidgetSpecRules.CpuRasterizerApiSuffix, StringComparison.Ordinal)) ||
                     widgetClass.Members.OfType<FieldDeclarationSyntax>()
                     .Any(f => f.Declaration.Variables.Any(v => v.Identifier.Text == WidgetSpecRules.CpuRasterizerPixelField));
 
@@ -297,7 +298,7 @@ namespace ModularFlightPanel.UI.Auditing
                 foreach (var method in widgetClass.Members.OfType<MethodDeclarationSyntax>())
                 {
                     string mName = method.Identifier.Text;
-                    for (int f = 0; f < WidgetSpecRules.BannedFormattingMethods.Length; f++)
+                    for (int f = 0; f < WidgetSpecRules.BannedFormattingMethods.Count; f++)
                     {
                         if (string.Equals(mName, WidgetSpecRules.BannedFormattingMethods[f], StringComparison.Ordinal))
                         {
@@ -327,49 +328,44 @@ namespace ModularFlightPanel.UI.Auditing
                 var allInvocations = widgetClass.DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
                 item.UsesStandardizedChannels = allInvocations.Any(inv =>
                 {
-                    string expr = inv.Expression.ToString();
-                    for (int c = 0; c < WidgetSpecRules.StandardTemplateChannelApis.Length; c++)
+                    string mName = RoslynAstHelper.GetInvokedMethodName(inv);
+                    for (int c = 0; c < WidgetSpecRules.StandardTemplateChannelApis.Count; c++)
                     {
-                        if (expr.EndsWith(WidgetSpecRules.StandardTemplateChannelApis[c], StringComparison.Ordinal)) return true;
+                        if (string.Equals(mName, WidgetSpecRules.StandardTemplateChannelApis[c], StringComparison.Ordinal)) return true;
                     }
                     return false;
                 });
 
                 item.UsesStandardizedFormatting = allInvocations.Any(inv =>
                 {
-                    string expr = inv.Expression.ToString();
-                    for (int s = 0; s < WidgetSpecRules.StandardFormattingClasses.Length; s++)
+                    string mName = RoslynAstHelper.GetInvokedMethodName(inv);
+                    var receiver = RoslynAstHelper.GetInvocationReceiver(inv);
+                    string receiverName = receiver != null ? RoslynAstHelper.GetRightmostIdentifier(receiver) : string.Empty;
+
+                    for (int s = 0; s < WidgetSpecRules.StandardFormattingClasses.Count; s++)
                     {
-                        if (expr.StartsWith(WidgetSpecRules.StandardFormattingClasses[s] + ".", StringComparison.Ordinal) ||
-                            expr.Contains("." + WidgetSpecRules.StandardFormattingClasses[s] + "."))
-                        {
-                            return true;
-                        }
+                        if (string.Equals(receiverName, WidgetSpecRules.StandardFormattingClasses[s], StringComparison.Ordinal)) return true;
                     }
-                    for (int f = 0; f < WidgetSpecRules.StandardFormattingApis.Length; f++)
+                    for (int f = 0; f < WidgetSpecRules.StandardFormattingApis.Count; f++)
                     {
-                        if (expr.EndsWith(WidgetSpecRules.StandardFormattingApis[f], StringComparison.Ordinal)) return true;
+                        if (string.Equals(mName, WidgetSpecRules.StandardFormattingApis[f], StringComparison.Ordinal)) return true;
                     }
                     return false;
                 });
 
                 item.UsesFastFormat = allInvocations.Any(inv =>
                 {
-                    string expr = inv.Expression.ToString();
-                    return expr.StartsWith(WidgetSpecRules.FastFormatClass + ".", StringComparison.Ordinal) ||
-                           expr.Contains("." + WidgetSpecRules.FastFormatClass + ".");
+                    var receiver = RoslynAstHelper.GetInvocationReceiver(inv);
+                    string receiverName = receiver != null ? RoslynAstHelper.GetRightmostIdentifier(receiver) : string.Empty;
+                    return string.Equals(receiverName, WidgetSpecRules.FastFormatClass, StringComparison.Ordinal);
                 });
 
                 item.UsesSmartUIExtensions = allInvocations.Any(inv =>
                 {
-                    string expr = inv.Expression.ToString();
-                    for (int s = 0; s < WidgetSpecRules.SmartUIExtensionApis.Length; s++)
+                    string mName = RoslynAstHelper.GetInvokedMethodName(inv);
+                    for (int s = 0; s < WidgetSpecRules.SmartUIExtensionApis.Count; s++)
                     {
-                        if (expr.EndsWith("." + WidgetSpecRules.SmartUIExtensionApis[s], StringComparison.Ordinal) ||
-                            expr.Equals(WidgetSpecRules.SmartUIExtensionApis[s], StringComparison.Ordinal))
-                        {
-                            return true;
-                        }
+                        if (string.Equals(mName, WidgetSpecRules.SmartUIExtensionApis[s], StringComparison.Ordinal)) return true;
                     }
                     return false;
                 });
@@ -403,29 +399,37 @@ namespace ModularFlightPanel.UI.Auditing
                 // 从 HotLoop 入口方法出发，递归跟踪所有被调用的内部私有方法/局部函数连通闭包，
                 // 彻底杜绝违规堆分配与裸 UGUI 逃逸到私有方法中。
                 var allClassMethods = widgetClass.Members.OfType<MethodDeclarationSyntax>().ToList();
-                var methodsByName = new Dictionary<string, List<MethodDeclarationSyntax>>(StringComparer.Ordinal);
-                foreach (var m in allClassMethods)
+                var allLocalFunctions = widgetClass.DescendantNodes().OfType<LocalFunctionStatementSyntax>().ToList();
+                var allProperties = widgetClass.Members.OfType<PropertyDeclarationSyntax>().ToList();
+
+                var callablesByName = new Dictionary<string, List<SyntaxNode>>(StringComparer.Ordinal);
+                void RegisterCallable(string name, SyntaxNode node)
                 {
-                    string mName = m.Identifier.Text;
-                    if (!methodsByName.TryGetValue(mName, out var list))
+                    if (string.IsNullOrEmpty(name) || node == null) return;
+                    if (!callablesByName.TryGetValue(name, out var list))
                     {
-                        list = new List<MethodDeclarationSyntax>();
-                        methodsByName[mName] = list;
+                        list = new List<SyntaxNode>();
+                        callablesByName[name] = list;
                     }
-                    list.Add(m);
+                    list.Add(node);
                 }
+
+                foreach (var m in allClassMethods) RegisterCallable(m.Identifier.Text, m);
+                foreach (var lf in allLocalFunctions) RegisterCallable(lf.Identifier.Text, lf);
+                foreach (var p in allProperties) RegisterCallable(p.Identifier.Text, p);
 
                 var entryMethods = allClassMethods
                     .Where(m => WidgetSpecRules.HotLoopMethodNames.Contains(m.Identifier.Text) ||
                                 m.Identifier.Text.StartsWith(WidgetSpecRules.HotSyncMethodPrefix, StringComparison.OrdinalIgnoreCase))
+                    .Cast<SyntaxNode>()
                     .ToList();
 
-                var reachableHotMethods = new HashSet<MethodDeclarationSyntax>();
-                var methodQueue = new Queue<MethodDeclarationSyntax>();
+                var reachableHotBodies = new HashSet<SyntaxNode>();
+                var methodQueue = new Queue<SyntaxNode>();
 
                 foreach (var entry in entryMethods)
                 {
-                    if (reachableHotMethods.Add(entry))
+                    if (reachableHotBodies.Add(entry))
                     {
                         methodQueue.Enqueue(entry);
                     }
@@ -434,24 +438,41 @@ namespace ModularFlightPanel.UI.Auditing
                 while (methodQueue.Count > 0)
                 {
                     var current = methodQueue.Dequeue();
+
+                    // 入口/方法内部声明的局部函数直接属于热路径闭包
+                    foreach (var localFunc in current.ChildNodes().OfType<LocalFunctionStatementSyntax>())
+                    {
+                        if (reachableHotBodies.Add(localFunc))
+                        {
+                            methodQueue.Enqueue(localFunc);
+                        }
+                    }
+
                     foreach (var inv in current.DescendantNodes().OfType<InvocationExpressionSyntax>())
                     {
-                        string invokedName = null;
-                        if (inv.Expression is IdentifierNameSyntax idSyntax)
-                        {
-                            invokedName = idSyntax.Identifier.Text;
-                        }
-                        else if (inv.Expression is MemberAccessExpressionSyntax maSyntax &&
-                                 (maSyntax.Expression is ThisExpressionSyntax || maSyntax.Expression is IdentifierNameSyntax))
-                        {
-                            invokedName = maSyntax.Name.Identifier.Text;
-                        }
-
-                        if (!string.IsNullOrEmpty(invokedName) && methodsByName.TryGetValue(invokedName, out var targets))
+                        string invokedName = RoslynAstHelper.GetInvokedMethodName(inv);
+                        if (!string.IsNullOrEmpty(invokedName) && callablesByName.TryGetValue(invokedName, out var targets))
                         {
                             foreach (var target in targets)
                             {
-                                if (reachableHotMethods.Add(target))
+                                if (reachableHotBodies.Add(target))
+                                {
+                                    methodQueue.Enqueue(target);
+                                }
+                            }
+                        }
+                    }
+
+                    // 检查对类内属性的调用/访问
+                    foreach (var ma in current.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+                    {
+                        string memberName = ma.Name.Identifier.Text;
+                        if ((ma.Expression is ThisExpressionSyntax || ma.Expression is IdentifierNameSyntax)
+                            && callablesByName.TryGetValue(memberName, out var propTargets))
+                        {
+                            foreach (var target in propTargets)
+                            {
+                                if (target is PropertyDeclarationSyntax && reachableHotBodies.Add(target))
                                 {
                                     methodQueue.Enqueue(target);
                                 }
@@ -460,27 +481,49 @@ namespace ModularFlightPanel.UI.Auditing
                     }
                 }
 
-                item.ReachableHotMethodCount = reachableHotMethods.Count;
-                item.ReachableHotMethodNames.AddRange(reachableHotMethods.Select(m => m.Identifier.Text).Distinct());
+                item.ReachableHotMethodCount = reachableHotBodies.Count;
+                item.ReachableHotMethodNames.AddRange(reachableHotBodies.Select(b =>
+                {
+                    if (b is MethodDeclarationSyntax m) return m.Identifier.Text;
+                    if (b is LocalFunctionStatementSyntax lf) return lf.Identifier.Text;
+                    if (b is PropertyDeclarationSyntax p) return p.Identifier.Text;
+                    return b.ToString();
+                }).Distinct());
 
                 int hotArrayAllocs = 0;
                 int hotUguiSetters = 0;
-                foreach (var method in reachableHotMethods)
+                foreach (var body in reachableHotBodies)
                 {
-                    hotArrayAllocs += method.DescendantNodes().OfType<ArrayCreationExpressionSyntax>().Count();
+                    // 纳管显式数组与隐式类型数组 new[] { ... }
+                    hotArrayAllocs += body.DescendantNodes().OfType<ArrayCreationExpressionSyntax>().Count();
+                    hotArrayAllocs += body.DescendantNodes().OfType<ImplicitArrayCreationExpressionSyntax>().Count();
 
-                    var assignments = method.DescendantNodes().OfType<AssignmentExpressionSyntax>();
+                    var assignments = body.DescendantNodes().OfType<AssignmentExpressionSyntax>();
                     foreach (var assign in assignments)
                     {
-                        string left = assign.Left.ToString();
-                        for (int p = 0; p < WidgetSpecRules.HotLoopUguiProperties.Length; p++)
+                        string propName = null;
+                        if (assign.Left is MemberAccessExpressionSyntax ma)
                         {
-                            if (left.EndsWith("." + WidgetSpecRules.HotLoopUguiProperties[p], StringComparison.Ordinal))
+                            propName = ma.Name.Identifier.ValueText;
+                        }
+                        else
+                        {
+                            string left = assign.Left.ToString();
+                            int dot = left.LastIndexOf('.');
+                            if (dot >= 0) propName = left.Substring(dot + 1).Trim();
+                        }
+
+                        if (!string.IsNullOrEmpty(propName))
+                        {
+                            for (int p = 0; p < WidgetSpecRules.HotLoopUguiProperties.Count; p++)
                             {
-                                bool inIf = assign.Ancestors().OfType<IfStatementSyntax>().Any();
-                                if (!inIf)
+                                if (string.Equals(propName, WidgetSpecRules.HotLoopUguiProperties[p], StringComparison.Ordinal))
                                 {
-                                    hotUguiSetters++;
+                                    bool inIf = assign.Ancestors().OfType<IfStatementSyntax>().Any();
+                                    if (!inIf)
+                                    {
+                                        hotUguiSetters++;
+                                    }
                                 }
                             }
                         }
@@ -519,7 +562,7 @@ namespace ModularFlightPanel.UI.Auditing
             if (string.IsNullOrEmpty(expression)) return false;
             if (expression.StartsWith(WidgetSpecRules.ControlsAddPrefix, StringComparison.Ordinal)) return true;
 
-            for (int i = 0; i < WidgetSpecRules.DslFactoryInvocationTypes.Length; i++)
+            for (int i = 0; i < WidgetSpecRules.DslFactoryInvocationTypes.Count; i++)
             {
                 if (expression.StartsWith(WidgetSpecRules.DslFactoryInvocationTypes[i] + ".", StringComparison.Ordinal)) return true;
             }
@@ -532,7 +575,7 @@ namespace ModularFlightPanel.UI.Auditing
             if (string.IsNullOrEmpty(fieldName)) return false;
             if (!fieldName.StartsWith(WidgetSpecRules.DirtyTrackingFieldPrefix, StringComparison.OrdinalIgnoreCase)) return false;
 
-            for (int i = 0; i < WidgetSpecRules.DirtyTrackingFieldSuffixes.Length; i++)
+            for (int i = 0; i < WidgetSpecRules.DirtyTrackingFieldSuffixes.Count; i++)
             {
                 if (fieldName.EndsWith(WidgetSpecRules.DirtyTrackingFieldSuffixes[i], StringComparison.OrdinalIgnoreCase)) return true;
             }

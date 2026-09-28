@@ -525,6 +525,23 @@ namespace ModularFlightPanel.HeadlessValidator
 
             Console.WriteLine($"  ├─ 扫描范围: src/ModularFlightPanel 全量源码 {discovery.Sources.Count} 个文件 → 组件类 {discovery.WidgetClassCount} 个 (作用域文件 {discovery.ScopedFileCount} 个)");
             Console.WriteLine($"  ├─ 作用域判定: 继承契约根 {WidgetSpecRules.ContractRootType} 的闭合后代 (内容驱动，组件文件移动目录不会脱离审计)");
+            Console.WriteLine($"  ├─ 语义编译集: 已排除 {discovery.PluginExcludedFileCount} 个仅无头侧编译的审计文件 (与插件 csproj 的 <Compile Remove> 逐项一致)");
+            if (discovery.SemanticContext != null)
+            {
+                int semanticErrors = discovery.SemanticContext.CompilationErrorCount;
+                if (discovery.SemanticContext.IsFullSemanticActive)
+                {
+                    Console.WriteLine($"  ├─ 编译语义模型: 成功链接 {discovery.SemanticContext.ResolvedReferencePaths.Count} 个外部 Unity/KSP 程序集 (Full L4 真实符号语义与常量折叠激活)");
+                }
+                else
+                {
+                    Console.WriteLine($"  ├─ 编译语义模型: 主机环境编译模型激活 ({discovery.SemanticContext.ResolvedReferencePaths.Count} 个基础程序集)");
+                }
+                // 编译体检不再是隐形的：以前只看"链接了几个程序集"，从不看编译本身是否干净。
+                Console.WriteLine($"  ├─ 语义编译体检: 诊断 ERROR {semanticErrors} (棘轮上限 {WidgetSpecRules.SemanticCompilationErrorCeiling})"
+                                + (semanticErrors > WidgetSpecRules.SemanticCompilationErrorCeiling
+                                    ? "  <<== 超出棘轮上限，L4 权威性不成立!" : string.Empty));
+            }
 
             var report = WidgetSourceAudit.Scan(discovery);
             errors += report.ErrorCount;
@@ -545,7 +562,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 Console.WriteLine($"  ├─ 主题与着色管道: 全部组件提供 ApplyTheme({WidgetSpecRules.ThemeParameterType}) 且 0 颜色字面量（零容忍）");
                 Console.WriteLine($"  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry 且 OnDestroy 全量 override 并调用 base");
                 Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件沿继承链声明 [{WidgetSpecRules.MetadataAttribute}] 特性 (MFP-SPEC-008 自动挂载)");
-                Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询（黑名单表 {WidgetSpecRules.SceneQueryApis.Length} 条：Find*ByType / GameObject.Find* / Camera.main·current·allCameras·GetAllCameras / GetRootGameObjects）");
+                Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询（黑名单表 {WidgetSpecRules.SceneQueryApis.Count} 条：Find*ByType / GameObject.Find* / Camera.main·current·allCameras·GetAllCameras / GetRootGameObjects）");
                 var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
                 Console.WriteLine($"  ├─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
                 var perfRisks = modReport.WidgetsWithAntiPatterns
@@ -1198,11 +1215,27 @@ namespace ModularFlightPanel.HeadlessValidator
             Console.WriteLine("注意：SPEC-006 的判定口径是【处数】(CountOccurrences)，不是行数。");
             Console.WriteLine("登记基线的同时必须写入 WidgetColorLiteralAudit.RatchetCeilingTable，否则棘轮校验会直接失败：\n");
 
+            // 与门禁同源：走 Discover() 建立的同一份语义编译上下文。
+            // 旧实现这里直接 CountOccurrences(text) 不传 SemanticModel —— dump 用带宏的语法树、
+            // 门禁用语义树，两边口径分裂时导出的棘轮基数会偏离门禁实测值，而基数是"只降不升"的。
+            var discovery = WidgetSourceAudit.Discover(repoRoot);
+            if (discovery.SemanticContext != null)
+            {
+                Console.WriteLine($"  基线口径与门禁一致: 语义模型 {(discovery.SemanticContext.IsFullSemanticActive ? "Full L4 激活" : "主机降级")}"
+                                + $" / 已链接 {discovery.SemanticContext.ResolvedReferencePaths.Count} 个程序集"
+                                + $" / 编译诊断 ERROR {discovery.SemanticContext.CompilationErrorCount}\n");
+            }
+            else
+            {
+                PrintWarning("未取得语义编译上下文（源码根不可解析），本次基线导出退化为纯语法口径，禁止据此登记棘轮基数。");
+            }
+
             int total = 0;
             foreach (var file in Directory.GetFiles(widgetDir, "*.cs", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 string fileName = Path.GetFileName(file);
-                int count = WidgetColorLiteralAudit.CountOccurrences(File.ReadAllText(file));
+                string text = File.ReadAllText(file);
+                int count = WidgetColorLiteralAudit.CountOccurrences(text, discovery.SemanticContext?.GetSemanticModel(file));
                 int allowed = WidgetColorLiteralAudit.GetAllowedOccurrences(fileName);
                 total += count;
                 string flag = count > allowed ? "  <== 超出基线!" : (count < allowed ? "  <== 已低于基线，可下调" : string.Empty);
