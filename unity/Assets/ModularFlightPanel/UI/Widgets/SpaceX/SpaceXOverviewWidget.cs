@@ -151,14 +151,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Overview Panel", _bgImage.gameObject, "SpaceX综合环控面板底盘", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
             this.Controls.Register(new WidgetHeaderControl(_titleText, _statusBadge, "Header", "综合环控标题与状态微标"));
-            this.Controls.Register(new WidgetLinearBarControl(_pressFill, _pressTrack, MeterStyleRole.Primary, false, "Cabin Pressure", "座舱气压仪表"));
-            this.Controls.Register(new WidgetLinearBarControl(_o2Fill, _o2Track, MeterStyleRole.Primary, false, "Oxygen Level", "氧气浓度仪表"));
-            this.Controls.Register(new WidgetLinearBarControl(_tempFill, _tempTrack, MeterStyleRole.Primary, false, "Cabin Temperature", "座舱温度仪表"));
-            this.Controls.Register(new WidgetLinearBarControl(_pwrFill, _pwrTrack, MeterStyleRole.Primary, false, "Net Power", "母线净功率仪表"));
-            this.Controls.Register(new WidgetReadoutControl(_subsysAirlock, null, TextStyleRole.Accent, "Airlock Status", "气闸舱状态"));
-            this.Controls.Register(new WidgetReadoutControl(_subsysProp, null, TextStyleRole.SecondaryValue, "RCS Propellant", "姿控推进剂余量"));
-            this.Controls.Register(new WidgetReadoutControl(_subsysThermal, null, TextStyleRole.Accent, "Thermal Status", "热控循环状态"));
-            this.Controls.Register(new WidgetReadoutControl(_subsysDock, null, TextStyleRole.Accent, "Docking Mechanism", "对接机构状态"));
+            this.Controls.Register(new WidgetLinearBarControl(this, "cabin_pressure", "座舱气压仪表", _pressFill != null ? _pressFill.gameObject : null, _pressTrack, _pressFill, "{PRESSURE}", 0.0, 105.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetLinearBarControl(this, "oxygen_level", "氧气浓度仪表", _o2Fill != null ? _o2Fill.gameObject : null, _o2Track, _o2Fill, "{O2}", 0.0, 100.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetLinearBarControl(this, "cabin_temperature", "座舱温度仪表", _tempFill != null ? _tempFill.gameObject : null, _tempTrack, _tempFill, "{TEMP}", 0.0, 40.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetLinearBarControl(this, "net_power", "母线净功率仪表", _pwrFill != null ? _pwrFill.gameObject : null, _pwrTrack, _pwrFill, "{EC}", 0.0, 100.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetReadoutControl("airlock_status", "气闸舱状态", _subsysAirlock != null ? _subsysAirlock.gameObject : null, _subsysAirlock, null, TextStyleRole.Accent, "{ATM}"));
+            this.Controls.Register(new WidgetReadoutControl("rcs_propellant", "姿控推进剂余量", _subsysProp != null ? _subsysProp.gameObject : null, _subsysProp, null, TextStyleRole.SecondaryValue, "{MONO}"));
+            this.Controls.Register(new WidgetReadoutControl("thermal_status", "热控循环状态", _subsysThermal != null ? _subsysThermal.gameObject : null, _subsysThermal, null, TextStyleRole.Accent, "{TEMP}"));
+            this.Controls.Register(new WidgetReadoutControl("docking_mechanism", "对接机构状态", _subsysDock != null ? _subsysDock.gameObject : null, _subsysDock, null, TextStyleRole.Accent, "{PRESSURE}"));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

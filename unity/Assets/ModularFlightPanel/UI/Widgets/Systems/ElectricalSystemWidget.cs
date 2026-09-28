@@ -79,9 +79,9 @@ namespace ModularFlightPanel.UI.Widgets
             tipRt.anchoredPosition = new Vector2(0f, -64f * s);
 
             // 注册节点微控件至标准化管理器
-            this.Controls.Register(new WidgetReadoutControl("battery_nodes", "蓄电池组", _bat1ValText != null ? _bat1ValText.gameObject : null, _bat1ValText, _bat2ValText, TextStyleRole.PrimaryValue));
-            this.Controls.Register(new WidgetReadoutControl("dc_bus", "直流总线母线", _dcBusValText != null ? _dcBusValText.gameObject : null, _dcBusValText, _dcBusSubText, TextStyleRole.PrimaryValue));
-            this.Controls.Register(new WidgetReadoutControl("generation_load", "发电与负载监控", _genValText != null ? _genValText.gameObject : null, _genValText, _loadValText, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("battery_nodes", "蓄电池组", _bat1ValText != null ? _bat1ValText.gameObject : null, _bat1ValText, _bat2ValText, TextStyleRole.PrimaryValue, "{VOLT}"));
+            this.Controls.Register(new WidgetReadoutControl("dc_bus", "直流总线母线", _dcBusValText != null ? _dcBusValText.gameObject : null, _dcBusValText, _dcBusSubText, TextStyleRole.PrimaryValue, "{EC:PCT}"));
+            this.Controls.Register(new WidgetReadoutControl("generation_load", "发电与负载监控", _genValText != null ? _genValText.gameObject : null, _genValText, _loadValText, TextStyleRole.PrimaryValue, "{SOLAR}"));
         }
 
         private void CreateNodeBox(Transform parent, string name, Vector2 size, Vector2 pos, string nodeTitle,

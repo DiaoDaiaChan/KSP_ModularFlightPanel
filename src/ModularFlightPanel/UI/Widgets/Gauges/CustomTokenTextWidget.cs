@@ -67,6 +67,10 @@ namespace ModularFlightPanel.UI.Widgets
         public TextWidget Ch6Val = new TextWidget(TextStyleRole.PrimaryValue, 38f, -28f, 54f, 16f, 11f, TextAnchor.MiddleRight, "1.00");
         public TextWidget Ch6Unit = new TextWidget(TextStyleRole.Unit, 94f, -28f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "G");
 
+        // 零 GC 常量池：通道分隔符静态复用，杜绝帧循环内 new[]{...} 堆数组分配
+        private static readonly char[] MultiChannelSeparators = { ';', '\n', '\r' };
+        private static readonly char[] DelimitedSeparators = { '|', '\n', '\r' };
+
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !telemetry.HasVessel)
@@ -133,7 +137,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ParseCustomMultiChannel(string template, IFlightTelemetry telemetry)
         {
-            string[] pairs = template.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] pairs = template.Split(MultiChannelSeparators, StringSplitOptions.RemoveEmptyEntries);
             foreach (var p in pairs)
             {
                 int eq = p.IndexOf('=');
@@ -154,7 +158,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ParseDelimitedChannels(string template, IFlightTelemetry telemetry)
         {
-            string[] tokens = template.Split(new[] { '|', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] tokens = template.Split(DelimitedSeparators, StringSplitOptions.RemoveEmptyEntries);
             for (int i = 0; i < tokens.Length && i < 6; i++)
             {
                 string tok = tokens[i].Trim();

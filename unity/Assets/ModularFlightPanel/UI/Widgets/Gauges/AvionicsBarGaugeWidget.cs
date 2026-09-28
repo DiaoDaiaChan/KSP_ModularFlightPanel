@@ -204,7 +204,7 @@ namespace ModularFlightPanel.UI.Widgets
             }));
             if (_fillBarRt != null)
             {
-                this.Controls.Register(new WidgetLinearBarControl("fill_bar", "充填光柱", _fillBarRt.gameObject, _fillBarImage, null, MeterStyleRole.Primary, false));
+                this.Controls.Register(new WidgetLinearBarControl(this, "fill_bar", "充填光柱", _fillBarRt.gameObject, null, _fillBarImage, _valueToken, _minVal, _maxVal, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
             }
             if (_actPointerObj != null)
             {
@@ -216,11 +216,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_topTagBox != null)
             {
-                this.Controls.Register(new WidgetReadoutControl("top_tag", "顶部胶囊读数", _topTagBox, _topTagValue, _topTagTitle, TextStyleRole.PrimaryValue));
+                this.Controls.Register(new WidgetReadoutControl("top_tag", "顶部胶囊读数", _topTagBox, _topTagValue, _topTagTitle, TextStyleRole.PrimaryValue, _valueToken));
             }
             if (_bottomTagBox != null)
             {
-                this.Controls.Register(new WidgetReadoutControl("bottom_tag", "底部档位标牌", _bottomTagBox, _bottomTagText, null, TextStyleRole.Accent));
+                this.Controls.Register(new WidgetReadoutControl("bottom_tag", "底部档位标牌", _bottomTagBox, _bottomTagText, null, TextStyleRole.Accent, _valueToken));
             }
             if (_cautionLineObj != null)
             {

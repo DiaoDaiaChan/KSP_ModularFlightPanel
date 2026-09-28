@@ -123,8 +123,8 @@ namespace ModularFlightPanel.UI.Widgets
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "top_stripe", "Top Stripe", _topStripe.gameObject, "顶部微光警示饰条", t => { if (_topStripe != null) _topStripe.color = t.AccentPrimary; }));
             }
             this.Controls.Register(new WidgetHeaderControl(_titleText, _sourceBadgeText, "Header", "顶部标题与数据源标牌"));
-            this.Controls.Register(new WidgetReadoutControl(_totalDvValue, null, TextStyleRole.ValueLarge, "Total DeltaV", "总可用速度增量标牌"));
-            this.Controls.Register(new WidgetReadoutControl(_totalTimeValue, null, TextStyleRole.ValueSmall, "Total Burn Time", "总工作烧燃时序"));
+            this.Controls.Register(new WidgetReadoutControl("total_deltav", "总可用速度增量标牌", _totalDvValue != null ? _totalDvValue.gameObject : null, _totalDvValue, null, TextStyleRole.ValueLarge, "{DV:TOTAL}"));
+            this.Controls.Register(new WidgetReadoutControl("total_burn_time", "总工作烧燃时序", _totalTimeValue != null ? _totalTimeValue.gameObject : null, _totalTimeValue, null, TextStyleRole.ValueSmall, "{DV:TOTALTIME}"));
             if (_silhouetteBayObj != null)
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "silhouette_bay", "Silhouette Bay", _silhouetteBayObj, "飞船剪影轮廓视窗"));

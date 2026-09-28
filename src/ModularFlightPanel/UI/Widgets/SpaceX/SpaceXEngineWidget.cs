@@ -119,12 +119,12 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBackdropRawImage.gameObject, "发动机圆形深色底盘", t => { if (_dialBackdropRawImage != null) _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
             }
-            this.Controls.Register(new WidgetReadoutControl(_titleText, null, TextStyleRole.Label, "Title", "顶部标题"));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "title", "Title", _titleText != null ? _titleText.gameObject : null));
             if (_clusterContainer != null)
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "engines_cluster", "Engine Cluster", _clusterContainer.gameObject, "发动机喷管集群挂载容器"));
             }
-            this.Controls.Register(new WidgetReadoutControl(_statusText, null, TextStyleRole.SecondaryValue, "Status Readout", "底部点火/关机状态读数"));
+            this.Controls.Register(new WidgetReadoutControl("status_readout", "底部点火/关机状态读数", _statusText != null ? _statusText.gameObject : null, _statusText, null, TextStyleRole.SecondaryValue, "{THR}"));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

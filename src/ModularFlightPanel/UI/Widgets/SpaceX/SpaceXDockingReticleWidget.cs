@@ -122,12 +122,12 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "crosshair", "Center Crosshair", _centerReticleRing.gameObject, "对接中心环与十字准星"));
             }
-            this.Controls.Register(new WidgetReadoutControl(_rollValue, _rollLabel, TextStyleRole.Accent, "Roll Deviation", "滚转对接偏差"));
-            this.Controls.Register(new WidgetReadoutControl(_pitchValue, _pitchLabel, TextStyleRole.Accent, "Pitch Deviation", "俯仰对接偏差"));
-            this.Controls.Register(new WidgetReadoutControl(_yawValue, _yawLabel, TextStyleRole.Accent, "Yaw Deviation", "偏航对接偏差"));
-            this.Controls.Register(new WidgetReadoutControl(_rangeValue, _rangeLabel, TextStyleRole.PrimaryValue, "Range Readout", "对接距离读数"));
-            this.Controls.Register(new WidgetReadoutControl(_rateValue, _rateLabel, TextStyleRole.PrimaryValue, "Closing Rate", "临近闭合速率读数"));
-            this.Controls.Register(new WidgetReadoutControl(_xyzOffsets, null, TextStyleRole.Muted, "XYZ Offsets", "空间相对偏移量"));
+            this.Controls.Register(new WidgetReadoutControl("roll_deviation", "滚转对接偏差", _rollValue != null ? _rollValue.gameObject : null, _rollValue, _rollLabel, TextStyleRole.Accent, "{DOCK:RollOffset}"));
+            this.Controls.Register(new WidgetReadoutControl("pitch_deviation", "俯仰对接偏差", _pitchValue != null ? _pitchValue.gameObject : null, _pitchValue, _pitchLabel, TextStyleRole.Accent, "{DOCK:PitchDev}"));
+            this.Controls.Register(new WidgetReadoutControl("yaw_deviation", "偏航对接偏差", _yawValue != null ? _yawValue.gameObject : null, _yawValue, _yawLabel, TextStyleRole.Accent, "{DOCK:YawDev}"));
+            this.Controls.Register(new WidgetReadoutControl("range_readout", "对接距离读数", _rangeValue != null ? _rangeValue.gameObject : null, _rangeValue, _rangeLabel, TextStyleRole.PrimaryValue, _rangeToken));
+            this.Controls.Register(new WidgetReadoutControl("closing_rate", "临近闭合速率读数", _rateValue != null ? _rateValue.gameObject : null, _rateValue, _rateLabel, TextStyleRole.PrimaryValue, "{DOCK:ClosureRate}"));
+            this.Controls.Register(new WidgetReadoutControl("xyz_offsets", "空间相对偏移量", _xyzOffsets != null ? _xyzOffsets.gameObject : null, _xyzOffsets, null, TextStyleRole.Muted, "{DOCK:DevX}"));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

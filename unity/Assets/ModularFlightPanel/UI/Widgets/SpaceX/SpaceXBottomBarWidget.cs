@@ -147,10 +147,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             this.Controls.Register(new WidgetActionButtonControl(_sasBtn, _sasText, null, ButtonVisualRole.ActiveToggle, "SAS Toggle", "SAS增稳系统开关药丸按钮"));
             this.Controls.Register(new WidgetActionButtonControl(_modeBtn, _modeText, null, ButtonVisualRole.Normal, "Speed Mode", "速度基准循环切换药丸按钮"));
             this.Controls.Register(new WidgetActionButtonControl(_precBtn, _precText, null, ButtonVisualRole.ActiveToggle, "Fine Controls", "精细控制微调模式药丸按钮"));
-            this.Controls.Register(new WidgetReadoutControl(_pointingValue, _pointingLabel, TextStyleRole.Accent, "Pointing Mode", "姿态指向保持模式读数"));
-            this.Controls.Register(new WidgetReadoutControl(_commSpx, null, TextStyleRole.Accent, "Comm SpaceX", "SpaceX测控链路微标"));
-            this.Controls.Register(new WidgetReadoutControl(_commTdrs, null, TextStyleRole.Accent, "Comm TDRS", "TDRS中继链路微标"));
-            this.Controls.Register(new WidgetReadoutControl(_commIss, null, TextStyleRole.Accent, "Comm ISS", "空间站临近链路微标"));
+            this.Controls.Register(new WidgetReadoutControl("pointing_mode", "姿态指向保持模式读数", _pointingValue != null ? _pointingValue.gameObject : null, _pointingValue, _pointingLabel, TextStyleRole.Accent, "{CTRL_MODE}"));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "comm_spx", "Comm SpaceX", _commSpx != null ? _commSpx.gameObject : null));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "comm_tdrs", "Comm TDRS", _commTdrs != null ? _commTdrs.gameObject : null));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "comm_iss", "Comm ISS", _commIss != null ? _commIss.gameObject : null));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

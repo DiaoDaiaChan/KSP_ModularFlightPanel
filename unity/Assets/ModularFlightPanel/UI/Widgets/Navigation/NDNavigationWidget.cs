@@ -140,11 +140,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "导航屏底板", gameObject, (t) => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
-            this.Controls.Register(new WidgetReadoutControl("heading_readout", "顶部航向读数", _topHeadingText != null ? _topHeadingText.gameObject : null, _topHeadingText, null, TextStyleRole.PrimaryValue));
-            this.Controls.Register(new WidgetReadoutControl("speed_readout", "空速地速读数", _gsTasText != null ? _gsTasText.gameObject : null, _gsTasText, null, TextStyleRole.SecondaryValue));
-            this.Controls.Register(new WidgetReadoutControl("wind_readout", "风向风速读数", _windText != null ? _windText.gameObject : null, _windText, null, TextStyleRole.Accent));
-            this.Controls.Register(new WidgetReadoutControl("waypoint_readout", "航点距离ETA", _waypointNameDistText != null ? _waypointNameDistText.gameObject : null, _waypointNameDistText, _waypointEtaText, TextStyleRole.SecondaryValue));
-            this.Controls.Register(new WidgetReadoutControl("navaids_readout", "无线电导航台", _vor1Text != null ? _vor1Text.gameObject : null, _vor1Text, _vor2Text, TextStyleRole.SecondaryValue));
+            this.Controls.Register(new WidgetReadoutControl("heading_readout", "顶部航向读数", _topHeadingText != null ? _topHeadingText.gameObject : null, _topHeadingText, null, TextStyleRole.PrimaryValue, _headingToken));
+            this.Controls.Register(new WidgetReadoutControl("speed_readout", "空速地速读数", _gsTasText != null ? _gsTasText.gameObject : null, _gsTasText, null, TextStyleRole.SecondaryValue, _gsTasTemplate));
+            this.Controls.Register(new WidgetReadoutControl("wind_readout", "风向风速读数", _windText != null ? _windText.gameObject : null, _windText, null, TextStyleRole.Accent, _windTemplate));
+            this.Controls.Register(new WidgetReadoutControl("waypoint_readout", "航点距离ETA", _waypointNameDistText != null ? _waypointNameDistText.gameObject : null, _waypointNameDistText, _waypointEtaText, TextStyleRole.SecondaryValue, _waypointNameDistTemplate));
+            this.Controls.Register(new WidgetReadoutControl("navaids_readout", "无线电导航台", _vor1Text != null ? _vor1Text.gameObject : null, _vor1Text, _vor2Text, TextStyleRole.SecondaryValue, _vor1Template));
             if (_rangeRingsRoot != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "range_rings", "测距同心环", _rangeRingsRoot));
             if (_airplaneSymbol != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "aircraft_symbol", "中心机标", _airplaneSymbol));
 

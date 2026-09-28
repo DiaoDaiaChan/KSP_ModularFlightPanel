@@ -1,0 +1,28 @@
+refactor(widgets): bind telemetry tokens to all 78 legacy data micro-controls
+
+Clears every remaining MFP-WARN-TELEM-ASSEMBLY warning (78 -> 0) so the gate is now
+fully green (ERROR 0 / WARNING 0), and lets the edit mode assemble/rebind each data
+slot and adjust its range.
+
+Per-control binding policy (no invented tokens):
+- WidgetReadoutControl / WidgetLinearBarControl whose content is produced by a widget
+  token or template variable now take that very variable as the `token` argument
+  (e.g. _valueToken, _deltaVToken, _fpsToken, _tatTemplate, _gsTasTemplate).
+- Composite/derived readouts without a single channel take the closest canonical
+  token (e.g. {MET}, {INC}, {SPD}, {SITUATION}, {CTRL_MODE}, {DOCK:*}, {DV:TOTAL}).
+- Seven controls are build-time static labels (SpaceX top/unit label, engine title,
+  north mark, three comm tags) and never carry telemetry; registering them as
+  WidgetReadoutControl was simply wrong, so they now use the auditor's sanctioned
+  non-data channel WidgetControlManager.WrapElement.
+- All 14 linear bars were moved to the token-bearing 11-arg ctor. Their Caution/
+  Warning thresholds are set to double.MaxValue because alert colouring and threshold
+  semantics are owned by each widget's own role machine; letting the control's default
+  80/95 thresholds fire would fight the widget's colouring.
+
+Visual safety: MasterUpdateTelemetry runs Controls.UpdateControls() BEFORE
+OnUpdateTelemetry(), so every widget that writes its own text/sizeDelta in
+OnUpdateTelemetry still wins on the same frame. Final rendered output is unchanged.
+
+Also: CustomTokenTextWidget hot-loop new[]{...} split separators hoisted to static
+readonly arrays (radar: 2 runtime heap allocations -> 0).
+unity/ preview mirror re-synced with --mirror-fix (25 files).

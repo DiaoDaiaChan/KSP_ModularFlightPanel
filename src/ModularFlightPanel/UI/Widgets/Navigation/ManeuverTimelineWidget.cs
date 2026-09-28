@@ -231,9 +231,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 if (_trackLineImage != null) _trackLineImage.color = WidgetStyleManager.Weighted(t.AccentSecondary, LineWeight.Medium);
                 if (_burnZoneImage != null) _burnZoneImage.color = WidgetStyleManager.Weighted(t.AccentPrimary, LineWeight.Light);
             }));
-            this.Controls.Register(new WidgetReadoutControl("countdown_readout", "倒计时读数", _countdownText != null ? _countdownText.gameObject : null, _countdownText, null, TextStyleRole.PrimaryValue));
-            this.Controls.Register(new WidgetReadoutControl("deltav_readout", "ΔV 读数", _deltaVText != null ? _deltaVText.gameObject : null, _deltaVText, null, TextStyleRole.PrimaryValue));
-            this.Controls.Register(new WidgetReadoutControl("vector_subtitle", "三轴矢量副标牌", _vectorSubtitleText != null ? _vectorSubtitleText.gameObject : null, _vectorSubtitleText, null, TextStyleRole.SecondaryValue));
+            this.Controls.Register(new WidgetReadoutControl("countdown_readout", "倒计时读数", _countdownText != null ? _countdownText.gameObject : null, _countdownText, null, TextStyleRole.PrimaryValue, _tNodeToken));
+            this.Controls.Register(new WidgetReadoutControl("deltav_readout", "ΔV 读数", _deltaVText != null ? _deltaVText.gameObject : null, _deltaVText, null, TextStyleRole.PrimaryValue, _deltaVToken));
+            this.Controls.Register(new WidgetReadoutControl("vector_subtitle", "三轴矢量副标牌", _vectorSubtitleText != null ? _vectorSubtitleText.gameObject : null, _vectorSubtitleText, null, TextStyleRole.SecondaryValue, _proToken));
 
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);

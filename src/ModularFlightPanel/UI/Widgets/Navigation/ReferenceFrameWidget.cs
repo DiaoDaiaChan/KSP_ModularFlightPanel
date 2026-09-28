@@ -144,7 +144,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
             this.Controls.Register(WidgetControlManager.WrapElement(this, "icon_box", "参考系图标徽章", _iconBox, (t) => ApplyCard(_iconBoxBg, _iconBoxOutline, CardStyleRole.SubtleSlot, t)));
-            this.Controls.Register(new WidgetReadoutControl("frame_title", "权威参考系全称", _frameTitleText != null ? _frameTitleText.gameObject : null, _frameTitleText, null, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("frame_title", "权威参考系全称", _frameTitleText != null ? _frameTitleText.gameObject : null, _frameTitleText, null, TextStyleRole.PrimaryValue, _frameToken));
 
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);

@@ -185,7 +185,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 注册微控件至标准化管理器
             this.Controls.Register(new WidgetAnnunciatorControl("ctrl_badge", "控制权徽章", _ctrlBadgeText != null ? _ctrlBadgeText.gameObject : null, _ctrlBadgeText, null, _ctrlBadgeBg, null));
-            this.Controls.Register(new WidgetReadoutControl("target_readout", "目标对端与速率", _targetNameText != null ? _targetNameText.gameObject : null, _targetNameText, _rateText, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("target_readout", "目标对端与速率", _targetNameText != null ? _targetNameText.gameObject : null, _targetNameText, _rateText, TextStyleRole.PrimaryValue, "{SIGNAL}"));
 
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);

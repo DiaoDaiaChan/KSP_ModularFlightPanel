@@ -186,13 +186,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "accent_line", "Bottom Accent Line", _bottomAccentLine.gameObject, "底部电光青色细强调线", t => { if (_bottomAccentLine != null) _bottomAccentLine.color = t.AccentPrimary; }));
             }
-            this.Controls.Register(new WidgetReadoutControl(_phaseValue, _phaseLabel, TextStyleRole.Accent, "Active Phase", "当前任务飞行阶段徽章"));
-            this.Controls.Register(new WidgetReadoutControl(_timerValue, _timerLabel, TextStyleRole.PrimaryValue, "Mission Timer", "任务时钟与溅落倒计时"));
-            this.Controls.Register(new WidgetReadoutControl(_velValue, _velLabel, TextStyleRole.PrimaryValue, "Inertial Velocity", "惯性速度列"));
-            this.Controls.Register(new WidgetReadoutControl(_altValue, _altLabel, TextStyleRole.PrimaryValue, "Altitude", "海拔高度列"));
-            this.Controls.Register(new WidgetReadoutControl(_apValue, _apLabel, TextStyleRole.PrimaryValue, "Apogee", "远地点高度列"));
-            this.Controls.Register(new WidgetReadoutControl(_peValue, _peLabel, TextStyleRole.PrimaryValue, "Perigee", "近地点高度列"));
-            this.Controls.Register(new WidgetReadoutControl(_incValue, _incLabel, TextStyleRole.PrimaryValue, "Inclination", "轨道倾角列"));
+            this.Controls.Register(new WidgetReadoutControl("active_phase", "当前任务飞行阶段徽章", _phaseValue != null ? _phaseValue.gameObject : null, _phaseValue, _phaseLabel, TextStyleRole.Accent, "{SITUATION}"));
+            this.Controls.Register(new WidgetReadoutControl("mission_timer", "任务时钟与溅落倒计时", _timerValue != null ? _timerValue.gameObject : null, _timerValue, _timerLabel, TextStyleRole.PrimaryValue, "{MET}"));
+            this.Controls.Register(new WidgetReadoutControl("inertial_velocity", "惯性速度列", _velValue != null ? _velValue.gameObject : null, _velValue, _velLabel, TextStyleRole.PrimaryValue, "{SPD}"));
+            this.Controls.Register(new WidgetReadoutControl("altitude", "海拔高度列", _altValue != null ? _altValue.gameObject : null, _altValue, _altLabel, TextStyleRole.PrimaryValue, _altToken));
+            this.Controls.Register(new WidgetReadoutControl("apogee", "远地点高度列", _apValue != null ? _apValue.gameObject : null, _apValue, _apLabel, TextStyleRole.PrimaryValue, _apToken));
+            this.Controls.Register(new WidgetReadoutControl("perigee", "近地点高度列", _peValue != null ? _peValue.gameObject : null, _peValue, _peLabel, TextStyleRole.PrimaryValue, _peToken));
+            this.Controls.Register(new WidgetReadoutControl("inclination", "轨道倾角列", _incValue != null ? _incValue.gameObject : null, _incValue, _incLabel, TextStyleRole.PrimaryValue, "{INC}"));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

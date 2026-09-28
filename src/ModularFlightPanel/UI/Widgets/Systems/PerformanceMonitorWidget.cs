@@ -176,13 +176,13 @@ namespace ModularFlightPanel.UI.Widgets
             bLblRt.offsetMax = Vector2.zero;
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(new WidgetReadoutControl(_fpsValText, _fpsLabel, TextStyleRole.Cardinal, "FPS Readout", "帧率主读数"));
-            this.Controls.Register(new WidgetReadoutControl(_mfpMsText, _budgetPctText, TextStyleRole.PrimaryValue, "MFP Overhead", "MFP整帧耗时与预算占比"));
-            this.Controls.Register(new WidgetLinearBarControl(_widgetsFill, _widgetsTrack, MeterStyleRole.Primary, false, "Widgets Meter", "组件渲染耗时条"));
-            this.Controls.Register(new WidgetLinearBarControl(_probesFill, _probesTrack, MeterStyleRole.Primary, false, "Probes Meter", "探针采样耗时条"));
-            this.Controls.Register(new WidgetLinearBarControl(_telemFill, _telemTrack, MeterStyleRole.Primary, false, "Telem Meter", "遥测缓存更新耗时条"));
-            this.Controls.Register(new WidgetLinearBarControl(_coreFill, _coreTrack, MeterStyleRole.Primary, false, "Core Meter", "核心管线耗时条"));
-            this.Controls.Register(new WidgetReadoutControl(_memValText, _healthValText, TextStyleRole.Label, "Memory Stats", "托管堆分配与GC监控"));
+            this.Controls.Register(new WidgetReadoutControl("fps_readout", "帧率主读数", _fpsValText != null ? _fpsValText.gameObject : null, _fpsValText, _fpsLabel, TextStyleRole.Cardinal, _fpsToken));
+            this.Controls.Register(new WidgetReadoutControl("mfp_overhead", "MFP整帧耗时与预算占比", _mfpMsText != null ? _mfpMsText.gameObject : null, _mfpMsText, _budgetPctText, TextStyleRole.PrimaryValue, _totalMsToken));
+            this.Controls.Register(new WidgetLinearBarControl(this, "widgets_meter", "组件渲染耗时条", _widgetsFill != null ? _widgetsFill.gameObject : null, _widgetsTrack, _widgetsFill, _widgetsToken, 0.0, 100.0, 88f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetLinearBarControl(this, "probes_meter", "探针采样耗时条", _probesFill != null ? _probesFill.gameObject : null, _probesTrack, _probesFill, _probesToken, 0.0, 100.0, 88f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetLinearBarControl(this, "telem_meter", "遥测缓存更新耗时条", _telemFill != null ? _telemFill.gameObject : null, _telemTrack, _telemFill, _telemToken, 0.0, 100.0, 88f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetLinearBarControl(this, "core_meter", "核心管线耗时条", _coreFill != null ? _coreFill.gameObject : null, _coreTrack, _coreFill, _coreToken, 0.0, 100.0, 88f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            this.Controls.Register(new WidgetReadoutControl("memory_stats", "托管堆分配与GC监控", _memValText != null ? _memValText.gameObject : null, _memValText, _healthValText, TextStyleRole.Label, _memToken));
             this.Controls.Register(new WidgetActionButtonControl(_bypassBtn, _bypassBtnLabel, null, ButtonVisualRole.Normal, "Bypass Button", "MFP全管线旁路挂起按钮"));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);

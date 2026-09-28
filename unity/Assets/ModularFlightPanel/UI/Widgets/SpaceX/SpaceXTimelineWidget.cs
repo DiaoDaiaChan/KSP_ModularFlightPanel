@@ -130,8 +130,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "progress_pip", "Progress Pip", _progressPipImage.gameObject, "当前飞行进度光标"));
             }
-            this.Controls.Register(new WidgetReadoutControl(_missionClockText, null, TextStyleRole.PrimaryValue, "Mission Clock", "任务时钟读数"));
-            this.Controls.Register(new WidgetReadoutControl(_missionPhaseText, null, TextStyleRole.SecondaryValue, "Mission Phase", "任务阶段副标题"));
+            this.Controls.Register(new WidgetReadoutControl("mission_clock", "任务时钟读数", _missionClockText != null ? _missionClockText.gameObject : null, _missionClockText, null, TextStyleRole.PrimaryValue, _clockToken));
+            this.Controls.Register(new WidgetReadoutControl("mission_phase", "任务阶段副标题", _missionPhaseText != null ? _missionPhaseText.gameObject : null, _missionPhaseText, null, TextStyleRole.SecondaryValue, "{MET}"));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

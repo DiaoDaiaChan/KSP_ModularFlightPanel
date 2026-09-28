@@ -131,7 +131,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBackdropRawImage.gameObject, "姿态圆形深色底盘", t => { if (_dialBackdropRawImage != null) _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
             }
-            this.Controls.Register(new WidgetReadoutControl(_northIndicatorText, null, TextStyleRole.Cardinal, "North Mark", "真北罗盘方位微标"));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "north_mark", "North Mark", _northIndicatorText != null ? _northIndicatorText.gameObject : null));
             if (_gimbalRingRawImage != null)
             {
                 this.Controls.Register(new WidgetGraphicViewportControl(_gimbalRingRawImage, "Gimbal Ring", "3D空间姿态地平参考环"));
@@ -140,7 +140,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             {
                 this.Controls.Register(new WidgetGraphicViewportControl(_shipSilhouetteRawImage, "Ship Silhouette", "中央飞船剪影视窗"));
             }
-            this.Controls.Register(new WidgetReadoutControl(_attitudeLabelText, null, TextStyleRole.SecondaryValue, "Attitude Readout", "底部俯仰滚转角读数"));
+            this.Controls.Register(new WidgetReadoutControl("attitude_readout", "底部俯仰滚转角读数", _attitudeLabelText != null ? _attitudeLabelText.gameObject : null, _attitudeLabelText, null, TextStyleRole.SecondaryValue, "{PITCH}"));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

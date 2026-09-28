@@ -122,7 +122,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
             }));
-            this.Controls.Register(new WidgetReadoutControl("speech_bubble", "气泡航向标牌", _speechBubbleRoot, _headingText, null, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("speech_bubble", "气泡航向标牌", _speechBubbleRoot, _headingText, null, TextStyleRole.PrimaryValue, _valueToken));
             this.Controls.Register(WidgetControlManager.WrapElement(this, "lubber_mark", "翡翠绿基准游标", _lubberLineRoot, (t) => {
                 Color lc = WidgetStyleManager.Meter(MeterStyleRole.Primary, t);
                 if (_lubberBar != null) _lubberBar.color = lc;

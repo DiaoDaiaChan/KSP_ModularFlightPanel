@@ -101,11 +101,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(new WidgetReadoutControl("environment_summary", "乘员环境摘要", _crewText != null ? _crewText.gameObject : null, _crewText, _pressureText, TextStyleRole.SecondaryValue));
-            if (_gauges[0].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("o2_gauge", "氧气余量", _gauges[0].BoxObj, _gauges[0].BarFill != null ? _gauges[0].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
-            if (_gauges[1].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("power_gauge", "电力储备", _gauges[1].BoxObj, _gauges[1].BarFill != null ? _gauges[1].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
-            if (_gauges[2].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("rcs_gauge", "RCS姿控", _gauges[2].BoxObj, _gauges[2].BarFill != null ? _gauges[2].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
-            if (_gauges[3].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl("water_gauge", "水/燃料储备", _gauges[3].BoxObj, _gauges[3].BarFill != null ? _gauges[3].BarFill.GetComponent<Image>() : null, null, MeterStyleRole.Primary, false));
+            this.Controls.Register(new WidgetReadoutControl("environment_summary", "乘员环境摘要", _crewText != null ? _crewText.gameObject : null, _crewText, _pressureText, TextStyleRole.SecondaryValue, "{CREW}"));
+            if (_gauges[0].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl(this, "o2_gauge", "氧气余量", _gauges[0].BoxObj, null, _gauges[0].BarFill != null ? _gauges[0].BarFill.GetComponent<Image>() : null, "{O2}", 0.0, 100.0, _gauges[0].BarWidth, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            if (_gauges[1].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl(this, "power_gauge", "电力储备", _gauges[1].BoxObj, null, _gauges[1].BarFill != null ? _gauges[1].BarFill.GetComponent<Image>() : null, "{EC:PCT}", 0.0, 100.0, _gauges[1].BarWidth, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            if (_gauges[2].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl(this, "rcs_gauge", "RCS姿控", _gauges[2].BoxObj, null, _gauges[2].BarFill != null ? _gauges[2].BarFill.GetComponent<Image>() : null, "{MONO}", 0.0, 100.0, _gauges[2].BarWidth, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+            if (_gauges[3].BoxObj != null) this.Controls.Register(new WidgetLinearBarControl(this, "water_gauge", "水/燃料储备", _gauges[3].BoxObj, null, _gauges[3].BarFill != null ? _gauges[3].BarFill.GetComponent<Image>() : null, "{WATER}", 0.0, 100.0, _gauges[3].BarWidth, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
         }
 
         private ResourceGaugeUI CreateResourceGauge(Transform parent, string name, Vector2 size, Vector2 pos,

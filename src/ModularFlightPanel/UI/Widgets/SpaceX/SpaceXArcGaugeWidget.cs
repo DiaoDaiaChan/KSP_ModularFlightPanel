@@ -140,9 +140,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Card Background", _bgImage.gameObject, "圆弧表盘底衬", t => ApplyCard(_bgImage, _bgOutline, _currentCardRole, t)));
             this.Controls.Register(new WidgetArcMeterControl(_arcFillImage, _arcTrackImage, MeterStyleRole.Primary, "Arc Meter", "马蹄弧形量规轨道与指示弧"));
-            this.Controls.Register(new WidgetReadoutControl(_topLabelText, null, TextStyleRole.Label, "Top Label", "顶部测量参数名"));
-            this.Controls.Register(new WidgetReadoutControl(_primaryValueText, null, TextStyleRole.PrimaryValue, "Primary Value", "中央超大号读数"));
-            this.Controls.Register(new WidgetReadoutControl(_unitLabelText, null, TextStyleRole.Unit, "Unit Label", "底部工程单位标签"));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "top_label", "Top Label", _topLabelText != null ? _topLabelText.gameObject : null));
+            this.Controls.Register(new WidgetReadoutControl("primary_value", "中央超大号读数", _primaryValueText != null ? _primaryValueText.gameObject : null, _primaryValueText, null, TextStyleRole.PrimaryValue, (!string.IsNullOrEmpty(_tokenKey) ? _tokenKey : (Config != null && !string.IsNullOrEmpty(Config.NumericToken) ? Config.NumericToken : "{SPD:SURF:KMH}"))));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "unit_label", "Unit Label", _unitLabelText != null ? _unitLabelText.gameObject : null));
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 

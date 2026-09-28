@@ -152,7 +152,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 注册微控件至标准化管理器
             this.Controls.Register(new WidgetHeaderControl("header_summary", "顶部简报栏", _titleText != null ? _titleText.gameObject : null, _titleText, _subTitleText));
-            this.Controls.Register(new WidgetReadoutControl("twr_dv_readout", "TWR与总速度增量", _summaryDvText != null ? _summaryDvText.gameObject : null, _summaryDvText, _summaryTwrText, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("twr_dv_readout", "TWR与总速度增量", _summaryDvText != null ? _summaryDvText.gameObject : null, _summaryDvText, _summaryTwrText, TextStyleRole.PrimaryValue, _totalDvToken));
             if (_silhouetteBayObj != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "silhouette_bay", "飞船剪影视窗", _silhouetteBayObj));
             if (_stageRows.Count > 0) this.Controls.Register(WidgetControlManager.WrapElement(this, "propulsion_stack", "多级推进栈", _stageRows[0].Root));
         }

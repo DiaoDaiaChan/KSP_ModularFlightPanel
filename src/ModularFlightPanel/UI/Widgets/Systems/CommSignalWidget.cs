@@ -200,7 +200,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "capsule_bar", "通信胶囊条", _capsuleBar, (t) => { if (_panelBg != null) _panelBg.color = WidgetStyleManager.WithAlpha(t.FrameBgColor, 0.75f); }));
             this.Controls.Register(new WidgetAnnunciatorControl("ctrl_badge", "控制权徽章", _ctrlBadgeText != null ? _ctrlBadgeText.gameObject : null, _ctrlBadgeText, null, _ctrlBadgeBg, null));
-            this.Controls.Register(new WidgetReadoutControl("target_readout", "通信对端名称", _targetNameText != null ? _targetNameText.gameObject : null, _targetNameText, _rateSummaryText, TextStyleRole.PrimaryValue));
+            this.Controls.Register(new WidgetReadoutControl("target_readout", "通信对端名称", _targetNameText != null ? _targetNameText.gameObject : null, _targetNameText, _rateSummaryText, TextStyleRole.PrimaryValue, "{COMM}"));
             this.Controls.Register(new WidgetActionButtonControl("expand_btn", "折叠展开按键", _expandBtn != null ? _expandBtn.gameObject : null, _expandBtn, _expandBtnText, null, ButtonVisualRole.Ghost));
             this.Controls.Register(new WidgetActionButtonControl("stock_toggle_btn", "原版显隐按键", _stockBtn != null ? _stockBtn.gameObject : null, _stockBtn, _stockBtnText, null, ButtonVisualRole.Ghost));
             if (_dropdownPanel != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "dropdown_matrix", "链路信道矩阵", _dropdownPanel));
