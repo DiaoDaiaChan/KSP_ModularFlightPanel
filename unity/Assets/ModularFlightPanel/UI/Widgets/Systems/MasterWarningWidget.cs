@@ -950,20 +950,29 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             float dt = Time.unscaledDeltaTime;
 
-            // 预先集中求解高精度轨道动力学与大气边界参数，单次解算供事件侦测与巡航工况复用
-            _cachedAtmoCutoff = GetAtmosphereCutoff(telemetry);
-            _cachedEffectivePe = GetEffectivePeriapsis(telemetry);
-            _cachedEffectiveAp = GetEffectiveApoapsis(telemetry);
+            // 判定降频与瞬态事件侦测 (10Hz 判定节拍器，分级/引擎状态变化时立即触发)
+            bool stateChanged = telemetry.CurrentStage != _lastStage ||
+                                telemetry.ActiveEngines != _lastActiveEngines ||
+                                telemetry.IsStageSeparating != _lastIsStageSeparating ||
+                                telemetry.IsEngineIgniting != _lastIsEngineIgniting ||
+                                (telemetry.Throttle > 0.05f != _lastThrottle > 0.05f) ||
+                                (telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode <= 60.0 && (_lastTimeToNode > 60.0 || _lastTimeToNode < 0.0));
 
-            // 1. 侦测分级分离、引擎点火与机动巡航等全景瞬态事件
-            DetectTransientEvents(telemetry);
-
-            // 2. 持续评估当前所有活跃警报 (10Hz 判定降频节拍器，事件触发时立即响应)
             _alertEvalTimer += dt;
-            if (_alertEvalTimer >= ALERT_EVAL_INTERVAL || _forceImmediateAlertEval)
+            if (_alertEvalTimer >= ALERT_EVAL_INTERVAL || _forceImmediateAlertEval || stateChanged)
             {
                 _alertEvalTimer = 0f;
                 _forceImmediateAlertEval = false;
+
+                // 预先集中求解高精度轨道动力学与大气边界参数，单次解算供事件侦测与巡航工况复用
+                _cachedAtmoCutoff = GetAtmosphereCutoff(telemetry);
+                _cachedEffectivePe = GetEffectivePeriapsis(telemetry);
+                _cachedEffectiveAp = GetEffectiveApoapsis(telemetry);
+
+                // 1. 侦测分级分离、引擎点火与机动巡航等全景瞬态事件
+                DetectTransientEvents(telemetry);
+
+                // 2. 持续评估当前所有活跃警报
                 EvaluateTelemetryAlerts(telemetry, dt);
             }
 

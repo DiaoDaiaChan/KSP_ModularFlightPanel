@@ -5,9 +5,8 @@ using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.Widgets.Controls;
-#if KSP_RUNTIME
+using ModularFlightPanel.UI.Widgets.SpaceX;
 using ModularFlightPanel.UI.Settings;
-#endif
 
 namespace ModularFlightPanel.UI.HUD
 {
@@ -728,6 +727,13 @@ namespace ModularFlightPanel.UI.HUD
             if (w == null) return;
             _telemScrollPos = GUILayout.BeginScrollView(_telemScrollPos, GUILayout.Height(totalH - 46f));
 
+            if (primary is SpaceXHeaderWidget spxHeader)
+            {
+                DrawSpaceXDynamicSlotsBanner(spxHeader, w);
+                GUILayout.EndScrollView();
+                return;
+            }
+
             var allControls = primary.Controls?.All;
             var bindableControls = new List<ITelemetryBindableControl>();
             if (allControls != null)
@@ -872,6 +878,122 @@ namespace ModularFlightPanel.UI.HUD
             }
 
             GUILayout.EndScrollView();
+        }
+
+        private void DrawSpaceXDynamicSlotsBanner(SpaceXHeaderWidget spxHeader, WidgetConfig w)
+        {
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=9>💡 动态槽位横幅模式: 可自由加减数据列、调整顺序与分隔线</size></color>");
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("+ 添加数据列", GUILayout.Width(100f), GUILayout.Height(22f)))
+            {
+                TelemetryParamDrawer.Open("添加顶栏数据列", chosenToken =>
+                {
+                    var meta = TelemetryCatalog.FindByToken(chosenToken);
+                    string title = meta != null ? meta.DisplayName : chosenToken;
+                    spxHeader.AddSlot(chosenToken, title);
+                });
+            }
+            if (GUILayout.Button("↺ 恢复默认 7 列", GUILayout.Width(110f), GUILayout.Height(22f)))
+            {
+                spxHeader.ResetToDefaultSlots();
+            }
+            GUILayout.FlexibleSpace();
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>共 {spxHeader.Slots.Count} 列</size></color>");
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            var slots = spxHeader.Slots;
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var slot = slots[i];
+                MFPGuiSkin.BeginInset();
+                GUILayout.BeginHorizontal(GUILayout.Height(22f));
+
+                // 1. 左右移位
+                GUI.enabled = (i > 0);
+                if (GUILayout.Button("◀", GUILayout.Width(18f), GUILayout.Height(19f)))
+                {
+                    spxHeader.MoveSlot(i, i - 1);
+                    GUI.enabled = true;
+                    GUILayout.EndHorizontal();
+                    MFPGuiSkin.EndInset();
+                    break;
+                }
+                GUI.enabled = (i < slots.Count - 1);
+                if (GUILayout.Button("▶", GUILayout.Width(18f), GUILayout.Height(19f)))
+                {
+                    spxHeader.MoveSlot(i, i + 1);
+                    GUI.enabled = true;
+                    GUILayout.EndHorizontal();
+                    MFPGuiSkin.EndInset();
+                    break;
+                }
+                GUI.enabled = true;
+
+                // 2. 分隔线开关
+                string sepText = slot.HasSeparator ? "<color=#00E5FF>|</color>" : "<color=#7088A8>○</color>";
+                if (GUILayout.Button(sepText, GUILayout.Width(20f), GUILayout.Height(19f)))
+                {
+                    spxHeader.ToggleSlotSeparator(i);
+                }
+
+                // 3. 标题输入
+                string curTitle = slot.Title ?? "";
+                string newTitle = GUILayout.TextField(curTitle, GUILayout.Width(76f), GUILayout.Height(19f));
+                if (newTitle != curTitle)
+                {
+                    spxHeader.UpdateSlotTitle(i, newTitle);
+                }
+
+                // 4. Token 输入与查表替换
+                string curTok = slot.Token ?? "";
+                string newTok = GUILayout.TextField(curTok, GUILayout.Width(88f), GUILayout.Height(19f));
+                if (newTok != curTok)
+                {
+                    spxHeader.UpdateSlotToken(i, newTok);
+                }
+
+                int slotIdx = i;
+                if (GUILayout.Button("🔍", GUILayout.Width(22f), GUILayout.Height(19f)))
+                {
+                    TelemetryParamDrawer.Open($"更换遥测数据 - {slot.Title}", chosenToken =>
+                    {
+                        var meta = TelemetryCatalog.FindByToken(chosenToken);
+                        spxHeader.UpdateSlotToken(slotIdx, chosenToken);
+                        if (string.IsNullOrEmpty(slot.Title) || slot.Title.StartsWith("col_"))
+                        {
+                            string suggested = meta != null ? meta.DisplayName : chosenToken;
+                            spxHeader.UpdateSlotTitle(slotIdx, suggested);
+                        }
+                    });
+                }
+
+                // 5. 实时采样预览
+                string sampleVal = GetSampledTokenValue(slot.Token);
+                GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color>", GUILayout.Width(48f));
+
+                // 6. 删除列
+                if (slots.Count > 1)
+                {
+                    if (GUILayout.Button("×", GUILayout.Width(18f), GUILayout.Height(19f)))
+                    {
+                        spxHeader.RemoveSlot(i);
+                        GUILayout.EndHorizontal();
+                        MFPGuiSkin.EndInset();
+                        break;
+                    }
+                }
+                else
+                {
+                    GUILayout.Space(22f);
+                }
+
+                GUILayout.EndHorizontal();
+                MFPGuiSkin.EndInset();
+                GUILayout.Space(1f);
+            }
         }
 
         private void DrawGlobalTelemetrySettings(BaseFlightWidget primary, WidgetConfig w)

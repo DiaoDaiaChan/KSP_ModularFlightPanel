@@ -121,6 +121,17 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             public float TargetPropFrac;
             public float CurrentPropFrac;
             public float TransitionFlashTimer;
+
+            // Dirty tracking & Microsecond Caching
+            public int LastPartHash = -1;
+            public float LastRenderedAvailW = -1f;
+            public bool LastRenderedExpanded = false;
+            public bool LastRenderedActive = false;
+            public double LastRenderedDv = -9999.0;
+            public int LastRenderedBurnSec = -1;
+            public double LastRenderedTwr = -9999.0;
+            public string CachedDvStr;
+            public string CachedMetaStr;
         }
 
         private const int InitialPooledStages = 10;
@@ -1115,6 +1126,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     SetActiveIfChanged(item.DeleteStageBtn.gameObject, false);
                     SetActiveIfChanged(item.StageDvText.gameObject, false);
 
+                    int partHash = ComputePartHash(stg.PartIcons);
                     if (item.IsExpanded)
                     {
                         SetActiveIfChanged(item.StageMetaText.gameObject, true);
@@ -1126,7 +1138,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         float bayCenterY = (itemH * 0.5f * s) - (24f * s) - (partsBayH * 0.5f);
                         SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(availW, partsBayH));
                         SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(0f, bayCenterY));
-                        ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
+
+                        bool chipsDirty = partHash != item.LastPartHash ||
+                                          Mathf.Abs(item.LastRenderedAvailW - availW) > 0.5f ||
+                                          item.LastRenderedExpanded != item.IsExpanded ||
+                                          item.LastRenderedActive != isActive;
+                        if (chipsDirty)
+                        {
+                            item.LastPartHash = partHash;
+                            item.LastRenderedAvailW = availW;
+                            item.LastRenderedExpanded = item.IsExpanded;
+                            item.LastRenderedActive = isActive;
+                            ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
+                        }
                     }
                     else
                     {
@@ -1140,7 +1164,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         float compAvailW = rowW - 44f * s - 80f * s;
                         SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(compAvailW, 18f * s));
                         SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(-halfRowW + 38f * s + compAvailW * 0.5f, 0f));
-                        ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
+
+                        bool chipsDirty = partHash != item.LastPartHash ||
+                                          Mathf.Abs(item.LastRenderedAvailW - compAvailW) > 0.5f ||
+                                          item.LastRenderedExpanded != item.IsExpanded ||
+                                          item.LastRenderedActive != isActive;
+                        if (chipsDirty)
+                        {
+                            item.LastPartHash = partHash;
+                            item.LastRenderedAvailW = compAvailW;
+                            item.LastRenderedExpanded = item.IsExpanded;
+                            item.LastRenderedActive = isActive;
+                            ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
+                        }
                     }
                 }
                 else
@@ -1149,12 +1185,26 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     if (item.EmptySlotText != null) SetActiveIfChanged(item.EmptySlotText.gameObject, false);
                     SetActiveIfChanged(item.DeleteStageBtn.gameObject, false);
 
+                    int partHash = ComputePartHash(stg.PartIcons);
                     int burnSec = Mathf.Max(0, (int)stg.BurnTime);
-                    int min = burnSec / 60;
-                    int sec = burnSec % 60;
-                    string metaStr = stg.TWR > 0.01 
-                        ? $"⏱ {min:00}:{sec:00} · {stg.TWR:F2}T" 
-                        : $"⏱ {min:00}:{sec:00} · {stg.Isp:F0}s";
+                    if (burnSec != item.LastRenderedBurnSec || Math.Abs(stg.TWR - item.LastRenderedTwr) >= 0.02 || item.CachedMetaStr == null)
+                    {
+                        item.LastRenderedBurnSec = burnSec;
+                        item.LastRenderedTwr = stg.TWR;
+                        int min = burnSec / 60;
+                        int sec = burnSec % 60;
+                        item.CachedMetaStr = stg.TWR > 0.01 
+                            ? $"⏱ {min:00}:{sec:00} · {stg.TWR:F2}T" 
+                            : $"⏱ {min:00}:{sec:00} · {stg.Isp:F0}s";
+                    }
+                    string metaStr = item.CachedMetaStr;
+
+                    if (Math.Abs(stg.DeltaV - item.LastRenderedDv) >= 1.0 || item.CachedDvStr == null)
+                    {
+                        item.LastRenderedDv = stg.DeltaV;
+                        item.CachedDvStr = $"{stg.DeltaV:N0} m/s";
+                    }
+                    string dvStr = item.CachedDvStr;
 
                     if (item.IsExpanded)
                     {
@@ -1163,7 +1213,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         SetActiveIfChanged(item.StageDvText.gameObject, true);
                         SetSizeDeltaIfChanged(item.StageDvText.rectTransform, new Vector2(rightColW, 13f * s));
                         SetAnchoredPositionIfChanged(item.StageDvText.rectTransform, new Vector2(halfRowW - rightColW * 0.5f - 4f * s, topElementsY + 3f * s));
-                        SetTextIfChanged(item.StageDvText, $"{stg.DeltaV:N0} m/s");
+                        SetTextIfChanged(item.StageDvText, dvStr);
                         ApplyText(item.StageDvText, isActive ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
 
                         SetActiveIfChanged(item.StageMetaText.gameObject, true);
@@ -1177,7 +1227,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                             float bayCenterY = (itemH * 0.5f * s) - (24f * s) - (partsBayH * 0.5f);
                             SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(availW, partsBayH));
                             SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(0f, bayCenterY));
-                            ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
+
+                            bool chipsDirty = partHash != item.LastPartHash ||
+                                              Mathf.Abs(item.LastRenderedAvailW - availW) > 0.5f ||
+                                              item.LastRenderedExpanded != item.IsExpanded ||
+                                              item.LastRenderedActive != isActive;
+                            if (chipsDirty)
+                            {
+                                item.LastPartHash = partHash;
+                                item.LastRenderedAvailW = availW;
+                                item.LastRenderedExpanded = item.IsExpanded;
+                                item.LastRenderedActive = isActive;
+                                ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
+                            }
                         }
                         else
                         {
@@ -1193,7 +1255,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         SetActiveIfChanged(item.StageDvText.gameObject, true);
                         SetSizeDeltaIfChanged(item.StageDvText.rectTransform, new Vector2(dvW, 14f * s));
                         SetAnchoredPositionIfChanged(item.StageDvText.rectTransform, new Vector2(halfRowW - dvW * 0.5f - 4f * s, 0f));
-                        SetTextIfChanged(item.StageDvText, $"{stg.DeltaV:N0} m/s");
+                        SetTextIfChanged(item.StageDvText, dvStr);
                         ApplyText(item.StageDvText, isActive ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
 
                         if (hasIcons)
@@ -1204,7 +1266,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                 SetActiveIfChanged(item.IconsContainer, true);
                                 SetSizeDeltaIfChanged(item.IconsContainerRt, new Vector2(compAvailW, 18f * s));
                                 SetAnchoredPositionIfChanged(item.IconsContainerRt, new Vector2(-halfRowW + 38f * s + compAvailW * 0.5f, 0f));
-                                ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
+
+                                bool chipsDirty = partHash != item.LastPartHash ||
+                                                  Mathf.Abs(item.LastRenderedAvailW - compAvailW) > 0.5f ||
+                                                  item.LastRenderedExpanded != item.IsExpanded ||
+                                                  item.LastRenderedActive != isActive;
+                                if (chipsDirty)
+                                {
+                                    item.LastPartHash = partHash;
+                                    item.LastRenderedAvailW = compAvailW;
+                                    item.LastRenderedExpanded = item.IsExpanded;
+                                    item.LastRenderedActive = isActive;
+                                    ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
+                                }
                             }
                             else
                             {
@@ -1218,6 +1292,18 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     }
                 }
             }
+        }
+
+        private static int ComputePartHash(IReadOnlyList<StagePartIconData> partIcons)
+        {
+            if (partIcons == null || partIcons.Count == 0) return 0;
+            int hash = partIcons.Count;
+            for (int k = 0; k < partIcons.Count; k++)
+            {
+                hash = unchecked((hash * 31) ^ (int)partIcons[k].PartFlightId ^ (partIcons[k].Multiplier << 16));
+            }
+            return hash;
+        }
         }
 
         private void ArrangeIconChipsGrid(StageItemUI item, StageDeltaVInfo stg, Texture currentAtlas, bool isUsingStockAtlas, bool isActive, ThemeConfig theme, WidgetStyleManager style, float s, float containerWidth, float containerHeight, float chipSize, float chipGap, int chipsPerRow)

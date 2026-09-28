@@ -743,15 +743,15 @@ namespace ModularFlightPanel.Core
 
         public static string GetHeadingText()
         {
-            if (!PrincipiaProbe.IsAvailable && HasStockNavBall && StockInstance.headingText != null)
-            {
-                string txt = StockInstance.headingText.text;
-                if (!string.IsNullOrEmpty(txt)) return txt;
-            }
             if (GetContinuousHeading(out float hdg))
             {
                 int h = (Mathf.RoundToInt(hdg) % 360 + 360) % 360;
                 return $"{h:D3}°";
+            }
+            if (!PrincipiaProbe.IsAvailable && HasStockNavBall && StockInstance.headingText != null)
+            {
+                string txt = StockInstance.headingText.text;
+                if (!string.IsNullOrEmpty(txt)) return txt;
             }
             int fallbackH = TelemetryHub.Instance != null ? Mathf.RoundToInt(TelemetryHub.Instance.Heading) % 360 : 0;
             return $"{fallbackH:D3}°";

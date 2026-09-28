@@ -121,6 +121,17 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             public float TargetPropFrac;
             public float CurrentPropFrac;
             public float TransitionFlashTimer;
+
+            // Dirty tracking & Microsecond Caching
+            public int LastPartHash = -1;
+            public float LastRenderedAvailW = -1f;
+            public bool LastRenderedExpanded = false;
+            public bool LastRenderedActive = false;
+            public double LastRenderedDv = -9999.0;
+            public int LastRenderedBurnSec = -1;
+            public double LastRenderedTwr = -9999.0;
+            public string CachedDvStr;
+            public string CachedMetaStr;
         }
 
         private const int InitialPooledStages = 10;
