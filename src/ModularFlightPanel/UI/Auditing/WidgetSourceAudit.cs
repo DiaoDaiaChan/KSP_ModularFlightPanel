@@ -1176,12 +1176,13 @@ namespace ModularFlightPanel.UI
                     + WidgetSpecRules.TelemetryMethod + "(" + WidgetSpecRules.TelemetryParameterType + " telemetry)）");
             }
 
-            bool declaredAnywhere = WidgetClassGraph.FindDeclarer(node, n => n.TelemetryMethod != null) != null;
+            bool declaredAnywhere = WidgetClassGraph.FindDeclarer(node, n => n.DataHeartBeatMethod != null || n.TelemetryMethod != null) != null;
 
             if (!declaredAnywhere)
             {
                 Add(report, node.FileName, WidgetSpecRules.TelemetryContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
-                    "未重写 " + WidgetSpecRules.TelemetryMethod + "(" + WidgetSpecRules.TelemetryParameterType + ") 遥测驱动接口（本类或继承链上的组件类必须提供合规实现）");
+                    "未重写 " + WidgetSpecRules.DataHeartBeatMethod + "(in " + WidgetSpecRules.DataHeartBeatParameterType
+                    + ") 遥测驱动接口（本类或继承链上的组件类必须提供合规实现）");
             }
         }
 
@@ -1751,8 +1752,10 @@ namespace ModularFlightPanel.UI
             var themeBadSig = Scan(new[] { MakeFile("ThemeBadSig.cs", compliant.Replace("public override void ApplyTheme(ThemeConfig theme)", "public void ApplyTheme(ThemeConfig theme)")) });
             check(themeBadSig.CountByRule(WidgetSpecRules.SemanticTheming) == 1, "SPEC-003 非 override 签名未拦下");
 
-            var telemMissing = Scan(new[] { MakeFile("TelemMissing.cs", compliant.Replace("        public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { }\n", string.Empty)) });
-            check(telemMissing.CountByRule(WidgetSpecRules.TelemetryContract) == 1, "SPEC-004 缺失 OnUpdateTelemetry 未拦下");
+            var telemMissing = Scan(new[] { MakeFile("TelemMissing.cs", compliant
+                .Replace("        public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { }\n", string.Empty)
+                .Replace("        public override void OnDataHeartBeat(in FlightHeartbeatContext context) { }\n", string.Empty)) });
+            check(telemMissing.CountByRule(WidgetSpecRules.TelemetryContract) == 1, "SPEC-004 缺失遥测契约未拦下");
 
             // ── 8. SPEC-005 安全生命周期 ──
             var destroyPriv = Scan(new[] { MakeFile("DestroyPriv.cs", compliant.Replace("protected override void OnDestroy()", "private void OnDestroy()")) });

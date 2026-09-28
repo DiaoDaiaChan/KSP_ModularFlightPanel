@@ -42,8 +42,26 @@ namespace ModularFlightPanel.UI.Widgets
         ExactIds = new[] { "nav.orbital_elements" })]
     public class OrbitalElementsWidget : BaseFlightWidget
     {
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
         protected override bool AutoCreateCardFrame => true;
+
+        // ── 数据心跳与 UI 绘制解耦状态缓存 ──
+        private bool _hasVessel = false;
+        private double _dataAp = double.NaN;
+        private double _dataPe = double.NaN;
+        private double _dataTAp = double.NaN;
+        private double _dataTPe = double.NaN;
+        private double _dataSma = double.NaN;
+        private double _dataEcc = double.NaN;
+        private double _dataInc = double.NaN;
+        private double _dataLan = double.NaN;
+        private double _dataAop = double.NaN;
+        private double _dataTra = double.NaN;
+        private double _dataPeriod = double.NaN;
+        private string _dataBadgeText = "---";
+        private TextStyleRole _dataBadgeRole = TextStyleRole.Muted;
+        private string _dataTitleText = "ORBIT ELEMENTS";
 
         // ── 性能节流与状态缓存 ──
         private float _lastMeshRebuildTime = -1f;
@@ -545,10 +563,9 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         // ═════════════════════════════════════════════════════════════════
-        // SPEC-004: 遥测驱动更新 (直接对接 IFlightTelemetry 真实开普勒要素)
+        // SPEC-004C: 数据心跳独立解算循环 (受 HeartBeatTier 严格节流)
+        // 专用于开普勒轨道六根数物理计算、Principia 探针查询与状态评估 (0 UI 绘制)
         // ═════════════════════════════════════════════════════════════════
-        private float _orbitMathTimer = 0f;
-        private const float ORBIT_MATH_INTERVAL = 0.1f;
         private double _cachedSma = double.NaN;
         private double _cachedEcc = double.NaN;
         private double _cachedInc = double.NaN;
@@ -557,33 +574,36 @@ namespace ModularFlightPanel.UI.Widgets
         private double _cachedPeriod = double.NaN;
         private bool _cachedIsPrincipia = false;
 
-        public override void OnUpdateTelemetry(IFlightTelemetry telemetry)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            base.OnDataHeartBeat(in context);
+
+            IFlightTelemetry telemetry = context.Telemetry;
             if (telemetry == null || !telemetry.HasVessel)
             {
-                OrbitBadge.Text = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
-                OrbitBadge.SetRole(TextStyleRole.Muted);
+                _hasVessel = false;
+                _dataBadgeText = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
+                _dataBadgeRole = TextStyleRole.Muted;
                 return;
             }
 
-            // 1. 基础拱点与时钟
-            double ap = telemetry.Apoapsis;
-            double pe = telemetry.Periapsis;
-            double tAp = telemetry.TimeToAp;
-            double tPe = telemetry.TimeToPe;
+            _hasVessel = true;
 
-            // 2. 开普勒六根数：稳态两体节拍守卫与外部探针按需查询 (Microsecond Performance Tuning)
-            float dt = Time.unscaledDeltaTime;
-            _orbitMathTimer += dt;
+            // 1. 基础拱点与时钟采样
+            _dataAp = telemetry.Apoapsis;
+            _dataPe = telemetry.Periapsis;
+            _dataTAp = telemetry.TimeToAp;
+            _dataTPe = telemetry.TimeToPe;
+
+            // 2. 开普勒六根数：稳态两体节拍守卫与外部探针按需查询
             bool isManeuvering = telemetry.Throttle > 0.001f || telemetry.DynamicPressure > 0.1 || telemetry.HasManeuverNode;
-            bool needKeplerianRecalc = isManeuvering || _orbitMathTimer >= ORBIT_MATH_INTERVAL || double.IsNaN(_cachedSma);
+            bool needKeplerianRecalc = isManeuvering || double.IsNaN(_cachedSma) || context.Every(3);
 
             double sma, ecc, inc, lan, aop, period;
             bool isPrincipia;
 
             if (needKeplerianRecalc)
             {
-                _orbitMathTimer = 0f;
                 sma = telemetry.SemiMajorAxis;
                 ecc = telemetry.Eccentricity;
                 inc = telemetry.Inclination;
@@ -623,20 +643,20 @@ namespace ModularFlightPanel.UI.Widgets
                 // 几何回退
                 if (double.IsNaN(ecc) || ecc < 0.0)
                 {
-                    double rA = Math.Max(10000.0, DefaultKerbinRadius + ap);
-                    double rP = DefaultKerbinRadius + pe;
+                    double rA = Math.Max(10000.0, DefaultKerbinRadius + _dataAp);
+                    double rP = DefaultKerbinRadius + _dataPe;
                     ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
                 }
 
                 if (double.IsNaN(sma) || sma <= 0.0)
                 {
-                    double rA = DefaultKerbinRadius + ap;
-                    double rP = DefaultKerbinRadius + pe;
+                    double rA = DefaultKerbinRadius + _dataAp;
+                    double rP = DefaultKerbinRadius + _dataPe;
                     sma = (rA + rP) * 0.5;
                 }
 
                 if (double.IsNaN(period) || period <= 0.0)
-                    period = ecc < 1.0 ? Math.Abs(tAp - tPe) * 2.0 : 0.0;
+                    period = ecc < 1.0 ? Math.Abs(_dataTAp - _dataTPe) * 2.0 : 0.0;
 
                 _cachedSma = sma;
                 _cachedEcc = ecc;
@@ -657,6 +677,13 @@ namespace ModularFlightPanel.UI.Widgets
                 isPrincipia = _cachedIsPrincipia;
             }
 
+            _dataSma = sma;
+            _dataEcc = ecc;
+            _dataInc = inc;
+            _dataLan = lan;
+            _dataAop = aop;
+            _dataPeriod = period;
+
             // 真近点角（连续平滑演进）
             double tra = telemetry.TrueAnomaly;
             if (isPrincipia && ExternalProbeRegistry.NumericResolver != null)
@@ -664,9 +691,9 @@ namespace ModularFlightPanel.UI.Widgets
                 double pTra = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "TRA");
                 if (!double.IsNaN(pTra)) tra = pTra;
             }
-            tra = NormalizeDegrees(tra);
+            _dataTra = NormalizeDegrees(tra);
 
-            // Principia 参考系标题联动
+            // Principia 参考系标题解算 (纯字符串，不更新 UI)
             bool hasPrinFrame = false;
             if (isPrincipia && ExternalProbeRegistry.StringResolver != null)
             {
@@ -675,43 +702,59 @@ namespace ModularFlightPanel.UI.Widgets
                     prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
                 if (!string.IsNullOrEmpty(prinFrame) && prinFrame != "---")
                 {
-                    Title.Text = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
+                    _dataTitleText = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
                     hasPrinFrame = true;
                 }
             }
             if (!hasPrinFrame)
             {
-                Title.Text = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
+                _dataTitleText = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
             }
 
-            // 3. 轨道能量状态胶囊 (Principia 描述优先)
-            UpdateOrbitStateBadge(ap, pe, ecc, telemetry, isPrincipia);
+            // 3. 轨道能量状态解算 (纯物理状态判定)
+            ComputeOrbitStateBadge(_dataAp, _dataPe, _dataEcc, telemetry.AtmosphereDepth, telemetry.HasAtmosphere, isPrincipia,
+                out _dataBadgeText, out _dataBadgeRole);
+        }
 
-            // 4. 数值更新
+        // ═════════════════════════════════════════════════════════════════
+        // SPEC-004D: UI 独立绘制循环 (随 RefreshTier 满频触发)
+        // 专注于 UGUI 文本刷新、矢量硬件覆盖层 Transform 补间与网格渲染 (0 物理采样)
+        // ═════════════════════════════════════════════════════════════════
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+
+            Title.Text = _dataTitleText;
+            OrbitBadge.Text = _dataBadgeText;
+            OrbitBadge.SetRole(_dataBadgeRole);
+
+            if (!_hasVessel) return;
+
             if (_isFullMode)
             {
-                UpdateFullModeReadouts(ap, pe, tAp, sma, ecc, inc, lan, aop, tra, period);
+                UpdateFullModeReadouts(_dataAp, _dataPe, _dataTAp, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
                 float now = Time.unscaledTime;
-                if ((now - _lastMeshRebuildTime >= 0.25f || _lastMeshRebuildTime < 0f) && CheckDirty(sma, ecc, inc, lan, aop))
+                if ((now - _lastMeshRebuildTime >= 0.25f || _lastMeshRebuildTime < 0f) && CheckDirty(_dataSma, _dataEcc, _dataInc, _dataLan, _dataAop))
                 {
                     _lastMeshRebuildTime = now;
-                    _lastDrawnSma = sma; _lastDrawnEcc = ecc; _lastDrawnInc = inc;
-                    _lastDrawnLan = lan; _lastDrawnAop = aop;
-                    _lastDrawnAp = ap; _lastDrawnPe = pe;
+                    _lastDrawnSma = _dataSma; _lastDrawnEcc = _dataEcc; _lastDrawnInc = _dataInc;
+                    _lastDrawnLan = _dataLan; _lastDrawnAop = _dataAop;
+                    _lastDrawnAp = _dataAp; _lastDrawnPe = _dataPe;
                     if (_diagramGraphic != null) _diagramGraphic.SetVerticesDirty();
                 }
-                UpdateSpacecraftOverlay(tra, sma, ecc, inc, lan, aop);
+                UpdateSpacecraftOverlay(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop);
             }
             else
             {
                 if (_scMarker != null && _scMarker.activeSelf) _scMarker.SetActive(false);
                 if (_scRadiusLine != null && _scRadiusLine.activeSelf) _scRadiusLine.SetActive(false);
                 if (_scVelocityArrow != null && _scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(false);
-                UpdateCompactModeReadouts(ap, pe, tAp, tPe, sma, ecc, inc, lan, aop, tra, period);
+                UpdateCompactModeReadouts(_dataAp, _dataPe, _dataTAp, _dataTPe, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
             }
         }
 
-        private void UpdateOrbitStateBadge(double ap, double pe, double ecc, IFlightTelemetry telemetry, bool isPrincipia)
+        private static void ComputeOrbitStateBadge(double ap, double pe, double ecc, double atmDepth, bool hasAtm, bool isPrincipia,
+            out string badgeText, out TextStyleRole badgeRole)
         {
             // 优先接入 Principia 轨道分析高阶物理描述
             if (isPrincipia)
@@ -721,22 +764,17 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     string clean = pDesc.Replace("\n", " ").Trim();
                     if (clean.Length > 15) clean = clean.Substring(0, 15).Trim();
-                    OrbitBadge.Text = clean.ToUpperInvariant();
-                    OrbitBadge.SetRole(TextStyleRole.Accent);
+                    badgeText = clean.ToUpperInvariant();
+                    badgeRole = TextStyleRole.Accent;
                     return;
                 }
             }
 
-            double atmDepth = telemetry.AtmosphereDepth;
-            bool hasAtm = telemetry.HasAtmosphere;
             double safeAlt = hasAtm ? atmDepth : 0.0;
 
             // 获取天体名称用于标题增强 (通过探针查表，SPEC-007 禁止场景查询)
             string bodyName = ExternalProbeRegistry.ResolveString("ORBIT", "BODY", "");
             bool hasBodyName = !string.IsNullOrEmpty(bodyName) && bodyName != "---";
-
-            string badgeText;
-            TextStyleRole badgeRole;
 
             if (ecc >= 1.0)
             {
@@ -769,9 +807,6 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 badgeText = $"{badgeText} ({bodyName.ToUpperInvariant()})";
             }
-
-            OrbitBadge.Text = badgeText;
-            OrbitBadge.SetRole(badgeRole);
         }
 
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,

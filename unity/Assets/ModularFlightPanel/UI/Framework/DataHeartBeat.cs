@@ -48,6 +48,11 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
+        /// 每 N 个心跳拍触发一次快捷重载 (等价于 EveryNth)
+        /// </summary>
+        public bool Every(int nth) => EveryNth(nth);
+
+        /// <summary>
         /// 目标刷新阶梯分频判定：根据当前组件的心跳频率与目标阶梯自动折算整除比率。
         /// 例如组件主心跳为 30Hz，Every(Relaxed 10Hz) 自动换算为 30/10=3，即每 3 拍触发一次。
         /// 子类无需声明任何计时器变量即可直接实现 10Hz 中频计算！
