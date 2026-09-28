@@ -21,7 +21,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     {
         public override Vector2 BaseSize => new Vector2(100f, 32f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         // 声明式微控件
         public TextWidget FrameTitle = TextWidget.Title(I18n.Tr("WIDGET_NAV_FRAME_SURFACE", "表面"));

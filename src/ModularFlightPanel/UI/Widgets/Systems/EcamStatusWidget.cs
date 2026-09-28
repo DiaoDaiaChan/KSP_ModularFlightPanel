@@ -27,7 +27,7 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override Vector2 BaseSize => new Vector2(260f, 48f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         /// <summary>
         /// 语义主题管道 (MFP-SPEC-003)：显式接入 WidgetStyleManager 单向主题下发。

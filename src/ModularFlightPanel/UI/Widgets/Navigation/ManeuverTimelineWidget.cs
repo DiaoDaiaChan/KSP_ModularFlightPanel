@@ -29,7 +29,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     {
         public override Vector2 BaseSize => new Vector2(520f, 100f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         // 注意: 本组件不使用声明式 DSL 微控件 (TextWidget.Value/Unit)，
         // 时间轴 Hero 与 Subtitle 由 OnInitialize 手动构建以支持多段异构布局。

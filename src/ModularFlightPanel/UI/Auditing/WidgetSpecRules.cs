@@ -16,6 +16,7 @@ namespace ModularFlightPanel.UI
     {
         public const string Inheritance = "MFP-SPEC-001";        // 必须继承 BaseFlightWidget
         public const string RefreshTier = "MFP-SPEC-002";        // 必须显式声明刷新阶梯
+        public const string HeartBeatTier = "MFP-SPEC-002B";     // 心跳频率不得高于刷新率 (HeartBeatTier >= RefreshTier)
         public const string SemanticTheming = "MFP-SPEC-003";    // 必须实现 ApplyTheme(ThemeConfig)
         public const string TelemetryContract = "MFP-SPEC-004";  // 必须实现 OnUpdateTelemetry(IFlightTelemetry)
         public const string SafeLifecycle = "MFP-SPEC-005";      // OnDestroy 必须 override
@@ -24,7 +25,7 @@ namespace ModularFlightPanel.UI
         public const string AutoRegistration = "MFP-SPEC-008";   // 必须声明 [FlightWidget] 自动注册与预设库元数据
         public const string TelemetryAssemblyWarning = "MFP-WARN-TELEM-ASSEMBLY"; // 微控件未支持标准化遥测装配警告
 
-        public const int RuleCount = 8;
+        public const int RuleCount = 9;
 
         /// <summary>审计内核自身问题（发现层失效 / 判定依据缺失）的统一报告名</summary>
         public const string KernelReportName = "AuditKernel";
@@ -56,6 +57,9 @@ namespace ModularFlightPanel.UI
 
         /// <summary>刷新阶梯属性名</summary>
         public const string TierProperty = "RefreshTier";
+
+        /// <summary>数据心跳阶梯属性名</summary>
+        public const string HeartBeatTierProperty = "HeartBeatTier";
 
         /// <summary>刷新阶梯枚举类型名（阶梯合法取值集合直接从源码里的枚举声明派生，不再写死 4 个字面量）</summary>
         public const string TierEnumType = "WidgetRefreshTier";

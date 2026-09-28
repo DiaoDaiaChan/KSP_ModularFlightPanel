@@ -30,7 +30,7 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override Vector2 BaseSize => new Vector2(260f, 275f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         // 声明式微控件
         public TextWidget TatTitle = TextWidget.Title("TAT +15 c");

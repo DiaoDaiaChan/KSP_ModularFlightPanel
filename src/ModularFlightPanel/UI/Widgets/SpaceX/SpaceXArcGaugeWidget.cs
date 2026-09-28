@@ -23,7 +23,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     {
         public override Vector2 BaseSize => new Vector2(110f, 110f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         // 声明式微控件
         public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SPX_SPEED", "速度"));

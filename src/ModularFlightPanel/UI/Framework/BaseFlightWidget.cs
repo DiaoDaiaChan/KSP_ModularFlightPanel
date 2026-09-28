@@ -9,6 +9,25 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI
 {
     /// <summary>
+    /// 航电数据心跳上下文参数包（强类型只读传递，零 GC）
+    /// </summary>
+    public struct FlightHeartbeatContext
+    {
+        public IFlightTelemetry Telemetry;
+        public float DeltaTime;
+        public bool IsManeuvering;
+        public double UniversalTime;
+
+        public FlightHeartbeatContext(IFlightTelemetry telem, float dt)
+        {
+            Telemetry = telem;
+            DeltaTime = dt;
+            IsManeuvering = telem != null && (telem.Throttle > 0.01f || telem.DynamicPressure > 0.1 || telem.HasManeuverNode);
+            UniversalTime = telem != null ? telem.UniversalTime : 0.0;
+        }
+    }
+
+    /// <summary>
     /// 所有模块化飞行小组件必须继承的统一基类
     /// 自动提供：自由拖拽句柄绑定、分辨率响应、主题与着色器样式管道 (WidgetStyleManager)、
     /// 独立画布渲染隔离 (Sub-Canvas Isolation)、生命周期与阶梯 Tick 刷新率管控 (WidgetRenderManager)、
@@ -40,11 +59,80 @@ namespace ModularFlightPanel.UI
 
         /// <summary>
         /// 控件在 WidgetRenderManager 中的刷新率阶梯。
-        /// Critical: 60Hz 满帧 (姿态球, 航向指示弧)
-        /// Standard: 30Hz (滚带, 表盘, 罗盘, 导航)
-        /// Relaxed: 10Hz (电力, 维生, ΔV, 控制栏, 时间加速, 轨道数据)
+        /// Critical: 随游戏 FPS (满帧直通游戏实时渲染帧率，如 3D 姿态球)
+        /// Standard: 60Hz (标准高帧率 UI，如速度/高度动态标尺带)
+        /// Slow: 30Hz (经典仪表，如 ND 导航, SAS 罗盘)
+        /// Relaxed: 10Hz (低频监控，如电力, 维生, ΔV, 控制栏, 时间加速, 轨道数据)
+        /// UltraLow: 2Hz (后台低频监视，深空巡航)
+        /// Custom: 自定义 (由 CustomHz / DefaultUpdateInterval 决定)
         /// </summary>
         public virtual WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+
+        /// <summary>
+        /// 控件数据心跳节拍阶梯 (Data Heartbeat Tier)。
+        /// 约束契约：HeartBeat 频率必须小于等于 RefreshTier 组件画面刷新率。
+        /// 缺省等价机制：默认与当前组件的 RefreshTier 保持相等，零额外心智负担。
+        /// </summary>
+        public virtual WidgetRefreshTier HeartBeatTier => RefreshTier;
+
+        /// <summary>
+        /// 根据阶梯与自定义参数换算周期秒数
+        /// </summary>
+        public static float GetTierInterval(WidgetRefreshTier tier, float customInterval)
+        {
+            switch (tier)
+            {
+                case WidgetRefreshTier.Critical: return 0f;
+                case WidgetRefreshTier.Standard: return 1.0f / 60f;
+                case WidgetRefreshTier.Slow:     return 1.0f / 30f;
+                case WidgetRefreshTier.Relaxed:  return 1.0f / 10f;
+                case WidgetRefreshTier.UltraLow: return 1.0f / 2f;
+                case WidgetRefreshTier.Custom:   return customInterval > 0f ? customInterval : (1.0f / 60f);
+                default: return 1.0f / 60f;
+            }
+        }
+
+        /// <summary>
+        /// 当前组件画面刷新周期 (秒)
+        /// </summary>
+        public float RefreshInterval => GetTierInterval(RefreshTier, DefaultUpdateInterval);
+
+        /// <summary>
+        /// 当前组件声明的数据心跳周期 (秒)
+        /// </summary>
+        public float HeartBeatInterval => GetTierInterval(HeartBeatTier, DefaultUpdateInterval);
+
+        /// <summary>
+        /// 经父类安全拦截收敛后的实际生效数据心跳阶梯（物理保证 HeartBeat 频率 <= RefreshTier 刷新率）。
+        /// 若 HeartBeatTier 误设为更小数值 (更高频)，父类自动强制截断钳位为 RefreshTier。
+        /// </summary>
+        public WidgetRefreshTier EffectiveHeartBeatTier
+        {
+            get
+            {
+                WidgetRefreshTier hb = HeartBeatTier;
+                WidgetRefreshTier rf = RefreshTier;
+                if (hb == WidgetRefreshTier.Custom || rf == WidgetRefreshTier.Custom)
+                {
+                    return HeartBeatInterval < RefreshInterval ? rf : hb;
+                }
+                return hb < rf ? rf : hb;
+            }
+        }
+
+        /// <summary>
+        /// 经父类收敛计算后的实际生效心跳周期秒数
+        /// </summary>
+        public float EffectiveHeartBeatInterval
+        {
+            get
+            {
+                float rfInterval = RefreshInterval;
+                float hbInterval = HeartBeatInterval;
+                // 心跳频率必须 <= 刷新率，即心跳周期必须 >= 刷新周期
+                return hbInterval < rfInterval ? rfInterval : hbInterval;
+            }
+        }
 
         /// <summary>
         /// 组件源码级自定义目标刷新率 (Hz)。
@@ -518,22 +606,59 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        private float _lastHeartBeatTime = -10f;
+
         /// <summary>
         /// 全局主遥测更新派发调度入口 (Master Telemetry Update Dispatcher)。
         /// 由 WidgetRenderManager 单点阶梯分发，自动执行：
         /// 1. 遥测上下文空值与空船安全拦截 (HasVessel Guard)
-        /// 2. 所有已注册微控件的自动化遥测更新 (Controls.UpdateControls)
-        /// 3. 派生类特异化遥测逻辑执行 (OnUpdateTelemetry)
+        /// 2. 数据心跳节拍判定与专属物理计算派发 (OnDataHeartBeat, 受 EffectiveHeartBeatTier 节流)
+        /// 3. 所有已注册微控件的自动化遥测更新 (Controls.UpdateControls)
+        /// 4. 纯 UI 渲染/补间帧更新 (OnUpdateRender)
         /// </summary>
         public void MasterUpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !telemetry.HasVessel) return;
 
+            float now = Time.unscaledTime;
+            float interval = EffectiveHeartBeatInterval;
+            bool shouldHeartBeat = (EffectiveHeartBeatTier == RefreshTier) ||
+                                   (_lastHeartBeatTime < 0f) ||
+                                   (interval <= 0.001f) ||
+                                   (now - _lastHeartBeatTime >= interval - 0.0005f);
+
+            if (shouldHeartBeat)
+            {
+                float dt = _lastHeartBeatTime > 0f ? (now - _lastHeartBeatTime) : Time.unscaledDeltaTime;
+                _lastHeartBeatTime = now;
+
+                var ctx = new FlightHeartbeatContext(telemetry, dt);
+                OnDataHeartBeat(in ctx);
+            }
+
             // 1. 微控件全自动化遥测更新 (包含通配符 Token 计算与脏检查)
             this.Controls.UpdateControls(telemetry);
 
-            // 2. 派生组件特异化遥测更新
-            OnUpdateTelemetry(telemetry);
+            // 2. 纯 UI 渲染/平滑补间帧更新
+            OnUpdateRender(Time.unscaledDeltaTime);
+        }
+
+        /// <summary>
+        /// 【核心航电数据心跳契约】由父类严格按 EffectiveHeartBeatTier 节拍调度的专属数据刷新方法。
+        /// 专用于执行遥测参数计算、物理量解算、状态机轮询与微控件赋值。
+        /// 默认实现自动回退调用 OnUpdateTelemetry(context.Telemetry)，确保全库 46 个存量组件 100% 向后兼容。
+        /// </summary>
+        protected virtual void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            OnUpdateTelemetry(context.Telemetry);
+        }
+
+        /// <summary>
+        /// 纯 UI 渲染/平滑补间帧更新钩子（随组件 RefreshTier 满帧触发，不受 HeartBeatTier 节流）。
+        /// 常用于补间滚带平滑移动、罗盘平滑旋转等不需要每帧重新计算物理遥测的纯视觉动画。
+        /// </summary>
+        public virtual void OnUpdateRender(float deltaTime)
+        {
         }
 
         /// <summary>

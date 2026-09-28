@@ -54,8 +54,8 @@ namespace ModularFlightPanel.UI
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// 声明刷新率阶梯 (Critical 满帧直通 | Standard 30Hz | Relaxed 10Hz | UltraLow 2Hz)
-        /// BaseFlightWidget 默认即为 Standard 30Hz，此处显式声明示范
+        /// 声明刷新率阶梯 (Critical 随游戏FPS | Standard 60Hz | Slow 30Hz | Relaxed 10Hz | UltraLow 2Hz | Custom 自定义)
+        /// BaseFlightWidget 默认即为 Standard 60Hz，此处显式声明示范
         /// </summary>
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
 

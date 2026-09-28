@@ -20,7 +20,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
     {
         public override Vector2 BaseSize => new Vector2(520f, 88f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         // 声明式微控件
         public TextWidget Clock = TextWidget.Value(I18n.Tr("WIDGET_SPX_CLOCK_PLACEHOLDER", "T+ 00:00:00"));

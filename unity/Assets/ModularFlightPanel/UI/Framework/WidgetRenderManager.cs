@@ -18,10 +18,12 @@ namespace ModularFlightPanel.UI
 
     public enum WidgetRefreshTier
     {
-        Critical = 0, // 60 Hz / 每一帧更新 (3D姿态球, 航向指示弧, 速度/高度滚带, 油门柱, ECAM圆弧表盘)
-        Standard = 1, // 30 Hz / 约 33ms 更新 (ND导航, SAS罗盘)
-        Relaxed  = 2, // 10 Hz / 约 100ms 更新 (电力, 维生, 分级ΔV, 时钟, 工具栏, 轨道数据)
-        UltraLow = 3  // 2 Hz  / 约 500ms 更新 (大尺度时间加速或后台低频监视)
+        Critical = 0, // 随游戏 FPS (满帧直通游戏实时渲染帧率，如 60/120/144fps 每一帧刷新)
+        Standard = 1, // 60 Hz (约 16.6ms 更新)
+        Slow     = 2, // 30 Hz (约 33.3ms 更新)
+        Relaxed  = 3, // 10 Hz (约 100.0ms 更新)
+        UltraLow = 4, // 2 Hz  (约 500.0ms 更新)
+        Custom   = 5  // 自定义 (由组件 CustomHz 或配置指定精确更新频率)
     }
 
     public enum GlobalRefreshProfile
@@ -120,10 +122,11 @@ namespace ModularFlightPanel.UI
             set => ControlMode = value ? RefreshControlMode.VSync_GameFPS : RefreshControlMode.CustomHz_FreeTier;
         }
 
-        public float CriticalHz { get; set; } = 60.0f;     // 用户可自由填写的任意浮点数 (如 120.0f)
-        public float StandardHz { get; set; } = 30.0f;     // 用户可自由填写的任意浮点数 (如 30.0f)
-        public float RelaxedHz { get; set; } = 10.0f;      // 阶梯注释标称 10Hz；需要时用户可改成任意浮点 (如 11.2f)
-        public float UltraLowHz { get; set; } = 2.0f;      // 用户可自由填写的任意浮点数 (如 2.5f)
+        public float CriticalHz { get; set; } = 0f;        // 0 表示随游戏 FPS 直通
+        public float StandardHz { get; set; } = 60.0f;     // 60 Hz
+        public float SlowHz { get; set; } = 30.0f;         // 30 Hz
+        public float RelaxedHz { get; set; } = 10.0f;      // 10 Hz
+        public float UltraLowHz { get; set; } = 2.0f;      // 2 Hz
 
         // 硬限微秒级帧预算切片调度器配置 (Budgeted Frame Slicing)
         public bool EnableBudgetSlicing { get; set; } = true;
@@ -512,10 +515,11 @@ namespace ModularFlightPanel.UI
                 return true;
             }
 
-            // 1. 若组件定义了特定 UpdateInterval (或 CustomHz)，以组件自身设置为最高优先级
-            if (customInterval > 0f)
+            // 1. 若组件定义了特定 UpdateInterval (或 CustomHz) 或显式声明 Custom 阶梯
+            if (tier == WidgetRefreshTier.Custom || customInterval > 0f)
             {
-                if (unscaledTime - lastUpdateTime < customInterval) return false;
+                float effectiveInterval = customInterval > 0f ? customInterval : (1.0f / 60.0f);
+                if (unscaledTime - lastUpdateTime < effectiveInterval - 0.0005f) return false;
                 lastUpdateTime = unscaledTime;
                 return true;
             }
@@ -534,9 +538,10 @@ namespace ModularFlightPanel.UI
                         switch (tier)
                         {
                             case WidgetRefreshTier.Critical: allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break; // 1:2 降频 (如 60fps 时 30Hz)
-                            case WidgetRefreshTier.Standard: allowed = ((Time.frameCount + phaseOffset) % 4 == 0); break; // 1:4 降频 (如 60fps 时 15Hz)
-                            case WidgetRefreshTier.Relaxed:  allowed = ((Time.frameCount + phaseOffset) % 12 == 0); break; // 1:12 降频 (如 60fps 时 5Hz)
-                            case WidgetRefreshTier.UltraLow: allowed = ((Time.frameCount + phaseOffset) % 30 == 0); break; // 1:30 降频 (如 60fps 时 2Hz)
+                            case WidgetRefreshTier.Standard: allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break; // 30Hz
+                            case WidgetRefreshTier.Slow:     allowed = ((Time.frameCount + phaseOffset) % 4 == 0); break; // 15Hz
+                            case WidgetRefreshTier.Relaxed:  allowed = ((Time.frameCount + phaseOffset) % 12 == 0); break; // 5Hz
+                            case WidgetRefreshTier.UltraLow: allowed = ((Time.frameCount + phaseOffset) % 30 == 0); break; // 2Hz
                             default: allowed = ((Time.frameCount + phaseOffset) % 4 == 0); break;
                         }
                         break;
@@ -545,10 +550,11 @@ namespace ModularFlightPanel.UI
                     default:
                         switch (tier)
                         {
-                            case WidgetRefreshTier.Critical: allowed = true; break;                                       // 1:1 满帧垂直同步 (如 60/120/144Hz)
-                            case WidgetRefreshTier.Standard: allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break; // 1:2 垂直同步 (如 60fps 时 30Hz)
-                            case WidgetRefreshTier.Relaxed:  allowed = ((Time.frameCount + phaseOffset) % 6 == 0); break; // 1:6 垂直同步 (如 60fps 时 10Hz)
-                            case WidgetRefreshTier.UltraLow: allowed = ((Time.frameCount + phaseOffset) % 30 == 0); break;// 1:30 垂直同步 (约 2Hz)
+                            case WidgetRefreshTier.Critical: allowed = true; break;                                       // 随游戏 FPS (满帧)
+                            case WidgetRefreshTier.Standard: allowed = true; break;                                       // 60Hz (在 60fps 垂直同步下 1:1)
+                            case WidgetRefreshTier.Slow:     allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break; // 30Hz (1:2 垂直同步)
+                            case WidgetRefreshTier.Relaxed:  allowed = ((Time.frameCount + phaseOffset) % 6 == 0); break; // 10Hz (1:6 垂直同步)
+                            case WidgetRefreshTier.UltraLow: allowed = ((Time.frameCount + phaseOffset) % 30 == 0); break;// 2Hz (1:30 垂直同步)
                             default: allowed = ((Time.frameCount + phaseOffset) % 2 == 0); break;
                         }
                         break;
@@ -563,18 +569,20 @@ namespace ModularFlightPanel.UI
             }
 
             // 3. 自由填写自定义 Hz 模式 (基于用户设定的目标 Hz 与未缩放时间戳精准节流)
-            float targetHz = 30f;
+            float targetHz = 60f;
             switch (tier)
             {
-                case WidgetRefreshTier.Critical: targetHz = CriticalHz; break;
-                case WidgetRefreshTier.Standard: targetHz = StandardHz; break;
-                case WidgetRefreshTier.Relaxed:  targetHz = RelaxedHz; break;
-                case WidgetRefreshTier.UltraLow: targetHz = UltraLowHz; break;
+                case WidgetRefreshTier.Critical: targetHz = 0f; break; // 0 表示直通随游戏 FPS
+                case WidgetRefreshTier.Standard: targetHz = StandardHz; break; // 60Hz
+                case WidgetRefreshTier.Slow:     targetHz = SlowHz; break;     // 30Hz
+                case WidgetRefreshTier.Relaxed:  targetHz = RelaxedHz; break;  // 10Hz
+                case WidgetRefreshTier.UltraLow: targetHz = UltraLowHz; break; // 2Hz
+                case WidgetRefreshTier.Custom:   targetHz = customInterval > 0f ? (1f / customInterval) : StandardHz; break;
             }
 
             if (targetHz <= 0f) return true;
             float interval = 1f / Mathf.Max(0.1f, targetHz);
-            if (unscaledTime - lastUpdateTime >= interval)
+            if (unscaledTime - lastUpdateTime >= interval - 0.0005f)
             {
                 lastUpdateTime = unscaledTime;
                 return true;

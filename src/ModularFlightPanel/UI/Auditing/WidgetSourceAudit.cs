@@ -53,6 +53,7 @@ namespace ModularFlightPanel.UI
         public bool HasMetadataAttribute;         // 声明了 [FlightWidget]
         public bool DeclaresHighFrequency;        // [FlightWidget(..., HighFrequency = true)]
         public PropertyDeclarationSyntax TierProperty;
+        public PropertyDeclarationSyntax HeartBeatTierProperty;
         public MethodDeclarationSyntax ThemeMethod;
         public MethodDeclarationSyntax TelemetryMethod;
         public MethodDeclarationSyntax OnDestroyMethod;
@@ -197,6 +198,7 @@ namespace ModularFlightPanel.UI
                             WidgetSpecRules.HighFrequencyMetadata);
 
                     node.TierProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.TierProperty);
+                    node.HeartBeatTierProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.HeartBeatTierProperty);
                     node.ThemeMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.ThemeMethod);
                     node.TelemetryMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.TelemetryMethod);
                     node.OnDestroyMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.LifecycleMethod);
@@ -1021,6 +1023,20 @@ namespace ModularFlightPanel.UI
         // SPEC-002 / 003 / 004：契约由"最近的合规声明者"提供，与反射级判定口径一致
         // ══════════════════════════════════════════════════════════════════════════════════════════
 
+        private static int GetTierOrder(string member)
+        {
+            switch (member)
+            {
+                case "Critical": return 0;
+                case "Standard": return 1;
+                case "Slow":     return 2;
+                case "Relaxed":  return 3;
+                case "UltraLow": return 4;
+                case "Custom":   return 5;
+                default: return 99;
+            }
+        }
+
         private static void ScanTierContract(WidgetClassNode node, WidgetClassGraph graph, WidgetSourceAuditReport report)
         {
             if (node.TierProperty != null)
@@ -1051,9 +1067,9 @@ namespace ModularFlightPanel.UI
                     {
                         Add(report, node.FileName, WidgetSpecRules.RefreshTier, "WARNING", line,
                             "声明了满帧阶梯 " + WidgetSpecRules.TierEnumType + "." + WidgetSpecRules.FullFrameTierMember
-                            + " (60Hz 满帧) 但未在 [" + WidgetSpecRules.MetadataAttribute + "] 上声明 "
+                            + " (随游戏FPS直通) 但未在 [" + WidgetSpecRules.MetadataAttribute + "] 上声明 "
                             + WidgetSpecRules.HighFrequencyMetadata + " = true。"
-                            + "若该组件确实是高速姿态/操纵类，请显式声明该元数据；否则请改用 Standard (30Hz) 或 Relaxed (10Hz)");
+                            + "若该组件确实是高速姿态/操纵类，请显式声明该元数据；否则请改用 Standard (60Hz), Slow (30Hz) 或 Relaxed (10Hz)");
                     }
                 }
             }
@@ -1062,6 +1078,46 @@ namespace ModularFlightPanel.UI
             {
                 Add(report, node.FileName, WidgetSpecRules.RefreshTier, "ERROR", RoslynAstHelper.GetLine(node.Decl),
                     "未显式重写 RefreshTier 阶梯（必须由本类或继承链上的组件类提供，禁止依赖 " + WidgetSpecRules.ContractRootType + " 的默认阶梯）");
+            }
+
+            // ── SPEC-002B 心跳阶梯（可选重写，但频率不得高于 RefreshTier）──
+            if (node.HeartBeatTierProperty != null)
+            {
+                int line = RoslynAstHelper.GetLine(node.HeartBeatTierProperty);
+
+                if (node.HeartBeatTierProperty.DescendantNodes().OfType<CastExpressionSyntax>().Any())
+                {
+                    Add(report, node.FileName, WidgetSpecRules.HeartBeatTier, "ERROR", line,
+                        "HeartBeatTier 禁止用强制转换伪造阶梯，必须直接返回枚举成员之一");
+                }
+                else
+                {
+                    var validHbNames = RoslynAstHelper.CollectReturnedMemberNames(node.HeartBeatTierProperty)
+                        .Where(n => graph.TierMembers.Contains(n))
+                        .Distinct()
+                        .ToList();
+
+                    if (validHbNames.Count == 0)
+                    {
+                        Add(report, node.FileName, WidgetSpecRules.HeartBeatTier, "ERROR", line,
+                            "HeartBeatTier 必须直接返回 " + WidgetSpecRules.TierEnumType + " 的枚举成员；不得用字段、变量或常量间接回填");
+                    }
+                    else
+                    {
+                        string rfMember = graph.EffectiveTierMembers(node).FirstOrDefault();
+                        string hbMember = validHbNames.FirstOrDefault();
+                        if (!string.IsNullOrEmpty(rfMember) && !string.IsNullOrEmpty(hbMember))
+                        {
+                            int rfOrder = GetTierOrder(rfMember);
+                            int hbOrder = GetTierOrder(hbMember);
+                            if (hbOrder < rfOrder)
+                            {
+                                Add(report, node.FileName, WidgetSpecRules.HeartBeatTier, "ERROR", line,
+                                    "HeartBeatTier 数据心跳频率 (" + hbMember + ") 不得高于组件刷新率 RefreshTier (" + rfMember + ")，违反物理上界契约");
+                            }
+                        }
+                    }
+                }
             }
 
             // CPU 软件光栅化反模式侦测（SPEC-002 效能红线，数据单点声明于 WidgetSpecRules）
@@ -1515,6 +1571,15 @@ namespace ModularFlightPanel.UI
             var criticalOk = Scan(new[] { MakeFile("CriticalWithMeta.cs", criticalWithMeta) });
             check(criticalOk.CountByRule(WidgetSpecRules.RefreshTier) == 0, "SPEC-002 已声明 HighFrequency 的满帧组件被误判");
 
+            // ── 6B. SPEC-002B 心跳阶梯：频率高于刷新率必须报错 ──
+            string hbFaster = compliant.Replace("=> WidgetRefreshTier.Standard;", "=> WidgetRefreshTier.Relaxed;\n        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Critical;");
+            var hbFasterReport = Scan(new[] { MakeFile("HbFaster.cs", hbFaster) });
+            check(hbFasterReport.CountByRule(WidgetSpecRules.HeartBeatTier) == 1, "SPEC-002B 心跳频率高于刷新率未拦下");
+
+            string hbSlower = compliant.Replace("=> WidgetRefreshTier.Standard;", "=> WidgetRefreshTier.Critical;\n        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Slow;");
+            var hbSlowerReport = Scan(new[] { MakeFile("HbSlower.cs", hbSlower) });
+            check(hbSlowerReport.CountByRule(WidgetSpecRules.HeartBeatTier) == 0, "SPEC-002B 心跳频率低于刷新率被误判");
+
             // ── 7. SPEC-003 / SPEC-004：缺失与签名 ──
             var themeMissing = Scan(new[] { MakeFile("ThemeMissing.cs", compliant.Replace("        public override void ApplyTheme(ThemeConfig theme) { }\n", string.Empty)) });
             check(themeMissing.CountByRule(WidgetSpecRules.SemanticTheming) == 1, "SPEC-003 缺失 ApplyTheme 未拦下");
@@ -1840,7 +1905,7 @@ namespace ModularFlightPanel.UI
             new WidgetSourceFile { Name = name, Path = name, Text = text };
 
         /// <summary>合成源里的阶梯枚举声明行（自检用例需要按整行移除，故单独声明）</summary>
-        private const string SyntheticTierEnumLine = "    enum WidgetRefreshTier { Critical, Standard, Relaxed, UltraLow }\n";
+        private const string SyntheticTierEnumLine = "    enum WidgetRefreshTier { Critical, Standard, Slow, Relaxed, UltraLow, Custom }\n";
 
         /// <summary>合成组件：自带阶梯枚举声明，便于验证"取值集合从源码派生"的判定链路</summary>
         private static string BuildSyntheticWidget(string extra)

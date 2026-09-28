@@ -24,7 +24,7 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override Vector2 BaseSize => new Vector2(112f, 112f);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         // 声明式微控件
         public TextWidget Title = TextWidget.Title("N1");

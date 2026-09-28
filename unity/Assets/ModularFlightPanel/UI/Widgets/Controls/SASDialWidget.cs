@@ -50,7 +50,7 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override Vector2 BaseSize => new Vector2(96f, 116f);
         protected override bool AutoCreateCardFrame => false;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
         // 声明式微控件
         public TextWidget StatusBadge = TextWidget.Badge("SAS: OFF");
