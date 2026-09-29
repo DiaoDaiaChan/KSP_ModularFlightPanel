@@ -1104,6 +1104,8 @@
     "WIDGET_NAV_DV_REMAINING": "Δv REMAINING",
     "WIDGET_NAV_AWAITING_PLAN": "AWAITING MANEUVER FLIGHT PLAN",
     "WIDGET_NAV_ATTITUDE_NAVBALL": "ATTITUDE  /  NAVBALL",
+    "WIDGET_RECT_NAVBALL_TITLE": "RECTANGULAR ATTITUDE / NAVBALL",
+    "WIDGET_RECT_NAVBALL_DESC": "Modern rectangular attitude indicator / navball with procedural vector & stock texture modes, full navigation markers, and freely resizable aspect ratio in edit GUI.",
     "WIDGET_NAV_LIVE": "LIVE",
     "WIDGET_NAV_SURF": "SURF",
     "WIDGET_NAV_CLICK_ENGAGE_SAS": "CLICK: ENGAGE SAS",

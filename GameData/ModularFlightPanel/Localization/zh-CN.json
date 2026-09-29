@@ -1104,6 +1104,8 @@
     "WIDGET_NAV_DV_REMAINING": "剩余 Δv",
     "WIDGET_NAV_AWAITING_PLAN": "等待机动飞行计划",
     "WIDGET_NAV_ATTITUDE_NAVBALL": "姿态 / 导航球",
+    "WIDGET_RECT_NAVBALL_TITLE": "矩形姿态 / 导航球",
+    "WIDGET_RECT_NAVBALL_DESC": "现代矩形姿态仪 / 导航球，集成超清矢量/贴图渲染、全量导航标线，支持在编辑GUI中任意非等比调节长宽比。",
     "WIDGET_NAV_LIVE": "实时",
     "WIDGET_NAV_SURF": "表面",
     "WIDGET_NAV_CLICK_ENGAGE_SAS": "点击：启用 SAS",

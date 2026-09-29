@@ -22,7 +22,7 @@ namespace ModularFlightPanel.UI.Widgets
     [DefaultExecutionOrder(10000)]
     [AlwaysFullPower]
     [FlightWidget("navball", "navball_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 姿态球", Description = "现代超清矢量/贴图 3D 姿态球核心，支持无极缩放、姿态导引十字与全量机动矢量。", DefaultWidgetId = "core.navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, AlwaysFullPower = true, ExactIds = new[] { "core.navball" })]
-    public class NavballSphereWidget : BaseNavballSphereWidget, IPointerClickHandler
+    public class NavballSphereWidget : BaseNavballSphereWidget, IPointerClickHandler, INavballMarkerWidget
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
@@ -687,7 +687,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _markerSlots[i] = new MarkerSlot
                 {
                     Key = k,
-                    MarkerType = NavballMarkerVectorExtractor.GetMarkerType(k),
+                    MarkerType = NavballMarkerHelper.GetMarkerType(k),
                     Image = img,
                     RectTransform = img.rectTransform,
                     Handler = clickHandler
@@ -2094,13 +2094,24 @@ namespace ModularFlightPanel.UI.Widgets
     }
 
     /// <summary>
+    /// 姿态球/导航球标记物交互契约接口
+    /// </summary>
+    public interface INavballMarkerWidget
+    {
+        void OnMarkerHoverEnter(string markerKey, Vector2 pos);
+        void OnMarkerHoverExit(string markerKey);
+        void HandleMarkerClick(string markerKey, Vector2 pos);
+        void HandleMarkerRightClick(string markerKey, Vector2 pos);
+    }
+
+    /// <summary>
     /// 导航标与准星交互事件拦截转发器 (Click-to-SAS 航电操作路由 & 悬停反馈)
     /// </summary>
     public class NavballMarkerClickHandler : MonoBehaviour,
         IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
     {
         public string MarkerKey;
-        public NavballSphereWidget Widget;
+        public INavballMarkerWidget Widget;
         public bool IsHovered { get; private set; }
         public bool IsPressed { get; private set; }
 

@@ -1025,6 +1025,15 @@ namespace ModularFlightPanel.Editor
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(vnav);
                 }
+                else if (id == "nav.rect_navball" || id == "rect_navball" || id == "rectangular_navball" || id == "core.rect_navball")
+                {
+                    var rnav = new WidgetConfig(id, "矩形姿态球", x, y, 1.0f)
+                    {
+                        WidgetType = "rect_navball",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(rnav);
+                }
                 else if (id == "core.sas_dial" || id == "core.sas_dial_3d")
                 {
                     bool is3D = (id == "core.sas_dial_3d");

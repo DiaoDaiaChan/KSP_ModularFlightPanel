@@ -55,6 +55,12 @@ Shader "ModularFlightPanel/NavballRaymarch"
         // 近地平精细游标阶梯 (Vernier Fine Scale Detail)
         _VernierScaleDetail ("Vernier Scale Detail", Range(0.0, 1.0)) = 0.0
 
+        // 视口孔径与几何长宽比 (Aperture Shape & Aspect Ratio)
+        _ApertureShape ("Aperture Shape (0=Circle, 1=Rectangle)", Float) = 0.0
+        _AspectRatio ("Aspect Ratio (Width / Height)", Float) = 1.0
+        _CornerRadius ("Corner Radius", Range(0.0, 0.5)) = 0.05
+        _FovScale ("FOV Scale", Range(0.4, 2.5)) = 1.0
+
         // UGUI 系统参数 (Required for UI.Mask & Canvas compatibility)
         _Color ("Tint", Color) = (1,1,1,1)
         _StencilComp ("Stencil Comparison", Float) = 8
@@ -165,6 +171,10 @@ Shader "ModularFlightPanel/NavballRaymarch"
             float4 _MarkerAvoid3;
             float _GroundHazardAlert;
             float _VernierScaleDetail;
+            float _ApertureShape;
+            float _AspectRatio;
+            float _CornerRadius;
+            float _FovScale;
 
             fixed4 _Color;
             float4 _ClipRect;
@@ -1094,12 +1104,24 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
             fixed4 SampleProceduralNavball(float2 subCoord)
             {
-                float subR2 = dot(subCoord, subCoord);
-                float subZ = sqrt(max(0.0, 1.0 - subR2));
-                float3 subViewRay = float3(subCoord.x, subCoord.y, subZ);
+                float3 subViewRay;
+                float subNdotV = 1.0;
+                if (_ApertureShape < 0.5)
+                {
+                    float subR2 = dot(subCoord, subCoord);
+                    float subZ = sqrt(max(0.0, 1.0 - subR2));
+                    subViewRay = float3(subCoord.x, subCoord.y, subZ);
+                    subNdotV = subZ;
+                }
+                else
+                {
+                    float ar = max(_AspectRatio, 0.1);
+                    float fov = max(_FovScale, 0.2);
+                    subViewRay = normalize(float3(subCoord.x * ar * 0.95 * fov, subCoord.y * 0.95 * fov, 1.0));
+                    subNdotV = 1.0;
+                }
                 float3 subP = RotateByQuaternion(subViewRay, _SphereInvRotation);
                 subP = normalize(subP);
-                float subNdotV = subZ;
 
                 float3 procP = subP;
                 float signH = 1.0;
@@ -1137,26 +1159,50 @@ Shader "ModularFlightPanel/NavballRaymarch"
             {
                 // 1. 屏幕空间以 [0.5, 0.5] 为原点归一化到 [-1, 1] 坐标
                 float2 coord = (i.uv - 0.5) * 2.0;
-                float r2 = dot(coord, coord);
-                float r = sqrt(r2);
 
-                // 2. 硬件导数亚像素完美抗锯齿边缘 (Subpixel Silhouette AA)
-                float edgeAA = clamp(fwidth(r) * 0.75, 0.0004, 0.05);
-                float circleAlpha = saturate((1.0 - r) / edgeAA);
-                if (circleAlpha <= 0.0) discard;
+                float circleAlpha = 1.0;
+                float rectAlpha = 1.0;
+                float z = 1.0;
+                float3 viewRay;
+                float NdotV = 1.0;
 
-                // 3. 逆向求解正交视线与单位球相交：正面球体深度 Z
-                float z = sqrt(max(0.0, 1.0 - r2));
+                if (_ApertureShape < 0.5)
+                {
+                    // 2. 经典圆形导航球 (Classic Circular Navball)
+                    float r2 = dot(coord, coord);
+                    float r = sqrt(r2);
+                    float edgeAA = clamp(fwidth(r) * 0.75, 0.0004, 0.05);
+                    circleAlpha = saturate((1.0 - r) / edgeAA);
+                    if (circleAlpha <= 0.0) discard;
 
-                // 视线空间正面单位球面向量：X 右 (+x)，Y 上 (+y)，面向观察者的正面半球满足 Z = +z (前向沿 +Z)
-                float3 viewRay = float3(coord.x, coord.y, z);
+                    // 3. 逆向求解正交视线与单位球相交：正面球体深度 Z
+                    z = sqrt(max(0.0, 1.0 - r2));
+
+                    // 视线空间正面单位球面向量：X 右 (+x)，Y 上 (+y)，面向观察者的正面半球满足 Z = +z (前向沿 +Z)
+                    viewRay = float3(coord.x, coord.y, z);
+                    NdotV = z;
+                }
+                else
+                {
+                    // 现代矩形姿态仪 / 导航球 (Modern Rectangular ADI / Navball)
+                    float2 halfBox = float2(1.0, 1.0);
+                    float rCorner = clamp(_CornerRadius, 0.001, 0.45);
+                    float2 dBox = abs(coord) - (halfBox - rCorner);
+                    float distBox = length(max(dBox, 0.0)) + min(max(dBox.x, dBox.y), 0.0) - rCorner;
+                    float edgeAA = clamp(fwidth(distBox) * 0.75, 0.0004, 0.05);
+                    rectAlpha = saturate(-distBox / edgeAA);
+                    if (rectAlpha <= 0.0) discard;
+
+                    float ar = max(_AspectRatio, 0.1);
+                    float fov = max(_FovScale, 0.2);
+                    viewRay = normalize(float3(coord.x * ar * 0.95 * fov, coord.y * 0.95 * fov, 1.0));
+                    z = 1.0;
+                    NdotV = 1.0;
+                }
 
                 // 4. 将视线空间坐标通过姿态逆旋转四元数变换，求得球体模型本地三维坐标 p！
                 float3 p = RotateByQuaternion(viewRay, _SphereInvRotation);
                 p = normalize(p);
-
-                // 在正交相机投影下，视线法线点积 NdotV 恒等于几何深度 z
-                float NdotV = z;
 
                 fixed4 col;
 
@@ -1307,7 +1353,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float3 lightDir = normalize(float3(-0.35, 0.6, 0.7));
                 float3 viewDir = float3(0, 0, 1);
                 float3 halfDir = normalize(lightDir + viewDir);
-                float3 viewNormal = float3(coord.x, coord.y, z);
+                float3 viewNormal = (_ApertureShape < 0.5) ? float3(coord.x, coord.y, z) : float3(0, 0, 1);
                 float specAngle = saturate(dot(viewNormal, halfDir));
                 float spec = pow(specAngle, _Glossiness) * _SpecIntensity;
                 col.rgb += _SpecularColor.rgb * spec * 0.20;
@@ -1317,7 +1363,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 col.a *= UnityGet2DClipping(i.worldPosition.xy, _ClipRect);
                 #endif
 
-                col.a *= circleAlpha * i.color.a;
+                float shapeAlpha = (_ApertureShape < 0.5) ? circleAlpha : rectAlpha;
+                col.a *= shapeAlpha * i.color.a;
                 return col;
             }
             ENDCG
