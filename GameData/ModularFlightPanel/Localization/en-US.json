@@ -1418,6 +1418,17 @@
     "WIDGET_MANEUVER_NODE_TITLE": "MANEUVER NODE",
     "WIDGET_MANEUVER_WARP": "WARP",
     "WIDGET_MANEUVER_DEL": "DEL",
-    "WIDGET_GAUGE_LIMIT_HARD": "HARD"
+    "WIDGET_GAUGE_LIMIT_HARD": "HARD",
+    "CTX_UNLOCK_POS": "🔓 Unlock Position",
+    "CTX_LOCK_POS": "🔒 Lock Position",
+    "CTX_RESET_TRANSFORM": "↺ Reset Transform",
+    "CTX_COMPACT_MODE": "⛶ Compact Mode",
+    "CTX_INSPECT_TELEM": "🔍 Inspect Telemetry",
+    "CTX_HIDE_WIDGET": "✕ Hide Widget",
+    "CTX_UNIT_CYCLE": "📏 Switch Units",
+    "CTX_UNIT_CHANGED_FMT": "Unit system switched to: {0}",
+    "CTX_TELEM_INSPECT_FMT": "Widget: {0} ({1}) | Pos: ({2:F0}, {3:F0}) | Scale: {4:F2}",
+    "WIDGET_NAV_MANEUVER_NODE_V2": "Maneuver Node v2",
+    "WIDGET_SIG_COMMNET_V2": "CommNet Signal v2"
   }
 }

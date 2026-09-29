@@ -829,7 +829,26 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public virtual void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
+            if (LogicCore != null)
+            {
+                OnRenderState();
+            }
             OnUpdateRender(context.DeltaTime);
+        }
+
+        /// <summary>
+        /// 纯 C# 业务解算大脑核心（可选）。
+        /// 若子类提供 LogicCore，则数据心跳自动优先执行 LogicCore.Evaluate，UI绘制循环自动执行 OnRenderState() 将纯状态映射至视觉；
+        /// 若未提供，则自动回退调用传统的 OnUpdateTelemetry(context.Telemetry)。
+        /// </summary>
+        protected virtual IWidgetLogic LogicCore => null;
+
+        /// <summary>
+        /// 当组件接入 WidgetLogic 时在 OnUIDrawLoop 中触发的状态渲染回调。
+        /// 专用于从 LogicCore 的纯结构体状态映射到 UI 控件，零遥测查询，零 GC 分配。
+        /// </summary>
+        protected virtual void OnRenderState()
+        {
         }
 
         /// <summary>
@@ -839,7 +858,14 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public virtual void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            OnUpdateTelemetry(context.Telemetry);
+            if (LogicCore != null)
+            {
+                LogicCore.Evaluate(context.Telemetry, context.DeltaTime);
+            }
+            else
+            {
+                OnUpdateTelemetry(context.Telemetry);
+            }
         }
 
         /// <summary>

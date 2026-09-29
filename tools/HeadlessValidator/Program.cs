@@ -281,7 +281,8 @@ namespace ModularFlightPanel.HeadlessValidator
                     var stModFailures = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.SelfTest();
                     var stInternalFailures = ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.RunSelfTest();
                     var stFieldFailures = ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.SelfTest();
-                    int stTotalFailures = stRuleFailures.Count + stColorFailures.Count + stI18nFailures.Count + stI18nDictFailures.Count + stModFailures.Count + stInternalFailures.Count + stFieldFailures.Count;
+                    var stUnitFailures = RunAvionicsUnitSystemSelfTest(out int stUnitCount);
+                    int stTotalFailures = stRuleFailures.Count + stColorFailures.Count + stI18nFailures.Count + stI18nDictFailures.Count + stModFailures.Count + stInternalFailures.Count + stFieldFailures.Count + stUnitFailures.Count;
 
                     if (stTotalFailures == 0)
                     {
@@ -291,7 +292,8 @@ namespace ModularFlightPanel.HeadlessValidator
                                    + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条"
                                    + $" + 内部控件几何 {ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.LastSelfTestCaseCount} 条"
                                    + $" + 字段穿透语义 {ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.LastSelfTestCaseCount} 条"
-                                   + $" + 现代化网格闭包 {ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.LastSelfTestCaseCount} 条 全部符合预期。");
+                                   + $" + 现代化网格闭包 {ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.LastSelfTestCaseCount} 条"
+                                   + $" + 航电量纲体系 {stUnitCount} 条用例 全部符合预期。");
                     }
                     else
                     {
@@ -302,6 +304,7 @@ namespace ModularFlightPanel.HeadlessValidator
                         foreach (var f in stInternalFailures) PrintError("内部控件几何自检失败: " + f);
                         foreach (var f in stFieldFailures) PrintError("字段穿透语义自检失败: " + f);
                         foreach (var f in stModFailures) PrintError("现代化网格闭包自检失败: " + f);
+                        foreach (var f in stUnitFailures) PrintError("航电量纲自检失败: " + f);
                     }
                     return stTotalFailures == 0 ? 0 : 1;
                 }
@@ -473,7 +476,8 @@ namespace ModularFlightPanel.HeadlessValidator
             var i18nDictSelfTestFailures = I18nDictionaryValueAudit.SelfTest();
             var internalSelfTestFailures = ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.RunSelfTest();
             var fieldSelfTestFailures = ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.SelfTest();
-            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0 && i18nDictSelfTestFailures.Count == 0 && internalSelfTestFailures.Count == 0 && fieldSelfTestFailures.Count == 0)
+            var unitFailures = RunAvionicsUnitSystemSelfTest(out int unitTestCount);
+            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0 && i18nDictSelfTestFailures.Count == 0 && internalSelfTestFailures.Count == 0 && fieldSelfTestFailures.Count == 0 && unitFailures.Count == 0)
             {
                 // 用例条数由内核回传真实计数：写死数字必然随代码漂移成假信息。
                 PrintSuccess($"审计内核自检通过: 规则自检 {WidgetSourceAudit.LastSelfTestCaseCount} 条对照用例"
@@ -481,7 +485,8 @@ namespace ModularFlightPanel.HeadlessValidator
                            + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条用例"
                            + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条用例"
                            + $" + 内部控件几何 {ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.LastSelfTestCaseCount} 条用例"
-                           + $" + 字段穿透语义 {ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.LastSelfTestCaseCount} 条用例 全部符合预期。");
+                           + $" + 字段穿透语义 {ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.LastSelfTestCaseCount} 条用例"
+                           + $" + 航电量纲体系 {unitTestCount} 条用例 全部符合预期。");
             }
             else
             {
@@ -491,7 +496,8 @@ namespace ModularFlightPanel.HeadlessValidator
                 foreach (var failure in i18nDictSelfTestFailures) PrintError($"I18n 词典值自检失败: {failure}");
                 foreach (var failure in internalSelfTestFailures) PrintError($"内部控件几何自检失败: {failure}");
                 foreach (var failure in fieldSelfTestFailures) PrintError($"字段穿透语义自检失败: {failure}");
-                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count + i18nDictSelfTestFailures.Count + internalSelfTestFailures.Count + fieldSelfTestFailures.Count;
+                foreach (var failure in unitFailures) PrintError($"航电量纲自检失败: {failure}");
+                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count + i18nDictSelfTestFailures.Count + internalSelfTestFailures.Count + fieldSelfTestFailures.Count + unitFailures.Count;
             }
 
             // 8. Unity 无头预览工程镜像一致性（清单 tools/unity_mirror.manifest 即合约）
@@ -1972,6 +1978,86 @@ namespace ModularFlightPanel.HeadlessValidator
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"  ✘ [FAIL] {msg}");
             Console.ResetColor();
+        }
+
+        public static List<string> RunAvionicsUnitSystemSelfTest(out int testCount)
+        {
+            var failures = new List<string>();
+            int count = 0;
+
+            void AssertEqual(double actual, double expected, double tolerance, string message)
+            {
+                count++;
+                if (Math.Abs(actual - expected) > tolerance)
+                {
+                    failures.Add($"{message} - 预期: {expected}, 实际: {actual}, 容差: {tolerance}");
+                }
+            }
+
+            void AssertString(string actual, string expected, string message)
+            {
+                count++;
+                if (actual != expected)
+                {
+                    failures.Add($"{message} - 预期: '{expected}', 实际: '{actual}'");
+                }
+            }
+
+            // 1. Length conversions
+            double nm = AvionicsUnitSystem.Convert(1852.0, UnitDimension.Length, UnitSystemMode.Nautical, out string nmSym);
+            AssertEqual(nm, 1.0, 0.01, "米转海里 (1852m -> 1NM)");
+            AssertString(nmSym, "NM", "海里单位符号");
+
+            double ft = AvionicsUnitSystem.Convert(1000.0, UnitDimension.Length, UnitSystemMode.AviationImperial, out string ftSym);
+            AssertEqual(ft, 3280.84, 0.1, "米转英尺 (1000m -> 3280.84ft)");
+            AssertString(ftSym, "ft", "英尺单位符号");
+
+            // 2. Velocity conversions
+            double kts = AvionicsUnitSystem.Convert(100.0, UnitDimension.Velocity, UnitSystemMode.AviationImperial, out string ktsSym);
+            AssertEqual(kts, 194.38, 0.1, "m/s 转节 (100 m/s -> 194.38 kts)");
+            AssertString(ktsSym, "kts", "节单位符号");
+
+            double ms = AvionicsUnitSystem.Convert(100.0, UnitDimension.Velocity, UnitSystemMode.MetricSI, out string msSym);
+            AssertEqual(ms, 100.0, 0.001, "公制速度 m/s 保持");
+            AssertString(msSym, "m/s", "公制速度符号");
+
+            // 3. Pressure conversions
+            double inHg = AvionicsUnitSystem.Convert(101.325, UnitDimension.Pressure, UnitSystemMode.AviationImperial, out string inHgSym);
+            AssertEqual(inHg, 29.92, 0.05, "kPa 转 inHg (101.325 kPa -> 29.92 inHg)");
+            AssertString(inHgSym, "inHg", "汞柱英寸符号");
+
+            double hPa = AvionicsUnitSystem.Convert(101.325, UnitDimension.Pressure, UnitSystemMode.AviationHybrid, out string hPaSym);
+            AssertEqual(hPa, 1013.25, 0.1, "kPa 转 hPa (101.325 kPa -> 1013.25 hPa)");
+            AssertString(hPaSym, "hPa", "百帕符号");
+
+            // 4. Temperature conversions
+            double degF = AvionicsUnitSystem.Convert(20.0, UnitDimension.Temperature, UnitSystemMode.AviationImperial, out string fSym);
+            AssertEqual(degF, 68.0, 0.01, "摄氏度转华氏度 (20 °C -> 68 °F)");
+            AssertString(fSym, "°F", "华氏度符号");
+
+            double degC = AvionicsUnitSystem.Convert(20.0, UnitDimension.Temperature, UnitSystemMode.MetricSI, out string cSym);
+            AssertEqual(degC, 20.0, 0.001, "公制温度保持 (20 °C)");
+            AssertString(cSym, "°C", "摄氏度符号");
+
+            // 5. Mass conversions
+            double lbs = AvionicsUnitSystem.Convert(1.0, UnitDimension.Mass, UnitSystemMode.AviationImperial, out string lbsSym);
+            AssertEqual(lbs, 2204.62, 0.1, "吨转磅 (1.0 t -> 2204.62 lbs)");
+            AssertString(lbsSym, "lbs", "磅符号");
+
+            // 6. Adaptive formatting
+            string fmtAlt = AvionicsUnitSystem.FormatAdaptive(15000.0, UnitDimension.Length, UnitSystemMode.MetricSI, "0.0");
+            AssertString(fmtAlt, "15.0 km", "大尺度公制自适应高度 (15000m -> 15.0 km)");
+
+            string fmtSmallAlt = AvionicsUnitSystem.FormatAdaptive(500.0, UnitDimension.Length, UnitSystemMode.MetricSI, "0.0");
+            AssertString(fmtSmallAlt, "500.0 m", "小尺度公制自适应高度 (500m -> 500.0 m)");
+
+            // 7. Defensive NaN / Infinity defense
+            double nanVal = AvionicsUnitSystem.Convert(double.NaN, UnitDimension.Velocity, UnitSystemMode.MetricSI, out string nanSym);
+            AssertEqual(nanVal, 0.0, 0.0001, "NaN 防御");
+            AssertString(nanSym, "--", "NaN 符号防御");
+
+            testCount = count;
+            return failures;
         }
     }
 

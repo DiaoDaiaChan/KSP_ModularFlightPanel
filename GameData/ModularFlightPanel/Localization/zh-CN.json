@@ -1418,6 +1418,17 @@
     "WIDGET_MANEUVER_NODE_TITLE": "机动节点",
     "WIDGET_MANEUVER_WARP": "跃迁",
     "WIDGET_MANEUVER_DEL": "删除",
-    "WIDGET_GAUGE_LIMIT_HARD": "硬限"
+    "WIDGET_GAUGE_LIMIT_HARD": "硬限",
+    "CTX_UNLOCK_POS": "🔓 解锁位置",
+    "CTX_LOCK_POS": "🔒 锁定位置",
+    "CTX_RESET_TRANSFORM": "↺ 复位形变",
+    "CTX_COMPACT_MODE": "⛶ 紧凑模式",
+    "CTX_INSPECT_TELEM": "🔍 遥测检视",
+    "CTX_HIDE_WIDGET": "✕ 隐藏组件",
+    "CTX_UNIT_CYCLE": "📏 切换单位",
+    "CTX_UNIT_CHANGED_FMT": "单位体系已切换为: {0}",
+    "CTX_TELEM_INSPECT_FMT": "组件: {0} ({1}) | 坐标: ({2:F0}, {3:F0}) | 缩放: {4:F2}",
+    "WIDGET_NAV_MANEUVER_NODE_V2": "机动节点 v2",
+    "WIDGET_SIG_COMMNET_V2": "通信网络 v2"
   }
 }

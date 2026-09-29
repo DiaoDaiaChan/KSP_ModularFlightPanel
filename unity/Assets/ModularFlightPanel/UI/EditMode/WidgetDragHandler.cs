@@ -304,7 +304,16 @@ namespace ModularFlightPanel.UI
 
         public void OnPointerDown(PointerEventData eventData)
         {
-            if (!IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar) return;
+            if (FlightHUDManager.IsMouseOverFloatingToolbar) return;
+
+            // 右键唤起通用航电上下文菜单 (锁定/复位/紧凑模式/单位制式/遥测检视)
+            if (eventData.button == PointerEventData.InputButton.Right)
+            {
+                WidgetActionRouter.HandlePointerDown(_ownerWidget, eventData);
+                return;
+            }
+
+            if (!IsEditModeActive) return;
 
             // 优先拦截：处于微控件精细定制态且命中下属微控件
             if (HUDEditModeToolbar.IsSubControlCustomizerOpen && _ownerWidget != null && _ownerWidget.Controls != null && WidgetSelectionManager.IsSelected(_ownerWidget))

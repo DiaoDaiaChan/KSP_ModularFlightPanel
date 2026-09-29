@@ -31,6 +31,7 @@
     <Compile Include="..\..\src\ModularFlightPanel\Config\WidgetConfig.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\Config\ThemeConfig.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\Config\AvionicsConfigParser.cs" />
+    <Compile Include="..\..\src\ModularFlightPanel\Core\Avionics\AvionicsUnitSystem.cs" />
   </ItemGroup>
 
   <ItemGroup>
