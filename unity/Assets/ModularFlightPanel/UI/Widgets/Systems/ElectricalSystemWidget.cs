@@ -117,16 +117,16 @@ namespace ModularFlightPanel.UI.Widgets
             subRt.anchoredPosition = new Vector2(0f, -(size.y * 0.5f) + 6f * s);
         }
 
-        private string _lastBat1Val;
-        private string _lastBat1Sub;
-        private string _lastBat2Val;
-        private string _lastBat2Sub;
-        private string _lastDcBusVal;
-        private string _lastDcBusSub;
-        private string _lastGenVal;
-        private string _lastGenSub;
-        private string _lastLoadVal;
-        private string _lastLoadSub;
+        private readonly Cached<string> _lastBat1Val = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBat1Sub = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBat2Val = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBat2Sub = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastDcBusVal = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastDcBusSub = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastGenVal = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastGenSub = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastLoadVal = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastLoadSub = new Cached<string>(string.Empty);
 
         private string _dataBat1Val;
         private string _dataBat1Sub;
@@ -210,62 +210,52 @@ namespace ModularFlightPanel.UI.Widgets
 
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
 
-            if (_dataBat1Val != _lastBat1Val)
+            if (_lastBat1Val.Update(_dataBat1Val))
             {
-                _lastBat1Val = _dataBat1Val;
                 _bat1ValText.text = _dataBat1Val;
             }
-            if (_dataBat1Sub != _lastBat1Sub)
+            if (_lastBat1Sub.Update(_dataBat1Sub))
             {
-                _lastBat1Sub = _dataBat1Sub;
                 _bat1SubText.text = _dataBat1Sub;
                 ApplyText(_bat1SubText, _dataBat1SubRole, theme);
             }
 
-            if (_dataBat2Val != _lastBat2Val)
+            if (_lastBat2Val.Update(_dataBat2Val))
             {
-                _lastBat2Val = _dataBat2Val;
                 _bat2ValText.text = _dataBat2Val;
             }
-            if (_dataBat2Sub != _lastBat2Sub)
+            if (_lastBat2Sub.Update(_dataBat2Sub))
             {
-                _lastBat2Sub = _dataBat2Sub;
                 _bat2SubText.text = _dataBat2Sub;
                 ApplyText(_bat2SubText, _dataBat2SubRole, theme);
             }
 
-            if (_dataDcVal != _lastDcBusVal)
+            if (_lastDcBusVal.Update(_dataDcVal))
             {
-                _lastDcBusVal = _dataDcVal;
                 _dcBusValText.text = _dataDcVal;
             }
-            if (_dataDcSub != _lastDcBusSub)
+            if (_lastDcBusSub.Update(_dataDcSub))
             {
-                _lastDcBusSub = _dataDcSub;
                 _dcBusSubText.text = _dataDcSub;
             }
 
-            if (_dataGenVal != _lastGenVal)
+            if (_lastGenVal.Update(_dataGenVal))
             {
-                _lastGenVal = _dataGenVal;
                 _genValText.text = _dataGenVal;
                 ApplyText(_genValText, _dataGenRole, theme);
             }
-            if (_dataGenSub != _lastGenSub)
+            if (_lastGenSub.Update(_dataGenSub))
             {
-                _lastGenSub = _dataGenSub;
                 _genSubText.text = _dataGenSub;
             }
 
-            if (_dataLoadVal != _lastLoadVal)
+            if (_lastLoadVal.Update(_dataLoadVal))
             {
-                _lastLoadVal = _dataLoadVal;
                 _loadValText.text = _dataLoadVal;
                 ApplyText(_loadValText, _dataLoadRole, theme);
             }
-            if (_dataLoadSub != _lastLoadSub)
+            if (_lastLoadSub.Update(_dataLoadSub))
             {
-                _lastLoadSub = _dataLoadSub;
                 _loadSubText.text = _dataLoadSub;
             }
         }

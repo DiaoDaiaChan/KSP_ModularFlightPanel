@@ -82,16 +82,16 @@ namespace ModularFlightPanel.UI.Widgets
         private string _driftTemplate = "34.7 L";
 
         // 脏检查与缓存
-        private float _lastRenderedHeading = -999f;
-        private string _lastTens = string.Empty;
-        private string _lastGsTas = string.Empty;
-        private string _lastWind = string.Empty;
-        private string _lastProc = string.Empty;
-        private string _lastWp = string.Empty;
-        private string _lastEta = string.Empty;
-        private string _lastVor1 = string.Empty;
-        private string _lastVor2 = string.Empty;
-        private string _lastDrift = string.Empty;
+        private readonly CachedFloat _lastRenderedHeading = new CachedFloat(-999f);
+        private readonly Cached<string> _lastTens = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastGsTas = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastWind = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastProc = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastWp = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastEta = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastVor1 = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastVor2 = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastDrift = new Cached<string>(string.Empty);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -453,65 +453,56 @@ namespace ModularFlightPanel.UI.Widgets
             if (!_cachedHasVessel) return;
 
             // 1. 更新顶部大十位数显 (如 24 代表 240°)
-            if (_cachedTensStr != _lastTens)
+            if (_lastTens.Update(_cachedTensStr))
             {
-                _lastTens = _cachedTensStr;
                 if (_topHeadingText != null) _topHeadingText.text = _cachedTensStr;
             }
 
             // 2. 动态更新四角航电读数
-            if (_cachedGsTas != _lastGsTas)
+            if (_lastGsTas.Update(_cachedGsTas))
             {
-                _lastGsTas = _cachedGsTas;
                 if (_gsTasText != null) _gsTasText.text = _cachedGsTas;
             }
 
-            if (_cachedWind != _lastWind)
+            if (_lastWind.Update(_cachedWind))
             {
-                _lastWind = _cachedWind;
                 if (_windText != null) _windText.text = _cachedWind;
             }
 
-            if (_cachedProc != _lastProc)
+            if (_lastProc.Update(_cachedProc))
             {
-                _lastProc = _cachedProc;
                 if (_procedureText != null) _procedureText.text = _cachedProc;
             }
 
-            if (_cachedWp != _lastWp)
+            if (_lastWp.Update(_cachedWp))
             {
-                _lastWp = _cachedWp;
                 if (_waypointNameDistText != null) _waypointNameDistText.text = _cachedWp;
             }
 
-            if (_cachedEta != _lastEta)
+            if (_lastEta.Update(_cachedEta))
             {
-                _lastEta = _cachedEta;
                 if (_waypointEtaText != null) _waypointEtaText.text = _cachedEta;
             }
 
-            if (_cachedVor1 != _lastVor1)
+            if (_lastVor1.Update(_cachedVor1))
             {
-                _lastVor1 = _cachedVor1;
                 if (_vor1Text != null) _vor1Text.text = _cachedVor1;
             }
 
-            if (_cachedVor2 != _lastVor2)
+            if (_lastVor2.Update(_cachedVor2))
             {
-                _lastVor2 = _cachedVor2;
                 if (_vor2Text != null) _vor2Text.text = _cachedVor2;
             }
 
-            if (_cachedDrift != _lastDrift)
+            if (_lastDrift.Update(_cachedDrift))
             {
-                _lastDrift = _cachedDrift;
                 if (_driftText != null) _driftText.text = _cachedDrift;
             }
 
             // 3. 动态更新罗盘圆弧十度刻度带
-            if (Mathf.Abs(Mathf.DeltaAngle(_cachedHeading, _lastRenderedHeading)) > 0.05f)
+            if (Mathf.Abs(Mathf.DeltaAngle(_cachedHeading, _lastRenderedHeading.Value)) > 0.05f)
             {
-                _lastRenderedHeading = _cachedHeading;
+                _lastRenderedHeading.Update(_cachedHeading);
                 UpdateArcCompassRose(_cachedHeading, context.Theme);
             }
         }

@@ -45,8 +45,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private static Texture2D _sharedRingTexture;
 
         // 遥测缓存与脏标记
-        private double _lastCachedValue = double.NaN;
-        private string _lastFormattedText = string.Empty;
+        private readonly CachedDouble _lastCachedValue = new CachedDouble(double.NaN);
+        private readonly Cached<string> _lastFormattedText = new Cached<string>(string.Empty);
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
 
         // CustomTemplate 自定义通道
@@ -218,16 +218,15 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             // 2. 脏标记检查：变化小于阈值时不触发 UGUI 文本重排
             double delta = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (!double.IsNaN(_lastCachedValue) && Math.Abs(_dataVal - _lastCachedValue) <= delta)
+            if (!double.IsNaN(_lastCachedValue.Value) && Math.Abs(_dataVal - _lastCachedValue.Value) <= delta)
             {
                 return;
             }
-            _lastCachedValue = _dataVal;
+            _lastCachedValue.Update(_dataVal);
 
             // 3. 更新数字文本
-            if (_dataNewStr != _lastFormattedText)
+            if (_lastFormattedText.Update(_dataNewStr))
             {
-                _lastFormattedText = _dataNewStr;
                 _primaryValueText.text = _dataNewStr;
             }
 
@@ -288,9 +287,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         private void ShowUnavailable()
         {
-            if (_lastFormattedText == "---") return;
-            _lastCachedValue = double.NaN;
-            _lastFormattedText = "---";
+            if (_lastFormattedText.Value == "---") return;
+            _lastCachedValue.Reset(double.NaN);
+            _lastFormattedText.Update("---");
             _primaryValueText.text = "---";
             if (_arcFillImage != null) _arcFillImage.fillAmount = 0f;
         }

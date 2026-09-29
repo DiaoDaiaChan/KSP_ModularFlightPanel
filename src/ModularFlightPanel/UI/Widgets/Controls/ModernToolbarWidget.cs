@@ -97,8 +97,8 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         private readonly List<ToolbarItemView> _itemViews = new List<ToolbarItemView>();
-        private float _lastSyncTime = -1f;
-        private int _cachedButtonCount = -1;
+        private readonly CachedFloat _lastSyncTime = new CachedFloat(-1f);
+        private readonly Cached<int> _cachedButtonCount = new Cached<int>(-1);
         private ThemeConfig _currentTheme;
         private float _currentPanelWidth = 240f;
         private float _currentPanelHeight = 240f;
@@ -421,7 +421,7 @@ namespace ModularFlightPanel.UI.Widgets
                     if (stockBtns != null) allButtons.AddRange(stockBtns);
                     if (modBtns != null) allButtons.AddRange(modBtns);
 
-                    _cachedButtonCount = allButtons.Count;
+                    _cachedButtonCount.Update(allButtons.Count);
                     if (allButtons.Count > 0)
                     {
                         hasRealLauncher = true;
@@ -1357,8 +1357,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isCollapsed) return;
 
             float now = Time.unscaledTime;
-            if (now - _lastSyncTime < 1.0f) return;
-            _lastSyncTime = now;
+            if (now - _lastSyncTime.Value < 1.0f) return;
+            _lastSyncTime.Update(now);
 
 #if KSP_RUNTIME
             try
@@ -1371,7 +1371,7 @@ namespace ModularFlightPanel.UI.Widgets
                     int currentCount = (stockBtns != null ? stockBtns.Count : 0) + (modBtns != null ? modBtns.Count : 0);
 
                     // 1. 动态自动适配：如果模组数量发生变化，标记自适应重构
-                    if (currentCount != _cachedButtonCount)
+                    if (currentCount != _cachedButtonCount.Value)
                     {
                         _needsRepopulate = true;
                         return;

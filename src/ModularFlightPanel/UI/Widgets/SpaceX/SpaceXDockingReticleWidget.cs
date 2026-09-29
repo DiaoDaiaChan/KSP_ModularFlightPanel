@@ -60,13 +60,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private Image _thrusterRight;
 
         // 脏数据缓存与双轨快照
-        private string _lastRoll = string.Empty;
-        private string _lastPitch = string.Empty;
-        private string _lastYaw = string.Empty;
-        private string _lastRange = string.Empty;
-        private string _lastRate = string.Empty;
-        private string _lastXyz = string.Empty;
-        private int _lastThrusterState = -1;
+        private readonly Cached<string> _lastRoll = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastPitch = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastYaw = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRange = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRate = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastXyz = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastThrusterState = new Cached<int>(-1);
 
         private string _pendingRoll = string.Empty;
         private string _pendingPitch = string.Empty;
@@ -361,44 +361,37 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             base.OnUIDrawLoop(ref context);
 
-            if (_rollValue != null && _pendingRoll != _lastRoll)
+            if (_rollValue != null && _lastRoll.Update(_pendingRoll))
             {
-                _lastRoll = _pendingRoll;
                 _rollValue.text = _pendingRoll;
             }
-            if (_pitchValue != null && _pendingPitch != _lastPitch)
+            if (_pitchValue != null && _lastPitch.Update(_pendingPitch))
             {
-                _lastPitch = _pendingPitch;
                 _pitchValue.text = _pendingPitch;
             }
-            if (_yawValue != null && _pendingYaw != _lastYaw)
+            if (_yawValue != null && _lastYaw.Update(_pendingYaw))
             {
-                _lastYaw = _pendingYaw;
                 _yawValue.text = _pendingYaw;
             }
-            if (_rangeValue != null && _pendingRange != _lastRange)
+            if (_rangeValue != null && _lastRange.Update(_pendingRange))
             {
-                _lastRange = _pendingRange;
                 _rangeValue.text = _pendingRange;
             }
-            if (_rateValue != null && _pendingRate != _lastRate)
+            if (_rateValue != null && _lastRate.Update(_pendingRate))
             {
-                _lastRate = _pendingRate;
                 _rateValue.text = _pendingRate;
             }
-            if (_xyzOffsets != null && _pendingXyz != _lastXyz)
+            if (_xyzOffsets != null && _lastXyz.Update(_pendingXyz))
             {
-                _lastXyz = _pendingXyz;
                 _xyzOffsets.text = _pendingXyz;
             }
-            if (_crossRootRt != null && _crossRootRt.anchoredPosition != _pendingCrossPos)
+            if (_crossRootRt != null)
             {
-                _crossRootRt.anchoredPosition = _pendingCrossPos;
+                _crossRootRt.SetAnchoredPositionSafe(_pendingCrossPos);
             }
 
-            if (_pendingThrusterState != _lastThrusterState)
+            if (_lastThrusterState.Update(_pendingThrusterState))
             {
-                _lastThrusterState = _pendingThrusterState;
                 ThemeConfig th = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
                 WidgetStyleManager st = WidgetStyleManager.Instance;
                 Color activeCol = st.GetMeterColor(MeterStyleRole.Primary, th);

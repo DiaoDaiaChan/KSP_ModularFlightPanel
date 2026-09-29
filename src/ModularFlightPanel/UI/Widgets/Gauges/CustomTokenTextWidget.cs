@@ -96,8 +96,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string _pendingTitle = "多通道遥测综合矩阵卡";
         private string _pendingBadge = "MJ MATRIX";
-        private string _lastRenderedTitle = null;
-        private string _lastRenderedBadge = null;
+        private readonly Cached<string> _lastRenderedTitle = new Cached<string>(null);
+        private readonly Cached<string> _lastRenderedBadge = new Cached<string>(null);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -284,15 +284,13 @@ namespace ModularFlightPanel.UI.Widgets
                 RebuildUI(context.Theme);
             }
 
-            if (_titleText != null && _pendingTitle != _lastRenderedTitle)
+            if (_titleText != null && _lastRenderedTitle.Update(_pendingTitle))
             {
-                _lastRenderedTitle = _pendingTitle;
                 _titleText.SetTextSafe(_pendingTitle);
             }
 
-            if (_badgeText != null && _badgeBadgeChanged())
+            if (_badgeText != null && _lastRenderedBadge.Update(_pendingBadge))
             {
-                _lastRenderedBadge = _pendingBadge;
                 _badgeText.SetTextSafe(_pendingBadge);
             }
 
@@ -321,11 +319,6 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
             }
-        }
-
-        private bool _badgeBadgeChanged()
-        {
-            return _pendingBadge != _lastRenderedBadge;
         }
 
         private TextStyleRole EvaluateSemanticRole(string token, IFlightTelemetry telemetry)

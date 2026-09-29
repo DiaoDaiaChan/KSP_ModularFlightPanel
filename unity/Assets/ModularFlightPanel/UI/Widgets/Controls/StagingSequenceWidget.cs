@@ -138,8 +138,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private const int MaxDisplayedStages = 32;
         private const int MaxChipsPerStage = 24;
         private readonly List<StageItemUI> _stageItems = new List<StageItemUI>();
-        private float _lastLayoutW = -1f;
-        private float _lastLayoutH = -1f;
+        private readonly CachedFloat _lastLayoutW = new CachedFloat(-1f);
+        private readonly CachedFloat _lastLayoutH = new CachedFloat(-1f);
         private readonly List<StageDeltaVInfo> _reusableSortedStages = new List<StageDeltaVInfo>();
         private static readonly Comparison<StageDeltaVInfo> _stageOrderAscending = (a, b) => a.Stage.CompareTo(b.Stage);
         private static readonly Comparison<StageDeltaVInfo> _stageOrderDescending = (a, b) => b.Stage.CompareTo(a.Stage);
@@ -205,12 +205,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         // 缓存与脏检查标记
         private ThemeConfig _cachedTheme;
-        private bool _lastStageLocked = false;
-        private string _lastTotalDvStr = string.Empty;
-        private double _lastTotalDv = double.NaN;
+        private readonly Cached<bool> _lastStageLocked = new Cached<bool>(false);
+        private readonly Cached<string> _lastTotalDvStr = new Cached<string>(string.Empty);
+        private readonly CachedDouble _lastTotalDv = new CachedDouble(double.NaN);
 
         private int _highestStageNumber = 0;
-        private int _lastActiveStage = -1;
+        private readonly Cached<int> _lastActiveStage = new Cached<int>(-1);
         private float _stageTriggerRecoilTimer = 0f;
         private float _stageTriggerFlashTimer = 0f;
         public static float CustomAnimationTime = -1f;
@@ -901,10 +901,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             // 1. 读取当前物理尺寸并自适应布局 (仅在尺寸变化时才调用 ApplyLayout)
             float currentW = RectTransform.rect.width > 10f ? RectTransform.rect.width : DefaultWidth * s;
             float currentH = RectTransform.rect.height > 10f ? RectTransform.rect.height : DefaultHeight * s;
-            if (Mathf.Abs(currentW - _lastLayoutW) > 0.5f || Mathf.Abs(currentH - _lastLayoutH) > 0.5f)
+            if (Mathf.Abs(currentW - _lastLayoutW.Value) > 0.5f || Mathf.Abs(currentH - _lastLayoutH.Value) > 0.5f)
             {
-                _lastLayoutW = currentW;
-                _lastLayoutH = currentH;
+                _lastLayoutW.Update(currentW);
+                _lastLayoutH.Update(currentH);
                 ApplyLayout(currentW, currentH);
             }
 
@@ -915,18 +915,17 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             double totalDv = _cachedTotalDv;
-            if (Math.Abs(totalDv - _lastTotalDv) >= 0.5 || string.IsNullOrEmpty(_lastTotalDvStr))
+            if (Math.Abs(totalDv - _lastTotalDv.Value) >= 0.5 || string.IsNullOrEmpty(_lastTotalDvStr.Value))
             {
-                _lastTotalDv = totalDv;
-                _lastTotalDvStr = $"{totalDv:N0} m/s";
-                SetTextIfChanged(_totalDvText, _lastTotalDvStr);
+                _lastTotalDv.Update(totalDv);
+                _lastTotalDvStr.Update($"{totalDv:N0} m/s");
+                SetTextIfChanged(_totalDvText, _lastTotalDvStr.Value);
             }
 
             // 3. 分级安全锁与状态
             bool isLocked = _cachedIsLocked;
-            if (isLocked != _lastStageLocked)
+            if (_lastStageLocked.Update(isLocked))
             {
-                _lastStageLocked = isLocked;
                 string statusText = isLocked ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定") : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
                 SetTextIfChanged(_statusBadgeText, statusText);
                 _statusBadgeText.color = isLocked 
@@ -943,7 +942,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             List<StageDeltaVInfo> sortedStages = _reusableSortedStages;
 
-            if (_lastActiveStage >= 0 && _lastActiveStage != curStage)
+            if (_lastActiveStage.Value >= 0 && _lastActiveStage.Value != curStage)
             {
                 for (int m = 0; m < _stageItems.Count; m++)
                 {
@@ -953,7 +952,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     }
                 }
             }
-            _lastActiveStage = curStage;
+            _lastActiveStage.Update(curStage);
 
             int displayCount = Mathf.Min(sortedStages.Count, MaxDisplayedStages);
 

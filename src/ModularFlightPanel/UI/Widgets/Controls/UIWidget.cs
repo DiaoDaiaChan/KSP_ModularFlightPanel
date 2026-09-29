@@ -81,8 +81,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         private readonly List<WidgetRowView> _rowViews = new List<WidgetRowView>();
         private bool _isCollapsed = false;
-        private int _lastWidgetCount = -1;
-        private int _lastActiveCount = -1;
+        private readonly Cached<int> _lastWidgetCount = new Cached<int>(-1);
+        private readonly Cached<int> _lastActiveCount = new Cached<int>(-1);
         private ThemeConfig _cachedTheme;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -598,10 +598,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             int total = _cachedTotalWidgets;
             int active = _cachedActiveWidgets;
 
-            if (total != _lastWidgetCount || active != _lastActiveCount)
+            if (total != _lastWidgetCount.Value || active != _lastActiveCount.Value)
             {
-                _lastWidgetCount = total;
-                _lastActiveCount = active;
+                _lastWidgetCount.Update(total);
+                _lastActiveCount.Update(active);
                 SetTextIfChanged(_statusBadge, $"{active}/{total} ON");
             }
         }

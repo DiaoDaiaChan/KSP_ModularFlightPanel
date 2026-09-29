@@ -92,7 +92,7 @@ namespace ModularFlightPanel.UI
         public LinearBarWidget MeterBar = LinearBarWidget.BottomBar(MeterStyleRole.Primary, height: 4f);
 
         // 运行时遥测变动缓存 (防止高频 GC 分配与无意义的 Canvas 脏标记)
-        private double _lastCachedValue = double.NaN;
+        private readonly CachedDouble _lastCachedValue = new CachedDouble(double.NaN);
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
 
         // ------------------------------------------------------------------------------------
@@ -189,13 +189,11 @@ namespace ModularFlightPanel.UI
                 return;
             }
 
-            // 脏标记检查：阈值来自 Config.ValueDeltaThreshold，仅在显著变化时才驱动 UI 重绘
-            double delta = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.0;
-            if (!double.IsNaN(_lastCachedValue) && Math.Abs(_dataVal - _lastCachedValue) <= delta)
+            // 脏标记检查：阈值防抖，仅在显著变化时才驱动 UI 重绘
+            if (!_lastCachedValue.Update(_dataVal))
             {
                 return;
             }
-            _lastCachedValue = _dataVal;
 
             // 更新微控件读数与填充
             PrimaryValue.Text = _dataText;
@@ -272,7 +270,7 @@ namespace ModularFlightPanel.UI
         {
             if (PrimaryValue.Text == "---") return;
 
-            _lastCachedValue = double.NaN;
+            _lastCachedValue.Reset(double.NaN);
             PrimaryValue.Text = "---";
             MeterBar.SetFillAmount(0f, MeterBar.MeterRole);
 

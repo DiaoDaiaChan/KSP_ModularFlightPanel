@@ -57,14 +57,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private Text _commIss;
 
         // 变动缓存
-        private bool _lastRcs = false;
-        private bool _lastSas = false;
-        private bool _lastPrec = false;
-        private string _lastModeStr = string.Empty;
-        private string _lastPointing = string.Empty;
-        private bool _lastSpxConn = false;
-        private bool _lastTdrsConn = false;
-        private bool _lastIssConn = false;
+        private readonly Cached<bool> _lastRcs = new Cached<bool>(false);
+        private readonly Cached<bool> _lastSas = new Cached<bool>(false);
+        private readonly Cached<bool> _lastPrec = new Cached<bool>(false);
+        private readonly Cached<string> _lastModeStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastPointing = new Cached<string>(string.Empty);
+        private readonly Cached<bool> _lastSpxConn = new Cached<bool>(false);
+        private readonly Cached<bool> _lastTdrsConn = new Cached<bool>(false);
+        private readonly Cached<bool> _lastIssConn = new Cached<bool>(false);
 
         // CustomTemplate 自定义通道
         private string _rcsLabel = "RCS";
@@ -257,56 +257,48 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             ThemeConfig th = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
 
             // 1. RCS 按钮状态
-            if (_dataRcs != _lastRcs)
+            if (_lastRcs.Update(_dataRcs))
             {
-                _lastRcs = _dataRcs;
-                UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, _lastRcs, th);
+                UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, _lastRcs.Value, th);
             }
 
             // 2. SAS 按钮状态
-            if (_dataSas != _lastSas)
+            if (_lastSas.Update(_dataSas))
             {
-                _lastSas = _dataSas;
-                UpdatePillAppearance(_sasImg, _sasOutline, _sasText, _lastSas, th);
+                UpdatePillAppearance(_sasImg, _sasOutline, _sasText, _lastSas.Value, th);
             }
 
             // 3. 速度参考系模式
-            if (_dataModeName != _lastModeStr && _modeText != null)
+            if (_lastModeStr.Update(_dataModeName) && _modeText != null)
             {
-                _lastModeStr = _dataModeName;
                 _modeText.text = _dataModeName;
             }
 
             // 4. 精细控制
-            if (_dataPrec != _lastPrec)
+            if (_lastPrec.Update(_dataPrec))
             {
-                _lastPrec = _dataPrec;
-                UpdatePillAppearance(_precImg, _precOutline, _precText, _lastPrec, th);
+                UpdatePillAppearance(_precImg, _precOutline, _precText, _lastPrec.Value, th);
             }
 
             // 5. 当前指向模式
-            if (_dataPointing != _lastPointing && _pointingValue != null)
+            if (_lastPointing.Update(_dataPointing) && _pointingValue != null)
             {
-                _lastPointing = _dataPointing;
                 _pointingValue.text = _dataPointing;
             }
 
             // 6. 通信链路
-            if (_dataSpxConn != _lastSpxConn)
+            if (_lastSpxConn.Update(_dataSpxConn))
             {
-                _lastSpxConn = _dataSpxConn;
                 ApplyText(_commSpx, _dataSpxConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
 
-            if (_dataTdrsConn != _lastTdrsConn)
+            if (_lastTdrsConn.Update(_dataTdrsConn))
             {
-                _lastTdrsConn = _dataTdrsConn;
                 ApplyText(_commTdrs, _dataTdrsConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
 
-            if (_dataIssConn != _lastIssConn)
+            if (_lastIssConn.Update(_dataIssConn))
             {
-                _lastIssConn = _dataIssConn;
                 ApplyText(_commIss, _dataIssConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
         }
@@ -350,9 +342,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
 
-            UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, _lastRcs, theme);
-            UpdatePillAppearance(_sasImg, _sasOutline, _sasText, _lastSas, theme);
-            UpdatePillAppearance(_precImg, _precOutline, _precText, _lastPrec, theme);
+            UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, _lastRcs.Value, theme);
+            UpdatePillAppearance(_sasImg, _sasOutline, _sasText, _lastSas.Value, theme);
+            UpdatePillAppearance(_precImg, _precOutline, _precText, _lastPrec.Value, theme);
 
             if (_modeImg != null) _modeImg.color = style.GetSurfaceColor(SurfaceStyleRole.Control, theme);
             if (_modeOutline != null) _modeOutline.effectColor = style.GetLineColor(LineWeight.Subtle, theme);
@@ -361,9 +353,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_pointingLabel != null) ApplyText(_pointingLabel, TextStyleRole.Label, theme);
             if (_pointingValue != null) ApplyText(_pointingValue, TextStyleRole.Accent, theme);
 
-            ApplyText(_commSpx, _lastSpxConn ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
-            ApplyText(_commTdrs, _lastTdrsConn ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
-            ApplyText(_commIss, _lastIssConn ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
+            ApplyText(_commSpx, _lastSpxConn.Value ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
+            ApplyText(_commTdrs, _lastTdrsConn.Value ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
+            ApplyText(_commIss, _lastIssConn.Value ? TextStyleRole.Accent : TextStyleRole.Muted, theme);
         }
 
         protected override void OnDestroy()

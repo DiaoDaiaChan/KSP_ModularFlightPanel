@@ -96,14 +96,14 @@ namespace ModularFlightPanel.UI.Widgets
         private string _typeToken = "{FRAME:TYPE}";
         private string _frameToken = "{FRAME}";
         private string _framePrefix = "";
-        private SpeedDisplayMode _lastSpeedMode = (SpeedDisplayMode)(-1);
-        private string _lastNavHookCategory = null;
-        private string _lastNavHookTitle = null;
+        private readonly Cached<SpeedDisplayMode> _lastSpeedMode = new Cached<SpeedDisplayMode>((SpeedDisplayMode)(-1));
+        private readonly Cached<string> _lastNavHookCategory = new Cached<string>(null);
+        private readonly Cached<string> _lastNavHookTitle = new Cached<string>(null);
         private bool _dataHasVessel = false;
-        private bool _lastRcs = false;
-        private bool _lastSas = false;
-        private string _lastRefCategory;
-        private string _lastRefTitle;
+        private readonly Cached<bool> _lastRcs = new Cached<bool>(false);
+        private readonly Cached<bool> _lastSas = new Cached<bool>(false);
+        private readonly Cached<string> _lastRefCategory = new Cached<string>(null);
+        private readonly Cached<string> _lastRefTitle = new Cached<string>(null);
         private bool _refFrameDirty = false;
 
         // ── 视图初始化钩子：绑定多语言悬浮提示 ──
@@ -128,8 +128,8 @@ namespace ModularFlightPanel.UI.Widgets
             _dataHasVessel = true;
             IFlightTelemetry telem = context.Telemetry;
 
-            _lastRcs = telem.IsRCSEnabled;
-            _lastSas = telem.IsSASEnabled;
+            _lastRcs.Update(telem.IsRCSEnabled);
+            _lastSas.Update(telem.IsSASEnabled);
 
             // 参考系模式状态同步：仅在速度模式或探针参考系变更时执行慢速重构，巡航静默 0 开销
             SpeedDisplayMode curSpeedMode = telem.CurrentSpeedMode;
@@ -137,15 +137,15 @@ namespace ModularFlightPanel.UI.Widgets
             string curHookCat = navHook != null ? navHook.ReferenceFrameCategory : null;
             string curHookTitle = navHook != null ? navHook.FrameName : null;
 
-            bool frameDirty = curSpeedMode != _lastSpeedMode 
-                || curHookCat != _lastNavHookCategory 
-                || curHookTitle != _lastNavHookTitle;
+            bool frameDirty = curSpeedMode != _lastSpeedMode.Value 
+                || curHookCat != _lastNavHookCategory.Value 
+                || curHookTitle != _lastNavHookTitle.Value;
 
             if (frameDirty)
             {
-                _lastSpeedMode = curSpeedMode;
-                _lastNavHookCategory = curHookCat;
-                _lastNavHookTitle = curHookTitle;
+                _lastSpeedMode.Update(curSpeedMode);
+                _lastNavHookCategory.Update(curHookCat);
+                _lastNavHookTitle.Update(curHookTitle);
 
                 string curSpeedModeName = telem.SpeedModeName;
 
@@ -175,8 +175,8 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                _lastRefCategory = category;
-                _lastRefTitle = !string.IsNullOrEmpty(_framePrefix) ? $"{_framePrefix}{title}" : title;
+                _lastRefCategory.Update(category);
+                _lastRefTitle.Update(!string.IsNullOrEmpty(_framePrefix) ? $"{_framePrefix}{title}" : title);
                 _refFrameDirty = true;
             }
         }
@@ -187,15 +187,15 @@ namespace ModularFlightPanel.UI.Widgets
             base.OnUIDrawLoop(ref context);
             if (!_dataHasVessel) return;
 
-            if (Rcs.IsActive != _lastRcs)
-                Rcs.IsActive = _lastRcs;
-            if (Sas.IsActive != _lastSas)
-                Sas.IsActive = _lastSas;
+            if (Rcs.IsActive != _lastRcs.Value)
+                Rcs.IsActive = _lastRcs.Value;
+            if (Sas.IsActive != _lastSas.Value)
+                Sas.IsActive = _lastSas.Value;
 
             if (_refFrameDirty)
             {
                 _refFrameDirty = false;
-                Ref.UpdateFrame(_lastRefCategory, _lastRefTitle, context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null));
+                Ref.UpdateFrame(_lastRefCategory.Value, _lastRefTitle.Value, context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null));
             }
         }
 

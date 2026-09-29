@@ -136,20 +136,19 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         private double _activeScale = 1.0;
         private bool _showingIntegerReadout = false;
 
-        private double _lastRawVal = double.NaN;
-        private double _lastDisplayVal = double.NaN;
-        private string _lastCenterText = string.Empty;
-        private string _lastUnitText = string.Empty;
-        private string _lastTopText = string.Empty;
-        private string _lastBottomText = string.Empty;
+        private readonly CachedDouble _lastRawVal = new CachedDouble(double.NaN, tolerance: 0.05);
+        private readonly Cached<string> _lastCenterText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastUnitText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTopText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBottomText = new Cached<string>(string.Empty);
 
         private double _filteredTrendRate = 0.0;
-        private double _lastRawTrendRate = 0.0;
-        private float _lastTrendAngle = 0f;
-        private double _lastTerrainVal = double.NaN;
-        private string _lastBadgePrimaryText = string.Empty;
-        private string _lastBadgeSecondaryText = string.Empty;
-        private int _lastAlertLevel = -1;
+        private readonly CachedDouble _lastRawTrendRate = new CachedDouble(0.0, tolerance: DYNAMIC_DEADBAND);
+        private float _trendAngle = 0f;
+        private readonly CachedDouble _lastTerrainVal = new CachedDouble(double.NaN, tolerance: 0.2);
+        private readonly Cached<string> _lastBadgePrimaryText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBadgeSecondaryText = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastAlertLevel = new Cached<int>(-1);
 
         // 双轨状态快照
         private double _pendingRawVal = double.NaN;
@@ -714,14 +713,13 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             double rawRate = TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
             if (double.IsNaN(rawRate)) rawRate = 0.0;
 
-            if (Math.Abs(rawRate - _lastRawTrendRate) < DYNAMIC_DEADBAND)
+            if (_lastRawTrendRate.Update(rawRate))
             {
-                rawRate = _filteredTrendRate;
+                _filteredTrendRate = rawRate;
             }
             else
             {
-                _filteredTrendRate = rawRate;
-                _lastRawTrendRate = rawRate;
+                rawRate = _filteredTrendRate;
             }
 
             _trendRatePositive = rawRate >= 0;
@@ -780,26 +778,20 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             if (!_hasPendingHeartbeat) return;
 
             // 1. 几何脏检查防抖 (死区小于阈值不重构弧度刻度)
-            double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (double.IsNaN(_lastRawVal) || Math.Abs(_pendingRawVal - _lastRawVal) > deltaThreshold)
+            if (_lastRawVal.Update(_pendingRawVal))
             {
-                _lastRawVal = _pendingRawVal;
-                _lastDisplayVal = _pendingDisplayVal;
-
                 UpdateCenterReadout(_pendingDisplayVal);
                 UpdateArcTicks(_pendingDisplayVal);
             }
 
             // 2. 模式标签与次级信息窗更新
-            if (_pendingTopText != _lastTopText)
+            if (_lastTopText.Update(_pendingTopText))
             {
-                _lastTopText = _pendingTopText;
                 SetTextIfChanged(_modeTagText, _pendingTopText);
             }
 
-            if (_pendingBottomText != _lastBottomText)
+            if (_lastBottomText.Update(_pendingBottomText))
             {
-                _lastBottomText = _pendingBottomText;
                 SetTextIfChanged(_bottomSecText, _pendingBottomText);
             }
 
@@ -985,15 +977,13 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             }
 
             formatted = UIFactory.FormatTabular(formatted);
-            if (formatted != _lastCenterText)
+            if (_lastCenterText.Update(formatted))
             {
-                _lastCenterText = formatted;
                 if (_centerValueText != null) _centerValueText.text = formatted;
             }
 
-            if (_activeUnitStr != _lastUnitText)
+            if (_lastUnitText.Update(_activeUnitStr))
             {
-                _lastUnitText = _activeUnitStr;
                 if (_centerUnitText != null) _centerUnitText.text = _activeUnitStr;
             }
         }
@@ -1100,30 +1090,26 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
             if (_isSpeedTape)
             {
-                if (_pendingBadgePrimary != _lastBadgePrimaryText)
+                if (_lastBadgePrimaryText.Update(_pendingBadgePrimary))
                 {
-                    _lastBadgePrimaryText = _pendingBadgePrimary;
                     if (_escortBadgeTextPrimary != null) _escortBadgeTextPrimary.text = _pendingBadgePrimary;
                 }
-                if (_pendingBadgeSecondary != _lastBadgeSecondaryText)
+                if (_lastBadgeSecondaryText.Update(_pendingBadgeSecondary))
                 {
-                    _lastBadgeSecondaryText = _pendingBadgeSecondary;
                     if (_escortBadgeTextSecondary != null) _escortBadgeTextSecondary.text = _pendingBadgeSecondary;
                 }
             }
             else
             {
-                if (_pendingBadgePrimary != _lastBadgePrimaryText)
+                if (_lastBadgePrimaryText.Update(_pendingBadgePrimary))
                 {
-                    _lastBadgePrimaryText = _pendingBadgePrimary;
                     if (_escortBadgeTextPrimary != null) _escortBadgeTextPrimary.text = _pendingBadgePrimary;
                 }
             }
 
             // 更新胶囊高亮外框
-            if (alertLevel != _lastAlertLevel)
+            if (_lastAlertLevel.Update(alertLevel))
             {
-                _lastAlertLevel = alertLevel;
                 if (_escortBadgeOutline != null)
                 {
                     _escortBadgeOutline.effectColor = alertLevel == 2 ? style.GetMeterColor(MeterStyleRole.Danger, theme) :
@@ -1142,7 +1128,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                 }
             }
 
-            _lastTrendAngle = Mathf.Lerp(_lastTrendAngle, _pendingTargetAngle, 0.25f);
+            _trendAngle = Mathf.Lerp(_trendAngle, _pendingTargetAngle, 0.25f);
             bool isDeadband = _pendingIsDeadband;
 
             // 1. 动态充填同心圆弧发光流线段 (Concentric Ribbon Fill)
@@ -1160,19 +1146,19 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
                 float segAng = -halfSpan + (i * step);
                 bool inRange = false;
-                if (_lastTrendAngle >= 0f)
+                if (_trendAngle >= 0f)
                 {
-                    inRange = (segAng >= -step * 0.5f && segAng <= _lastTrendAngle + step * 0.5f);
+                    inRange = (segAng >= -step * 0.5f && segAng <= _trendAngle + step * 0.5f);
                 }
                 else
                 {
-                    inRange = (segAng <= step * 0.5f && segAng >= _lastTrendAngle - step * 0.5f);
+                    inRange = (segAng <= step * 0.5f && segAng >= _trendAngle - step * 0.5f);
                 }
 
                 if (inRange)
                 {
                     seg.gameObject.SetActive(true);
-                    float distFraction = Mathf.Clamp01(Mathf.Abs(segAng) / (Mathf.Abs(_lastTrendAngle) + 0.1f));
+                    float distFraction = Mathf.Clamp01(Mathf.Abs(segAng) / (Mathf.Abs(_trendAngle) + 0.1f));
                     float segAlpha = Mathf.Lerp(0.40f, 0.95f, distFraction);
                     seg.color = WidgetStyleManager.WithAlpha(dynamicCol, segAlpha);
                 }
@@ -1191,10 +1177,10 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             {
                 if (!_escortPointerObj.activeSelf) _escortPointerObj.SetActive(true);
 
-                Vector2 needlePos = EvalArcPoint(escortRadius, _lastTrendAngle);
+                Vector2 needlePos = EvalArcPoint(escortRadius, _trendAngle);
                 _escortPointerRt.anchoredPosition = needlePos;
 
-                float rotAngle = _isLeftOrientation ? -_lastTrendAngle : _lastTrendAngle;
+                float rotAngle = _isLeftOrientation ? -_trendAngle : _trendAngle;
                 _escortPointerRt.localEulerAngles = new Vector3(0f, 0f, rotAngle);
 
                 if (_escortPointerLine != null) _escortPointerLine.color = dynamicCol;
@@ -1209,8 +1195,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             double agl = _pendingAgl;
             if (agl < 300.0 && agl >= -5.0)
             {
-                if (!double.IsNaN(_lastTerrainVal) && Math.Abs(agl - _lastTerrainVal) < 0.2) return;
-                _lastTerrainVal = agl;
+                if (!_lastTerrainVal.Update(agl)) return;
 
                 ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
                 Color warnCol = WidgetStyleManager.WithAlpha(WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Warning, theme), 0.35f);
@@ -1226,9 +1211,9 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                     }
                 }
             }
-            else if (!double.IsNaN(_lastTerrainVal) && _lastTerrainVal < 300.0)
+            else if (_lastTerrainVal.Value < 300.0)
             {
-                _lastTerrainVal = agl;
+                _lastTerrainVal.Reset(agl);
                 ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
                 Color baseCol = WidgetStyleManager.Instance.GetCardBackgroundColor(CardStyleRole.Normal, theme);
                 foreach (var img in _bandBgImages) if (img != null) img.color = baseCol;

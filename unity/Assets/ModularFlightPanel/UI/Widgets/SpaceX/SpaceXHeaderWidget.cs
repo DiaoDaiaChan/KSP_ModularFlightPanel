@@ -73,6 +73,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private readonly List<SpaceXSlotItem> _slots = new List<SpaceXSlotItem>();
         public IReadOnlyList<SpaceXSlotItem> Slots => _slots;
 
+        // ── 智能私有缓存与脏检查 ──
+        private readonly Cached<int> _lastSlotCount = new Cached<int>(-1);
+        private readonly Cached<bool> _lastHasVessel = new Cached<bool>(false);
+
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
@@ -486,8 +490,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
+            _lastSlotCount.Update(_slots.Count);
             IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel) return;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                _lastHasVessel.Update(false);
+                return;
+            }
+            _lastHasVessel.Update(true);
 
             for (int i = 0; i < _slots.Count; i++)
             {
@@ -555,6 +565,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+            if (!_lastHasVessel.Value) return;
 
             for (int i = 0; i < _slots.Count; i++)
             {

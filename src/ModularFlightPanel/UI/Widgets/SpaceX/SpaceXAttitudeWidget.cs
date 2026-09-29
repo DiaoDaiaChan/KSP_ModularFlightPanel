@@ -49,10 +49,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private static Texture2D _sharedStarshipTexture;
 
         // 姿态缓存与脏标记
-        private float _lastPitch = float.NaN;
-        private float _lastRoll = float.NaN;
-        private float _lastHeading = float.NaN;
-        private string _lastAttitudeStr = string.Empty;
+        private readonly CachedFloat _lastPitch = new CachedFloat(float.NaN, 0.1f);
+        private readonly CachedFloat _lastRoll = new CachedFloat(float.NaN, 0.1f);
+        private readonly CachedFloat _lastHeading = new CachedFloat(float.NaN, 0.1f);
+        private readonly Cached<string> _lastAttitudeStr = new Cached<string>(string.Empty);
 
         // CustomTemplate 自定义通道
         private string _northLabel = "N";
@@ -226,17 +226,13 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             float heading = _dataHeading;
 
             // 姿态变动脏标记检查 (0.1 度分辨率)
-            if (!float.IsNaN(_lastPitch) &&
-                Mathf.Abs(pitch - _lastPitch) < 0.1f &&
-                Mathf.Abs(roll - _lastRoll) < 0.1f &&
-                Mathf.Abs(heading - _lastHeading) < 0.1f)
+            bool pDirty = _lastPitch.Update(pitch);
+            bool rDirty = _lastRoll.Update(roll);
+            bool hDirty = _lastHeading.Update(heading);
+            if (!pDirty && !rDirty && !hDirty)
             {
                 return;
             }
-
-            _lastPitch = pitch;
-            _lastRoll = roll;
-            _lastHeading = heading;
 
             float s = CurrentDpiScale;
 
@@ -270,9 +266,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_attitudeLabelText != null)
             {
                 string attStr = string.Format(_attitudeFormat, pitch, roll);
-                if (attStr != _lastAttitudeStr)
+                if (_lastAttitudeStr.Update(attStr))
                 {
-                    _lastAttitudeStr = attStr;
                     _attitudeLabelText.text = attStr;
                 }
             }

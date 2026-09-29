@@ -128,6 +128,10 @@ namespace ModularFlightPanel.UI.Widgets
             public RectTransform VibPointerPivot;
             public Image VibPointerImage;
 
+            public readonly CachedFloat LastOilPPos = new CachedFloat(-9999f, 0.1f);
+            public readonly CachedFloat LastOilTPos = new CachedFloat(-9999f, 0.1f);
+            public readonly CachedFloat LastVibPos = new CachedFloat(-9999f, 0.1f);
+
             // 运行时遥测防抖缓存
             public double LastN1Val = double.NaN;
             public double LastEgtVal = double.NaN;
@@ -247,20 +251,20 @@ namespace ModularFlightPanel.UI.Widgets
         private string _rudderToken = "{TRIM_YAW}";
 
         // 运行时防抖脏检查缓存 (100% 零 GC)
-        private string _lastTatStr = string.Empty;
-        private string _lastModeStr = string.Empty;
-        private string _lastGearStr = string.Empty;
-        private string _lastFlapStr = string.Empty;
-        private string _lastStabStr = string.Empty;
-        private string _lastRudderStr = string.Empty;
-        private string _lastCabAltStr = string.Empty;
-        private string _lastCabRateStr = string.Empty;
-        private string _lastDeltaPStr = string.Empty;
-        private string _lastLdgAltStr = string.Empty;
-        private string _lastGrossWtStr = string.Empty;
-        private string _lastTotalFuelStr = string.Empty;
-        private string _lastSatStr = string.Empty;
-        private string _lastFuelTempStr = string.Empty;
+        private readonly Cached<string> _lastTatStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastModeStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastGearStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFlapStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastStabStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRudderStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastCabAltStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastCabRateStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastDeltaPStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastLdgAltStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastGrossWtStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTotalFuelStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastSatStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFuelTempStr = new Cached<string>(string.Empty);
 
         // 双轨架构快照字段
         private bool _cachedHasVessel;
@@ -1394,15 +1398,13 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 顶端 TAT 与推力模式
-            if (_cachedTatStr != _lastTatStr)
+            if (_lastTatStr.Update(_cachedTatStr))
             {
-                _lastTatStr = _cachedTatStr;
                 if (_tatText != null) _tatText.text = _cachedTatStr;
             }
 
-            if (_cachedModeStr != _lastModeStr)
+            if (_lastModeStr.Update(_cachedModeStr))
             {
-                _lastModeStr = _cachedModeStr;
                 if (_thrustModeText != null) _thrustModeText.text = _cachedModeStr;
             }
 
@@ -1451,7 +1453,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (col.OilPPointerPivot != null)
                 {
                     float ptrY = (_cachedColOilPFrac[i] - 0.5f) * tapeHalfH * 2f;
-                    col.OilPPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    if (col.LastOilPPos.Update(ptrY))
+                    {
+                        col.OilPPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    }
                 }
 
                 if (_cachedColOilTStr[i] != col.LastOilTStr)
@@ -1462,7 +1467,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (col.OilTPointerPivot != null)
                 {
                     float ptrY = (_cachedColOilTFrac[i] - 0.5f) * tapeHalfH * 2f;
-                    col.OilTPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    if (col.LastOilTPos.Update(ptrY))
+                    {
+                        col.OilTPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    }
                 }
 
                 if (_cachedColOilQStr[i] != col.LastOilQStr)
@@ -1479,14 +1487,16 @@ namespace ModularFlightPanel.UI.Widgets
                 if (col.VibPointerPivot != null)
                 {
                     float ptrY = (_cachedColVibFrac[i] - 0.5f) * tapeHalfH * 2f;
-                    col.VibPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    if (col.LastVibPos.Update(ptrY))
+                    {
+                        col.VibPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
+                    }
                 }
             }
 
             // 4. 右侧起落架状态 (GEAR)
-            if (_cachedGearStr != _lastGearStr)
+            if (_lastGearStr.Update(_cachedGearStr))
             {
-                _lastGearStr = _cachedGearStr;
                 if (_gearStatusText != null) _gearStatusText.text = _cachedGearStr;
                 if (_cachedGearStr.IndexOf("DOWN", StringComparison.OrdinalIgnoreCase) >= 0
                     || _cachedGearStr.IndexOf(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase) >= 0)
@@ -1502,9 +1512,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 右侧襟翼 (FLAPS)
-            if (_cachedFlapStr != _lastFlapStr)
+            if (_lastFlapStr.Update(_cachedFlapStr))
             {
-                _lastFlapStr = _cachedFlapStr;
                 if (_flapPositionText != null) _flapPositionText.text = _cachedFlapStr;
                 float travelH = 36f * s;
                 float ptrY = -_cachedFlapRatio * travelH;
@@ -1513,9 +1522,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 6. 安定面配平 (STAB TRIM)
-            if (_cachedStabStr != _lastStabStr)
+            if (_lastStabStr.Update(_cachedStabStr))
             {
-                _lastStabStr = _cachedStabStr;
                 if (_stabValueText != null) _stabValueText.text = _cachedStabStr;
                 if (_stabTargetText != null) _stabTargetText.text = _cachedStabStr;
 
@@ -1525,9 +1533,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 7. 方向舵配平 (RUDDER TRIM)
-            if (_cachedRudderStr != _lastRudderStr)
+            if (_lastRudderStr.Update(_cachedRudderStr))
             {
-                _lastRudderStr = _cachedRudderStr;
                 if (_rudderValueText != null) _rudderValueText.text = _cachedRudderStr;
 
                 float ptrX = _cachedRudderFrac * 14f * s;
@@ -1536,46 +1543,39 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 8. ECS 客舱增压系统
-            if (_cachedCabAltStr != _lastCabAltStr)
+            if (_lastCabAltStr.Update(_cachedCabAltStr))
             {
-                _lastCabAltStr = _cachedCabAltStr;
                 if (_cabAltValue != null) _cabAltValue.text = _cachedCabAltStr;
             }
 
-            if (_cachedCabRateStr != _lastCabRateStr)
+            if (_lastCabRateStr.Update(_cachedCabRateStr))
             {
-                _lastCabRateStr = _cachedCabRateStr;
                 if (_cabRateValue != null) _cabRateValue.text = _cachedCabRateStr;
             }
 
-            if (_cachedDeltaPStr != _lastDeltaPStr)
+            if (_lastDeltaPStr.Update(_cachedDeltaPStr))
             {
-                _lastDeltaPStr = _cachedDeltaPStr;
                 if (_deltaPValue != null) _deltaPValue.text = _cachedDeltaPStr;
             }
 
             // 9. 全机总重与燃油统计 (GROSS WT / TOTAL FUEL)
-            if (_cachedGrossWtStr != _lastGrossWtStr)
+            if (_lastGrossWtStr.Update(_cachedGrossWtStr))
             {
-                _lastGrossWtStr = _cachedGrossWtStr;
                 if (_grossWtText != null) _grossWtText.text = _cachedGrossWtStr;
             }
 
-            if (_cachedTotalFuelStr != _lastTotalFuelStr)
+            if (_lastTotalFuelStr.Update(_cachedTotalFuelStr))
             {
-                _lastTotalFuelStr = _cachedTotalFuelStr;
                 if (_totalFuelText != null) _totalFuelText.text = _cachedTotalFuelStr;
             }
 
-            if (_cachedSatStr != _lastSatStr)
+            if (_lastSatStr.Update(_cachedSatStr))
             {
-                _lastSatStr = _cachedSatStr;
                 if (_satText != null) _satText.text = _cachedSatStr;
             }
 
-            if (_cachedFuelTempStr != _lastFuelTempStr)
+            if (_lastFuelTempStr.Update(_cachedFuelTempStr))
             {
-                _lastFuelTempStr = _cachedFuelTempStr;
                 if (_fuelTempText != null) _fuelTempText.text = _cachedFuelTempStr;
             }
         }

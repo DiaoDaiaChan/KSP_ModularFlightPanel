@@ -69,6 +69,8 @@ namespace ModularFlightPanel.UI.Widgets
             public float TargetFuelFrac;
             public float CurrentFuelFrac;
             public int StageNumber;
+            public readonly CachedFloat LastFuelFrac = new CachedFloat(-1f, 0.001f);
+            public readonly Cached<string> LastPctText = new Cached<string>(string.Empty);
         }
 
         // 外框与底板
@@ -114,12 +116,8 @@ namespace ModularFlightPanel.UI.Widgets
         private ThemeConfig _cachedTheme;
 
         // 脏检查缓存
-        private string _lastTitleStr = string.Empty;
-        private string _lastSubTitleStr = string.Empty;
-        private string _lastTwrStr = string.Empty;
-        private string _lastDvStr = string.Empty;
-        private string _lastStatusStr = string.Empty;
-        private string _lastBayFooterStr = string.Empty;
+        private readonly Cached<string> _cachedTitleSlot = new Cached<string>(string.Empty);
+        private readonly CachedFloat _lastPlumeFlutter = new CachedFloat(-1f, 0.005f);
 
         // 动画时间模拟支持 (用于无头单帧/连续帧确定性渲染)
         public static float CustomAnimationTime = -1f;
@@ -742,8 +740,12 @@ namespace ModularFlightPanel.UI.Widgets
                     }
 
                     float trackW = FuelTrackMaxWidth * s;
-                    row.FuelFillRt.sizeDelta = new Vector2(trackW * row.CurrentFuelFrac, row.FuelFillRt.sizeDelta.y);
-                    SetTextIfChanged(row.FuelPercentText, snap.IsExpended ? "JETT" : $"{(propFrac * 100f):F0}%");
+                    if (row.LastFuelFrac.Update(row.CurrentFuelFrac))
+                    {
+                        row.FuelFillRt.sizeDelta = new Vector2(trackW * row.CurrentFuelFrac, row.FuelFillRt.sizeDelta.y);
+                        string pctText = snap.IsExpended ? "JETT" : $"{(propFrac * 100f):F0}%";
+                        SetTextIfChanged(row.FuelPercentText, pctText);
+                    }
                 }
                 else
                 {
@@ -775,8 +777,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (_plumeObj != null && _plumeObj.activeSelf)
             {
                 float flutter = 1.0f + Mathf.Sin(time * 26f) * 0.12f;
-                float thr = 1.0f;
-                _plumeRt.sizeDelta = new Vector2(10f * s * flutter, (10f + 14f * thr) * s * flutter);
+                if (_lastPlumeFlutter.Update(flutter))
+                {
+                    float thr = 1.0f;
+                    _plumeRt.sizeDelta = new Vector2(10f * s * flutter, (10f + 14f * thr) * s * flutter);
+                }
                 _plumeImg.color = WidgetStyleManager.WithAlpha(style.GetMeterColor(MeterStyleRole.Warning, theme), 0.85f + Mathf.Sin(time * 28f) * 0.15f);
             }
 

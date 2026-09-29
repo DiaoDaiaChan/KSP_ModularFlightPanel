@@ -63,7 +63,7 @@ namespace ModularFlightPanel.UI.Widgets
         private string _dataTitleText = "ORBIT ELEMENTS";
 
         // ── 性能节流与状态缓存 ──
-        private float _lastMeshRebuildTime = -1f;
+        private readonly CachedFloat _lastMeshRebuildTime = new CachedFloat(-1f);
         private float _cachedDpiScale = 1f; // DPI 缩放系数缓存 (供 PopulateOrbitMesh 使用，避免在 OnPopulateMesh 回调中查询 Unity API)
 
         // ── 尺寸规格：精简模式 290×116，完整模式 400×440 ──
@@ -135,35 +135,35 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _lblSpacecraft;
 
         // ── 读数防抖与字符串缓存 (避免逐帧 GC 与 Text 网格脏化) ──
-        private double _lastCompactAp = double.NaN;
-        private double _lastCompactPe = double.NaN;
-        private int _lastCompactSec = -1;
-        private double _lastCompactSma = double.NaN;
-        private double _lastCompactEcc = double.NaN;
-        private double _lastCompactInc = double.NaN;
-        private double _lastCompactLan = double.NaN;
-        private double _lastCompactAop = double.NaN;
-        private double _lastCompactTa = double.NaN;
-        private double _lastCompactPer = double.NaN;
+        private readonly CachedDouble _lastCompactAp = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastCompactPe = new CachedDouble(double.NaN);
+        private readonly Cached<int> _lastCompactSec = new Cached<int>(-1);
+        private readonly CachedDouble _lastCompactSma = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastCompactEcc = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastCompactInc = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastCompactLan = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastCompactAop = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastCompactTa = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastCompactPer = new CachedDouble(double.NaN);
 
-        private double _lastFullAp = double.NaN;
-        private double _lastFullPe = double.NaN;
-        private int _lastFullSec = -1;
-        private double _lastFullSma = double.NaN;
-        private double _lastFullEcc = double.NaN;
-        private double _lastFullLan = double.NaN;
-        private double _lastFullAop = double.NaN;
-        private double _lastFullInc = double.NaN;
-        private double _lastFullTa = double.NaN;
-        private double _lastFullPer = double.NaN;
+        private readonly CachedDouble _lastFullAp = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastFullPe = new CachedDouble(double.NaN);
+        private readonly Cached<int> _lastFullSec = new Cached<int>(-1);
+        private readonly CachedDouble _lastFullSma = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastFullEcc = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastFullLan = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastFullAop = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastFullInc = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastFullTa = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastFullPer = new CachedDouble(double.NaN);
 
         // ── 每帧复用的采样缓冲 (几何图元不再逐帧分配数组) ──
         private readonly Vector2[] _orbitPts = new Vector2[385];
         private readonly bool[] _orbitFront = new bool[385];
         private readonly Vector2[] _diskPts = new Vector2[129];
 
-        private double _lastDrawnAp = double.NaN;
-        private double _lastDrawnPe = double.NaN;
+        private readonly CachedDouble _lastDrawnAp = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastDrawnPe = new CachedDouble(double.NaN);
 
         // ── 完整模式四角微卡槽读数 ──
         private Text _fApVal, _fPeVal, _fTimeVal;
@@ -198,12 +198,12 @@ namespace ModularFlightPanel.UI.Widgets
         private Color32 _cLabelText;
 
         // ── 渲染脏标记防抖 (防止无意义像素重绘) ──
-        private double _lastDrawnSma = double.NaN;
-        private double _lastDrawnEcc = double.NaN;
-        private double _lastDrawnInc = double.NaN;
-        private double _lastDrawnLan = double.NaN;
-        private double _lastDrawnAop = double.NaN;
-        private double _lastDrawnTra = double.NaN;
+        private readonly CachedDouble _lastDrawnSma = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastDrawnEcc = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastDrawnInc = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastDrawnLan = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastDrawnAop = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastDrawnTra = new CachedDouble(double.NaN);
 
         private const double DefaultKerbinRadius = 600000.0;
 
@@ -523,11 +523,11 @@ namespace ModularFlightPanel.UI.Widgets
             float btnH = 16f * s;
             float btnX = 18f * s;
             float btnY = (targetSize.y * 0.5f - 14f) * s;
-            _modeButton.GetComponent<RectTransform>().anchoredPosition = new Vector2(btnX, btnY);
+            _modeButton.GetComponent<RectTransform>().SetAnchoredPositionSafe(new Vector2(btnX, btnY));
 
             if (_isFullMode)
             {
-                _lastDrawnSma = double.NaN; // 强制首次绘制
+                _lastDrawnSma.Reset(double.NaN); // 强制首次绘制
             }
         }
 
@@ -549,7 +549,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             ApplyReadoutColors(theme);      // 先着色读数
             CacheThemeColors(theme);        // 再烘焙语义色缓存 (两者共用同一色谱)
-            if (_isFullMode) _lastDrawnSma = double.NaN;
+            if (_isFullMode) _lastDrawnSma.Reset(double.NaN);
         }
 
         /// <summary>
@@ -862,15 +862,15 @@ namespace ModularFlightPanel.UI.Widgets
                 UpdateFullModeReadouts(_dataAp, _dataPe, _dataTAp, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
                 float now = context.UnscaledTime;
                 bool geomDirty = CheckDirty(_dataSma, _dataEcc, _dataInc, _dataLan, _dataAop);
-                bool traDirty = double.IsNaN(_lastDrawnTra) || Math.Abs(NormalizeDegrees(_dataTra) - NormalizeDegrees(_lastDrawnTra)) > 1.5;
+                bool traDirty = double.IsNaN(_lastDrawnTra.Value) || Math.Abs(NormalizeDegrees(_dataTra) - NormalizeDegrees(_lastDrawnTra.Value)) > 1.5;
 
-                if ((now - _lastMeshRebuildTime >= 0.25f || _lastMeshRebuildTime < 0f) && (geomDirty || traDirty))
+                if ((now - _lastMeshRebuildTime.Value >= 0.25f || _lastMeshRebuildTime.Value < 0f) && (geomDirty || traDirty))
                 {
-                    _lastMeshRebuildTime = now;
-                    _lastDrawnSma = _dataSma; _lastDrawnEcc = _dataEcc; _lastDrawnInc = _dataInc;
-                    _lastDrawnLan = _dataLan; _lastDrawnAop = _dataAop;
-                    _lastDrawnAp = _dataAp; _lastDrawnPe = _dataPe;
-                    _lastDrawnTra = _dataTra;
+                    _lastMeshRebuildTime.Update(now);
+                    _lastDrawnSma.Update(_dataSma); _lastDrawnEcc.Update(_dataEcc); _lastDrawnInc.Update(_dataInc);
+                    _lastDrawnLan.Update(_dataLan); _lastDrawnAop.Update(_dataAop);
+                    _lastDrawnAp.Update(_dataAp); _lastDrawnPe.Update(_dataPe);
+                    _lastDrawnTra.Update(_dataTra);
 
                     UpdateDiagramLabels(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataAp, _dataPe);
                     if (_diagramGraphic != null) _diagramGraphic.SetVerticesDirty();
@@ -946,44 +946,43 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
-            if (double.IsNaN(_lastCompactAp) || Math.Abs(ap - _lastCompactAp) >= 5.0)
+            if (double.IsNaN(_lastCompactAp.Value) || Math.Abs(ap - _lastCompactAp.Value) >= 5.0)
             {
-                _lastCompactAp = ap;
+                _lastCompactAp.Update(ap);
                 SetTextIfChanged(_apVal, FormatMetricDistance(ap));
             }
-            if (double.IsNaN(_lastCompactPe) || Math.Abs(pe - _lastCompactPe) >= 5.0)
+            if (double.IsNaN(_lastCompactPe.Value) || Math.Abs(pe - _lastCompactPe.Value) >= 5.0)
             {
-                _lastCompactPe = pe;
+                _lastCompactPe.Update(pe);
                 SetTextIfChanged(_peVal, pe < -100000.0 ? I18n.Tr("ORBIT_VAL_IMPACT", "IMPACT") : FormatMetricDistance(pe));
             }
 
             int curSec = (int)tAp;
-            if (curSec != _lastCompactSec)
+            if (_lastCompactSec.Update(curSec))
             {
-                _lastCompactSec = curSec;
                 string tApLabel = I18n.Tr("ORBIT_FMT_T_AP", "T-AP");
                 string tPeLabel = I18n.Tr("ORBIT_FMT_T_PE", "T-PE");
                 SetTextIfChanged(_tApPeReadout, $"{tApLabel} {FormatDurationCompact(tAp)}  {tPeLabel} {FormatDurationCompact(tPe)}");
             }
 
-            if (double.IsNaN(_lastCompactSma) || Math.Abs(sma - _lastCompactSma) >= 5.0)
+            if (double.IsNaN(_lastCompactSma.Value) || Math.Abs(sma - _lastCompactSma.Value) >= 5.0)
             {
-                _lastCompactSma = sma;
+                _lastCompactSma.Update(sma);
                 SetTextIfChanged(_smaVal, FormatMetricDistance(sma));
             }
 
-            if (double.IsNaN(_lastCompactEcc) || Math.Abs(ecc - _lastCompactEcc) >= 0.0001)
+            if (double.IsNaN(_lastCompactEcc.Value) || Math.Abs(ecc - _lastCompactEcc.Value) >= 0.0001)
             {
-                _lastCompactEcc = ecc;
+                _lastCompactEcc.Update(ecc);
                 if (ecc < 0.0001 && ecc > 0.0)
                     SetTextIfChanged(_eccVal, ecc.ToString("E2"));
                 else
                     SetTextIfChanged(_eccVal, ecc.ToString("F4"));
             }
 
-            if (double.IsNaN(_lastCompactInc) || Math.Abs(inc - _lastCompactInc) >= 0.05)
+            if (double.IsNaN(_lastCompactInc.Value) || Math.Abs(inc - _lastCompactInc.Value) >= 0.05)
             {
-                _lastCompactInc = inc;
+                _lastCompactInc.Update(inc);
                 SetTextIfChanged(_incVal, FormatAngleSmart(inc));
                 if (_incDirVal != null)
                 {
@@ -992,24 +991,24 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            if (double.IsNaN(_lastCompactLan) || Math.Abs(lan - _lastCompactLan) >= 0.05)
+            if (double.IsNaN(_lastCompactLan.Value) || Math.Abs(lan - _lastCompactLan.Value) >= 0.05)
             {
-                _lastCompactLan = lan;
+                _lastCompactLan.Update(lan);
                 SetTextIfChanged(_lanVal, FormatAngleSmart(lan));
             }
-            if (double.IsNaN(_lastCompactAop) || Math.Abs(aop - _lastCompactAop) >= 0.05)
+            if (double.IsNaN(_lastCompactAop.Value) || Math.Abs(aop - _lastCompactAop.Value) >= 0.05)
             {
-                _lastCompactAop = aop;
+                _lastCompactAop.Update(aop);
                 SetTextIfChanged(_aopVal, FormatAngleSmart(aop));
             }
-            if (double.IsNaN(_lastCompactTa) || Math.Abs(tra - _lastCompactTa) >= 0.1)
+            if (double.IsNaN(_lastCompactTa.Value) || Math.Abs(tra - _lastCompactTa.Value) >= 0.1)
             {
-                _lastCompactTa = tra;
+                _lastCompactTa.Update(tra);
                 SetTextIfChanged(_taVal, FormatAngleSmart(tra));
             }
-            if (double.IsNaN(_lastCompactPer) || Math.Abs(period - _lastCompactPer) >= 1.0)
+            if (double.IsNaN(_lastCompactPer.Value) || Math.Abs(period - _lastCompactPer.Value) >= 1.0)
             {
-                _lastCompactPer = period;
+                _lastCompactPer.Update(period);
                 SetTextIfChanged(_perVal, FormatPeriodCompact(period));
             }
         }
@@ -1017,36 +1016,35 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateFullModeReadouts(double ap, double pe, double tAp,
             double sma, double ecc, double inc, double lan, double aop, double tra, double period)
         {
-            if (double.IsNaN(_lastFullAp) || Math.Abs(ap - _lastFullAp) >= 5.0)
+            if (double.IsNaN(_lastFullAp.Value) || Math.Abs(ap - _lastFullAp.Value) >= 5.0)
             {
-                _lastFullAp = ap;
+                _lastFullAp.Update(ap);
                 string apLabel = I18n.Tr("ORBIT_LABEL_AP", "AP");
                 SetTextIfChanged(_fApVal, $"{apLabel} {FormatMetricDistance(ap)}");
             }
-            if (double.IsNaN(_lastFullPe) || Math.Abs(pe - _lastFullPe) >= 5.0)
+            if (double.IsNaN(_lastFullPe.Value) || Math.Abs(pe - _lastFullPe.Value) >= 5.0)
             {
-                _lastFullPe = pe;
+                _lastFullPe.Update(pe);
                 string peLabel = I18n.Tr("ORBIT_LABEL_PE", "PE");
                 SetTextIfChanged(_fPeVal, $"{peLabel} {FormatMetricDistance(pe)}");
             }
 
             int curSec = (int)tAp;
-            if (curSec != _lastFullSec)
+            if (_lastFullSec.Update(curSec))
             {
-                _lastFullSec = curSec;
                 SetTextIfChanged(_fTimeVal, $"{I18n.Tr("ORBIT_FMT_T_AP", "T-AP")} {FormatDurationCompact(tAp)}");
             }
 
-            if (double.IsNaN(_lastFullSma) || Math.Abs(sma - _lastFullSma) >= 5.0)
+            if (double.IsNaN(_lastFullSma.Value) || Math.Abs(sma - _lastFullSma.Value) >= 5.0)
             {
-                _lastFullSma = sma;
+                _lastFullSma.Update(sma);
                 string elemA = I18n.Tr("ORBIT_ELEM_SMA", "a");
                 SetTextIfChanged(_fSmaVal, $"{elemA} {FormatMetricDistance(sma)}");
             }
 
-            if (double.IsNaN(_lastFullEcc) || Math.Abs(ecc - _lastFullEcc) >= 0.0001)
+            if (double.IsNaN(_lastFullEcc.Value) || Math.Abs(ecc - _lastFullEcc.Value) >= 0.0001)
             {
-                _lastFullEcc = ecc;
+                _lastFullEcc.Update(ecc);
                 string elemE = I18n.Tr("ORBIT_ELEM_ECC", "e");
                 if (ecc < 0.0001 && ecc > 0.0)
                     SetTextIfChanged(_fEccVal, $"{elemE} {ecc:E2}");
@@ -1054,30 +1052,30 @@ namespace ModularFlightPanel.UI.Widgets
                     SetTextIfChanged(_fEccVal, $"{elemE} {ecc:F4}");
             }
 
-            if (double.IsNaN(_lastFullPer) || Math.Abs(period - _lastFullPer) >= 1.0)
+            if (double.IsNaN(_lastFullPer.Value) || Math.Abs(period - _lastFullPer.Value) >= 1.0)
             {
-                _lastFullPer = period;
+                _lastFullPer.Update(period);
                 SetTextIfChanged(_fPeriodVal, $"{I18n.Tr("ORBIT_LABEL_PERIOD", "P")} {FormatPeriodCompact(period)}");
             }
 
-            if (double.IsNaN(_lastFullLan) || Math.Abs(lan - _lastFullLan) >= 0.05)
+            if (double.IsNaN(_lastFullLan.Value) || Math.Abs(lan - _lastFullLan.Value) >= 0.05)
             {
-                _lastFullLan = lan;
+                _lastFullLan.Update(lan);
                 SetTextIfChanged(_fLanVal, $"{I18n.Tr("ORBIT_ELEM_LAN", "Ω")} {FormatAngleSmart(lan)}");
             }
-            if (double.IsNaN(_lastFullAop) || Math.Abs(aop - _lastFullAop) >= 0.05)
+            if (double.IsNaN(_lastFullAop.Value) || Math.Abs(aop - _lastFullAop.Value) >= 0.05)
             {
-                _lastFullAop = aop;
+                _lastFullAop.Update(aop);
                 SetTextIfChanged(_fAopVal, $"{I18n.Tr("ORBIT_ELEM_AOP", "ω")} {FormatAngleSmart(aop)}");
             }
-            if (double.IsNaN(_lastFullInc) || Math.Abs(inc - _lastFullInc) >= 0.05)
+            if (double.IsNaN(_lastFullInc.Value) || Math.Abs(inc - _lastFullInc.Value) >= 0.05)
             {
-                _lastFullInc = inc;
+                _lastFullInc.Update(inc);
                 SetTextIfChanged(_fIncVal, $"{I18n.Tr("ORBIT_ELEM_INC", "i")} {FormatAngleSmart(inc)}");
             }
-            if (double.IsNaN(_lastFullTa) || Math.Abs(tra - _lastFullTa) >= 0.1)
+            if (double.IsNaN(_lastFullTa.Value) || Math.Abs(tra - _lastFullTa.Value) >= 0.1)
             {
-                _lastFullTa = tra;
+                _lastFullTa.Update(tra);
                 SetTextIfChanged(_fTaVal, $"{I18n.Tr("ORBIT_ELEM_TA", "ν")} {FormatAngleSmart(tra)}");
             }
         }
@@ -1088,18 +1086,18 @@ namespace ModularFlightPanel.UI.Widgets
         /// </summary>
         private bool CheckDirty(double sma, double ecc, double inc, double lan, double aop)
         {
-            if (double.IsNaN(_lastDrawnSma)) return true;
-            double relSma = Math.Abs(sma - _lastDrawnSma) / Math.Max(1.0, _lastDrawnSma);
+            if (double.IsNaN(_lastDrawnSma.Value)) return true;
+            double relSma = Math.Abs(sma - _lastDrawnSma.Value) / Math.Max(1.0, _lastDrawnSma.Value);
 
             bool dirty = relSma > 0.001
-                || Math.Abs(ecc - _lastDrawnEcc) > 0.001
-                || Math.Abs(inc - _lastDrawnInc) > 0.5;
+                || Math.Abs(ecc - _lastDrawnEcc.Value) > 0.001
+                || Math.Abs(inc - _lastDrawnInc.Value) > 0.5;
 
             // 对于近圆轨道 (ecc < 0.02)，近地点辐角 aop 在数学上是奇异点/数值噪音，忽略其高频抖动
-            if (ecc > 0.02 && Math.Abs(aop - _lastDrawnAop) > 0.5) dirty = true;
+            if (ecc > 0.02 && Math.Abs(aop - _lastDrawnAop.Value) > 0.5) dirty = true;
 
             // 对于近赤道轨道 (inc < 0.5°)，升交点经度 lan 在数学上是奇异点/数值噪音，忽略其高频抖动
-            if (inc > 0.5 && Math.Abs(lan - _lastDrawnLan) > 0.5) dirty = true;
+            if (inc > 0.5 && Math.Abs(lan - _lastDrawnLan.Value) > 0.5) dirty = true;
 
             return dirty;
         }
@@ -1412,16 +1410,16 @@ namespace ModularFlightPanel.UI.Widgets
         internal void PopulateOrbitMesh(VertexHelper vh)
         {
             vh.Clear();
-            if (double.IsNaN(_lastDrawnSma)) return;
+            if (double.IsNaN(_lastDrawnSma.Value)) return;
 
-            double sma = _lastDrawnSma;
-            double ecc = _lastDrawnEcc;
-            double inc = _lastDrawnInc;
-            double lan = _lastDrawnLan;
-            double aop = _lastDrawnAop;
-            double ap = _lastDrawnAp;
-            double pe = _lastDrawnPe;
-            double tra = double.IsNaN(_lastDrawnTra) ? 0.0 : _lastDrawnTra;
+            double sma = _lastDrawnSma.Value;
+            double ecc = _lastDrawnEcc.Value;
+            double inc = _lastDrawnInc.Value;
+            double lan = _lastDrawnLan.Value;
+            double aop = _lastDrawnAop.Value;
+            double ap = _lastDrawnAp.Value;
+            double pe = _lastDrawnPe.Value;
+            double tra = double.IsNaN(_lastDrawnTra.Value) ? 0.0 : _lastDrawnTra.Value;
 
             // 观察视角配置 (正交轴测相机，对齐教科书经典定义图视角：X 向左下，Y 向右，Z 向上)
             float s = _cachedDpiScale > 0.01f ? _cachedDpiScale : 1f;

@@ -105,6 +105,21 @@ namespace ModularFlightPanel.UI
             "DirtyDouble"
         });
 
+        /// <summary>
+        /// 判定类型名称是否为合规的私有缓存类型（自动解包数组 [] 与可空 ? 包装）
+        /// </summary>
+        public static bool IsValidCacheType(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName)) return false;
+            string clean = typeName.Replace("[]", "").Replace("?", "").Trim();
+            for (int i = 0; i < ValidCacheTypes.Count; i++)
+            {
+                if (string.Equals(ValidCacheTypes[i], clean, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
         // ==========================================================================================
         // SPEC-007 场景查询 API 表：唯一数据源，扫描与自检共用同一份判定
         // ==========================================================================================

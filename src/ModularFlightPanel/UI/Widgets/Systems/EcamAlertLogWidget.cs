@@ -162,20 +162,20 @@ namespace ModularFlightPanel.UI.Widgets
         private float _globalBlinkTimer = 0f;
 
         // 历史遥测防抖缓存
-        private int _lastStage = -1;
-        private int _lastActiveEngines = -1;
-        private float _lastThrottle = 0f;
-        private bool _lastIsStageSeparating = false;
-        private bool _lastIsEngineIgniting = false;
-        private double _lastTimeToNode = -1.0;
-        private bool _lastManeuverBurnTriggered = false;
-        private double _lastAltitude = 0.0;
-        private double _lastEffectivePe = -999999.0;
-        private double _lastEffectiveAp = -999999.0;
-        private string _lastCelestialBody = string.Empty;
-        private string _lastFlightSituation = string.Empty;
-        private bool _lastIsLanded = false;
-        private double _lastAltitudeAGL = 0.0;
+        private readonly Cached<int> _lastStage = new Cached<int>(-1);
+        private readonly Cached<int> _lastActiveEngines = new Cached<int>(-1);
+        private readonly CachedFloat _lastThrottle = new CachedFloat(0f);
+        private readonly Cached<bool> _lastIsStageSeparating = new Cached<bool>(false);
+        private readonly Cached<bool> _lastIsEngineIgniting = new Cached<bool>(false);
+        private readonly CachedDouble _lastTimeToNode = new CachedDouble(-1.0);
+        private readonly Cached<bool> _lastManeuverBurnTriggered = new Cached<bool>(false);
+        private readonly CachedDouble _lastAltitude = new CachedDouble(0.0);
+        private readonly CachedDouble _lastEffectivePe = new CachedDouble(-999999.0);
+        private readonly CachedDouble _lastEffectiveAp = new CachedDouble(-999999.0);
+        private readonly Cached<string> _lastCelestialBody = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFlightSituation = new Cached<string>(string.Empty);
+        private readonly Cached<bool> _lastIsLanded = new Cached<bool>(false);
+        private readonly CachedDouble _lastAltitudeAGL = new CachedDouble(0.0);
         private float _lowFuelTimer = 0f;
         private bool _initialHistorySeeded = false;
 
@@ -806,7 +806,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (!_lastManeuverBurnTriggered)
                 {
-                    _lastManeuverBurnTriggered = true;
+                    _lastManeuverBurnTriggered.Value = true;
                     PushLogEntry(new EcamLogEntry(
                         EcamAlertSeverity.Advisory, "BURN", "▶",
                         I18n.Tr("WIDGET_ALERT_MANEUVER_BURN", "机动点火执行中"),
@@ -815,7 +815,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else if (!telem.HasManeuverNode || telem.Throttle <= 0.01f)
             {
-                _lastManeuverBurnTriggered = false;
+                _lastManeuverBurnTriggered.Value = false;
             }
 
             // F. 入轨圆化完成 ORBIT
@@ -850,8 +850,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // I. 天体引力范围穿越 SOI TRANSITION
-            if (!string.IsNullOrEmpty(_lastCelestialBody) && !string.IsNullOrEmpty(telem.CelestialBodyName) &&
-                !_lastCelestialBody.Equals(telem.CelestialBodyName, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(_lastCelestialBody.Value) && !string.IsNullOrEmpty(telem.CelestialBodyName) &&
+                !string.Equals(_lastCelestialBody.Value, telem.CelestialBodyName, StringComparison.OrdinalIgnoreCase))
             {
                 PushLogEntry(new EcamLogEntry(
                     EcamAlertSeverity.Advisory, "SOI", "◆",
@@ -901,19 +901,19 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 缓存本帧遥测
-            _lastStage = telem.CurrentStage;
-            _lastActiveEngines = telem.ActiveEngines;
-            _lastThrottle = telem.Throttle;
-            _lastIsStageSeparating = telem.IsStageSeparating;
-            _lastIsEngineIgniting = telem.IsEngineIgniting;
-            _lastTimeToNode = telem.HasManeuverNode ? telem.ManeuverTimeToNode : -1.0;
-            _lastAltitude = telem.AltitudeASL;
-            _lastAltitudeAGL = telem.AltitudeAGL;
-            _lastEffectivePe = effectivePe;
-            _lastEffectiveAp = effectiveAp;
-            _lastCelestialBody = telem.CelestialBodyName;
-            _lastFlightSituation = telem.FlightSituation;
-            _lastIsLanded = isLandedNow;
+            _lastStage.Reset(telem.CurrentStage);
+            _lastActiveEngines.Reset(telem.ActiveEngines);
+            _lastThrottle.Reset(telem.Throttle);
+            _lastIsStageSeparating.Reset(telem.IsStageSeparating);
+            _lastIsEngineIgniting.Reset(telem.IsEngineIgniting);
+            _lastTimeToNode.Reset(telem.HasManeuverNode ? telem.ManeuverTimeToNode : -1.0);
+            _lastAltitude.Reset(telem.AltitudeASL);
+            _lastAltitudeAGL.Reset(telem.AltitudeAGL);
+            _lastEffectivePe.Reset(effectivePe);
+            _lastEffectiveAp.Reset(effectiveAp);
+            _lastCelestialBody.Reset(telem.CelestialBodyName);
+            _lastFlightSituation.Reset(telem.FlightSituation);
+            _lastIsLanded.Reset(isLandedNow);
         }
 
         private void EvaluatePersistentAlerts(IFlightTelemetry telem, float dt)

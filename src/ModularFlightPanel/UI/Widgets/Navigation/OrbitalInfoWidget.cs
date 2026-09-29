@@ -75,6 +75,18 @@ namespace ModularFlightPanel.UI.Widgets
         private string _dataOrbitBadgeText = string.Empty;
         private TextStyleRole _dataOrbitBadgeRole = TextStyleRole.SecondaryValue;
 
+        // ── 智能私有缓存与脏检查 ──
+        private readonly Cached<string> _lastApVal = new Cached<string>(null);
+        private readonly Cached<string> _lastPeVal = new Cached<string>(null);
+        private readonly Cached<string> _lastTimeReadout = new Cached<string>(null);
+        private readonly Cached<string> _lastEccVal = new Cached<string>(null);
+        private readonly Cached<string> _lastIncVal = new Cached<string>(null);
+        private readonly Cached<string> _lastIncDir = new Cached<string>(null);
+        private readonly Cached<TextStyleRole> _lastIncDirRole = new Cached<TextStyleRole>(TextStyleRole.Unit);
+        private readonly Cached<string> _lastPeriodVal = new Cached<string>(null);
+        private readonly Cached<string> _lastOrbitBadgeText = new Cached<string>(null);
+        private readonly Cached<TextStyleRole> _lastOrbitBadgeRole = new Cached<TextStyleRole>(TextStyleRole.SecondaryValue);
+
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
@@ -146,16 +158,16 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            ApVal.Text = _dataApVal;
-            PeVal.Text = _dataPeVal;
-            TimeReadout.Text = _dataTimeReadout;
-            EccVal.Text = _dataEccVal;
-            IncVal.Text = _dataIncVal;
-            IncDir.Text = _dataIncDir;
-            IncDir.SetRole(_dataIncDirRole);
-            PeriodVal.Text = _dataPeriodVal;
-            OrbitBadge.Text = _dataOrbitBadgeText;
-            OrbitBadge.SetRole(_dataOrbitBadgeRole);
+            if (_lastApVal.Update(_dataApVal)) ApVal.Text = _dataApVal;
+            if (_lastPeVal.Update(_dataPeVal)) PeVal.Text = _dataPeVal;
+            if (_lastTimeReadout.Update(_dataTimeReadout)) TimeReadout.Text = _dataTimeReadout;
+            if (_lastEccVal.Update(_dataEccVal)) EccVal.Text = _dataEccVal;
+            if (_lastIncVal.Update(_dataIncVal)) IncVal.Text = _dataIncVal;
+            if (_lastIncDir.Update(_dataIncDir)) IncDir.Text = _dataIncDir;
+            if (_lastIncDirRole.Update(_dataIncDirRole)) IncDir.SetRole(_dataIncDirRole);
+            if (_lastPeriodVal.Update(_dataPeriodVal)) PeriodVal.Text = _dataPeriodVal;
+            if (_lastOrbitBadgeText.Update(_dataOrbitBadgeText)) OrbitBadge.Text = _dataOrbitBadgeText;
+            if (_lastOrbitBadgeRole.Update(_dataOrbitBadgeRole)) OrbitBadge.SetRole(_dataOrbitBadgeRole);
         }
 
         private void UpdateOrbitState(IFlightTelemetry telemetry, double ap, double pe, double ecc)

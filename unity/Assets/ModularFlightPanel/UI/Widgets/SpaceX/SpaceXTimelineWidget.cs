@@ -49,10 +49,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private Text _missionPhaseText;
 
         // 缓存与脏标记
-        private double _lastCachedMissionTime = double.NaN;
-        private float _lastCachedPipProgress = -1f;
-        private string _lastPhaseStr = string.Empty;
-        private string _lastClockStr = string.Empty;
+        private readonly CachedDouble _lastCachedMissionTime = new CachedDouble(double.NaN);
+        private readonly CachedFloat _lastCachedPipProgress = new CachedFloat(-1f);
+        private readonly Cached<string> _lastPhaseStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastClockStr = new Cached<string>(string.Empty);
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
 
         // CustomTemplate 自定义通道
@@ -269,26 +269,25 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
 
             // 1. 任务时钟更新 (T+ 00:08:03 格式)
-            if (double.IsNaN(_lastCachedMissionTime) || Math.Abs(_dataMissionTime - _lastCachedMissionTime) >= 0.5)
+            if (double.IsNaN(_lastCachedMissionTime.Value) || Math.Abs(_dataMissionTime - _lastCachedMissionTime.Value) >= 0.5)
             {
-                _lastCachedMissionTime = _dataMissionTime;
-                if (_dataClockStr != _lastClockStr && _missionClockText != null)
+                _lastCachedMissionTime.Update(_dataMissionTime);
+                if (_lastClockStr.Update(_dataClockStr) && _missionClockText != null)
                 {
-                    _lastClockStr = _dataClockStr;
                     _missionClockText.text = _dataClockStr;
                 }
             }
 
             // 2. 动态计算时序光标进度 (0.0 .. 1.0)
-            if (Mathf.Abs(_dataPipProgress - _lastCachedPipProgress) > 0.002f)
+            if (Mathf.Abs(_dataPipProgress - _lastCachedPipProgress.Value) > 0.002f)
             {
-                _lastCachedPipProgress = _dataPipProgress;
+                _lastCachedPipProgress.Update(_dataPipProgress);
                 float s = CurrentDpiScale;
                 float pipX = (_dataPipProgress - 0.5f) * ArcWidth * s;
                 float pipY = ComputeArcY(_dataPipProgress) * s + 26f * s;
                 if (_progressPipRt != null)
                 {
-                    _progressPipRt.anchoredPosition = new Vector2(pipX, pipY);
+                    _progressPipRt.SetAnchoredPositionSafe(new Vector2(pipX, pipY));
                 }
 
                 // 动态高亮已达成里程碑节点
@@ -296,9 +295,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             // 3. 动态任务阶段文本推导
-            if (_dataDynamicPhase != _lastPhaseStr)
+            if (_lastPhaseStr.Update(_dataDynamicPhase))
             {
-                _lastPhaseStr = _dataDynamicPhase;
                 if (_missionPhaseText != null)
                 {
                     _missionPhaseText.text = _dataDynamicPhase;

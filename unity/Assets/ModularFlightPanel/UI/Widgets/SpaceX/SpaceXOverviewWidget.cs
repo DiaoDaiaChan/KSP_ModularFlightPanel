@@ -58,17 +58,20 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private Text _subsysDock;
 
         // 脏数据变动缓存
-        private float _lastPress = -1f;
-        private float _lastO2 = -1f;
-        private float _lastTemp = -1f;
-        private float _lastEc = -1f;
-        private float _lastProp = -1f;
-        private string _lastStatusBadge = string.Empty;
-        private string _lastPressStr = string.Empty;
-        private string _lastO2Str = string.Empty;
-        private string _lastTempStr = string.Empty;
-        private string _lastPwrStr = string.Empty;
-        private string _lastPropStr = string.Empty;
+        private readonly CachedFloat _lastPress = new CachedFloat(-1f);
+        private readonly CachedFloat _lastO2 = new CachedFloat(-1f);
+        private readonly CachedFloat _lastTemp = new CachedFloat(-1f);
+        private readonly CachedFloat _lastEc = new CachedFloat(-1f);
+        private readonly CachedFloat _lastProp = new CachedFloat(-1f);
+        private readonly Cached<string> _lastStatusBadge = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastPressStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastO2Str = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTempStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastPwrStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastPropStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastAirlockStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastThermalStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastDockStr = new Cached<string>(string.Empty);
 
         // CustomTemplate 自定义通道
         private string _titleCustom = "VEHICLE OVERVIEW / ECLSS";
@@ -293,95 +296,89 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (!_dataHasVessel) return;
 
             // 1. 舱压
-            if (Mathf.Abs(_dataPress - _lastPress) > 0.1f)
+            if (Mathf.Abs(_dataPress - _lastPress.Value) > 0.1f)
             {
-                _lastPress = _dataPress;
+                _lastPress.Update(_dataPress);
                 string pStr = $"{_dataPress:F1} kPa";
-                if (pStr != _lastPressStr && _pressValue != null)
+                if (_lastPressStr.Update(pStr) && _pressValue != null)
                 {
-                    _lastPressStr = pStr;
                     _pressValue.text = pStr;
                 }
                 if (_pressFill != null)
                 {
                     float ratio = Mathf.Clamp01(_dataPress / 105f);
-                    _pressFill.rectTransform.sizeDelta = new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale);
+                    _pressFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
                 }
             }
 
             // 2. 氧气百分比
-            if (Mathf.Abs(_dataO2 - _lastO2) > 0.5f)
+            if (Mathf.Abs(_dataO2 - _lastO2.Value) > 0.5f)
             {
-                _lastO2 = _dataO2;
+                _lastO2.Update(_dataO2);
                 string oStr = $"{_dataO2:F0}%";
-                if (oStr != _lastO2Str && _o2Value != null)
+                if (_lastO2Str.Update(oStr) && _o2Value != null)
                 {
-                    _lastO2Str = oStr;
                     _o2Value.text = oStr;
                 }
                 if (_o2Fill != null)
                 {
                     float ratio = Mathf.Clamp01(_dataO2 * 0.01f);
-                    _o2Fill.rectTransform.sizeDelta = new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale);
+                    _o2Fill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
                 }
             }
 
             // 3. 客舱温度
-            if (Mathf.Abs(_dataTemp - _lastTemp) > 0.2f)
+            if (Mathf.Abs(_dataTemp - _lastTemp.Value) > 0.2f)
             {
-                _lastTemp = _dataTemp;
+                _lastTemp.Update(_dataTemp);
                 string tStr = $"{_dataTemp:F1}°C";
-                if (tStr != _lastTempStr && _tempValue != null)
+                if (_lastTempStr.Update(tStr) && _tempValue != null)
                 {
-                    _lastTempStr = tStr;
                     _tempValue.text = tStr;
                 }
                 if (_tempFill != null)
                 {
                     float ratio = Mathf.Clamp01(_dataTemp / 40f);
-                    _tempFill.rectTransform.sizeDelta = new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale);
+                    _tempFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
                 }
             }
 
             // 4. 电力与总线电压
-            if (Mathf.Abs(_dataEc - _lastEc) > 0.5f)
+            if (Mathf.Abs(_dataEc - _lastEc.Value) > 0.5f)
             {
-                _lastEc = _dataEc;
+                _lastEc.Update(_dataEc);
                 string pwrStr = $"{_dataVolt:F1}V / {_dataEc:F0}%";
-                if (pwrStr != _lastPwrStr && _pwrValue != null)
+                if (_lastPwrStr.Update(pwrStr) && _pwrValue != null)
                 {
-                    _lastPwrStr = pwrStr;
                     _pwrValue.text = pwrStr;
                 }
                 if (_pwrFill != null)
                 {
                     float ratio = Mathf.Clamp01(_dataEc * 0.01f);
-                    _pwrFill.rectTransform.sizeDelta = new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale);
+                    _pwrFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
                 }
             }
 
             // 5. 推进剂储备
-            if (Mathf.Abs(_dataProp - _lastProp) > 0.5f)
+            if (Mathf.Abs(_dataProp - _lastProp.Value) > 0.5f)
             {
-                _lastProp = _dataProp;
+                _lastProp.Update(_dataProp);
                 string propStr = $"{_dataProp:F0}%";
-                if (propStr != _lastPropStr && _subsysProp != null)
+                if (_lastPropStr.Update(propStr) && _subsysProp != null)
                 {
-                    _lastPropStr = propStr;
                     _subsysProp.text = propStr;
                 }
             }
 
             // 6. 四大子系统
-            if (_subsysAirlock != null) _subsysAirlock.text = _dataAirlockState;
-            if (_subsysThermal != null) _subsysThermal.text = _dataThermalState;
-            if (_subsysDock != null) _subsysDock.text = _dataDockState;
+            if (_subsysAirlock != null && _lastAirlockStr.Update(_dataAirlockState)) _subsysAirlock.text = _dataAirlockState;
+            if (_subsysThermal != null && _lastThermalStr.Update(_dataThermalState)) _subsysThermal.text = _dataThermalState;
+            if (_subsysDock != null && _lastDockStr.Update(_dataDockState)) _subsysDock.text = _dataDockState;
 
             // 7. 总体警告判定
             string badge = _dataHasWarn ? "WARN" : "NOMINAL";
-            if (badge != _lastStatusBadge && _statusBadge != null)
+            if (_lastStatusBadge.Update(badge) && _statusBadge != null)
             {
-                _lastStatusBadge = badge;
                 _statusBadge.text = badge;
                 ThemeConfig th = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
                 ApplyText(_statusBadge, badge == "NOMINAL" ? TextStyleRole.Accent : TextStyleRole.Warning, th);
@@ -398,7 +395,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
 
             if (_titleText != null) ApplyText(_titleText, TextStyleRole.Label, theme);
-            if (_statusBadge != null) ApplyText(_statusBadge, _lastStatusBadge == "WARN" ? TextStyleRole.Warning : TextStyleRole.Accent, theme);
+            if (_statusBadge != null) ApplyText(_statusBadge, _lastStatusBadge.Value == "WARN" ? TextStyleRole.Warning : TextStyleRole.Accent, theme);
 
             if (_pressLabel != null) ApplyText(_pressLabel, TextStyleRole.Label, theme);
             if (_pressValue != null) ApplyText(_pressValue, TextStyleRole.PrimaryValue, theme);

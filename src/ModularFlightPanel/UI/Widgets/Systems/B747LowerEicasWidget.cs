@@ -106,17 +106,18 @@ namespace ModularFlightPanel.UI.Widgets
         private string _oilQLabelText = "OIL Q";
         private string _vibLabelText = "VIB";
 
-        // 脏检查文本缓存
-        private string[] _lastN2Strs = new string[4];
-        private string[] _lastN3Strs = new string[4];
-        private string[] _lastFfStrs = new string[4];
-        private string[] _lastOilPStrs = new string[4];
-        private string[] _lastOilTStrs = new string[4];
-        private string[] _lastOilQStrs = new string[4];
-        private string[] _lastVibStrs = new string[4];
-
-        private double[] _lastN2Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
-        private double[] _lastN3Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
+        // 脏检查文本与图元几何缓存
+        private readonly Cached<string>[] _lastN2Strs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastN3Strs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastFfStrs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastOilPStrs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastOilTStrs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastOilQStrs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastVibStrs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly CachedFloat[] _lastN3Fills = new[] { new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f) };
+        private readonly CachedFloat[] _lastOilPPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
+        private readonly CachedFloat[] _lastOilTPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
+        private readonly CachedFloat[] _lastVibPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
         private static readonly float[] s_Variances = { -0.1f, 0.2f, -0.05f, 0.1f };
 
         // 双轨架构快照字段
@@ -188,7 +189,7 @@ namespace ModularFlightPanel.UI.Widgets
                 CreateReadoutBox(transform, $"N2_Box_{i + 1}", new Vector2(boxWidth, boxHeight), new Vector2(engXCoords[i], n2Y),
                     "50", boxBgCol, boxBorderCol, valCol, s,
                     out _n2ReadoutBoxes[i], out _n2ReadoutOutlines[i], out _n2ReadoutTexts[i]);
-                _lastN2Strs[i] = string.Empty;
+                _lastN2Strs[i].Reset(string.Empty);
             }
             _n2Label = UIFactory.CreateText(transform, "Label_N2", _n2LabelText, Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, labelCol);
@@ -214,7 +215,7 @@ namespace ModularFlightPanel.UI.Widgets
                 CreateVerticalN3Gauge(transform, $"N3_Gauge_{i + 1}", new Vector2(n3GaugeW, n3GaugeH), new Vector2(engXCoords[i], n3GaugeTopY),
                     trackCol, meterFillCol, dangerCol, warnCol, s,
                     out _n3GaugeTracks[i], out _n3GaugeTrackOutlines[i], out _n3GaugeFills[i], out _n3LimitTicks[i], out _n3CautionTicks[i]);
-                _lastN3Strs[i] = string.Empty;
+                _lastN3Strs[i].Reset(string.Empty);
             }
 
             _n3Label = UIFactory.CreateText(transform, "Label_N3", _n3LabelText, Mathf.RoundToInt(8f * s),
@@ -233,7 +234,7 @@ namespace ModularFlightPanel.UI.Widgets
                 CreateReadoutBox(transform, $"FF_Box_{i + 1}", new Vector2(boxWidth, boxHeight), new Vector2(engXCoords[i], ffY),
                     "06", boxBgCol, boxBorderCol, valCol, s,
                     out _ffReadoutBoxes[i], out _ffReadoutOutlines[i], out _ffReadoutTexts[i]);
-                _lastFfStrs[i] = string.Empty;
+                _lastFfStrs[i].Reset(string.Empty);
             }
             _ffLabel = UIFactory.CreateText(transform, "Label_FF", _ffLabelText, Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, labelCol);
@@ -270,7 +271,7 @@ namespace ModularFlightPanel.UI.Widgets
                 oqrt.pivot = new Vector2(0.5f, 0.5f);
                 oqrt.sizeDelta = new Vector2(boxWidth, 14f * s);
                 oqrt.anchoredPosition = new Vector2(engXCoords[i], oilQY);
-                _lastOilQStrs[i] = string.Empty;
+                _lastOilQStrs[i].Reset(string.Empty);
             }
             _oilQLabel = UIFactory.CreateText(transform, "Label_OilQ", _oilQLabelText, Mathf.RoundToInt(8f * s),
                 TextAnchor.MiddleCenter, labelCol);
@@ -660,69 +661,71 @@ namespace ModularFlightPanel.UI.Widgets
             for (int i = 0; i < 4; i++)
             {
                 // 1. N2 读数框
-                if (_cachedN2Strs[i] != _lastN2Strs[i])
+                if (_lastN2Strs[i].Update(_cachedN2Strs[i]))
                 {
-                    _lastN2Strs[i] = _cachedN2Strs[i];
                     if (_n2ReadoutTexts[i] != null) _n2ReadoutTexts[i].text = _cachedN2Strs[i];
                 }
 
                 // 2. N3 读数框与垂直柱
-                if (_cachedN3Strs[i] != _lastN3Strs[i])
+                if (_lastN3Strs[i].Update(_cachedN3Strs[i]))
                 {
-                    _lastN3Strs[i] = _cachedN3Strs[i];
                     if (_n3ReadoutTexts[i] != null) _n3ReadoutTexts[i].text = _cachedN3Strs[i];
                 }
-                if (_n3GaugeFills[i] != null)
+                if (_n3GaugeFills[i] != null && _lastN3Fills[i].Update(_cachedN3Fracs[i]))
                     _n3GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, n3GaugeMaxH * _cachedN3Fracs[i]);
 
                 // 3. FF 燃油流量框
-                if (_cachedFfStrs[i] != _lastFfStrs[i])
+                if (_lastFfStrs[i].Update(_cachedFfStrs[i]))
                 {
-                    _lastFfStrs[i] = _cachedFfStrs[i];
                     if (_ffReadoutTexts[i] != null) _ffReadoutTexts[i].text = _cachedFfStrs[i];
                 }
 
                 // 4. OIL P 读数与指针位移
-                if (_cachedOilPStrs[i] != _lastOilPStrs[i])
+                if (_lastOilPStrs[i].Update(_cachedOilPStrs[i]))
                 {
-                    _lastOilPStrs[i] = _cachedOilPStrs[i];
                     if (_oilPReadoutTexts[i] != null) _oilPReadoutTexts[i].text = _cachedOilPStrs[i];
                 }
                 if (_oilPPointerTransforms[i] != null)
                 {
                     float ptrY = -92f * s - oilAxisHalfH + ((_cachedOilPFracs[i] - 0.5f) * oilAxisHalfH * 1.6f);
-                    _oilPPointerTransforms[i].anchoredPosition = new Vector2(_oilPPointerTransforms[i].anchoredPosition.x, ptrY);
+                    if (_lastOilPPos[i].Update(ptrY))
+                    {
+                        _oilPPointerTransforms[i].anchoredPosition = new Vector2(_oilPPointerTransforms[i].anchoredPosition.x, ptrY);
+                    }
                 }
 
                 // 5. OIL T 读数与指针位移
-                if (_cachedOilTStrs[i] != _lastOilTStrs[i])
+                if (_lastOilTStrs[i].Update(_cachedOilTStrs[i]))
                 {
-                    _lastOilTStrs[i] = _cachedOilTStrs[i];
                     if (_oilTReadoutTexts[i] != null) _oilTReadoutTexts[i].text = _cachedOilTStrs[i];
                 }
                 if (_oilTPointerTransforms[i] != null)
                 {
                     float ptrY = -128f * s - oilAxisHalfH + ((_cachedOilTFracs[i] - 0.5f) * oilAxisHalfH * 1.6f);
-                    _oilTPointerTransforms[i].anchoredPosition = new Vector2(_oilTPointerTransforms[i].anchoredPosition.x, ptrY);
+                    if (_lastOilTPos[i].Update(ptrY))
+                    {
+                        _oilTPointerTransforms[i].anchoredPosition = new Vector2(_oilTPointerTransforms[i].anchoredPosition.x, ptrY);
+                    }
                 }
 
                 // 6. OIL Q 读数
-                if (_cachedOilQStrs[i] != _lastOilQStrs[i])
+                if (_lastOilQStrs[i].Update(_cachedOilQStrs[i]))
                 {
-                    _lastOilQStrs[i] = _cachedOilQStrs[i];
                     if (_oilQReadoutTexts[i] != null) _oilQReadoutTexts[i].text = _cachedOilQStrs[i];
                 }
 
                 // 7. VIB 读数与滑块位移
-                if (_cachedVibStrs[i] != _lastVibStrs[i])
+                if (_lastVibStrs[i].Update(_cachedVibStrs[i]))
                 {
-                    _lastVibStrs[i] = _cachedVibStrs[i];
                     if (_vibReadoutTexts[i] != null) _vibReadoutTexts[i].text = _cachedVibStrs[i];
                 }
                 if (_vibPointerTransforms[i] != null)
                 {
                     float ptrY = -184f * s - vibRailHalfH + ((_cachedVibFracs[i] - 0.5f) * vibRailHalfH * 1.6f);
-                    _vibPointerTransforms[i].anchoredPosition = new Vector2(_vibPointerTransforms[i].anchoredPosition.x, ptrY);
+                    if (_lastVibPos[i].Update(ptrY))
+                    {
+                        _vibPointerTransforms[i].anchoredPosition = new Vector2(_vibPointerTransforms[i].anchoredPosition.x, ptrY);
+                    }
                 }
             }
         }

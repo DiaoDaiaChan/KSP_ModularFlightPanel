@@ -52,8 +52,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private RectTransform _titleRt;
 
         // 脏检查与平滑缓存
-        private string _lastCategory = string.Empty;
-        private string _lastTitle = string.Empty;
+        private readonly Cached<string> _lastCategory = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTitle = new Cached<string>(string.Empty);
 
         public static Action OnCycleReferenceFrameAction;
         public static Action OnToggleReferenceFrameWindowAction;
@@ -193,8 +193,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (FrameTitle != null) FrameTitle.SetRole(TextStyleRole.PrimaryValue);
             else ApplyText(_frameTitleText, TextStyleRole.PrimaryValue, theme);
 
-            UpdateCategoryVisuals(_lastCategory, theme);
-            AdjustCardWidth(_lastTitle);
+            UpdateCategoryVisuals(_lastCategory.Value, theme);
+            AdjustCardWidth(_lastTitle.Value);
 
             this.Controls.ApplyThemeToControls(theme);
         }
@@ -313,15 +313,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             ThemeConfig theme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
 
-            if (_dataCategory != _lastCategory)
+            if (_lastCategory.Update(_dataCategory))
             {
-                _lastCategory = _dataCategory;
                 UpdateCategoryVisuals(_dataCategory, theme);
             }
 
-            if (_dataTitle != _lastTitle)
+            if (_lastTitle.Update(_dataTitle))
             {
-                _lastTitle = _dataTitle;
                 SetTextIfChanged(_frameTitleText, _dataTitle);
                 AdjustCardWidth(_dataTitle);
             }

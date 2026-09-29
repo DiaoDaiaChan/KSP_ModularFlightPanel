@@ -182,24 +182,24 @@ namespace ModularFlightPanel.UI.Widgets
         private float _activeStep = 100f;
 
         // 速度变化率高精度微分采样 (Velocity Rate of Change: dV/dt)
-        private double _lastSampleSpeed = double.NaN;
+        private double _sampleSpeed = double.NaN;
         private double _calculatedAccelMps2 = 0.0;
 
         // 脏检查与状态缓存
-        private double _lastRawVal = double.NaN;
-        private double _lastTrendVal = double.NaN;
-        private double _lastTerrainVal = double.NaN;
-        private string _lastCenterText = string.Empty;
-        private string _lastUnitText = string.Empty;
-        private string _lastTopText = string.Empty;
-        private string _lastBottomText = string.Empty;
-        private string _lastTrendRateText = string.Empty;
-        private string _lastAccText = string.Empty;
-        private string _lastRateText = string.Empty;
-        private bool _lastTrendPositive = true;
-        private int _lastAccAlertLevel = -1;
-        private double _lastGForce = double.NaN;
-        private double _lastRenderedAccel = double.NaN;
+        private readonly CachedDouble _lastRawVal = new CachedDouble(double.NaN, tolerance: 0.02);
+        private readonly CachedDouble _lastTrendVal = new CachedDouble(double.NaN, tolerance: 0.05);
+        private readonly CachedDouble _lastTerrainVal = new CachedDouble(double.NaN, tolerance: 0.2);
+        private readonly Cached<string> _lastCenterText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastUnitText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTopText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBottomText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTrendRateText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastAccText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRateText = new Cached<string>(string.Empty);
+        private readonly Cached<bool> _lastTrendPositive = new Cached<bool>(true);
+        private readonly Cached<int> _lastAccAlertLevel = new Cached<int>(-1);
+        private readonly CachedDouble _lastGForce = new CachedDouble(double.NaN, tolerance: 0.03);
+        private readonly CachedDouble _lastRenderedAccel = new CachedDouble(double.NaN, tolerance: 0.05);
         private bool _showingIntegerReadout = false;
         private float _currentHalfTrackH = 58f;
         private Color _cachedMajorCol;
@@ -372,9 +372,9 @@ namespace ModularFlightPanel.UI.Widgets
         public void OnAdaptiveResize(Vector2 pixelSize)
         {
             ApplyLayoutDimensions(pixelSize.x, pixelSize.y);
-            if (!double.IsNaN(_lastRawVal))
+            if (!double.IsNaN(_lastRawVal.Value))
             {
-                UpdateRollingTape(_lastRawVal / _tierScale);
+                UpdateRollingTape(_lastRawVal.Value / _tierScale);
             }
         }
 
@@ -1069,15 +1069,15 @@ namespace ModularFlightPanel.UI.Widgets
                 _pendingGForce = gForce;
 
                 float dt = context.DeltaTime > 0.0001f ? context.DeltaTime : 0.02f;
-                if (!double.IsNaN(_lastSampleSpeed))
+                if (!double.IsNaN(_sampleSpeed))
                 {
-                    double instantaneousAccel = (rawVal - _lastSampleSpeed) / dt;
+                    double instantaneousAccel = (rawVal - _sampleSpeed) / dt;
                     _calculatedAccelMps2 = Mathf.Lerp((float)_calculatedAccelMps2, (float)instantaneousAccel, 0.35f);
-                    _lastSampleSpeed = rawVal;
+                    _sampleSpeed = rawVal;
                 }
                 else
                 {
-                    _lastSampleSpeed = rawVal;
+                    _sampleSpeed = rawVal;
                     _calculatedAccelMps2 = 0.0;
                 }
                 _pendingAccelMps2 = _calculatedAccelMps2;
@@ -1101,23 +1101,19 @@ namespace ModularFlightPanel.UI.Widgets
             base.OnUIDrawLoop(ref context);
             if (!_hasPendingTapeHeartbeat) return;
 
-            double deltaThreshold = Config != null && Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.02;
-            if (double.IsNaN(_lastRawVal) || Math.Abs(_pendingRawVal - _lastRawVal) > deltaThreshold)
+            if (_lastRawVal.Update(_pendingRawVal))
             {
-                _lastRawVal = _pendingRawVal;
                 UpdateCenterReadout(_pendingDisplayVal);
                 UpdateRollingTape(_pendingDisplayVal);
             }
 
-            if (_pendingTopText != _lastTopText)
+            if (_lastTopText.Update(_pendingTopText))
             {
-                _lastTopText = _pendingTopText;
                 if (_topModeText != null) _topModeText.text = _pendingTopText;
             }
 
-            if (_pendingBottomText != _lastBottomText)
+            if (_lastBottomText.Update(_pendingBottomText))
             {
-                _lastBottomText = _pendingBottomText;
                 if (_bottomSecText != null) _bottomSecText.text = _pendingBottomText;
             }
 
@@ -1258,15 +1254,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             formatted = UIFactory.FormatTabular(formatted);
 
-            if (formatted != _lastCenterText)
+            if (_lastCenterText.Update(formatted))
             {
-                _lastCenterText = formatted;
                 if (_centerValueText != null) _centerValueText.text = formatted;
             }
 
-            if (_activeUnitStr != _lastUnitText)
+            if (_lastUnitText.Update(_activeUnitStr))
             {
-                _lastUnitText = _activeUnitStr;
                 if (_centerUnitText != null) _centerUnitText.text = _activeUnitStr;
             }
         }
@@ -1417,9 +1411,8 @@ namespace ModularFlightPanel.UI.Widgets
                 if (gForce >= 8.0 || gForce <= -3.0) alertLevel = 2;
                 else if (gForce >= 4.0 || gForce <= -1.5) alertLevel = 1;
 
-                if (alertLevel != _lastAccAlertLevel)
+                if (_lastAccAlertLevel.Update(alertLevel))
                 {
-                    _lastAccAlertLevel = alertLevel;
                     TextStyleRole valTextRole = alertLevel == 2 ? TextStyleRole.Danger :
                                                 alertLevel == 1 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue;
                     TextStyleRole tagTextRole = alertLevel == 2 ? TextStyleRole.Danger :
@@ -1455,13 +1448,11 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-_currentHalfTrackH 至 +_currentHalfTrackH)
-                if (double.IsNaN(_lastGForce) || Math.Abs(gForce - _lastGForce) > 0.03)
+                if (_lastGForce.Update(gForce))
                 {
-                    _lastGForce = gForce;
                     string accStr = UIFactory.FormatTabular($"{gForce:F1}G");
-                    if (accStr != _lastAccText)
+                    if (_lastAccText.Update(accStr))
                     {
-                        _lastAccText = accStr;
                         if (_accValText != null) _accValText.text = accStr;
                     }
 
@@ -1479,10 +1470,8 @@ namespace ModularFlightPanel.UI.Widgets
                 const double RATE_DEADBAND = 0.08;
                 bool isRateDeadband = Math.Abs(_pendingAccelMps2) < RATE_DEADBAND;
 
-                if (double.IsNaN(_lastRenderedAccel) || Math.Abs(_pendingAccelMps2 - _lastRenderedAccel) > 0.05)
+                if (_lastRenderedAccel.Update(_pendingAccelMps2))
                 {
-                    _lastRenderedAccel = _pendingAccelMps2;
-
                     string rateStr;
                     if (isRateDeadband)
                     {
@@ -1495,9 +1484,8 @@ namespace ModularFlightPanel.UI.Widgets
 
                     rateStr = UIFactory.FormatTabular(rateStr);
 
-                    if (rateStr != _lastRateText)
+                    if (_lastRateText.Update(rateStr))
                     {
-                        _lastRateText = rateStr;
                         if (_rateValText != null)
                         {
                             _rateValText.text = rateStr;
@@ -1579,11 +1567,10 @@ namespace ModularFlightPanel.UI.Widgets
                     meterRole = isPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                 }
 
-                if (double.IsNaN(_lastTrendVal) || Math.Abs(vs - _lastTrendVal) > 0.05 || isPositive != _lastTrendPositive)
+                bool trendValDirty = _lastTrendVal.Update(vs);
+                bool trendPosDirty = _lastTrendPositive.Update(isPositive);
+                if (trendValDirty || trendPosDirty)
                 {
-                    _lastTrendVal = vs;
-                    _lastTrendPositive = isPositive;
-
                     Color vsiCol = WidgetStyleManager.Meter(meterRole, theme);
                     SetColorIfChanged(_vsiPointerHead, vsiCol);
                     SetColorIfChanged(_vsiPointerStem, vsiCol);
@@ -1605,9 +1592,8 @@ namespace ModularFlightPanel.UI.Widgets
 
                     formattedRate = UIFactory.FormatTabular(formattedRate);
 
-                    if (formattedRate != _lastTrendRateText)
+                    if (_lastTrendRateText.Update(formattedRate))
                     {
-                        _lastTrendRateText = formattedRate;
                         if (_vsiRateText != null) _vsiRateText.text = formattedRate;
                     }
 
@@ -1651,8 +1637,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (agl < 500.0 && agl >= -10.0)
             {
-                if (!double.IsNaN(_lastTerrainVal) && Math.Abs(agl - _lastTerrainVal) < 0.2 && _groundRibbonObj.activeSelf) return;
-                _lastTerrainVal = agl;
+                if (!_lastTerrainVal.Update(agl) && _groundRibbonObj.activeSelf) return;
 
                 _groundRibbonObj.SetActiveSafe(true);
 
@@ -1799,12 +1784,12 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (_vsiTagBox != null) ApplyCard(_vsiTagBg, _vsiTagOutline, CardStyleRole.Normal, theme);
                 if (_vsiTagText != null) ApplyText(_vsiTagText, TextStyleRole.Cardinal, theme);
-                if (_vsiRateText != null) ApplyText(_vsiRateText, _lastTrendPositive ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
+                if (_vsiRateText != null) ApplyText(_vsiRateText, _lastTrendPositive.Value ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
                 if (_vsiTrackBg != null) ApplyCard(_vsiTrackBg, _vsiTrackOutline, CardStyleRole.SubtleSlot, theme);
                 if (_vsiTrack != null) _vsiTrack.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
                 if (_vsiZeroAnchor != null) _vsiZeroAnchor.color = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.60f);
 
-                MeterStyleRole vsiRole = _lastTrendPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
+                MeterStyleRole vsiRole = _lastTrendPositive.Value ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                 Color vsiCol = WidgetStyleManager.Meter(vsiRole, theme);
                 if (_vsiPointerHead != null) _vsiPointerHead.color = vsiCol;
                 if (_vsiPointerStem != null) _vsiPointerStem.color = vsiCol;

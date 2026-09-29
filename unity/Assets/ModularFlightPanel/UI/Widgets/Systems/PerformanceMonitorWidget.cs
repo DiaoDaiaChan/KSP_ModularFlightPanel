@@ -75,20 +75,20 @@ namespace ModularFlightPanel.UI.Widgets
         private string _coreToken = "{PERF:HOOKS}";
 
         // 脏检查缓存 (抑制无效重绘)
-        private double _lastFps = double.NaN;
-        private double _lastTotalMs = double.NaN;
-        private double _lastBudget = double.NaN;
-        private double _lastMem = double.NaN;
-        private double _lastWidgetsMs = double.NaN;
-        private double _lastProbesMs = double.NaN;
-        private double _lastTelemMs = double.NaN;
-        private double _lastCoreMs = double.NaN;
-        private bool _lastBypassState = false;
-        private string _lastFormattedFps = string.Empty;
-        private string _lastFormattedTotalMs = string.Empty;
-        private string _lastFormattedBudget = string.Empty;
-        private string _lastFormattedMem = string.Empty;
-        private string _lastFormattedHealth = string.Empty;
+        private readonly CachedDouble _lastFps = new CachedDouble(double.NaN, tolerance: 0.8);
+        private readonly CachedDouble _lastTotalMs = new CachedDouble(double.NaN, tolerance: 0.02);
+        private readonly CachedDouble _lastBudget = new CachedDouble(double.NaN, tolerance: 0.1);
+        private readonly CachedDouble _lastMem = new CachedDouble(double.NaN, tolerance: 0.5);
+        private readonly CachedDouble _lastWidgetsMs = new CachedDouble(double.NaN, tolerance: 0.01);
+        private readonly CachedDouble _lastProbesMs = new CachedDouble(double.NaN, tolerance: 0.01);
+        private readonly CachedDouble _lastTelemMs = new CachedDouble(double.NaN, tolerance: 0.01);
+        private readonly CachedDouble _lastCoreMs = new CachedDouble(double.NaN, tolerance: 0.01);
+        private readonly Cached<bool> _lastBypassState = new Cached<bool>(false);
+        private readonly Cached<string> _lastFormattedFps = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFormattedTotalMs = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFormattedBudget = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFormattedMem = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFormattedHealth = new Cached<string>(string.Empty);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -365,9 +365,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. 旁路状态变动侦测
             bool bypassed = _cachedBypassed;
-            if (bypassed != _lastBypassState)
+            if (_lastBypassState.Update(bypassed))
             {
-                _lastBypassState = bypassed;
                 StatusBadge.Text = bypassed ? "● " + I18n.Tr("WIDGET_PERF_BYPASS", "旁路") : "● " + I18n.Tr("WIDGET_PERF_LIVE", "实时");
                 StatusBadge.SetRole(bypassed ? TextStyleRole.Warning : TextStyleRole.Accent);
                 _bypassBtnLabel.text = bypassed ? "▶ " + I18n.Tr("WIDGET_PERF_RESUME", "恢复 MFP HUD") : "⏸ " + I18n.Tr("WIDGET_PERF_BYPASS_BTN", "旁路 MFP (零开销)");
@@ -376,13 +375,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 2. FPS 读数与语义告警
             double fps = _cachedFps;
-            if (double.IsNaN(_lastFps) || Math.Abs(fps - _lastFps) > 0.8)
+            if (_lastFps.Update(fps))
             {
-                _lastFps = fps;
                 string fpsStr = Math.Round(fps).ToString();
-                if (fpsStr != _lastFormattedFps)
+                if (_lastFormattedFps.Update(fpsStr))
                 {
-                    _lastFormattedFps = fpsStr;
                     _fpsValText.text = fpsStr;
 
                     if (fps < 25.0) ApplyText(_fpsValText, TextStyleRole.Danger, theme);
@@ -393,25 +390,21 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 3. MFP 帧耗时与预算占比
             double totalMs = _cachedTotalMs;
-            if (double.IsNaN(_lastTotalMs) || Math.Abs(totalMs - _lastTotalMs) > deltaThreshold)
+            if (_lastTotalMs.Update(totalMs))
             {
-                _lastTotalMs = totalMs;
                 string msStr = $"{totalMs:F2} ms";
-                if (msStr != _lastFormattedTotalMs)
+                if (_lastFormattedTotalMs.Update(msStr))
                 {
-                    _lastFormattedTotalMs = msStr;
                     _mfpMsText.text = msStr;
                 }
             }
 
             double budget = _cachedBudget;
-            if (double.IsNaN(_lastBudget) || Math.Abs(budget - _lastBudget) > 0.1)
+            if (_lastBudget.Update(budget))
             {
-                _lastBudget = budget;
                 string budStr = $"{budget:F1}% BUDGET";
-                if (budStr != _lastFormattedBudget)
+                if (_lastFormattedBudget.Update(budStr))
                 {
-                    _lastFormattedBudget = budStr;
                     _budgetPctText.text = budStr;
                 }
             }
@@ -422,61 +415,54 @@ namespace ModularFlightPanel.UI.Widgets
 
             // Widgets
             double wMs = _cachedWidgetsMs;
-            if (double.IsNaN(_lastWidgetsMs) || Math.Abs(wMs - _lastWidgetsMs) > 0.01)
+            if (_lastWidgetsMs.Update(wMs))
             {
-                _lastWidgetsMs = wMs;
                 float frac = Mathf.Clamp01((float)(wMs / maxSubsystemMs));
-                _widgetsFill.rectTransform.sizeDelta = new Vector2(maxBarWidth * frac, 7f * s);
+                _widgetsFill.rectTransform.SetSizeDeltaSafe(new Vector2(maxBarWidth * frac, 7f * s));
                 _widgetsValText.text = $"{wMs:F2}ms";
             }
 
             // Probes
             double pMs = _cachedProbesMs;
-            if (double.IsNaN(_lastProbesMs) || Math.Abs(pMs - _lastProbesMs) > 0.01)
+            if (_lastProbesMs.Update(pMs))
             {
-                _lastProbesMs = pMs;
                 float frac = Mathf.Clamp01((float)(pMs / maxSubsystemMs));
-                _probesFill.rectTransform.sizeDelta = new Vector2(maxBarWidth * frac, 7f * s);
+                _probesFill.rectTransform.SetSizeDeltaSafe(new Vector2(maxBarWidth * frac, 7f * s));
                 _probesValText.text = $"{pMs:F2}ms";
             }
 
             // Telem
             double tMs = _cachedTelemMs;
-            if (double.IsNaN(_lastTelemMs) || Math.Abs(tMs - _lastTelemMs) > 0.01)
+            if (_lastTelemMs.Update(tMs))
             {
-                _lastTelemMs = tMs;
                 float frac = Mathf.Clamp01((float)(tMs / maxSubsystemMs));
-                _telemFill.rectTransform.sizeDelta = new Vector2(maxBarWidth * frac, 7f * s);
+                _telemFill.rectTransform.SetSizeDeltaSafe(new Vector2(maxBarWidth * frac, 7f * s));
                 _telemValText.text = $"{tMs:F2}ms";
             }
 
             // Core / Hooks
             double cMs = _cachedCoreMs;
-            if (double.IsNaN(_lastCoreMs) || Math.Abs(cMs - _lastCoreMs) > 0.01)
+            if (_lastCoreMs.Update(cMs))
             {
-                _lastCoreMs = cMs;
                 float frac = Mathf.Clamp01((float)(cMs / maxSubsystemMs));
-                _coreFill.rectTransform.sizeDelta = new Vector2(maxBarWidth * frac, 7f * s);
+                _coreFill.rectTransform.SetSizeDeltaSafe(new Vector2(maxBarWidth * frac, 7f * s));
                 _coreValText.text = $"{cMs:F2}ms";
             }
 
             // 5. 内存分配与稳定性
             double mem = _cachedMem;
-            if (double.IsNaN(_lastMem) || Math.Abs(mem - _lastMem) > 0.5)
+            if (_lastMem.Update(mem))
             {
-                _lastMem = mem;
                 string memStr = $"HEAP: {mem:F1} M";
-                if (memStr != _lastFormattedMem)
+                if (_lastFormattedMem.Update(memStr))
                 {
-                    _lastFormattedMem = memStr;
                     _memValText.text = memStr;
                 }
             }
 
             string healthStr = _cachedHealthStr;
-            if (healthStr != _lastFormattedHealth)
+            if (_lastFormattedHealth.Update(healthStr))
             {
-                _lastFormattedHealth = healthStr;
                 _healthValText.text = healthStr;
             }
         }

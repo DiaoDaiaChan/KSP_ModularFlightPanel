@@ -85,8 +85,8 @@ namespace ModularFlightPanel.UI.Widgets
         private float _displayedHeading = 0f;
         private float _headingVelocity = 0f;
         private bool _isHeadingInitialized = false;
-        private float _lastRenderedHeading = -999f;
-        private int _lastBubbleDeg = -1;
+        private readonly CachedFloat _lastRenderedHeading = new CachedFloat(-999f, tolerance: 0.02f);
+        private readonly Cached<int> _lastBubbleDeg = new Cached<int>(-1);
         private Color _cachedTextCol;
         private Color _cachedSubTickCol;
         private Color _cachedNorthCol;
@@ -509,9 +509,8 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 int degInt = Mathf.RoundToInt(heading) % 360;
                 if (degInt < 0) degInt += 360;
-                if (degInt != _lastBubbleDeg)
+                if (_lastBubbleDeg.Update(degInt))
                 {
-                    _lastBubbleDeg = degInt;
                     _headingText.text = $"{degInt:D3}°";
                 }
             }
@@ -519,11 +518,14 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateRotatingCompassRose(float currentHeading, bool force = false)
         {
-            if (!force && Mathf.Abs(Mathf.DeltaAngle(currentHeading, _lastRenderedHeading)) < 0.02f)
+            if (!force && !_lastRenderedHeading.Update(currentHeading))
             {
                 return;
             }
-            _lastRenderedHeading = currentHeading;
+            if (force)
+            {
+                _lastRenderedHeading.Reset(currentHeading);
+            }
 
             float s = CurrentDpiScale;
             float rx = _currentRadiusX > 0.001f ? _currentRadiusX : (ARC_RADIUS * s);

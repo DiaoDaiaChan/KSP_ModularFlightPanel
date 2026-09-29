@@ -62,7 +62,6 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _isExpanded = false;
         private bool _stockHidden = true;
         private ThemeConfig _currentTheme;
-        private IFlightTelemetry _lastTelemetry;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -252,13 +251,13 @@ namespace ModularFlightPanel.UI.Widgets
             return ui;
         }
 
-        private string _lastTargetName;
-        private string _lastRateSummary;
-        private string _lastMatrixSummary;
-        private string _lastMatrixFooter;
-        private string _lastStockBtnText;
-        private int _lastLitBars = -1;
-        private int _lastCtrlState = -1;
+        private readonly Cached<string> _lastTargetName = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRateSummary = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastMatrixSummary = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastMatrixFooter = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastStockBtnText = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastLitBars = new Cached<int>(-1);
+        private readonly Cached<int> _lastCtrlState = new Cached<int>(-1);
 
         private string _targetFallback;
         private string _rateTemplate;
@@ -302,7 +301,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             _cachedHasVessel = true;
-            _lastTelemetry = context.Telemetry;
 
             double sig = Mathf.Clamp01((float)context.Telemetry.CommSignal);
             _cachedSig = sig;
@@ -375,9 +373,8 @@ namespace ModularFlightPanel.UI.Widgets
                 : ((sig > 0.1) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
             Color sigColor = WidgetStyleManager.Meter(barRole, theme);
 
-            if (litBars != _lastLitBars)
+            if (_lastLitBars.Update(litBars))
             {
-                _lastLitBars = litBars;
                 for (int i = 0; i < MainBarCount; i++)
                 {
                     if (_mainSignalBars[i] == null) continue;
@@ -394,9 +391,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 2. 控制权徽章 (FULL / PART / NONE)
             int ctrlState = _cachedCtrlState;
-            if (ctrlState != _lastCtrlState && _ctrlBadgeText != null && _ctrlBadgeBg != null)
+            if (_lastCtrlState.Update(ctrlState) && _ctrlBadgeText != null && _ctrlBadgeBg != null)
             {
-                _lastCtrlState = ctrlState;
                 if (ctrlState == 0)
                 {
                     _ctrlBadgeText.text = I18n.Tr("WIDGET_SIGNAL_NONE", "NONE");
@@ -418,24 +414,21 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 主站点名称与综合速率
-            if (_targetNameText != null && _cachedTargetName != _lastTargetName)
+            if (_targetNameText != null && _lastTargetName.Update(_cachedTargetName))
             {
-                _lastTargetName = _cachedTargetName;
                 _targetNameText.text = _cachedTargetName;
             }
 
-            if (_rateSummaryText != null && _cachedRateSummary != null && _cachedRateSummary != _lastRateSummary)
+            if (_rateSummaryText != null && _cachedRateSummary != null && _lastRateSummary.Update(_cachedRateSummary))
             {
-                _lastRateSummary = _cachedRateSummary;
                 _rateSummaryText.text = _cachedRateSummary;
             }
 
             // 4. 抽屉矩阵更新
             if (_dropdownPanel != null && _dropdownPanel.activeSelf)
             {
-                if (_matrixSummaryText != null && _cachedMatrixSummary != null && _cachedMatrixSummary != _lastMatrixSummary)
+                if (_matrixSummaryText != null && _cachedMatrixSummary != null && _lastMatrixSummary.Update(_cachedMatrixSummary))
                 {
-                    _lastMatrixSummary = _cachedMatrixSummary;
                     _matrixSummaryText.text = _cachedMatrixSummary;
                 }
 
@@ -468,9 +461,8 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                if (_matrixFooterText != null && _cachedMatrixFooter != null && _cachedMatrixFooter != _lastMatrixFooter)
+                if (_matrixFooterText != null && _cachedMatrixFooter != null && _lastMatrixFooter.Update(_cachedMatrixFooter))
                 {
-                    _lastMatrixFooter = _cachedMatrixFooter;
                     _matrixFooterText.text = _cachedMatrixFooter;
                 }
             }
@@ -479,9 +471,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (_stockBtnText != null)
             {
                 string newStockText = _stockHidden ? "KSP" : "MFP";
-                if (newStockText != _lastStockBtnText)
+                if (_lastStockBtnText.Update(newStockText))
                 {
-                    _lastStockBtnText = newStockText;
                     _stockBtnText.text = newStockText;
                     ApplyText(_stockBtnText, _stockHidden ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
                 }
@@ -521,8 +512,8 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnLanguageChanged();
             RefreshTemplateChannels();
-            _lastCtrlState = -1;
-            _lastMatrixFooter = null;
+            _lastCtrlState.Reset(-1);
+            _lastMatrixFooter.Reset(null);
             if (_matrixTitleText != null)
             {
                 _matrixTitleText.text = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SIGNAL_TITLE", "REALANTENNAS / COMMNET"));

@@ -104,21 +104,21 @@ namespace ModularFlightPanel.UI.Widgets
         private string _gearLabelStr = "GEAR";
 
         // 脏检查文本缓存
-        private string _lastTatStr = string.Empty;
-        private string _lastModeStr = string.Empty;
-        private string _lastCas1Str = string.Empty;
-        private string _lastCas2Str = string.Empty;
-        private string _lastGearStr = string.Empty;
-        private string _lastDuctStr = string.Empty;
-        private string _lastCabStr = string.Empty;
-        private string _lastFuelStr = string.Empty;
+        private readonly Cached<string> _lastTatStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastModeStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastCas1Str = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastCas2Str = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastGearStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastDuctStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastCabStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastFuelStr = new Cached<string>(string.Empty);
 
-        private string[] _lastEprStrs = new string[4];
-        private string[] _lastN1Strs = new string[4];
-        private string[] _lastEgtStrs = new string[4];
-        private double[] _lastEprVals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
-        private double[] _lastN1Vals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
-        private double[] _lastEgtVals = new double[4] { double.NaN, double.NaN, double.NaN, double.NaN };
+        private readonly Cached<string>[] _lastEprStrs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastN1Strs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly Cached<string>[] _lastEgtStrs = new[] { new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty), new Cached<string>(string.Empty) };
+        private readonly CachedFloat[] _lastEprFills = new[] { new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f) };
+        private readonly CachedFloat[] _lastN1Fills = new[] { new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f) };
+        private readonly CachedFloat[] _lastEgtFills = new[] { new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f) };
         private static readonly float[] s_Variances = { -0.01f, 0.02f, -0.01f, 0.01f };
 
         // 双轨架构快照字段
@@ -255,9 +255,9 @@ namespace ModularFlightPanel.UI.Widgets
                     trackCol, meterFillCol, warnCol, s, false,
                     out _egtGaugeTracks[i], out _egtGaugeFills[i], out _egtLimitTicks[i]);
 
-                _lastEprStrs[i] = string.Empty;
-                _lastN1Strs[i] = string.Empty;
-                _lastEgtStrs[i] = string.Empty;
+                _lastEprStrs[i].Reset(string.Empty);
+                _lastN1Strs[i].Reset(string.Empty);
+                _lastEgtStrs[i].Reset(string.Empty);
             }
 
             // 4. 行标签
@@ -609,15 +609,13 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 顶端 TAT 与推力模式更新
-            if (_cachedTatStr != _lastTatStr)
+            if (_lastTatStr.Update(_cachedTatStr))
             {
-                _lastTatStr = _cachedTatStr;
                 if (_tatText != null) _tatText.text = _cachedTatStr;
             }
 
-            if (_cachedModeStr != _lastModeStr)
+            if (_lastModeStr.Update(_cachedModeStr))
             {
-                _lastModeStr = _cachedModeStr;
                 if (_thrustModeText != null) _thrustModeText.text = _cachedModeStr;
             }
 
@@ -625,41 +623,36 @@ namespace ModularFlightPanel.UI.Widgets
             float gaugeMaxH = 24f * CurrentDpiScale;
             for (int i = 0; i < 4; i++)
             {
-                if (_cachedEprStrs[i] != _lastEprStrs[i])
+                if (_lastEprStrs[i].Update(_cachedEprStrs[i]))
                 {
-                    _lastEprStrs[i] = _cachedEprStrs[i];
                     if (_eprReadoutTexts[i] != null) _eprReadoutTexts[i].text = _cachedEprStrs[i];
                 }
-                if (_eprGaugeFills[i] != null)
+                if (_eprGaugeFills[i] != null && _lastEprFills[i].Update(_cachedEprFracs[i]))
                     _eprGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedEprFracs[i]);
 
-                if (_cachedN1Strs[i] != _lastN1Strs[i])
+                if (_lastN1Strs[i].Update(_cachedN1Strs[i]))
                 {
-                    _lastN1Strs[i] = _cachedN1Strs[i];
                     if (_n1ReadoutTexts[i] != null) _n1ReadoutTexts[i].text = _cachedN1Strs[i];
                 }
-                if (_n1GaugeFills[i] != null)
+                if (_n1GaugeFills[i] != null && _lastN1Fills[i].Update(_cachedN1Fracs[i]))
                     _n1GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedN1Fracs[i]);
 
-                if (_cachedEgtStrs[i] != _lastEgtStrs[i])
+                if (_lastEgtStrs[i].Update(_cachedEgtStrs[i]))
                 {
-                    _lastEgtStrs[i] = _cachedEgtStrs[i];
                     if (_egtReadoutTexts[i] != null) _egtReadoutTexts[i].text = _cachedEgtStrs[i];
                 }
-                if (_egtGaugeFills[i] != null)
+                if (_egtGaugeFills[i] != null && _lastEgtFills[i].Update(_cachedEgtFracs[i]))
                     _egtGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedEgtFracs[i]);
             }
 
             // 3. 右侧机组告警与起落架更新
-            if (_cachedCas1Str != _lastCas1Str)
+            if (_lastCas1Str.Update(_cachedCas1Str))
             {
-                _lastCas1Str = _cachedCas1Str;
                 if (_casMemo1Text != null) _casMemo1Text.text = _cachedCas1Str;
             }
 
-            if (_cachedCas2Str != _lastCas2Str)
+            if (_lastCas2Str.Update(_cachedCas2Str))
             {
-                _lastCas2Str = _cachedCas2Str;
                 if (_casMemo2Text != null)
                 {
                     _casMemo2Text.text = _cachedCas2Str;
@@ -668,9 +661,8 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            if (_cachedGearStr != _lastGearStr)
+            if (_lastGearStr.Update(_cachedGearStr))
             {
-                _lastGearStr = _cachedGearStr;
                 if (_gearStatusText != null)
                 {
                     _gearStatusText.text = _cachedGearStr;
@@ -687,21 +679,18 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 底部引气、客舱增压与燃油总重
-            if (_cachedDuctStr != _lastDuctStr)
+            if (_lastDuctStr.Update(_cachedDuctStr))
             {
-                _lastDuctStr = _cachedDuctStr;
                 if (_ductPressText != null) _ductPressText.text = _cachedDuctStr;
             }
 
-            if (_cachedCabStr != _lastCabStr)
+            if (_lastCabStr.Update(_cachedCabStr))
             {
-                _lastCabStr = _cachedCabStr;
                 if (_cabPressText != null) _cabPressText.text = _cachedCabStr;
             }
 
-            if (_cachedFuelStr != _lastFuelStr)
+            if (_lastFuelStr.Update(_cachedFuelStr))
             {
-                _lastFuelStr = _cachedFuelStr;
                 if (_fuelSummaryText != null) _fuelSummaryText.text = _cachedFuelStr;
             }
         }

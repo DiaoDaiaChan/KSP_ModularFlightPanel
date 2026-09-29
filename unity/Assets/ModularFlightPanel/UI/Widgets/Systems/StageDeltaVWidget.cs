@@ -40,6 +40,9 @@ namespace ModularFlightPanel.UI.Widgets
             public Image CaretImg;
             public Text StageDvText;
             public Text StageTimeText;
+            public readonly Cached<int> LastStage = new Cached<int>(-1);
+            public readonly CachedDouble LastDv = new CachedDouble(-1.0, tolerance: 0.5);
+            public readonly CachedFloat LastBarW = new CachedFloat(-1f, tolerance: 0.5f);
         }
 
         private Image _panelBg;
@@ -430,11 +433,12 @@ namespace ModularFlightPanel.UI.Widgets
             footRt.sizeDelta = new Vector2(panelSize.x - 20f * s, 16f * s);
         }
 
-        private string _lastTotalDvText;
-        private string _lastTotalTimeText;
-        private string _lastBayFooterText;
-        private string _lastFooterStatusText;
-        private string _lastSourceText;
+        private readonly Cached<string> _dirtyTotalDvText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _dirtyTotalTimeText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _dirtyBayFooterText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _dirtyFooterStatusText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _dirtySourceText = new Cached<string>(string.Empty);
+        private readonly CachedFloat _dirtyPlumeThr = new CachedFloat(-1f, tolerance: 0.01f);
 
         private struct DvRowSnapshot
         {
@@ -575,23 +579,20 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 1. 数据源标识
-            if (_sourceBadgeText != null && _cachedSource != _lastSourceText)
+            if (_sourceBadgeText != null && _dirtySourceText.Update(_cachedSource))
             {
-                _lastSourceText = _cachedSource;
-                _sourceBadgeText.text = _cachedSource;
+                SetTextIfChanged(_sourceBadgeText, _cachedSource);
             }
 
             // 2. 总 Δv 与总烧燃时序
-            if (_totalDvValue != null && _cachedTotalDvText != _lastTotalDvText)
+            if (_totalDvValue != null && _dirtyTotalDvText.Update(_cachedTotalDvText))
             {
-                _lastTotalDvText = _cachedTotalDvText;
-                _totalDvValue.text = _cachedTotalDvText;
+                SetTextIfChanged(_totalDvValue, _cachedTotalDvText);
             }
 
-            if (_totalTimeValue != null && _cachedTotalTimeText != _lastTotalTimeText)
+            if (_totalTimeValue != null && _dirtyTotalTimeText.Update(_cachedTotalTimeText))
             {
-                _lastTotalTimeText = _cachedTotalTimeText;
-                _totalTimeValue.text = _cachedTotalTimeText;
+                SetTextIfChanged(_totalTimeValue, _cachedTotalTimeText);
             }
 
             // 3. 逐行速度条
@@ -604,7 +605,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (snap.Visible)
                 {
                     row.Root.SetActive(true);
-                    row.StageBadgeText.text = $"S{snap.Stage:D2}";
+                    if (row.LastStage.Update(snap.Stage))
+                    {
+                        SetTextIfChanged(row.StageBadgeText, $"S{snap.Stage:D2}");
+                    }
 
                     if (snap.IsActive)
                     {
@@ -620,7 +624,10 @@ namespace ModularFlightPanel.UI.Widgets
                     }
 
                     float barW = Mathf.Max(3f * _cachedScale, snap.Ratio * maxTrackW);
-                    row.FillBarRt.sizeDelta = new Vector2(barW, row.TrackRt.sizeDelta.y - 2f * _cachedScale);
+                    if (row.LastBarW.Update(barW))
+                    {
+                        row.FillBarRt.sizeDelta = new Vector2(barW, row.TrackRt.sizeDelta.y - 2f * _cachedScale);
+                    }
 
                     if (snap.IsActive)
                     {
@@ -634,8 +641,11 @@ namespace ModularFlightPanel.UI.Widgets
                         row.CaretImg.enabled = false;
                     }
 
-                    row.StageDvText.text = $"{snap.DeltaV:N0} m/s";
-                    row.StageTimeText.text = FormatDurationCompact(snap.BurnTime);
+                    if (row.LastDv.Update(snap.DeltaV))
+                    {
+                        SetTextIfChanged(row.StageDvText, $"{snap.DeltaV:N0} m/s");
+                    }
+                    SetTextIfChanged(row.StageTimeText, FormatDurationCompact(snap.BurnTime));
                 }
                 else
                 {
@@ -644,14 +654,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 左侧 2D 剪影视窗底部状态与发动机羽流
-            if (_silhouetteBayFooter != null)
+            if (_silhouetteBayFooter != null && _dirtyBayFooterText.Update(_cachedBayFootStr))
             {
-                if (_cachedBayFootStr != _lastBayFooterText)
-                {
-                    _lastBayFooterText = _cachedBayFootStr;
-                    _silhouetteBayFooter.text = _cachedBayFootStr;
-                    ApplyText(_silhouetteBayFooter, _cachedHasActive ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
-                }
+                SetTextIfChanged(_silhouetteBayFooter, _cachedBayFootStr);
+                ApplyText(_silhouetteBayFooter, _cachedHasActive ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
             }
 
             if (_plumeObj != null)
@@ -660,20 +666,19 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_cachedIsFiring && _plumeRt != null)
                 {
                     float thr = _cachedThrottle;
-                    _plumeRt.sizeDelta = new Vector2(9f * _cachedScale, (6f + 8f * thr) * _cachedScale);
+                    if (_dirtyPlumeThr.Update(thr))
+                    {
+                        _plumeRt.sizeDelta = new Vector2(9f * _cachedScale, (6f + 8f * thr) * _cachedScale);
+                    }
                     _plumeImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                 }
             }
 
             // 5. 底栏摘要
-            if (_footerStatusText != null)
+            if (_footerStatusText != null && _dirtyFooterStatusText.Update(_cachedFootStatusStr))
             {
-                if (_cachedFootStatusStr != _lastFooterStatusText)
-                {
-                    _lastFooterStatusText = _cachedFootStatusStr;
-                    _footerStatusText.text = _cachedFootStatusStr;
-                    ApplyText(_footerStatusText, _cachedFootRole, theme);
-                }
+                SetTextIfChanged(_footerStatusText, _cachedFootStatusStr);
+                ApplyText(_footerStatusText, _cachedFootRole, theme);
             }
         }
 

@@ -51,7 +51,7 @@ namespace ModularFlightPanel.UI.Widgets
         public TextWidget MaxScale = new TextWidget(TextStyleRole.Muted, 12f, -38f, 26f, 14f, 8f, TextAnchor.MiddleRight, "100");
 
         private string _valueToken = "{THROTTLE}";
-        private float _lastFill = -1f;
+        private readonly CachedFloat _lastFill = new CachedFloat(-1f, tolerance: 0.002f);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -197,9 +197,8 @@ namespace ModularFlightPanel.UI.Widgets
             Value.Text = _dataValueText;
             Value.SetRole(_dataRole);
 
-            if (_meterMaterial != null && Math.Abs(_dataFill - _lastFill) > 0.002f)
+            if (_meterMaterial != null && _lastFill.Update(_dataFill))
             {
-                _lastFill = _dataFill;
                 _meterMaterial.SetFloat("_FillAmount", _dataFill);
             }
         }

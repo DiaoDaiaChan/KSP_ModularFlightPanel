@@ -51,6 +51,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Button _centerDividerBtn;
         private Image _horizDivider;
         private Button _horizDividerBtn;
+        private readonly CachedFloat _bannerSlidePos = new CachedFloat(-999f, tolerance: 0.5f);
 
         // 告警单元结构体 (支持零 GC 判等与分桶脏检查)
         private struct AlertItem : IEquatable<AlertItem>
@@ -203,24 +204,24 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _warnWasDeadFront = false;
         private bool _cellsStyleNeedsUpdate = true;
         private bool _nominalStyleNeedsUpdate = true;
-        private Color _lastNominalPhaseColor = Color.clear;
-        private double _lastRenderedAp = -9999999.0;
-        private double _lastRenderedPe = -9999999.0;
-        private double _lastRenderedDv = -999.0;
-        private float _lastRenderedMach = -1f;
-        private float _lastRenderedVsi = -9999f;
+        private readonly Cached<Color> _lastNominalPhaseColor = new Cached<Color>(Color.clear);
+        private readonly CachedDouble _lastRenderedAp = new CachedDouble(-9999999.0, tolerance: 500.0);
+        private readonly CachedDouble _lastRenderedPe = new CachedDouble(-9999999.0, tolerance: 500.0);
+        private readonly CachedDouble _lastRenderedDv = new CachedDouble(-999.0, tolerance: 0.5);
+        private readonly CachedFloat _lastRenderedMach = new CachedFloat(-1f, tolerance: 0.05f);
+        private readonly CachedFloat _lastRenderedVsi = new CachedFloat(-9999f, tolerance: 1.0f);
         private string _cachedApSub;
         private string _cachedPeSub;
         private string _cachedDvSub;
         private string _cachedMachSub;
         private string _cachedVsiSub;
-        private string _lastRenderedNominalTitle;
-        private string _lastRenderedNominalSub;
-        private string _lastRenderedNominalIcon;
-        private string _lastRenderedEventTitle;
-        private string _lastRenderedEventSub;
-        private string _lastRenderedEventLeftIcon;
-        private string _lastRenderedEventRightIcon;
+        private readonly Cached<string> _lastRenderedNominalTitle = new Cached<string>(null);
+        private readonly Cached<string> _lastRenderedNominalSub = new Cached<string>(null);
+        private readonly Cached<string> _lastRenderedNominalIcon = new Cached<string>(null);
+        private readonly Cached<string> _lastRenderedEventTitle = new Cached<string>(null);
+        private readonly Cached<string> _lastRenderedEventSub = new Cached<string>(null);
+        private readonly Cached<string> _lastRenderedEventLeftIcon = new Cached<string>(null);
+        private readonly Cached<string> _lastRenderedEventRightIcon = new Cached<string>(null);
         private bool _nominalDataDirty = true;
         private bool _isQuiescentFlightState = false;
 
@@ -264,33 +265,33 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 遥测数据死区量化格式缓存 (Zero-GC Telemetry Affix Deadbands)
         private string _cachedAglStr = "0m";
-        private int _lastAglMeters = -9999;
+        private int _fmtAglMeters = -9999;
         private string _cachedVsiStr = "0m/s";
-        private int _lastVsiVal = -9999;
+        private int _fmtVsiVal = -9999;
         private string _cachedGForceStr = "1.0G";
-        private double _lastGForceVal = -999.0;
+        private double _fmtGForceVal = -999.0;
         private string _cachedTempStr = "0°C";
-        private int _lastTempInt = -9999;
+        private int _fmtTempInt = -9999;
         private string _cachedTtiStr = "0s";
-        private int _lastTtiSec = -9999;
+        private int _fmtTtiSec = -9999;
         private string _cachedClosureRateStr = "0.0m/s";
-        private double _lastClosureRateVal = -999.0;
+        private double _fmtClosureRateVal = -999.0;
         private string _cachedVMassStr = "0.0t";
-        private double _lastVMassVal = -999.0;
+        private double _fmtVMassVal = -999.0;
         private string _cachedRadStr = "0.00r/h";
-        private double _lastRadVal = -999.0;
+        private double _fmtRadVal = -999.0;
         private string _cachedPressStr = "0.00a";
-        private double _lastPressVal = -999.0;
+        private double _fmtPressVal = -999.0;
         private string _cachedDbsSecStr = "0s";
-        private int _lastDbsSec = -9999;
+        private int _fmtDbsSec = -9999;
         private string _cachedDbsMinStr = "0m";
-        private int _lastDbsMin = -9999;
+        private int _fmtDbsMin = -9999;
 
         private string FormatAglM(int agl)
         {
-            if (Math.Abs(agl - _lastAglMeters) >= 5)
+            if (Math.Abs(agl - _fmtAglMeters) >= 5)
             {
-                _lastAglMeters = agl;
+                _fmtAglMeters = agl;
                 _cachedAglStr = CacheManager.FastInt(agl) + "m";
             }
             return _cachedAglStr;
@@ -298,9 +299,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatVsiMps(int vsi)
         {
-            if (Math.Abs(vsi - _lastVsiVal) >= 2)
+            if (Math.Abs(vsi - _fmtVsiVal) >= 2)
             {
-                _lastVsiVal = vsi;
+                _fmtVsiVal = vsi;
                 _cachedVsiStr = CacheManager.FastInt(vsi) + "m/s";
             }
             return _cachedVsiStr;
@@ -308,9 +309,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatGForce(double g)
         {
-            if (Math.Abs(g - _lastGForceVal) >= 0.1)
+            if (Math.Abs(g - _fmtGForceVal) >= 0.1)
             {
-                _lastGForceVal = g;
+                _fmtGForceVal = g;
                 _cachedGForceStr = $"{g:F1}G";
             }
             return _cachedGForceStr;
@@ -318,9 +319,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatTemp(int temp)
         {
-            if (Math.Abs(temp - _lastTempInt) >= 2)
+            if (Math.Abs(temp - _fmtTempInt) >= 2)
             {
-                _lastTempInt = temp;
+                _fmtTempInt = temp;
                 _cachedTempStr = CacheManager.FastInt(temp) + "°C";
             }
             return _cachedTempStr;
@@ -328,9 +329,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatTtiSec(int tti)
         {
-            if (Math.Abs(tti - _lastTtiSec) >= 1)
+            if (Math.Abs(tti - _fmtTtiSec) >= 1)
             {
-                _lastTtiSec = tti;
+                _fmtTtiSec = tti;
                 _cachedTtiStr = CacheManager.FastInt(tti) + "s";
             }
             return _cachedTtiStr;
@@ -338,9 +339,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatClosureRate(double rate)
         {
-            if (Math.Abs(rate - _lastClosureRateVal) >= 0.1)
+            if (Math.Abs(rate - _fmtClosureRateVal) >= 0.1)
             {
-                _lastClosureRateVal = rate;
+                _fmtClosureRateVal = rate;
                 _cachedClosureRateStr = $"{rate:F1}m/s";
             }
             return _cachedClosureRateStr;
@@ -348,9 +349,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatVMass(double mass)
         {
-            if (Math.Abs(mass - _lastVMassVal) >= 0.2)
+            if (Math.Abs(mass - _fmtVMassVal) >= 0.2)
             {
-                _lastVMassVal = mass;
+                _fmtVMassVal = mass;
                 _cachedVMassStr = $"{mass:F1}t";
             }
             return _cachedVMassStr;
@@ -358,9 +359,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatRadiation(double rad)
         {
-            if (Math.Abs(rad - _lastRadVal) >= 0.02)
+            if (Math.Abs(rad - _fmtRadVal) >= 0.02)
             {
-                _lastRadVal = rad;
+                _fmtRadVal = rad;
                 _cachedRadStr = $"{rad:F2}r/h";
             }
             return _cachedRadStr;
@@ -368,9 +369,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatPressure(double press)
         {
-            if (Math.Abs(press - _lastPressVal) >= 0.02)
+            if (Math.Abs(press - _fmtPressVal) >= 0.02)
             {
-                _lastPressVal = press;
+                _fmtPressVal = press;
                 _cachedPressStr = $"{press:F2}a";
             }
             return _cachedPressStr;
@@ -378,9 +379,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatDbsSec(int sec)
         {
-            if (Math.Abs(sec - _lastDbsSec) >= 2)
+            if (Math.Abs(sec - _fmtDbsSec) >= 2)
             {
-                _lastDbsSec = sec;
+                _fmtDbsSec = sec;
                 _cachedDbsSecStr = CacheManager.FastInt(sec) + "s";
             }
             return _cachedDbsSecStr;
@@ -388,9 +389,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private string FormatDbsMin(int min)
         {
-            if (Math.Abs(min - _lastDbsMin) >= 1)
+            if (Math.Abs(min - _fmtDbsMin) >= 1)
             {
-                _lastDbsMin = min;
+                _fmtDbsMin = min;
                 _cachedDbsMinStr = CacheManager.FastInt(min) + "m";
             }
             return _cachedDbsMinStr;
@@ -405,8 +406,8 @@ namespace ModularFlightPanel.UI.Widgets
         // 消警状态 (Acknowledge)
         private bool _cautAcknowledged = false;
         private bool _warnAcknowledged = false;
-        private int _lastCautCount = -1;
-        private int _lastWarnCount = -1;
+        private readonly Cached<int> _lastCautCount = new Cached<int>(-1);
+        private readonly Cached<int> _lastWarnCount = new Cached<int>(-1);
 
         // 同步时钟与闪烁
         private static float _clock = 0f;
@@ -420,24 +421,16 @@ namespace ModularFlightPanel.UI.Widgets
         private string _dataNominalIcon = string.Empty;
         private EventColorRole _dataNominalRole = EventColorRole.AccentPrimary;
 
-        // 脏检查保护 (减少 GC 与 Canvas 重绘)
-        private string _lastCautTitleStr = string.Empty;
-        private string _lastCautSubStr = string.Empty;
-        private string _lastWarnTitleStr = string.Empty;
-        private string _lastWarnSubStr = string.Empty;
-        private string _lastBannerTitleStr = string.Empty;
-        private string _lastBannerSubStr = string.Empty;
-
         // 10Hz 判定降频节拍器与告警渲染脏检查守卫 (Microsecond Performance Tuning)
         private float _alertEvalTimer = 0f;
         private const float ALERT_EVAL_INTERVAL = 0.1f;
         private bool _forceImmediateAlertEval = true;
-        private bool _lastCautBlink = false;
-        private int _lastRenderedCautIdx = -1;
-        private int _lastRenderedCautTotal = -1;
-        private bool _lastWarnBlink = false;
-        private int _lastRenderedWarnIdx = -1;
-        private int _lastRenderedWarnTotal = -1;
+        private readonly Cached<bool> _lastCautBlink = new Cached<bool>(false);
+        private readonly Cached<int> _lastRenderedCautIdx = new Cached<int>(-1);
+        private readonly Cached<int> _lastRenderedCautTotal = new Cached<int>(-1);
+        private readonly Cached<bool> _lastWarnBlink = new Cached<bool>(false);
+        private readonly Cached<int> _lastRenderedWarnIdx = new Cached<int>(-1);
+        private readonly Cached<int> _lastRenderedWarnTotal = new Cached<int>(-1);
 
         // 国际化文本高速缓存 (彻底消除字典查表与堆分配)
         private string _cachedStrCaution;
@@ -1341,16 +1334,14 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateAlertIndicesAndAcknowledge()
         {
-            if (_cautAlerts.Count != _lastCautCount)
+            if (_cautAlerts.Count > _lastCautCount.Value) _cautAcknowledged = false;
+            if (_lastCautCount.Update(_cautAlerts.Count))
             {
-                if (_cautAlerts.Count > _lastCautCount) _cautAcknowledged = false;
-                _lastCautCount = _cautAlerts.Count;
                 if (_cautIndex >= _cautAlerts.Count) _cautIndex = 0;
             }
-            if (_warnAlerts.Count != _lastWarnCount)
+            if (_warnAlerts.Count > _lastWarnCount.Value) _warnAcknowledged = false;
+            if (_lastWarnCount.Update(_warnAlerts.Count))
             {
-                if (_warnAlerts.Count > _lastWarnCount) _warnAcknowledged = false;
-                _lastWarnCount = _warnAlerts.Count;
                 if (_warnIndex >= _warnAlerts.Count) _warnIndex = 0;
             }
         }
@@ -1377,9 +1368,13 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_modulesCount == 2)
                 {
                     // 2模块形态：双方框平滑向中央滑动聚拢
-                    if (_centerDivider != null) _centerDivider.gameObject.SetActive(false);
-                    if (_cautRect != null) _cautRect.anchoredPosition = new Vector2(Mathf.Lerp(-46f * s, 0f, progress), 0f);
-                    if (_warnRect != null) _warnRect.anchoredPosition = new Vector2(Mathf.Lerp(46f * s, 0f, progress), 0f);
+                    float slideX = Mathf.Lerp(46f * s, 0f, progress);
+                    if (_bannerSlidePos.Update(slideX))
+                    {
+                        if (_centerDivider != null) _centerDivider.gameObject.SetActive(false);
+                        if (_cautRect != null) _cautRect.anchoredPosition = new Vector2(-slideX, 0f);
+                        if (_warnRect != null) _warnRect.anchoredPosition = new Vector2(slideX, 0f);
+                    }
 
                     if (progress >= 1.0f)
                     {
@@ -1418,24 +1413,20 @@ namespace ModularFlightPanel.UI.Widgets
                     if (_bannerCell != null && !_bannerCell.activeSelf) _bannerCell.SetActive(true);
                 }
 
-                if (!object.ReferenceEquals(_lastRenderedEventTitle, _currentEvent.Title) && _lastRenderedEventTitle != _currentEvent.Title)
+                if (_lastRenderedEventTitle.Update(_currentEvent.Title))
                 {
-                    _lastRenderedEventTitle = _currentEvent.Title;
                     if (_bannerTitle != null) _bannerTitle.SetTextSafe(_currentEvent.Title);
                 }
-                if (!object.ReferenceEquals(_lastRenderedEventSub, _currentEvent.Sub) && _lastRenderedEventSub != _currentEvent.Sub)
+                if (_lastRenderedEventSub.Update(_currentEvent.Sub))
                 {
-                    _lastRenderedEventSub = _currentEvent.Sub;
                     if (_bannerSub != null) _bannerSub.SetTextSafe(_currentEvent.Sub);
                 }
-                if (!object.ReferenceEquals(_lastRenderedEventLeftIcon, _currentEvent.LeftIcon) && _lastRenderedEventLeftIcon != _currentEvent.LeftIcon)
+                if (_lastRenderedEventLeftIcon.Update(_currentEvent.LeftIcon))
                 {
-                    _lastRenderedEventLeftIcon = _currentEvent.LeftIcon;
                     if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_currentEvent.LeftIcon);
                 }
-                if (!object.ReferenceEquals(_lastRenderedEventRightIcon, _currentEvent.RightIcon) && _lastRenderedEventRightIcon != _currentEvent.RightIcon)
+                if (_lastRenderedEventRightIcon.Update(_currentEvent.RightIcon))
                 {
-                    _lastRenderedEventRightIcon = _currentEvent.RightIcon;
                     if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_currentEvent.RightIcon);
                 }
 
@@ -1474,24 +1465,20 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _bannerTimer += dt;
 
-                if (!object.ReferenceEquals(_lastRenderedEventTitle, _currentEvent.Title) && _lastRenderedEventTitle != _currentEvent.Title)
+                if (_lastRenderedEventTitle.Update(_currentEvent.Title))
                 {
-                    _lastRenderedEventTitle = _currentEvent.Title;
                     if (_bannerTitle != null) _bannerTitle.SetTextSafe(_currentEvent.Title);
                 }
-                if (!object.ReferenceEquals(_lastRenderedEventSub, _currentEvent.Sub) && _lastRenderedEventSub != _currentEvent.Sub)
+                if (_lastRenderedEventSub.Update(_currentEvent.Sub))
                 {
-                    _lastRenderedEventSub = _currentEvent.Sub;
                     if (_bannerSub != null) _bannerSub.SetTextSafe(_currentEvent.Sub);
                 }
-                if (!object.ReferenceEquals(_lastRenderedEventLeftIcon, _currentEvent.LeftIcon) && _lastRenderedEventLeftIcon != _currentEvent.LeftIcon)
+                if (_lastRenderedEventLeftIcon.Update(_currentEvent.LeftIcon))
                 {
-                    _lastRenderedEventLeftIcon = _currentEvent.LeftIcon;
                     if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_currentEvent.LeftIcon);
                 }
-                if (!object.ReferenceEquals(_lastRenderedEventRightIcon, _currentEvent.RightIcon) && _lastRenderedEventRightIcon != _currentEvent.RightIcon)
+                if (_lastRenderedEventRightIcon.Update(_currentEvent.RightIcon))
                 {
-                    _lastRenderedEventRightIcon = _currentEvent.RightIcon;
                     if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_currentEvent.RightIcon);
                 }
 
@@ -1528,9 +1515,9 @@ namespace ModularFlightPanel.UI.Widgets
 
                         _bannerState = BannerDisplayState.Normal;
                         _bannerTimer = 0f;
-                        _lastRenderedNominalTitle = null;
-                        _lastRenderedNominalSub = null;
-                        _lastRenderedNominalIcon = null;
+                        _lastRenderedNominalTitle.Reset(null);
+                        _lastRenderedNominalSub.Reset(null);
+                        _lastRenderedNominalIcon.Reset(null);
                         _nominalStyleNeedsUpdate = true;
                         RenderVisualCells(theme);
                     }
@@ -1542,9 +1529,9 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _bannerState = BannerDisplayState.Normal;
                         _bannerTimer = 0f;
-                        _lastRenderedNominalTitle = null;
-                        _lastRenderedNominalSub = null;
-                        _lastRenderedNominalIcon = null;
+                        _lastRenderedNominalTitle.Reset(null);
+                        _lastRenderedNominalSub.Reset(null);
+                        _lastRenderedNominalIcon.Reset(null);
                         _nominalStyleNeedsUpdate = true;
                     }
                 }
@@ -1569,7 +1556,7 @@ namespace ModularFlightPanel.UI.Widgets
             double effectiveAp = _cachedEffectiveAp;
 
             // 若在稳态静默巡航轨道中且工况文本未失效，直接复用，免除全部后续分流与格式化逻辑
-            if (isSteadyOrbit && _dataNominalTitle == _cachedStrOrbitCruise && Math.Abs(effectiveAp - _lastRenderedAp) <= 500.0)
+            if (isSteadyOrbit && _dataNominalTitle == _cachedStrOrbitCruise && Math.Abs(effectiveAp - _lastRenderedAp.Value) <= 500.0)
             {
                 return;
             }
@@ -1587,9 +1574,8 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 title = _cachedStrNodeArmed ?? (_cachedStrNodeArmed = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命"));
                 double dv = telem.ManeuverDeltaV;
-                if (Math.Abs(dv - _lastRenderedDv) > 0.5)
+                if (_lastRenderedDv.Update(dv))
                 {
-                    _lastRenderedDv = dv;
                     _cachedDvSub = $"Δv {dv:F0}";
                 }
                 sub = _cachedDvSub ?? ($"Δv {dv:F0}");
@@ -1606,9 +1592,8 @@ namespace ModularFlightPanel.UI.Widgets
             else if (telem.FlightSituation == "ESCAPING" || (effectiveAp < 0 && effectiveAp > -9000000.0))
             {
                 title = _cachedStrEscape ?? (_cachedStrEscape = I18n.Tr("WIDGET_STATUS_ESCAPE", "深空逃逸"));
-                if (Math.Abs(effectivePe - _lastRenderedPe) > 500.0)
+                if (_lastRenderedPe.Update(effectivePe))
                 {
-                    _lastRenderedPe = effectivePe;
                     _cachedPeSub = $"Pe {FormatKm(effectivePe)}";
                 }
                 sub = _cachedPeSub ?? ($"Pe {FormatKm(effectivePe)}");
@@ -1618,9 +1603,8 @@ namespace ModularFlightPanel.UI.Widgets
             else if (effectivePe < atmoCutoff && telem.AltitudeASL >= atmoCutoff && effectivePe > -9000000.0)
             {
                 // 航天器处于太空高度，但近拱点已降至大气层内或地表之下 (执行了离轨制动或处于再入走廊)
-                if (Math.Abs(effectivePe - _lastRenderedPe) > 500.0)
+                if (_lastRenderedPe.Update(effectivePe))
                 {
-                    _lastRenderedPe = effectivePe;
                     _cachedPeSub = $"Pe {FormatKm(effectivePe)}";
                 }
                 sub = _cachedPeSub ?? ($"Pe {FormatKm(effectivePe)}");
@@ -1640,9 +1624,8 @@ namespace ModularFlightPanel.UI.Widgets
             else if (telem.FlightSituation == "ORBITING" || (effectivePe >= atmoCutoff && telem.AltitudeASL >= atmoCutoff))
             {
                 title = _cachedStrOrbitCruise ?? (_cachedStrOrbitCruise = I18n.Tr("WIDGET_STATUS_ORBIT_CRUISE", "轨道巡航"));
-                if (Math.Abs(effectiveAp - _lastRenderedAp) > 500.0)
+                if (_lastRenderedAp.Update(effectiveAp))
                 {
-                    _lastRenderedAp = effectiveAp;
                     _cachedApSub = $"Ap {FormatKm(effectiveAp)}";
                 }
                 sub = _cachedApSub ?? ($"Ap {FormatKm(effectiveAp)}");
@@ -1653,9 +1636,8 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 title = _cachedStrAscent ?? (_cachedStrAscent = I18n.Tr("WIDGET_STATUS_ASCENT", "大气爬升"));
                 float mach = (float)telem.Mach;
-                if (Math.Abs(mach - _lastRenderedMach) > 0.05f)
+                if (_lastRenderedMach.Update(mach))
                 {
-                    _lastRenderedMach = mach;
                     _cachedMachSub = $"M {mach:F1}";
                 }
                 sub = _cachedMachSub ?? ($"M {mach:F1}");
@@ -1666,9 +1648,8 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 title = _cachedStrApproach ?? (_cachedStrApproach = I18n.Tr("WIDGET_STATUS_APPROACH", "降落进近"));
                 float vsi = (float)telem.VerticalSpeed;
-                if (Math.Abs(vsi - _lastRenderedVsi) > 1.0f)
+                if (_lastRenderedVsi.Update(vsi))
                 {
-                    _lastRenderedVsi = vsi;
                     _cachedVsiSub = $"VSI {Mathf.RoundToInt(vsi)}";
                 }
                 sub = _cachedVsiSub ?? ($"VSI {Mathf.RoundToInt(vsi)}");
@@ -1708,27 +1689,24 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_nominalDataDirty)
             {
-                if (!object.ReferenceEquals(_lastRenderedNominalTitle, _dataNominalTitle) && _lastRenderedNominalTitle != _dataNominalTitle)
+                if (_lastRenderedNominalTitle.Update(_dataNominalTitle))
                 {
-                    _lastRenderedNominalTitle = _dataNominalTitle;
                     if (_bannerTitle != null) _bannerTitle.SetTextSafe(_dataNominalTitle);
                 }
-                if (!object.ReferenceEquals(_lastRenderedNominalSub, _dataNominalSub) && _lastRenderedNominalSub != _dataNominalSub)
+                if (_lastRenderedNominalSub.Update(_dataNominalSub))
                 {
-                    _lastRenderedNominalSub = _dataNominalSub;
                     if (_bannerSub != null) _bannerSub.SetTextSafe(_dataNominalSub);
                 }
-                if (!object.ReferenceEquals(_lastRenderedNominalIcon, _dataNominalIcon) && _lastRenderedNominalIcon != _dataNominalIcon)
+                if (_lastRenderedNominalIcon.Update(_dataNominalIcon))
                 {
-                    _lastRenderedNominalIcon = _dataNominalIcon;
                     if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_dataNominalIcon);
                     if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_dataNominalIcon);
                 }
             }
 
-            if (_lastNominalPhaseColor != phaseColor || _nominalStyleNeedsUpdate)
+            bool phaseColorDirty = _lastNominalPhaseColor.Update(phaseColor);
+            if (phaseColorDirty || _nominalStyleNeedsUpdate)
             {
-                _lastNominalPhaseColor = phaseColor;
                 _nominalStyleNeedsUpdate = false;
 
                 // 暗舱待命微光 (Dead-front subdued glow, 0 颜色字面量)
@@ -2185,21 +2163,18 @@ namespace ModularFlightPanel.UI.Widgets
                 AlertItem item = _cautAlerts[_cautIndex];
 
                 bool blink = _cautAcknowledged || _blink1Hz;
-                bool itemChanged = _cautIndex != _lastRenderedCautIdx || _cautAlerts.Count != _lastRenderedCautTotal;
-                if (itemChanged || _cellsStyleNeedsUpdate)
+                bool idxDirty = _lastRenderedCautIdx.Update(_cautIndex);
+                bool totalDirty = _lastRenderedCautTotal.Update(_cautAlerts.Count);
+                if (idxDirty || totalDirty || _cellsStyleNeedsUpdate)
                 {
-                    _lastRenderedCautIdx = _cautIndex;
-                    _lastRenderedCautTotal = _cautAlerts.Count;
-
                     string pagination = _cautAlerts.Count > 1 ? $"{_cautIndex + 1}/{_cautAlerts.Count}" : item.TelemetryAffix;
                     _cautTitle.SetTextSafe(item.MainTitle);
                     _cautSub.SetTextSafe(pagination);
                     _cautIcon.SetTextSafe("▲");
                 }
 
-                if (blink != _lastCautBlink || _cellsStyleNeedsUpdate)
+                if (_lastCautBlink.Update(blink) || _cellsStyleNeedsUpdate)
                 {
-                    _lastCautBlink = blink;
                     if (blink)
                     {
                         _cautBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Caution, theme));
@@ -2247,21 +2222,18 @@ namespace ModularFlightPanel.UI.Widgets
                 AlertItem item = _warnAlerts[_warnIndex];
 
                 bool blink = _warnAcknowledged || _blink2Hz;
-                bool itemChanged = _warnIndex != _lastRenderedWarnIdx || _warnAlerts.Count != _lastRenderedWarnTotal;
-                if (itemChanged || _cellsStyleNeedsUpdate)
+                bool idxDirty = _lastRenderedWarnIdx.Update(_warnIndex);
+                bool totalDirty = _lastRenderedWarnTotal.Update(_warnAlerts.Count);
+                if (idxDirty || totalDirty || _cellsStyleNeedsUpdate)
                 {
-                    _lastRenderedWarnIdx = _warnIndex;
-                    _lastRenderedWarnTotal = _warnAlerts.Count;
-
                     string pagination = _warnAlerts.Count > 1 ? $"{_warnIndex + 1}/{_warnAlerts.Count}" : item.TelemetryAffix;
                     _warnTitle.SetTextSafe(item.MainTitle);
                     _warnSub.SetTextSafe(pagination);
                     _warnIcon.SetTextSafe("▲");
                 }
 
-                if (blink != _lastWarnBlink || _cellsStyleNeedsUpdate)
+                if (_lastWarnBlink.Update(blink) || _cellsStyleNeedsUpdate)
                 {
-                    _lastWarnBlink = blink;
                     if (blink)
                     {
                         _warnBg.SetColor(WidgetStyleManager.StatusSurface(StatusSurfaceRole.Danger, theme));
@@ -2376,44 +2348,44 @@ namespace ModularFlightPanel.UI.Widgets
             _alertsDirty = true;
             _cautAcknowledged = false;
             _warnAcknowledged = false;
-            _lastCautCount = -1;
-            _lastWarnCount = -1;
+            _lastCautCount.Reset(-1);
+            _lastWarnCount.Reset(-1);
             _cautIndex = 0;
             _warnIndex = 0;
             _rotateTimer = 0f;
             _cellsStyleNeedsUpdate = true;
             _nominalStyleNeedsUpdate = true;
-            _lastNominalPhaseColor = Color.clear;
-            _lastRenderedAp = -9999999.0;
-            _lastRenderedPe = -9999999.0;
-            _lastRenderedDv = -999.0;
-            _lastRenderedMach = -1f;
-            _lastRenderedVsi = -9999f;
+            _lastNominalPhaseColor.Reset(Color.clear);
+            _lastRenderedAp.Reset(-9999999.0);
+            _lastRenderedPe.Reset(-9999999.0);
+            _lastRenderedDv.Reset(-999.0);
+            _lastRenderedMach.Reset(-1f);
+            _lastRenderedVsi.Reset(-9999f);
             _cachedApSub = null;
             _cachedPeSub = null;
             _cachedDvSub = null;
             _cachedMachSub = null;
             _cachedVsiSub = null;
-            _lastRenderedNominalTitle = null;
-            _lastRenderedNominalSub = null;
-            _lastRenderedNominalIcon = null;
-            _lastRenderedEventTitle = null;
-            _lastRenderedEventSub = null;
-            _lastRenderedEventLeftIcon = null;
-            _lastRenderedEventRightIcon = null;
-            _lastAglMeters = -9999;
-            _lastVsiVal = -9999;
-            _lastGForceVal = -999.0;
-            _lastTempInt = -9999;
-            _lastTtiSec = -9999;
-            _lastClosureRateVal = -999.0;
-            _lastVMassVal = -999.0;
-            _lastRadVal = -999.0;
-            _lastPressVal = -999.0;
+            _lastRenderedNominalTitle.Reset(null);
+            _lastRenderedNominalSub.Reset(null);
+            _lastRenderedNominalIcon.Reset(null);
+            _lastRenderedEventTitle.Reset(null);
+            _lastRenderedEventSub.Reset(null);
+            _lastRenderedEventLeftIcon.Reset(null);
+            _lastRenderedEventRightIcon.Reset(null);
+            _fmtAglMeters = -9999;
+            _fmtVsiVal = -9999;
+            _fmtGForceVal = -999.0;
+            _fmtTempInt = -9999;
+            _fmtTtiSec = -9999;
+            _fmtClosureRateVal = -999.0;
+            _fmtVMassVal = -999.0;
+            _fmtRadVal = -999.0;
+            _fmtPressVal = -999.0;
             _nominalDataDirty = true;
             _isQuiescentFlightState = false;
-            _lastDbsSec = -9999;
-            _lastDbsMin = -9999;
+            _fmtDbsSec = -9999;
+            _fmtDbsMin = -9999;
         }
 
         protected override void OnDestroy()

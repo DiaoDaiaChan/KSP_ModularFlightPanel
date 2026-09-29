@@ -62,11 +62,11 @@ namespace ModularFlightPanel.UI.Widgets
         private string _overrideLimitMode = null;
 
         // 运行时脏检查缓存与双轨快照
-        private double _lastValue = double.NaN;
-        private string _lastFormattedVal = string.Empty;
-        private string _lastTitleStr = string.Empty;
-        private string _lastUnitStr = string.Empty;
-        private int _lastAlertState = -1; // 0=Normal, 1=Caution, 2=Warning
+        private readonly CachedDouble _lastValue = new CachedDouble(double.NaN, tolerance: 0.05);
+        private readonly Cached<string> _lastFormattedVal = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTitleStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastUnitStr = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastAlertState = new Cached<int>(-1); // 0=Normal, 1=Caution, 2=Warning
 
         private string _pendingTitleStr = string.Empty;
         private string _pendingUnitStr = string.Empty;
@@ -314,10 +314,8 @@ namespace ModularFlightPanel.UI.Widgets
             _pendingAlertState = isWarning ? 2 : (isCaution ? 1 : 0);
 
             // 4. 几何与指针角度更新 (脏标记保护)
-            double deltaThreshold = Config != null && Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (double.IsNaN(_lastValue) || Math.Abs(currentVal - _lastValue) > deltaThreshold)
+            if (_lastValue.Update(currentVal))
             {
-                _lastValue = currentVal;
                 _pendingVisualFraction = visualFraction;
                 _pendingFormattedVal = FormatDisplayText(displayValue);
                 _hasPendingVisual = true;
@@ -328,15 +326,13 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            if (_pendingTitleStr != _lastTitleStr)
+            if (_lastTitleStr.Update(_pendingTitleStr))
             {
-                _lastTitleStr = _pendingTitleStr;
                 if (_titleText != null) _titleText.text = _pendingTitleStr;
             }
 
-            if (_pendingUnitStr != _lastUnitStr)
+            if (_lastUnitStr.Update(_pendingUnitStr))
             {
-                _lastUnitStr = _pendingUnitStr;
                 if (_unitText != null) _unitText.text = _pendingUnitStr;
             }
 
@@ -344,9 +340,8 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 状态变更或初次运行时更新语义色彩
-            if (_pendingAlertState != _lastAlertState)
+            if (_lastAlertState.Update(_pendingAlertState))
             {
-                _lastAlertState = _pendingAlertState;
                 if (_pendingAlertState == 2)
                 {
                     ApplyCard(_bgPanel, _bgOutline, CardStyleRole.Danger, theme);
@@ -387,9 +382,8 @@ namespace ModularFlightPanel.UI.Widgets
                     _needlePivot.localEulerAngles = new Vector3(0f, 0f, needleAngle);
                 }
 
-                if (_pendingFormattedVal != _lastFormattedVal)
+                if (_lastFormattedVal.Update(_pendingFormattedVal))
                 {
-                    _lastFormattedVal = _pendingFormattedVal;
                     if (_valueText != null) _valueText.text = _pendingFormattedVal;
                 }
             }

@@ -157,13 +157,13 @@ namespace ModularFlightPanel.UI.Widgets
             return g;
         }
 
-        private float[] _lastFractions = new float[] { -1f, -1f, -1f, -1f };
-        private string[] _lastPercentTexts = new string[4];
-        private string[] _lastStatusTexts = new string[4];
-        private string _lastCrewText;
-        private string _lastPressureText;
-        private string _lastTempText;
-        private int _lastStatusBadgeState = -1;
+        private readonly float[] _gaugeFractions = new float[] { -1f, -1f, -1f, -1f };
+        private readonly string[] _gaugePercentTexts = new string[4];
+        private readonly string[] _gaugeStatusTexts = new string[4];
+        private readonly Cached<string> _lastCrewText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastPressureText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTempText = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastStatusBadgeState = new Cached<int>(-1);
 
         private string _dataCrewStr;
         private string _dataPresStr;
@@ -220,21 +220,18 @@ namespace ModularFlightPanel.UI.Widgets
             base.OnUIDrawLoop(ref context);
             if (!_dataHasVessel) return;
 
-            if (_dataCrewStr != _lastCrewText)
+            if (_lastCrewText.Update(_dataCrewStr))
             {
-                _lastCrewText = _dataCrewStr;
                 _crewText.text = _dataCrewStr;
             }
 
-            if (_dataPresStr != _lastPressureText)
+            if (_lastPressureText.Update(_dataPresStr))
             {
-                _lastPressureText = _dataPresStr;
                 _pressureText.text = _dataPresStr;
             }
 
-            if (_dataTempStr != _lastTempText)
+            if (_lastTempText.Update(_dataTempStr))
             {
-                _lastTempText = _dataTempStr;
                 _tempText.text = _dataTempStr;
             }
 
@@ -243,9 +240,8 @@ namespace ModularFlightPanel.UI.Widgets
                 UpdateGauge(i, _dataFractions[i], _dataGaugePercentTexts[i]);
             }
 
-            if (_dataBadgeState != _lastStatusBadgeState)
+            if (_lastStatusBadgeState.Update(_dataBadgeState))
             {
-                _lastStatusBadgeState = _dataBadgeState;
                 if (_dataBadgeState == 2)
                 {
                     StatusBadge.Text = "▲ " + I18n.Tr("WIDGET_LIFE_WARNING", "警告");
@@ -269,22 +265,22 @@ namespace ModularFlightPanel.UI.Widgets
             ResourceGaugeUI g = _gauges[index];
             float clamped = Mathf.Clamp01(fraction);
 
-            if (Math.Abs(clamped - _lastFractions[index]) > 0.005f)
+            if (Math.Abs(clamped - _gaugeFractions[index]) > 0.005f)
             {
-                _lastFractions[index] = clamped;
-                g.BarFill.sizeDelta = new Vector2(g.BarWidth * clamped, g.BarFill.sizeDelta.y);
+                _gaugeFractions[index] = clamped;
+                g.BarFill.SetSizeDeltaSafe(new Vector2(g.BarWidth * clamped, g.BarFill.sizeDelta.y));
             }
 
-            if (valueStr != _lastPercentTexts[index])
+            if (valueStr != _gaugePercentTexts[index])
             {
-                _lastPercentTexts[index] = valueStr;
+                _gaugePercentTexts[index] = valueStr;
                 g.PercentText.text = valueStr;
             }
 
             string statStr = clamped < 0.15f ? "WARN" : "OK";
-            if (statStr != _lastStatusTexts[index])
+            if (statStr != _gaugeStatusTexts[index])
             {
-                _lastStatusTexts[index] = statStr;
+                _gaugeStatusTexts[index] = statStr;
                 g.StatusText.text = statStr;
             }
         }

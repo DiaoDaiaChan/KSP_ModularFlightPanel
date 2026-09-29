@@ -70,10 +70,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (hInt < 0) hInt += 360;
             var hook = NavBallHookService.Provider;
             string frameCat = hook?.ReferenceFrameCategory ?? "SURFACE";
-            if (hInt != _lastHdgInt || frameCat != _lastTopFrameCat)
+            bool hdgDirty = _lastHdgInt.Update(hInt);
+            bool catDirty = _lastTopFrameCat.Update(frameCat);
+            if (hdgDirty || catDirty)
             {
-                _lastHdgInt = hInt;
-                _lastTopFrameCat = frameCat;
                 string hdgPart = (_headingToken == "{HDG}") ? CacheManager.FastHdg(hInt) : $"HDG {TelemetryTokenEngine.Evaluate(_headingToken, context.Telemetry)}";
                 _cachedTopFormatted = $"{hdgPart} | {frameCat}";
             }
@@ -123,13 +123,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             int pInt = Mathf.RoundToInt(_cachedPitch);
             int rInt = Mathf.RoundToInt(_cachedRoll);
-            if (pInt != _lastPitchInt || rInt != _lastRollInt || curSASMode != _lastSASMode || _isDirectorLocked != _lastDirectorLocked)
+            bool pDirty = _lastPitchInt.Update(pInt);
+            bool rDirty = _lastRollInt.Update(rInt);
+            bool sasDirty = _lastSASMode.Update(curSASMode);
+            bool dirDirty = _lastDirectorLocked.Update(_isDirectorLocked);
+            if (pDirty || rDirty || sasDirty || dirDirty)
             {
-                _lastPitchInt = pInt;
-                _lastRollInt = rInt;
-                _lastSASMode = curSASMode;
-                _lastDirectorLocked = _isDirectorLocked;
-
                 string pStr = (_pitchToken == "{PITCH}") ? CacheManager.FastInt(pInt) : TelemetryTokenEngine.Evaluate(_pitchToken, context.Telemetry);
                 if (pStr.EndsWith("°")) pStr = pStr.Substring(0, pStr.Length - 1).Trim();
 
@@ -142,9 +141,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 _cachedBtmFormatted = $"P {pStr}° R {rStr}° | {sasMode}{lockTag}";
             }
 
-            _lastPitch = context.Telemetry.Pitch;
-            _lastRoll = context.Telemetry.Roll;
-            _lastHeading = context.Telemetry.Heading;
+            _lastPitch.Update(context.Telemetry.Pitch);
+            _lastRoll.Update(context.Telemetry.Roll);
+            _lastHeading.Update(context.Telemetry.Heading);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -154,8 +153,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 驱动 3D 姿态仪离屏相机渲染与脏标记复位
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation) > RotationDirtyThreshold);
-                bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime) >= HeartbeatInterval;
+                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
+                bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime.Value) >= HeartbeatInterval;
 
                 if (rotDirty || _isPaletteLerping || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
                 {
@@ -163,9 +162,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     _hasEverRendered = true;
                     if (_sphereObject != null)
                     {
-                        _lastRenderedRotation = _sphereObject.transform.localRotation;
+                        _lastRenderedRotation.Update(_sphereObject.transform.localRotation);
                     }
-                    _lastRenderedTime = Time.unscaledTime;
+                    _lastRenderedTime.Update(Time.unscaledTime);
                     _isMaterialDirty = false;
                     _isRenderDirty = false;
                 }
@@ -196,12 +195,18 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     float pitchRad = _cachedPitch * Mathf.Deg2Rad;
                     float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.5f), 0.72f, 1.0f);
-                    _centerShipRoot.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
+                    if (_lastShipScaleY.Update(foreshortenY))
+                    {
+                        _centerShipRoot.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
+                    }
                     _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, -_cachedRoll * 0.25f);
                 }
                 else
                 {
-                    _centerShipRoot.localScale = Vector3.one;
+                    if (_lastShipScaleY.Update(1.0f))
+                    {
+                        _centerShipRoot.localScale = Vector3.one;
+                    }
                     _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, -_cachedRoll);
                 }
             }
@@ -239,16 +244,14 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
 
             // 4. 顶部航向与参考系标牌更新
-            if (_cachedTopFormatted != _lastTopText)
+            if (_lastTopText.Update(_cachedTopFormatted))
             {
-                _lastTopText = _cachedTopFormatted;
                 SetTextIfChanged(_topBadgeText, _cachedTopFormatted);
             }
 
             // 5. 底部俯仰/滚转与 SAS 状态更新
-            if (_cachedBtmFormatted != _lastBottomText)
+            if (_lastBottomText.Update(_cachedBtmFormatted))
             {
-                _lastBottomText = _cachedBtmFormatted;
                 SetTextIfChanged(_bottomBadgeText, _cachedBtmFormatted);
             }
         }
@@ -285,22 +288,22 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private static Texture2D _sharedBezelTexture;
 
         // 姿态缓存与脏标记
-        private double _lastPitch = double.NaN;
-        private double _lastRoll = double.NaN;
-        private double _lastHeading = double.NaN;
-        private int _lastHdgInt = -1;
-        private string _lastTopFrameCat = null;
-        private int _lastPitchInt = -9999;
-        private int _lastRollInt = -9999;
-        private FlightSASMode _lastSASMode = (FlightSASMode)(-1);
-        private bool _lastDirectorLocked = false;
-        private string _lastTopText = string.Empty;
-        private string _lastBottomText = string.Empty;
+        private readonly CachedDouble _lastPitch = new CachedDouble(double.NaN, 0.05);
+        private readonly CachedDouble _lastRoll = new CachedDouble(double.NaN, 0.05);
+        private readonly CachedDouble _lastHeading = new CachedDouble(double.NaN, 0.05);
+        private readonly Cached<int> _lastHdgInt = new Cached<int>(-1);
+        private readonly Cached<string> _lastTopFrameCat = new Cached<string>(null);
+        private readonly Cached<int> _lastPitchInt = new Cached<int>(-9999);
+        private readonly Cached<int> _lastRollInt = new Cached<int>(-9999);
+        private readonly Cached<FlightSASMode> _lastSASMode = new Cached<FlightSASMode>((FlightSASMode)(-1));
+        private readonly Cached<bool> _lastDirectorLocked = new Cached<bool>(false);
+        private readonly Cached<string> _lastTopText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBottomText = new Cached<string>(string.Empty);
         private bool _isDirectorLocked = false;
         private bool _isChasePerspective = true;
 
         // 多参考系调色板过渡
-        private string _lastFrameCategory = "";
+        private readonly Cached<string> _lastFrameCategory = new Cached<string>("");
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
         private bool _paletteInitialized = false;
@@ -309,8 +312,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         // 动态绘制与亚像素脏标记判定 (Zero Visual Quality Loss)
         private const float RotationDirtyThreshold = 0.025f;
         private const float HeartbeatInterval = 0.25f;
-        private Quaternion _lastRenderedRotation = Quaternion.identity;
-        private float _lastRenderedTime = -10f;
+        private readonly Cached<Quaternion> _lastRenderedRotation = new Cached<Quaternion>(Quaternion.identity);
+        private readonly CachedFloat _lastRenderedTime = new CachedFloat(-10f, 0.001f);
+        private readonly CachedFloat _lastShipScaleY = new CachedFloat(-1f, 0.002f);
         private bool _isMaterialDirty = true;
         private bool _hasEverRendered = false;
 
@@ -606,7 +610,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
             _paletteInitialized = false;
-            _lastFrameCategory = null;
+            _lastFrameCategory.Reset(string.Empty);
 
             if (_bezelRingRawImage != null)
             {
@@ -660,8 +664,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 动态绘制与亚像素脏标记判定 (4Hz 保活心跳 + 0.025° 亚像素死区)
             if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation) > RotationDirtyThreshold);
-                bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime) >= HeartbeatInterval;
+                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
+                bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime.Value) >= HeartbeatInterval;
 
                 if (rotDirty || _isPaletteLerping || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
                 {
@@ -669,9 +673,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     _hasEverRendered = true;
                     if (_sphereObject != null)
                     {
-                        _lastRenderedRotation = _sphereObject.transform.localRotation;
+                        _lastRenderedRotation.Update(_sphereObject.transform.localRotation);
                     }
-                    _lastRenderedTime = Time.unscaledTime;
+                    _lastRenderedTime.Update(Time.unscaledTime);
                     _isMaterialDirty = false;
                     _isRenderDirty = false;
                 }
@@ -702,7 +706,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             // 多参考系调色板过渡
             string category = hook?.ReferenceFrameCategory ?? "SURFACE";
-            if (category != _lastFrameCategory || !_paletteInitialized)
+            if (_lastFrameCategory.Update(category) || !_paletteInitialized)
             {
                 _targetPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
                 if (!_paletteInitialized)
@@ -712,7 +716,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     ApplyPaletteToSphereMaterial(_currentPalette);
                     _isMaterialDirty = true;
                 }
-                _lastFrameCategory = category;
                 _isPaletteLerping = true;
             }
 
@@ -844,7 +847,10 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
                     Vector2 targetPos = new Vector2(dir.x, dir.y) * _visualRadius;
-                    img.rectTransform.anchoredPosition = targetPos;
+                    if (Mathf.Abs(img.rectTransform.anchoredPosition.x - targetPos.x) > 0.05f || Mathf.Abs(img.rectTransform.anchoredPosition.y - targetPos.y) > 0.05f)
+                    {
+                        img.rectTransform.anchoredPosition = targetPos;
+                    }
 
                     float alpha = Mathf.Clamp01((dir.z + 0.22f) / 0.32f);
                     if (Mathf.Abs(img.color.a - alpha) > 0.015f)
@@ -896,7 +902,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             {
                 // 右键切换观察视角
                 _isChasePerspective = !_isChasePerspective;
-                _lastPitch = double.NaN; // 触发刷新
+                _lastPitch.Reset(double.NaN); // 触发刷新
             }
             else if (eventData.button == PointerEventData.InputButton.Left)
             {

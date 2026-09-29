@@ -263,7 +263,7 @@ namespace ModularFlightPanel.UI.Widgets
             _displayMode = (_displayMode == SASDialDisplayMode.Mode2D) ? SASDialDisplayMode.Mode3D : SASDialDisplayMode.Mode2D;
             ApplyDisplayMode();
             _hasInitializedState = false;
-            _lastStatusText = null;
+            _lastStatusText.Reset(null);
         }
 
         private void ApplyDisplayMode()
@@ -415,12 +415,12 @@ namespace ModularFlightPanel.UI.Widgets
             FlightTelemetryContext.Current?.SetSASMode(mode);
         }
 
-        private double _lastRoll = -9999.0;
-        private double _lastPitch = -9999.0;
-        private double _lastHeading = -9999.0;
-        private FlightSASMode _lastMode = (FlightSASMode)(-1);
-        private bool _lastSasOn = false;
-        private string _lastStatusText;
+        private readonly CachedDouble _lastRoll = new CachedDouble(-9999.0);
+        private readonly CachedDouble _lastPitch = new CachedDouble(-9999.0);
+        private readonly CachedDouble _lastHeading = new CachedDouble(-9999.0);
+        private readonly Cached<FlightSASMode> _lastMode = new Cached<FlightSASMode>((FlightSASMode)(-1));
+        private readonly Cached<bool> _lastSasOn = new Cached<bool>(false);
+        private readonly Cached<string> _lastStatusText = new Cached<string>(null);
         private bool _hasInitializedState = false;
 
         private enum DirectorVisualState { Inactive, Locked, Guiding, Dim }
@@ -473,8 +473,8 @@ namespace ModularFlightPanel.UI.Widgets
             _dataHasVessel = true;
             bool sasOn = telemetry.IsSASEnabled;
             FlightSASMode currentMode = telemetry.CurrentSASMode;
-            bool modeChanged = !_hasInitializedState || currentMode != _lastMode || sasOn != _lastSasOn;
-            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.05 || Math.Abs(telemetry.Pitch - _lastPitch) > 0.05 || Math.Abs(telemetry.Heading - _lastHeading) > 0.05;
+            bool modeChanged = !_hasInitializedState || currentMode != _lastMode.Value || sasOn != _lastSasOn.Value;
+            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll.Value) > 0.05 || Math.Abs(telemetry.Pitch - _lastPitch.Value) > 0.05 || Math.Abs(telemetry.Heading - _lastHeading.Value) > 0.05;
 
             _dataSasOn = sasOn;
             _dataCurrentMode = currentMode;
@@ -494,9 +494,9 @@ namespace ModularFlightPanel.UI.Widgets
             // 3. 底部状态指示胶囊文本与样式角色 (纯文本格式化)
             ComputeStatusBadgeData(currentMode, sasOn, _dataIsDirectorLocked, out _dataStatusText, out _dataBadgeRole);
 
-            _lastRoll = telemetry.Roll;
-            _lastPitch = telemetry.Pitch;
-            _lastHeading = telemetry.Heading;
+            _lastRoll.Update(telemetry.Roll);
+            _lastPitch.Update(telemetry.Pitch);
+            _lastHeading.Update(telemetry.Heading);
         }
 
         // ═════════════════════════════════════════════════════════════════
@@ -559,10 +559,10 @@ namespace ModularFlightPanel.UI.Widgets
             RenderNoseTipVisuals(s);
 
             // 6. 当前 SAS 模式与开关高亮指示 (Dirty Checking + 100% 语义化驱动)
-            if (!_hasInitializedState || _dataCurrentMode != _lastMode || _dataSasOn != _lastSasOn)
+            if (!_hasInitializedState || _dataCurrentMode != _lastMode.Value || _dataSasOn != _lastSasOn.Value)
             {
-                _lastMode = _dataCurrentMode;
-                _lastSasOn = _dataSasOn;
+                _lastMode.Update(_dataCurrentMode);
+                _lastSasOn.Update(_dataSasOn);
 
                 for (int i = 0; i < _buttons.Count; i++)
                 {
@@ -819,9 +819,8 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_statusLabel == null) return;
 
-            if (statusText != _lastStatusText)
+            if (_lastStatusText.Update(statusText))
             {
-                _lastStatusText = statusText;
                 _statusLabel.SetTextSafe(statusText);
                 ApplyText(_statusLabel, textRole, theme);
                 if (_statusOutline != null)
@@ -886,7 +885,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             base.ApplyTheme(theme);
             _hasInitializedState = false;
-            _lastStatusText = null;
+            _lastStatusText.Reset(null);
 
             if (_silhouetteRawImage != null) _silhouetteRawImage.color = theme.AccentSecondary;
             if (_noseTipRawImage != null) _noseTipRawImage.color = theme.WarningColor;
@@ -1490,7 +1489,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnLanguageChanged();
             _hasInitializedState = false;
-            _lastStatusText = null;
+            _lastStatusText.Reset(null);
         }
 
         protected override void OnDestroy()

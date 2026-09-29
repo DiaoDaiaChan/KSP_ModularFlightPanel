@@ -73,15 +73,15 @@ namespace ModularFlightPanel.UI.Widgets
         private string _delTextTemplate = "DEL";
 
         // 运行时状态与脏标记缓存
-        private bool _lastHasNode = false;
-        private double _lastDeltaV = double.NaN;
-        private double _lastTimeToNode = double.NaN;
-        private double _lastBurnTime = double.NaN;
-        private double _lastTimeToBurn = double.NaN;
+        private readonly Cached<bool> _lastHasNode = new Cached<bool>(false);
+        private readonly CachedDouble _lastDeltaV = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastTimeToNode = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastBurnTime = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastTimeToBurn = new CachedDouble(double.NaN);
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
-        private string _lastFormattedDeltaV = string.Empty;
-        private string _lastTitleStr = string.Empty;
-        private string _lastBadgeStr = string.Empty;
+        private readonly Cached<string> _lastFormattedDeltaV = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastTitleStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBadgeStr = new Cached<string>(string.Empty);
 
         // 双轨快照
         private bool _pendingHasNode = false;
@@ -335,14 +335,14 @@ namespace ModularFlightPanel.UI.Widgets
             if (double.IsNaN(timeToBurn)) timeToBurn = telemetry.ManeuverTimeToBurn;
 
             double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            bool dvChanged = double.IsNaN(_lastDeltaV) || Math.Abs(dv - _lastDeltaV) > deltaThreshold;
-            bool tNodeChanged = double.IsNaN(_lastTimeToNode) || Math.Abs(timeToNode - _lastTimeToNode) >= 0.5;
-            bool burnTimeChanged = double.IsNaN(_lastBurnTime) || Math.Abs(burnTime - _lastBurnTime) >= 0.5;
-            bool timeToBurnChanged = double.IsNaN(_lastTimeToBurn) || Math.Abs(timeToBurn - _lastTimeToBurn) >= 0.5;
+            bool dvChanged = double.IsNaN(_lastDeltaV.Value) || Math.Abs(dv - _lastDeltaV.Value) > deltaThreshold;
+            bool tNodeChanged = double.IsNaN(_lastTimeToNode.Value) || Math.Abs(timeToNode - _lastTimeToNode.Value) >= 0.5;
+            bool burnTimeChanged = double.IsNaN(_lastBurnTime.Value) || Math.Abs(burnTime - _lastBurnTime.Value) >= 0.5;
+            bool timeToBurnChanged = double.IsNaN(_lastTimeToBurn.Value) || Math.Abs(timeToBurn - _lastTimeToBurn.Value) >= 0.5;
 
             if (dvChanged)
             {
-                _lastDeltaV = dv;
+                _lastDeltaV.Update(dv);
                 _pendingDeltaVStr = $"{dv:F1}";
                 float fraction = 1.0f;
                 if (totalDv > 0.1)
@@ -354,20 +354,20 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (tNodeChanged)
             {
-                _lastTimeToNode = timeToNode;
+                _lastTimeToNode.Update(timeToNode);
                 string prefix = timeToNode < 0 ? "T+ " : "T- ";
                 _pendingTNodeStr = prefix + FormatDuration(Math.Abs(timeToNode));
             }
 
             if (burnTimeChanged)
             {
-                _lastBurnTime = burnTime;
+                _lastBurnTime.Update(burnTime);
                 _pendingBurnTimeStr = FormatDuration(Math.Max(0.0, burnTime));
             }
 
             if (timeToBurnChanged)
             {
-                _lastTimeToBurn = timeToBurn;
+                _lastTimeToBurn.Update(timeToBurn);
                 if (timeToBurn <= 0.0)
                 {
                     _pendingBurnInStr = I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!";
@@ -404,9 +404,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
 
-            if (_pendingTitleStr != _lastTitleStr)
+            if (_lastTitleStr.Update(_pendingTitleStr))
             {
-                _lastTitleStr = _pendingTitleStr;
                 if (_headerTitleText != null) _headerTitleText.text = _pendingTitleStr;
             }
 
@@ -416,17 +415,16 @@ namespace ModularFlightPanel.UI.Widgets
                 return;
             }
 
-            _lastHasNode = true;
+            _lastHasNode.Update(true);
 
-            if (_pendingDeltaVStr != null && _pendingDeltaVStr != _lastFormattedDeltaV)
+            if (_pendingDeltaVStr != null && _lastFormattedDeltaV.Update(_pendingDeltaVStr))
             {
-                _lastFormattedDeltaV = _pendingDeltaVStr;
                 if (_deltaVValueText != null) _deltaVValueText.text = _pendingDeltaVStr;
 
                 if (_meterTrack != null && _meterFill != null)
                 {
                     float maxW = _meterTrack.rectTransform.sizeDelta.x;
-                    _meterFill.rectTransform.sizeDelta = new Vector2(maxW * _pendingMeterFraction, _meterFill.rectTransform.sizeDelta.y);
+                    _meterFill.rectTransform.SetSizeDeltaSafe(new Vector2(maxW * _pendingMeterFraction, _meterFill.rectTransform.sizeDelta.y));
                 }
             }
 
@@ -453,9 +451,8 @@ namespace ModularFlightPanel.UI.Widgets
                 ApplyText(_statusBadgeText, _pendingCardRole == CardStyleRole.Emphasized ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
             }
 
-            if (_pendingBadgeStr != _lastBadgeStr)
+            if (_lastBadgeStr.Update(_pendingBadgeStr))
             {
-                _lastBadgeStr = _pendingBadgeStr;
                 if (_statusBadgeText != null) _statusBadgeText.text = _pendingBadgeStr;
             }
 
@@ -465,22 +462,22 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ShowUnavailable(ThemeConfig theme)
         {
-            if (!_lastHasNode && _lastFormattedDeltaV == "---") return;
+            if (!_lastHasNode.Value && _lastFormattedDeltaV.Value == "---") return;
 
-            _lastHasNode = false;
-            _lastDeltaV = double.NaN;
-            _lastTimeToNode = double.NaN;
-            _lastBurnTime = double.NaN;
-            _lastTimeToBurn = double.NaN;
-            _lastFormattedDeltaV = "---";
+            _lastHasNode.Update(false);
+            _lastDeltaV.Reset(double.NaN);
+            _lastTimeToNode.Reset(double.NaN);
+            _lastBurnTime.Reset(double.NaN);
+            _lastTimeToBurn.Reset(double.NaN);
+            _lastFormattedDeltaV.Update("---");
 
             _deltaVValueText.text = "---";
-            _meterFill.rectTransform.sizeDelta = new Vector2(0f, _meterFill.rectTransform.sizeDelta.y);
+            _meterFill.rectTransform.SetSizeDeltaSafe(new Vector2(0f, _meterFill.rectTransform.sizeDelta.y));
             _tNodeValueText.text = "--:--";
             _burnTimeValueText.text = "--:--";
             _burnInText.text = I18n.Tr("WIDGET_NAV_NO_NODE", "无节点");
             _statusBadgeText.text = I18n.Tr("PHASE_STANDBY", "待机");
-            _lastBadgeStr = "STANDBY";
+            _lastBadgeStr.Update("STANDBY");
 
             if (_currentCardRole != CardStyleRole.Normal)
             {

@@ -109,9 +109,9 @@ namespace ModularFlightPanel.UI.Widgets
         private float _spoolThrottle = float.NaN;
 
         // 运行时脏检查与状态缓存
-        private string _lastTitleStr = string.Empty;
-        private string _lastValueStr = string.Empty;
-        private string _lastBottomStr = string.Empty;
+        private readonly Cached<string> _lastTitleStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastValueStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBottomStr = new Cached<string>(string.Empty);
         private CardStyleRole _currentRole = CardStyleRole.Normal;
 
         // 双轨状态快照
@@ -696,9 +696,8 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            if (_topTagTitle != null && _pendingTitleStr != _lastTitleStr)
+            if (_topTagTitle != null && _lastTitleStr.Update(_pendingTitleStr))
             {
-                _lastTitleStr = _pendingTitleStr;
                 _topTagTitle.text = _pendingTitleStr;
             }
 
@@ -715,17 +714,15 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_traceRt != null) _traceRt.sizeDelta = _pendingTraceSize;
             }
 
-            if (_topTagValue != null && _pendingValueStr != _lastValueStr)
+            if (_topTagValue != null && _lastValueStr.Update(_pendingValueStr))
             {
-                _lastValueStr = _pendingValueStr;
                 _topTagValue.text = _pendingValueStr;
             }
 
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
 
-            if (_bottomTagText != null && _pendingBottomStr != _lastBottomStr)
+            if (_bottomTagText != null && _lastBottomStr.Update(_pendingBottomStr))
             {
-                _lastBottomStr = _pendingBottomStr;
                 _bottomTagText.text = _pendingBottomStr;
                 ApplyText(_bottomTagText, _pendingBottomRole, theme);
             }

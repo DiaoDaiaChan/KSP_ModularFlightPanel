@@ -56,7 +56,7 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _showUniversalTime = false;
         private bool _stockHidden = true;
         private ThemeConfig _currentTheme;
-        private IFlightTelemetry _lastTelemetry;
+        private IFlightTelemetry _telemetry;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -212,13 +212,12 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
 
-        private string _lastClockStr;
-        private string _lastRateStr;
-        private bool _lastPausedState = false;
-        private bool _lastPhysState = false;
-        private int _lastActiveIndex = -1;
-        private int _lastMaxIndex = -1;
-        private bool _hasInitState = false;
+        private readonly Cached<string> _dirtyClockStr = new Cached<string>(string.Empty);
+        private readonly CachedDouble _cachedRateDirty = new CachedDouble(-1.0, tolerance: 0.001);
+        private readonly Cached<bool> _dirtyPausedState = new Cached<bool>(false);
+        private readonly Cached<bool> _dirtyPhysState = new Cached<bool>(false);
+        private readonly Cached<int> _dirtyActiveIndex = new Cached<int>(-1);
+        private readonly Cached<int> _dirtyMaxIndex = new Cached<int>(-1);
 
         private bool _cachedHasVessel;
         private string _cachedClockStr;
@@ -240,7 +239,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             _cachedHasVessel = true;
-            _lastTelemetry = context.Telemetry;
+            _telemetry = context.Telemetry;
 
             string utTpl = GetTemplateChannel("UT_FORMAT", "{UT}");
             string metTpl = GetTemplateChannel("MET_FORMAT", "{MET}");
@@ -268,20 +267,15 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme);
 
             // 1. 更新时钟读数
-            if (_clockText != null)
+            if (_clockText != null && _dirtyClockStr.Update(_cachedClockStr))
             {
-                if (_cachedClockStr != _lastClockStr)
-                {
-                    _lastClockStr = _cachedClockStr;
-                    _clockText.text = _cachedClockStr;
-                }
+                SetTextIfChanged(_clockText, _cachedClockStr);
             }
 
             // 2. 暂停状态提示
             bool isPaused = _cachedIsPaused;
-            if (!_hasInitState || isPaused != _lastPausedState)
+            if (_dirtyPausedState.Update(isPaused))
             {
-                _lastPausedState = isPaused;
                 if (_pauseBtnText != null && _pauseBtn != null)
                 {
                     _pauseBtnText.text = isPaused ? I18n.Tr("WIDGET_TIMEWARP_PAUSED", "PAUSED") : I18n.Tr("WIDGET_TIMEWARP_PAUSE", "PAUSE");
@@ -297,9 +291,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 3. 加速模式与倍率
             bool isPhys = _cachedIsPhys;
-            if (!_hasInitState || isPhys != _lastPhysState)
+            if (_dirtyPhysState.Update(isPhys))
             {
-                _lastPhysState = isPhys;
                 if (_warpModeText != null)
                 {
                     _warpModeText.text = _cachedModeLabel;
@@ -310,11 +303,10 @@ namespace ModularFlightPanel.UI.Widgets
             if (_warpRateText != null)
             {
                 double rate = _cachedRate;
-                string rStr = (rate >= 1000.0) ? $"{rate:N0}x" : ((rate > 1.0) ? $"{rate:0.#}x" : "1x");
-                if (rStr != _lastRateStr)
+                if (_cachedRateDirty.Update(rate))
                 {
-                    _lastRateStr = rStr;
-                    _warpRateText.text = rStr;
+                    string rStr = (rate >= 1000.0) ? $"{rate:N0}x" : ((rate > 1.0) ? $"{rate:0.#}x" : "1x");
+                    SetTextIfChanged(_warpRateText, rStr);
                     ApplyText(_warpRateText, (rate > 1.0) ? (isPhys ? TextStyleRole.Warning : TextStyleRole.Accent) : TextStyleRole.PrimaryValue, theme);
                 }
             }
@@ -322,12 +314,11 @@ namespace ModularFlightPanel.UI.Widgets
             // 4. 加速光段状态机
             int activeIndex = _cachedActiveIndex;
             int maxIndex = _cachedMaxIndex;
+            bool activeDirty = _dirtyActiveIndex.Update(activeIndex);
+            bool maxDirty = _dirtyMaxIndex.Update(maxIndex);
 
-            if (!_hasInitState || activeIndex != _lastActiveIndex || maxIndex != _lastMaxIndex)
+            if (activeDirty || maxDirty)
             {
-                _lastActiveIndex = activeIndex;
-                _lastMaxIndex = maxIndex;
-
                 MeterStyleRole fillRole = isPhys ? MeterStyleRole.Warning : MeterStyleRole.Primary;
                 Color litColor = WidgetStyleManager.Meter(fillRole, theme);
                 Color dimColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Faint);
@@ -366,8 +357,6 @@ namespace ModularFlightPanel.UI.Widgets
                 _stockBtnText.text = _stockHidden ? "KSP" : "MFP";
                 ApplyText(_stockBtnText, _stockHidden ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
             }
-
-            _hasInitState = true;
         }
 
         public override void ApplyTheme(ThemeConfig theme)
@@ -420,7 +409,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnTogglePause()
         {
-            _lastTelemetry?.TogglePause();
+            _telemetry?.TogglePause();
         }
 
         private void OnToggleStock()
@@ -433,38 +422,39 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnStepWarpDown()
         {
-            _lastTelemetry?.DecreaseTimeWarp();
+            _telemetry?.DecreaseTimeWarp();
         }
 
         private void OnStepWarpUp()
         {
-            _lastTelemetry?.IncreaseTimeWarp();
+            _telemetry?.IncreaseTimeWarp();
         }
 
         private void OnSetWarpIndex(int idx)
         {
-            _lastTelemetry?.SetTimeWarpRateIndex(idx);
+            _telemetry?.SetTimeWarpRateIndex(idx);
         }
 
         private void OnCancelWarp()
         {
-            _lastTelemetry?.CancelTimeWarp();
+            _telemetry?.CancelTimeWarp();
         }
 
         protected override void OnLanguageChanged()
         {
             base.OnLanguageChanged();
-            _hasInitState = false;
-            _lastClockStr = null;
+            _dirtyClockStr.Reset(string.Empty);
+            _dirtyPausedState.Reset(false);
+            _dirtyPhysState.Reset(false);
             if (_pauseBtnText != null)
             {
-                _pauseBtnText.text = _lastPausedState ? I18n.Tr("WIDGET_TIMEWARP_PAUSED", "PAUSED") : I18n.Tr("WIDGET_TIMEWARP_PAUSE", "PAUSE");
+                _pauseBtnText.text = _dirtyPausedState.Value ? I18n.Tr("WIDGET_TIMEWARP_PAUSED", "PAUSED") : I18n.Tr("WIDGET_TIMEWARP_PAUSE", "PAUSE");
             }
             if (_warpModeText != null)
             {
                 string physLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS"));
                 string warpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP"));
-                _warpModeText.text = _lastPhysState ? physLabel : warpLabel;
+                _warpModeText.text = _dirtyPhysState.Value ? physLabel : warpLabel;
             }
         }
 

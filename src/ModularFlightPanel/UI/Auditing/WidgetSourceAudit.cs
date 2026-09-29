@@ -1512,7 +1512,7 @@ namespace ModularFlightPanel.UI
                 foreach (var field in n.Decl.Members.OfType<FieldDeclarationSyntax>())
                 {
                     string simpleType = RoslynAstHelper.GetSimpleTypeName(field.Declaration.Type);
-                    if (WidgetSpecRules.ValidCacheTypes.Any(t => string.Equals(t, simpleType, StringComparison.Ordinal)))
+                    if (WidgetSpecRules.IsValidCacheType(simpleType))
                     {
                         hasCacheField = true;
                         break;
@@ -1528,7 +1528,7 @@ namespace ModularFlightPanel.UI
                 foreach (var creation in node.Decl.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
                 {
                     string createdType = RoslynAstHelper.GetSimpleTypeName(creation.Type);
-                    if (WidgetSpecRules.ValidCacheTypes.Any(t => string.Equals(t, createdType, StringComparison.Ordinal)))
+                    if (WidgetSpecRules.IsValidCacheType(createdType))
                     {
                         hasCacheUsage = true;
                         break;
@@ -1552,7 +1552,7 @@ namespace ModularFlightPanel.UI
                 if (field.Modifiers.Any(SyntaxKind.ConstKeyword)) continue;
 
                 string fieldTypeName = RoslynAstHelper.GetSimpleTypeName(field.Declaration.Type);
-                if (WidgetSpecRules.ValidCacheTypes.Any(t => string.Equals(t, fieldTypeName, StringComparison.Ordinal)))
+                if (WidgetSpecRules.IsValidCacheType(fieldTypeName))
                 {
                     continue;
                 }
@@ -1609,6 +1609,12 @@ namespace ModularFlightPanel.UI
                 var current = queue.Dequeue();
                 foreach (var inv in current.DescendantNodes().OfType<InvocationExpressionSyntax>())
                 {
+                    // 若调用点位于委托/Lambda 内部，属于异步/交互回调，不计入每帧热循环同步调用图
+                    if (inv.Ancestors().TakeWhile(a => a != current).Any(a => a is LambdaExpressionSyntax || a is AnonymousMethodExpressionSyntax))
+                    {
+                        continue;
+                    }
+
                     // 若调用点本身位于脏检查守卫内部（如 if (layoutDirty) ApplyLayout(...)），则目标方法已被守卫
                     if (IsGuardedByDirtyCheck(inv)) continue;
 
@@ -1675,21 +1681,39 @@ namespace ModularFlightPanel.UI
 
         private static bool IsGuardedByDirtyCheck(SyntaxNode node)
         {
+            // 若节点位于委托/Lambda 内部（如按钮点击回调），则属于离散交互事件，不属于每帧主线程热循环
+            if (node.Ancestors().Any(a => a is LambdaExpressionSyntax || a is AnonymousMethodExpressionSyntax))
+            {
+                return true;
+            }
+
+            // 1. 检查外层 if 条件
             foreach (var ifStmt in node.Ancestors().OfType<IfStatementSyntax>())
             {
                 if (IsDirtyGuardCondition(ifStmt.Condition)) return true;
             }
 
-            // 检查方法或外层代码块中是否存在前置早退守卫 (例如 if (!_dirty) return;)
-            var block = node.Ancestors().OfType<BlockSyntax>().FirstOrDefault();
-            if (block != null)
+            // 2. 检查外层 while / for / foreach 循环条件（如对象池扩充 while (_items.Count < neededCount)）
+            foreach (var whileStmt in node.Ancestors().OfType<WhileStatementSyntax>())
+            {
+                if (IsDirtyGuardCondition(whileStmt.Condition)) return true;
+            }
+            foreach (var forStmt in node.Ancestors().OfType<ForStatementSyntax>())
+            {
+                if (IsDirtyGuardCondition(forStmt.Condition)) return true;
+            }
+
+            // 3. 检查所有外层代码块中是否存在前置早退守卫 (例如 if (!_dirty) return; 或 if (!pDirty && !rDirty) { return; })
+            foreach (var block in node.Ancestors().OfType<BlockSyntax>())
             {
                 foreach (var stmt in block.Statements)
                 {
                     if (stmt.SpanStart >= node.SpanStart) break;
-                    if (stmt is IfStatementSyntax earlyIf && earlyIf.Statement is ReturnStatementSyntax)
+                    if (stmt is IfStatementSyntax earlyIf)
                     {
-                        if (IsDirtyGuardCondition(earlyIf.Condition)) return true;
+                        bool isReturn = earlyIf.Statement is ReturnStatementSyntax ||
+                            (earlyIf.Statement is BlockSyntax earlyBlock && earlyBlock.Statements.Count == 1 && earlyBlock.Statements[0] is ReturnStatementSyntax);
+                        if (isReturn && IsDirtyGuardCondition(earlyIf.Condition)) return true;
                     }
                 }
             }
@@ -1709,7 +1733,7 @@ namespace ModularFlightPanel.UI
                 return true;
             }
 
-            // 2. 检查了脏标记或变化量标识符 (dirty, changed, layoutDirty, frameDirty, recoil, timer, cooldown 等)
+            // 2. 检查了脏标记或变化量标识符 (dirty, changed, layoutDirty, frameDirty, recoil, timer, cooldown, need, rebuild, pool, count, capacity 等)
             var idents = condition.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>();
             foreach (var id in idents)
             {
@@ -1718,7 +1742,20 @@ namespace ModularFlightPanel.UI
                     name.IndexOf("changed", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     name.IndexOf("recoil", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     name.IndexOf("timer", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("cooldown", StringComparison.OrdinalIgnoreCase) >= 0)
+                    name.IndexOf("cooldown", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("need", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("rebuild", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("repopulate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("pending", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("stale", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("fresh", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("init", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("cached", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("last", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("prev", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("pool", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("count", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("capacity", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return true;
                 }

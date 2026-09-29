@@ -54,6 +54,13 @@ namespace ModularFlightPanel.UI.Widgets
         private string _dataNavContextText = "SURFACE";
         private float _dataFillAmount = 0.8f;
 
+        private readonly Cached<string> _lastMainStateText = new Cached<string>(string.Empty);
+        private readonly Cached<TextStyleRole> _lastMainStateRole = new Cached<TextStyleRole>(TextStyleRole.Accent);
+        private readonly Cached<string> _lastPhaseBadgeText = new Cached<string>(string.Empty);
+        private readonly Cached<TextStyleRole> _lastPhaseBadgeRole = new Cached<TextStyleRole>(TextStyleRole.SecondaryValue);
+        private readonly Cached<string> _lastNavContextText = new Cached<string>(string.Empty);
+        private readonly CachedFloat _lastFillAmount = new CachedFloat(-1f);
+
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
@@ -111,12 +118,12 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            MainState.Text = _dataMainStateText;
-            MainState.SetRole(_dataMainStateRole);
-            PhaseBadge.Text = _dataPhaseBadgeText;
-            PhaseBadge.SetRole(_dataPhaseBadgeRole);
-            NavContext.Text = _dataNavContextText;
-            StatusAccentBar.FillAmount = _dataFillAmount;
+            if (_lastMainStateText.Update(_dataMainStateText)) MainState.Text = _dataMainStateText;
+            if (_lastMainStateRole.Update(_dataMainStateRole)) MainState.SetRole(_dataMainStateRole);
+            if (_lastPhaseBadgeText.Update(_dataPhaseBadgeText)) PhaseBadge.Text = _dataPhaseBadgeText;
+            if (_lastPhaseBadgeRole.Update(_dataPhaseBadgeRole)) PhaseBadge.SetRole(_dataPhaseBadgeRole);
+            if (_lastNavContextText.Update(_dataNavContextText)) NavContext.Text = _dataNavContextText;
+            if (_lastFillAmount.Update(_dataFillAmount)) StatusAccentBar.FillAmount = _dataFillAmount;
         }
 
         private void UpdateFlightPhase(IFlightTelemetry telemetry)

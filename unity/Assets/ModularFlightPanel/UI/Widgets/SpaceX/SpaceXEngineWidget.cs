@@ -46,6 +46,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             public Image CoreLight;
             public Vector2 NormalizedPos;
             public bool IsActive;
+            public readonly CachedFloat LastScale = new CachedFloat(-1f, 0.005f);
         }
 
         private readonly List<EngineNodeUI> _engineNodes = new List<EngineNodeUI>();
@@ -55,7 +56,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private int _cachedActiveEngines = -1;
         private int _cachedTotalEngines = -1;
         private float _cachedThrottle = -1f;
-        private string _lastStatusStr = string.Empty;
+        private readonly Cached<string> _lastStatusStr = new Cached<string>(string.Empty);
 
         // CustomTemplate 自定义通道
         private string _titleCustom = "ENGINES";
@@ -373,7 +374,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 // 核心羽流光斑随油门动态平滑缩放
                 if (node.CoreLight != null && shouldLight)
                 {
-                    node.CoreLight.transform.localScale = new Vector3(throttleScale, throttleScale, 1f);
+                    if (node.LastScale.Update(throttleScale))
+                    {
+                        node.CoreLight.transform.localScale = new Vector3(throttleScale, throttleScale, 1f);
+                    }
                     node.CoreLight.color = activeColor;
                 }
 
@@ -406,9 +410,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     sStr = string.Format(_activeTemplate, litCount, _engineNodes.Count);
                 }
 
-                if (sStr != _lastStatusStr)
+                if (_lastStatusStr.Update(sStr))
                 {
-                    _lastStatusStr = sStr;
                     _statusText.text = sStr;
                 }
             }

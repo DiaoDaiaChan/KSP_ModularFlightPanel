@@ -65,14 +65,15 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         // 缓存与脏检查标记
         private ThemeConfig _cachedTheme;
-        private bool _lastHasNode = false;
-        private double _lastDeltaV = double.NaN;
-        private double _lastPrograde = double.NaN;
-        private double _lastNormal = double.NaN;
-        private double _lastRadial = double.NaN;
-        private float _lastCachedPipProgress = -1f;
-        private string _lastHeroStr = string.Empty;
-        private string _lastSubtitleStr = string.Empty;
+        private readonly Cached<bool> _lastHasNode = new Cached<bool>(false);
+        private readonly CachedDouble _lastDeltaV = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastPrograde = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastNormal = new CachedDouble(double.NaN);
+        private readonly CachedDouble _lastRadial = new CachedDouble(double.NaN);
+        private readonly CachedFloat _lastCachedPipProgress = new CachedFloat(-1f);
+        private readonly Cached<string> _lastHeroStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastSubtitleStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastDvStr = new Cached<string>(string.Empty);
 
         // 双轨快照
         private bool _pendingHasNode = false;
@@ -465,12 +466,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _pendingDeltaV = dv;
 
             double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (double.IsNaN(_lastPrograde) || Math.Abs(proDv - _lastPrograde) > deltaThreshold ||
-                Math.Abs(normDv - _lastNormal) > deltaThreshold || Math.Abs(radDv - _lastRadial) > deltaThreshold)
+            if (double.IsNaN(_lastPrograde.Value) || Math.Abs(proDv - _lastPrograde.Value) > deltaThreshold ||
+                Math.Abs(normDv - _lastNormal.Value) > deltaThreshold || Math.Abs(radDv - _lastRadial.Value) > deltaThreshold)
             {
-                _lastPrograde = proDv;
-                _lastNormal = normDv;
-                _lastRadial = radDv;
+                _lastPrograde.Update(proDv);
+                _lastNormal.Update(normDv);
+                _lastRadial.Update(radDv);
 
                 string proSign = proDv >= 0 ? "+" : "";
                 string normSign = normDv >= 0 ? "+" : "";
@@ -501,7 +502,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 return;
             }
 
-            _lastHasNode = true;
+            _lastHasNode.Update(true);
 
             if (_currentCardRole != _pendingCardRole)
             {
@@ -518,13 +519,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            if (Mathf.Abs(_pendingPipProgress - _lastCachedPipProgress) > 0.002f)
+            if (Mathf.Abs(_pendingPipProgress - _lastCachedPipProgress.Value) > 0.002f)
             {
-                _lastCachedPipProgress = _pendingPipProgress;
+                _lastCachedPipProgress.Update(_pendingPipProgress);
                 float pipX = (_pendingPipProgress - 0.5f) * TrackWidth * s;
                 if (_progressPipRt != null)
                 {
-                    _progressPipRt.anchoredPosition = new Vector2(pipX, TrackCenterY * s);
+                    _progressPipRt.SetAnchoredPositionSafe(new Vector2(pipX, TrackCenterY * s));
                 }
 
                 if (_milestones != null)
@@ -547,36 +548,35 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            if (_pendingCountdownStr != _lastHeroStr)
+            if (_lastHeroStr.Update(_pendingCountdownStr))
             {
-                _lastHeroStr = _pendingCountdownStr;
                 SetTextIfChanged(_countdownText, _pendingCountdownStr);
                 SetTextIfChanged(_countdownLabel, _pendingCountdownLabel);
             }
 
-            if (_pendingDvStr != _lastSubtitleStr || _lastDeltaV != _pendingDeltaV)
+            if (_lastDvStr.Update(_pendingDvStr) || _lastDeltaV.Update(_pendingDeltaV))
             {
-                _lastDeltaV = _pendingDeltaV;
                 SetTextIfChanged(_deltaVText, _pendingDvStr);
             }
 
-            if (_pendingSubtitleStr != null && _pendingSubtitleStr != _lastSubtitleStr)
+            if (_pendingSubtitleStr != null && _lastSubtitleStr.Update(_pendingSubtitleStr))
             {
-                _lastSubtitleStr = _pendingSubtitleStr;
                 SetTextIfChanged(_vectorSubtitleText, _pendingSubtitleStr);
             }
         }
 
         private void ShowStandby(ThemeConfig theme, float s)
         {
-            if (!_lastHasNode && _lastDeltaV == 0.0) return;
+            if (!_lastHasNode.Value && _lastDeltaV.Value == 0.0) return;
 
-            _lastHasNode = false;
-            _lastDeltaV = 0.0;
-            _lastPrograde = double.NaN;
-            _lastNormal = double.NaN;
-            _lastRadial = double.NaN;
-            _lastCachedPipProgress = -1f;
+            _lastHasNode.Update(false);
+            _lastDeltaV.Reset(0.0);
+            _lastPrograde.Reset(double.NaN);
+            _lastNormal.Reset(double.NaN);
+            _lastRadial.Reset(double.NaN);
+            _lastCachedPipProgress.Reset(-1f);
+            _lastDvStr.Reset(string.Empty);
+            _lastSubtitleStr.Reset(string.Empty);
 
             SetTextIfChanged(_countdownText, I18n.Tr("WIDGET_NAV_NO_NODE", "无节点"));
             SetTextIfChanged(_deltaVText, "--- m/s");
@@ -584,7 +584,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             if (_progressPipRt != null)
             {
-                _progressPipRt.anchoredPosition = new Vector2(-TrackWidth * 0.5f * s, TrackCenterY * s);
+                _progressPipRt.SetAnchoredPositionSafe(new Vector2(-TrackWidth * 0.5f * s, TrackCenterY * s));
             }
 
             if (_milestones != null)
