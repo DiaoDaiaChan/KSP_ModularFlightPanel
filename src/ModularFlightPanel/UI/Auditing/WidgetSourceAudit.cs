@@ -1032,6 +1032,12 @@ namespace ModularFlightPanel.UI
                 Add(report, node.FileName, WidgetSpecRules.AutoRegistration, "ERROR", RoslynAstHelper.GetLine(node.Decl),
                     "未声明 [" + WidgetSpecRules.MetadataAttribute + "] 自动注册与预设库元数据特性（具体组件必须声明元数据以便自动挂载至游戏内预设库与验证器）");
             }
+
+            // ── SPEC-009 智能私有缓存与死区脏检查契约（必须声明或使用 Cached<T> / CachedFloat / CachedDouble 等槽位）──
+            ScanPrivateCacheContract(node, report);
+
+            // ── SPEC-010 高频生命周期禁止无守卫堆分配、字符串插值与 UGUI 几何写入 ──
+            ScanHotLoopUnguardedOperation(node, report);
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -1491,6 +1497,240 @@ namespace ModularFlightPanel.UI
         {
             Add(report, node.FileName, WidgetSpecRules.TelemetryAssemblyWarning, "WARNING", line,
                 $"{node.Name}组件'{ctrlName}'控件未支持标准化遥测装配 (未提供遥测 Token 绑定或缺少通道装配契约)");
+        }
+
+        private static void ScanPrivateCacheContract(WidgetClassNode node, WidgetSourceAuditReport report)
+        {
+            if (node.IsAbstract || node.IsContractRoot || node.IsObsoleteShim) return;
+
+            // 1. 检查类内或继承链祖先类中是否声明了合规的私有缓存字段
+            bool hasCacheField = false;
+            foreach (var n in node.SelfAndAncestors())
+            {
+                if (n.IsContractRoot || n.Decl == null) continue;
+
+                foreach (var field in n.Decl.Members.OfType<FieldDeclarationSyntax>())
+                {
+                    string simpleType = RoslynAstHelper.GetSimpleTypeName(field.Declaration.Type);
+                    if (WidgetSpecRules.ValidCacheTypes.Any(t => string.Equals(t, simpleType, StringComparison.Ordinal)))
+                    {
+                        hasCacheField = true;
+                        break;
+                    }
+                }
+                if (hasCacheField) break;
+            }
+
+            bool hasCacheUsage = false;
+            if (!hasCacheField)
+            {
+                // 2. 检查类内方法或表达式中是否实例化/调用了合规缓存类型
+                foreach (var creation in node.Decl.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+                {
+                    string createdType = RoslynAstHelper.GetSimpleTypeName(creation.Type);
+                    if (WidgetSpecRules.ValidCacheTypes.Any(t => string.Equals(t, createdType, StringComparison.Ordinal)))
+                    {
+                        hasCacheUsage = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasCacheField && !hasCacheUsage)
+            {
+                Add(report, node.FileName, WidgetSpecRules.WidgetPrivateCacheContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
+                    "未声明或使用智能私有缓存与死区脏检查 (Cached<T> / CachedFloat / CachedDouble / DirtyField / DirtyFloat / DirtyDouble)。"
+                    + "根据航电能效规范，组件必须通过全托管缓存槽位隔离遥测刷新与 UI 绘制，彻底阻断无效重复计算与无感静默开销");
+                return;
+            }
+
+            // 3. 检查残留的手工脏追踪私有字段（防止半拉子接入或伪改造）
+            // 即使拥有 Cached<T>，若依然残留未纳管的手工脏追踪变量（如 _last* / _prev* / _dirty*），则触发不完全接入错误
+            var residualFields = new List<string>();
+            foreach (var field in node.Decl.Members.OfType<FieldDeclarationSyntax>())
+            {
+                if (field.Modifiers.Any(SyntaxKind.ConstKeyword)) continue;
+
+                string fieldTypeName = RoslynAstHelper.GetSimpleTypeName(field.Declaration.Type);
+                if (WidgetSpecRules.ValidCacheTypes.Any(t => string.Equals(t, fieldTypeName, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+
+                foreach (var v in field.Declaration.Variables)
+                {
+                    string name = v.Identifier.Text;
+                    if (WidgetSpecRules.IsResidualDirtyField(name))
+                    {
+                        residualFields.Add($"'{name}' ({fieldTypeName})");
+                    }
+                }
+            }
+
+            if (residualFields.Count > 0)
+            {
+                string fieldList = string.Join(", ", residualFields);
+                Add(report, node.FileName, WidgetSpecRules.WidgetPrivateCacheContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
+                    $"私有缓存接入不完全: 检测到残留的手工脏追踪字段 {fieldList} 未接入全托管缓存槽位。"
+                    + "根据航电能效规范，严禁混用裸私有变量进行脏检查，必须全量迁移至 Cached<T> / CachedFloat / CachedDouble。");
+            }
+        }
+
+        private static void ScanHotLoopUnguardedOperation(WidgetClassNode node, WidgetSourceAuditReport report)
+        {
+            if (node.IsAbstract || node.IsContractRoot || node.IsObsoleteShim || node.Decl == null) return;
+
+            // 收集所有高频生命周期入口方法
+            var entryMethods = node.Decl.Members.OfType<MethodDeclarationSyntax>()
+                .Where(m => WidgetSpecRules.HotLoopMethodNames.Contains(m.Identifier.Text) ||
+                            m.Identifier.Text.StartsWith(WidgetSpecRules.HotSyncMethodPrefix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (entryMethods.Count == 0) return;
+
+            // 收集所有无条件每帧可达的方法闭包 (若调用点已有脏检查守卫，则不计入高频无条件闭包)
+            var unguardedMembers = new HashSet<MethodDeclarationSyntax>();
+            var queue = new Queue<MethodDeclarationSyntax>();
+
+            foreach (var entry in entryMethods)
+            {
+                if (unguardedMembers.Add(entry))
+                {
+                    queue.Enqueue(entry);
+                }
+            }
+
+            var methodsByName = node.Decl.Members.OfType<MethodDeclarationSyntax>()
+                .GroupBy(m => m.Identifier.Text, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                foreach (var inv in current.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    // 若调用点本身位于脏检查守卫内部（如 if (layoutDirty) ApplyLayout(...)），则目标方法已被守卫
+                    if (IsGuardedByDirtyCheck(inv)) continue;
+
+                    string invokedName = RoslynAstHelper.GetInvokedMethodName(inv);
+                    if (!string.IsNullOrEmpty(invokedName) && methodsByName.TryGetValue(invokedName, out var targets))
+                    {
+                        foreach (var target in targets)
+                        {
+                            if (unguardedMembers.Add(target))
+                            {
+                                queue.Enqueue(target);
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var member in unguardedMembers)
+            {
+                string memberName = member.Identifier.ValueText;
+
+                // 1. 高频生命周期内的无守卫字符串插值 (堆分配与 GC 压力)
+                foreach (var strInterp in member.DescendantNodes().OfType<InterpolatedStringExpressionSyntax>())
+                {
+                    if (!IsGuardedByDirtyCheck(strInterp))
+                    {
+                        int line = RoslynAstHelper.GetLine(strInterp);
+                        string codeSnippet = strInterp.ToString();
+                        if (codeSnippet.Length > 40) codeSnippet = codeSnippet.Substring(0, 37) + "...";
+                        Add(report, node.FileName, WidgetSpecRules.HotLoopUnguardedOperation, "ERROR", line,
+                            $"高频生命周期 '{memberName}' 中存在无守卫字符串插值 ({codeSnippet})。必须接入 Cached<T> 或脏标记守卫隔离，彻底杜绝每帧重复堆分配与 GC 压力");
+                    }
+                }
+
+                // 2. 高频生命周期内的无守卫 UGUI 几何写入 (Canvas 脏重排)
+                foreach (var assign in member.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+                {
+                    string propName = null;
+                    if (assign.Left is MemberAccessExpressionSyntax ma)
+                    {
+                        propName = ma.Name.Identifier.ValueText;
+                    }
+                    else
+                    {
+                        string left = assign.Left.ToString();
+                        int dot = left.LastIndexOf('.');
+                        if (dot >= 0) propName = left.Substring(dot + 1).Trim();
+                    }
+
+                    if (propName == "sizeDelta" || propName == "anchoredPosition" || propName == "localScale")
+                    {
+                        if (!IsGuardedByDirtyCheck(assign))
+                        {
+                            int line = RoslynAstHelper.GetLine(assign);
+                            string codeSnippet = assign.ToString();
+                            if (codeSnippet.Length > 50) codeSnippet = codeSnippet.Substring(0, 47) + "...";
+                            Add(report, node.FileName, WidgetSpecRules.HotLoopUnguardedOperation, "ERROR", line,
+                                $"高频生命周期 '{memberName}' 中存在无守卫的 RectTransform 几何写入 ({codeSnippet})。无条件每帧写入 RectTransform 会持续污染 Canvas 引发局部重排，必须接入 CachedFloat / 脏标记守卫隔离");
+                        }
+                    }
+                }
+            }
+        }
+
+        private static bool IsGuardedByDirtyCheck(SyntaxNode node)
+        {
+            foreach (var ifStmt in node.Ancestors().OfType<IfStatementSyntax>())
+            {
+                if (IsDirtyGuardCondition(ifStmt.Condition)) return true;
+            }
+
+            // 检查方法或外层代码块中是否存在前置早退守卫 (例如 if (!_dirty) return;)
+            var block = node.Ancestors().OfType<BlockSyntax>().FirstOrDefault();
+            if (block != null)
+            {
+                foreach (var stmt in block.Statements)
+                {
+                    if (stmt.SpanStart >= node.SpanStart) break;
+                    if (stmt is IfStatementSyntax earlyIf && earlyIf.Statement is ReturnStatementSyntax)
+                    {
+                        if (IsDirtyGuardCondition(earlyIf.Condition)) return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsDirtyGuardCondition(ExpressionSyntax condition)
+        {
+            if (condition == null) return false;
+            string condStr = condition.ToString();
+
+            // 1. 调用了缓存更新或变化判定方法：.Update( 或 .IsDirty 或 .HasChanged
+            if (condStr.Contains(".Update(") || condStr.Contains(".Update (") ||
+                condStr.Contains(".IsDirty") || condStr.Contains(".HasChanged"))
+            {
+                return true;
+            }
+
+            // 2. 检查了脏标记或变化量标识符 (dirty, changed, layoutDirty, frameDirty, recoil, timer, cooldown 等)
+            var idents = condition.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>();
+            foreach (var id in idents)
+            {
+                string name = id.Identifier.Text;
+                if (name.IndexOf("dirty", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("changed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("recoil", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("timer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    name.IndexOf("cooldown", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            // 3. 包含容差阈值差值计算 Math.Abs(...) > tol 或 Mathf.Abs(...) > tol
+            if (condStr.Contains("Abs(") && (condStr.Contains(">") || condStr.Contains(">=")))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -2130,6 +2370,49 @@ namespace ModularFlightPanel.UI
                     + aliasSemanticReport.CountByRule(WidgetSpecRules.NoSceneQueries) + " 条（期望 1 条）");
             }
 
+            // ── 23. SPEC-009 智能私有缓存契约自检：必须声明或使用 Cached<T> / CachedFloat / CachedDouble 等槽位 ──
+            string noCacheSrc = compliant.Replace("        private readonly Cached<float> _cachedTest = new Cached<float>(0f);\n", string.Empty);
+            var noCacheReport = Scan(new[] { MakeFile("NoCache.cs", noCacheSrc) });
+            check(noCacheReport.CountByRule(WidgetSpecRules.WidgetPrivateCacheContract) == 1,
+                "SPEC-009 未声明或使用智能私有缓存未拦下（必须声明 Cached<T> / CachedFloat / CachedDouble 等槽位）");
+
+            string withCachedDoubleSrc = noCacheSrc.Replace(
+                "public class FakeWidget : BaseFlightWidget\n    {",
+                "public class FakeWidget : BaseFlightWidget\n    {\n        private CachedDouble _testDbl = new CachedDouble(0.0);");
+            var withCachedDoubleReport = Scan(new[] { MakeFile("WithCachedDouble.cs", withCachedDoubleSrc) });
+            check(withCachedDoubleReport.CountByRule(WidgetSpecRules.WidgetPrivateCacheContract) == 0,
+                "SPEC-009 声明了 CachedDouble 的组件被误判");
+
+            string withDirtyFieldSrc = noCacheSrc.Replace(
+                "public class FakeWidget : BaseFlightWidget\n    {",
+                "public class FakeWidget : BaseFlightWidget\n    {\n        private DirtyField<int> _testDirty;");
+            var withDirtyFieldReport = Scan(new[] { MakeFile("WithDirtyField.cs", withDirtyFieldSrc) });
+            check(withDirtyFieldReport.CountByRule(WidgetSpecRules.WidgetPrivateCacheContract) == 0,
+                "SPEC-009 声明了 DirtyField<T> 的组件被误判");
+
+            string withResidualFieldSrc = compliant.Replace(
+                "public class FakeWidget : BaseFlightWidget\n    {",
+                "public class FakeWidget : BaseFlightWidget\n    {\n        private float _lastSpeed;");
+            var withResidualFieldReport = Scan(new[] { MakeFile("WithResidualField.cs", withResidualFieldSrc) });
+            check(withResidualFieldReport.CountByRule(WidgetSpecRules.WidgetPrivateCacheContract) == 1
+                  && withResidualFieldReport.Violations.Any(v => v.Description.Contains("私有缓存接入不完全")),
+                "SPEC-009 混用残留手工脏追踪字段未被拦截（半拉子迁移必须报警）");
+
+            // ── 24. SPEC-010 高频生命周期禁止无守卫堆分配、字符串插值与 UGUI 几何写入 ──
+            string unguardedInterpSrc = compliant.Replace(
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }",
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { string s = $\"Val: {context.DeltaTime}\"; }");
+            var unguardedInterpReport = Scan(new[] { MakeFile("UnguardedInterp.cs", unguardedInterpSrc) });
+            check(unguardedInterpReport.CountByRule(WidgetSpecRules.HotLoopUnguardedOperation) == 1,
+                "SPEC-010 OnUIDrawLoop 内无守卫字符串插值未被拦截");
+
+            string guardedInterpSrc = compliant.Replace(
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { }",
+                "public override void OnUIDrawLoop(ref FlightUIDrawContext context) { if (_cachedTest.Update(context.DeltaTime)) { string s = $\"Val: {context.DeltaTime}\"; } }");
+            var guardedInterpReport = Scan(new[] { MakeFile("GuardedInterp.cs", guardedInterpSrc) });
+            check(guardedInterpReport.CountByRule(WidgetSpecRules.HotLoopUnguardedOperation) == 0,
+                "SPEC-010 有 Cached.Update 守卫的字符串插值被误判");
+
             LastSelfTestCaseCount = cases;
             return failures;
         }
@@ -2158,6 +2441,7 @@ namespace ModularFlightPanel.UI
                  + "    [FlightWidget(\"fake_widget\")]\n"
                  + "    public class FakeWidget : BaseFlightWidget\n"
                  + "    {\n"
+                 + "        private readonly Cached<float> _cachedTest = new Cached<float>(0f);\n"
                  + "        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n"
                  + "        public override void ApplyTheme(ThemeConfig theme) { }\n"
                  + "        public override void OnUpdateTelemetry(IFlightTelemetry telemetry) { }\n"

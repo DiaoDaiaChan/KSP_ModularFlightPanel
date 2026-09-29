@@ -21,6 +21,7 @@
     <Compile Remove="UI\Auditing\WidgetSourceAudit.cs" />
     <Compile Remove="UI\Auditing\WidgetModernizationAudit.cs" />
     <Compile Remove="UI\Auditing\WidgetColorLiteralAudit.cs" />
+    <Compile Remove="UI\Auditing\WidgetFieldPenetrationAudit.cs" />
     <Compile Remove="UI\Auditing\I18nSyntaxAuditor.cs" />
   </ItemGroup>
 

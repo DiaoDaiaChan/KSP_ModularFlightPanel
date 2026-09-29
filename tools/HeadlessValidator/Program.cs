@@ -246,6 +246,14 @@ namespace ModularFlightPanel.HeadlessValidator
                 {
                     return ConfigRoundtripTestSuite.Run(repoRoot) == 0 ? 0 : 1;
                 }
+                else if (args[i] == "--audit-fields" || args[i] == "--penetrate-fields")
+                {
+                    Console.OutputEncoding = Encoding.UTF8;
+                    bool showAll = args.Contains("--all");
+                    var fieldReport = ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.Scan(repoRoot);
+                    Console.WriteLine(ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.RenderConsoleReport(fieldReport, showAll));
+                    return fieldReport.TotalAllLeaks == 0 ? 0 : 1;
+                }
                 else if (args[i] == "--self-test")
                 {
                     // 审计内核自检的独立入口：不加载布局、不做渲染、不做镜像校验，
@@ -566,6 +574,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 Console.WriteLine($"  ├─ 遥测与生命周期: 全部组件重写 OnUpdateTelemetry 且 OnDestroy 全量 override 并调用 base");
                 Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件沿继承链声明 [{WidgetSpecRules.MetadataAttribute}] 特性 (MFP-SPEC-008 自动挂载)");
                 Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询（黑名单表 {WidgetSpecRules.SceneQueryApis.Count} 条：Find*ByType / GameObject.Find* / Camera.main·current·allCameras·GetAllCameras / GetRootGameObjects）");
+                Console.WriteLine($"  ├─ 智能私有缓存: 全部组件接入 Cached<T> / CachedFloat / CachedDouble / DirtyField 全托管死区缓存 (MFP-SPEC-009)");
                 var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
                 Console.WriteLine($"  ├─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
                 var perfRisks = modReport.WidgetsWithAntiPatterns

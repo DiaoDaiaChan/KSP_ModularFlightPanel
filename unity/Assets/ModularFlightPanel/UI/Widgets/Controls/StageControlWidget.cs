@@ -97,12 +97,13 @@ namespace ModularFlightPanel.UI.Widgets
             public RectTransform SubTickPosRt;
             public Text ValText;
             public RectTransform ValRt;
+            public readonly CachedFloat LastTrim = new CachedFloat(-999f, tolerance: 0.005f);
         }
 
         private AxisMeterUI _pitchMeter;
         private AxisMeterUI _rollMeter;
         private AxisMeterUI _yawMeter;
-        private float _cachedTrackWidth = 104f;
+        private readonly CachedFloat _cachedTrackWidth = new CachedFloat(104f, tolerance: 0.5f);
 
         // 分级推进剂计量槽
         private GameObject _propTagBg;
@@ -134,13 +135,11 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _stockToggleImg;
         private Outline _stockToggleOutline;
         private Text _stockToggleText;
-        private bool _stockHidden = true;
+        private readonly Cached<bool> _stockHidden = new Cached<bool>(true);
 
-        // 动效与交互计时器
-        private float _fireBtnRecoilTimer = 0f;
-        private float _currentPropFrac = 1f;
-        private float _lastLayoutW = -1f;
-        private float _lastLayoutH = -1f;
+        // 动效与交互计时器 (全托管生命周期)
+        private readonly CachedFloat _fireBtnRecoilTimer = new CachedFloat(0f, tolerance: 0.001f);
+        private readonly CachedFloat _currentPropFrac = new CachedFloat(1f, tolerance: 0.001f);
 
         // 统一私有遥测快照 (零 GC 结构体，解耦遥测心跳与 UI 渲染)
         private struct StageSnapshot
@@ -177,9 +176,12 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<int> _lastPitchPct = new Cached<int>(-9999);
         private readonly Cached<int> _lastRollPct = new Cached<int>(-9999);
         private readonly Cached<int> _lastYawPct = new Cached<int>(-9999);
-        private string _lastPitchStr;
-        private string _lastRollStr;
-        private string _lastYawStr;
+        private readonly CachedFloat _lastLayoutW = new CachedFloat(-1f, tolerance: 0.5f);
+        private readonly CachedFloat _lastLayoutH = new CachedFloat(-1f, tolerance: 0.5f);
+        private readonly Cached<int> _dirtyBurnSec = new Cached<int>(-1);
+        private readonly CachedFloat _dirtyTwr = new CachedFloat(-1f, tolerance: 0.05f);
+        private readonly Cached<int> _dirtyActiveEngines = new Cached<int>(-1);
+        private readonly CachedFloat _dirtyPropFill = new CachedFloat(-1f, tolerance: 0.002f);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -403,7 +405,7 @@ namespace ModularFlightPanel.UI.Widgets
                 I18n.Tr("TOOLTIP_STAGE_STOCK_DESC", "隐藏或还原游戏左下角原版分级控制面板。"), "HUD Toggle");
 
             // 初始化时默认执行静默隐藏原版左下角
-            NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden);
+            NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden.Value);
 
             // 标准化组件内部控件注册至管理器
             if (_fireBtn != null)
@@ -615,7 +617,7 @@ namespace ModularFlightPanel.UI.Widgets
             float labelW = 34f * s;
             float valW = 34f * s;
             float trackW = Mathf.Max(60f * s, contentW - labelW - valW - 14f * s);
-            _cachedTrackWidth = trackW / (s > 0f ? s : 1f);
+            _cachedTrackWidth.Update(trackW / (s > 0f ? s : 1f));
 
             LayoutAxisMeter(_pitchMeter, axisBayTopY, halfW, margin, labelW, trackW, valW, s);
             LayoutAxisMeter(_rollMeter, axisBayTopY - axisSpacing, halfW, margin, labelW, trackW, valW, s);
@@ -728,7 +730,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnFireStage()
         {
-            _fireBtnRecoilTimer = 0.20f;
+            _fireBtnRecoilTimer.Value = 0.20f;
             StockStageActionService.ActivateNextStage();
             FlightTelemetryContext.Current?.ActivateNextStage();
         }
@@ -745,8 +747,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnToggleStockVisibility()
         {
-            _stockHidden = !_stockHidden;
-            NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden);
+            _stockHidden.Value = !_stockHidden.Value;
+            NavBallHookService.HideStockBottomLeftAction?.Invoke(_stockHidden.Value);
             UpdateStockToggleButtonState();
         }
 
@@ -754,12 +756,12 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_stockToggleText != null)
             {
-                string text = _stockHidden ? "KSP HUD" : "● KSP HUD";
+                string text = _stockHidden.Value ? "KSP HUD" : "● KSP HUD";
                 SetTextIfChanged(_stockToggleText, text);
             }
             if (_cachedTheme != null)
             {
-                ApplyText(_stockToggleText, _stockHidden ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, _cachedTheme);
+                ApplyText(_stockToggleText, _stockHidden.Value ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, _cachedTheme);
             }
         }
 
@@ -818,10 +820,9 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 自适应排版重算 (增加尺寸脏检查，杜绝每帧重复 ApplyLayout)
             float currentW = RectTransform.rect.width > 10f ? RectTransform.rect.width : BaseSize.x * s;
             float currentH = RectTransform.rect.height > 10f ? RectTransform.rect.height : BaseSize.y * s;
-            if (Math.Abs(currentW - _lastLayoutW) > 0.5f || Math.Abs(currentH - _lastLayoutH) > 0.5f)
+            bool layoutDirty = _lastLayoutW.Update(currentW) | _lastLayoutH.Update(currentH);
+            if (layoutDirty)
             {
-                _lastLayoutW = currentW;
-                _lastLayoutH = currentH;
                 ApplyLayout(currentW, currentH);
             }
 
@@ -861,10 +862,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 按键微回弹动效
-            if (_fireBtnRecoilTimer > 0f)
+            if (_fireBtnRecoilTimer.Value > 0f)
             {
-                _fireBtnRecoilTimer -= dt;
-                float recoilScale = 1f - Mathf.Clamp01(_fireBtnRecoilTimer * 0.4f);
+                _fireBtnRecoilTimer.Value -= dt;
+                float recoilScale = 1f - Mathf.Clamp01(_fireBtnRecoilTimer.Value * 0.4f);
                 if (_fireBtn != null) _fireBtn.transform.localScale = new Vector3(recoilScale, recoilScale, 1f);
             }
             else if (_fireBtn != null && _fireBtn.transform.localScale.x < 0.999f)
@@ -886,27 +887,36 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             int burnSec = Mathf.Max(0, (int)_snap.StageBurnTime);
-            int m = burnSec / 60;
-            int sec = burnSec % 60;
-            string twrStr = _snap.Twr > 0.01f 
-                ? $"⏱ {m:00}:{sec:00} · {_snap.Twr:F2} TWR · ⚙ {_snap.ActiveEngines} ENG" 
-                : $"⏱ {m:00}:{sec:00} · ⚙ {_snap.ActiveEngines} ENG";
-            SetTextIfChanged(_stageTwrEngText, twrStr);
-
-            if (_stageAccentBar != null)
+            bool burnDirty = _dirtyBurnSec.Update(burnSec);
+            bool twrDirty = _dirtyTwr.Update(_snap.Twr);
+            bool engDirty = _dirtyActiveEngines.Update(_snap.ActiveEngines);
+            if (burnDirty || twrDirty || engDirty)
             {
-                _stageAccentBar.color = _snap.ActiveEngines > 0 ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                int m = burnSec / 60;
+                int sec = burnSec % 60;
+                float twr = _dirtyTwr.Value;
+                int eng = _dirtyActiveEngines.Value;
+                string twrStr = twr > 0.01f 
+                    ? $"⏱ {m:00}:{sec:00} · {twr:F2} TWR · ⚙ {eng} ENG" 
+                    : $"⏱ {m:00}:{sec:00} · ⚙ {eng} ENG";
+                SetTextIfChanged(_stageTwrEngText, twrStr);
+
+                if (_stageAccentBar != null)
+                {
+                    _stageAccentBar.color = eng > 0 ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                }
             }
 
             // 4. 三轴舵面偏转与配平
-            float curTrackW = _cachedTrackWidth * s;
-            UpdateAxisVisuals(_pitchMeter, _snap.PitchInput, _snap.PitchTrim, curTrackW, s, theme, _lastPitchPct, ref _lastPitchStr);
-            UpdateAxisVisuals(_rollMeter, _snap.RollInput, _snap.RollTrim, curTrackW, s, theme, _lastRollPct, ref _lastRollStr);
-            UpdateAxisVisuals(_yawMeter, _snap.YawInput, _snap.YawTrim, curTrackW, s, theme, _lastYawPct, ref _lastYawStr);
+            float curTrackW = _cachedTrackWidth.Value * s;
+            UpdateAxisVisuals(_pitchMeter, _snap.PitchInput, _snap.PitchTrim, curTrackW, s, theme, _lastPitchPct);
+            UpdateAxisVisuals(_rollMeter, _snap.RollInput, _snap.RollTrim, curTrackW, s, theme, _lastRollPct);
+            UpdateAxisVisuals(_yawMeter, _snap.YawInput, _snap.YawTrim, curTrackW, s, theme, _lastYawPct);
 
             // 5. 分级推进剂指示条 (100% 语义驱动)
             float targetPropFrac = _snap.StagePropellantFraction;
-            _currentPropFrac = Mathf.Lerp(_currentPropFrac < 0f ? targetPropFrac : _currentPropFrac, targetPropFrac, 0.25f);
+            float nextProp = Mathf.Lerp(_currentPropFrac.Value < 0f ? targetPropFrac : _currentPropFrac.Value, targetPropFrac, 0.25f);
+            _currentPropFrac.Update(nextProp);
 
             if (_dirtyPropName.Update(_snap.PropName))
             {
@@ -914,19 +924,19 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             float contentW = currentW - 16f * s;
-            int propPctInt = Mathf.Clamp(Mathf.RoundToInt(_currentPropFrac * 100f), 0, 100);
+            int propPctInt = Mathf.Clamp(Mathf.RoundToInt(_currentPropFrac.Value * 100f), 0, 100);
             SetTextIfChanged(_propPctText, CacheManager.FastPercent(propPctInt));
 
-            TextStyleRole pRole = (_currentPropFrac > 0.25f) ? TextStyleRole.PrimaryValue : ((_currentPropFrac > 0.10f) ? TextStyleRole.Warning : TextStyleRole.Danger);
+            TextStyleRole pRole = (_currentPropFrac.Value > 0.25f) ? TextStyleRole.PrimaryValue : ((_currentPropFrac.Value > 0.10f) ? TextStyleRole.Warning : TextStyleRole.Danger);
             ApplyText(_propPctText, pRole, theme);
 
-            if (_propFillRt != null)
+            if (_dirtyPropFill.Update(_currentPropFrac.Value) && _propFillRt != null)
             {
-                _propFillRt.sizeDelta = new Vector2(contentW * _currentPropFrac, 4f * s);
+                _propFillRt.sizeDelta = new Vector2(contentW * _dirtyPropFill.Value, 4f * s);
             }
             if (_propFillImg != null)
             {
-                if (_currentPropFrac < 0.10f)
+                if (_currentPropFrac.Value < 0.10f)
                 {
                     // 临界低油量 1.5Hz 柔和脉冲
                     float pulse = 0.65f + 0.35f * Mathf.Sin(Time.time * 9.4f);
@@ -934,7 +944,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else
                 {
-                    MeterStyleRole fillRole = (_currentPropFrac > 0.25f) ? MeterStyleRole.Primary : MeterStyleRole.Warning;
+                    MeterStyleRole fillRole = (_currentPropFrac.Value > 0.25f) ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                     _propFillImg.color = style.GetMeterColor(fillRole, theme);
                 }
             }
@@ -961,36 +971,36 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void UpdateAxisVisuals(AxisMeterUI meter, float input, float trim, float trackW, float s, ThemeConfig theme, Cached<int> lastPct, ref string lastStr)
+        private void UpdateAxisVisuals(AxisMeterUI meter, float input, float trim, float trackW, float s, ThemeConfig theme, Cached<int> lastPct)
         {
             if (meter == null) return;
             float halfWidth = trackW * 0.5f;
             float clampedInput = Mathf.Clamp(input, -1f, 1f);
-            float fillWidth = Mathf.Abs(clampedInput) * halfWidth;
-            float fillCenterOffset = (clampedInput >= 0f) ? (fillWidth * 0.5f) : (-fillWidth * 0.5f);
 
-            if (meter.FillRt != null)
+            int pct = Mathf.RoundToInt(clampedInput * 100f);
+            if (lastPct.Update(pct))
             {
-                meter.FillRt.sizeDelta = new Vector2(fillWidth, 4f * s);
-                meter.FillRt.anchoredPosition = new Vector2(fillCenterOffset, 0f);
-            }
-
-            if (meter.TrimRt != null)
-            {
-                float clampedTrim = Mathf.Clamp(trim, -1f, 1f);
-                meter.TrimRt.anchoredPosition = new Vector2(clampedTrim * halfWidth, 0f);
-            }
-
-            if (meter.ValText != null)
-            {
-                int pct = Mathf.RoundToInt(clampedInput * 100f);
-                if (lastPct.Update(pct))
+                if (meter.FillRt != null)
                 {
-                    lastStr = (pct > 0) ? "+" + CacheManager.FastPercent(pct) : (pct == 0 ? "0%" : CacheManager.FastInt(pct) + "%");
-                    SetTextIfChanged(meter.ValText, lastStr);
+                    float fillWidth = Mathf.Abs(clampedInput) * halfWidth;
+                    float fillCenterOffset = (clampedInput >= 0f) ? (fillWidth * 0.5f) : (-fillWidth * 0.5f);
+                    meter.FillRt.sizeDelta = new Vector2(fillWidth, 4f * s);
+                    meter.FillRt.anchoredPosition = new Vector2(fillCenterOffset, 0f);
+                }
+
+                if (meter.ValText != null)
+                {
+                    string str = (pct > 0) ? "+" + CacheManager.FastPercent(pct) : (pct == 0 ? "0%" : CacheManager.FastInt(pct) + "%");
+                    SetTextIfChanged(meter.ValText, str);
                     TextStyleRole role = Mathf.Abs(pct) > 3 ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue;
                     ApplyText(meter.ValText, role, theme);
                 }
+            }
+
+            if (meter.TrimRt != null && meter.LastTrim.Update(trim))
+            {
+                float clampedTrim = Mathf.Clamp(trim, -1f, 1f);
+                meter.TrimRt.anchoredPosition = new Vector2(clampedTrim * halfWidth, 0f);
             }
         }
 

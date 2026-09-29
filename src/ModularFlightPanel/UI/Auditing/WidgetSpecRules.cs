@@ -25,9 +25,11 @@ namespace ModularFlightPanel.UI
         public const string NoHardcodedColors = "MFP-SPEC-006";  // 禁止颜色字面量（零容忍）
         public const string NoSceneQueries = "MFP-SPEC-007";     // 禁止组件内场景查询，统一走 ProbeManager
         public const string AutoRegistration = "MFP-SPEC-008";   // 必须声明 [FlightWidget] 自动注册与预设库元数据
+        public const string WidgetPrivateCacheContract = "MFP-SPEC-009"; // 必须声明或使用智能私有缓存与死区脏检查 (Cached<T> / CachedFloat / CachedDouble 等)
+        public const string HotLoopUnguardedOperation = "MFP-SPEC-010";   // 高频生命周期禁止无守卫堆分配、字符串插值与 UGUI 几何写入
         public const string TelemetryAssemblyWarning = "MFP-WARN-TELEM-ASSEMBLY"; // 微控件未支持标准化遥测装配警告
 
-        public const int RuleCount = 11;
+        public const int RuleCount = 13;
 
         /// <summary>审计内核自身问题（发现层失效 / 判定依据缺失）的统一报告名</summary>
         public const string KernelReportName = "AuditKernel";
@@ -87,6 +89,21 @@ namespace ModularFlightPanel.UI
 
         /// <summary>生命周期方法名（override 且必须回链 base）</summary>
         public const string LifecycleMethod = "OnDestroy";
+
+        /// <summary>
+        /// SPEC-009 智能私有缓存与死区脏检查合法类型清单（声明为字段或显式实例化调用）：
+        /// Cached<T> / CachedFloat / CachedDouble (全托管类，支持弱引用与反射全自动重置)
+        /// DirtyField<T> / DirtyFloat / DirtyDouble (零 GC 局部值死区脏检查结构体)
+        /// </summary>
+        public static readonly IReadOnlyList<string> ValidCacheTypes = Array.AsReadOnly(new[]
+        {
+            "Cached",
+            "CachedFloat",
+            "CachedDouble",
+            "DirtyField",
+            "DirtyFloat",
+            "DirtyDouble"
+        });
 
         // ==========================================================================================
         // SPEC-007 场景查询 API 表：唯一数据源，扫描与自检共用同一份判定
@@ -281,8 +298,8 @@ namespace ModularFlightPanel.UI
         // ==========================================================================================
         // 航电效能与反模式规则：高频生命周期方法与堆分配/裸 UGUI 逃逸
         // ==========================================================================================
-        public static readonly IReadOnlyList<string> HotLoopMethodNames = Array.AsReadOnly(new[] { "LateUpdate", "Update", "OnUpdateTelemetry", "FixedUpdate" });
-        public static readonly IReadOnlyList<string> HotLoopUguiProperties = Array.AsReadOnly(new[] { "anchoredPosition", "localScale", "color" });
+        public static readonly IReadOnlyList<string> HotLoopMethodNames = Array.AsReadOnly(new[] { "LateUpdate", "Update", "OnUIDrawLoop", "OnUpdateTelemetry", "FixedUpdate" });
+        public static readonly IReadOnlyList<string> HotLoopUguiProperties = Array.AsReadOnly(new[] { "anchoredPosition", "localScale", "color", "sizeDelta" });
 
         /// <summary>
         /// 触发 UGUI Canvas 网格或布局全量重建的高危 API（反模式：禁止在高频生命周期热路径内无节制调用）
@@ -367,6 +384,25 @@ namespace ModularFlightPanel.UI
         /// <summary>手工脏标记字段命名约定：_last* 前缀 + 下列后缀</summary>
         public const string DirtyTrackingFieldPrefix = "_last";
         public static readonly IReadOnlyList<string> DirtyTrackingFieldSuffixes = Array.AsReadOnly(new[] { "Text", "Str", "Val" });
+
+        /// <summary>残留手工脏标记前缀集合：检测未纳管私有状态</summary>
+        public static readonly IReadOnlyList<string> ResidualDirtyFieldPrefixes = Array.AsReadOnly(new[] { "_last", "_prev", "_dirty" });
+
+        /// <summary>
+        /// 判定字段名是否属于手工脏检查残留字段（例如 _lastPitch, _prevAlt, _dirtyText 等）
+        /// </summary>
+        public static bool IsResidualDirtyField(string fieldName)
+        {
+            if (string.IsNullOrEmpty(fieldName)) return false;
+            for (int i = 0; i < ResidualDirtyFieldPrefixes.Count; i++)
+            {
+                if (fieldName.StartsWith(ResidualDirtyFieldPrefixes[i], StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
 
         /// <summary>高频方法名判定用的同步入口前缀（Sync* 视为高频受染入口）</summary>
         public const string HotSyncMethodPrefix = "Sync";
@@ -557,6 +593,7 @@ namespace ModularFlightPanel.UI
             "WidgetSourceAudit.cs",
             "WidgetModernizationAudit.cs",
             "WidgetColorLiteralAudit.cs",
+            "WidgetFieldPenetrationAudit.cs",
             "I18nSyntaxAuditor.cs"
         });
 
