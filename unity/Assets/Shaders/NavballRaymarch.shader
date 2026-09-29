@@ -1116,9 +1116,13 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 else
                 {
                     float ar = max(_AspectRatio, 0.1);
-                    float fov = max(_FovScale, 0.2);
-                    subViewRay = normalize(float3(subCoord.x * ar * 0.95 * fov, subCoord.y * 0.95 * fov, 1.0));
-                    subNdotV = 1.0;
+                    float rSphere = sqrt(ar * ar + 1.0) * 1.02;
+                    float u = (subCoord.x * ar) / rSphere;
+                    float v = subCoord.y / rSphere;
+                    float subR2 = u * u + v * v;
+                    float subZ = sqrt(max(0.0, 1.0 - subR2));
+                    subViewRay = float3(u, v, subZ);
+                    subNdotV = subZ;
                 }
                 float3 subP = RotateByQuaternion(subViewRay, _SphereInvRotation);
                 subP = normalize(subP);
@@ -1194,10 +1198,13 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (rectAlpha <= 0.0) discard;
 
                     float ar = max(_AspectRatio, 0.1);
-                    float fov = max(_FovScale, 0.2);
-                    viewRay = normalize(float3(coord.x * ar * 0.95 * fov, coord.y * 0.95 * fov, 1.0));
-                    z = 1.0;
-                    NdotV = 1.0;
+                    float rSphere = sqrt(ar * ar + 1.0) * 1.02;
+                    float u = (coord.x * ar) / rSphere;
+                    float v = coord.y / rSphere;
+                    float r2 = u * u + v * v;
+                    z = sqrt(max(0.0, 1.0 - r2));
+                    viewRay = float3(u, v, z);
+                    NdotV = z;
                 }
 
                 // 4. 将视线空间坐标通过姿态逆旋转四元数变换，求得球体模型本地三维坐标 p！

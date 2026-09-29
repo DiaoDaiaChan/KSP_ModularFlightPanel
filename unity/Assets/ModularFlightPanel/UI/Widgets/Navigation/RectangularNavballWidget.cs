@@ -1059,7 +1059,6 @@ namespace ModularFlightPanel.UI.Widgets
             float halfW = _currentWidth * 0.5f;
             float halfH = _currentHeight * 0.5f;
             float ar = _aspectRatio;
-            float fov = 1.0f;
             float s = CurrentDpiScale;
             float marginX = 14f * s;
             float marginY = 14f * s;
@@ -1106,10 +1105,9 @@ namespace ModularFlightPanel.UI.Widgets
 
                     if (currentDir.z >= 0.05f)
                     {
-                        float screenNormX = currentDir.x / (currentDir.z * ar * 0.95f * fov);
-                        float screenNormY = currentDir.y / (currentDir.z * 0.95f * fov);
-                        float rawX = screenNormX * halfW;
-                        float rawY = screenNormY * halfH;
+                        float rSphere = Mathf.Sqrt(ar * ar + 1.0f) * 1.02f;
+                        float rawX = currentDir.x * (rSphere * halfH);
+                        float rawY = currentDir.y * (rSphere * halfH);
 
                         if (Mathf.Abs(rawX) <= boundX && Mathf.Abs(rawY) <= boundY)
                         {
