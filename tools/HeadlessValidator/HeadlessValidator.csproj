@@ -29,8 +29,7 @@
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\I18nSyntaxAuditor.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\Core\I18nJsonParser.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\Config\WidgetConfig.cs" />
-    <Compile Include="..\..\src\ModularFlightPanel\Config\WidgetLayoutData.cs" />
-    <Compile Include="..\..\src\ModularFlightPanel\Config\ThemeSettingsData.cs" />
+    <Compile Include="..\..\src\ModularFlightPanel\Config\ThemeConfig.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\Config\AvionicsConfigParser.cs" />
   </ItemGroup>
 

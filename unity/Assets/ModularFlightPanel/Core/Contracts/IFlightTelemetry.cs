@@ -237,4 +237,299 @@ namespace ModularFlightPanel.Core
 
         // 注：所有双向控制指令方法已拆分解耦至 IFlightControl 接口 (落实 ISP 接口隔离原则)
     }
+
+    /// <summary>
+    /// 标准化机载飞行控制指令接口 (Pure Unity / C# 契约)
+    /// 将双向操控指令与只读遥测数据解耦，落实接口隔离原则 (ISP)。
+    /// 操控型仪表 (SAS罗盘、分级控制台、时钟加速等) 面向此接口工作。
+    /// </summary>
+    public interface IFlightControl
+    {
+        // 飞行姿态与 SAS / RCS 控制
+        void SetSASMode(FlightSASMode mode);
+        void ToggleSAS();
+        void ToggleRCS();
+        void CycleSpeedMode();
+
+        // 分级与飞行模式
+        void ActivateNextStage();
+        void ToggleStageLock();
+        void TogglePrecisionMode();
+        void ToggleFlightMode();
+
+        // 机动节点
+        void WarpToManeuverNode();
+        void DeleteManeuverNode();
+
+        // 时间加速与暂停控制
+        void IncreaseTimeWarp();
+        void DecreaseTimeWarp();
+        void CancelTimeWarp();
+        void TogglePause();
+        void SetTimeWarpRateIndex(int index);
+    }
+
+    /// <summary>
+    /// 飞行瞬态动力学与状态机事件类型 (Flight Transient Event Type)
+    /// 用于主告警光字牌、时序甘特轴、ECAM状态条与机动指示卡等航电组件。
+    /// </summary>
+    public enum FlightTransientEventType
+    {
+        None = 0,
+        Separation,         // 分级分离 / 脱扣
+        EngineStart,        // 引擎启动 / 点火
+        MECO,               // 主发关机 / 熄火
+        ManeuverApproach,   // 接近机动节点 (T-60s)
+        ManeuverBurn,       // 机动点火执行
+        OrbitAchieved,      // 入轨圆化完成 (Stable Orbit)
+        Deorbit,            // 飞船离轨制动 / 进入再入走廊
+        AtmosphereEntry,    // 再入/进入大气层 (Entry Interface)
+        Blackout,           // 再入等离子体黑障
+        Escape,             // 逃逸轨道建立 (双曲线逃逸)
+        SoiTransition,      // 穿越引力范围 (SOI 切换)
+        SuicideBurn,        // 动力减速着陆点火
+        ApoapsisPass,       // 通过远拱点
+        PeriapsisPass,      // 通过近拱点
+        DockingMode,        // 进入对接模式
+        Touchdown,          // 着陆接地成功
+        MaxQ,               // 突破最大动压 (Max Q Passed)
+        V1Rotate,           // GPWS 起飞决断/抬轮速度 (V1 Decision / Rotate)
+        SolarStorm,         // Kerbalism 太阳风暴冲击 (CME / Solar Storm)
+        AvionicsLock,       // RP-1 航电失控锁定 (Avionics Locked)
+        TerrainImpact,      // Trajectories 预测地表撞击告警 (Ground Impact Imminent)
+        DockingCapture,     // DPAI 端口对接锁扣捕获 (Docking Captured)
+        EngineFailure,      // TestFlight 发动机故障失效 (Engine Failure)
+        ThermalOverheat     // SystemHeat 热回路过热紧急告警 (Thermal Loop Overheat)
+    }
+
+    /// <summary>
+    /// 全局机载遥测数据上下文访问点
+    /// 允许任何 UI 组件与无头渲染器直接接入标准 IFlightTelemetry 提供者
+    /// 实现了 UI 表现层与游戏核心引擎的彻底解耦
+    /// </summary>
+    public static class FlightTelemetryContext
+    {
+        private static IFlightTelemetry _provider;
+        public static Func<IFlightTelemetry> FallbackProvider { get; set; }
+
+        public static IFlightTelemetry Current
+        {
+            get => _provider ?? (FallbackProvider != null ? FallbackProvider() : null);
+            set => _provider = value;
+        }
+
+        /// <summary>
+        /// 全局机载控制指令访问点 (ISP 隔离接口)
+        /// </summary>
+        public static IFlightControl Control => Current;
+
+        public static void SetProvider(IFlightTelemetry provider)
+        {
+            _provider = provider;
+        }
+
+        public static void Reset()
+        {
+            _provider = null;
+        }
+    }
+
+    /// <summary>
+    /// 标准化单根天线工况与遥测快照 (CommNet / RealAntennas Antenna Telemetry Snapshot)
+    /// </summary>
+    public struct AntennaTelemetryInfo
+    {
+        public string Name;
+        public string TypeStr; // "DIRECT", "RELAY", "INTERNAL"
+        public double Power;
+        public string PowerFormatted; // "5.0k", "2.0M", "100G"
+        public float SignalStrength; // 0.0f .. 1.0f
+        public string Status; // "LINKED", "SEARCHING", "RETRACTED", "OFFLINE"
+        public bool IsOperational;
+
+        public AntennaTelemetryInfo(string name, string typeStr, double power, string powerFormatted, float signalStrength, string status, bool isOperational)
+        {
+            Name = name ?? "ANTENNA";
+            TypeStr = typeStr ?? "DIRECT";
+            Power = power;
+            PowerFormatted = powerFormatted ?? "---";
+            SignalStrength = signalStrength;
+            Status = status ?? "OFFLINE";
+            IsOperational = isOperational;
+        }
+
+        public string SpecSummary => $"{TypeStr}  ·  {PowerFormatted} POWER";
+    }
+
+    /// <summary>
+    /// 标准化通信网络对端链路遥测快照 (CommNet / RealAntennas Active Link Info)
+    /// </summary>
+    public struct CommLinkInfo
+    {
+        public string PeerName;
+        public double DataRateBps;
+        public float SignalStrength; // 0.0f .. 1.0f
+        public bool IsDirectHome;
+
+        public CommLinkInfo(string peerName, double dataRateBps, float signalStrength, bool isDirectHome = false)
+        {
+            PeerName = peerName;
+            DataRateBps = dataRateBps;
+            SignalStrength = signalStrength;
+            IsDirectHome = isDirectHome;
+        }
+
+        public string FormattedDataRate => FormatRate(DataRateBps);
+
+        public static string FormatRate(double bps)
+        {
+            if (bps <= 0.0) return "0.0 bps";
+            if (bps >= 1000000.0)
+                return $"{(bps / 1000000.0):F1} Mbps";
+            if (bps >= 1000.0)
+                return $"{(bps / 1000.0):F1} Kbps";
+            return $"{bps:F0} bps";
+        }
+    }
+
+    /// <summary>
+    /// 单级部件图标与推进剂状态数据模型 (Pure Unity / C# Contract)
+    /// 解耦原版 KSP StageIcon、ProtoStageIcon 与 DefaultIcons 枚举
+    /// </summary>
+    public struct StagePartIconData
+    {
+        public string IconType;           // 部件图标类型
+        public int IconTypeIndex;         // DefaultIcons 索引编号
+        public int Count;                 // 部件对称/数量倍率
+        public string PartTitle;          // 部件显示名称
+        public string PropellantName;     // 推进剂类型名称
+        public float PropellantFraction;  // 推进剂余量比例 (0.0 ~ 1.0, 若非推进部件则为 -1.0)
+        public Rect StockUvRect;          // 原版 StageIcon 贴图图集 UV 矩形
+        public bool HasStockUv;           // 是否包含原版有效 UV 坐标
+        public uint PartFlightId;         // 部件全局唯一 ID (flightID / craftID)，用于场景高亮与跨级移动
+
+        public StagePartIconData(string iconType, int iconTypeIndex, int count, string partTitle = "", string propName = null, float propFrac = -1f, Rect stockUv = default, bool hasStockUv = false, uint partFlightId = 0)
+        {
+            IconType = iconType;
+            IconTypeIndex = iconTypeIndex;
+            Count = count > 0 ? count : 1;
+            PartTitle = partTitle ?? string.Empty;
+            PropellantName = propName;
+            PropellantFraction = propFrac;
+            StockUvRect = stockUv;
+            HasStockUv = hasStockUv;
+            PartFlightId = partFlightId;
+        }
+    }
+
+    /// <summary>
+    /// 单级火箭动力与燃烧遥测数据模型 (Pure C# Contract)
+    /// </summary>
+    public struct StageDeltaVInfo
+    {
+        public int Stage;                                    // 级数编号 (如 0, 1, 2...)
+        public double DeltaV;                                // 该级可用 Delta-V (m/s)
+        public double BurnTime;                              // 该级发动机全推力工作时间 (秒)
+        public double TWR;                                   // 该级起步/平均推重比
+        public double Isp;                                   // 该级比冲 (秒)
+        public bool IsActive;                                // 是否为当前正在工作的激活级
+        public IReadOnlyList<StagePartIconData> PartIcons;   // 该级触发的部件图标列表
+
+        public StageDeltaVInfo(int stage, double dv, double burnTime, double twr = 0.0, double isp = 0.0, bool isActive = false, IReadOnlyList<StagePartIconData> partIcons = null)
+        {
+            Stage = stage;
+            DeltaV = dv;
+            BurnTime = burnTime;
+            TWR = twr;
+            Isp = isp;
+            IsActive = isActive;
+            PartIcons = partIcons ?? Array.Empty<StagePartIconData>();
+        }
+    }
+
+    /// <summary>
+    /// 外部探针位图标志（零开销位掩码，消除字符串字典查询）
+    /// </summary>
+    [Flags]
+    public enum ProbeTagFlags : uint
+    {
+        None = 0,
+        FAR = 1 << 0,
+        KER = 1 << 1,
+        MJ = 1 << 2,
+        Principia = 1 << 3,
+        RealAntennas = 1 << 4,
+        Kerbalism = 1 << 5,
+        Trajectories = 1 << 6,
+        Docking = 1 << 7,
+        GPWS = 1 << 8,
+        RealFuels = 1 << 9,
+        TestFlight = 1 << 10,
+        DynamicBatteryStorage = 1 << 11,
+        SystemHeat = 1 << 12,
+        AtmosphereAutopilot = 1 << 13,
+        RP1 = 1 << 14,
+    }
+
+    /// <summary>
+    /// 第三方遥测探针解耦注册表 (FAR / KerbalEngineer / MechJeb / Principia 等 15 大模组)
+    /// 允许外围探针以委托形式动态注入数据，使 TelemetryTokenEngine 与小组件彻底与第三方 DLL 解耦
+    /// </summary>
+    public static class ExternalProbeRegistry
+    {
+        public static Func<string, string, double> NumericResolver;
+        public static Func<string, string, string, string> StringResolver;
+        public static Func<string, bool> TagAvailabilityResolver;
+
+        public static ProbeTagFlags AvailableFlags;
+
+        // 零开销纳秒级硬件位掩码查询属性
+        public static bool HasFar => (AvailableFlags & ProbeTagFlags.FAR) != 0;
+        public static bool HasKer => (AvailableFlags & ProbeTagFlags.KER) != 0;
+        public static bool HasMj => (AvailableFlags & ProbeTagFlags.MJ) != 0;
+        public static bool HasPrincipia => (AvailableFlags & ProbeTagFlags.Principia) != 0;
+        public static bool HasRealAntennas => (AvailableFlags & ProbeTagFlags.RealAntennas) != 0;
+        public static bool HasKerbalism => (AvailableFlags & ProbeTagFlags.Kerbalism) != 0;
+        public static bool HasTrajectories => (AvailableFlags & ProbeTagFlags.Trajectories) != 0;
+        public static bool HasDocking => (AvailableFlags & ProbeTagFlags.Docking) != 0;
+        public static bool HasGPWS => (AvailableFlags & ProbeTagFlags.GPWS) != 0;
+        public static bool HasRealFuels => (AvailableFlags & ProbeTagFlags.RealFuels) != 0;
+        public static bool HasTestFlight => (AvailableFlags & ProbeTagFlags.TestFlight) != 0;
+        public static bool HasDynamicBatteryStorage => (AvailableFlags & ProbeTagFlags.DynamicBatteryStorage) != 0;
+        public static bool HasSystemHeat => (AvailableFlags & ProbeTagFlags.SystemHeat) != 0;
+        public static bool HasAtmosphereAutopilot => (AvailableFlags & ProbeTagFlags.AtmosphereAutopilot) != 0;
+        public static bool HasRP1 => (AvailableFlags & ProbeTagFlags.RP1) != 0;
+
+        public static bool IsTagAvailable(string tag)
+        {
+            if (AvailableFlags == ProbeTagFlags.None) return false;
+            return TagAvailabilityResolver != null && TagAvailabilityResolver(tag);
+        }
+
+        public static double ResolveNumeric(string tag, string subTag)
+        {
+            if (NumericResolver != null)
+            {
+                try { return NumericResolver(tag, subTag); }
+                catch (Exception ex)
+                {
+                    MFPLogger.WarnThrottled("Probe_Numeric_" + tag, $"External probe numeric error for {tag}:{subTag} - {ex.Message}");
+                }
+            }
+            return double.NaN;
+        }
+
+        public static string ResolveString(string tag, string subTag, string format)
+        {
+            if (StringResolver != null)
+            {
+                try { return StringResolver(tag, subTag, format); }
+                catch (Exception ex)
+                {
+                    MFPLogger.WarnThrottled("Probe_String_" + tag, $"External probe string error for {tag}:{subTag} - {ex.Message}");
+                }
+            }
+            return "---";
+        }
+    }
 }

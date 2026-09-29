@@ -22,10 +22,8 @@
 !Core/Hooks/StockNavBallHook.cs
 !Core/Hooks/NavballMarkerVectorExtractor.cs
 !Core/Hooks/StockUIHider.cs
-!Core/Hooks/StockStageIconHook.cs
 !Core/Hooks/MFPToolbarButton.cs
 !Core/Hooks/DockAnchorTracker.cs
-!Core/Hooks/StockToolbarLifecycle.cs
 !Core/Rendering/VesselSilhouetteBaker.cs
 !Core/Rendering/Vessel3DBaker.cs
 
@@ -41,11 +39,9 @@
 !UI/Settings/TabAssembler.cs
 !UI/Settings/TabLibrary.cs
 !UI/Settings/TabProfilesConfig.cs
-!UI/Settings/TabSharePresets.cs
 !UI/Settings/TabSimulation.cs
 !UI/Settings/TabThemeSettings.cs
 !UI/Settings/TabWidgetManager.cs
-!UI/Settings/WidgetLiveBaker.cs
 !UI/Settings/WidgetPreviewLoader.cs
 
 # ── 构建期审计工具链：只在插件编译期/无头 CI 使用，不进 Unity 工程 ──

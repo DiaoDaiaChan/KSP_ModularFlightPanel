@@ -546,4 +546,252 @@ namespace ModularFlightPanel.UI
             EditModeShortcutHandler.HandleGlobalShortcuts();
         }
     }
+
+    /// <summary>
+    /// 编辑模式全局快捷键调度器 (Edit Mode Global Shortcut & Input Dispatcher)
+    /// 集中处理键盘输入、鼠标滚轮缩放旋转、方向键微调与层级切换，解耦选择管理器的几何运算与输入轮询。
+    /// </summary>
+    public static class EditModeShortcutHandler
+    {
+        public static void HandleGlobalShortcuts()
+        {
+            if (!WidgetDragHandler.IsEditModeActive) return;
+
+            // 0. 全局撤销/重做 (Ctrl+Z / Ctrl+Y)
+            WidgetEditHistory.HandleHotkeys();
+
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+
+            // 1. 全选 (Ctrl + A)
+            if (ctrl && Input.GetKeyDown(KeyCode.A))
+            {
+                if (FlightHUDManager.Instance != null && FlightHUDManager.Instance.ModularWidgets != null)
+                {
+                    WidgetSelectionManager.SelectAll(FlightHUDManager.Instance.ModularWidgets);
+                    MFPToastBridge.Show(I18n.Tr("TOAST_SELECT_ALL", "已全选所有小组件"));
+                }
+                return;
+            }
+
+            // 1.1 复制 / 粘贴 / 克隆 (Ctrl + C / Ctrl + V / Ctrl + D)
+            if (ctrl && Input.GetKeyDown(KeyCode.C))
+            {
+                WidgetClipboardManager.CopySelected();
+                return;
+            }
+            if (ctrl && Input.GetKeyDown(KeyCode.V))
+            {
+                WidgetClipboardManager.Paste();
+                return;
+            }
+            if (ctrl && Input.GetKeyDown(KeyCode.D))
+            {
+                WidgetClipboardManager.DuplicateSelected();
+                return;
+            }
+
+            // 2. 切换蓝图辅助网格 (G 键)
+            if (Input.GetKeyDown(KeyCode.G) && !ctrl)
+            {
+                WidgetCanvasGrid.ToggleGrid();
+                return;
+            }
+
+            // 3. 切换图层管理面板 (L 键)
+            if (Input.GetKeyDown(KeyCode.L) && !ctrl)
+            {
+                WidgetLayerManager.ToggleLayerPanel();
+                return;
+            }
+
+            if (WidgetSelectionManager.Count == 0) return;
+
+            // 4. 像素级方向键微调 (Arrow Keys Nudge)
+            float nudge = shift ? 10f : (ctrl ? 5f : 1f);
+            if (Input.GetKeyDown(KeyCode.UpArrow)) WidgetSelectionManager.Nudge(new Vector2(0f, nudge));
+            else if (Input.GetKeyDown(KeyCode.DownArrow)) WidgetSelectionManager.Nudge(new Vector2(0f, -nudge));
+            else if (Input.GetKeyDown(KeyCode.LeftArrow)) WidgetSelectionManager.Nudge(new Vector2(-nudge, 0f));
+            else if (Input.GetKeyDown(KeyCode.RightArrow)) WidgetSelectionManager.Nudge(new Vector2(nudge, 0f));
+
+            // 5. 图层层级移动：
+            // ] 上移一层，Shift+] 或 Ctrl+] 置于顶层
+            // [ 下移一层，Shift+[ 或 Ctrl+[ 置于底层
+            if (Input.GetKeyDown(KeyCode.RightBracket))
+            {
+                if (shift || ctrl) WidgetSelectionManager.BringToFront();
+                else WidgetSelectionManager.BringForward();
+            }
+            else if (Input.GetKeyDown(KeyCode.LeftBracket))
+            {
+                if (shift || ctrl) WidgetSelectionManager.SendToBack();
+                else WidgetSelectionManager.SendBackward();
+            }
+
+            // 6. 快速隐藏/删除选中组件 (Delete / Backspace)
+            if (Input.GetKeyDown(KeyCode.Delete) || Input.GetKeyDown(KeyCode.Backspace))
+            {
+                WidgetSelectionManager.DeleteSelected();
+                return;
+            }
+
+            // 7. 快捷复位 (R 复位旋转，0 复位缩放)
+            if (Input.GetKeyDown(KeyCode.R) && !ctrl)
+            {
+                WidgetSelectionManager.ResetRotation();
+            }
+            else if ((Input.GetKeyDown(KeyCode.Alpha0) || Input.GetKeyDown(KeyCode.Keypad0)) && !ctrl)
+            {
+                WidgetSelectionManager.ResetScale();
+            }
+
+            // 8. 滚轮辅助缩放与旋转
+            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            if (ctrl && !shift && Math.Abs(scroll) > 0.001f)
+            {
+                float deltaScale = scroll > 0f ? 0.05f : -0.05f;
+                WidgetEditHistory.BeginAction();
+                WidgetSelectionManager.BatchScale(deltaScale);
+                WidgetEditHistory.CommitAction(I18n.Tr("HIST_SCROLL_SCALE", "滚轮缩放"));
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+            else if (shift && Math.Abs(scroll) > 0.001f)
+            {
+                float step = ctrl ? 15f : 5f;
+                float deltaAngle = scroll > 0f ? step : -step;
+                WidgetEditHistory.BeginAction();
+                WidgetSelectionManager.BatchRotate(deltaAngle);
+                WidgetEditHistory.CommitAction(I18n.Tr("HIST_SCROLL_ROT", "滚轮旋转"));
+                WidgetLayoutManager.Instance.SaveLayout();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 编辑模式小组件剪贴板与复用中枢 (Widget Clipboard & Cloning Engine)
+    /// 支持单选/多选组件的复制 (Ctrl+C)、粘贴 (Ctrl+V) 与快捷克隆 (Ctrl+D)。
+    /// 自动分配全局唯一 WidgetId、智能递增偏移排版，并记录撤销历史。
+    /// </summary>
+    public static class WidgetClipboardManager
+    {
+        private static readonly List<WidgetConfig> _clipboard = new List<WidgetConfig>();
+        private static int _consecutivePasteCount = 0;
+
+        public static int ClipboardCount => _clipboard.Count;
+        public static bool HasData => _clipboard.Count > 0;
+
+        /// <summary>
+        /// 复制指定或当前选中的小组件到剪贴板
+        /// </summary>
+        public static void CopySelected(IEnumerable<BaseFlightWidget> targets = null)
+        {
+            var list = (targets ?? WidgetSelectionManager.SelectedWidgets).Where(w => w != null && w.Config != null).ToList();
+            if (list.Count == 0)
+            {
+                MFPToastBridge.Show(I18n.Tr("TOAST_CLIPBOARD_NO_SELECTION", "未选择可复制的小组件"));
+                return;
+            }
+
+            _clipboard.Clear();
+            foreach (var w in list)
+            {
+                _clipboard.Add(w.Config.Clone());
+            }
+
+            _consecutivePasteCount = 0;
+            MFPToastBridge.Show(I18n.TrFormat("TOAST_CLIPBOARD_COPIED", _clipboard.Count));
+        }
+
+        /// <summary>
+        /// 从剪贴板粘贴小组件实例
+        /// </summary>
+        public static void Paste()
+        {
+            if (_clipboard.Count == 0)
+            {
+                MFPToastBridge.Show(I18n.Tr("TOAST_CLIPBOARD_EMPTY", "剪贴板为空，请先按 Ctrl+C 复制组件"));
+                return;
+            }
+
+            var layout = WidgetLayoutManager.Instance?.CurrentLayout;
+            if (layout == null || layout.Widgets == null) return;
+
+            _consecutivePasteCount++;
+            Vector2 stepOffset = new Vector2(24f * _consecutivePasteCount, -24f * _consecutivePasteCount);
+
+            var createdIds = new List<string>();
+
+            WidgetEditHistory.RecordInstantAction(I18n.Tr("HIST_PASTE_WIDGETS", "粘贴小组件"), () =>
+            {
+                foreach (var srcCfg in _clipboard)
+                {
+                    string uniqueId = GenerateUniqueWidgetId(srcCfg.WidgetId, srcCfg.WidgetType, layout);
+                    var newCfg = srcCfg.Clone(uniqueId, stepOffset.x, stepOffset.y);
+                    newCfg.IsEnabled = true;
+
+                    // 确保 WidgetType 绝不为空，方便泛型工厂精准实例化
+                    if (string.IsNullOrEmpty(newCfg.WidgetType))
+                    {
+                        newCfg.WidgetType = srcCfg.WidgetType;
+                    }
+
+                    layout.Widgets.Add(newCfg);
+                    createdIds.Add(uniqueId);
+                }
+
+                WidgetLayoutManager.Instance.SaveLayout();
+                FlightHUDManager.Instance?.RebuildHUD();
+
+                // 重建后自动框选新粘贴出的所有组件
+                if (FlightHUDManager.Instance?.ModularWidgets != null)
+                {
+                    var newWidgets = FlightHUDManager.Instance.ModularWidgets
+                        .Where(w => w != null && createdIds.Contains(w.WidgetId, StringComparer.OrdinalIgnoreCase))
+                        .ToList();
+                    WidgetSelectionManager.SetSelection(newWidgets);
+                }
+            });
+
+            MFPToastBridge.Show(I18n.TrFormat("TOAST_CLIPBOARD_PASTED", createdIds.Count));
+        }
+
+        /// <summary>
+        /// 快捷克隆选中的组件 (Ctrl+D)
+        /// </summary>
+        public static void DuplicateSelected(IEnumerable<BaseFlightWidget> targets = null)
+        {
+            var list = (targets ?? WidgetSelectionManager.SelectedWidgets).Where(w => w != null && w.Config != null).ToList();
+            if (list.Count == 0) return;
+
+            CopySelected(list);
+            Paste();
+        }
+
+        /// <summary>
+        /// 为克隆或新建组件生成全局唯一的 WidgetId
+        /// </summary>
+        public static string GenerateUniqueWidgetId(string baseId, string typeName, WidgetLayoutData layout)
+        {
+            string prefix = baseId;
+            if (string.IsNullOrEmpty(prefix))
+            {
+                prefix = !string.IsNullOrEmpty(typeName) ? typeName : "widget";
+            }
+
+            // 清理末尾现有的 _copy 或 _copyX
+            int copyIdx = prefix.IndexOf("_copy", StringComparison.OrdinalIgnoreCase);
+            if (copyIdx > 0)
+            {
+                prefix = prefix.Substring(0, copyIdx);
+            }
+
+            string candidate = $"{prefix}_copy";
+            int counter = 1;
+            while (layout != null && layout.Widgets != null && layout.Widgets.Exists(w => string.Equals(w.WidgetId, candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                candidate = $"{prefix}_copy{counter++}";
+            }
+            return candidate;
+        }
+    }
 }
