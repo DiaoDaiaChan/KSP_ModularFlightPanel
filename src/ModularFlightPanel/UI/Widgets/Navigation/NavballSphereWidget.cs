@@ -37,9 +37,11 @@ namespace ModularFlightPanel.UI.Widgets
         private Vector2 _cachedTexOffset = Vector2.zero;
         private string _cachedRefCategory = "SURFACE";
         private string _cachedRefCategoryUpper = "SURFACE";
-        private string _cachedHookHeadingText;
         private float _cachedHeading;
         private string _cachedFrameName;
+        private string _lastRawCategory;
+        private string _lastRawFrameName;
+        private string _lastAppliedCategoryForFrame;
         private string _lastAppliedFrameText;
         private Color _lastAppliedFrameColor = Color.clear;
 
@@ -53,14 +55,27 @@ namespace ModularFlightPanel.UI.Widgets
             var hook = NavBallHookService.Provider;
             if (hook != null)
             {
-                _cachedStockTex = hook.BallTexture;
-                _cachedTexScale = hook.TextureScale;
-                _cachedTexOffset = hook.TextureOffset;
+                // 仅在 StockTexture 贴图模式下才提取原版贴图元数据，在现代 ProceduralVector 纯矢量模式下 100% 旁路，节约大量 native C++ 查询
+                if (_cachedRenderMode == NavballRenderMode.StockTexture)
+                {
+                    _cachedStockTex = hook.BallTexture;
+                    _cachedTexScale = hook.TextureScale;
+                    _cachedTexOffset = hook.TextureOffset;
+                }
+                else
+                {
+                    _cachedStockTex = null;
+                }
+
                 string rawCat = hook.ReferenceFrameCategory;
                 if (string.IsNullOrEmpty(rawCat)) rawCat = "SURFACE";
                 _cachedRefCategory = rawCat;
-                _cachedRefCategoryUpper = rawCat.ToUpperInvariant();
-                _cachedHookHeadingText = hook.HeadingText;
+                if (!object.ReferenceEquals(rawCat, _lastRawCategory))
+                {
+                    _lastRawCategory = rawCat;
+                    _cachedRefCategoryUpper = rawCat.ToUpperInvariant();
+                }
+
                 _cachedFrameName = hook.FrameName;
             }
             else
@@ -70,11 +85,10 @@ namespace ModularFlightPanel.UI.Widgets
                 _cachedTexOffset = Vector2.zero;
                 _cachedRefCategory = "SURFACE";
                 _cachedRefCategoryUpper = "SURFACE";
-                _cachedHookHeadingText = null;
                 _cachedFrameName = null;
             }
 
-            _cachedHeading = (context.Telemetry != null) ? context.Telemetry.Heading : 0f;
+            _cachedHeading = (hook != null && hook.HasStockNavBall) ? hook.HeadingAngle : ((context.Telemetry != null) ? context.Telemetry.Heading : 0f);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -118,86 +132,80 @@ namespace ModularFlightPanel.UI.Widgets
             string catUpper = _cachedRefCategoryUpper;
             if (_headingText != null)
             {
-                if (!string.IsNullOrEmpty(_cachedHookHeadingText))
-                {
-                    if (_lastHeadingCategory != _cachedHookHeadingText)
-                    {
-                        _headingText.text = _cachedHookHeadingText;
-                        _lastHeadingCategory = _cachedHookHeadingText;
-                    }
-                }
-                else
-                {
-                    float hdg = _cachedHeading;
-                    int iHdg = Mathf.RoundToInt(hdg) % 360;
-                    if (iHdg < 0) iHdg += 360;
+                float hdg = _cachedHeading;
+                int iHdg = (Mathf.RoundToInt(hdg) % 360 + 360) % 360;
 
-                    if (iHdg != _lastHeadingValue || catUpper != _lastHeadingCategory)
-                    {
-                        _lastHeadingValue = iHdg;
-                        _lastHeadingCategory = catUpper;
+                if (iHdg != _lastHeadingValue || catUpper != _lastHeadingCategory)
+                {
+                    _lastHeadingValue = iHdg;
+                    _lastHeadingCategory = catUpper;
 
-                        switch (catUpper)
-                        {
-                            case "INERTIAL":
-                                int raH = Mathf.FloorToInt((iHdg % 360) / 15f);
-                                int raM = Mathf.FloorToInt(((iHdg % 15) / 15f) * 60f);
-                                _headingText.text = $"RA {raH:D2}h{raM:D2}m";
-                                break;
-                            case "BODY_FIXED":
-                            case "BODY_SURFACE":
-                                _headingText.text = CacheManager.FastLon(iHdg);
-                                break;
-                            case "ORBIT":
-                            case "ORBITAL":
-                                _headingText.text = CacheManager.FastObt(iHdg);
-                                break;
-                            case "TARGET":
-                                _headingText.text = CacheManager.FastTgt(iHdg);
-                                break;
-                            case "LAGRANGE":
-                            case "BARYCENTRIC":
-                                _headingText.text = $"LAG {iHdg:D3}°";
-                                break;
-                            default:
-                                _headingText.text = CacheManager.FastHdg(iHdg);
-                                break;
-                        }
+                    switch (catUpper)
+                    {
+                        case "INERTIAL":
+                            int raH = Mathf.FloorToInt(iHdg / 15f);
+                            int raM = Mathf.FloorToInt(((iHdg % 15) / 15f) * 60f);
+                            _headingText.text = $"RA {raH:D2}h{raM:D2}m";
+                            break;
+                        case "BODY_FIXED":
+                        case "BODY_SURFACE":
+                            _headingText.text = CacheManager.FastLon(iHdg);
+                            break;
+                        case "ORBIT":
+                        case "ORBITAL":
+                            _headingText.text = CacheManager.FastObt(iHdg);
+                            break;
+                        case "TARGET":
+                            _headingText.text = CacheManager.FastTgt(iHdg);
+                            break;
+                        case "LAGRANGE":
+                        case "BARYCENTRIC":
+                            _headingText.text = $"LAG {iHdg:D3}°";
+                            break;
+                        default:
+                            _headingText.text = CacheManager.FastHdg(iHdg);
+                            break;
                     }
                 }
             }
 
             if (_frameText != null)
             {
-                string frame = _cachedFrameName;
-                if (string.IsNullOrEmpty(frame))
+                if (!object.ReferenceEquals(_cachedFrameName, _lastRawFrameName) || catUpper != _lastAppliedCategoryForFrame)
                 {
-                    switch (catUpper)
-                    {
-                        case "INERTIAL": frame = "INERT"; break;
-                        case "BODY_FIXED":
-                        case "BODY_SURFACE": frame = "FIXED"; break;
-                        case "ORBIT":
-                        case "ORBITAL": frame = "ORBIT"; break;
-                        case "TARGET": frame = "TARGT"; break;
-                        case "LAGRANGE":
-                        case "BARYCENTRIC": frame = "LAGRN"; break;
-                        default: frame = "SURF"; break;
-                    }
-                }
-                else if (frame.Length > 5)
-                {
-                    frame = frame.Substring(0, 5).ToUpperInvariant();
-                }
-                else
-                {
-                    frame = frame.ToUpperInvariant();
-                }
+                    _lastRawFrameName = _cachedFrameName;
+                    _lastAppliedCategoryForFrame = catUpper;
 
-                if (!string.Equals(frame, _lastAppliedFrameText, StringComparison.Ordinal))
-                {
-                    _lastAppliedFrameText = frame;
-                    _frameText.text = frame;
+                    string frame = _cachedFrameName;
+                    if (string.IsNullOrEmpty(frame))
+                    {
+                        switch (catUpper)
+                        {
+                            case "INERTIAL": frame = "INERT"; break;
+                            case "BODY_FIXED":
+                            case "BODY_SURFACE": frame = "FIXED"; break;
+                            case "ORBIT":
+                            case "ORBITAL": frame = "ORBIT"; break;
+                            case "TARGET": frame = "TARGT"; break;
+                            case "LAGRANGE":
+                            case "BARYCENTRIC": frame = "LAGRN"; break;
+                            default: frame = "SURF"; break;
+                        }
+                    }
+                    else if (frame.Length > 5)
+                    {
+                        frame = frame.Substring(0, 5).ToUpperInvariant();
+                    }
+                    else
+                    {
+                        frame = frame.ToUpperInvariant();
+                    }
+
+                    if (!string.Equals(frame, _lastAppliedFrameText, StringComparison.Ordinal))
+                    {
+                        _lastAppliedFrameText = frame;
+                        _frameText.text = frame;
+                    }
                 }
 
                 // 参考系角标切变颜色同步 (仅在动画结束后且颜色发生改变时写入 UGUI)
@@ -373,8 +381,29 @@ namespace ModularFlightPanel.UI.Widgets
             public float Alpha;
         }
 
+        private class MarkerSlot
+        {
+            public string Key;
+            public NavballMarkerType MarkerType;
+            public Image Image;
+            public RectTransform RectTransform;
+            public NavballMarkerClickHandler Handler;
+            public Vector3 CurrentDir;
+            public Vector2 RenderedPos;
+            public MarkerRenderState LastRenderState;
+        }
+
+        private MarkerSlot[] _markerSlots;
         private readonly Dictionary<string, MarkerRenderState> _markerRenderStates = new Dictionary<string, MarkerRenderState>(StringComparer.OrdinalIgnoreCase);
         private readonly Vector4[] _cachedAvoidVectors = new Vector4[4];
+        private Vector4 _lastUploadedAvoid0;
+        private Vector4 _lastUploadedAvoid1;
+        private Vector4 _lastUploadedAvoid2;
+        private Vector4 _lastUploadedAvoid3;
+        private Vector4 _lastUploadedInvRot;
+        private RectTransform _crosshairRt;
+        private string _lastEvaluatedPaletteCategory;
+        private ThemeConfig _lastEvaluatedPaletteTheme;
 
         // ── 着色器动态属性存在性布尔缓存（消除热循环 native C++ HasProperty 调用） ──
         private bool _hasPropFramePatternOld;
@@ -390,6 +419,7 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastHeadingCategory = null;
         private float _lastRollPointerAngle = -9999f;
         private float _lastBankTicksAlpha = -1f;
+        private Color _lastSasLockColor = Color.clear;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -534,6 +564,7 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform crosshairRt = CreateContainer("Navball_Crosshair_Reticle", parent,
                 new Vector2(76f * dpiScale, 32f * dpiScale), Vector2.zero);
             _crosshair = crosshairRt.gameObject;
+            _crosshairRt = crosshairRt;
 
             _reticleImage = CreateChild<Image>("Reticle_Image", _crosshair.transform,
                 crosshairRt.sizeDelta, Vector2.zero);
@@ -637,8 +668,10 @@ namespace ModularFlightPanel.UI.Widgets
             _renderedMarkerPositions.Clear();
             _currentMarkerDirs.Clear();
             _transitionStartMarkerDirs.Clear();
-            foreach (string k in markerKeys)
+            _markerSlots = new MarkerSlot[markerKeys.Length];
+            for (int i = 0; i < markerKeys.Length; i++)
             {
+                string k = markerKeys[i];
                 _renderedMarkerPositions[k] = Vector2.zero;
                 _currentMarkerDirs[k] = Vector3.zero;
                 Image img = CreateChild<Image>($"Marker_{k}", _markerContainer,
@@ -656,6 +689,15 @@ namespace ModularFlightPanel.UI.Widgets
                 mObj.SetActive(false);
                 _markerImages[k] = img;
                 _markerHandlers[k] = clickHandler;
+
+                _markerSlots[i] = new MarkerSlot
+                {
+                    Key = k,
+                    MarkerType = NavballMarkerVectorExtractor.GetMarkerType(k),
+                    Image = img,
+                    RectTransform = img.rectTransform,
+                    Handler = clickHandler
+                };
             }
 
             // 1. 机动节点航向流光引导箭头容器 (Steering Director Chevron Flow)
@@ -811,6 +853,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             var hook = NavBallHookService.Provider;
             bool hasHook = (hook != null && hook.HasStockNavBall);
+            ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
 
             // 1. 权威姿态四元数解算
             Quaternion rawRot;
@@ -862,7 +905,6 @@ namespace ModularFlightPanel.UI.Widgets
                 _attitudeTrendStrength = 0f;
 
                 // 触发中心微光雷达波扩散动画，颜色对应新参考系
-                ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
                 Color frameAccent = GetFrameAccentColor(category, curTheme);
                 TriggerShockwaveRipple(Vector2.zero, frameAccent);
 
@@ -915,7 +957,12 @@ namespace ModularFlightPanel.UI.Widgets
             if (_sphereMaterial != null)
             {
                 Quaternion invRot = Quaternion.Inverse(_displayedAttitudeRotation);
-                _sphereMaterial.SetVector(_PropSphereInvRotation, new Vector4(invRot.x, invRot.y, invRot.z, invRot.w));
+                Vector4 invRotVec = new Vector4(invRot.x, invRot.y, invRot.z, invRot.w);
+                if (invRotVec != _lastUploadedInvRot)
+                {
+                    _lastUploadedInvRot = invRotVec;
+                    _sphereMaterial.SetVector(_PropSphereInvRotation, invRotVec);
+                }
 
                 if (_hasPropFramePatternOld)
                 {
@@ -932,7 +979,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 程序化多参考系自适应变色与高级航电动态特性驱动 (Principia / Stock 多参考系高保真映射)
-            _targetPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
+            if (_lastEvaluatedPaletteCategory != category || _lastEvaluatedPaletteTheme != curTheme)
+            {
+                _lastEvaluatedPaletteCategory = category;
+                _lastEvaluatedPaletteTheme = curTheme;
+                _targetPalette = GetPaletteForCategory(category, curTheme);
+            }
             if (!_paletteInitialized)
             {
                 _currentPalette = _targetPalette;
@@ -999,11 +1051,12 @@ namespace ModularFlightPanel.UI.Widgets
             int avoidIdx = 0;
             for (int i = 0; i < 4; i++) _cachedAvoidVectors[i] = Vector4.zero;
 
-            foreach (var kvp in _markerImages)
+            for (int slotIdx = 0; slotIdx < _markerSlots.Length; slotIdx++)
             {
-                string key = kvp.Key;
-                Image img = kvp.Value;
+                var slot = _markerSlots[slotIdx];
+                var img = slot.Image;
                 if (img == null) continue;
+                string key = slot.Key;
 
                 Vector3 dir = Vector3.forward;
                 bool isVisible = false;
@@ -1029,6 +1082,7 @@ namespace ModularFlightPanel.UI.Widgets
                         float eased = 1.0f - Mathf.Pow(1.0f - transT, 3.0f);
                         currentDir = Vector3.Slerp(startDir, dir, eased).normalized;
                     }
+                    slot.CurrentDir = currentDir;
                     _currentMarkerDirs[key] = currentDir;
 
                     Vector2 bearing = new Vector2(currentDir.x, currentDir.y);
@@ -1077,11 +1131,11 @@ namespace ModularFlightPanel.UI.Widgets
 
                     // 瞬时精准咬合球体表面，零滞后、零抽搐
                     Vector2 renderedPos = markerPos;
+                    slot.RenderedPos = renderedPos;
                     _renderedMarkerPositions[key] = renderedPos;
 
                     // 光标悬停交互 (Hover Scaling, Highlight & Press Feedback)
-                    NavballMarkerClickHandler handler = null;
-                    _markerHandlers.TryGetValue(key, out handler);
+                    NavballMarkerClickHandler handler = slot.Handler;
                     bool isHovered = handler != null && handler.IsHovered;
                     bool isPressed = handler != null && handler.IsPressed;
 
@@ -1099,19 +1153,20 @@ namespace ModularFlightPanel.UI.Widgets
                     }
 
                     // 性能核心优化：UGUI死区量化守卫，杜绝微亚像素浮动导致每帧反复脏化 Canvas 网格
-                    _markerRenderStates.TryGetValue(key, out var lastState);
+                    var lastState = slot.LastRenderState;
                     bool posChanged = (renderedPos - lastState.Position).sqrMagnitude > 0.0225f; // > 0.15px
                     bool scaleChanged = Mathf.Abs(targetScale - lastState.Scale) > 0.005f;
                     bool alphaChanged = Mathf.Abs(alpha - lastState.Alpha) > 0.01f;
 
+                    var rt = slot.RectTransform ?? img.rectTransform;
                     if (posChanged)
                     {
-                        img.rectTransform.anchoredPosition = renderedPos;
+                        rt.anchoredPosition = renderedPos;
                         lastState.Position = renderedPos;
                     }
                     if (scaleChanged)
                     {
-                        img.rectTransform.localScale = new Vector3(targetScale, targetScale, 1.0f);
+                        rt.localScale = new Vector3(targetScale, targetScale, 1.0f);
                         lastState.Scale = targetScale;
                     }
                     if (alphaChanged)
@@ -1121,7 +1176,7 @@ namespace ModularFlightPanel.UI.Widgets
                         img.color = c;
                         lastState.Alpha = alpha;
                     }
-                    _markerRenderStates[key] = lastState;
+                    slot.LastRenderState = lastState;
 
                     // 避免球体字号与前方核心航向/机动标重叠遮挡
                     if (avoidIdx < 4 && currentDir.z > 0.1f)
@@ -1133,9 +1188,11 @@ namespace ModularFlightPanel.UI.Widgets
                 else
                 {
                     if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                    slot.RenderedPos = Vector2.zero;
+                    slot.CurrentDir = Vector3.zero;
+                    slot.LastRenderState = default;
                     _renderedMarkerPositions[key] = Vector2.zero;
                     _currentMarkerDirs[key] = Vector3.zero;
-                    _markerRenderStates[key] = default;
                     if (_activeHoveredMarkerKey == key)
                     {
                         _activeHoveredMarkerKey = null;
@@ -1184,10 +1241,26 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_sphereMaterial != null)
             {
-                _sphereMaterial.SetVector(_PropMarkerAvoid0, _cachedAvoidVectors[0]);
-                _sphereMaterial.SetVector(_PropMarkerAvoid1, _cachedAvoidVectors[1]);
-                _sphereMaterial.SetVector(_PropMarkerAvoid2, _cachedAvoidVectors[2]);
-                _sphereMaterial.SetVector(_PropMarkerAvoid3, _cachedAvoidVectors[3]);
+                if (_lastUploadedAvoid0 != _cachedAvoidVectors[0])
+                {
+                    _lastUploadedAvoid0 = _cachedAvoidVectors[0];
+                    _sphereMaterial.SetVector(_PropMarkerAvoid0, _cachedAvoidVectors[0]);
+                }
+                if (_lastUploadedAvoid1 != _cachedAvoidVectors[1])
+                {
+                    _lastUploadedAvoid1 = _cachedAvoidVectors[1];
+                    _sphereMaterial.SetVector(_PropMarkerAvoid1, _cachedAvoidVectors[1]);
+                }
+                if (_lastUploadedAvoid2 != _cachedAvoidVectors[2])
+                {
+                    _lastUploadedAvoid2 = _cachedAvoidVectors[2];
+                    _sphereMaterial.SetVector(_PropMarkerAvoid2, _cachedAvoidVectors[2]);
+                }
+                if (_lastUploadedAvoid3 != _cachedAvoidVectors[3])
+                {
+                    _lastUploadedAvoid3 = _cachedAvoidVectors[3];
+                    _sphereMaterial.SetVector(_PropMarkerAvoid3, _cachedAvoidVectors[3]);
+                }
             }
         }
 
@@ -1195,11 +1268,10 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_bankRollPointerRoot == null) return;
 
-            var hook = NavBallHookService.Provider;
-            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
-            bool isSurface = category.Equals("SURFACE", StringComparison.OrdinalIgnoreCase) ||
-                             category.Equals("BODY_FIXED", StringComparison.OrdinalIgnoreCase) ||
-                             category.Equals("BODY_SURFACE", StringComparison.OrdinalIgnoreCase);
+            string category = _cachedRefCategoryUpper;
+            bool isSurface = category == "SURFACE" ||
+                             category == "BODY_FIXED" ||
+                             category == "BODY_SURFACE";
 
             float dt = Time.unscaledDeltaTime;
             float targetAlpha = isSurface ? 1.0f : 0.0f;
@@ -1326,7 +1398,10 @@ namespace ModularFlightPanel.UI.Widgets
                     ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
                     Color lockCol = NavballMarkerFactory.GetSASModeColor(curSASMode, curTheme);
                     lockCol.a = 0.92f;
-                    _sasLockReticleImage.color = lockCol;
+                    if (_sasLockReticleImage.color != lockCol)
+                    {
+                        _sasLockReticleImage.color = lockCol;
+                    }
                 }
                 else
                 {
@@ -1503,18 +1578,16 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateReticleDynamics()
         {
-            if (_crosshair == null) return;
-            RectTransform rt = _crosshair.GetComponent<RectTransform>();
-            if (rt != null && rt.anchoredPosition != Vector2.zero)
+            if (_crosshairRt != null && _crosshairRt.anchoredPosition != Vector2.zero)
             {
-                rt.anchoredPosition = Vector2.zero;
+                _crosshairRt.anchoredPosition = Vector2.zero;
             }
         }
 
         private static Color GetFrameAccentColor(string category, ThemeConfig theme)
         {
             if (theme == null) return WidgetStyleManager.NeutralOpaque;
-            switch (category?.ToUpperInvariant())
+            switch (category)
             {
                 case "ORBIT":
                 case "ORBITAL":
@@ -1537,7 +1610,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private NavballFramePalette GetPaletteForCategory(string category, ThemeConfig theme)
         {
-            switch (category?.ToUpperInvariant())
+            switch (category)
             {
                 case "INERTIAL":
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.AccentSecondary, theme);

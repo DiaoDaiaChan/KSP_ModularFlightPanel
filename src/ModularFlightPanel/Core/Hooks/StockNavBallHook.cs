@@ -81,6 +81,18 @@ namespace ModularFlightPanel.Core
 
         public static bool HasStockNavBall => StockInstance != null && StockInstance.navBall != null;
 
+        private static Renderer _cachedNavBallRenderer;
+        private static MeshFilter _cachedNavBallMeshFilter;
+        private static Material _cachedNavBallMaterial;
+        private static Texture _cachedNavBallTexture;
+        private static Vector2 _cachedTextureScale = Vector2.one;
+        private static Vector2 _cachedTextureOffset = Vector2.zero;
+        private static int _cachedTextureFrame = -1;
+
+        private static int _cachedContinuousHeadingFrame = -1;
+        private static float _cachedContinuousHeadingValue = 0f;
+        private static bool _cachedContinuousHeadingSuccess = false;
+
         public static void InvalidateCaches()
         {
             _cachedNavBallCamera = null;
@@ -88,6 +100,12 @@ namespace ModularFlightPanel.Core
             _cachedReferenceFrameNameFrame = -1;
             _cachedReferenceFrameCategoryFrame = -1;
             _cachedNavballSpeedFrame = -1;
+            _cachedNavBallRenderer = null;
+            _cachedNavBallMeshFilter = null;
+            _cachedNavBallMaterial = null;
+            _cachedNavBallTexture = null;
+            _cachedTextureFrame = -1;
+            _cachedContinuousHeadingFrame = -1;
             PrincipiaProbe.InvalidateCaches();
         }
 
@@ -298,38 +316,56 @@ namespace ModularFlightPanel.Core
             return TelemetryHub.Instance != null ? TelemetryHub.Instance.AttitudeRotation : Quaternion.identity;
         }
 
-        /// <summary>
-        /// 获取官方或 Principia / TextureReplacer 加载的高保真姿态球贴图
-        /// </summary>
-        public static Texture GetTexture()
+        public static Renderer GetNavBallRenderer()
         {
-            if (HasStockNavBall)
+            if (_cachedNavBallRenderer != null) return _cachedNavBallRenderer;
+            if (HasStockNavBall && StockInstance.navBall != null)
             {
-                Renderer r = StockInstance.navBall.GetComponent<Renderer>() ?? StockInstance.navBall.GetComponentInChildren<Renderer>(true);
-                if (r != null)
+                _cachedNavBallRenderer = StockInstance.navBall.GetComponent<Renderer>() ?? StockInstance.navBall.GetComponentInChildren<Renderer>(true);
+            }
+            return _cachedNavBallRenderer;
+        }
+
+        public static MeshFilter GetNavBallMeshFilter()
+        {
+            if (_cachedNavBallMeshFilter != null) return _cachedNavBallMeshFilter;
+            if (HasStockNavBall && StockInstance.navBall != null)
+            {
+                _cachedNavBallMeshFilter = StockInstance.navBall.GetComponent<MeshFilter>() ?? StockInstance.navBall.GetComponentInChildren<MeshFilter>(true);
+            }
+            return _cachedNavBallMeshFilter;
+        }
+
+        public static Material GetNavBallMaterial()
+        {
+            if (_cachedNavBallMaterial != null) return _cachedNavBallMaterial;
+            Renderer r = GetNavBallRenderer();
+            if (r != null)
+            {
+                _cachedNavBallMaterial = r.sharedMaterial;
+            }
+            return _cachedNavBallMaterial;
+        }
+
+        private static void UpdateTextureCaches(int frame)
+        {
+            _cachedTextureFrame = frame;
+            Material mat = GetNavBallMaterial();
+            if (mat != null)
+            {
+                if (mat.HasProperty("_MainTex"))
                 {
-                    Material mat = r.sharedMaterial ?? r.material;
-                    if (mat != null)
-                    {
-                        if (mat.HasProperty("_MainTexture"))
-                        {
-                            Texture tex = mat.GetTexture("_MainTexture");
-                            if (tex != null) return tex;
-                        }
-                        if (mat.HasProperty("_MainTex"))
-                        {
-                            Texture tex = mat.GetTexture("_MainTex");
-                            if (tex != null) return tex;
-                        }
-                        if (mat.HasProperty("_MainTex") && mat.mainTexture != null)
-                        {
-                            return mat.mainTexture;
-                        }
-                    }
+                    _cachedTextureScale = mat.mainTextureScale;
+                    _cachedTextureOffset = mat.mainTextureOffset;
+                    _cachedNavBallTexture = mat.mainTexture;
+                }
+                if (_cachedNavBallTexture == null && mat.HasProperty("_MainTexture"))
+                {
+                    _cachedNavBallTexture = mat.GetTexture("_MainTexture");
                 }
             }
 
-            if (GameDatabase.Instance != null)
+            if (_cachedNavBallTexture == null && GameDatabase.Instance != null)
             {
                 string[] fallbackTextures = new string[]
                 {
@@ -343,11 +379,46 @@ namespace ModularFlightPanel.Core
                 for (int i = 0; i < fallbackTextures.Length; i++)
                 {
                     Texture2D tex = GameDatabase.Instance.GetTexture(fallbackTextures[i], false);
-                    if (tex != null) return tex;
+                    if (tex != null)
+                    {
+                        _cachedNavBallTexture = tex;
+                        break;
+                    }
                 }
             }
+        }
 
-            return null;
+        /// <summary>
+        /// 获取官方或 Principia / TextureReplacer 加载的高保真姿态球贴图 (单帧同态零开销缓存)
+        /// </summary>
+        public static Texture GetTexture()
+        {
+            int frame = Time.frameCount;
+            if (_cachedTextureFrame != frame)
+            {
+                UpdateTextureCaches(frame);
+            }
+            return _cachedNavBallTexture;
+        }
+
+        public static Vector2 GetTextureScale()
+        {
+            int frame = Time.frameCount;
+            if (_cachedTextureFrame != frame)
+            {
+                UpdateTextureCaches(frame);
+            }
+            return _cachedTextureScale;
+        }
+
+        public static Vector2 GetTextureOffset()
+        {
+            int frame = Time.frameCount;
+            if (_cachedTextureFrame != frame)
+            {
+                UpdateTextureCaches(frame);
+            }
+            return _cachedTextureOffset;
         }
 
         private static Camera _cachedNavBallCamera;
@@ -664,6 +735,17 @@ namespace ModularFlightPanel.Core
                 }
             }
 
+            if (!PrincipiaProbe.IsAvailable)
+            {
+                switch (FlightGlobals.speedDisplayMode)
+                {
+                    case FlightGlobals.SpeedDisplayModes.Target: return "TARGET";
+                    case FlightGlobals.SpeedDisplayModes.Orbit: return "ORBIT";
+                    case FlightGlobals.SpeedDisplayModes.Surface: return "SURFACE";
+                    default: return "ORBIT";
+                }
+            }
+
             string frameName = GetReferenceFrameName();
             if (!string.IsNullOrEmpty(frameName))
             {
@@ -746,7 +828,7 @@ namespace ModularFlightPanel.Core
             if (GetContinuousHeading(out float hdg))
             {
                 int h = (Mathf.RoundToInt(hdg) % 360 + 360) % 360;
-                return $"{h:D3}°";
+                return CacheManager.FastDegree(h);
             }
             if (!PrincipiaProbe.IsAvailable && HasStockNavBall && StockInstance.headingText != null)
             {
@@ -754,11 +836,20 @@ namespace ModularFlightPanel.Core
                 if (!string.IsNullOrEmpty(txt)) return txt;
             }
             int fallbackH = TelemetryHub.Instance != null ? Mathf.RoundToInt(TelemetryHub.Instance.Heading) % 360 : 0;
-            return $"{fallbackH:D3}°";
+            return CacheManager.FastDegree(fallbackH);
         }
 
         public static bool GetContinuousHeading(out float heading)
         {
+            int frame = Time.frameCount;
+            if (_cachedContinuousHeadingFrame == frame && frame != 0)
+            {
+                heading = _cachedContinuousHeadingValue;
+                return _cachedContinuousHeadingSuccess;
+            }
+            _cachedContinuousHeadingFrame = frame;
+            _cachedContinuousHeadingSuccess = false;
+
             if (HasStockNavBall)
             {
                 try
@@ -820,6 +911,8 @@ namespace ModularFlightPanel.Core
                         _hasLatchedHeading = false;
                     }
 
+                    _cachedContinuousHeadingValue = calcHdg;
+                    _cachedContinuousHeadingSuccess = true;
                     heading = calcHdg;
                     return true;
                 }
@@ -960,35 +1053,14 @@ namespace ModularFlightPanel.Core
             get
             {
                 if (!HasStockNavBall) return null;
-                MeshFilter mf = StockNavBallHook.StockInstance.navBall.GetComponent<MeshFilter>() ??
-                    StockNavBallHook.StockInstance.navBall.GetComponentInChildren<MeshFilter>(true);
+                MeshFilter mf = StockNavBallHook.GetNavBallMeshFilter();
                 return mf != null ? mf.sharedMesh : null;
             }
         }
 
-        public Vector2 TextureScale
-        {
-            get
-            {
-                if (!HasStockNavBall) return Vector2.one;
-                Renderer r = StockNavBallHook.StockInstance.navBall.GetComponent<Renderer>() ??
-                    StockNavBallHook.StockInstance.navBall.GetComponentInChildren<Renderer>(true);
-                Material mat = (r != null) ? (r.sharedMaterial ?? r.material) : null;
-                return (mat != null && mat.HasProperty("_MainTex")) ? mat.mainTextureScale : Vector2.one;
-            }
-        }
+        public Vector2 TextureScale => StockNavBallHook.GetTextureScale();
 
-        public Vector2 TextureOffset
-        {
-            get
-            {
-                if (!HasStockNavBall) return Vector2.zero;
-                Renderer r = StockNavBallHook.StockInstance.navBall.GetComponent<Renderer>() ??
-                    StockNavBallHook.StockInstance.navBall.GetComponentInChildren<Renderer>(true);
-                Material mat = (r != null) ? (r.sharedMaterial ?? r.material) : null;
-                return (mat != null && mat.HasProperty("_MainTex")) ? mat.mainTextureOffset : Vector2.zero;
-            }
-        }
+        public Vector2 TextureOffset => StockNavBallHook.GetTextureOffset();
 
         public Quaternion CameraRotation
         {

@@ -66,18 +66,19 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _cachedTex3D = Vessel3DService.Provider?.Texture3D;
 
-            string hdgStr = TelemetryTokenEngine.Evaluate(_headingToken, context.Telemetry);
-            if (hdgStr.EndsWith("°")) hdgStr = hdgStr.Substring(0, hdgStr.Length - 1).Trim();
+            int hInt = Mathf.RoundToInt(_cachedHeading) % 360;
+            if (hInt < 0) hInt += 360;
             var hook = NavBallHookService.Provider;
             string frameCat = hook?.ReferenceFrameCategory ?? "SURFACE";
-            _cachedTopFormatted = $"HDG {hdgStr}° | {frameCat}";
+            if (hInt != _lastHdgInt || frameCat != _lastTopFrameCat)
+            {
+                _lastHdgInt = hInt;
+                _lastTopFrameCat = frameCat;
+                string hdgPart = (_headingToken == "{HDG}") ? CacheManager.FastHdg(hInt) : $"HDG {TelemetryTokenEngine.Evaluate(_headingToken, context.Telemetry)}";
+                _cachedTopFormatted = $"{hdgPart} | {frameCat}";
+            }
 
-            string pStr = TelemetryTokenEngine.Evaluate(_pitchToken, context.Telemetry);
-            if (pStr.EndsWith("°")) pStr = pStr.Substring(0, pStr.Length - 1).Trim();
-            string rStr = TelemetryTokenEngine.Evaluate(_rollToken, context.Telemetry);
-            if (rStr.EndsWith("°")) rStr = rStr.Substring(0, rStr.Length - 1).Trim();
-            string sasMode = TelemetryTokenEngine.Evaluate(_sasToken, context.Telemetry);
-
+            FlightSASMode curSASMode = context.Telemetry.CurrentSASMode;
             bool sasActive = context.Telemetry.IsSASEnabled;
             if (!sasActive)
             {
@@ -86,7 +87,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
             else
             {
-                string sasModeKey = context.Telemetry.CurrentSASMode.ToString().ToLowerInvariant();
+                string sasModeKey = GetSASModeKey(curSASMode);
                 Vector3 targetDir = Vector3.forward;
                 bool isVis = false;
                 bool hasDir = false;
@@ -120,8 +121,26 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            string lockTag = _isDirectorLocked ? " [LOCK]" : "";
-            _cachedBtmFormatted = $"P {pStr}° R {rStr}° | {sasMode}{lockTag}";
+            int pInt = Mathf.RoundToInt(_cachedPitch);
+            int rInt = Mathf.RoundToInt(_cachedRoll);
+            if (pInt != _lastPitchInt || rInt != _lastRollInt || curSASMode != _lastSASMode || _isDirectorLocked != _lastDirectorLocked)
+            {
+                _lastPitchInt = pInt;
+                _lastRollInt = rInt;
+                _lastSASMode = curSASMode;
+                _lastDirectorLocked = _isDirectorLocked;
+
+                string pStr = (_pitchToken == "{PITCH}") ? CacheManager.FastInt(pInt) : TelemetryTokenEngine.Evaluate(_pitchToken, context.Telemetry);
+                if (pStr.EndsWith("°")) pStr = pStr.Substring(0, pStr.Length - 1).Trim();
+
+                string rStr = (_rollToken == "{ROLL}") ? CacheManager.FastInt(rInt) : TelemetryTokenEngine.Evaluate(_rollToken, context.Telemetry);
+                if (rStr.EndsWith("°")) rStr = rStr.Substring(0, rStr.Length - 1).Trim();
+
+                string sasMode = (_sasToken == "{SAS:MODE}") ? GetSASModeDisplayText(curSASMode) : TelemetryTokenEngine.Evaluate(_sasToken, context.Telemetry);
+
+                string lockTag = _isDirectorLocked ? " [LOCK]" : "";
+                _cachedBtmFormatted = $"P {pStr}° R {rStr}° | {sasMode}{lockTag}";
+            }
 
             _lastPitch = context.Telemetry.Pitch;
             _lastRoll = context.Telemetry.Roll;
@@ -269,6 +288,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private double _lastPitch = double.NaN;
         private double _lastRoll = double.NaN;
         private double _lastHeading = double.NaN;
+        private int _lastHdgInt = -1;
+        private string _lastTopFrameCat = null;
+        private int _lastPitchInt = -9999;
+        private int _lastRollInt = -9999;
+        private FlightSASMode _lastSASMode = (FlightSASMode)(-1);
+        private bool _lastDirectorLocked = false;
         private string _lastTopText = string.Empty;
         private string _lastBottomText = string.Empty;
         private bool _isDirectorLocked = false;
@@ -1158,6 +1183,42 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (_renderTexture == null || _renderTexture.width != optimalRes)
             {
                 HandleResolutionChanged(optimalRes);
+            }
+        }
+
+        private static string GetSASModeKey(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.StabilityAssist: return "stabilityassist";
+                case FlightSASMode.Prograde: return "prograde";
+                case FlightSASMode.Retrograde: return "retrograde";
+                case FlightSASMode.Normal: return "normal";
+                case FlightSASMode.Antinormal: return "antinormal";
+                case FlightSASMode.RadialIn: return "radialin";
+                case FlightSASMode.RadialOut: return "radialout";
+                case FlightSASMode.Target: return "target";
+                case FlightSASMode.AntiTarget: return "antitarget";
+                case FlightSASMode.Maneuver: return "maneuver";
+                default: return "stabilityassist";
+            }
+        }
+
+        private static string GetSASModeDisplayText(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.StabilityAssist: return "STAB";
+                case FlightSASMode.Prograde: return "PROGRADE";
+                case FlightSASMode.Retrograde: return "RETROGRADE";
+                case FlightSASMode.Normal: return "NORMAL";
+                case FlightSASMode.Antinormal: return "ANTINORMAL";
+                case FlightSASMode.RadialIn: return "RADIAL IN";
+                case FlightSASMode.RadialOut: return "RADIAL OUT";
+                case FlightSASMode.Target: return "TARGET";
+                case FlightSASMode.AntiTarget: return "ANTI-TARGET";
+                case FlightSASMode.Maneuver: return "MANEUVER";
+                default: return "SAS";
             }
         }
 

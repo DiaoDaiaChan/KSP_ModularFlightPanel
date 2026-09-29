@@ -66,11 +66,34 @@ namespace ModularFlightPanel.Core
             return NavballMarkerType.Unknown;
         }
 
+        private struct CachedMarkerResult
+        {
+            public int Frame;
+            public Vector3 Dir;
+            public bool IsVisible;
+            public bool HasDir;
+        }
+
+        private static readonly CachedMarkerResult[] _markerResultsCache = new CachedMarkerResult[16];
+
         public static void InvalidateCaches()
         {
             _cachedBurnVector = null;
             _cachedManeuverTransform = null;
             _cachedTotalMarkerRotFrame = -1;
+            Array.Clear(_markerResultsCache, 0, _markerResultsCache.Length);
+        }
+
+        private static bool CacheMarkerAndReturn(int typeIdx, int currentFrame, bool hasDir, Vector3 dir, bool isVisible)
+        {
+            if (typeIdx > 0 && typeIdx < _markerResultsCache.Length)
+            {
+                _markerResultsCache[typeIdx].Frame = currentFrame;
+                _markerResultsCache[typeIdx].Dir = dir;
+                _markerResultsCache[typeIdx].IsVisible = isVisible;
+                _markerResultsCache[typeIdx].HasDir = hasDir;
+            }
+            return hasDir;
         }
 
         public static bool GetMarkerDirection(string markerKey, out Vector3 dir, out bool isVisible)
@@ -80,6 +103,16 @@ namespace ModularFlightPanel.Core
             if (string.IsNullOrEmpty(markerKey)) return false;
 
             NavballMarkerType markerType = GetMarkerType(markerKey);
+            int typeIdx = (int)markerType;
+            int currentFrame = Time.frameCount;
+
+            if (typeIdx > 0 && typeIdx < _markerResultsCache.Length && _markerResultsCache[typeIdx].Frame == currentFrame && currentFrame != 0)
+            {
+                dir = _markerResultsCache[typeIdx].Dir;
+                isVisible = _markerResultsCache[typeIdx].IsVisible;
+                return _markerResultsCache[typeIdx].HasDir;
+            }
+
             StockNavBallHook.PulseAttitudeConsumerHeartbeat();
             if (markerType == NavballMarkerType.Maneuver)
             {
@@ -90,14 +123,14 @@ namespace ModularFlightPanel.Core
             {
                 if (FlightGlobals.speedDisplayMode == FlightGlobals.SpeedDisplayModes.Surface)
                 {
-                    return false;
+                    return CacheMarkerAndReturn(typeIdx, currentFrame, false, Vector3.forward, false);
                 }
             }
 
             // 1. 直接采用开普勒/轨道/Principia 高精度数学权威解算（0 帧延迟、0 依赖原生 Transform 竞态、与着色器姿态四元数 100% 同源）
             if (CalculateMarkerDirectionMath(markerType, markerKey, out dir, out isVisible))
             {
-                return true;
+                return CacheMarkerAndReturn(typeIdx, currentFrame, true, dir, isVisible);
             }
 
             // 2. 仅对未收录的自定义外置标线尝试从原生 Transform 提取兜底
@@ -111,12 +144,12 @@ namespace ModularFlightPanel.Core
                     {
                         dir = localPos.normalized;
                         isVisible = true;
-                        return true;
+                        return CacheMarkerAndReturn(typeIdx, currentFrame, true, dir, isVisible);
                     }
                 }
             }
 
-            return false;
+            return CacheMarkerAndReturn(typeIdx, currentFrame, false, Vector3.forward, false);
         }
 
         public static bool IsMarkerLogicallyActive(string markerKey, Transform marker)
