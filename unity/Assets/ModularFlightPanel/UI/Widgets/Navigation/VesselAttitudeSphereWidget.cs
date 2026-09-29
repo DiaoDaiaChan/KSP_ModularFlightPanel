@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Rendering;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI.Framework;
 
@@ -12,30 +13,41 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     /// <summary>
     /// 3D 飞船球形姿态仪 / 导航球仪表 (Vessel Attitude Sphere / 3D Navball Widget)
     /// 核心特性：
-    /// 1. 球形姿态球体表达 (Spherical Navball Representation)：
-    ///    - 正交 3D 单位球体配合多参考系天顶/地平渐变、赤道地平线与经纬度俯仰阶梯标尺。
-    ///    - 完整对接 NavBallHookService 原生与 Principia 多参考系姿态球纹理或高保真程序化着色器。
-    ///    - 2D/3D 导航标记层（Prograde, Retrograde, Normal, Maneuver 等）球面正交平滑投影与边缘淡出。
+    /// 1. 球形姿态表达 (Spherical Attitude Representation)：
+    ///    - 优先采用现代单 Quad 屏幕空间数学解析光线投射 (Screen-Space Analytic Raymarching) 管线，
+    ///      完美规避场景阳光过曝洗白与 3D 粗糙多边形棱角缺陷，输出视网膜级超清画质；
+    ///    - 兼容极简 3D 离屏着色器网格管线 (MinimalistAttitudeSphere)，支持全系多参考系天顶/地平渐变与抗锯齿俯仰阶梯；
+    ///    - 完整对接 NavBallHookService 原生与 Principia 参考系，以及球面正交平滑投影导航标记。
     /// 2. 中央 3D 飞船实体 (3D Spacecraft at Center)：
     ///    - 取代原版扁平准星，在球体正中心呈现立体航天器。
-    ///    - 优先挂载 Vessel3DService.Provider?.Texture3D（来自 Vessel3DBaker 的实时 3D 动态网格捕获）。
-    ///    - 未烘焙时平滑回退至高保真 Half-Lambert 光照着色 3D 航天器模型（座舱反光、三角翼、编队灯与引擎辉光）。
-    ///    - 具备俯仰透视收缩 cos(Pitch * 0.5) 与滚转/操纵量动态响应。
-    /// 3. 飞行指引仪 (Flight Director Target Chevron)：
-    ///    - 机头前向反 V 形高亮指引光标，追踪当前 SAS 模式机动目标向量，并在 <= 1.5° 时吸附锁定。
-    /// 4. 航电读数与参考系标牌：
-    ///    - 顶部弧形标牌：参考系（SURF / ORBIT / TGT）与航向角（HDG {HDG:F0}°）。
-    ///    - 底部状态标牌：俯仰/滚转角（P {PITCH:+0;-0;0}° R {ROLL:+0;-0;0}°）与 SAS 锁定状态。
-    /// 5. 交互控制：
+    ///    - 默认采用高保真 Half-Lambert 光照着色 3D 航天器模型（座舱反光、三角主翼、编队灯与离子羽流）；
+    ///    - 支持切换至 Vessel3DService.Provider?.Texture3D 机尾正视追随视角 (TailChase)，或 2D 权威俯视剪影；
+    ///    - 具备俯仰透视收缩 cos(Pitch * 0.5) 动态响应。
+    /// 3. 水平基准定位翼 (Aerospace Horizon Reticle Index Wings)：
+    ///    - 权威仪表水线基准标记，始终保持水平正交（0 异常倾角），为飞行员提供可靠的地平线参考。
+    /// 4. 飞行指引仪 (Flight Director Target Chevron)：
+    ///    - 机头前向反 V 形高亮指引光标，追踪当前 SAS 模式机动目标向量，并在 <= 1.5° 时吸附锁定变绿。
+    /// 5. 航电读数与参考系标牌：
+    ///    - 顶部弧形标牌：参考系与航向角（HDG {HDG:F0}° | {FRAME}）。
+    ///    - 底部状态标牌：俯仰/滚转角（P {PITCH:+0;-0;0}° R {ROLL:+0;-0;0}° | {SAS}）。
+    /// 6. 交互控制：
     ///    - 左键点击底部标牌切换 SAS / STAB 稳定。
+    ///    - 左键点击中央飞船切换显示模型（程序化 3D 穿梭机 / 载具 3D 模型 / 2D 剪影）。
     ///    - 右键点击中央飞船切换观察视角（追尾 3D / 俯视 3D）。
-    /// 6. 严格落实 MFP-SPEC-001..007 铁律（0 颜色字面量、0 场景查询、分频阶梯 Critical 60Hz、零 GC 缓存守卫）。
+    /// 7. 严格落实 MFP-SPEC-001..011 铁律（0 颜色字面量、0 场景查询、分频阶梯 Critical 60Hz、2D UI Shader 材质管线接入）。
     /// </summary>
     [AlwaysFullPower]
     [FlightWidget("vessel_navball", "vessel_attitude_sphere", "attitude_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 飞船球形姿态仪", Description = "全新球形姿态仪：以真实 3D 飞船为中心，外层环绕 3D 姿态球体、人工地平标尺、SAS 目标飞行指引仪与全量导航矢量。", DefaultWidgetId = "nav.vessel_navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, AlwaysFullPower = true, ExactIds = new[] { "nav.vessel_navball", "nav.vessel_attitude_sphere", "core.vessel_navball", "core.vessel_attitude_sphere", "nav.attitude_sphere_3d" })]
     public class VesselAttitudeSphereWidget : BaseNavballSphereWidget, IPointerClickHandler
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+
+        public enum CenterShipVisualMode
+        {
+            Procedural3D = 0,
+            RealVessel3D = 1,
+            TopDownSilhouette = 2
+        }
 
         private bool _cachedHasVessel;
         private float _cachedPitch;
@@ -64,7 +76,19 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _cachedRoll = (float)context.Telemetry.Roll;
             _cachedHeading = (float)context.Telemetry.Heading;
 
-            _cachedTex3D = Vessel3DService.Provider?.Texture3D;
+            // 当选择 RealVessel3D 时，自动将烘焙器视图配置为 TailChase
+            if (_shipVisualMode == CenterShipVisualMode.RealVessel3D && Vessel3DService.Provider != null)
+            {
+                if (Vessel3DService.Provider.ViewMode != Vessel3DViewMode.TailChase)
+                {
+                    Vessel3DService.Provider.ViewMode = Vessel3DViewMode.TailChase;
+                }
+                _cachedTex3D = Vessel3DService.Provider.Texture3D;
+            }
+            else
+            {
+                _cachedTex3D = null;
+            }
 
             int hInt = Mathf.RoundToInt(_cachedHeading) % 360;
             if (hInt < 0) hInt += 360;
@@ -150,8 +174,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         {
             base.OnUIDrawLoop(ref context);
 
-            // 驱动 3D 姿态仪离屏相机渲染与脏标记复位
-            if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
+            // 驱动 3D 姿态仪离屏相机渲染与脏标记复位 (仅在网格渲染管线下工作)
+            if (!_isUsingRaymarch && _ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
                 bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
                 bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime.Value) >= HeartbeatInterval;
@@ -174,17 +198,23 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
 
-            // 1. 优先挂载 Vessel3DService 实时烘焙的 3D 飞船贴图
+            // 1. 中央飞船贴图与视图选择
             if (_shipRawImage != null)
             {
-                Texture tex3D = _cachedTex3D;
-                if (tex3D != null && _shipRawImage.texture != tex3D)
+                Texture targetTex = _shared3DSpacecraftTexture;
+                if (_shipVisualMode == CenterShipVisualMode.RealVessel3D && _cachedTex3D != null)
                 {
-                    _shipRawImage.texture = tex3D;
+                    targetTex = _cachedTex3D;
                 }
-                else if (tex3D == null && _shipRawImage.texture != _shared3DSpacecraftTexture)
+                else if (_shipVisualMode == CenterShipVisualMode.TopDownSilhouette)
                 {
-                    _shipRawImage.texture = _shared3DSpacecraftTexture;
+                    Texture silTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
+                    if (silTex != null) targetTex = silTex;
+                }
+
+                if (_shipRawImage.texture != targetTex)
+                {
+                    _shipRawImage.texture = targetTex;
                 }
             }
 
@@ -199,7 +229,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     {
                         _centerShipRoot.localScale = new Vector3(1.0f, foreshortenY, 1.0f);
                     }
-                    _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, -_cachedRoll * 0.25f);
+                    _centerShipRoot.localRotation = Quaternion.identity;
                 }
                 else
                 {
@@ -261,12 +291,18 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private Outline _bgOutline;
         private RawImage _sphereDisplayImage;
 
+        // 水平基准定位翼 (保持水平正交基准)
+        private RectTransform _reticleWingsRoot;
+        private GameObject _wingL;
+        private GameObject _wingR;
+        private GameObject _pipL;
+        private GameObject _pipR;
+
         // 中央 3D 飞船机构
         private RectTransform _centerShipRoot;
         private RawImage _shipRawImage;
         private RectTransform _flightDirectorRoot;
         private RawImage _flightDirectorRawImage;
-        private RectTransform _reticleWingsRoot;
 
         // 外部圆环包边与装饰刻度
         private GameObject _bezelRingObj;
@@ -281,6 +317,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         // 球面导航标线集合 (Prograde, Retrograde, Normal, Maneuver 等)
         private readonly Dictionary<string, Image> _markerImages = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private float _visualRadius = 70f;
+
+        // 渲染与视口模式
+        private bool _isUsingRaymarch = false;
+        private CenterShipVisualMode _shipVisualMode = CenterShipVisualMode.Procedural3D;
+        private bool _isDirectorLocked = false;
+        private bool _isChasePerspective = true;
 
         // 静态共享程序化纹理 (避免重复分配)
         private static Texture2D _shared3DSpacecraftTexture;
@@ -299,8 +341,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private readonly Cached<bool> _lastDirectorLocked = new Cached<bool>(false);
         private readonly Cached<string> _lastTopText = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastBottomText = new Cached<string>(string.Empty);
-        private bool _isDirectorLocked = false;
-        private bool _isChasePerspective = true;
 
         // 多参考系调色板过渡
         private readonly Cached<string> _lastFrameCategory = new Cached<string>("");
@@ -329,6 +369,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private static readonly int _PropGroundHorizonColor = Shader.PropertyToID("_GroundHorizonColor");
         private static readonly int _PropGroundNadirColor = Shader.PropertyToID("_GroundNadirColor");
         private static readonly int _PropHeadingLineColor = Shader.PropertyToID("_HeadingLineColor");
+        private static readonly int _PropSphereInvRotation = Shader.PropertyToID("_SphereInvRotation");
+        private static readonly int _PropRenderMode = Shader.PropertyToID("_RenderMode");
 
         private static bool FastColorEquals(Color a, Color b)
         {
@@ -375,15 +417,34 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _pitchToken = GetTemplateChannel("PITCH", _pitchToken);
             _rollToken = GetTemplateChannel("ROLL", _rollToken);
             _sasToken = GetTemplateChannel("SAS", _sasToken);
+
             string viewVal = GetTemplateChannel("VIEW", null);
             if (!string.IsNullOrEmpty(viewVal))
             {
                 _isChasePerspective = !viewVal.Equals("TOP", StringComparison.OrdinalIgnoreCase);
             }
+
+            string shipModeStr = GetTemplateChannel("SHIP", null);
+            if (!string.IsNullOrEmpty(shipModeStr))
+            {
+                if ("VESSEL".Equals(shipModeStr, StringComparison.OrdinalIgnoreCase) || "REAL".Equals(shipModeStr, StringComparison.OrdinalIgnoreCase))
+                {
+                    _shipVisualMode = CenterShipVisualMode.RealVessel3D;
+                }
+                else if ("SILHOUETTE".Equals(shipModeStr, StringComparison.OrdinalIgnoreCase))
+                {
+                    _shipVisualMode = CenterShipVisualMode.TopDownSilhouette;
+                }
+                else
+                {
+                    _shipVisualMode = CenterShipVisualMode.Procedural3D;
+                }
+            }
+
             EnsureSharedTextures();
 
-            // 1. 初始化 3D 姿态球离屏渲染管线 (RenderTexture + Offscreen Camera + Sphere Mesh)
-            InitializeOffscreenSphere(ballDiameter, theme);
+            // 1. 初始化姿态球渲染管线 (优先单 Quad 纯矢量光线投射，规避场景阳光洗白)
+            InitializeAttitudeSphere(ballDiameter, theme);
 
             // 2. 外部航电金属刻度圆环 (Bezel Ring)
             CreateBezelRing(ballDiameter, s, theme);
@@ -391,10 +452,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 3. 球面 2D/3D 导航矢量标记层 (Marker Layer)
             CreateMarkerOverlayLayer(transform, s);
 
-            // 4. 中央 3D 飞船机构 (Center 3D Spacecraft & Flight Director)
+            // 4. 水平基准指示翼 (Aerospace Horizon Reticle Index Wings)
+            CreateReticleWings(s, theme);
+
+            // 5. 中央 3D 飞船机构 (Center 3D Spacecraft & Flight Director)
             CreateCenter3DSpacecraft(ballDiameter, s, theme);
 
-            // 5. 顶部与底部航电信息微标栏 (Header & Footer Badges)
+            // 6. 顶部与底部航电信息微标栏 (Header & Footer Badges)
             CreateAvionicsBadges(ballDiameter, totalHeight, s, theme);
 
             // 注册微控件至标准化管理器
@@ -411,81 +475,91 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             ApplyTheme(theme);
         }
 
-
-        private void InitializeOffscreenSphere(float ballDiameter, ThemeConfig theme)
+        private void InitializeAttitudeSphere(float ballDiameter, ThemeConfig theme)
         {
-            int rtRes = 512;
-            if (WidgetRenderManager.Instance != null)
-            {
-                rtRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
-                    new Vector2(ballDiameter, ballDiameter),
-                    Config != null ? Config.Scale : 1.0f,
-                    Config != null ? Config.RenderScale : 1.0f);
-            }
+            string renderModeStr = GetTemplateChannel("RENDER", null);
+            bool forceMesh = "MESH".Equals(renderModeStr, StringComparison.OrdinalIgnoreCase) ||
+                             "MINIMAL".Equals(renderModeStr, StringComparison.OrdinalIgnoreCase);
 
-            _renderTexture = new RenderTexture(rtRes, rtRes, 16, RenderTextureFormat.ARGB32)
-            {
-                antiAliasing = 1,
-                anisoLevel = 4,
-                useMipMap = false,
-                autoGenerateMips = false,
-                filterMode = FilterMode.Bilinear
-            };
-            _renderTexture.Create();
+            Shader raymarchShader = AssetLoader.RaymarchShader ?? Shader.Find("ModularFlightPanel/NavballRaymarch");
+            Shader minimalShader = AssetLoader.MinimalistAttitudeShader ?? Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere");
 
-            // 离屏正交摄像机 (层级 31，正交视口 1.0f)
-            _ballCamera = CreateChild<Camera>("Navball_Vessel_Cam", transform);
-            GameObject camObj = _ballCamera.gameObject;
-            camObj.transform.localPosition = new Vector3(0f, 0f, -2.5f);
-            _ballCamera.clearFlags = CameraClearFlags.SolidColor;
-            _ballCamera.backgroundColor = WidgetStyleManager.NeutralTransparent;
-            _ballCamera.targetTexture = _renderTexture;
-            _ballCamera.orthographic = true;
-            _ballCamera.orthographicSize = 1.0f;
-            _ballCamera.nearClipPlane = 0.1f;
-            _ballCamera.farClipPlane = 10f;
-            _ballCamera.cullingMask = 1 << 31;
-            _ballCamera.enabled = false;
-            _ballCamera.useOcclusionCulling = false;
-            _ballCamera.allowHDR = false;
-            _ballCamera.allowMSAA = false;
-            _ballCamera.depthTextureMode = DepthTextureMode.None;
+            _isUsingRaymarch = !forceMesh && raymarchShader != null;
+            Shader targetShader = _isUsingRaymarch ? raymarchShader : (minimalShader ?? raymarchShader ?? AssetLoader.ProceduralShader ?? AssetLoader.ModernShader);
 
-            // 3D 单位球体 (半径 0.94f，预留边缘抗锯齿与发光空间)
-            _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            _sphereObject.name = "Navball_Vessel_Sphere";
-            _sphereObject.transform.SetParent(transform, false);
-            _sphereObject.transform.localPosition = Vector3.zero;
-            _sphereObject.layer = 31;
-            UpdateSphereScale();
-
-            Collider col = _sphereObject.GetComponent<Collider>();
-            if (col != null)
-            {
-                if (Application.isPlaying) Destroy(col);
-                else DestroyImmediate(col);
-            }
-
-            // 极简纯净 3D 姿态球 (100% 程序化，0 贴图素材依赖，不使用传统导航球素材)
-            var hook = NavBallHookService.Provider;
-            MeshRenderer mr = _sphereObject.GetComponent<MeshRenderer>();
-            Shader targetShader = AssetLoader.MinimalistAttitudeShader ?? AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
             _sphereMaterial = new Material(targetShader);
-            _sphereMaterial.mainTexture = null;
 
-            // 初始化极简调色板并挂载至材质
+            _sphereDisplayImage = CreateChild<RawImage>("Sphere_Viewport", transform,
+                new Vector2(ballDiameter, ballDiameter), Vector2.zero);
+            _sphereDisplayImage.raycastTarget = false;
+
+            if (_isUsingRaymarch)
+            {
+                _sphereDisplayImage.material = _sphereMaterial;
+                _sphereDisplayImage.texture = Texture2D.whiteTexture;
+            }
+            else
+            {
+                int rtRes = 512;
+                if (WidgetRenderManager.Instance != null)
+                {
+                    rtRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
+                        new Vector2(ballDiameter, ballDiameter),
+                        Config != null ? Config.Scale : 1.0f,
+                        Config != null ? Config.RenderScale : 1.0f);
+                }
+
+                _renderTexture = new RenderTexture(rtRes, rtRes, 16, RenderTextureFormat.ARGB32)
+                {
+                    antiAliasing = 1,
+                    anisoLevel = 4,
+                    useMipMap = false,
+                    autoGenerateMips = false,
+                    filterMode = FilterMode.Bilinear
+                };
+                _renderTexture.Create();
+
+                _ballCamera = CreateChild<Camera>("Navball_Vessel_Cam", transform);
+                GameObject camObj = _ballCamera.gameObject;
+                camObj.transform.localPosition = new Vector3(0f, 0f, -2.5f);
+                _ballCamera.clearFlags = CameraClearFlags.SolidColor;
+                _ballCamera.backgroundColor = WidgetStyleManager.NeutralTransparent;
+                _ballCamera.targetTexture = _renderTexture;
+                _ballCamera.orthographic = true;
+                _ballCamera.orthographicSize = 1.0f;
+                _ballCamera.nearClipPlane = 0.1f;
+                _ballCamera.farClipPlane = 10f;
+                _ballCamera.cullingMask = 1 << 31;
+                _ballCamera.enabled = false;
+                _ballCamera.useOcclusionCulling = false;
+                _ballCamera.allowHDR = false;
+                _ballCamera.allowMSAA = false;
+                _ballCamera.depthTextureMode = DepthTextureMode.None;
+
+                _sphereObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                _sphereObject.name = "Navball_Vessel_Sphere";
+                _sphereObject.transform.SetParent(transform, false);
+                _sphereObject.transform.localPosition = Vector3.zero;
+                _sphereObject.layer = 31;
+                UpdateSphereScale();
+
+                Collider col = _sphereObject.GetComponent<Collider>();
+                if (col != null)
+                {
+                    if (Application.isPlaying) Destroy(col);
+                    else DestroyImmediate(col);
+                }
+
+                MeshRenderer mr = _sphereObject.GetComponent<MeshRenderer>();
+                mr.material = _sphereMaterial;
+                _sphereDisplayImage.texture = _renderTexture;
+            }
+
+            var hook = NavBallHookService.Provider;
             _currentPalette = GetPaletteForCategory(hook?.ReferenceFrameCategory ?? "SURFACE", theme);
             _targetPalette = _currentPalette;
             _paletteInitialized = true;
             ApplyPaletteToSphereMaterial(_currentPalette);
-
-            mr.material = _sphereMaterial;
-
-            // RawImage 球体主贴图视口
-            _sphereDisplayImage = CreateChild<RawImage>("Sphere_Viewport", transform,
-                new Vector2(ballDiameter, ballDiameter), Vector2.zero);
-            _sphereDisplayImage.texture = _renderTexture;
-            _sphereDisplayImage.raycastTarget = false;
         }
 
         private void CreateBezelRing(float ballDiameter, float s, ThemeConfig theme)
@@ -528,32 +602,36 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
         }
 
+        private void CreateReticleWings(float s, ThemeConfig theme)
+        {
+            // 水平水线基准标翼：挂载于 transform，保持 0 角度正交，绝不随 Roll 翻滚
+            _reticleWingsRoot = CreateContainer("Reticle_Wings", transform,
+                new Vector2(74f * s, 10f * s), Vector2.zero);
+            _reticleWingsRoot.localRotation = Quaternion.identity;
+
+            float wingW = 14f * s;
+            float wingH = 2.4f * s;
+            float wingOffX = 26f * s;
+            _wingL = UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Wing_L", new Vector2(wingW, wingH), new Vector2(-wingOffX, 0f), theme.AccentPrimary);
+            _wingR = UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Wing_R", new Vector2(wingW, wingH), new Vector2(wingOffX, 0f), theme.AccentPrimary);
+            _pipL = UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Pip_L", new Vector2(2.4f * s, 6f * s), new Vector2(-wingOffX + wingW * 0.5f, -2f * s), theme.AccentPrimary);
+            _pipR = UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Pip_R", new Vector2(2.4f * s, 6f * s), new Vector2(wingOffX - wingW * 0.5f, -2f * s), theme.AccentPrimary);
+        }
+
         private void CreateCenter3DSpacecraft(float ballDiameter, float s, ThemeConfig theme)
         {
             // 中央机构根节点
             _centerShipRoot = CreateContainer("Center_3D_Ship_Root", transform,
                 new Vector2(46f * s, 46f * s), Vector2.zero);
 
-            // 1. 水平基准定位指示标翼 (Aerospace Horizon Reticle Index Wings)
-            _reticleWingsRoot = CreateContainer("Reticle_Wings", _centerShipRoot,
-                new Vector2(74f * s, 10f * s), Vector2.zero);
-
-            float wingW = 14f * s;
-            float wingH = 2.4f * s;
-            float wingOffX = 26f * s;
-            UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Wing_L", new Vector2(wingW, wingH), new Vector2(-wingOffX, 0f), theme.AccentPrimary);
-            UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Wing_R", new Vector2(wingW, wingH), new Vector2(wingOffX, 0f), theme.AccentPrimary);
-            UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Pip_L", new Vector2(2.4f * s, 6f * s), new Vector2(-wingOffX + wingW * 0.5f, -2f * s), theme.AccentPrimary);
-            UIFactory.CreatePanel(_reticleWingsRoot, "Reticle_Pip_R", new Vector2(2.4f * s, 6f * s), new Vector2(wingOffX - wingW * 0.5f, -2f * s), theme.AccentPrimary);
-
-            // 2. 3D 飞船主体 (Spacecraft Visual Image)
+            // 1. 3D 飞船主体 (Spacecraft Visual Image)
             _shipRawImage = CreateChild<RawImage>("Spacecraft_Visual", _centerShipRoot,
                 new Vector2(44f * s, 44f * s), Vector2.zero);
             _shipRawImage.texture = _shared3DSpacecraftTexture;
             _shipRawImage.color = WidgetStyleManager.NeutralOpaque;
             _shipRawImage.raycastTarget = false;
 
-            // 3. 飞行指引仪 Target Flight Director Chevron
+            // 2. 飞行指引仪 Target Flight Director Chevron
             _flightDirectorRawImage = CreateChild<RawImage>("Flight_Director_Chevron", _centerShipRoot,
                 new Vector2(24f * s, 24f * s), new Vector2(0f, 18f * s));
             _flightDirectorRoot = _flightDirectorRawImage.rectTransform;
@@ -612,14 +690,34 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _paletteInitialized = false;
             _lastFrameCategory.Reset(string.Empty);
 
+            Material uiMat = style?.GetUiMaterial(isText: false);
+            Material txtMat = style?.GetUiMaterial(isText: true);
+
             if (_bezelRingRawImage != null)
             {
                 _bezelRingRawImage.color = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.85f);
             }
 
+            if (_wingL != null) { var img = _wingL.GetComponent<Image>(); if (img != null) { img.color = theme.AccentPrimary; if (uiMat != null) img.material = uiMat; } }
+            if (_wingR != null) { var img = _wingR.GetComponent<Image>(); if (img != null) { img.color = theme.AccentPrimary; if (uiMat != null) img.material = uiMat; } }
+            if (_pipL != null) { var img = _pipL.GetComponent<Image>(); if (img != null) { img.color = theme.AccentPrimary; if (uiMat != null) img.material = uiMat; } }
+            if (_pipR != null) { var img = _pipR.GetComponent<Image>(); if (img != null) { img.color = theme.AccentPrimary; if (uiMat != null) img.material = uiMat; } }
+
+            if (_topBadgeRoot != null && uiMat != null)
+            {
+                Image bg = _topBadgeRoot.GetComponent<Image>();
+                if (bg != null) bg.material = uiMat;
+            }
+            if (_bottomBadgeRoot != null && uiMat != null)
+            {
+                Image bg = _bottomBadgeRoot.GetComponent<Image>();
+                if (bg != null) bg.material = uiMat;
+            }
+
             if (_topBadgeText != null)
             {
                 ApplyText(_topBadgeText, TextStyleRole.Cardinal, theme);
+                if (txtMat != null) _topBadgeText.material = txtMat;
             }
 
             if (_bottomBadgeText != null)
@@ -627,6 +725,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 _bottomBadgeText.color = _isDirectorLocked
                     ? WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f)
                     : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                if (txtMat != null) _bottomBadgeText.material = txtMat;
             }
 
             if (_flightDirectorRawImage != null)
@@ -636,21 +735,14 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     : WidgetStyleManager.WithAlpha(theme.AccentWarning, 0.90f);
             }
 
-            // 更新 3D 球体材质着色器与极简调色板
+            // 更新姿态球材质着色器与调色板
             if (_sphereMaterial != null)
             {
-                Shader targetShader = AssetLoader.MinimalistAttitudeShader ?? AssetLoader.ProceduralShader ?? AssetLoader.ModernShader;
-                if (targetShader != null && _sphereMaterial.shader != targetShader)
-                {
-                    _sphereMaterial.shader = targetShader;
-                }
                 ApplyPaletteToSphereMaterial(_currentPalette);
             }
 
             this.Controls.ApplyThemeToControls(theme);
         }
-
-
 
         protected override void LateUpdate()
         {
@@ -661,8 +753,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             SyncAttitudeAndVisuals();
             SyncMarkers();
 
-            // 动态绘制与亚像素脏标记判定 (4Hz 保活心跳 + 0.025° 亚像素死区)
-            if (_ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
+            // 网格渲染模式动态绘制与亚像素脏标记判定 (4Hz 保活心跳 + 0.025° 亚像素死区)
+            if (!_isUsingRaymarch && _ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
                 bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
                 bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime.Value) >= HeartbeatInterval;
@@ -687,21 +779,31 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             var hook = NavBallHookService.Provider;
             bool hasHook = (hook != null && hook.HasStockNavBall);
 
-            if (_sphereObject != null)
+            Quaternion rawRot;
+            if (hasHook)
             {
-                bool isProcedural = ThemeManager.Instance.GlobalRenderMode != NavballRenderMode.StockTexture;
-                if (hasHook)
+                Quaternion camRot = hook.CameraRotation;
+                rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
+            }
+            else
+            {
+                IFlightTelemetry telem = FlightTelemetryContext.Current;
+                rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
+            }
+
+            if (_isUsingRaymarch)
+            {
+                Quaternion invRot = Quaternion.Inverse(rawRot);
+                Vector4 invRotVec = new Vector4(invRot.x, invRot.y, invRot.z, invRot.w);
+                if (_sphereMaterial != null)
                 {
-                    Quaternion camRot = hook.CameraRotation;
-                    Quaternion rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
-                    _sphereObject.transform.localRotation = rawRot;
+                    _sphereMaterial.SetVector(_PropSphereInvRotation, invRotVec);
+                    _sphereMaterial.SetFloat(_PropRenderMode, 1.0f);
                 }
-                else
-                {
-                    IFlightTelemetry telem = FlightTelemetryContext.Current;
-                    Quaternion rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
-                    _sphereObject.transform.localRotation = rawRot;
-                }
+            }
+            else if (_sphereObject != null)
+            {
+                _sphereObject.transform.localRotation = rawRot;
             }
 
             // 多参考系调色板过渡
@@ -900,14 +1002,23 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         {
             if (eventData.button == PointerEventData.InputButton.Right)
             {
-                // 右键切换观察视角
+                // 右键切换观察视角 (Chase 3D <-> Top-Down 3D)
                 _isChasePerspective = !_isChasePerspective;
                 _lastPitch.Reset(double.NaN); // 触发刷新
             }
             else if (eventData.button == PointerEventData.InputButton.Left)
             {
-                // 左键切换 SAS 稳定状态
-                FlightTelemetryContext.Current?.ToggleSAS();
+                // 检查是否点击在中央飞船区域
+                if (_centerShipRoot != null && RectTransformUtility.RectangleContainsScreenPoint(_centerShipRoot, eventData.position, eventData.pressEventCamera))
+                {
+                    // 点击飞船轮播视觉样式: Procedural3D -> RealVessel3D -> TopDownSilhouette
+                    _shipVisualMode = (CenterShipVisualMode)(((int)_shipVisualMode + 1) % 3);
+                }
+                else
+                {
+                    // 左键切换 SAS 稳定状态
+                    FlightTelemetryContext.Current?.ToggleSAS();
+                }
             }
         }
 
@@ -917,256 +1028,16 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         {
             if (_shared3DSpacecraftTexture == null)
             {
-                _shared3DSpacecraftTexture = CreateProcedural3DSpacecraftTexture();
+                _shared3DSpacecraftTexture = SpacecraftAttitudeVisualGenerator.GetOrCreateSpacecraftTexture();
             }
             if (_sharedFlightDirectorTexture == null)
             {
-                _sharedFlightDirectorTexture = CreateFlightDirectorChevronTexture();
+                _sharedFlightDirectorTexture = SpacecraftAttitudeVisualGenerator.GetOrCreateFlightDirectorTexture();
             }
             if (_sharedBezelTexture == null)
             {
-                _sharedBezelTexture = CreateBezelRingTexture();
+                _sharedBezelTexture = SpacecraftAttitudeVisualGenerator.GetOrCreateBezelTexture();
             }
-        }
-
-        /// <summary>
-        /// 程序化生成 256x256 高精度 3D 航天器纹理 (Half-Lambert 漫反射 + 边缘高光 + 驾驶舱 + 编队灯)
-        /// </summary>
-        private static Texture2D CreateProcedural3DSpacecraftTexture()
-        {
-            const int size = 256;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
-            tex.filterMode = FilterMode.Trilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-            Color[] cols = new Color[size * size];
-
-            float half = (size - 1) * 0.5f;
-            float invHalf = 1f / half;
-            float feather = 1.8f * invHalf;
-
-            // 虚拟光源方向 (从左上方照向机身)
-            Vector3 lightDir = new Vector3(-0.45f, 0.45f, 0.77f).normalized;
-
-            for (int y = 0; y < size; y++)
-            {
-                float ny = (y - half) * invHalf; // -1 .. +1
-                for (int x = 0; x < size; x++)
-                {
-                    float nx = (x - half) * invHalf; // -1 .. +1
-                    float absX = Mathf.Abs(nx);
-
-                    float alpha = 0f;
-                    Vector3 normal = Vector3.forward;
-                    float albedoR = 0.85f, albedoG = 0.88f, albedoB = 0.95f;
-
-                    // 1. 中央机身轮廓 (Fuselage: 机头 ny ~ 0.82 至机尾 ny ~ -0.55)
-                    float bodyHalfW = 0f;
-                    if (ny >= 0.20f && ny <= 0.82f)
-                    {
-                        float t = (0.82f - ny) / 0.62f; // 0 .. 1
-                        bodyHalfW = Mathf.Lerp(0.02f, 0.18f, Mathf.Sqrt(t));
-                    }
-                    else if (ny >= -0.55f && ny < 0.20f)
-                    {
-                        bodyHalfW = Mathf.Lerp(0.18f, 0.22f, (0.20f - ny) / 0.75f);
-                    }
-
-                    if (bodyHalfW > 0.001f && absX <= bodyHalfW + feather)
-                    {
-                        float dist = absX - bodyHalfW;
-                        float a = (dist <= 0f) ? 1.0f : Mathf.Clamp01(1.0f - dist / feather);
-                        if (a > alpha)
-                        {
-                            alpha = a;
-                            // 弧形机身法线估计
-                            float u = Mathf.Clamp(nx / Mathf.Max(0.01f, bodyHalfW), -1f, 1f);
-                            normal = new Vector3(u * 0.85f, 0.15f, Mathf.Sqrt(Mathf.Max(0f, 1f - u * u * 0.72f))).normalized;
-                            albedoR = 0.78f; albedoG = 0.84f; albedoB = 0.92f;
-                        }
-                    }
-
-                    // 2. 三角主翼 (Swept Delta Wings)
-                    if (ny >= -0.48f && ny <= 0.35f)
-                    {
-                        float wingT = (0.35f - ny) / 0.83f; // 0 .. 1
-                        float wingSpan = Mathf.Lerp(0.12f, 0.78f, Mathf.Pow(wingT, 1.25f));
-                        float wingInner = Mathf.Max(0f, bodyHalfW - 0.02f);
-                        if (absX >= wingInner && absX <= wingSpan + feather)
-                        {
-                            float dist = absX - wingSpan;
-                            float a = (dist <= 0f) ? 1.0f : Mathf.Clamp01(1.0f - dist / feather);
-                            if (a > alpha)
-                            {
-                                alpha = a;
-                                normal = new Vector3(Mathf.Sign(nx) * 0.25f, -0.1f, 0.96f).normalized;
-                                albedoR = 0.68f; albedoG = 0.76f; albedoB = 0.86f;
-                            }
-                        }
-                    }
-
-                    // 3. 翼尖航行灯 (Wingtip Formation Lights)
-                    if (ny >= -0.45f && ny <= -0.38f && absX >= 0.72f && absX <= 0.79f)
-                    {
-                        alpha = 1.0f;
-                        if (nx < 0f) { albedoR = 1.0f; albedoG = 0.2f; albedoB = 0.2f; }
-                        else { albedoR = 0.2f; albedoG = 1.0f; albedoB = 0.4f; }
-                    }
-
-                    // 4. 水滴形座舱盖 (Cockpit Canopy)
-                    if (ny >= 0.24f && ny <= 0.58f && absX <= 0.085f)
-                    {
-                        float cT = (0.58f - ny) / 0.34f;
-                        float cW = Mathf.Sin(cT * Mathf.PI) * 0.08f;
-                        if (absX <= cW + feather)
-                        {
-                            float dist = absX - cW;
-                            float a = (dist <= 0f) ? 1.0f : Mathf.Clamp01(1.0f - dist / feather);
-                            if (a > 0.01f)
-                            {
-                                alpha = Mathf.Max(alpha, a);
-                                normal = new Vector3(nx * 8f, 0.3f, 0.9f).normalized;
-                                albedoR = 0.10f; albedoG = 0.45f; albedoB = 0.65f;
-                            }
-                        }
-                    }
-
-                    // 5. 双发尾喷管 (Twin Engine Exhaust Nozzles)
-                    if (ny >= -0.66f && ny <= -0.52f && (Mathf.Abs(absX - 0.11f) <= 0.045f))
-                    {
-                        alpha = 1.0f;
-                        albedoR = 0.20f; albedoG = 0.75f; albedoB = 1.0f; // 离子推进微光
-                    }
-
-                    if (alpha <= 0.001f)
-                    {
-                        cols[y * size + x] = Color.clear;
-                    }
-                    else
-                    {
-                        // 3D 光照解算 (Half-Lambert + 边缘高光)
-                        float diff = Mathf.Max(0f, Vector3.Dot(normal, lightDir)) * 0.5f + 0.5f;
-                        Vector3 viewDir = Vector3.forward;
-                        Vector3 halfVec = (lightDir + viewDir).normalized;
-                        float spec = Mathf.Pow(Mathf.Max(0f, Vector3.Dot(normal, halfVec)), 16f) * 0.35f;
-
-                        Color shaded = WidgetStyleManager.NeutralOpaque;
-                        shaded.r = Mathf.Clamp01(albedoR * diff + spec);
-                        shaded.g = Mathf.Clamp01(albedoG * diff + spec);
-                        shaded.b = Mathf.Clamp01(albedoB * diff + spec);
-                        shaded.a = Mathf.Clamp01(alpha);
-                        cols[y * size + x] = shaded;
-                    }
-                }
-            }
-
-            tex.SetPixels(cols);
-            tex.Apply(true, true);
-            return tex;
-        }
-
-        private static Texture2D CreateFlightDirectorChevronTexture()
-        {
-            const int size = 64;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
-            tex.filterMode = FilterMode.Bilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-            Color[] cols = new Color[size * size];
-
-            float half = (size - 1) * 0.5f;
-            float invHalf = 1f / half;
-            float feather = 2.0f * invHalf;
-
-            for (int y = 0; y < size; y++)
-            {
-                float ny = (y - half) * invHalf;
-                for (int x = 0; x < size; x++)
-                {
-                    float nx = (x - half) * invHalf;
-                    float absX = Mathf.Abs(nx);
-
-                    float targetY = 0.55f - absX * 0.95f;
-                    float distY = Mathf.Abs(ny - targetY);
-                    float distX = Mathf.Max(0f, absX - 0.72f);
-                    float dist = Mathf.Max(distY - 0.12f, distX);
-
-                    float a = (dist <= 0f) ? 1.0f : Mathf.Clamp01(1.0f - dist / feather);
-                    if (a <= 0.001f)
-                    {
-                        cols[y * size + x] = Color.clear;
-                    }
-                    else
-                    {
-                        Color c = WidgetStyleManager.NeutralOpaque;
-                        c.a = a;
-                        cols[y * size + x] = c;
-                    }
-                }
-            }
-
-            tex.SetPixels(cols);
-            tex.Apply(true, true);
-            return tex;
-        }
-
-        private static Texture2D CreateBezelRingTexture()
-        {
-            const int size = 256;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
-            tex.filterMode = FilterMode.Trilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-            Color[] cols = new Color[size * size];
-
-            float half = (size - 1) * 0.5f;
-            float invHalf = 1f / half;
-            float feather = 2.0f * invHalf;
-
-            for (int y = 0; y < size; y++)
-            {
-                float ny = (y - half) * invHalf;
-                for (int x = 0; x < size; x++)
-                {
-                    float nx = (x - half) * invHalf;
-                    float r = Mathf.Sqrt(nx * nx + ny * ny);
-
-                    float alpha = 0f;
-                    // 极简纤细刻度环 (r: 0.94 .. 0.985)
-                    if (r >= 0.93f && r <= 0.995f)
-                    {
-                        float dist = Mathf.Max(0.95f - r, r - 0.98f);
-                        alpha = (dist <= 0f) ? 0.90f : Mathf.Clamp01(1.0f - dist / feather) * 0.90f;
-                    }
-
-                    // 12 点钟航向主标三角形 (Top Notch Triangle)
-                    if (ny >= 0.86f && Mathf.Abs(nx) <= (0.98f - ny) * 0.70f)
-                    {
-                        alpha = 1.0f;
-                    }
-
-                    // 滚转角指示标尺 (Bank Angle Ticks at ±30°, ±60°, ±90°)
-                    float angDeg = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg; // -180 .. 180
-                    float absAng = Mathf.Abs(angDeg);
-                    bool isTick = (Mathf.Abs(absAng - 30f) < 0.9f || Mathf.Abs(absAng - 60f) < 0.9f || Mathf.Abs(absAng - 90f) < 0.9f);
-                    if (isTick && r >= 0.88f && r <= 0.96f)
-                    {
-                        alpha = 0.88f;
-                    }
-
-                    if (alpha <= 0.001f)
-                    {
-                        cols[y * size + x] = Color.clear;
-                    }
-                    else
-                    {
-                        Color c = WidgetStyleManager.NeutralOpaque;
-                        c.a = alpha;
-                        cols[y * size + x] = c;
-                    }
-                }
-            }
-
-            tex.SetPixels(cols);
-            tex.Apply(true, true);
-            return tex;
         }
 
         #endregion
@@ -1175,11 +1046,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         {
             base.OnRenderTextureRecreated(newRt);
             if (_ballCamera != null) _ballCamera.targetTexture = newRt;
-            if (_sphereDisplayImage != null) _sphereDisplayImage.texture = newRt;
+            if (_sphereDisplayImage != null && !_isUsingRaymarch) _sphereDisplayImage.texture = newRt;
         }
 
         protected override void HandleRenderSettingChanged()
         {
+            if (_isUsingRaymarch) return;
             if (WidgetRenderManager.Instance == null) return;
             float ballDiameter = _visualRadius * 2.0f;
             int optimalRes = WidgetRenderManager.Instance.CalculateOptimalResolution(

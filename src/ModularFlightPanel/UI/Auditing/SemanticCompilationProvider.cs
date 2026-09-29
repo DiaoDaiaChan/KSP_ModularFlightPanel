@@ -167,6 +167,7 @@ namespace ModularFlightPanel.UI.Auditing
             "mscorlib.dll",
             "System.dll",
             "System.Core.dll",
+            "System.Xml.dll",
             "UnityEngine.dll",
             "UnityEngine.CoreModule.dll",
             "UnityEngine.UI.dll",
@@ -433,7 +434,7 @@ namespace ModularFlightPanel.UI.Auditing
         // 语义辅助工具集 (Semantic Query Helpers)
         // =========================================================================
 
-        /// <summary>判断 typeSymbol 是否为指定全限定名类型的真派生类（沿继承链递归）</summary>
+        /// <summary>判断 typeSymbol 是否为指定全限定名类型的真派生类（沿继承链递归，支持全限定名或简单名称匹配）</summary>
         public static bool InheritsFrom(ITypeSymbol typeSymbol, string targetFullMetadataName)
         {
             if (typeSymbol == null || string.IsNullOrEmpty(targetFullMetadataName)) return false;
@@ -441,7 +442,9 @@ namespace ModularFlightPanel.UI.Auditing
             INamedTypeSymbol current = typeSymbol.BaseType;
             while (current != null)
             {
-                if (string.Equals(current.ToDisplayString(), targetFullMetadataName, StringComparison.Ordinal))
+                string display = current.ToDisplayString();
+                if (string.Equals(display, targetFullMetadataName, StringComparison.Ordinal) ||
+                    string.Equals(current.Name, targetFullMetadataName, StringComparison.Ordinal))
                 {
                     return true;
                 }
@@ -450,15 +453,43 @@ namespace ModularFlightPanel.UI.Auditing
             return false;
         }
 
+        /// <summary>判断 typeSymbol 是否实现了指定接口（包含直接与间接继承的所有接口）</summary>
+        public static bool ImplementsInterface(ITypeSymbol typeSymbol, string targetInterfaceMetadataName)
+        {
+            if (typeSymbol == null || string.IsNullOrEmpty(targetInterfaceMetadataName)) return false;
+            foreach (var iface in typeSymbol.AllInterfaces)
+            {
+                if (string.Equals(iface.ToDisplayString(), targetInterfaceMetadataName, StringComparison.Ordinal) ||
+                    string.Equals(iface.Name, targetInterfaceMetadataName, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         /// <summary>判断 typeSymbol 是否等于目标类型，或继承自目标类型</summary>
         public static bool IsOrInheritsFrom(ITypeSymbol typeSymbol, string targetFullMetadataName)
         {
             if (typeSymbol == null || string.IsNullOrEmpty(targetFullMetadataName)) return false;
-            if (string.Equals(typeSymbol.ToDisplayString(), targetFullMetadataName, StringComparison.Ordinal))
+            if (string.Equals(typeSymbol.ToDisplayString(), targetFullMetadataName, StringComparison.Ordinal) ||
+                string.Equals(typeSymbol.Name, targetFullMetadataName, StringComparison.Ordinal))
             {
                 return true;
             }
             return InheritsFrom(typeSymbol, targetFullMetadataName);
+        }
+
+        /// <summary>判断 typeSymbol 是否等于目标类型、继承自目标类型或实现了目标接口</summary>
+        public static bool IsOrInheritsOrImplements(ITypeSymbol typeSymbol, string targetMetadataName)
+        {
+            if (typeSymbol == null || string.IsNullOrEmpty(targetMetadataName)) return false;
+            if (string.Equals(typeSymbol.ToDisplayString(), targetMetadataName, StringComparison.Ordinal) ||
+                string.Equals(typeSymbol.Name, targetMetadataName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+            return InheritsFrom(typeSymbol, targetMetadataName) || ImplementsInterface(typeSymbol, targetMetadataName);
         }
 
         /// <summary>判断类型是否为 UnityEngine.Color 或 UnityEngine.Color32</summary>
@@ -470,6 +501,179 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
+        /// 穿透性判定符号是否属于 Unity UI 绘制、文本更新、图元渲染、几何排版或材质着色操作。
+        /// 直达 UnityEngine.UI.Graphic / RectTransform / Material / Shader / GL 底层基类，杜绝字符串流水账。
+        /// </summary>
+        public static bool IsUiDrawSymbol(ISymbol symbol)
+        {
+            if (symbol == null) return false;
+
+            // 1. 获取符号的声明容器类型
+            ITypeSymbol containingType = symbol.ContainingType;
+            if (containingType != null)
+            {
+                // A. 基础图元渲染：UnityEngine.UI.Graphic 家族 (Text, Image, RawImage, MaskableGraphic 等)
+                if (IsOrInheritsOrImplements(containingType, "UnityEngine.UI.Graphic") ||
+                    containingType.Name is "Graphic" or "Text" or "Image" or "RawImage" or "MaskableGraphic") return true;
+
+                // B. UI 交互控件：UnityEngine.UI.Selectable 家族 (Button, Toggle, Slider, InputField 等)
+                if (IsOrInheritsOrImplements(containingType, "UnityEngine.UI.Selectable")) return true;
+
+                // C. 几何排版系统：UnityEngine.RectTransform 或 UnityEngine.Transform
+                if (IsOrInheritsOrImplements(containingType, "UnityEngine.RectTransform") ||
+                    IsOrInheritsOrImplements(containingType, "UnityEngine.Transform"))
+                {
+                    return true;
+                }
+
+                // D. 材质与着色器：UnityEngine.Material / Shader / CanvasRenderer / Canvas / CanvasGroup
+                if (IsOrInheritsOrImplements(containingType, "UnityEngine.Material") ||
+                    IsOrInheritsOrImplements(containingType, "UnityEngine.Shader") ||
+                    IsOrInheritsOrImplements(containingType, "UnityEngine.CanvasRenderer") ||
+                    IsOrInheritsOrImplements(containingType, "UnityEngine.Canvas") ||
+                    IsOrInheritsOrImplements(containingType, "UnityEngine.CanvasGroup"))
+                {
+                    return true;
+                }
+
+                // E. 底层绘图指令：UnityEngine.GL 或 UnityEngine.Graphics
+                string containingName = containingType.ToDisplayString();
+                if (containingName == "UnityEngine.GL" || containingName == "UnityEngine.Graphics" ||
+                    containingType.Name == "GL" || containingType.Name == "Graphics")
+                {
+                    return true;
+                }
+
+                // F. 航电 UI 扩展方法：SmartUIExtensions
+                if (containingName.StartsWith("ModularFlightPanel.UI.SmartUIExtensions") ||
+                    containingName.StartsWith("ModularFlightPanel.UI.Framework.SmartUIExtensions") ||
+                    containingType.Name == "SmartUIExtensions")
+                {
+                    return true;
+                }
+
+                // G. 微控件 DSL 绘图组件 (TextWidget, LinearBarWidget, WidgetReadoutControl 等)
+                if (IsOrInheritsOrImplements(containingType, "ModularFlightPanel.UI.Framework.WidgetDSLControl") ||
+                    containingType.Name == "TextWidget" || containingType.Name == "LinearBarWidget" ||
+                    (containingType.Name.StartsWith("Widget", StringComparison.Ordinal) && containingType.Name.EndsWith("Control", StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+            }
+
+            // 2. 检查符号本身代表的数据类型 (若为属性或字段)
+            ITypeSymbol memberType = null;
+            if (symbol is IPropertySymbol prop) memberType = prop.Type;
+            else if (symbol is IFieldSymbol field) memberType = field.Type;
+
+            if (memberType != null)
+            {
+                if (IsOrInheritsOrImplements(memberType, "UnityEngine.UI.Graphic") ||
+                    IsOrInheritsOrImplements(memberType, "UnityEngine.RectTransform") ||
+                    IsOrInheritsOrImplements(memberType, "UnityEngine.Material") ||
+                    memberType.Name == "TextWidget" || memberType.Name == "LinearBarWidget")
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 穿透性判定符号是否属于遥测数据采样、外部探针查询或物理量解算。
+        /// 直达 IFlightTelemetry / FlightGlobals / Planetarium / ExternalProbe 核心契约，杜绝 telemetry. 文本前缀匹配。
+        /// </summary>
+        public static bool IsTelemetrySymbol(ISymbol symbol)
+        {
+            if (symbol == null) return false;
+
+            ITypeSymbol containingType = symbol.ContainingType;
+            if (containingType != null)
+            {
+                // A. 契约驱动：实现 IFlightTelemetry 的接口与类
+                if (IsOrInheritsOrImplements(containingType, "ModularFlightPanel.Core.IFlightTelemetry") ||
+                    containingType.Name == "IFlightTelemetry")
+                {
+                    return true;
+                }
+
+                // B. 探针与遥测引擎：TelemetryProbeManager / ExternalProbeRegistry / TelemetryTokenEngine
+                string typeFullName = containingType.ToDisplayString();
+                string typeName = containingType.Name;
+                if (typeFullName.StartsWith("ModularFlightPanel.Core.Telemetry") ||
+                    typeFullName.StartsWith("ModularFlightPanel.Core.ExternalProbe") ||
+                    typeName == "ExternalProbeRegistry" ||
+                    typeName == "TelemetryProbeManager" ||
+                    typeName == "TelemetryTokenEngine")
+                {
+                    return true;
+                }
+
+                // C. KSP 原生物理与轨道核心：FlightGlobals, Planetarium, Vessel, Orbit, PartModule, Part
+                if (typeName == "FlightGlobals" || typeName == "Planetarium" ||
+                    typeName == "Vessel" || typeName == "Orbit" ||
+                    typeName == "CelestialBody" || typeName == "OrbitModel")
+                {
+                    return true;
+                }
+
+                // D. BaseFlightWidget 内置遥测与模板通道算子方法
+                if (IsOrInheritsOrImplements(containingType, "ModularFlightPanel.UI.BaseFlightWidget") ||
+                    IsOrInheritsOrImplements(containingType, "ModularFlightPanel.UI.Framework.BaseFlightWidget") ||
+                    containingType.Name == "BaseFlightWidget")
+                {
+                    string name = symbol.Name;
+                    if (name == "EvalNumeric" || name == "EvalToken" ||
+                        name.StartsWith("GetTemplateChannel", StringComparison.Ordinal) ||
+                        name == "TryGetPublishedChannel" ||
+                        name == "Telemetry")
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            // 检查属性或字段自身类型是否为 IFlightTelemetry
+            ITypeSymbol memberType = null;
+            if (symbol is IPropertySymbol prop) memberType = prop.Type;
+            else if (symbol is IFieldSymbol field) memberType = field.Type;
+
+            if (memberType != null)
+            {
+                if (IsOrInheritsOrImplements(memberType, "ModularFlightPanel.Core.IFlightTelemetry") ||
+                    memberType.Name == "IFlightTelemetry")
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 穿透性判定符号是否属于 CPU 软件光栅化内存写入 API（SPEC-002 红线）。
+        /// 直达 UnityEngine.Texture2D 的 SetPixels / SetPixels32 / SetPixelData / Apply。
+        /// </summary>
+        public static bool IsTextureRasterizerSymbol(ISymbol symbol)
+        {
+            if (symbol == null) return false;
+            ITypeSymbol containingType = symbol.ContainingType;
+            if (containingType == null) return false;
+
+            if (IsOrInheritsOrImplements(containingType, "UnityEngine.Texture2D") || containingType.Name == "Texture2D")
+            {
+                string name = symbol.Name;
+                if (name == "SetPixel" || name == "SetPixels" || name == "SetPixels32" ||
+                    name == "SetPixelData" || name == "Apply" || name == "LoadRawTextureData")
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// 精确判定符号是否属于场景查询黑名单（SPEC-007）：
         /// 包含 UnityEngine.GameObject.Find*, UnityEngine.Object.Find*, UnityEngine.Camera.main/current/allCameras 等
         /// </summary>
@@ -478,13 +682,14 @@ namespace ModularFlightPanel.UI.Auditing
             if (symbol == null) return false;
 
             string containingType = symbol.ContainingType?.ToDisplayString() ?? string.Empty;
+            string containingSimple = symbol.ContainingType?.Name ?? string.Empty;
 
-            // 1. UnityEngine.Camera 的黑名单属性
-            if (containingType == "UnityEngine.Camera")
+            // 1. UnityEngine.Camera 的黑名单属性与方法
+            if (containingType == "UnityEngine.Camera" || containingSimple == "Camera")
             {
                 if (symbol is IPropertySymbol prop)
                 {
-                    if (prop.Name == "main" || prop.Name == "current" || prop.Name == "allCameras")
+                    if (prop.Name == "main" || prop.Name == "current" || prop.Name == "allCameras" || prop.Name == "allCamerasCount")
                     {
                         return true;
                     }
@@ -496,22 +701,32 @@ namespace ModularFlightPanel.UI.Auditing
             }
 
             // 2. UnityEngine.GameObject 静态查询
-            if (containingType == "UnityEngine.GameObject")
+            if (containingType == "UnityEngine.GameObject" || containingSimple == "GameObject")
             {
                 if (symbol.Name.StartsWith("Find", StringComparison.Ordinal)) return true;
                 if (symbol.Name == "sceneCount" || symbol.Name == "GetRootGameObjects") return true;
             }
 
-            // 3. UnityEngine.Object 场景对象查询
-            if (containingType == "UnityEngine.Object")
+            // 3. UnityEngine.Object 场景对象查询 (含派生类的静态 FindObject* 方法，排除 Shader.Find 等资产加载)
+            if (containingType == "UnityEngine.Object" || containingSimple == "Object" ||
+                (symbol.ContainingType != null && InheritsFrom(symbol.ContainingType, "UnityEngine.Object")))
             {
-                if (symbol.Name.StartsWith("Find", StringComparison.Ordinal)) return true;
+                if (symbol.Name.StartsWith("FindObject", StringComparison.Ordinal) ||
+                    symbol.Name.StartsWith("FindFirstObject", StringComparison.Ordinal) ||
+                    symbol.Name.StartsWith("FindAnyObject", StringComparison.Ordinal)) return true;
             }
 
-            // 4. UnityEngine.SceneManagement.Scene
-            if (containingType == "UnityEngine.SceneManagement.Scene")
+            // 4. UnityEngine.SceneManagement.Scene / SceneManager
+            if (containingType == "UnityEngine.SceneManagement.Scene" || containingSimple == "Scene" ||
+                containingType == "UnityEngine.SceneManagement.SceneManager" || containingSimple == "SceneManager")
             {
-                if (symbol.Name == "GetRootGameObjects") return true;
+                if (symbol.Name == "GetRootGameObjects" || symbol.Name == "GetActiveScene") return true;
+            }
+
+            // 5. UnityEngine.Resources 场景对象全量扫描
+            if (containingType == "UnityEngine.Resources" || containingSimple == "Resources")
+            {
+                if (symbol.Name == "FindObjectsOfTypeAll") return true;
             }
 
             return false;
@@ -629,6 +844,65 @@ namespace ModularFlightPanel.UI.Auditing
             if (brokenCtx.ErrorCountForFile("Broken.cs") <= 0)
             {
                 failures.Add("ErrorCountForFile 未按文件归集编译错误 → 组件作用域零错误守卫会失效");
+            }
+
+            // ── 守卫 3：穿透性语义符号判定自证 (UI 图元 / 遥测 / 场景查询) ──
+            string penetrativeCode = @"
+                using System;
+                namespace ModularFlightPanel.Core { public interface IFlightTelemetry { double Speed { get; } } }
+                namespace TestNs
+                {
+                    public class UIHolder
+                    {
+                        public UnityEngine.UI.Text label;
+                        public ModularFlightPanel.Core.IFlightTelemetry telem;
+                        public void TestMethod()
+                        {
+                            label.text = ""hi"";
+                            var s = telem.Speed;
+                            UnityEngine.Object.FindObjectOfType<UnityEngine.Camera>();
+                        }
+                    }
+                }
+            ";
+            var pSources = new List<WidgetSourceFile>
+            {
+                new WidgetSourceFile { Name = "Penetrative.cs", Path = "Penetrative.cs", Text = penetrativeCode }
+            };
+            var pCtx = BuildCompilation(pSources);
+            var pModel = pCtx?.GetSemanticModel("Penetrative.cs");
+            if (pModel != null)
+            {
+                var pRoot = pModel.SyntaxTree.GetRoot();
+                var textAssign = pRoot.DescendantNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
+                if (textAssign != null)
+                {
+                    var textSymbol = pModel.GetSymbolInfo(textAssign.Left).Symbol;
+                    if (!IsUiDrawSymbol(textSymbol))
+                    {
+                        failures.Add("IsUiDrawSymbol 未能识别 UnityEngine.UI.Text.text 属性写入为 UI 绘制操作");
+                    }
+                }
+                var telemAccess = pRoot.DescendantNodes().OfType<MemberAccessExpressionSyntax>()
+                    .FirstOrDefault(ma => ma.Name.Identifier.Text == "Speed");
+                if (telemAccess != null)
+                {
+                    var telemSymbol = pModel.GetSymbolInfo(telemAccess).Symbol;
+                    if (!IsTelemetrySymbol(telemSymbol))
+                    {
+                        failures.Add("IsTelemetrySymbol 未能识别 IFlightTelemetry.Speed 为遥测符号");
+                    }
+                }
+                var findCall = pRoot.DescendantNodes().OfType<InvocationExpressionSyntax>().FirstOrDefault();
+                if (findCall != null)
+                {
+                    var symbolInfo = pModel.GetSymbolInfo(findCall);
+                    var findSymbol = symbolInfo.Symbol ?? symbolInfo.CandidateSymbols.FirstOrDefault();
+                    if (!IsSceneQuerySymbol(findSymbol))
+                    {
+                        failures.Add("IsSceneQuerySymbol 未能识别 UnityEngine.Object.FindObjectOfType 为场景查询");
+                    }
+                }
             }
 
             return failures;

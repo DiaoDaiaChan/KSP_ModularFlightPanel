@@ -167,6 +167,15 @@ namespace ModularFlightPanel.HeadlessValidator
 
         public static int Main(string[] args)
         {
+            // 语义降级逃生阀：门禁默认 fail-closed（语义不可用 = ERROR）。
+            // 只有在确实拿不到 KSP_x64_Data/Managed 的离机环境才允许显式放行，且必须让操作者看见这条告警。
+            if (args != null && args.Contains("--allow-semantic-degradation"))
+            {
+                WidgetSourceAudit.AllowSemanticDegradation = true;
+                PrintWarning("已启用语义降级逃生阀 (--allow-semantic-degradation)："
+                           + "本次门禁允许在无语义编译上下文下继续，全部 SPEC 判定强度低于 L4，结论不得当作权威。");
+            }
+
             if (args != null && (args.Contains("--audit-legacy") || args.Contains("--audit-modernization")))
             {
                 bool msbuildMode = args.Contains("--msbuild") || args.Contains("--quiet");
@@ -254,6 +263,12 @@ namespace ModularFlightPanel.HeadlessValidator
                     Console.WriteLine(ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.RenderConsoleReport(fieldReport, showAll));
                     return fieldReport.TotalAllLeaks == 0 ? 0 : 1;
                 }
+                else if (args[i] == "--audit-internal" || args[i] == "--audit-controls")
+                {
+                    Console.OutputEncoding = Encoding.UTF8;
+                    int errors = AuditInternalControlOverlaps(repoRoot);
+                    return errors == 0 ? 0 : 1;
+                }
                 else if (args[i] == "--self-test")
                 {
                     // 审计内核自检的独立入口：不加载布局、不做渲染、不做镜像校验，
@@ -264,7 +279,9 @@ namespace ModularFlightPanel.HeadlessValidator
                     var stI18nFailures = I18nSyntaxAuditor.SelfTest();
                     var stI18nDictFailures = I18nDictionaryValueAudit.SelfTest();
                     var stModFailures = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.SelfTest();
-                    int stTotalFailures = stRuleFailures.Count + stColorFailures.Count + stI18nFailures.Count + stI18nDictFailures.Count + stModFailures.Count;
+                    var stInternalFailures = ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.RunSelfTest();
+                    var stFieldFailures = ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.SelfTest();
+                    int stTotalFailures = stRuleFailures.Count + stColorFailures.Count + stI18nFailures.Count + stI18nDictFailures.Count + stModFailures.Count + stInternalFailures.Count + stFieldFailures.Count;
 
                     if (stTotalFailures == 0)
                     {
@@ -272,6 +289,8 @@ namespace ModularFlightPanel.HeadlessValidator
                                    + $" + 颜色字面量 {WidgetColorLiteralAudit.LastSelfTestCaseCount} 条"
                                    + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条"
                                    + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条"
+                                   + $" + 内部控件几何 {ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.LastSelfTestCaseCount} 条"
+                                   + $" + 字段穿透语义 {ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.LastSelfTestCaseCount} 条"
                                    + $" + 现代化网格闭包 {ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.LastSelfTestCaseCount} 条 全部符合预期。");
                     }
                     else
@@ -280,6 +299,8 @@ namespace ModularFlightPanel.HeadlessValidator
                         foreach (var f in stColorFailures) PrintError("颜色字面量自检失败: " + f);
                         foreach (var f in stI18nFailures) PrintError("I18n 语法树自检失败: " + f);
                         foreach (var f in stI18nDictFailures) PrintError("I18n 词典值自检失败: " + f);
+                        foreach (var f in stInternalFailures) PrintError("内部控件几何自检失败: " + f);
+                        foreach (var f in stFieldFailures) PrintError("字段穿透语义自检失败: " + f);
                         foreach (var f in stModFailures) PrintError("现代化网格闭包自检失败: " + f);
                     }
                     return stTotalFailures == 0 ? 0 : 1;
@@ -400,6 +421,11 @@ namespace ModularFlightPanel.HeadlessValidator
                 PrintWarning($"发现 {boundaryViolations} 处组件超出视口边界，请调整缩放或坐标。");
             }
 
+            // 组件内部控件与微控件空间几何重叠检测 (Internal Control Collision Engine)
+            Console.WriteLine($"\n  ├─ [内部几何] 组件内部微控件空间几何与重叠冲突审计 (Intra-Widget Internal Collision Engine)...");
+            int internalErrors = AuditInternalControlOverlaps(repoRoot);
+            overallErrors += internalErrors;
+
             // 3. 通配符 Token 引擎完整性审计
             Console.WriteLine($"\n[4/10] 遥测通配符语法与 Token 引擎静态审计...");
             int tokenErrors = AuditTokens(layout);
@@ -436,7 +462,7 @@ namespace ModularFlightPanel.HeadlessValidator
 
             // 6. 全量飞行仪表组件规范合法性校验 (Widget Specification Audit, MFP-SPEC-001..007)
             Console.WriteLine($"\n[6/10] 全量飞行仪表组件架构与代码规范合法性校验 (Architecture Compliance Audit)...");
-            int specErrors = ValidateWidgetSpecifications(repoRoot);
+            int specErrors = ValidateWidgetSpecifications(repoRoot, out int specWarningCount);
             overallErrors += specErrors;
 
             // 7. 审计内核自检：继承图规则 + 颜色字面量计数器 + I18n AST 语法树自检
@@ -445,13 +471,17 @@ namespace ModularFlightPanel.HeadlessValidator
             var colorFailures = WidgetColorLiteralAudit.SelfTest();
             var i18nSelfTestFailures = I18nSyntaxAuditor.SelfTest();
             var i18nDictSelfTestFailures = I18nDictionaryValueAudit.SelfTest();
-            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0 && i18nDictSelfTestFailures.Count == 0)
+            var internalSelfTestFailures = ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.RunSelfTest();
+            var fieldSelfTestFailures = ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.SelfTest();
+            if (ruleFailures.Count == 0 && colorFailures.Count == 0 && i18nSelfTestFailures.Count == 0 && i18nDictSelfTestFailures.Count == 0 && internalSelfTestFailures.Count == 0 && fieldSelfTestFailures.Count == 0)
             {
                 // 用例条数由内核回传真实计数：写死数字必然随代码漂移成假信息。
                 PrintSuccess($"审计内核自检通过: 规则自检 {WidgetSourceAudit.LastSelfTestCaseCount} 条对照用例"
                            + $" + 颜色字面量 {WidgetColorLiteralAudit.LastSelfTestCaseCount} 条边界用例"
                            + $" + I18n 语法树 {I18nSyntaxAuditor.LastSelfTestCaseCount} 条用例"
-                           + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条用例 全部符合预期。");
+                           + $" + I18n 词典值 {I18nDictionaryValueAudit.LastSelfTestCaseCount} 条用例"
+                           + $" + 内部控件几何 {ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.LastSelfTestCaseCount} 条用例"
+                           + $" + 字段穿透语义 {ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.LastSelfTestCaseCount} 条用例 全部符合预期。");
             }
             else
             {
@@ -459,7 +489,9 @@ namespace ModularFlightPanel.HeadlessValidator
                 foreach (var failure in colorFailures) PrintError($"颜色字面量自检失败: {failure}");
                 foreach (var failure in i18nSelfTestFailures) PrintError($"I18n 语法树自检失败: {failure}");
                 foreach (var failure in i18nDictSelfTestFailures) PrintError($"I18n 词典值自检失败: {failure}");
-                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count + i18nDictSelfTestFailures.Count;
+                foreach (var failure in internalSelfTestFailures) PrintError($"内部控件几何自检失败: {failure}");
+                foreach (var failure in fieldSelfTestFailures) PrintError($"字段穿透语义自检失败: {failure}");
+                overallErrors += ruleFailures.Count + colorFailures.Count + i18nSelfTestFailures.Count + i18nDictSelfTestFailures.Count + internalSelfTestFailures.Count + fieldSelfTestFailures.Count;
             }
 
             // 8. Unity 无头预览工程镜像一致性（清单 tools/unity_mirror.manifest 即合约）
@@ -480,12 +512,51 @@ namespace ModularFlightPanel.HeadlessValidator
             // 附加：出厂预设库空间几何扫描与健壮性验证
             ValidateAllPresets(repoRoot);
 
+            // 附加：字段穿透性语义审计 —— 【仅报告，不阻断门禁】
+            // 内部控件几何审计（[3/10]）已按阻断口径接入；字段穿透审计全库仍有存量裸字段泄漏
+            // （数以千计，属历史技术债），若按阻断口径接入会令门禁恒红、失去信号价值。
+            // 因此此处只做趋势观测：打印真实数字，不计入 overallErrors。
+            // 注意：这里刻意【不】调 RenderConsoleReport —— 那份完整大盘含逐组件字段明细与整改指南
+            // （约 2500 行），塞进主门禁只会淹没真正的失败信号；深挖请走旁路 `--audit-fields`。
+            // 口径与残留清单见 docs/SEMANTIC_COMPILATION_AUDIT.md §八（8.6/8.7/8.8）。
+            Console.WriteLine($"\n[附加] 字段穿透性语义审计 (Field Penetration Report, 仅报告不阻断)...");
+            try
+            {
+                var fieldReport = ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.Scan(repoRoot);
+                if (fieldReport.SemanticActive)
+                {
+                    Console.WriteLine($"  ├─ 扫描组件类: {fieldReport.TotalWidgetsScanned} 个 | 私有字段: {fieldReport.TotalFieldsScanned} 个"
+                                      + $" | 字段归类通道: 穿透性语义符号决议 {fieldReport.SemanticResolvedFieldCount}/{fieldReport.TotalFieldsScanned}");
+                }
+                else
+                {
+                    // 不静默：语义缺失时显式声明结论强度下降，避免"数字看着正常"掩盖通道退化。
+                    PrintWarning($"字段归类通道已退化为类型简名匹配（无语义编译上下文），"
+                               + $"语义决议字段 {fieldReport.SemanticResolvedFieldCount}/{fieldReport.TotalFieldsScanned}"
+                               + " —— 本次数字仅供参考，不参与门禁判定。");
+                }
+                Console.WriteLine($"  ├─ 已纳管: 托管缓存 {fieldReport.TotalManagedCaches} 处 | 视觉图元句柄 {fieldReport.TotalUiHandles} 处"
+                                  + $" | 零GC遥测快照 {fieldReport.TotalSnapshotStructs} 处 | 事件委托 {fieldReport.TotalEventCallbacks} 处"
+                                  + $"（纳管率 {fieldReport.OverallManagedRatio:F1}%）");
+                Console.WriteLine($"  ├─ 存量裸字段残留 (Total Leaks): {fieldReport.TotalAllLeaks} 处"
+                                  + $"（脏缓存 {fieldReport.TotalResidualLeaks} / 裸标量 {fieldReport.TotalScalarLeaks}）");
+                Console.WriteLine($"  └─ 本项属历史技术债，不计入门禁；完整大盘与整改指南: --audit-fields");
+            }
+            catch (Exception ex)
+            {
+                PrintWarning($"字段穿透审计跳过（非阻断项）: {ex.Message}");
+            }
+
             // 最终汇报
             Console.WriteLine($"\n-----------------------------------------------------------------------");
             if (overallErrors == 0)
             {
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine($"✔ [ALL CHECKS PASSED] 无头测试全部通过! UI 组件已彻底解耦，随时可用于游戏实装或分享!");
+                // 通过口径必须写明：否则绿灯会被读成"零问题"，而实际口径是
+                // "无 ERROR 级发现 + 无超出冻结棘轮基线的新增欠账"（详见 docs/SEMANTIC_COMPILATION_AUDIT.md §8.9.4）。
+                Console.WriteLine($"  通过口径: 无 ERROR 级发现 + 无超基线新增欠账；"
+                                + $"不等于零问题（未阻断的 WARNING 级发现 {specWarningCount} 条，见上方 [6/10] 清单）。");
                 Console.ResetColor();
                 return 0;
             }
@@ -510,11 +581,12 @@ namespace ModularFlightPanel.HeadlessValidator
         /// 现在发现层返回结构化状态：源码根不可解析 / 源码目录缺失 / 读取失败 / 未发现组件 一律按 ERROR 计入总数；
         /// 组件作用域由继承闭包按内容判定，不存在"移动目录即脱离审计"的盲区。
         /// </summary>
-        private static int ValidateWidgetSpecifications(string repoRoot)
+        private static int ValidateWidgetSpecifications(string repoRoot, out int warningCount)
         {
             var discovery = WidgetSourceAudit.Discover(repoRoot);
 
             int errors = 0;
+            warningCount = 0;
 
             if (!discovery.CanAuditSource)
             {
@@ -556,6 +628,7 @@ namespace ModularFlightPanel.HeadlessValidator
 
             var report = WidgetSourceAudit.Scan(discovery);
             errors += report.ErrorCount;
+            warningCount = report.WarningCount;
 
             for (int i = 0; i < report.Violations.Count; i++)
             {
@@ -567,7 +640,12 @@ namespace ModularFlightPanel.HeadlessValidator
 
             if (errors == 0)
             {
-                PrintSuccess($"规范合规审计 100% 通过 ({report.WidgetsScanned} 个组件类完全合规):");
+                // 措辞必须与同屏事实一致：紧接着下面就会列出 WARNING 级违规，
+                // 因此不能笼统写"100% 通过 / 完全合规"——准确表述是"ERROR 级 0 违规 + N 条 WARNING 未阻断"。
+                string warningNote = report.WarningCount > 0
+                    ? $"；另有 {report.WarningCount} 条 WARNING 级发现未阻断（见下）"
+                    : "；0 条 WARNING";
+                PrintSuccess($"规范合规审计通过: ERROR 级 0 违规 ({report.WidgetsScanned} 个组件类){warningNote}:");
                 Console.WriteLine($"  ├─ 继承契约: 全部组件统一继承 {WidgetSpecRules.ContractRootType}（含『声明元数据却未继承』的反向不变量）");
                 Console.WriteLine($"  ├─ 刷新率阶梯: 全部组件显式重写 RefreshTier 且取值来自 {WidgetSpecRules.TierEnumType} 枚举本身（取值集合从源码派生）");
                 Console.WriteLine($"  ├─ 主题与着色管道: 全部组件提供 ApplyTheme({WidgetSpecRules.ThemeParameterType}) 且 0 颜色字面量（零容忍）");
@@ -1000,10 +1078,23 @@ namespace ModularFlightPanel.HeadlessValidator
             }
             Console.WriteLine($"  ├─ 源码可汉化英文文案: {astReport.UntranslatedEnglishCount} 处存量 / 基线 "
                            + $"{I18nSyntaxAuditor.TotalRegisteredEnglishDebt} 处 (扫描 {astReport.ScannedFilesCount} 个源码文件，只降不升)");
-            if (astReport.HardcodedChineseCount > 0 || astReport.MissingKeyCount > 0)
+
+            // 7. 源码硬编码中文 / 未登记键名。
+            //    此前这一项**只打印不判定**：实测可任意新增中文硬编码而门禁仍全绿（§8.9.3）。
+            //    现按两类严重度收口 —— 未登记键名零容忍（界面会直接显示原始 KEY），中文硬编码按棘轮冻结（只降不升）。
+            foreach (var failure in I18nSyntaxAuditor.ValidateChineseBudget(astReport))
             {
-                Console.WriteLine($"  ├─ [存量] 源码硬编码中文 {astReport.HardcodedChineseCount} 处 / 未登记键名 {astReport.MissingKeyCount} 处 (明细: --i18n-ast)");
+                PrintError(failure);
+                errors++;
             }
+            foreach (var failure in I18nSyntaxAuditor.ValidateChineseRatchet())
+            {
+                PrintError("I18n 中文硬编码棘轮: " + failure);
+                errors++;
+            }
+            Console.WriteLine($"  ├─ 源码硬编码中文: {astReport.HardcodedChineseCount} 处存量 / 基线 "
+                           + $"{I18nSyntaxAuditor.TotalRegisteredChineseDebt} 处 (只降不升) | 未登记键名 {astReport.MissingKeyCount} 处 (零容忍)"
+                           + "  明细: --i18n-ast");
 
             if (errors == 0)
             {
@@ -1204,8 +1295,24 @@ namespace ModularFlightPanel.HeadlessValidator
                 Console.WriteLine($"            {{ \"{group.Key}\", {group.Count()} }},");
             }
 
+            // ── 3. 源码硬编码中文（棘轮基线，2026-09-29 新增；与英文表同工具同口径生成）──
+            var chineseGroups = report.Issues
+                .Where(i => i.IssueType == I18nIssueType.HardcodedChinese)
+                .GroupBy(i => Path.GetFileName(i.FilePath), StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+            Console.WriteLine("\n[I18nSyntaxAuditor.ChineseBaselineTable / ChineseRatchetCeilingTable]");
+            int chineseTotal = 0;
+            foreach (var group in chineseGroups)
+            {
+                chineseTotal += group.Count();
+                Console.WriteLine($"            {{ \"{group.Key}\", {group.Count()} }},");
+            }
+            Console.WriteLine($"            // 实测合计: 硬编码中文 {chineseTotal} 处 / 未登记键名 {report.MissingKeyCount} 处"
+                           + " (未登记键名为零容忍，不进基线表)");
+
             Console.WriteLine($"\n实测合计: 源码可汉化英文 {total} 处 / 词典未汉化 {unlocalizedEntries.Count} 条"
-                           + $" (当前登记基线 {I18nSyntaxAuditor.TotalRegisteredEnglishDebt} / {I18nDictionaryValueAudit.TotalRegisteredDebt})");
+                           + $" (当前登记基线 {I18nSyntaxAuditor.TotalRegisteredEnglishDebt} / {I18nDictionaryValueAudit.TotalRegisteredDebt})"
+                           + $" / 硬编码中文 {chineseTotal} 处 (当前登记基线 {I18nSyntaxAuditor.TotalRegisteredChineseDebt})");
             Console.WriteLine("===========================================================================");
             return 0;
         }
@@ -1248,18 +1355,14 @@ namespace ModularFlightPanel.HeadlessValidator
                 string fileName = Path.GetFileName(file);
                 string text = File.ReadAllText(file);
                 int count = WidgetColorLiteralAudit.CountOccurrences(text, discovery.SemanticContext?.GetSemanticModel(file));
-                int allowed = WidgetColorLiteralAudit.GetAllowedOccurrences(fileName);
                 total += count;
-                string flag = count > allowed ? "  <== 超出基线!" : (count < allowed ? "  <== 已低于基线，可下调" : string.Empty);
+                string flag = count > 0 ? "  <== 违反零容忍口径，必须清零后才能提交" : string.Empty;
                 Console.WriteLine($"            {{ \"{fileName}\", {count} }},{flag}");
             }
 
-            var ratchetFailures = WidgetColorLiteralAudit.ValidateRatchet();
-            for (int i = 0; i < ratchetFailures.Count; i++) PrintError("棘轮校验: " + ratchetFailures[i]);
-
-            Console.WriteLine($"\n实测合计: {total} 处 / 当前登记基线合计: {WidgetColorLiteralAudit.TotalRegisteredDebt} 处");
+            Console.WriteLine($"\n实测合计: {total} 处 (SPEC-006 全库零容忍，无棘轮基数可登记)");
             Console.WriteLine("===========================================================================");
-            return ratchetFailures.Count == 0 ? 0 : 1;
+            return total == 0 ? 0 : 1;
         }
 
         // ==========================================
@@ -1304,8 +1407,6 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "core.heading_arc" || widgetId == "nav.heading_arc" || widgetType == "heading_arc") return (202f, 82f);
             if (widgetId == "core.master_warning" || widgetType == "master_warning" || widgetType == "warning_annunciator" || widgetType == "annunciator" || widgetType == "cws") return (184f, 20f);
             if (widgetId == "core.bottom_controls" || widgetId == "core.ref_rcs_sas" || widgetId == "core.rcs_ref_sas" || widgetType == "bottom_controls" || widgetType == "bottom_bar_controls" || widgetType == "rcs_ref_sas" || widgetType == "ref_rcs_sas") return (184f, 22f);
-            if (widgetId == "core.orbital_info") return (320f, 36f);
-            if (widgetId == "core.ecam_status") return (380f, 32f);
             if (widgetId == "core.ecam_alert_log" || widgetId == "ecam.alert_log" || widgetId == "custom.ecam_alert_log" || widgetType == "ecam_alert_log" || widgetType == "alert_log" || widgetType == "eicas_messages" || widgetType == "warning_log" || widgetId.Contains("alert_log")) return (280f, 172f);
             if (widgetId == "core.sas_dial") return (96f, 116f);
             if (widgetId == "core.stage_control" || widgetType == "stage_control") return (204f, 186f);
@@ -1326,7 +1427,6 @@ namespace ModularFlightPanel.HeadlessValidator
             if (widgetId == "nav.reference_frame" || widgetId == "nav.ref_frame" || widgetId == "core.reference_frame" || widgetType == "reference_frame" || widgetType == "ref_frame") return (100f, 32f);
             if (widgetType == "arc_tape" || widgetId.StartsWith("arc_tape.") || widgetId.StartsWith("curved_tape.") || widgetType == "arc_speed_tape" || widgetType == "arc_altitude_tape" || widgetType == "arc_alt_tape" || widgetId.StartsWith("arc_alt.") || widgetId.StartsWith("arc_speed.") || widgetId == "custom.arc_speed_tape" || widgetId == "custom.arc_altitude_tape") return (120f, 240f);
             if (widgetType == "tape" || widgetId.StartsWith("tape.")) return (50f, 240f);
-            if (widgetType == "ecam_dial" || widgetId.StartsWith("ecam.")) return (110f, 110f);
             if (widgetType == "electrical" || widgetId.Contains("elec")) return (180f, 160f);
             if (widgetType == "rocket2d" || widgetId.Contains("rocket")) return (260f, 176f);
             if (widgetType == "life_support" || widgetId.Contains("life")) return (180f, 150f);
@@ -1423,6 +1523,40 @@ namespace ModularFlightPanel.HeadlessValidator
             }
 
             return violations;
+        }
+
+        private static int AuditInternalControlOverlaps(string repoRoot, WidgetDiscoveryResult discovery = null)
+        {
+            if (discovery == null) discovery = WidgetSourceAudit.Discover(repoRoot);
+            var report = ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.Scan(discovery);
+
+            Console.WriteLine($"  ├─ 内部控件几何拓扑扫描: 覆盖 {report.WidgetsScanned} 个具体组件类");
+            Console.WriteLine($"  ├─ 几何取值通道: 语义常量折叠命中 {ModularFlightPanel.UI.Auditing.WidgetInternalLayoutAudit.LastSemanticFoldedCount} 处"
+                              + " (SemanticModel.GetConstantValue，支持 BASE * 0.5f / const 引用等编译期可求值写法)");
+
+            if (report.Violations.Count == 0)
+            {
+                PrintSuccess($"0 内部几何重叠! 全部组件内部微控件与图元几何分离合理，无穿模重合。");
+                return 0;
+            }
+            else
+            {
+                int errors = 0;
+                foreach (var v in report.Violations)
+                {
+                    string msg = $"[组件内部重叠 {v.Severity}] '{v.FileName}': {v.Description}" + (v.LineNumber > 0 ? $" (L{v.LineNumber})" : string.Empty);
+                    if (v.Severity == "ERROR")
+                    {
+                        PrintError(msg);
+                        errors++;
+                    }
+                    else
+                    {
+                        PrintWarning(msg);
+                    }
+                }
+                return errors;
+            }
         }
 
         private static int AuditTokens(WidgetLayoutModel layout)
@@ -1956,8 +2090,6 @@ namespace ModularFlightPanel.HeadlessValidator
             {
                 "core.navball" => "NAVBALL",
                 "core.bottom_controls" => "RCS/SAS",
-                "core.orbital_info" => "ORBIT",
-                "core.ecam_status" => "ECAM_STAT",
                 "core.sas_dial" => "SAS",
                 "core.comm_signal" => "COMM",
                 "core.maneuver" => "MANEUVER",
@@ -1969,8 +2101,6 @@ namespace ModularFlightPanel.HeadlessValidator
                 "core.stage_dv" => "STAGE_DV",
                 "tape.speed" => "SPD",
                 "tape.altitude" => "ALT",
-                "ecam.gforce" => "G-FORCE",
-                "ecam.q" => "Q-AERO",
                 "custom.electrical" => "ELEC",
                 "custom.rocket" => "ROCKET",
                 "custom.life" => "LIFE",

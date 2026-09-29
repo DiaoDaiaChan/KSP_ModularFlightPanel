@@ -446,13 +446,65 @@ namespace ModularFlightPanel.UI.Widgets
         private string _cachedStrAscent;
         private string _cachedStrApproach;
         private string _cachedStrSuborbital;
+        private string _cachedNominalReadySub;
+        private string _cachedNominalSuborbSub;
+
+        // 告警单元主文案与副标高速缓存 (Zero-GC Alert String Cache)
+        private string _cachedAlertMinFuel;
+        private string _cachedAlertLowFuel;
+        private string _cachedAlertPullUp;
+        private string _cachedAlertSinkRate;
+        private string _cachedAlertExcessG;
+        private string _cachedAlertHighG;
+        private string _cachedAlertStall;
+        private string _cachedAlertStallWarn;
+        private string _cachedAlertUllage;
+        private string _cachedAlertUnstable;
+        private string _cachedAlertEcCrit;
+        private string _cachedAlertLowEc;
+        private string _cachedAlertO2Crit;
+        private string _cachedAlertLowO2;
+        private string _cachedAlertOverheat;
+        private string _cachedAlertHighTemp;
+        private string _cachedAlertNoComm;
+        private string _cachedAlertCommOff;
+        private string _cachedAlertLastIgn;
+        private string _cachedAlert1Left;
+        private string _cachedAlertNoIgn;
+        private string _cachedAlert0Left;
+        private string _cachedAlertWeakSig;
+        private string _cachedAlertEngFail;
+        private string _cachedAlertFail;
+        private string _cachedAlertImpact;
+        private string _cachedAlertTerrClose;
+        private string _cachedAlertGearUp;
+        private string _cachedAlertRateHigh;
+        private string _cachedAlertAoaLimit;
+        private string _cachedAlertGLimit;
+        private string _cachedAlertAvionOver;
+        private string _cachedAlertInterplanLck;
+        private string _cachedAlertDeep;
+        private string _cachedAlertAvionLock;
+        private string _cachedAlertLost;
+        private string _cachedAlertAvionDead;
+        private string _cachedAlertLoopOverheat;
+        private string _cachedAlertLoopTempHi;
+        private string _cachedAlertBattDrain;
+        private string _cachedAlertDischarging;
+        private string _cachedAlertSolarStorm;
+        private string _cachedAlertCme;
+        private string _cachedAlertRadDanger;
+        private string _cachedAlertHighRad;
+        private string _cachedAlertCo2Crit;
+        private string _cachedAlertHighCo2;
+        private string _cachedAlertCabinPress;
 
         private void InitCachedI18n()
         {
             _cachedStrCaution = I18n.Tr("WIDGET_ALERT_CAUTION", "注意");
-            _cachedStrWarning = I18n.Tr("WIDGET_ALERT_WARNING", "警告");
-            _cachedStrNorm = I18n.Tr("WIDGET_ALERT_NORM", "NORM");
-            _cachedStrArmed = I18n.Tr("WIDGET_ALERT_ARMED", "待发");
+            _cachedStrWarning = I18n.Tr("WIDGET_ALERT_WARNING", "危急");
+            _cachedStrNorm = I18n.Tr("WIDGET_ALERT_NORM", "正常");
+            _cachedStrArmed = I18n.Tr("WIDGET_ALERT_ARMED", "待命");
             _cachedStrNodeArmed = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命");
             _cachedStrReady = I18n.Tr("WIDGET_STATUS_READY", "发射就绪");
             _cachedStrEscape = I18n.Tr("WIDGET_STATUS_ESCAPE", "深空逃逸");
@@ -462,6 +514,57 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedStrAscent = I18n.Tr("WIDGET_STATUS_ASCENT", "大气爬升");
             _cachedStrApproach = I18n.Tr("WIDGET_STATUS_APPROACH", "降落进近");
             _cachedStrSuborbital = I18n.Tr("WIDGET_STATUS_SUBORBITAL", "亚轨道飞行");
+            _cachedNominalReadySub = I18n.Tr("WIDGET_ALERT_READY", "就绪");
+            _cachedNominalSuborbSub = I18n.Tr("WIDGET_STATUS_SUBORBITAL_SUB", "亚轨道");
+
+            _cachedAlertMinFuel = I18n.Tr("WIDGET_ALERT_MIN_FUEL", "燃料危急!");
+            _cachedAlertLowFuel = I18n.Tr("WIDGET_ALERT_LOW_FUEL", "低燃料");
+            _cachedAlertPullUp = I18n.Tr("WIDGET_ALERT_PULL_UP", "拉起飞船!");
+            _cachedAlertSinkRate = I18n.Tr("WIDGET_ALERT_SINK_RATE", "下沉速率大");
+            _cachedAlertExcessG = I18n.Tr("WIDGET_ALERT_HIGH_G", "过载超限!");
+            _cachedAlertHighG = I18n.Tr("WIDGET_ALERT_HIGH_G_CAUT", "高过载");
+            _cachedAlertStall = I18n.Tr("WIDGET_ALERT_STALL", "气动失速!");
+            _cachedAlertStallWarn = I18n.Tr("WIDGET_ALERT_STALL_WARN", "失速预警");
+            _cachedAlertUllage = I18n.Tr("WIDGET_ALERT_ULLAGE", "沉底不稳");
+            _cachedAlertUnstable = I18n.Tr("WIDGET_ALERT_UNSTABLE", "不稳定");
+            _cachedAlertEcCrit = I18n.Tr("WIDGET_ALERT_EC_CRIT", "电力告急!");
+            _cachedAlertLowEc = I18n.Tr("WIDGET_ALERT_LOW_EC", "电力不足");
+            _cachedAlertO2Crit = I18n.Tr("WIDGET_ALERT_O2_CRIT", "氧气告急!");
+            _cachedAlertLowO2 = I18n.Tr("WIDGET_ALERT_LOW_O2", "氧气不足");
+            _cachedAlertOverheat = I18n.Tr("WIDGET_ALERT_CRIT_TEMP", "极限超温!");
+            _cachedAlertHighTemp = I18n.Tr("WIDGET_ALERT_OVERHEAT", "超温注意");
+            _cachedAlertNoComm = I18n.Tr("WIDGET_SIG_CTRL_NO_COMM", "无通信");
+            _cachedAlertCommOff = I18n.Tr("WIDGET_ALERT_AFFIX_OFF", "断开");
+            _cachedAlertLastIgn = I18n.Tr("WIDGET_ALERT_LAST_IGN", "最后点火");
+            _cachedAlert1Left = I18n.Tr("WIDGET_ALERT_1_LEFT", "剩 1 次");
+            _cachedAlertNoIgn = I18n.Tr("WIDGET_ALERT_NO_IGN", "无点火次数");
+            _cachedAlert0Left = I18n.Tr("WIDGET_ALERT_0_LEFT", "剩 0 次");
+            _cachedAlertWeakSig = I18n.Tr("WIDGET_ALERT_WEAK_SIGNAL", "信号微弱");
+            _cachedAlertEngFail = I18n.Tr("WIDGET_ALERT_ENGINE_FAIL", "发动机故障失效");
+            _cachedAlertFail = I18n.Tr("WIDGET_ALERT_FAIL_AFFIX", "故障");
+            _cachedAlertImpact = I18n.Tr("WIDGET_ALERT_TERRAIN_IMPACT", "地表撞击告警");
+            _cachedAlertTerrClose = I18n.Tr("WIDGET_ALERT_TERR_CLOSE", "地形接近");
+            _cachedAlertGearUp = I18n.Tr("WIDGET_ALERT_GEAR_UP", "收起落架!");
+            _cachedAlertRateHigh = I18n.Tr("WIDGET_ALERT_RATE_HIGH", "进近过速");
+            _cachedAlertAoaLimit = I18n.Tr("WIDGET_ALERT_AOA_LIMIT", "攻角超限");
+            _cachedAlertGLimit = I18n.Tr("WIDGET_ALERT_G_LIMIT", "过载限制");
+            _cachedAlertAvionOver = I18n.Tr("WIDGET_ALERT_AVION_OVER", "航电超负荷!");
+            _cachedAlertInterplanLck = I18n.Tr("WIDGET_ALERT_INTERPLAN_LCK", "深空锁定");
+            _cachedAlertDeep = I18n.Tr("WIDGET_ALERT_DEEP", "深空");
+            _cachedAlertAvionLock = I18n.Tr("WIDGET_ALERT_AVIONICS_LOCK", "航电失控锁定");
+            _cachedAlertLost = I18n.Tr("WIDGET_ALERT_LOST", "丢失");
+            _cachedAlertAvionDead = I18n.Tr("WIDGET_ALERT_AVION_DEAD", "航电失效");
+            _cachedAlertLoopOverheat = I18n.Tr("WIDGET_ALERT_THERMAL_OVERHEAT", "热回路超温");
+            _cachedAlertLoopTempHi = I18n.Tr("WIDGET_ALERT_LOOP_TEMP_HI", "回路偏热");
+            _cachedAlertBattDrain = I18n.Tr("WIDGET_ALERT_BATT_DRAIN", "电池快速放电!");
+            _cachedAlertDischarging = I18n.Tr("WIDGET_ALERT_DISCHARGING", "持续放电");
+            _cachedAlertSolarStorm = I18n.Tr("WIDGET_ALERT_SOLAR_STORM", "太阳风暴冲击");
+            _cachedAlertCme = I18n.Tr("WIDGET_ALERT_CME", "日冕抛射");
+            _cachedAlertRadDanger = I18n.Tr("WIDGET_ALERT_RAD_DANGER", "辐射危险!");
+            _cachedAlertHighRad = I18n.Tr("WIDGET_ALERT_HIGH_RAD", "高辐射");
+            _cachedAlertCo2Crit = I18n.Tr("WIDGET_ALERT_CO2_CRIT", "CO2 极高!");
+            _cachedAlertHighCo2 = I18n.Tr("WIDGET_ALERT_HIGH_CO2", "CO2 偏高");
+            _cachedAlertCabinPress = I18n.Tr("WIDGET_ALERT_CABIN_PRESS", "座舱失压!");
         }
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -869,7 +972,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.ManeuverBurn,
                         I18n.Tr("WIDGET_ALERT_MANEUVER_BURN", "机动点火执行"),
-                        "BURN",
+                        I18n.Tr("WIDGET_ALERT_SUB_BURN", "点火"),
                         "▶",
                         "▶",
                         Mathf.Max(1.5f, _bannerDuration),
@@ -893,7 +996,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.AtmosphereEntry,
                         I18n.Tr("WIDGET_ALERT_ATMOSPHERE_ENTRY", "进入大气层"),
-                        "ENTRY",
+                        I18n.Tr("WIDGET_ALERT_SUB_ENTRY", "再入"),
                         "▼",
                         "▼",
                         Mathf.Max(1.8f, _bannerDuration),
@@ -941,7 +1044,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.Deorbit,
                         I18n.Tr("WIDGET_ALERT_DEORBIT", "飞船离轨"),
-                        "DEORB",
+                        I18n.Tr("WIDGET_ALERT_SUB_DEORB", "离轨"),
                         "▼",
                         "▼",
                         Mathf.Max(1.8f, _bannerDuration),
@@ -953,7 +1056,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.Escape,
                         I18n.Tr("WIDGET_ALERT_ESCAPE", "逃逸轨道建立"),
-                        "ESC",
+                        I18n.Tr("WIDGET_ALERT_SUB_ESC", "逃逸"),
                         "▲",
                         "▲",
                         Mathf.Max(1.8f, _bannerDuration),
@@ -977,7 +1080,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.SuicideBurn,
                         I18n.Tr("WIDGET_ALERT_SUICIDE_BURN", "动力减速着陆"),
-                        "BURN",
+                        I18n.Tr("WIDGET_ALERT_SUB_BURN", "点火"),
                         "▼",
                         "▼",
                         Mathf.Max(1.8f, _bannerDuration),
@@ -989,7 +1092,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.Blackout,
                         I18n.Tr("WIDGET_ALERT_BLACKOUT", "再入黑障"),
-                        "BLKOUT",
+                        I18n.Tr("WIDGET_ALERT_SUB_BLKOUT", "黑障"),
                         "⚡",
                         "⚡",
                         Mathf.Max(2.0f, _bannerDuration),
@@ -1001,7 +1104,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.Touchdown,
                         I18n.Tr("WIDGET_ALERT_TOUCHDOWN", "着陆接地成功"),
-                        "TOUCH",
+                        I18n.Tr("WIDGET_ALERT_SUB_TOUCH", "接地"),
                         "⚓",
                         "⚓",
                         Mathf.Max(2.0f, _bannerDuration),
@@ -1013,7 +1116,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.MaxQ,
                         I18n.Tr("WIDGET_ALERT_MAX_Q", "突破最大动压"),
-                        "MAX-Q",
+                        I18n.Tr("WIDGET_ALERT_SUB_MAX_Q", "极值动压"),
                         "⚡",
                         "⚡",
                         Mathf.Max(1.8f, _bannerDuration),
@@ -1025,7 +1128,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.V1Rotate,
                         I18n.Tr("WIDGET_ALERT_V1_ROTATE", "起飞决断速度"),
-                        "ROTATE",
+                        I18n.Tr("WIDGET_ALERT_SUB_ROTATE", "抬轮"),
                         "▲",
                         "▲",
                         Mathf.Max(1.5f, _bannerDuration),
@@ -1037,7 +1140,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.SolarStorm,
                         I18n.Tr("WIDGET_ALERT_SOLAR_STORM", "太阳风暴冲击"),
-                        "CME",
+                        I18n.Tr("WIDGET_ALERT_SUB_CME", "耀斑"),
                         "☢",
                         "☢",
                         Mathf.Max(2.2f, _bannerDuration),
@@ -1049,7 +1152,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.AvionicsLock,
                         I18n.Tr("WIDGET_ALERT_AVIONICS_LOCK", "航电失控锁定"),
-                        "LOCK",
+                        I18n.Tr("WIDGET_ALERT_SUB_LOCK", "锁定"),
                         "⚠",
                         "⚠",
                         Mathf.Max(2.5f, _bannerDuration),
@@ -1061,7 +1164,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.TerrainImpact,
                         I18n.Tr("WIDGET_ALERT_TERRAIN_IMPACT", "地表撞击告警"),
-                        "IMPACT",
+                        I18n.Tr("WIDGET_ALERT_SUB_IMPACT", "撞击"),
                         "▼",
                         "▼",
                         Mathf.Max(2.0f, _bannerDuration),
@@ -1073,7 +1176,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.DockingCapture,
                         I18n.Tr("WIDGET_ALERT_DOCKING_CAPTURE", "对接锁扣捕获"),
-                        "LATCH",
+                        I18n.Tr("WIDGET_ALERT_SUB_LATCH", "锁合"),
                         "⚓",
                         "⚓",
                         Mathf.Max(2.0f, _bannerDuration),
@@ -1085,7 +1188,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.EngineFailure,
                         I18n.Tr("WIDGET_ALERT_ENGINE_FAIL", "发动机故障失效"),
-                        "FAIL",
+                        I18n.Tr("WIDGET_ALERT_SUB_FAIL", "失效"),
                         "✕",
                         "✕",
                         Mathf.Max(2.5f, _bannerDuration),
@@ -1097,7 +1200,7 @@ namespace ModularFlightPanel.UI.Widgets
                     return new BannerEventItem(
                         BannerEventType.ThermalOverheat,
                         I18n.Tr("WIDGET_ALERT_THERMAL_OVERHEAT", "热回路超温"),
-                        "SCRAM",
+                        I18n.Tr("WIDGET_ALERT_SUB_SCRAM", "紧急停堆"),
                         "♨",
                         "♨",
                         Mathf.Max(2.0f, _bannerDuration),
@@ -1585,7 +1688,7 @@ namespace ModularFlightPanel.UI.Widgets
             else if (telem.FlightSituation == "LANDED" || telem.FlightSituation == "PRELAUNCH" || telem.FlightSituation == "SPLASHED")
             {
                 title = _cachedStrReady ?? (_cachedStrReady = I18n.Tr("WIDGET_STATUS_READY", "发射就绪"));
-                sub = "READY";
+                sub = _cachedNominalReadySub ?? (_cachedNominalReadySub = I18n.Tr("WIDGET_ALERT_READY", "就绪"));
                 icon = "●";
                 role = EventColorRole.Success;
             }
@@ -1659,7 +1762,7 @@ namespace ModularFlightPanel.UI.Widgets
             else
             {
                 title = _cachedStrSuborbital ?? (_cachedStrSuborbital = I18n.Tr("WIDGET_STATUS_SUBORBITAL", "亚轨道飞行"));
-                sub = "SUB-ORB";
+                sub = _cachedNominalSuborbSub ?? (_cachedNominalSuborbSub = I18n.Tr("WIDGET_STATUS_SUBORBITAL_SUB", "亚轨道"));
                 icon = "◈";
                 role = EventColorRole.AccentPrimary;
             }
@@ -1845,8 +1948,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     int propPct = Mathf.Clamp(Mathf.RoundToInt(prop * 100f), 0, 100);
                     string affix = CacheManager.FastPercent(propPct);
-                    if (prop <= warnThresh) warnOut.Add(new AlertItem("MIN FUEL!", affix, true));
-                    else cautOut.Add(new AlertItem("LOW FUEL", affix, false));
+                    if (prop <= warnThresh) warnOut.Add(new AlertItem(_cachedAlertMinFuel, affix, true));
+                    else cautOut.Add(new AlertItem(_cachedAlertLowFuel, affix, false));
                 }
             }
             else
@@ -1862,12 +1965,12 @@ namespace ModularFlightPanel.UI.Widgets
                 if (severePullUp)
                 {
                     int aglInt = Mathf.RoundToInt((float)telem.AltitudeAGL);
-                    warnOut.Add(new AlertItem("PULL UP!", FormatAglM(aglInt), true));
+                    warnOut.Add(new AlertItem(_cachedAlertPullUp, FormatAglM(aglInt), true));
                 }
                 else if (telem.AltitudeAGL > 10.0)
                 {
                     int vsiInt = Mathf.RoundToInt((float)telem.VerticalSpeed);
-                    cautOut.Add(new AlertItem("SINK RATE", FormatVsiMps(vsiInt), false));
+                    cautOut.Add(new AlertItem(_cachedAlertSinkRate, FormatVsiMps(vsiInt), false));
                 }
             }
 
@@ -1876,8 +1979,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (g > 6.0)
             {
                 string gStr = FormatGForce(g);
-                if (g > 9.0) warnOut.Add(new AlertItem("EXCESS G!", gStr, true));
-                else cautOut.Add(new AlertItem("HIGH G", gStr, false));
+                if (g > 9.0) warnOut.Add(new AlertItem(_cachedAlertExcessG, gStr, true));
+                else cautOut.Add(new AlertItem(_cachedAlertHighG, gStr, false));
             }
 
             // 4. 气动失速 (STALL / FAR)
@@ -1888,8 +1991,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     int stallPct = Mathf.Clamp(Mathf.RoundToInt((float)(farStall * 100.0)), 0, 100);
                     string stallStr = CacheManager.FastPercent(stallPct);
-                    if (farStall > 0.70) warnOut.Add(new AlertItem("STALL!", stallStr, true));
-                    else if (farStall > 0.30) cautOut.Add(new AlertItem("STALL WARN", stallStr, false));
+                    if (farStall > 0.70) warnOut.Add(new AlertItem(_cachedAlertStall, stallStr, true));
+                    else if (farStall > 0.30) cautOut.Add(new AlertItem(_cachedAlertStallWarn, stallStr, false));
                 }
             }
         }
@@ -1906,7 +2009,7 @@ namespace ModularFlightPanel.UI.Widgets
                     (rfUllage.IndexOf("Unstable", StringComparison.OrdinalIgnoreCase) >= 0 ||
                      rfUllage.IndexOf("Very", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
-                    cautOut.Add(new AlertItem("ULLAGE", "UNSTB", false));
+                    cautOut.Add(new AlertItem(_cachedAlertUllage, _cachedAlertUnstable, false));
                 }
             }
 
@@ -1916,8 +2019,8 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 int ecInt = Mathf.Clamp(Mathf.RoundToInt((float)ecPct), 0, 100);
                 string ecStr = CacheManager.FastPercent(ecInt);
-                if (ecPct <= 5.0) warnOut.Add(new AlertItem("EC CRIT!", ecStr, true));
-                else if (ecPct <= 20.0) cautOut.Add(new AlertItem("LOW EC", ecStr, false));
+                if (ecPct <= 5.0) warnOut.Add(new AlertItem(_cachedAlertEcCrit, ecStr, true));
+                else if (ecPct <= 20.0) cautOut.Add(new AlertItem(_cachedAlertLowEc, ecStr, false));
             }
 
             // 维生系统与氧气 (O2 / KERBALISM)
@@ -1928,8 +2031,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     int o2Int = Mathf.Clamp(Mathf.RoundToInt(o2), 0, 100);
                     string o2Str = CacheManager.FastPercent(o2Int);
-                    if (o2 <= 5.0f) warnOut.Add(new AlertItem("O2 CRIT!", o2Str, true));
-                    else if (o2 <= 20.0f) cautOut.Add(new AlertItem("LOW O2", o2Str, false));
+                    if (o2 <= 5.0f) warnOut.Add(new AlertItem(_cachedAlertO2Crit, o2Str, true));
+                    else if (o2 <= 20.0f) cautOut.Add(new AlertItem(_cachedAlertLowO2, o2Str, false));
                 }
             }
 
@@ -1939,14 +2042,14 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 int tempInt = Mathf.RoundToInt((float)cabinTemp);
                 string tempStr = FormatTemp(tempInt);
-                if (cabinTemp > 120.0) warnOut.Add(new AlertItem("OVERHEAT!", tempStr, true));
-                else cautOut.Add(new AlertItem("HIGH TEMP", tempStr, false));
+                if (cabinTemp > 120.0) warnOut.Add(new AlertItem(_cachedAlertOverheat, tempStr, true));
+                else cautOut.Add(new AlertItem(_cachedAlertHighTemp, tempStr, false));
             }
 
             // 通信网络断开 (NO COMM)
             if (!telem.IsConnected && (telem.CrewCount == 0 || telem.CrewCapacity == 0))
             {
-                cautOut.Add(new AlertItem("NO COMM", "OFF", false));
+                cautOut.Add(new AlertItem(_cachedAlertNoComm, _cachedAlertCommOff, false));
             }
 
             // RealFuels 剩余点火次数 (RF)
@@ -1955,11 +2058,11 @@ namespace ModularFlightPanel.UI.Widgets
                 double ignitions = ExternalProbeRegistry.ResolveNumeric("RF", "IGNITIONS");
                 if (ignitions == 1.0)
                 {
-                    cautOut.Add(new AlertItem("LAST IGN", "1 LEFT", false));
+                    cautOut.Add(new AlertItem(_cachedAlertLastIgn, _cachedAlert1Left, false));
                 }
                 else if (ignitions == 0.0 && telem.Throttle <= 0.001f)
                 {
-                    warnOut.Add(new AlertItem("NO IGNITIONS", "0 LEFT", true));
+                    warnOut.Add(new AlertItem(_cachedAlertNoIgn, _cachedAlert0Left, true));
                 }
             }
 
@@ -1970,7 +2073,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (!double.IsNaN(sig) && sig > 0.0001 && sig < 0.15)
                 {
                     int sigPct = Mathf.Clamp(Mathf.RoundToInt((float)sig * 100f), 0, 100);
-                    cautOut.Add(new AlertItem("WEAK SIGNAL", CacheManager.FastPercent(sigPct), false));
+                    cautOut.Add(new AlertItem(_cachedAlertWeakSig, CacheManager.FastPercent(sigPct), false));
                 }
             }
         }
@@ -1983,7 +2086,7 @@ namespace ModularFlightPanel.UI.Widgets
                 double tfFailed = ExternalProbeRegistry.ResolveNumeric("TF", "FAILED");
                 if (tfFailed > 0.5)
                 {
-                    warnOut.Add(new AlertItem("ENG FAIL!", "FAIL", true));
+                    warnOut.Add(new AlertItem(_cachedAlertEngFail, _cachedAlertFail, true));
                 }
             }
 
@@ -1995,8 +2098,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     int ttiSec = Mathf.RoundToInt((float)tti);
                     string ttiStr = FormatTtiSec(ttiSec);
-                    if (tti <= 30.0) warnOut.Add(new AlertItem("IMPACT!", ttiStr, true));
-                    else cautOut.Add(new AlertItem("TERR CLOSE", ttiStr, false));
+                    if (tti <= 30.0) warnOut.Add(new AlertItem(_cachedAlertImpact, ttiStr, true));
+                    else cautOut.Add(new AlertItem(_cachedAlertTerrClose, ttiStr, false));
                 }
             }
 
@@ -2007,7 +2110,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (gearDown < 0.5)
                 {
                     int aglInt = Mathf.RoundToInt((float)telem.AltitudeAGL);
-                    warnOut.Add(new AlertItem("GEAR UP!", FormatAglM(aglInt), true));
+                    warnOut.Add(new AlertItem(_cachedAlertGearUp, FormatAglM(aglInt), true));
                 }
             }
 
@@ -2020,7 +2123,7 @@ namespace ModularFlightPanel.UI.Widgets
                     double closureRate = ExternalProbeRegistry.ResolveNumeric("DOCK", "CLOSURERATE");
                     if (!double.IsNaN(closureRate) && closureRate > 2.0)
                     {
-                        cautOut.Add(new AlertItem("RATE HIGH", FormatClosureRate(closureRate), false));
+                        cautOut.Add(new AlertItem(_cachedAlertRateHigh, FormatClosureRate(closureRate), false));
                     }
                 }
             }
@@ -2035,7 +2138,7 @@ namespace ModularFlightPanel.UI.Widgets
                     double curAoA = ExternalProbeRegistry.ResolveNumeric("AA", "AOA");
                     if (maxAoA > 1.0 && Math.Abs(curAoA) >= maxAoA * 0.92)
                     {
-                        cautOut.Add(new AlertItem("AOA LIMIT", CacheManager.FastDegree(Mathf.RoundToInt((float)Math.Abs(curAoA))), false));
+                        cautOut.Add(new AlertItem(_cachedAlertAoaLimit, CacheManager.FastDegree(Mathf.RoundToInt((float)Math.Abs(curAoA))), false));
                     }
                 }
 
@@ -2045,7 +2148,7 @@ namespace ModularFlightPanel.UI.Widgets
                     double maxG = ExternalProbeRegistry.ResolveNumeric("AA", "MAX_G");
                     if (maxG > 1.0 && telem.GForce >= maxG * 0.90)
                     {
-                        cautOut.Add(new AlertItem("G LIMIT", FormatGForce(telem.GForce), false));
+                        cautOut.Add(new AlertItem(_cachedAlertGLimit, FormatGForce(telem.GForce), false));
                     }
                 }
             }
@@ -2063,19 +2166,19 @@ namespace ModularFlightPanel.UI.Widgets
                     if (massMargin < -0.01)
                     {
                         double vMass = ExternalProbeRegistry.ResolveNumeric("RP1", "VESSEL_MASS");
-                        warnOut.Add(new AlertItem("AVION OVER!", FormatVMass(vMass), true));
+                        warnOut.Add(new AlertItem(_cachedAlertAvionOver, FormatVMass(vMass), true));
                     }
                     else
                     {
                         double ipLock = ExternalProbeRegistry.ResolveNumeric("RP1", "INTERPLANETARY_LOCKED");
-                        if (ipLock > 0.5) warnOut.Add(new AlertItem("INTERPLAN LCK", "DEEP", true));
-                        else warnOut.Add(new AlertItem("AVION LOCK!", "LOST", true));
+                        if (ipLock > 0.5) warnOut.Add(new AlertItem(_cachedAlertInterplanLck, _cachedAlertDeep, true));
+                        else warnOut.Add(new AlertItem(_cachedAlertAvionLock, _cachedAlertLost, true));
                     }
                 }
                 double deadAvionics = ExternalProbeRegistry.ResolveNumeric("RP1", "DEAD_COUNT");
                 if (deadAvionics > 0.5)
                 {
-                    cautOut.Add(new AlertItem("AVION DEAD", CacheManager.FastInt(Mathf.RoundToInt((float)deadAvionics)), false));
+                    cautOut.Add(new AlertItem(_cachedAlertAvionDead, CacheManager.FastInt(Mathf.RoundToInt((float)deadAvionics)), false));
                 }
             }
 
@@ -2087,8 +2190,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     int ohInt = Mathf.Clamp(Mathf.RoundToInt((float)overheatRatio), 0, 100);
                     string ohStr = CacheManager.FastPercent(ohInt);
-                    if (overheatRatio >= 100.0) warnOut.Add(new AlertItem("LOOP OVERHEAT!", ohStr, true));
-                    else if (overheatRatio >= 85.0) cautOut.Add(new AlertItem("LOOP TEMP HI", ohStr, false));
+                    if (overheatRatio >= 100.0) warnOut.Add(new AlertItem(_cachedAlertLoopOverheat, ohStr, true));
+                    else if (overheatRatio >= 85.0) cautOut.Add(new AlertItem(_cachedAlertLoopTempHi, ohStr, false));
                 }
             }
 
@@ -2101,8 +2204,8 @@ namespace ModularFlightPanel.UI.Widgets
                     double timeSec = ExternalProbeRegistry.ResolveNumeric("DBS", "DEPLETIONSECONDS");
                     if (!double.IsNaN(timeSec) && timeSec > 0.0)
                     {
-                        if (timeSec <= 120.0) warnOut.Add(new AlertItem("BATT DRAIN!", FormatDbsSec(Mathf.RoundToInt((float)timeSec)), true));
-                        else if (timeSec <= 300.0) cautOut.Add(new AlertItem("DISCHARGING", FormatDbsMin(Mathf.RoundToInt((float)(timeSec / 60.0))), false));
+                        if (timeSec <= 120.0) warnOut.Add(new AlertItem(_cachedAlertBattDrain, FormatDbsSec(Mathf.RoundToInt((float)timeSec)), true));
+                        else if (timeSec <= 300.0) cautOut.Add(new AlertItem(_cachedAlertDischarging, FormatDbsMin(Mathf.RoundToInt((float)(timeSec / 60.0))), false));
                     }
                 }
             }
@@ -2111,14 +2214,14 @@ namespace ModularFlightPanel.UI.Widgets
             if (ExternalProbeRegistry.HasKerbalism)
             {
                 double inStorm = ExternalProbeRegistry.ResolveNumeric("KLSM", "INSTORM");
-                if (inStorm > 0.5) warnOut.Add(new AlertItem("SOLAR STORM!", "CME", true));
+                if (inStorm > 0.5) warnOut.Add(new AlertItem(_cachedAlertSolarStorm, _cachedAlertCme, true));
 
                 double habRad = ExternalProbeRegistry.ResolveNumeric("KLSM", "HABITATRADIATION");
                 if (!double.IsNaN(habRad) && habRad > 0.05)
                 {
                     string radStr = FormatRadiation(habRad);
-                    if (habRad > 0.20) warnOut.Add(new AlertItem("RAD DANGER!", radStr, true));
-                    else cautOut.Add(new AlertItem("HIGH RAD", radStr, false));
+                    if (habRad > 0.20) warnOut.Add(new AlertItem(_cachedAlertRadDanger, radStr, true));
+                    else cautOut.Add(new AlertItem(_cachedAlertHighRad, radStr, false));
                 }
 
                 if (telem.CrewCapacity > 0 && telem.CrewCount > 0)
@@ -2128,14 +2231,14 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         int co2Pct = Mathf.Clamp(Mathf.RoundToInt((float)(poisoning * 100.0)), 0, 100);
                         string co2Str = CacheManager.FastPercent(co2Pct);
-                        if (poisoning > 0.70) warnOut.Add(new AlertItem("CO2 CRIT!", co2Str, true));
-                        else cautOut.Add(new AlertItem("HIGH CO2", co2Str, false));
+                        if (poisoning > 0.70) warnOut.Add(new AlertItem(_cachedAlertCo2Crit, co2Str, true));
+                        else cautOut.Add(new AlertItem(_cachedAlertHighCo2, co2Str, false));
                     }
 
                     double habPress = ExternalProbeRegistry.ResolveNumeric("KLSM", "PRESSURE");
                     if (!double.IsNaN(habPress) && habPress > 0.001 && habPress < 0.40)
                     {
-                        warnOut.Add(new AlertItem("CABIN PRESS!", FormatPressure(habPress), true));
+                        warnOut.Add(new AlertItem(_cachedAlertCabinPress, FormatPressure(habPress), true));
                     }
                 }
             }
@@ -2201,8 +2304,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _cautWasDeadFront = true;
                     // 暗态待命 (Dead-Front Nominal)
-                    _cautTitle.SetTextSafe(_cachedStrCaution ?? "CAUTION");
-                    _cautSub.SetTextSafe(_cachedStrNorm ?? "NORM");
+                    _cautTitle.SetTextSafe(_cachedStrCaution ?? (_cachedStrCaution = I18n.Tr("WIDGET_ALERT_CAUTION", "注意")));
+                    _cautSub.SetTextSafe(_cachedStrNorm ?? (_cachedStrNorm = I18n.Tr("WIDGET_ALERT_NORM", "正常")));
                     _cautIcon.SetTextSafe("●");
 
                     _cautBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
@@ -2260,8 +2363,8 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _warnWasDeadFront = true;
                     // 暗态待命 (Dead-Front Nominal)
-                    _warnTitle.SetTextSafe(_cachedStrWarning ?? "WARNING");
-                    _warnSub.SetTextSafe(_cachedStrArmed ?? "ARMED");
+                    _warnTitle.SetTextSafe(_cachedStrWarning ?? (_cachedStrWarning = I18n.Tr("WIDGET_ALERT_WARNING", "危急")));
+                    _warnSub.SetTextSafe(_cachedStrArmed ?? (_cachedStrArmed = I18n.Tr("WIDGET_ALERT_ARMED", "待命")));
                     _warnIcon.SetTextSafe("●");
 
                     _warnBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
@@ -2278,6 +2381,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnLanguageChanged()
         {
+            InitCachedI18n();
             if (!_customSepExplicit) _sepTitleTemplate = I18n.Tr("WIDGET_ALERT_SEPARATION", "分  离");
             if (!_customEngExplicit) _engTitleTemplate = I18n.Tr("WIDGET_ALERT_ENGINE_START", "引擎启动");
             _cautWasDeadFront = false;

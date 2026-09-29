@@ -31,6 +31,12 @@ namespace ModularFlightPanel.UI.Auditing
         public FieldKind Kind { get; set; }
         public bool IsReadOnly { get; set; }
         public bool IsConst { get; set; }
+
+        /// <summary>语义符号给出的全限定类型名（无语义上下文时为 null）——证明类型决议真的走了 Roslyn 符号，而非字符串</summary>
+        public string SemanticTypeFullName { get; set; }
+
+        /// <summary>该字段的归类是否由 IFieldSymbol 语义决议给出；false = 已降级到旧的类型简名匹配</summary>
+        public bool ResolvedBySymbol { get; set; }
     }
 
     public class WidgetFieldPenetrationReport
@@ -44,6 +50,18 @@ namespace ModularFlightPanel.UI.Auditing
         public int TotalConfigs { get; set; }
         public int TotalResidualLeaks { get; set; }
         public int TotalScalarLeaks { get; set; }
+
+        /// <summary>
+        /// 本次扫描是否持有语义编译上下文。
+        /// false = 全部字段归类已退化为类型简名匹配，结论强度低于 L4，报告必须显式标注而不是照常给数。
+        /// </summary>
+        public bool SemanticActive { get; set; }
+
+        /// <summary>
+        /// 由 IFieldSymbol 语义决议完成归类的字段数（覆盖率计数）。
+        /// 为 0 即代表"穿透性符号判定"这一语义点位已被拆除，本审计退化回字符串流派。
+        /// </summary>
+        public int SemanticResolvedFieldCount { get; set; }
 
         public int TotalAllLeaks => TotalResidualLeaks + TotalScalarLeaks;
 
@@ -174,6 +192,194 @@ namespace ModularFlightPanel.UI.Auditing
             return FieldKind.RawScalarLeak;
         }
 
+        // ==========================================================================================
+        // 穿透性语义分类 (Roslyn IFieldSymbol / ITypeSymbol)
+        //
+        // 与上面的 ClassifyField 相比，本通道把"字段是什么类型"从字符串猜测升级为符号决议：
+        //   · 类型别名 (using GO = UnityEngine.GameObject;) 不再伪装成裸标量；
+        //   · 自定义派生类 (MyGauge : UnityEngine.UI.Image) 沿 BaseType 链穿透到 Unity 底层父类；
+        //   · 自定义委托沿 BaseType 链直达 System.MulticastDelegate；
+        //   · 泛型 / 可空 / 数组包装统一解包后再判定。
+        // 命名约定层 (IsUiHandleName) 仍然保留，但它现在作用在**符号给出的真实类型名**上，
+        // 而不是源码文本，因此命名混淆与跨命名空间同名类型都无法再绕过判定。
+        // ==========================================================================================
+
+        /// <summary>穿透探针：沿继承链直达这些 Unity 底层父类/接口即判定为视觉图元句柄</summary>
+        private static readonly string[] UiBaseTypeProbes =
+        {
+            "UnityEngine.UI.Graphic",
+            "UnityEngine.UI.Selectable",
+            "UnityEngine.RectTransform",
+            "UnityEngine.Transform",
+            "UnityEngine.GameObject",
+            "UnityEngine.Canvas",
+            "UnityEngine.CanvasGroup",
+            "UnityEngine.Material",
+            "UnityEngine.Sprite",
+            "UnityEngine.Font",
+            "UnityEngine.Camera",
+            "UnityEngine.Texture",
+            "UnityEngine.Texture2D",
+            "UnityEngine.RenderTexture",
+            "UnityEngine.Shader",
+            "UnityEngine.UI.ScrollRect",
+            "UnityEngine.UI.Slider",
+            "UnityEngine.UI.Toggle",
+            "UnityEngine.UI.Dropdown",
+            "UnityEngine.UI.InputField",
+            "UnityEngine.UI.Outline",
+            "UnityEngine.UI.Shadow",
+            "UnityEngine.UI.ContentSizeFitter",
+            "UnityEngine.UI.LayoutElement",
+            "UnityEngine.UI.HorizontalLayoutGroup",
+            "UnityEngine.UI.VerticalLayoutGroup",
+            "UnityEngine.UI.GridLayoutGroup"
+        };
+
+        /// <summary>剥离数组与 Nullable&lt;T&gt; 包装，得到参与归类判定的元素类型</summary>
+        private static ITypeSymbol UnwrapToElementType(ITypeSymbol type)
+        {
+            while (type != null)
+            {
+                if (type is IArrayTypeSymbol array)
+                {
+                    type = array.ElementType;
+                    continue;
+                }
+                if (type is INamedTypeSymbol named &&
+                    named.Arity == 1 &&
+                    named.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T)
+                {
+                    type = named.TypeArguments[0];
+                    continue;
+                }
+                return type;
+            }
+            return null;
+        }
+
+        /// <summary>是否为全托管缓存类型（Cached&lt;T&gt; / CachedFloat / DirtyField&lt;T&gt; …），按泛型原始定义名判定</summary>
+        private static bool IsManagedCacheType(ITypeSymbol type)
+        {
+            if (!(type is INamedTypeSymbol named)) return false;
+            INamedTypeSymbol definition = named.OriginalDefinition ?? named;
+            return WidgetSpecRules.IsValidCacheType(definition.Name);
+        }
+
+        /// <summary>命名约定层：项目内自定义句柄/包装类型（无语义基类可穿透时的兜底层）</summary>
+        private static bool IsUiHandleName(string baseType)
+        {
+            if (string.IsNullOrEmpty(baseType)) return false;
+            return KnownUiTypeNames.Contains(baseType) ||
+                   baseType.EndsWith("UI", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Widget", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Graphic", StringComparison.Ordinal) ||
+                   baseType.EndsWith("View", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Feedback", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Item", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Proxy", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Transform", StringComparison.Ordinal) ||
+                   baseType == "ApplicationLauncherButton";
+        }
+
+        /// <summary>语义判定：字段类型是否（直接或间接）是 Unity 图元/几何/材质句柄</summary>
+        private static bool IsUiHandleType(ITypeSymbol type, string simpleName)
+        {
+            if (type != null)
+            {
+                for (int i = 0; i < UiBaseTypeProbes.Length; i++)
+                {
+                    if (SemanticCompilationProvider.IsOrInheritsOrImplements(type, UiBaseTypeProbes[i])) return true;
+                }
+            }
+            return IsUiHandleName(simpleName);
+        }
+
+        /// <summary>语义判定：字段类型是否为委托（沿 BaseType 直达 System.MulticastDelegate）</summary>
+        private static bool IsDelegateType(ITypeSymbol type, string simpleName)
+        {
+            if (type != null && SemanticCompilationProvider.IsOrInheritsFrom(type, "System.MulticastDelegate"))
+            {
+                return true;
+            }
+            if (string.IsNullOrEmpty(simpleName)) return false;
+            return simpleName.StartsWith("Action", StringComparison.Ordinal) ||
+                   simpleName.StartsWith("Func", StringComparison.Ordinal) ||
+                   simpleName.StartsWith("UnityAction", StringComparison.Ordinal) ||
+                   simpleName.StartsWith("UnityEvent", StringComparison.Ordinal);
+        }
+
+        /// <summary>语义判定：字段类型是否为遥测契约 / 零 GC 快照结构体</summary>
+        private static bool IsTelemetrySnapshotType(ITypeSymbol type, string simpleName)
+        {
+            if (type != null &&
+                SemanticCompilationProvider.IsOrInheritsOrImplements(type, "IFlightTelemetry"))
+            {
+                return true;
+            }
+            return !string.IsNullOrEmpty(simpleName) && simpleName.EndsWith("Snapshot", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// 穿透性字段归类：优先使用 Roslyn 语义符号直达 Unity 底层父类与 C# 底层基类。
+        /// 判定顺序与 ClassifyField 保持一致，保证分类口径可比。
+        /// </summary>
+        public static FieldKind ClassifyFieldBySymbol(IFieldSymbol fieldSymbol, string fieldName, bool isConst, bool isReadOnly)
+        {
+            if (isConst) return FieldKind.ConfigToken;
+
+            ITypeSymbol type = UnwrapToElementType(fieldSymbol?.Type);
+            string baseType = type?.Name ?? string.Empty;
+
+            // 1. 全托管缓存
+            if (IsManagedCacheType(type)) return FieldKind.ManagedCache;
+
+            // 2. 视觉 UI 句柄 (语义穿透 Unity 底层父类)
+            if (IsUiHandleType(type, baseType)) return FieldKind.UiHandle;
+
+            // 3. 事件委托与回调 (语义穿透 System.MulticastDelegate)
+            if (IsDelegateType(type, baseType)) return FieldKind.EventCallback;
+
+            // 4. 零 GC 遥测快照结构体
+            if (IsTelemetrySnapshotType(type, baseType)) return FieldKind.SnapshotStruct;
+
+            // 5. 主题与样式配置
+            if (baseType == "ThemeConfig" || baseType == "WidgetConfig" ||
+                baseType.EndsWith("Role", StringComparison.Ordinal) ||
+                baseType.EndsWith("Palette", StringComparison.Ordinal) ||
+                baseType == "LineWeight")
+            {
+                return FieldKind.ConfigTheme;
+            }
+
+            // 6. 静态 Token / 模板配置 / Shader Property ID
+            if (isReadOnly && (fieldName.EndsWith("Token", StringComparison.OrdinalIgnoreCase) ||
+                               fieldName.EndsWith("Template", StringComparison.OrdinalIgnoreCase) ||
+                               fieldName.EndsWith("Prefix", StringComparison.OrdinalIgnoreCase) ||
+                               fieldName.EndsWith("Format", StringComparison.OrdinalIgnoreCase) ||
+                               fieldName.EndsWith("Key", StringComparison.OrdinalIgnoreCase) ||
+                               fieldName.EndsWith("Aliases", StringComparison.OrdinalIgnoreCase) ||
+                               fieldName.StartsWith("_Prop", StringComparison.Ordinal) ||
+                               fieldName.StartsWith("Prop", StringComparison.Ordinal)))
+            {
+                return FieldKind.ConfigToken;
+            }
+
+            // 7. 伪装为裸私有变量的残留脏缓存 (Residual Cache Leaks)
+            if (WidgetSpecRules.IsResidualDirtyField(fieldName) ||
+                fieldName.StartsWith("_cached", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_pending", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_old", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_has", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_showing", StringComparison.OrdinalIgnoreCase))
+            {
+                return FieldKind.ResidualDirtyField;
+            }
+
+            // 8. 其它所有未纳管的动态状态标量
+            return FieldKind.RawScalarLeak;
+        }
+
         public static string GetFieldRemediation(string typeName, string fieldName, FieldKind kind)
         {
             string baseType = UnwrapType(typeName);
@@ -208,10 +414,52 @@ namespace ModularFlightPanel.UI.Auditing
             }
         }
 
+        /// <summary>
+        /// 门禁 / CLI 入口：先经发现层构建语义编译上下文，再执行穿透扫描。
+        /// </summary>
         public static WidgetFieldPenetrationReport Scan(string repoRoot)
         {
-            var report = new WidgetFieldPenetrationReport();
-            string widgetsDir = Path.Combine(repoRoot, "src", "ModularFlightPanel", "UI", "Widgets");
+            if (string.IsNullOrEmpty(repoRoot))
+            {
+                repoRoot = WidgetSourceAudit.ResolveRepositoryRoot();
+            }
+
+            SemanticCompilationContext semanticContext = null;
+            WidgetDiscoveryResult discovery = WidgetSourceAudit.Discover(repoRoot);
+            if (discovery != null)
+            {
+                semanticContext = discovery.SemanticContext ?? discovery.Graph?.SemanticContext;
+            }
+
+            return ScanCore(repoRoot, semanticContext);
+        }
+
+        /// <summary>
+        /// 语义通道入口：直接复用调用方已构建的语义编译上下文，不做二次编译。
+        /// </summary>
+        public static WidgetFieldPenetrationReport Scan(WidgetDiscoveryResult discovery)
+        {
+            SemanticCompilationContext semanticContext =
+                discovery?.SemanticContext ?? discovery?.Graph?.SemanticContext;
+            return ScanCore(WidgetSourceAudit.ResolveRepositoryRoot(), semanticContext);
+        }
+
+        /// <summary>
+        /// 穿透性字段扫描核心。
+        ///
+        /// 语义可用时：字段类型一律由 IFieldSymbol.Type 决议，再沿 BaseType / AllInterfaces 穿透到
+        /// Unity 底层父类与 System 底层基类，彻底摆脱"类型简名字符串猜测"。
+        /// 语义不可用时：才降级到 RoslynAstHelper.GetSimpleTypeName 的字面量匹配，
+        /// 并在报告里把 SemanticActive 置 false（结论强度降级必须可感知，不得静默给数）。
+        /// </summary>
+        private static WidgetFieldPenetrationReport ScanCore(string repoRoot, SemanticCompilationContext semanticContext)
+        {
+            var report = new WidgetFieldPenetrationReport
+            {
+                SemanticActive = semanticContext != null
+            };
+
+            string widgetsDir = Path.Combine(repoRoot ?? string.Empty, "src", "ModularFlightPanel", "UI", "Widgets");
             if (!Directory.Exists(widgetsDir)) return report;
 
             var files = Directory.GetFiles(widgetsDir, "*.cs", SearchOption.AllDirectories)
@@ -221,8 +469,15 @@ namespace ModularFlightPanel.UI.Auditing
             foreach (var filePath in files)
             {
                 string fileName = Path.GetFileName(filePath);
-                string text = File.ReadAllText(filePath);
-                var root = RoslynAstHelper.ParseRoot(text);
+
+                // 语义树优先：必须复用语义编译里的同一棵解析树（共用 RoslynAstHelper.UnifiedParseOptions），
+                // 否则受 #if KSP_RUNTIME 保护的字段会与门禁其余判定看到不同的代码集。
+                SemanticModel model = semanticContext?.GetSemanticModel(filePath)
+                    ?? semanticContext?.GetSemanticModel(fileName);
+                CompilationUnitSyntax root = model != null
+                    ? model.SyntaxTree.GetRoot() as CompilationUnitSyntax
+                    : RoslynAstHelper.ParseRoot(File.ReadAllText(filePath));
+                if (root == null) continue;
 
                 foreach (var classDecl in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
@@ -240,13 +495,22 @@ namespace ModularFlightPanel.UI.Auditing
                             string fieldName = v.Identifier.Text;
                             int line = RoslynAstHelper.GetLine(v);
 
-                            FieldKind kind = ClassifyField(typeName, fieldName, isConst, isReadOnly);
+                            IFieldSymbol fieldSymbol = model?.GetDeclaredSymbol(v) as IFieldSymbol;
+
+                            FieldKind kind = fieldSymbol != null
+                                ? ClassifyFieldBySymbol(fieldSymbol, fieldName, isConst, isReadOnly)
+                                : ClassifyField(typeName, fieldName, isConst, isReadOnly);
+
+                            if (fieldSymbol != null) report.SemanticResolvedFieldCount++;
+
                             var info = new AuditedFieldInfo
                             {
                                 FileName = fileName,
                                 ClassName = className,
                                 FieldName = fieldName,
                                 TypeName = typeName,
+                                SemanticTypeFullName = fieldSymbol?.Type?.ToDisplayString(),
+                                ResolvedBySymbol = fieldSymbol != null,
                                 Line = line,
                                 Kind = kind,
                                 IsReadOnly = isReadOnly,
@@ -286,6 +550,133 @@ namespace ModularFlightPanel.UI.Auditing
             return report;
         }
 
+        /// <summary>
+        /// 语义通道自证（防"语义点位被拆除而门禁依然全绿"）。
+        ///
+        /// 合成用例刻意只用**字符串口径一定判错**的写法：
+        ///   1. 类型别名 `using GO = UnityEngine.GameObject;` → 语法简名是 "GO"，必落裸标量；
+        ///   2. 自定义派生类 `MyCustomReadout : UnityEngine.UI.Image` → 语法简名没有任何 Unity 后缀；
+        ///   3. 自定义委托 `CustomHandler` → 语法简名既不是 Action 也不是 Func。
+        /// 三条都必须被语义判定救回来。任何一条被拆掉，本自检立即变红。
+        /// </summary>
+        public static List<string> SelfTest()
+        {
+            var failures = new List<string>();
+            LastSelfTestCaseCount = 0;
+
+            const string src = @"
+using System;
+using UnityEngine;
+using UnityEngine.UI;
+using GO = UnityEngine.GameObject;
+
+namespace TestNs
+{
+    public delegate void CustomHandler(int value);
+
+    public class MyCustomReadout : Image { }
+
+    public class Holder
+    {
+        private MyCustomReadout _readout;
+        private GO _anchor;
+        private CustomHandler _onChanged;
+        private readonly Cached<float> _cachedSpeed = new Cached<float>(0f);
+        private float _lastSpeed;
+    }
+}
+
+namespace ModularFlightPanel.UI.Framework
+{
+    public class Cached<T>
+    {
+        public Cached(T value) { }
+    }
+}";
+
+            var sources = new List<WidgetSourceFile>
+            {
+                new WidgetSourceFile
+                {
+                    Name = "FieldPenetrationSelfTest.cs",
+                    Path = "FieldPenetrationSelfTest.cs",
+                    Text = src
+                }
+            };
+
+            SemanticCompilationContext context = SemanticCompilationProvider.BuildCompilation(sources);
+            SemanticModel model = context?.GetSemanticModel("FieldPenetrationSelfTest.cs");
+            if (model == null)
+            {
+                failures.Add("字段穿透自检：未能构建语义编译上下文（语义通道整体不可用）");
+                return failures;
+            }
+
+            var holder = model.SyntaxTree.GetRoot().DescendantNodes()
+                .OfType<ClassDeclarationSyntax>()
+                .FirstOrDefault(c => c.Identifier.Text == "Holder");
+            if (holder == null)
+            {
+                failures.Add("字段穿透自检：合成源码里找不到 Holder 类声明");
+                return failures;
+            }
+
+            var expectations = new Dictionary<string, FieldKind>(StringComparer.Ordinal)
+            {
+                { "_readout",    FieldKind.UiHandle },
+                { "_anchor",     FieldKind.UiHandle },
+                { "_onChanged",  FieldKind.EventCallback },
+                { "_cachedSpeed", FieldKind.ManagedCache },
+                { "_lastSpeed",  FieldKind.ResidualDirtyField }
+            };
+
+            int checkedCount = 0;
+            foreach (var variable in holder.Members.OfType<FieldDeclarationSyntax>()
+                         .SelectMany(f => f.Declaration.Variables))
+            {
+                string fieldName = variable.Identifier.Text;
+                if (!expectations.TryGetValue(fieldName, out FieldKind expected)) continue;
+
+                LastSelfTestCaseCount++;
+                IFieldSymbol symbol = model.GetDeclaredSymbol(variable) as IFieldSymbol;
+                if (symbol == null)
+                {
+                    failures.Add("字段穿透自检：" + fieldName + " 未能取得 IFieldSymbol（语义点位已被拆除）");
+                    continue;
+                }
+
+                FieldKind actual = ClassifyFieldBySymbol(symbol, fieldName, symbol.IsConst, symbol.IsReadOnly);
+                if (actual != expected)
+                {
+                    failures.Add("字段穿透自检：" + fieldName + " 归类错误，期望 " + expected + " 实得 " + actual
+                               + "（符号类型 " + symbol.Type.ToDisplayString() + "）");
+                }
+                checkedCount++;
+            }
+
+            if (checkedCount != expectations.Count)
+            {
+                failures.Add("字段穿透自检：用例覆盖不完整，仅命中 " + checkedCount + "/" + expectations.Count + " 个字段");
+            }
+
+            // 反例自证：同一份源码若走旧的类型简名口径，三条语义用例必然判错。
+            // 这一条同时锁死"删掉语义分支 → 上面三条断言失败 → 自检变红"的因果链。
+            if (ClassifyField("MyCustomReadout", "_readout", false, true) != FieldKind.RawScalarLeak)
+            {
+                failures.Add("字段穿透自检：类型简名口径未把 MyCustomReadout 判为裸标量，"
+                           + "说明反例已失效，本自检将无法证明语义通道仍在生效");
+            }
+            if (ClassifyField("GO", "_anchor", false, true) != FieldKind.RawScalarLeak)
+            {
+                failures.Add("字段穿透自检：类型简名口径未把别名 GO 判为裸标量，反例已失效");
+            }
+
+            return failures;
+        }
+
+        /// <summary>最近一次 SelfTest 实际执行的用例条数（禁止写死数字）</summary>
+        public static int LastSelfTestCaseCount { get; private set; }
+
         private static void TrackLeakType(WidgetFieldPenetrationReport report, string typeName)
         {
             string clean = UnwrapType(typeName);
@@ -306,6 +697,11 @@ namespace ModularFlightPanel.UI.Auditing
             sb.AppendLine("║       MFP 航电组件全数据类型与私有变量穿透审计大盘 (Private Field Penetration Radar)       ║");
             sb.AppendLine("╚═══════════════════════════════════════════════════════════════════════════════════════════╝");
             sb.AppendLine($"  ├─ 扫描组件类: {report.TotalWidgetsScanned} 个 | 总私有字段数: {report.TotalFieldsScanned} 个");
+            sb.AppendLine("  ├─ 字段归类通道: "
+                          + (report.SemanticActive
+                                ? "穿透性语义符号决议 (IFieldSymbol → Unity 底层父类 / System 基类)"
+                                : "⚠ 无语义编译上下文，已降级为类型简名匹配 (结论强度低于 L4)")
+                          + $" | 语义决议字段 {report.SemanticResolvedFieldCount}/{report.TotalFieldsScanned}");
             sb.AppendLine($"  ├─ 全托管缓存槽位 (Managed): {report.TotalManagedCaches} 处 ({report.OverallManagedRatio:F1}%)");
             sb.AppendLine($"  ├─ 视觉图元句柄 (UiHandle): {report.TotalUiHandles} 处 | 零GC遥测快照: {report.TotalSnapshotStructs} 处");
             sb.AppendLine($"  ├─ 静态配置与主题 (Config): {report.TotalConfigs} 处 | 事件委托回调: {report.TotalEventCallbacks} 处");

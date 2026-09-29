@@ -574,6 +574,28 @@ namespace ModularFlightPanel.Config
             return id;
         }
 
+        public string AddEcamDialWidget(string title, string token, double min, double max, double caution, double warning, bool isSoftLimit, string unit, Vector2 initialPos)
+        {
+            string id = "custom." + Guid.NewGuid().ToString().Substring(0, 8);
+            var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f)
+            {
+                WidgetType = "arc_meter",
+                NumericToken = token,
+                MinValue = (float)min,
+                MaxValue = (float)max,
+                CautionThreshold = (float)caution,
+                WarningThreshold = (float)warning,
+                IsSoftLimit = isSoftLimit,
+                UnitLabel = unit,
+                CustomTemplate = $"TITLE={title};TOKEN={token};MIN={min};MAX={max};WARN={caution};CRIT={warning};UNIT={unit};SOFT={isSoftLimit}",
+                DrawOrder = CurrentLayout.Widgets.Count,
+                IsEnabled = true
+            };
+            CurrentLayout.Widgets.Add(cfg);
+            SaveLayout();
+            return id;
+        }
+
         public string AddArcTapeWidget(string title, string token, bool isSpeedTape, float curvature, float radius, float span, bool isLeft, Vector2 initialPos)
         {
             string prefix = isSpeedTape ? "arc_speed." : "arc_alt.";
@@ -607,28 +629,6 @@ namespace ModularFlightPanel.Config
             return AddArcTapeWidget(title, token, false, curvature, radius, span, isLeft, initialPos);
         }
 
-        public string AddEcamDialWidget(string title, string token, double min, double max, double caution, double warning, bool isSoftLimit, string unit, Vector2 initialPos)
-        {
-            string id = "ecam." + Guid.NewGuid().ToString().Substring(0, 8);
-            var cfg = new WidgetConfig(id, title, initialPos.x, initialPos.y, 1.0f)
-            {
-                WidgetType = "ecam_dial",
-                NumericToken = token,
-                MinValue = (float)min,
-                MaxValue = (float)max,
-                CautionThreshold = (float)caution,
-                WarningThreshold = (float)warning,
-                IsSoftLimit = isSoftLimit,
-                LimitMode = isSoftLimit ? "soft" : "hard",
-                UnitLabel = unit,
-                DrawOrder = CurrentLayout.Widgets.Count,
-                IsEnabled = true
-            };
-            CurrentLayout.Widgets.Add(cfg);
-            SaveLayout();
-            return id;
-        }
-
         public void RemoveWidget(string widgetId)
         {
             CurrentLayout.Widgets.RemoveAll(w => w.WidgetId == widgetId);
@@ -640,7 +640,7 @@ namespace ModularFlightPanel.Config
             var src = GetConfig(widgetId);
             if (src == null) return;
 
-            string prefix = src.WidgetType == "ecam_dial" ? "ecam." : (src.WidgetType == "tape" ? "tape." : (src.WidgetType == "arc_tape" ? "arc_tape." : "custom."));
+            string prefix = src.WidgetType == "tape" ? "tape." : (src.WidgetType == "arc_tape" ? "arc_tape." : "custom.");
             string newId = prefix + Guid.NewGuid().ToString().Substring(0, 8);
 
             var clone = new WidgetConfig(newId, src.DisplayName + I18n.Tr("CFG_DUPLICATE_SUFFIX", " (副本)"), src.PositionX + 25f, src.PositionY + 25f, src.Scale, src.CustomTemplate)
@@ -674,7 +674,7 @@ namespace ModularFlightPanel.Config
 
         public void ClearAllCustomWidgets()
         {
-            CurrentLayout.Widgets.RemoveAll(w => w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("ecam.") || w.WidgetId.StartsWith("tape.") || w.WidgetId.StartsWith("arc_tape."));
+            CurrentLayout.Widgets.RemoveAll(w => w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("tape.") || w.WidgetId.StartsWith("arc_tape."));
             SaveLayout();
         }
     }

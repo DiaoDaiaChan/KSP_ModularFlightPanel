@@ -205,14 +205,12 @@ namespace ModularFlightPanel.UI.Settings
 
             // 2. 类别徽章
             string typeBadge = w.WidgetType == "tape" ? I18n.Tr("MGR_TYPE_TAPE", "PFD 标尺") :
-                              (w.WidgetType == "ecam_dial" ? I18n.Tr("MGR_TYPE_ECAM", "ECAM 表盘") :
                               (w.WidgetId.StartsWith("spacex.") ? I18n.Tr("MGR_TYPE_SPACEX", "SPX 龙船") :
-                              (w.WidgetId.StartsWith("custom.") ? I18n.Tr("MGR_TYPE_CARD", "遥测卡片") : I18n.Tr("MGR_TYPE_CORE", "原生核心"))));
+                              (w.WidgetId.StartsWith("custom.") ? I18n.Tr("MGR_TYPE_CARD", "遥测卡片") : I18n.Tr("MGR_TYPE_CORE", "原生核心")));
 
             Color badgeCol = w.WidgetType == "tape" ? new Color(0.00f, 0.40f, 0.60f, 0.9f) :
-                            (w.WidgetType == "ecam_dial" ? new Color(0.00f, 0.45f, 0.25f, 0.9f) :
                             (w.WidgetId.StartsWith("spacex.") ? new Color(0.10f, 0.30f, 0.60f, 0.9f) :
-                            (w.WidgetId.StartsWith("custom.") ? new Color(0.50f, 0.32f, 0.05f, 0.9f) : new Color(0.35f, 0.18f, 0.45f, 0.9f))));
+                            (w.WidgetId.StartsWith("custom.") ? new Color(0.50f, 0.32f, 0.05f, 0.9f) : new Color(0.35f, 0.18f, 0.45f, 0.9f)));
 
             MFPGuiSkin.DrawBadge(typeBadge, Color.white, badgeCol, 75f);
 
@@ -273,7 +271,7 @@ namespace ModularFlightPanel.UI.Settings
             }
 
             // 6. 复制副本
-            if (w.WidgetType == "ecam_dial" || w.WidgetType == "tape" || w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("spacex."))
+            if (w.WidgetType == "tape" || w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("spacex."))
             {
                 if (GUILayout.Button(I18n.Tr("MGR_BTN_COPY", "➕ 复制"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(55f), GUILayout.Height(22f)))
                 {

@@ -65,12 +65,14 @@ Shader "ModularFlightPanel/Vessel3DTechnical"
             {
                 float3 N = normalize(i.worldNormal);
                 float3 V = normalize(i.worldViewDir);
-                float3 L = normalize(_LightDir.xyz);
+                float3 L = (dot(_LightDir.xyz, _LightDir.xyz) > 0.01) ? normalize(_LightDir.xyz) : normalize(float3(0.45, 0.75, -0.55));
+                float3 fillL = -float3(L.x * 0.6, L.y * 0.4, L.z);
 
                 // Half-Lambert wrap lighting (smooth volumetric shading across rocket hull & tanks)
                 float NdotL = dot(N, L);
                 float halfLambert = saturate(NdotL * (1.0 - _DiffuseWrap) + _DiffuseWrap);
-                float3 diffuse = _Color.rgb * halfLambert;
+                float fillLight = max(0.0, dot(N, fillL)) * 0.28;
+                float3 diffuse = _Color.rgb * (halfLambert + fillLight);
 
                 // Fresnel / Rim lighting (crisp edge definition for every 3D stage and wing)
                 float NdotV = saturate(dot(N, V));
@@ -83,5 +85,5 @@ Shader "ModularFlightPanel/Vessel3DTechnical"
             ENDCG
         }
     }
-    Fallback "Diffuse"
+    Fallback "Unlit/Color"
 }

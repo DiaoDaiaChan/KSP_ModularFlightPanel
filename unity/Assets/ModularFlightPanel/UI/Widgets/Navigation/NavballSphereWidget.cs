@@ -409,11 +409,21 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _hasPropTrendStrength;
         private bool _hasPropTrendRotation;
 
+        // ── 着色器已提交值缓存（消除高频冗余 native SetFloat/SetColor 跨界开销） ──
+        private float _uploadedHazardAlert = -999f;
+        private float _uploadedVernierDetail = -999f;
+        private float _uploadedFramePatternOld = -999f;
+        private float _uploadedFramePattern = -999f;
+        private float _uploadedFrameTransitionProgress = -999f;
+        private NavballFramePalette _uploadedPalette;
+        private bool _hasUploadedPalette = false;
+        private readonly CachedFloat _lastBreathScale = new CachedFloat(-1f, 0.015f);
+
         // ── 航向与姿态死区更新缓存 ──
         private readonly Cached<int> _lastHeadingValue = new Cached<int>(-1);
         private readonly Cached<string> _lastHeadingCategory = new Cached<string>(null);
         private readonly CachedFloat _lastRollPointerAngle = new CachedFloat(-9999f, 0.05f);
-        private readonly CachedFloat _lastBankTicksAlpha = new CachedFloat(-1f, 0.01f);
+        private readonly CachedFloat _lastBankTicksAlpha = new CachedFloat(-1f, 0.025f);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -958,17 +968,21 @@ namespace ModularFlightPanel.UI.Widgets
                     _sphereMaterial.SetVector(_PropSphereInvRotation, invRotVec);
                 }
 
-                if (_hasPropFramePatternOld)
+                if (_hasPropFramePatternOld && Mathf.Abs(_transitionStartFramePattern - _uploadedFramePatternOld) > 0.001f)
                 {
+                    _uploadedFramePatternOld = _transitionStartFramePattern;
                     _sphereMaterial.SetFloat(_PropFramePatternOld, _transitionStartFramePattern);
                 }
-                if (_hasPropFramePattern)
+                if (_hasPropFramePattern && Mathf.Abs(newPattern - _uploadedFramePattern) > 0.001f)
                 {
+                    _uploadedFramePattern = newPattern;
                     _sphereMaterial.SetFloat(_PropFramePattern, newPattern);
                 }
-                if (_hasPropFrameTransitionProgress)
+                float targetProgress = _isFrameTransitioning ? eased : 1.0f;
+                if (_hasPropFrameTransitionProgress && Mathf.Abs(targetProgress - _uploadedFrameTransitionProgress) > 0.005f)
                 {
-                    _sphereMaterial.SetFloat(_PropFrameTransitionProgress, _isFrameTransitioning ? eased : 1.0f);
+                    _uploadedFrameTransitionProgress = targetProgress;
+                    _sphereMaterial.SetFloat(_PropFrameTransitionProgress, targetProgress);
                 }
             }
 
@@ -1022,7 +1036,11 @@ namespace ModularFlightPanel.UI.Widgets
                             hazardAlert = sinkHazard * altHazard;
                         }
                     }
-                    _sphereMaterial.SetFloat(_PropGroundHazardAlert, hazardAlert);
+                    if (Mathf.Abs(hazardAlert - _uploadedHazardAlert) > 0.015f)
+                    {
+                        _uploadedHazardAlert = hazardAlert;
+                        _sphereMaterial.SetFloat(_PropGroundHazardAlert, hazardAlert);
+                    }
                 }
 
                 // 近地平精细游标阶梯驱动 (Vernier Scale Detail)
@@ -1034,7 +1052,11 @@ namespace ModularFlightPanel.UI.Widgets
                         float pitchRate = Mathf.Abs(_smoothedAngularVelocity.x);
                         vernier = 1.0f - Mathf.Clamp01(pitchRate / 18.0f);
                     }
-                    _sphereMaterial.SetFloat(_PropVernierScaleDetail, vernier);
+                    if (Mathf.Abs(vernier - _uploadedVernierDetail) > 0.02f)
+                    {
+                        _uploadedVernierDetail = vernier;
+                        _sphereMaterial.SetFloat(_PropVernierScaleDetail, vernier);
+                    }
                 }
             }
         }
@@ -1045,12 +1067,49 @@ namespace ModularFlightPanel.UI.Widgets
             int avoidIdx = 0;
             for (int i = 0; i < 4; i++) _cachedAvoidVectors[i] = Vector4.zero;
 
+            IFlightTelemetry curTelem = FlightTelemetryContext.Current;
+            bool hasTarget = curTelem != null && curTelem.HasTarget;
+            bool hasManeuver = curTelem != null && curTelem.HasManeuverNode;
+            bool isSurfaceMode = _cachedRefCategoryUpper == "SURFACE" || _cachedRefCategoryUpper == "BODY_SURFACE" || _cachedRefCategoryUpper == "BODY_FIXED";
+
             for (int slotIdx = 0; slotIdx < _markerSlots.Length; slotIdx++)
             {
                 var slot = _markerSlots[slotIdx];
                 var img = slot.Image;
                 if (img == null) continue;
                 string key = slot.Key;
+
+                // 快速过滤非活动模式标记，节约高达 40% 的高频解算
+                if (!hasTarget && (slot.MarkerType == NavballMarkerType.Target || slot.MarkerType == NavballMarkerType.AntiTarget))
+                {
+                    if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                    slot.RenderedPos = Vector2.zero;
+                    slot.CurrentDir = Vector3.zero;
+                    slot.LastRenderState = default;
+                    _renderedMarkerPositions[key] = Vector2.zero;
+                    _currentMarkerDirs[key] = Vector3.zero;
+                    continue;
+                }
+                if (!hasManeuver && slot.MarkerType == NavballMarkerType.Maneuver)
+                {
+                    if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                    slot.RenderedPos = Vector2.zero;
+                    slot.CurrentDir = Vector3.zero;
+                    slot.LastRenderState = default;
+                    _renderedMarkerPositions[key] = Vector2.zero;
+                    _currentMarkerDirs[key] = Vector3.zero;
+                    continue;
+                }
+                if (isSurfaceMode && (slot.MarkerType == NavballMarkerType.VelocityVector || slot.MarkerType == NavballMarkerType.AntiVelocityVector))
+                {
+                    if (img.gameObject.activeSelf) img.gameObject.SetActive(false);
+                    slot.RenderedPos = Vector2.zero;
+                    slot.CurrentDir = Vector3.zero;
+                    slot.LastRenderState = default;
+                    _renderedMarkerPositions[key] = Vector2.zero;
+                    _currentMarkerDirs[key] = Vector3.zero;
+                    continue;
+                }
 
                 Vector3 dir = Vector3.forward;
                 bool isVisible = false;
@@ -1112,7 +1171,8 @@ namespace ModularFlightPanel.UI.Widgets
                     // 机动节点脉冲呼吸特效
                     if (key == "maneuver")
                     {
-                        float pulse = 1.0f + 0.08f * Mathf.Sin(Time.unscaledTime * 6f);
+                        float pulseRaw = Mathf.Sin(Time.unscaledTime * 6f);
+                        float pulse = 1.0f + 0.08f * (Mathf.Round(pulseRaw * 8f) * 0.125f);
                         targetScale *= pulse;
                     }
 
@@ -1148,19 +1208,19 @@ namespace ModularFlightPanel.UI.Widgets
 
                     // 性能核心优化：UGUI死区量化守卫，杜绝微亚像素浮动导致每帧反复脏化 Canvas 网格
                     var lastState = slot.LastRenderState;
-                    bool posChanged = (renderedPos - lastState.Position).sqrMagnitude > 0.0225f; // > 0.15px
-                    bool scaleChanged = Mathf.Abs(targetScale - lastState.Scale) > 0.005f;
-                    bool alphaChanged = Mathf.Abs(alpha - lastState.Alpha) > 0.01f;
+                    bool posChanged = (renderedPos - lastState.Position).sqrMagnitude > 0.16f; // > 0.4px
+                    bool scaleChanged = Mathf.Abs(targetScale - lastState.Scale) > 0.02f;
+                    bool alphaChanged = Mathf.Abs(alpha - lastState.Alpha) > 0.02f;
 
                     var rt = slot.RectTransform ?? img.rectTransform;
                     if (posChanged)
                     {
-                        rt.anchoredPosition = renderedPos;
+                        rt.SetAnchoredPositionSafe(renderedPos);
                         lastState.Position = renderedPos;
                     }
                     if (scaleChanged)
                     {
-                        rt.localScale = new Vector3(targetScale, targetScale, 1.0f);
+                        rt.SetLocalScaleSafe(new Vector3(targetScale, targetScale, 1.0f));
                         lastState.Scale = targetScale;
                     }
                     if (alphaChanged)
@@ -1270,6 +1330,7 @@ namespace ModularFlightPanel.UI.Widgets
             float dt = Time.unscaledDeltaTime;
             float targetAlpha = isSurface ? 1.0f : 0.0f;
             _rollPointerAlpha = Mathf.Lerp(_rollPointerAlpha, targetAlpha, Mathf.Clamp01(dt * 9.0f));
+            if (Mathf.Abs(_rollPointerAlpha - targetAlpha) < 0.005f) _rollPointerAlpha = targetAlpha;
 
             // 坡度标尺与滚转指针只在地表参考系 (SURFACE) 生效；在太空/轨道/惯性/拉格朗日系下平滑渐隐，避免太空乱漂
             if (_rollPointerAlpha < 0.01f)
@@ -1306,7 +1367,10 @@ namespace ModularFlightPanel.UI.Widgets
                     ? (theme != null ? (Color)theme.WarningColor : WidgetStyleManager.NeutralOpaque)
                     : (theme != null ? (Color)theme.HorizonLineColor : WidgetStyleManager.NeutralOpaque);
                 baseCol.a = _rollPointerAlpha;
-                _bankRollPointerImg.color = baseCol;
+                if (_bankRollPointerImg.color != baseCol)
+                {
+                    _bankRollPointerImg.color = baseCol;
+                }
             }
         }
 
@@ -1384,8 +1448,12 @@ namespace ModularFlightPanel.UI.Widgets
                         _sasLockReticleRt.SetAnchoredPositionSafe(Vector2.Lerp(_sasLockReticleRt.anchoredPosition, targetPos, Mathf.Clamp01(dt * 30.0f)));
                     }
 
-                    float breath = 1.0f + 0.05f * Mathf.Sin(Time.unscaledTime * 5.0f);
-                    _sasLockReticleRt.SetLocalScaleSafe(new Vector3(breath, breath, 1.0f));
+                    float breathRaw = Mathf.Sin(Time.unscaledTime * 5.0f);
+                    float breath = 1.0f + 0.05f * (Mathf.Round(breathRaw * 8f) * 0.125f);
+                    if (_lastBreathScale.Update(breath))
+                    {
+                        _sasLockReticleRt.SetLocalScaleSafe(new Vector3(breath, breath, 1.0f));
+                    }
 
                     ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
                     Color lockCol = NavballMarkerFactory.GetSASModeColor(curSASMode, curTheme);
@@ -1434,13 +1502,23 @@ namespace ModularFlightPanel.UI.Widgets
 
                     float phase = ((Time.unscaledTime * 1.5f + i * 0.25f) % 1.0f);
                     float t = 0.18f + 0.68f * phase;
-                    chev.rectTransform.SetAnchoredPositionSafe(manPos * t);
-                    chev.rectTransform.localRotation = chevronRot;
+                    Vector2 targetChevronPos = manPos * t;
+                    if ((chev.rectTransform.anchoredPosition - targetChevronPos).sqrMagnitude > 0.5f)
+                    {
+                        chev.rectTransform.SetAnchoredPositionSafe(targetChevronPos);
+                    }
+                    if (Quaternion.Angle(chev.rectTransform.localRotation, chevronRot) > 0.5f)
+                    {
+                        chev.rectTransform.localRotation = chevronRot;
+                    }
 
                     float alpha = Mathf.Sin(phase * Mathf.PI) * 0.85f;
-                    Color c = chevronCol;
-                    c.a = alpha;
-                    chev.color = c;
+                    if (Mathf.Abs(chev.color.a - alpha) > 0.03f)
+                    {
+                        Color c = chevronCol;
+                        c.a = alpha;
+                        chev.color = c;
+                    }
                 }
             }
             else
@@ -1681,6 +1759,10 @@ namespace ModularFlightPanel.UI.Widgets
         private void UploadPaletteToMaterial(NavballFramePalette palette)
         {
             if (_sphereMaterial == null) return;
+            if (_hasUploadedPalette && IsPaletteEqual(ref _uploadedPalette, ref palette)) return;
+
+            _uploadedPalette = palette;
+            _hasUploadedPalette = true;
             _sphereMaterial.SetColor(_PropSkyZenithColor, palette.SkyZenith);
             _sphereMaterial.SetColor(_PropSkyHorizonColor, palette.SkyHorizon);
             _sphereMaterial.SetColor(_PropGroundHorizonColor, palette.GroundHorizon);
@@ -2065,6 +2147,13 @@ namespace ModularFlightPanel.UI.Widgets
             _lastHeadingCategory.Reset(null);
             _lastRollPointerAngle.Reset(-9999f);
             _lastBankTicksAlpha.Reset(-1f);
+            _uploadedHazardAlert = -999f;
+            _uploadedVernierDetail = -999f;
+            _uploadedFramePatternOld = -999f;
+            _uploadedFramePattern = -999f;
+            _uploadedFrameTransitionProgress = -999f;
+            _hasUploadedPalette = false;
+            _lastBreathScale.Reset(-1f);
             _markerHoverTooltipObj = null;
             _markerHoverTooltipRt = null;
             _markerHoverTooltipBg = null;

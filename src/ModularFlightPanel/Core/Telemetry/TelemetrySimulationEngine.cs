@@ -75,6 +75,53 @@ namespace ModularFlightPanel.Core
         public int ActiveEngines { get; private set; } = 0;
         public int TotalStageEngines { get; private set; } = 6;
 
+        // 逐台发动机快照 (仿真模式下按当前级发动机数与油门推导，保证 EICAS 可测)
+        private readonly List<EngineTelemetryInfo> _simEngines = new List<EngineTelemetryInfo>(8);
+        public IReadOnlyList<EngineTelemetryInfo> Engines
+        {
+            get
+            {
+                RebuildSimEngines();
+                return _simEngines;
+            }
+        }
+
+        private void RebuildSimEngines()
+        {
+            int count = ActiveEngines > 0 ? ActiveEngines : (TotalStageEngines > 0 ? TotalStageEngines : 0);
+            if (_simEngines.Count == count && count > 0)
+            {
+                // 仅刷新动态读数，保持列结构稳定
+                for (int i = 0; i < count; i++)
+                {
+                    EngineTelemetryInfo e = _simEngines[i];
+                    e.CommandedThrottle = Throttle;
+                    e.CurrentThrust = e.MaxThrust * e.CommandedThrottle;
+                    e.FuelFlow = e.MaxThrust > 0.0001f ? e.CurrentThrust / (300f * 9.80665f) : 0f;
+                    e.PartTemperature = 20f + Throttle * 420f + i * 3f;
+                    _simEngines[i] = e;
+                }
+                return;
+            }
+
+            _simEngines.Clear();
+            for (int i = 0; i < count; i++)
+            {
+                const float ratedThrust = 240f; // 与仿真级推力同量级的代表值 (kN)
+                _simEngines.Add(new EngineTelemetryInfo
+                {
+                    PartName = "SIM ENGINE " + (i + 1),
+                    PropellantName = "Liquid Fuel/Oxidizer",
+                    CommandedThrottle = Throttle,
+                    CurrentThrust = ratedThrust * Throttle,
+                    MaxThrust = ratedThrust,
+                    FuelFlow = ratedThrust * Throttle / (300f * 9.80665f),
+                    IsOperational = ActiveEngines > 0,
+                    PartTemperature = 20f + Throttle * 420f + i * 3f
+                });
+            }
+        }
+
         // 轨道数据
         public double Apoapsis { get; private set; } = 74.0;
         public double Periapsis { get; private set; } = -600000.0;

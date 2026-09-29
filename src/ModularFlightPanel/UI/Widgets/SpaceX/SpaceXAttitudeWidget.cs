@@ -25,9 +25,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
-        // 声明式微控件
-        public TextWidget NorthMark = TextWidget.Title("N");
-        public TextWidget AttitudeText = TextWidget.Value(I18n.Tr("WIDGET_SPX_ATTITUDE_PLACEHOLDER", "俯仰 +0° 滚转 +0°"));
 
         // UI 视图节点
         private Image _bgImage;

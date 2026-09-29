@@ -134,6 +134,9 @@ namespace ModularFlightPanel.UI
         /// <summary>刷新阶梯合法取值集合 —— 直接从源码里的枚举声明派生（不再写死成员名）</summary>
         public readonly HashSet<string> TierMembers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>刷新阶梯枚举序数映射 (枚举成员名 -> 声明序数 0, 1, 2...) —— 彻底取代硬编码 switch</summary>
+        public readonly Dictionary<string, int> TierOrderMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>审计作用域：契约真后代中排除 [Obsolete] 兼容垫片</summary>
         public readonly List<WidgetClassNode> ContractClasses = new List<WidgetClassNode>();
 
@@ -380,9 +383,15 @@ namespace ModularFlightPanel.UI
             foreach (var ed in root.DescendantNodes().OfType<EnumDeclarationSyntax>())
             {
                 if (!string.Equals(ed.Identifier.Text, WidgetSpecRules.TierEnumType, StringComparison.Ordinal)) continue;
+                int index = 0;
                 foreach (var member in ed.Members)
                 {
-                    TierMembers.Add(member.Identifier.Text);
+                    string name = member.Identifier.Text;
+                    TierMembers.Add(name);
+                    if (!TierOrderMap.ContainsKey(name))
+                    {
+                        TierOrderMap[name] = index++;
+                    }
                 }
             }
         }
@@ -701,28 +710,51 @@ namespace ModularFlightPanel.UI
             return false;
         }
 
-        /// <summary>主入口：对发现层结果执行 SPEC-001..008 全量审计</summary>
+        /// <summary>主入口：对发现层结果执行 SPEC-001..011 全量审计（门禁路径，要求语义层必须可用）</summary>
         public static WidgetSourceAuditReport Scan(WidgetDiscoveryResult discovery)
         {
             if (discovery == null || discovery.Graph == null) return new WidgetSourceAuditReport();
-            return Scan(discovery.Graph, discovery.Sources);
+            return Scan(discovery.Graph, discovery.Sources, true);
         }
 
-        /// <summary>自检入口：对任意合成文件集合执行同一套规则</summary>
+        /// <summary>
+        /// 自检入口：对任意合成文件集合执行同一套规则。
+        /// requireFullSemantic = false —— 合成用例天然没有语义编译上下文，
+        /// 此路径下"语义降级"只报警告，否则每条合规断言都会被自身的降级噪声打红。
+        /// </summary>
         public static WidgetSourceAuditReport Scan(IEnumerable<WidgetSourceFile> files)
         {
             var list = (files ?? Enumerable.Empty<WidgetSourceFile>()).ToList();
-            return Scan(WidgetClassGraph.Build(list), list);
+            return Scan(WidgetClassGraph.Build(list), list, false);
         }
 
-        /// <summary>语义通道入口：允许显式传入语义编译上下文（自检用；门禁侧走 Scan(discovery) 已含上下文）</summary>
+        /// <summary>
+        /// 语义通道入口：显式传入语义编译上下文（传入非空即视为"要求语义必须可用"）。
+        /// </summary>
         public static WidgetSourceAuditReport Scan(IEnumerable<WidgetSourceFile> files, SemanticCompilationContext semanticContext)
         {
             var list = (files ?? Enumerable.Empty<WidgetSourceFile>()).ToList();
-            return Scan(WidgetClassGraph.Build(list, semanticContext), list);
+            return Scan(WidgetClassGraph.Build(list, semanticContext), list, semanticContext != null);
         }
 
-        private static WidgetSourceAuditReport Scan(WidgetClassGraph graph, IList<WidgetSourceFile> files)
+        /// <summary>显式控制"语义可用性是否硬性要求"的入口，供门禁与自检各取所需。</summary>
+        public static WidgetSourceAuditReport Scan(
+            IEnumerable<WidgetSourceFile> files,
+            SemanticCompilationContext semanticContext,
+            bool requireFullSemantic)
+        {
+            var list = (files ?? Enumerable.Empty<WidgetSourceFile>()).ToList();
+            return Scan(WidgetClassGraph.Build(list, semanticContext), list, requireFullSemantic);
+        }
+
+        /// <summary>
+        /// 语义降级逃生阀：仅用于"确实无法提供 KSP_x64_Data/Managed 程序集"的离机环境
+        /// （此时 Unity 类型无法决议，SPEC-006/007 的语义判定整段失效）。
+        /// 默认 false = fail-closed：语义不可用直接判 ERROR，杜绝"把语义层整套拆掉，门禁依然全绿"。
+        /// </summary>
+        public static bool AllowSemanticDegradation { get; set; }
+
+        private static WidgetSourceAuditReport Scan(WidgetClassGraph graph, IList<WidgetSourceFile> files, bool requireFullSemantic)
         {
             var report = new WidgetSourceAuditReport { WidgetsScanned = graph.ContractClasses.Count };
 
@@ -763,7 +795,7 @@ namespace ModularFlightPanel.UI
 
             // ── 内核级守卫 4：语义编译健康度（错误数棘轮 + 组件作用域文件零容忍）──
             // 没有这道锁时，"成功链接 17 个程序集"会被当成 L4 可用，而编译单元里其实藏着 2217 个错误。
-            VerifySemanticCompilationHealth(graph, report);
+            VerifySemanticCompilationHealth(graph, report, requireFullSemantic);
 
             // ── SPEC-001 继承契约（全局不变量：声明了组件元数据的类必须是契约真后代）──
             foreach (var node in graph.All)
@@ -857,29 +889,41 @@ namespace ModularFlightPanel.UI
         /// 报告照旧写 "Full L4 真实符号语义与常量折叠激活" —— 这是本次审计发现的最严重问题。
         ///
         /// 三道锁：
-        ///   1. 未构建语义上下文 → 显式 WARNING（判定已退化为语法回退，不得宣称 L4 权威）；
-        ///   2. 未链接 Unity/KSP 程序集 → 显式 WARNING（Unity 类型无法决议）；
+        ///   1. 未构建语义上下文 → 门禁路径直接 ERROR（fail-closed），自检合成路径才降为 WARNING；
+        ///   2. 未链接 Unity/KSP 程序集 → 同上（Unity 类型无法决议时 SPEC-006/007 语义判定整段失效）；
         ///   3. 诊断错误数超棘轮上限，或**任一组件作用域文件**自身带错误 → ERROR。
         ///      第 3 条后半句是关键：作用域文件的符号就是 SPEC-001..007 的判定依据，
         ///      它一旦不可信，那些"合规"结论就都不成立。
+        ///
+        /// 【为什么第 1/2 条必须 fail-closed】此前它们只出 WARNING 且不影响退出码，
+        /// 于是把 5 个语义点位整套拆掉、或让主机降级成"仅 .NET 基础程序集"，门禁依然打印
+        /// ALL CHECKS PASSED —— 那等于"穿透性审计"这张牌是自封的。
+        /// 离机环境（无 KSP 程序集）确实需要放行时，用 --allow-semantic-degradation 显式声明。
         /// </summary>
-        private static void VerifySemanticCompilationHealth(WidgetClassGraph graph, WidgetSourceAuditReport report)
+        private static void VerifySemanticCompilationHealth(
+            WidgetClassGraph graph, WidgetSourceAuditReport report, bool requireFullSemantic)
         {
             SemanticCompilationContext context = graph.SemanticContext;
+            string degradationSeverity = (requireFullSemantic && !AllowSemanticDegradation) ? "ERROR" : "WARNING";
+            string degradationSuffix = degradationSeverity == "ERROR"
+                ? "；门禁要求语义层必须可用，如确属无 KSP 程序集的离机环境，请显式传入 --allow-semantic-degradation 降级"
+                : string.Empty;
 
             if (context == null)
             {
-                Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelSemanticDegraded, "WARNING", 0,
+                Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelSemanticDegraded, degradationSeverity, 0,
                     "未构建语义编译上下文：全部判定已退化为语法回退路径"
-                    + "（无法识别类型别名、无法跨命名空间消歧、无语义常量折叠），结论强度低于 L4");
+                    + "（无法识别类型别名、无法跨命名空间消歧、无语义常量折叠），结论强度低于 L4"
+                    + degradationSuffix);
                 return;
             }
 
             if (!context.IsFullSemanticActive)
             {
-                Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelSemanticDegraded, "WARNING", 0,
+                Add(report, WidgetSpecRules.KernelReportName, WidgetSpecRules.KernelSemanticDegraded, degradationSeverity, 0,
                     "未探测到 KSP_x64_Data/Managed：语义编译仅链接 " + context.ResolvedReferencePaths.Count
-                    + " 个主机基础程序集，Unity 类型无法决议，SPEC-006/SPEC-007 已退化为语法回退路径");
+                    + " 个主机基础程序集，Unity 类型无法决议，SPEC-006/SPEC-007 已退化为语法回退路径"
+                    + degradationSuffix);
             }
 
             if (context.CompilationErrorCount > WidgetSpecRules.SemanticCompilationErrorCeiling)
@@ -901,8 +945,16 @@ namespace ModularFlightPanel.UI
                 int errors = context.ErrorCountForFile(key);
                 if (errors <= 0) continue;
 
+                var tree = context.GetSyntaxTree(key);
+                string diagDetails = string.Empty;
+                if (tree != null && context.Compilation != null)
+                {
+                    var diags = context.Compilation.GetDiagnostics().Where(d => d.Location.SourceTree == tree && d.Severity == DiagnosticSeverity.Error).Take(5).Select(d => $"L{d.Location.GetLineSpan().StartLinePosition.Line + 1}: {d.GetMessage()}");
+                    diagDetails = " [" + string.Join("; ", diags) + "]";
+                }
+
                 Add(report, node.FileName, WidgetSpecRules.KernelSemanticUnhealthy, "ERROR", 0,
-                    "组件作用域文件在语义编译中有 " + errors + " 处诊断 ERROR：该文件的符号决议不可信，"
+                    "组件作用域文件在语义编译中有 " + errors + " 处诊断 ERROR" + diagDetails + "：该文件的符号决议不可信，"
                     + "其 SPEC 判定必须视为失效（先修编译错误，再看合规结论）");
             }
         }
@@ -1044,18 +1096,10 @@ namespace ModularFlightPanel.UI
         // SPEC-002 / 003 / 004：契约由"最近的合规声明者"提供，与反射级判定口径一致
         // ══════════════════════════════════════════════════════════════════════════════════════════
 
-        private static int GetTierOrder(string member)
+        private static int GetTierOrder(string member, WidgetClassGraph graph)
         {
-            switch (member)
-            {
-                case "Critical": return 0;
-                case "Standard": return 1;
-                case "Slow":     return 2;
-                case "Relaxed":  return 3;
-                case "UltraLow": return 4;
-                case "Custom":   return 5;
-                default: return 99;
-            }
+            if (string.IsNullOrEmpty(member) || graph == null) return 99;
+            return graph.TierOrderMap.TryGetValue(member, out int order) ? order : 99;
         }
 
         private static void ScanTierContract(WidgetClassNode node, WidgetClassGraph graph, WidgetSourceAuditReport report)
@@ -1129,8 +1173,8 @@ namespace ModularFlightPanel.UI
                         string hbMember = validHbNames.FirstOrDefault();
                         if (!string.IsNullOrEmpty(rfMember) && !string.IsNullOrEmpty(hbMember))
                         {
-                            int rfOrder = GetTierOrder(rfMember);
-                            int hbOrder = GetTierOrder(hbMember);
+                            int rfOrder = GetTierOrder(rfMember, graph);
+                            int hbOrder = GetTierOrder(hbMember, graph);
                             if (hbOrder < rfOrder)
                             {
                                 Add(report, node.FileName, WidgetSpecRules.HeartBeatTier, "ERROR", line,
@@ -1141,11 +1185,23 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            // CPU 软件光栅化反模式侦测（SPEC-002 效能红线，数据单点声明于 WidgetSpecRules）
-            bool hasCpuRasterizer = node.Decl.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                .Any(inv => inv.Expression.ToString().EndsWith(WidgetSpecRules.CpuRasterizerApiSuffix, StringComparison.Ordinal))
-                || node.Decl.Members.OfType<FieldDeclarationSyntax>()
-                .Any(f => f.Declaration.Variables.Any(v => v.Identifier.Text == WidgetSpecRules.CpuRasterizerPixelField));
+            // CPU 软件光栅化反模式侦测（SPEC-002 效能红线，直达 UnityEngine.Texture2D 显存 API）
+            bool hasCpuRasterizer = false;
+            if (node.SemanticModel != null)
+            {
+                hasCpuRasterizer = node.Decl.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Any(inv => {
+                        var sym = node.SemanticModel.GetSymbolInfo(inv).Symbol;
+                        return SemanticCompilationProvider.IsTextureRasterizerSymbol(sym);
+                    });
+            }
+            if (!hasCpuRasterizer)
+            {
+                hasCpuRasterizer = node.Decl.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                    .Any(inv => inv.Expression.ToString().EndsWith(WidgetSpecRules.CpuRasterizerApiSuffix, StringComparison.Ordinal))
+                    || node.Decl.Members.OfType<FieldDeclarationSyntax>()
+                    .Any(f => f.Declaration.Variables.Any(v => v.Identifier.Text == WidgetSpecRules.CpuRasterizerPixelField));
+            }
             if (hasCpuRasterizer)
             {
                 Add(report, node.FileName, WidgetSpecRules.RefreshTier, "WARNING", RoslynAstHelper.GetLine(node.Decl),
@@ -1222,7 +1278,7 @@ namespace ModularFlightPanel.UI
                 var reachableFromHeartbeat = RoslynAstHelper.CollectReachableLocalMembers(node.Decl, node.DataHeartBeatMethod);
                 foreach (var member in reachableFromHeartbeat)
                 {
-                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(member);
+                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(member, node.SemanticModel);
                     if (drawOps.Count > 0)
                     {
                         var firstOp = drawOps[0];
@@ -1243,7 +1299,7 @@ namespace ModularFlightPanel.UI
                 bool foundTelemOp = false;
                 foreach (var member in reachableFromTelem)
                 {
-                    var telemOps = RoslynAstHelper.FindTelemetryUpdateExpressions(member);
+                    var telemOps = RoslynAstHelper.FindTelemetryUpdateExpressions(member, node.SemanticModel);
                     if (telemOps.Count > 0)
                     {
                         var firstOp = telemOps[0];
@@ -1271,7 +1327,7 @@ namespace ModularFlightPanel.UI
                 var reachableFromDraw = RoslynAstHelper.CollectReachableLocalMembers(node.Decl, node.UIDrawLoopMethod);
                 foreach (var member in reachableFromDraw)
                 {
-                    var telemOpsInDraw = RoslynAstHelper.FindTelemetryUpdateExpressions(member);
+                    var telemOpsInDraw = RoslynAstHelper.FindTelemetryUpdateExpressions(member, node.SemanticModel);
                     if (telemOpsInDraw.Count > 0)
                     {
                         var firstOp = telemOpsInDraw[0];
@@ -1333,7 +1389,7 @@ namespace ModularFlightPanel.UI
                 var reachableFromTelem = RoslynAstHelper.CollectReachableLocalMembers(node.Decl, node.TelemetryMethod);
                 foreach (var member in reachableFromTelem)
                 {
-                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(member);
+                    var drawOps = RoslynAstHelper.FindUIDrawExpressions(member, node.SemanticModel);
                     if (drawOps.Count > 0)
                     {
                         var firstOp = drawOps[0];
@@ -1419,30 +1475,71 @@ namespace ModularFlightPanel.UI
 
                 var cArgs = objCreation.ArgumentList.Arguments;
 
-                // 形状查表：判定依据全部来自 WidgetSpecRules.ControlCtorShapes，规则体里不再出现参数下标。
-                // 该表由 VerifyControlCtorShapes 与真实构造函数声明双向交叉校验。
-                WidgetSpecRules.ControlCtorShape shape = WidgetSpecRules.FindControlCtorShape(createdType, cArgs.Count);
+                bool isMissingToken = false;
+                string controlDisplayName = null;
 
-                if (shape == null)
+                // 优先通过 Roslyn 语义符号进行穿透解析（直接获取调用的 IMethodSymbol 构造函数）
+                IMethodSymbol ctorSymbol = node.SemanticModel?.GetSymbolInfo(objCreation).Symbol as IMethodSymbol;
+                if (ctorSymbol != null)
                 {
-                    // 未登记的重载形状：旧实现在这里直接落空（isMissingToken 保持 false）→ 静默放过。
-                    // 现在显式上报，让"签名表过期"变得可见。
-                    Add(report, node.FileName, WidgetSpecRules.TelemetryAssemblyWarning, "WARNING",
-                        RoslynAstHelper.GetLine(objCreation),
-                        $"{node.Name}组件调用了 {createdType} 的 {cArgs.Count} 参构造重载，但审计签名表 "
-                        + nameof(WidgetSpecRules.ControlCtorShapes) + " 未登记该形状，无法判定遥测 Token 装配情况。"
-                        + "请先登记形状，否则此类调用不会被审计");
-                    continue;
-                }
+                    int tokenParamIndex = -1;
+                    int nameParamIndex = -1;
+                    for (int p = 0; p < ctorSymbol.Parameters.Length; p++)
+                    {
+                        var param = ctorSymbol.Parameters[p];
+                        if (string.Equals(param.Name, WidgetSpecRules.ControlTokenParameterName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            tokenParamIndex = p;
+                        }
+                        if (string.Equals(param.Name, "name", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(param.Name, "label", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(param.Name, "id", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (nameParamIndex < 0) nameParamIndex = p;
+                        }
+                    }
 
-                // TokenIndex < 0 表示该重载本身就没有 Token 绑定形参 → 直接判定为未装配
-                bool isMissingToken = shape.TokenIndex < 0
-                    || !IsTokenArgumentProvided(cArgs[shape.TokenIndex].Expression);
+                    if (tokenParamIndex >= 0)
+                    {
+                        isMissingToken = tokenParamIndex >= cArgs.Count || !IsTokenArgumentProvided(cArgs[tokenParamIndex].Expression);
+                    }
+                    else
+                    {
+                        isMissingToken = true;
+                    }
+
+                    if (nameParamIndex >= 0 && nameParamIndex < cArgs.Count)
+                    {
+                        controlDisplayName = ExtractArgumentDisplayName(cArgs[nameParamIndex].Expression);
+                    }
+                    if (string.IsNullOrEmpty(controlDisplayName))
+                    {
+                        controlDisplayName = WidgetSpecRules.DefaultControlDisplayName(createdType);
+                    }
+                }
+                else
+                {
+                    // 形状查表：当语义模型不可用时回退到签名形状表
+                    WidgetSpecRules.ControlCtorShape shape = WidgetSpecRules.FindControlCtorShape(createdType, cArgs.Count);
+
+                    if (shape == null)
+                    {
+                        Add(report, node.FileName, WidgetSpecRules.TelemetryAssemblyWarning, "WARNING",
+                            RoslynAstHelper.GetLine(objCreation),
+                            $"{node.Name}组件调用了 {createdType} 的 {cArgs.Count} 参构造重载，但审计签名表 "
+                            + nameof(WidgetSpecRules.ControlCtorShapes) + " 未登记该形状，无法判定遥测 Token 装配情况。"
+                            + "请先登记形状，否则此类调用不会被审计");
+                        continue;
+                    }
+
+                    isMissingToken = shape.TokenIndex < 0
+                        || !IsTokenArgumentProvided(cArgs[shape.TokenIndex].Expression);
+                    controlDisplayName = ResolveControlDisplayName(objCreation.ArgumentList, shape, createdType);
+                }
 
                 if (isMissingToken)
                 {
-                    AddAssemblyWarning(report, node, RoslynAstHelper.GetLine(objCreation),
-                        ResolveControlDisplayName(objCreation.ArgumentList, shape, createdType));
+                    AddAssemblyWarning(report, node, RoslynAstHelper.GetLine(objCreation), controlDisplayName);
                 }
             }
         }
@@ -1469,6 +1566,19 @@ namespace ModularFlightPanel.UI
             if (expression == null) return false;
             string s = expression.ToString();
             return s == "this" || s.EndsWith("widget", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractArgumentDisplayName(ExpressionSyntax expr)
+        {
+            if (expr is LiteralExpressionSyntax lit
+                && lit.IsKind(SyntaxKind.StringLiteralExpression)
+                && !string.IsNullOrEmpty(lit.Token.ValueText))
+            {
+                return lit.Token.ValueText;
+            }
+            if (expr is IdentifierNameSyntax id) return id.Identifier.Text;
+            if (expr is MemberAccessExpressionSyntax ma) return ma.Name.Identifier.Text;
+            return null;
         }
 
         /// <summary>按签名表登记的 NameIndex 取控件显示名，取不到则回落到类型兜底名</summary>
@@ -1726,39 +1836,24 @@ namespace ModularFlightPanel.UI
             if (condition == null) return false;
             string condStr = condition.ToString();
 
-            // 1. 调用了缓存更新或变化判定方法：.Update( 或 .IsDirty 或 .HasChanged
+            // 1. 调用了托管缓存更新或脏检查方法：.Update( 或 .IsDirty 或 .HasChanged 或 .IsStale
             if (condStr.Contains(".Update(") || condStr.Contains(".Update (") ||
-                condStr.Contains(".IsDirty") || condStr.Contains(".HasChanged"))
+                condStr.Contains(".IsDirty") || condStr.Contains(".HasChanged") ||
+                condStr.Contains(".IsStale") || condStr.Contains(".IsFresh"))
             {
                 return true;
             }
 
-            // 2. 检查了脏标记或变化量标识符 (dirty, changed, layoutDirty, frameDirty, recoil, timer, cooldown, need, rebuild, pool, count, capacity 等)
-            var idents = condition.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>();
-            foreach (var id in idents)
+            // 2. 二元比较操作 (值变更判断、阈值超限、对象池扩容、死区容差差值计算)
+            if (condition.DescendantNodesAndSelf().OfType<BinaryExpressionSyntax>().Any(bin =>
+                bin.IsKind(SyntaxKind.NotEqualsExpression) ||
+                bin.IsKind(SyntaxKind.EqualsExpression) ||
+                bin.IsKind(SyntaxKind.GreaterThanExpression) ||
+                bin.IsKind(SyntaxKind.GreaterThanOrEqualExpression) ||
+                bin.IsKind(SyntaxKind.LessThanExpression) ||
+                bin.IsKind(SyntaxKind.LessThanOrEqualExpression)))
             {
-                string name = id.Identifier.Text;
-                if (name.IndexOf("dirty", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("changed", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("recoil", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("timer", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("cooldown", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("need", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("rebuild", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("repopulate", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("pending", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("stale", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("fresh", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("init", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("cached", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("last", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("prev", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("pool", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("count", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    name.IndexOf("capacity", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    return true;
-                }
+                return true;
             }
 
             // 3. 包含容差阈值差值计算 Math.Abs(...) > tol 或 Mathf.Abs(...) > tol
@@ -1767,7 +1862,40 @@ namespace ModularFlightPanel.UI
                 return true;
             }
 
+            // 4. 布尔脏标记与状态变迁标识符
+            var idents = condition.DescendantNodesAndSelf().OfType<IdentifierNameSyntax>();
+            foreach (var id in idents)
+            {
+                if (IsStateGuardIdentifier(id.Identifier.Text))
+                {
+                    return true;
+                }
+            }
+
             return false;
+        }
+
+        private static bool IsStateGuardIdentifier(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.IndexOf("dirty", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("changed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("recoil", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("timer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("cooldown", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("need", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("rebuild", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("repopulate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("pending", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("stale", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("fresh", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("init", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("cached", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("last", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("prev", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("pool", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("count", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("capacity", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -1778,14 +1906,13 @@ namespace ModularFlightPanel.UI
         {
             SemanticModel semanticModel = graph.SemanticContext?.GetSemanticModel(file.Path ?? file.Name);
 
-            // ── SPEC-006 零颜色字面量（棘轮：允许存量只降不升）──
+            // ── SPEC-006 零颜色字面量（零容忍：存量清零后棘轮表已删除，任何一处即 ERROR）──
             int colorOccurrences = WidgetColorLiteralAudit.CountOccurrences(file.Text, semanticModel);
-            int allowed = WidgetColorLiteralAudit.GetAllowedOccurrences(file.Name);
-            if (colorOccurrences > allowed)
+            if (colorOccurrences > 0)
             {
                 var samples = string.Join(" | ", WidgetColorLiteralAudit.CollectOffendingLines(file.Text, 3, semanticModel).ToArray());
                 Add(report, file.Name, WidgetSpecRules.NoHardcodedColors, "ERROR", 0,
-                    $"新增颜色字面量 {colorOccurrences - allowed} 处 (实测 {colorOccurrences} / 基线 {allowed})。"
+                    $"检测到颜色字面量 {colorOccurrences} 处（零容忍）。"
                     + "颜色必须取自 WidgetStyleManager 语义角色或 ThemeConfig；占位色用 Color.clear。样本: " + samples);
             }
 
@@ -2354,6 +2481,33 @@ namespace ModularFlightPanel.UI
             check(consistencyReport.CountByRule(WidgetSpecRules.KernelSemanticDegraded) == 1,
                 "语义降级不可见：Scan(IEnumerable) 不构建语义上下文，报告里应出现 1 条 MFP-KERNEL-SEMANTIC-DEGRADED，实测 "
                 + consistencyReport.CountByRule(WidgetSpecRules.KernelSemanticDegraded));
+
+            // 21.7 fail-closed 自证：门禁路径（requireFullSemantic = true）下语义缺失必须是 ERROR，
+            // 而不是只报警告 —— 否则把整套语义点位拆掉后门禁照样全绿，"穿透性审计"就成了自封的头衔。
+            // 同时验证逃生阀真的能生效（否则离机环境会被硬卡死）。
+            // 注意：本用例必须显式锁死死锁态/放行态，不能依赖进程启动时是否带 --allow-semantic-degradation，
+            // 否则门禁一旦带该开关自检就会自己变红。
+            bool previousAllowance = AllowSemanticDegradation;
+            try
+            {
+                AllowSemanticDegradation = false;
+                var gateDegradedReport = Scan(
+                    new[] { MakeFile("GateDegraded.cs", BuildSyntheticWidget(string.Empty)) }, null, true);
+                check(gateDegradedReport.Violations.Any(v =>
+                        v.RuleCode == WidgetSpecRules.KernelSemanticDegraded && v.Severity == "ERROR"),
+                    "fail-closed 失效：门禁路径下语义上下文缺失未判 ERROR（语义层可被静默拆除）");
+
+                AllowSemanticDegradation = true;
+                var optOutReport = Scan(
+                    new[] { MakeFile("GateDegradedOptOut.cs", BuildSyntheticWidget(string.Empty)) }, null, true);
+                check(!optOutReport.Violations.Any(v =>
+                        v.RuleCode == WidgetSpecRules.KernelSemanticDegraded && v.Severity == "ERROR"),
+                    "语义降级逃生阀失效：AllowSemanticDegradation = true 时仍判 ERROR，离机环境会被硬卡死");
+            }
+            finally
+            {
+                AllowSemanticDegradation = previousAllowance;
+            }
 
             // ── 22. 五个语义点位的"被采用"覆盖率守卫 ──
             // 【为什么必须是覆盖率而不是结果】语义结论与语法回退结论可能恰好相同，

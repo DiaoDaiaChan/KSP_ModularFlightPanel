@@ -21,10 +21,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
-        // 声明式微控件
-        public TextWidget RangeTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_RANGE", "距离"));
-        public TextWidget RateTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_RATE", "速率"));
-
         private Image _bgImage;
         private Outline _outline;
 

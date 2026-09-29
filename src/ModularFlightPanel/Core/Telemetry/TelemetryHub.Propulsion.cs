@@ -145,6 +145,45 @@ namespace ModularFlightPanel.Core
             }
         }
 
+        // 逐台发动机快照 (异构集群支持)；仅在推进域刷新时重建，读取零分配
+        private readonly List<EngineTelemetryInfo> _engineInfos = new List<EngineTelemetryInfo>(16);
+        private static readonly IReadOnlyList<EngineTelemetryInfo> s_emptyEngines = new EngineTelemetryInfo[0];
+
+        public IReadOnlyList<EngineTelemetryInfo> Engines
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.Engines;
+                EnsurePropulsionUpdated();
+                return _engineInfos.Count > 0 ? _engineInfos : s_emptyEngines;
+            }
+        }
+
+        /// <summary>
+        /// 估算单台发动机的实时推进剂消耗率 (单位/秒)。
+        /// 优先使用 KSP 原生推进剂流量比 (ratio)，退化时按 推力/(比冲·g0) 的质量流率换算，
+        /// 保证任何引擎类型 (化学/核/电推) 都能给出可读的 FF 读数。
+        /// </summary>
+        private static float EstimateEngineFuelFlow(ModuleEngines eng)
+        {
+            if (eng == null || !eng.isOperational || eng.finalThrust <= 0.0001f) return 0f;
+            try
+            {
+                float isp = eng.realIsp > 0.0001f ? eng.realIsp : eng.atmosphereCurve?.Evaluate(0f) ?? 0f;
+                float g0 = 9.80665f;
+                if (isp > 0.0001f)
+                {
+                    // 质量流率 (kg/s) = 推力(N) / (Isp · g0)
+                    return eng.finalThrust / (isp * g0);
+                }
+            }
+            catch
+            {
+                // 退化路径：无法获取比冲曲线时按额定推力的线性近似
+            }
+            return eng.maxThrust > 0.0001f ? eng.finalThrust / eng.maxThrust : 0f;
+        }
+
         public string StagePropellantName
         {
             get
@@ -223,6 +262,15 @@ namespace ModularFlightPanel.Core
                     if (!_vesselTopologyDirty && !partsChanged && !stageChanged && _throttle <= 0.001f && _cachedEngines != null && _cachedEngines.Count > 0)
                     {
                         _cachedTotalThrust = 0.0;
+                        // 保持逐台快照结构，仅推力/油耗归零，避免 UI 列数闪烁
+                        for (int ei = 0; ei < _engineInfos.Count; ei++)
+                        {
+                            EngineTelemetryInfo z = _engineInfos[ei];
+                            z.CurrentThrust = 0f;
+                            z.FuelFlow = 0f;
+                            z.CommandedThrottle = _throttle;
+                            _engineInfos[ei] = z;
+                        }
                     }
                     else
                     {
@@ -231,6 +279,7 @@ namespace ModularFlightPanel.Core
                         double thrust = 0.0;
                         int engineCount = 0;
                         string detectedProp = "PROP";
+                        _engineInfos.Clear();
 
                         if (_vesselTopologyDirty || _cachedEngines == null || _cachedEngines.Count == 0 || _lastEngineScanPartCount != currentParts)
                         {
@@ -247,6 +296,27 @@ namespace ModularFlightPanel.Core
                                 {
                                     thrust += eng.finalThrust;
                                     engineCount++;
+
+                                    // 逐台快照：真实推力 / 指令油门 / 油耗，供 EICAS 自适应渲染
+                                    float partTempC = 0f;
+                                    if (eng.part != null && eng.part.temperature > 0.1)
+                                    {
+                                        float rawK = (float)eng.part.temperature;
+                                        partTempC = rawK > 100f ? (rawK - 273.15f) : rawK;
+                                    }
+                                    EngineTelemetryInfo info = new EngineTelemetryInfo
+                                    {
+                                        PartName = eng.part != null ? eng.part.partInfo?.title ?? eng.part.partName : "ENGINE",
+                                        PropellantName = eng.propellants != null && eng.propellants.Count > 0
+                                            ? (eng.propellants[0].displayName ?? eng.propellants[0].name) : "",
+                                        CommandedThrottle = Mathf.Clamp01(eng.currentThrottle > 0.0001f ? eng.currentThrottle : _throttle),
+                                        CurrentThrust = eng.finalThrust,
+                                        MaxThrust = eng.maxThrust > 0.0001f ? eng.maxThrust : eng.finalThrust,
+                                        FuelFlow = EstimateEngineFuelFlow(eng),
+                                        IsOperational = true,
+                                        PartTemperature = partTempC
+                                    };
+                                    _engineInfos.Add(info);
 
                                     if (eng.propellants != null && eng.propellants.Count > 0)
                                     {

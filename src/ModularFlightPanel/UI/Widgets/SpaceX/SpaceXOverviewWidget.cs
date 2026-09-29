@@ -20,10 +20,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        // 声明式微控件
-        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SPX_VEHICLE_OVERVIEW", "飞行器总览 / ECLSS"));
-        public TextWidget StatusBadge = TextWidget.Badge(I18n.Tr("WIDGET_SPX_NOMINAL", "正常"));
-
         private Image _bgImage;
         private Outline _outline;
 

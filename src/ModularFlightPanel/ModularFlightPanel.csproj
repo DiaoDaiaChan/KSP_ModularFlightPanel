@@ -23,6 +23,7 @@
     <Compile Remove="UI\Auditing\WidgetColorLiteralAudit.cs" />
     <Compile Remove="UI\Auditing\WidgetFieldPenetrationAudit.cs" />
     <Compile Remove="UI\Auditing\I18nSyntaxAuditor.cs" />
+    <Compile Remove="UI\Auditing\WidgetInternalLayoutAudit.cs" />
   </ItemGroup>
 
   <ItemGroup>

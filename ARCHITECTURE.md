@@ -57,15 +57,15 @@ flowchart TD
         DSL["声明式微控件容器 (WidgetControlContainer)<br/>• TextWidget (Title / Badge / Value / Unit 语义泊靠)<br/>• LinearBarWidget (自动归一化进度条)<br/>• ToggleButtonWidget / ActionButtonWidget (防抖交互键)<br/>• AvionicsSegmentedControl / Annunciator / Tooltip"]
     end
 
-    %% ── 45 个全量标准化组件 ──
-    subgraph L6["七、五大标准化航电组件族 (45 Specialized Flight Widgets)"]
-        W_Nav["【姿态与轨道导航族 - 10 个】<br/>NavballSphereWidget (3D 离屏相机球) / VesselAttitudeSphereWidget<br/>HeadingArcWidget / NDNavigationWidget / SASDialWidget<br/>OrbitalInfoWidget / OrbitalElementsWidget / ReferenceFrameWidget<br/>ManeuverNodeWidget / ManeuverTimelineWidget"]
+    %% ── 42 个全量标准化组件 ──
+    subgraph L6["七、五大标准化航电组件族 (42 Specialized Flight Widgets)"]
+        W_Nav["【姿态与轨道导航族 - 9 个】<br/>NavballSphereWidget (3D 离屏相机球) / VesselAttitudeSphereWidget<br/>HeadingArcWidget / NDNavigationWidget / SASDialWidget<br/>OrbitalElementsWidget / ReferenceFrameWidget<br/>ManeuverNodeWidget / ManeuverTimelineWidget"]
 
-        W_Gauges["【表盘与带状仪表族 - 6 个】<br/>TapeGaugeWidget (双速/高度带) / ArcTapeWidget (弧形滚带)<br/>AvionicsBarGaugeWidget / ArcMeterWidget (弧形推力/VSI)<br/>EcamDialGaugeWidget / CustomTokenTextWidget (自由通配卡)"]
+        W_Gauges["【表盘与带状仪表族 - 5 个】<br/>TapeGaugeWidget (双速/高度带) / ArcTapeWidget (弧形滚带)<br/>AvionicsBarGaugeWidget / ArcMeterWidget (弧形推力/VSI)<br/>CustomTokenTextWidget (自由通配卡)"]
 
         W_SpaceX["【SpaceX 龙飞船与星舰航电族 - 8 个】<br/>SpaceXDockingReticleWidget (ISS 对接光标) / SpaceXAttitudeWidget<br/>SpaceXOverviewWidget / SpaceXHeaderWidget / SpaceXBottomBarWidget<br/>SpaceXTimelineWidget / SpaceXEngineWidget / SpaceXArcGaugeWidget"]
 
-        W_Systems["【飞船系统与工程监视族 - 13 个】<br/>ElectricalSystemWidget (电力拓扑图) / LifeSupportWidget (维生监视)<br/>Rocket2DWidget (2D 分级轮廓) / SignalStatusWidget / CommSignalWidget<br/>EcamStatusWidget / EcamAlertLogWidget / MasterWarningWidget<br/>B747EicasWidget / B747LowerEicasWidget / B787EicasWidget<br/>PerformanceMonitorWidget / StageDeltaVWidget"]
+        W_Systems["【飞船系统与工程监视族 - 12 个】<br/>ElectricalSystemWidget (电力拓扑图) / LifeSupportWidget (维生监视)<br/>Rocket2DWidget (2D 分级轮廓) / SignalStatusWidget / CommSignalWidget<br/>EcamAlertLogWidget / MasterWarningWidget<br/>B747EicasWidget / B747LowerEicasWidget / B787EicasWidget<br/>PerformanceMonitorWidget / StageDeltaVWidget"]
 
         W_Controls["【控制台与交互操纵族 - 8 个】<br/>StageControlWidget (分级防误触锁) / StagingSequenceWidget<br/>BottomControlsWidget / ModernToolbarWidget / FavoriteToolbarWidget<br/>TimeWarpWidget / UIWidget"]
     end
@@ -322,7 +322,6 @@ flowchart LR
 | | `HeadingArcWidget` | `core.heading_arc` | Critical (60Hz) | 现代平显航向刻度指示弧 (PFD 核心) |
 | | `NDNavigationWidget` | `custom.nd_navigation` | Standard (30Hz) | 综合导航罗盘、航点、对接口与轨道交会标识 |
 | | `SASDialWidget` | `core.sas_dial` | Standard (30Hz) | 环形 SAS 航向罗盘与多态指向环 |
-| | `OrbitalInfoWidget` | `core.orbital_info` | Relaxed (10Hz) | 轨道六根数、近/远地点高度、周期与节点倒计时 |
 | | `OrbitalElementsWidget` | `nav.orbital_elements`| Relaxed (10Hz) | 轨道摄动与偏心率/半长轴精准解析卡片 |
 | | `ReferenceFrameWidget` | `nav.reference_frame` | Relaxed (10Hz) | 地表/轨道/目标参考系切换与天体标识徽标 |
 | | `ManeuverNodeWidget` | `core.maneuver` | Standard (30Hz) | 变轨机动节点矢量分量与点火时长读数盒 |
@@ -331,7 +330,6 @@ flowchart LR
 | | `ArcTapeWidget` | `custom.arc_speed_tape`| Standard (30Hz) | 弯曲弧形滚带表盘 (航电高端拟物) |
 | | `AvionicsBarGaugeWidget` | `gauge.throttle` | Standard (30Hz) | 垂直多段式动力学柱状条 |
 | | `ArcMeterWidget` | `core.throttle` / `core.vsi` | Standard (30Hz) | 120°/180°/270° 圆弧刻度推力与垂直速度表 |
-| | `EcamDialGaugeWidget` | `ecam.n1` / `ecam.egt` | Standard (30Hz) | 空客 ECAM 圆形指针表盘 (支持警告黄色/红色阈值) |
 | | `CustomTokenTextWidget` | `custom.*` | Standard (30Hz) | 自由通配符文本卡片 (支持多槽位与自定义格式) |
 | **SpaceX 航电 (SpaceX)** | `SpaceXDockingReticleWidget` | `spacex.docking` | Critical (60Hz) | 龙飞船 ISS 对接光标 HUD (联动 P3 目标运动学外推) |
 | | `SpaceXAttitudeWidget` | `spacex.attitude` | Critical (60Hz) | 极简数字姿态三轴读数盒 |
@@ -346,7 +344,6 @@ flowchart LR
 | | `Rocket2DWidget` | `custom.rocket` | Relaxed (10Hz) | 2D 分级轮廓剪影与级间状态图 |
 | | `SignalStatusWidget` | `custom.signal` | Relaxed (10Hz) | 深空通信天线指向与增益列表 |
 | | `CommSignalWidget` | `core.comm_signal` | Relaxed (10Hz) | 通信数据速率、信号强度与丢包率监视 |
-| | `EcamStatusWidget` | `core.ecam_status` | Relaxed (10Hz) | 报警备忘清单与系统状态卡 |
 | | `EcamAlertLogWidget` | `core.ecam_alert_log` | Relaxed (10Hz) | 历史告警回溯日志记录器 |
 | | `MasterWarningWidget` | `core.master_warning` | Critical (60Hz) | 航空级主警告 (Master Warning) 与主注意灯闪烁器 |
 | | `B747EicasWidget` | `custom.b747_eicas` | Standard (30Hz) | 波音 747 主发动机参数指示 EICAS |

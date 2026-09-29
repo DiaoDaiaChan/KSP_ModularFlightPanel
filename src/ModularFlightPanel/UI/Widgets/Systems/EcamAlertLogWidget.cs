@@ -60,8 +60,6 @@ namespace ModularFlightPanel.UI.Widgets
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
-        // 声明式微控件
-        public TextWidget HeaderTitle = TextWidget.Title("ECAM / EICAS");
 
         // 几何布局常量 (乘 CurrentDpiScale)
         private const float BASE_WIDTH = 300f;
@@ -938,13 +936,13 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _activePersistentAlerts.Add(new EcamLogEntry(
                             EcamAlertSeverity.Warning, "FUEL", "!",
-                            "MIN FUEL EMERGENCY", $"{pct}%", curMet, telem.MissionTime, true));
+                            I18n.Tr("WIDGET_ALERT_MIN_FUEL_EMERGENCY", "最低燃油告警"), $"{pct}%", curMet, telem.MissionTime, true));
                     }
                     else
                     {
                         _activePersistentAlerts.Add(new EcamLogEntry(
                             EcamAlertSeverity.Caution, "FUEL", "▲",
-                            "LOW FUEL ADVISORY", $"{pct}%", curMet, telem.MissionTime, true));
+                            I18n.Tr("WIDGET_ALERT_LOW_FUEL_ADVISORY", "低燃油提醒"), $"{pct}%", curMet, telem.MissionTime, true));
                     }
                 }
             }
@@ -956,13 +954,13 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _activePersistentAlerts.Add(new EcamLogEntry(
                     EcamAlertSeverity.Warning, "GPWS", "!",
-                    "TERRAIN PULL UP!", $"{telem.AltitudeAGL:F0}m", curMet, telem.MissionTime, true));
+                    I18n.Tr("WIDGET_ALERT_TERRAIN_PULL_UP", "近地拉起警告!"), $"{telem.AltitudeAGL:F0}m", curMet, telem.MissionTime, true));
             }
             else if (telem.VerticalSpeed < -15.0 && telem.AltitudeAGL < 1500.0 && telem.AltitudeAGL > 10.0)
             {
                 _activePersistentAlerts.Add(new EcamLogEntry(
                     EcamAlertSeverity.Caution, "GPWS", "▲",
-                    "EXCESS SINK RATE", $"{telem.VerticalSpeed:F0}m/s", curMet, telem.MissionTime, true));
+                    I18n.Tr("WIDGET_ALERT_EXCESS_SINK_RATE", "下沉率过大"), $"{telem.VerticalSpeed:F0}m/s", curMet, telem.MissionTime, true));
             }
 
             // 3. 电网余量 CRITICAL EC
@@ -972,13 +970,13 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _activePersistentAlerts.Add(new EcamLogEntry(
                         EcamAlertSeverity.Warning, "ELEC", "!",
-                        "BATTERY CRITICAL!", $"{Mathf.RoundToInt((float)telem.EcPercent)}%", curMet, telem.MissionTime, true));
+                        I18n.Tr("WIDGET_ALERT_BATTERY_CRITICAL", "电池严重告急!"), $"{Mathf.RoundToInt((float)telem.EcPercent)}%", curMet, telem.MissionTime, true));
                 }
                 else if (telem.EcPercent <= 20.0)
                 {
                     _activePersistentAlerts.Add(new EcamLogEntry(
                         EcamAlertSeverity.Caution, "ELEC", "▲",
-                        "LOW BATTERY EC", $"{Mathf.RoundToInt((float)telem.EcPercent)}%", curMet, telem.MissionTime, true));
+                        I18n.Tr("WIDGET_ALERT_LOW_BATTERY_EC", "电池电量偏低"), $"{Mathf.RoundToInt((float)telem.EcPercent)}%", curMet, telem.MissionTime, true));
                 }
             }
 
@@ -987,13 +985,13 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _activePersistentAlerts.Add(new EcamLogEntry(
                     EcamAlertSeverity.Warning, "TEMP", "!",
-                    "CABIN OVERHEAT!", $"{Mathf.RoundToInt((float)telem.CabinTemp)}°C", curMet, telem.MissionTime, true));
+                    I18n.Tr("WIDGET_ALERT_CABIN_OVERHEAT", "座舱过热告警!"), $"{Mathf.RoundToInt((float)telem.CabinTemp)}°C", curMet, telem.MissionTime, true));
             }
             if (telem.GForce > 9.0)
             {
                 _activePersistentAlerts.Add(new EcamLogEntry(
                     EcamAlertSeverity.Warning, "G-LOAD", "!",
-                    "EXCESS G-LOAD!", $"{telem.GForce:F1}G", curMet, telem.MissionTime, true));
+                    I18n.Tr("WIDGET_ALERT_EXCESS_GLOAD", "过载严重超限!"), $"{telem.GForce:F1}G", curMet, telem.MissionTime, true));
             }
         }
 

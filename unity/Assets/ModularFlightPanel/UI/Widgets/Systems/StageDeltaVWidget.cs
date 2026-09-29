@@ -64,7 +64,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _silhouetteBayTitle;
         private Text _silhouetteBayFooter;
         private RawImage _silhouetteRawImage;
-        private Texture2D _fallbackSilhouetteTexture;
+        private ProceduralRocketSilhouetteGraphic _proceduralSilhouetteGraphic;
 
         // 动态发动机喷管与喷射羽流
         private GameObject _plumeObj;
@@ -88,9 +88,6 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(DefaultPanelWidth, DefaultPanelHeight);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
-
-        // 声明式微控件
-        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_DV_TITLE", "级 ΔV"));
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -236,23 +233,22 @@ namespace ModularFlightPanel.UI.Widgets
             titleRt.anchoredPosition = new Vector2(0f, bayH * 0.5f - 8f * s);
             titleRt.sizeDelta = new Vector2(bayW - 4f * s, 12f * s);
 
-            // 2D 飞船剪影图元 (RawImage 显示 VesselSilhouetteBaker 或程序化矢量保底)
+            // 2D 飞船剪影图元 (RawImage 显示 VesselSilhouetteBaker 或本地 GPU 矢量保底)
             _silhouetteRawImage = CreateChild<RawImage>("VesselSilhouette_RawImage", _silhouetteBayObj.transform,
                 new Vector2(46f * s, 102f * s), new Vector2(0f, -2f * s));
             _silhouetteRawImage.raycastTarget = false;
             _silhouetteRawImage.color = secondaryAccent;
 
-            // 优先接入 VesselSilhouetteBaker 显存直通纹理，否则启用程序化矢量纹理保底
+            _proceduralSilhouetteGraphic = CreateChild<ProceduralRocketSilhouetteGraphic>("ProceduralSilhouette", _silhouetteBayObj.transform,
+                new Vector2(46f * s, 102f * s), new Vector2(0f, -2f * s));
+            _proceduralSilhouetteGraphic.raycastTarget = false;
+            _proceduralSilhouetteGraphic.color = secondaryAccent;
+
             Texture tex = VesselSilhouetteService.Provider?.SilhouetteTexture;
-            if (tex == null)
-            {
-                if (_fallbackSilhouetteTexture == null)
-                {
-                    _fallbackSilhouetteTexture = CreateProceduralRocketSilhouetteTexture();
-                }
-                tex = _fallbackSilhouetteTexture;
-            }
-            _silhouetteRawImage.texture = tex;
+            bool hasBakerTex = tex != null;
+            _silhouetteRawImage.gameObject.SetActive(hasBakerTex);
+            _proceduralSilhouetteGraphic.gameObject.SetActive(!hasBakerTex);
+            if (hasBakerTex) _silhouetteRawImage.texture = tex;
 
             if (VesselSilhouetteService.Provider != null)
             {
@@ -277,9 +273,18 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnSilhouetteUpdated(Texture tex)
         {
-            if (_silhouetteRawImage != null && tex != null)
+            if (_silhouetteRawImage != null)
             {
-                _silhouetteRawImage.texture = tex;
+                bool hasBakerTex = tex != null;
+                _silhouetteRawImage.gameObject.SetActive(hasBakerTex);
+                if (_proceduralSilhouetteGraphic != null)
+                {
+                    _proceduralSilhouetteGraphic.gameObject.SetActive(!hasBakerTex);
+                }
+                if (hasBakerTex)
+                {
+                    _silhouetteRawImage.texture = tex;
+                }
             }
         }
 
@@ -545,17 +550,17 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (hasActive)
             {
-                _cachedFootStatusStr = $"ACTIVE S{activeStageInfo.Stage:D2}: {activeStageInfo.DeltaV:N0} m/s | ⏱ {FormatDuration(activeStageInfo.BurnTime)}";
+                _cachedFootStatusStr = I18n.TrFormat("WIDGET_DV_FOOT_ACTIVE", "当前 S{0:D2}: {1:N0} m/s | ⏱ {2}", activeStageInfo.Stage, activeStageInfo.DeltaV, FormatDuration(activeStageInfo.BurnTime));
                 _cachedFootRole = TextStyleRole.Accent;
             }
             else if (_reusableStageList.Count > 0)
             {
-                _cachedFootStatusStr = $"ALL {_reusableStageList.Count} STAGES ARMED | Σ {context.Telemetry.TotalDeltaV:N0} m/s";
+                _cachedFootStatusStr = I18n.TrFormat("WIDGET_DV_FOOT_ALL_ARMED", "共 {0} 级就绪 | Σ {1:N0} m/s", _reusableStageList.Count, context.Telemetry.TotalDeltaV);
                 _cachedFootRole = TextStyleRole.SecondaryValue;
             }
             else
             {
-                _cachedFootStatusStr = "NO STAGE DATA";
+                _cachedFootStatusStr = I18n.Tr("WIDGET_DV_NO_STAGE_DATA", "无分级数据");
                 _cachedFootRole = TextStyleRole.Warning;
             }
         }
@@ -712,6 +717,7 @@ namespace ModularFlightPanel.UI.Widgets
                 WidgetStyleManager.Instance.ApplyCardFrame(_silhouetteBayBg, _silhouetteBayOutline, CardStyleRole.TransparentHUD, theme);
             }
             if (_silhouetteRawImage != null) _silhouetteRawImage.color = secondaryAccent;
+            if (_proceduralSilhouetteGraphic != null) _proceduralSilhouetteGraphic.color = secondaryAccent;
 
             foreach (var row in _stageRows)
             {
@@ -729,129 +735,11 @@ namespace ModularFlightPanel.UI.Widgets
             return theme.FrameBorderColor;
         }
 
-
-
-        /// <summary>
-        /// 程序化高精多级火箭矢量二维剪影纹理 (用于无头测试与原地沙盒无活跃飞船时的保底呈现)
-        /// 包含：整流罩/头锥 (Fairing)、上面级 (Upper Stage)、芯级 (Core Stage)、侧挂助推器 (Side Boosters) 与发动机喷管
-        /// </summary>
-        private static Texture2D CreateProceduralRocketSilhouetteTexture()
-        {
-            int w = 128;
-            int h = 256;
-            Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            Color[] cols = new Color[w * h];
-            float centerX = (w - 1) * 0.5f;
-
-            for (int y = 0; y < h; y++)
-            {
-                float ny = (float)y / (h - 1); // 0.0 (底部) .. 1.0 (顶部)
-
-                for (int x = 0; x < w; x++)
-                {
-                    float dx = Mathf.Abs(x - centerX) / centerX; // 0.0 (中轴线) .. 1.0 (侧边缘)
-                    bool inside = false;
-                    bool isLine = false;
-
-                    // 1. 顶部载荷整流罩 / 头锥 (ny: 0.80 .. 0.96)
-                    if (ny >= 0.80f && ny <= 0.96f)
-                    {
-                        float t = (ny - 0.80f) / 0.16f; // 0..1
-                        float fairingW = Mathf.Lerp(0.22f, 0.02f, Mathf.Pow(t, 0.75f));
-                        if (dx <= fairingW) inside = true;
-                    }
-                    // 2. 上面级 (ny: 0.65 .. 0.79)
-                    else if (ny >= 0.65f && ny < 0.795f)
-                    {
-                        if (dx <= 0.22f) inside = true;
-                    }
-                    // 3. 主芯级 (ny: 0.22 .. 0.64)
-                    else if (ny >= 0.22f && ny < 0.645f)
-                    {
-                        if (dx <= 0.22f) inside = true;
-                    }
-                    // 4. 底部主发动机喷管 (ny: 0.14 .. 0.215)
-                    else if (ny >= 0.14f && ny < 0.215f)
-                    {
-                        float t = (ny - 0.14f) / 0.075f;
-                        float nozzleW = Mathf.Lerp(0.26f, 0.18f, t);
-                        if (dx <= nozzleW) inside = true;
-                    }
-
-                    // 5. 两侧捆绑助推器 (ny: 0.24 .. 0.60)
-                    if (ny >= 0.24f && ny <= 0.60f)
-                    {
-                        float boosterCenter = 0.38f;
-                        float boosterHalfW = 0.09f;
-                        float bstDx = Mathf.Abs(dx - boosterCenter);
-
-                        if (ny > 0.54f)
-                        {
-                            // 助推器锥形斜头
-                            float t = (ny - 0.54f) / 0.06f;
-                            float curW = Mathf.Lerp(boosterHalfW, 0.01f, t);
-                            if (bstDx <= curW) inside = true;
-                        }
-                        else
-                        {
-                            // 助推器身段
-                            if (bstDx <= boosterHalfW) inside = true;
-                        }
-                    }
-
-                    // 6. 助推器底部喷管 (ny: 0.17 .. 0.235)
-                    if (ny >= 0.17f && ny < 0.235f)
-                    {
-                        float boosterCenter = 0.38f;
-                        float bstDx = Mathf.Abs(dx - boosterCenter);
-                        if (bstDx <= 0.06f) inside = true;
-                    }
-
-                    // 7. 级间隔框细线刻痕 (Interstage separation rings)
-                    if (inside && (Mathf.Abs(ny - 0.795f) < 0.005f || Mathf.Abs(ny - 0.645f) < 0.005f))
-                    {
-                        isLine = true;
-                    }
-
-                    // 8. 脊线高光 (Ridge Line)
-                    if (inside && dx <= 0.02f && ny >= 0.24f && ny <= 0.90f)
-                    {
-                        isLine = true;
-                    }
-
-                    Color c = Color.clear;
-                    if (inside)
-                    {
-                        c = isLine
-                            ? WidgetStyleManager.Weighted(WidgetStyleManager.NeutralOpaque, LineWeight.Strong)
-                            : WidgetStyleManager.NeutralOpaque;
-                    }
-
-                    cols[y * w + x] = c;
-                }
-            }
-
-            tex.SetPixels(cols);
-            tex.Apply(true, true);
-            return tex;
-        }
-
         protected override void OnDestroy()
         {
             if (VesselSilhouetteService.Provider != null)
             {
                 VesselSilhouetteService.Provider.OnSilhouetteUpdated -= OnSilhouetteUpdated;
-            }
-
-            if (_fallbackSilhouetteTexture != null)
-            {
-                Destroy(_fallbackSilhouetteTexture);
-                _fallbackSilhouetteTexture = null;
             }
 
             this.Controls.UnregisterAll();

@@ -24,10 +24,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
-        // 声明式微控件
-        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SPX_ENGINES", "发动机"));
-        public TextWidget Status = TextWidget.Value(I18n.Tr("WIDGET_SPX_CUTOFF", "关机"));
-
         // UI 视图节点
         private Image _bgImage;
         private Outline _bgOutline;

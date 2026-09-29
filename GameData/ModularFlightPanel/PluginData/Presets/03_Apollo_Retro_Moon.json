@@ -11,6 +11,15 @@
       "WidgetType": "core"
     },
     {
+      "WidgetId": "core.heading_arc",
+      "DisplayName": "PFD 航向指示弧 (Set 2)",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 76,
+      "Scale": 1,
+      "WidgetType": "heading_arc"
+    },
+    {
       "WidgetId": "core.bottom_controls",
       "DisplayName": "RCS与SAS底控",
       "IsEnabled": true,
@@ -20,20 +29,11 @@
       "WidgetType": "core"
     },
     {
-      "WidgetId": "core.orbital_info",
-      "DisplayName": "轨道数据面板",
+      "WidgetId": "core.sas_dial",
+      "DisplayName": "环形 SAS 罗盘",
       "IsEnabled": true,
       "PositionX": 0,
-      "PositionY": -122,
-      "Scale": 1,
-      "WidgetType": "core"
-    },
-    {
-      "WidgetId": "core.ecam_status",
-      "DisplayName": "ECAM 飞行状态",
-      "IsEnabled": true,
-      "PositionX": 0,
-      "PositionY": -186,
+      "PositionY": -145,
       "Scale": 1,
       "WidgetType": "core"
     },
@@ -64,36 +64,36 @@
       "UnitLabel": "m"
     },
     {
-      "WidgetId": "ecam.throttle",
-      "DisplayName": "ECAM 引擎推力表",
+      "WidgetId": "gauge.throttle",
+      "DisplayName": "AVIONICS 油门推力带",
       "IsEnabled": true,
-      "PositionX": -345,
-      "PositionY": -35,
+      "PositionX": -160,
+      "PositionY": 0,
       "Scale": 1,
-      "WidgetType": "ecam_dial",
+      "WidgetType": "bar_gauge",
       "NumericToken": "{THROTTLE}",
       "MinValue": 0,
       "MaxValue": 100,
       "CautionThreshold": 85,
       "WarningThreshold": 100,
-      "IsSoftLimit": false,
-      "UnitLabel": "%"
+      "UnitLabel": "%",
+      "IsLeftOrientation": true
     },
     {
-      "WidgetId": "ecam.gforce",
-      "DisplayName": "ECAM G力过载表",
+      "WidgetId": "gauge.barometer",
+      "DisplayName": "AVIONICS 动压气压带",
       "IsEnabled": true,
-      "PositionX": 345,
-      "PositionY": -35,
+      "PositionX": 160,
+      "PositionY": 0,
       "Scale": 1,
-      "WidgetType": "ecam_dial",
-      "NumericToken": "{GFORCE}",
+      "WidgetType": "bar_gauge",
+      "NumericToken": "{Q}",
       "MinValue": 0,
-      "MaxValue": 10,
-      "CautionThreshold": 4,
-      "WarningThreshold": 7,
-      "IsSoftLimit": true,
-      "UnitLabel": "G"
+      "MaxValue": 35,
+      "CautionThreshold": 20,
+      "WarningThreshold": 28,
+      "UnitLabel": "kPa",
+      "IsLeftOrientation": false
     },
     {
       "WidgetId": "custom.life",

@@ -20,9 +20,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        // 声明式微控件
-        public TextWidget PointingTitle = TextWidget.Title(I18n.Tr("WIDGET_SPX_POINTING_MODE", "指向模式"));
-        public TextWidget PointingMode = TextWidget.Value(I18n.Tr("SAS_MODE_PROGRADE", "顺行"));
 
         private Image _bgImage;
         private Outline _outline;

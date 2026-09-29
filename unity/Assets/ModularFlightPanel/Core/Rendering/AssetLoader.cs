@@ -76,6 +76,8 @@ namespace ModularFlightPanel.Core
                         DigitalSegmentShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DigitalSegmentUI.shader");
                         CrispAvionicsTextShader = _bundle.LoadAsset<Shader>("Assets/Shaders/CrispAvionicsText.shader");
                         AvionicsProceduralShader = _bundle.LoadAsset<Shader>("Assets/Shaders/AvionicsProceduralUI.shader") ?? _bundle.LoadAsset<Shader>("Assets/Shaders/AvionicsTapeGauge.shader");
+                        Vessel3DShader = _bundle.LoadAsset<Shader>("Assets/Shaders/Vessel3DTechnical.shader");
+                        MinimalistAttitudeShader = _bundle.LoadAsset<Shader>("Assets/Shaders/MinimalistAttitudeSphere.shader");
                         MFPLogger.Info(MFPLogger.CatRender, "Successfully loaded custom shaders from AssetBundle!");
                     }
                 }
@@ -103,8 +105,8 @@ namespace ModularFlightPanel.Core
             if (PhosphorHoloShader == null) PhosphorHoloShader = Shader.Find("ModularFlightPanel/PhosphorHoloUI") ?? Shader.Find("UI/Default");
             if (DigitalSegmentShader == null) DigitalSegmentShader = Shader.Find("ModularFlightPanel/DigitalSegmentUI") ?? Shader.Find("UI/Default");
             if (CrispAvionicsTextShader == null) CrispAvionicsTextShader = Shader.Find("ModularFlightPanel/CrispAvionicsText") ?? Shader.Find("UI/Default");
-            if (Vessel3DShader == null) Vessel3DShader = Shader.Find("ModularFlightPanel/Vessel3DTechnical") ?? Shader.Find("Diffuse") ?? Shader.Find("Unlit/Color");
-            if (MinimalistAttitudeShader == null) MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere") ?? ProceduralShader ?? ModernShader ?? Shader.Find("Diffuse");
+            if (Vessel3DShader == null) Vessel3DShader = Shader.Find("ModularFlightPanel/Vessel3DTechnical") ?? Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Color") ?? Shader.Find("Diffuse");
+            if (MinimalistAttitudeShader == null) MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere") ?? RaymarchShader ?? ProceduralShader ?? Shader.Find("UI/Default");
         }
 
         public static void UnloadBundle()

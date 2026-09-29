@@ -25,6 +25,7 @@
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetColorLiteralAudit.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetModernizationAudit.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetFieldPenetrationAudit.cs" />
+    <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\WidgetInternalLayoutAudit.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\UI\Auditing\I18nSyntaxAuditor.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\Core\I18nJsonParser.cs" />
     <Compile Include="..\..\src\ModularFlightPanel\Config\WidgetConfig.cs" />

@@ -86,8 +86,6 @@ namespace ModularFlightPanel.UI.Widgets
         public override bool IsInteractive => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.UltraLow;
 
-        // 声明式微控件
-        public TextWidget TitleWidget = TextWidget.Title(I18n.Tr("FAV_DOCK_TITLE", "★ 快速对接"));
 
         private Image _panelBg;
         private Outline _panelOutline;

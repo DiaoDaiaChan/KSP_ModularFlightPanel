@@ -21,7 +21,7 @@ namespace ModularFlightPanel.Config
         public float EffectiveScaleY => ScaleY > 0.01f ? ScaleY : (Scale > 0.01f ? Scale : 1.0f);
 
         // 航电套件元数据 (Kit Metadata)
-        public string WidgetType = "custom"; // "core", "custom", "tape", "ecam_dial"
+        public string WidgetType = "custom"; // "core", "custom", "tape"
         public string NumericToken = "{SPD}";
         public float MinValue = 0.0f;
         public float MaxValue = 100.0f;
@@ -186,7 +186,7 @@ namespace ModularFlightPanel.Config
             ScaleY = scaleY > 0.01f ? scaleY : scale;
             CustomTemplate = template;
             Rotation = rotation;
-            WidgetType = id.StartsWith("tape.") ? "tape" : (id.StartsWith("arc_tape.") ? "arc_tape" : (id.StartsWith("ecam.") ? "ecam_dial" : (id.StartsWith("custom.") ? "custom" : "core")));
+            WidgetType = id.StartsWith("tape.") ? "tape" : (id.StartsWith("arc_tape.") ? "arc_tape" : (id.StartsWith("custom.") ? "custom" : "core"));
         }
 
         /// <summary>

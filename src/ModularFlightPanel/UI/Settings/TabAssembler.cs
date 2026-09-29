@@ -174,9 +174,9 @@ namespace ModularFlightPanel.UI.Settings
                 MFPGuiSkin.BeginInset();
                 GUILayout.Label($"<b><size=10><color=#{MFPGuiSkin.HexAccentCyan}>{I18n.Tr("ASM_QUICK_ADD_TITLE", "选择常用航电模板即时生成:")}</color></size></b>");
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button(I18n.Tr("ASM_SPAWN_ECAM", "📊 ECAM 仪表"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+                if (GUILayout.Button(I18n.Tr("ASM_SPAWN_BAR", "📶 状态条"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
-                    SpawnQuickWidget("ecam_dial", "ecam_dial", I18n.Tr("ASM_SPAWN_ECAM", "ECAM 仪表"));
+                    SpawnQuickWidget("bar_gauge", "bar_gauge", I18n.Tr("ASM_TAG_BAR", "横向条形图"));
                 }
                 if (GUILayout.Button(I18n.Tr("ASM_SPAWN_TAPE", "📏 PFD 标尺带"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
@@ -261,11 +261,10 @@ namespace ModularFlightPanel.UI.Settings
 
                 // 类型角标
                 string badge = w.WidgetType == "tape" ? "PFD" :
-                              (w.WidgetType == "ecam_dial" ? "ECAM" :
                               (w.WidgetType == "arc_meter" ? "ARC" :
                               (w.WidgetType == "bar_gauge" ? "BAR" :
                               (w.WidgetId.StartsWith("spacex.") ? "SPX" :
-                              (w.WidgetId.StartsWith("custom.") ? I18n.Tr("WIDGET_UIMGR_CARD", "卡片") : I18n.Tr("WIDGET_UIMGR_CORE", "核心"))))));
+                              (w.WidgetId.StartsWith("custom.") ? I18n.Tr("WIDGET_UIMGR_CARD", "卡片") : I18n.Tr("WIDGET_UIMGR_CORE", "核心")))));
 
                 string rowText = $"<b>{w.DisplayName}</b>\n<size=9><color=#88AACC>{badge}</color> | <color=#AAAAAA>({w.PositionX:F0}, {w.PositionY:F0})</color></size>";
                 if (GUILayout.Button(rowText, "label", GUILayout.ExpandWidth(true), GUILayout.Height(30f)))
@@ -327,7 +326,7 @@ namespace ModularFlightPanel.UI.Settings
             string id = w.WidgetId.ToLowerInvariant();
             string type = (w.WidgetType ?? "").ToLowerInvariant();
 
-            if (category == 1) return type == "ecam_dial" || type == "tape" || type == "bar_gauge" || type == "arc_meter" || id.Contains("gauge") || id.Contains("meter");
+            if (category == 1) return type == "tape" || type == "bar_gauge" || type == "arc_meter" || id.Contains("gauge") || id.Contains("meter");
             if (category == 2) return id.Contains("eicas") || id.Contains("elec") || id.Contains("life") || id.Contains("perf") || id.Contains("signal") || id.Contains("rocket");
             if (category == 3) return id.StartsWith("spacex.") || type.StartsWith("spacex_");
             if (category == 4) return id.Contains("toolbar") || id.Contains("control") || id.Contains("sas") || id.Contains("timewarp") || id.Contains("staging") || id.Contains("ui_widget");
@@ -364,13 +363,6 @@ namespace ModularFlightPanel.UI.Settings
                 newCfg.MaxValue = 1000f;
                 newCfg.NumericToken = "{SPD:SURF}";
                 newCfg.UnitLabel = "m/s";
-            }
-            else if (typeName == "ecam_dial")
-            {
-                newCfg.MinValue = 0f;
-                newCfg.MaxValue = 100f;
-                newCfg.NumericToken = "{THROTTLE}";
-                newCfg.UnitLabel = "%";
             }
             else if (typeName == "arc_meter")
             {
@@ -416,7 +408,7 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.Space(4f);
 
             // 3. 遥测插槽驱动与量程标定
-            if (w.WidgetType == "ecam_dial" || w.WidgetType == "tape" || w.WidgetType == "bar_gauge" ||
+            if (w.WidgetType == "tape" || w.WidgetType == "bar_gauge" ||
                 w.WidgetType == "arc_meter" || w.WidgetId == "core.vsi" || w.WidgetId == "core.throttle" || w.WidgetId == "core.propellant")
             {
                 DrawDialOrTapeCard(w);
@@ -452,11 +444,10 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.BeginHorizontal();
 
             string typeTag = w.WidgetType == "tape" ? I18n.Tr("ASM_TAG_TAPE", "PFD 标尺带") :
-                            (w.WidgetType == "ecam_dial" ? I18n.Tr("ASM_TAG_ECAM", "ECAM 仪表") :
                             (w.WidgetType == "arc_meter" ? I18n.Tr("ASM_TAG_ARC", "弧形电平指示器") :
                             (w.WidgetType == "bar_gauge" ? I18n.Tr("ASM_TAG_BAR", "横向条形图") :
                             (w.WidgetId.StartsWith("spacex.") ? I18n.Tr("ASM_TAG_SPACEX", "SpaceX 套件") :
-                            (w.WidgetId.StartsWith("custom.") ? I18n.Tr("ASM_TAG_CARD", "遥测卡片") : I18n.Tr("ASM_TAG_CORE", "原生核心组件"))))));
+                            (w.WidgetId.StartsWith("custom.") ? I18n.Tr("ASM_TAG_CARD", "遥测卡片") : I18n.Tr("ASM_TAG_CORE", "原生核心组件")))));
 
             MFPGuiSkin.DrawBadge(typeTag, Color.white, new Color(0.00f, 0.45f, 0.65f, 0.95f), 130f);
 
@@ -1302,7 +1293,7 @@ namespace ModularFlightPanel.UI.Settings
             {
                 TelemetryParamDrawer.Open(curWidget.DisplayName, token =>
                 {
-                    if (curWidget.WidgetType == "ecam_dial" || curWidget.WidgetType == "tape" || curWidget.WidgetType == "arc_meter" || curWidget.WidgetType == "bar_gauge")
+                    if (curWidget.WidgetType == "tape" || curWidget.WidgetType == "arc_meter" || curWidget.WidgetType == "bar_gauge")
                     {
                         curWidget.NumericToken = token;
                     }

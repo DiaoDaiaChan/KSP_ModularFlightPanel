@@ -124,7 +124,7 @@ KSP_naviball/
 │               ├── NavballSphereWidget.cs   <- 3D 姿态球
 │               ├── ArcMeterWidget.cs        <- 弧形分段表
 │               ├── DigitalBoxWidget.cs      <- 速度/高度数显盒
-│               ├── OrbitalInfoWidget.cs     <- 轨道参数栏
+│               ├── OrbitalElementsWidget.cs <- 轨道六根数全息态势
 │               ├── SASDialWidget.cs         <- 环形 SAS 罗盘
 │               └── BottomControlsWidget.cs  <- RCS/SAS 控制底栏
 │

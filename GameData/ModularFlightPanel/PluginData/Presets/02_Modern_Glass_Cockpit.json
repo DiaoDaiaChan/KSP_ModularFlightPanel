@@ -11,6 +11,15 @@
       "WidgetType": "core"
     },
     {
+      "WidgetId": "core.heading_arc",
+      "DisplayName": "PFD 航向指示弧 (Set 2)",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 76,
+      "Scale": 1,
+      "WidgetType": "heading_arc"
+    },
+    {
       "WidgetId": "core.bottom_controls",
       "DisplayName": "RCS与SAS底控",
       "IsEnabled": true,
@@ -20,20 +29,11 @@
       "WidgetType": "core"
     },
     {
-      "WidgetId": "core.orbital_info",
-      "DisplayName": "轨道数据面板",
+      "WidgetId": "core.sas_dial",
+      "DisplayName": "环形 SAS 罗盘",
       "IsEnabled": true,
       "PositionX": 0,
-      "PositionY": -122,
-      "Scale": 1,
-      "WidgetType": "core"
-    },
-    {
-      "WidgetId": "core.ecam_status",
-      "DisplayName": "ECAM 飞行状态",
-      "IsEnabled": true,
-      "PositionX": 0,
-      "PositionY": -186,
+      "PositionY": -145,
       "Scale": 1,
       "WidgetType": "core"
     },
@@ -64,6 +64,38 @@
       "UnitLabel": "m"
     },
     {
+      "WidgetId": "gauge.throttle",
+      "DisplayName": "AVIONICS 油门推力带",
+      "IsEnabled": true,
+      "PositionX": -160,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "bar_gauge",
+      "NumericToken": "{THROTTLE}",
+      "MinValue": 0,
+      "MaxValue": 100,
+      "CautionThreshold": 85,
+      "WarningThreshold": 100,
+      "UnitLabel": "%",
+      "IsLeftOrientation": true
+    },
+    {
+      "WidgetId": "gauge.barometer",
+      "DisplayName": "AVIONICS 动压气压带",
+      "IsEnabled": true,
+      "PositionX": 160,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "bar_gauge",
+      "NumericToken": "{Q}",
+      "MinValue": 0,
+      "MaxValue": 35,
+      "CautionThreshold": 20,
+      "WarningThreshold": 28,
+      "UnitLabel": "kPa",
+      "IsLeftOrientation": false
+    },
+    {
       "WidgetId": "custom.electrical",
       "DisplayName": "ELEC 电力分配系统",
       "IsEnabled": true,
@@ -80,38 +112,6 @@
       "PositionY": 150,
       "Scale": 1,
       "WidgetType": "rocket2d"
-    },
-    {
-      "WidgetId": "ecam.gforce",
-      "DisplayName": "ECAM G力过载表",
-      "IsEnabled": true,
-      "PositionX": -345,
-      "PositionY": -35,
-      "Scale": 1,
-      "WidgetType": "ecam_dial",
-      "NumericToken": "{GFORCE}",
-      "MinValue": 0,
-      "MaxValue": 15,
-      "CautionThreshold": 5,
-      "WarningThreshold": 8,
-      "IsSoftLimit": true,
-      "UnitLabel": "G"
-    },
-    {
-      "WidgetId": "ecam.q",
-      "DisplayName": "ECAM 动压监控表",
-      "IsEnabled": true,
-      "PositionX": 345,
-      "PositionY": -35,
-      "Scale": 1,
-      "WidgetType": "ecam_dial",
-      "NumericToken": "{Q}",
-      "MinValue": 0,
-      "MaxValue": 35,
-      "CautionThreshold": 25,
-      "WarningThreshold": 32,
-      "IsSoftLimit": false,
-      "UnitLabel": "kPa"
     }
   ]
 }

@@ -23,8 +23,6 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(264f, 26f);
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
-        // 声明式微控件
-        public TextWidget TargetName = TextWidget.Title(I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
 
         private Image _panelBg;
         private Outline _panelOutline;

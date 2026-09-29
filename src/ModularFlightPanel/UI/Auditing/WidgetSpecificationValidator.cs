@@ -60,15 +60,11 @@ namespace ModularFlightPanel.UI
             sb.AppendLine("           MODULAR FLIGHT PANEL 组件规范合法性校验报告 (SPEC AUDIT)");
             sb.AppendLine("=======================================================================");
             sb.AppendLine($"已审计组件总数: {TotalWidgetsAudited} (反射检查: {ReflectionWidgetsAudited}, 源码扫描: {SourceWidgetsAudited})");
-            sb.AppendLine($"源码级规则 (SPEC-001..008): {(SourceAuditExecuted ? "已执行" : "★未执行 (仓库源码不可见，本次结论仅覆盖反射级检查)")}");
+            sb.AppendLine($"源码级规则 (SPEC-001..011): {(SourceAuditExecuted ? "已执行 (L4 语义审计内核)" : "★未执行 (仓库源码不可见，本次结论仅覆盖运行期反射子集，不得据此宣称全量合规)")}");
             sb.AppendLine($"已执行规则检查: {TotalChecksPerformed}");
             sb.AppendLine($"错误违规项 (ERROR):   {ErrorCount}");
             sb.AppendLine($"潜在风险项 (WARNING): {WarningCount}");
-#if !KSP_RUNTIME
-            sb.AppendLine($"颜色基线债务 (DEBT):  {WidgetColorLiteralAudit.TotalRegisteredDebt} 处 (当前目标: 0 容忍)");
-#else
-            sb.AppendLine("颜色基线债务 (DEBT):  0 处 (反射运行时不可测，由 HeadlessValidator 源码审计保障)");
-#endif
+            sb.AppendLine("颜色字面量 (SPEC-006): 零容忍，无棘轮基数；判定由 L4 语义审计独占 (本通道仅覆盖静态 Color/Color32 字段子集)");
             sb.AppendLine("-----------------------------------------------------------------------");
 
             if (ErrorCount == 0 && WarningCount == 0)
@@ -129,23 +125,30 @@ namespace ModularFlightPanel.UI
     }
 
     /// <summary>
-    /// 飞行仪表组件规范合法性校验引擎 (WidgetSpecificationValidator)
-    /// 
-    /// 严格把关全项目所有继承自 BaseFlightWidget 的组件，
-    /// 包含反射层级分析与源码 AST 静态扫描双重机制：
-    /// 
-    /// 1. 继承契约规则 (Rule_Inheritance): 必须派生自 BaseFlightWidget 并重写 OnInitialize。
-    /// 2. 刷新阶梯规则 (Rule_RefreshTier): 必须显式声明或重写 RefreshTier 属性 (Critical/Standard/Relaxed/UltraLow)。
-    /// 3. 主题管道规则 (Rule_SemanticTheming): 必须实现 ApplyTheme 并接入 WidgetStyleManager。
-    /// 4. 遥测解耦规则 (Rule_TelemetryContract): 必须实现 OnUpdateTelemetry(IFlightTelemetry)，禁止私自持有 Vessel/Part 强引用。
-    /// 5. 安全生命周期规则 (Rule_SafeLifecycle): 严格 override OnDestroy() 与 Update()，禁止隐式成员隐藏 (0 CS0114)。
-    /// 6. 反硬编码偷懒规则 (Rule_NoHardcodedColors): 零容忍颜色字面量 (0 Color Literals)，禁止内部脱离 ThemeConfig 定义色彩常量。
-    /// 7. 零场景查询规则 (Rule_NoSceneQueriesInUpdate): 组件内不得出现任何 Unity 场景查询 API
-    ///    (FindObjectOfType / FindObjectsByType / FindFirstObjectByType / FindAnyObjectByType /
-    ///     FindObjectsByType / GameObject.Find 家族)，一律改由 ProbeManager 统一调度。
+    /// 飞行仪表组件规范合法性校验引擎 (WidgetSpecificationValidator) —— 运行期反射通道 / L2 降级通道
     ///
-    /// 【单一定义】规则码与规则实现（含"哪些文件算组件"的发现逻辑）唯一存在于 UI/WidgetSourceAudit.cs，
-    /// 本类只负责反射级校验与结果汇总；无头验证器调用同一内核，因此不存在两份正则各说各话的可能。
+    /// 【为什么这里只能是反射】
+    /// Roslyn (Microsoft.CodeAnalysis) 不随插件进入 KSP 运行时：KSP Managed 目录不提供该程序集，
+    /// `ModularFlightPanel.csproj` 已用 &lt;Compile Remove&gt; 把 SemanticCompilationProvider / WidgetSourceAudit /
+    /// WidgetColorLiteralAudit / I18nSyntaxAuditor 等全部语义审计文件排除在插件编译之外。
+    /// 因此进程内只能做**结构级**反射校验，它看不到源码文本 —— 颜色字面量、场景查询、死区缓存、
+    /// 内部几何重叠这类"源码事实"必须由 L4 语义审计负责，反射通道结构上不可能覆盖。
+    ///
+    /// 【本通道实际覆盖的反射子集】
+    /// 1. 继承契约 (Rule_Inheritance): 派生自 BaseFlightWidget 且重写了 OnInitialize。
+    /// 2. 刷新阶梯 (Rule_RefreshTier): 显式声明/重写 RefreshTier。
+    /// 3. 主题管道 (Rule_SemanticTheming): override ApplyTheme(ThemeConfig)。
+    /// 4. 遥测解耦 (Rule_TelemetryContract): override OnUpdateTelemetry(IFlightTelemetry) 且不持有 Vessel/Part 强引用。
+    /// 5. 生命周期 (Rule_SafeLifecycle): OnDestroy/Update 必须 override，禁止隐式成员隐藏 (0 CS0114)。
+    /// 6. 硬编码颜色字段 (Rule_NoHardcodedColors): 静态 Color/Color32 字段（**仅是 SPEC-006 的字段级子集**，
+    ///    字面量级判定由 L4 语义审计独占，两者不是同一强度的检查）。
+    ///
+    /// 【不再计入的项】SPEC-007 / 009 / 010 / 011 是纯源码规则，反射通道**不执行**，
+    /// 因此也不再虚增 TotalChecksPerformed —— 把没跑的检查算进"已执行规则检查"是纯粹的假信息。
+    ///
+    /// 【权威顺序】`tools/HeadlessValidator` 的源码级语义审计（SPEC-001..011）是唯一权威。
+    /// 【单一定义】规则码与规则实现（含"哪些文件算组件"的发现逻辑）唯一存在于 WidgetSourceAudit，
+    /// 本类只做反射级校验与结果汇总；无头验证器调用同一内核，不存在两份正则各说各话的可能。
     /// </summary>
     public static class WidgetSpecificationValidator
     {
@@ -458,8 +461,9 @@ namespace ModularFlightPanel.UI
                 });
             }
 
-            // 规则 7: 零场景查询 (反射计数对齐，真实扫描在源码阶段执行)
-            report.TotalChecksPerformed++;
+            // 规则 7（SPEC-007 零场景查询）是纯源码规则，反射通道不执行，因此这里**不再虚增**
+            // TotalChecksPerformed —— 旧实现只 `report.TotalChecksPerformed++` 却什么都不检查，
+            // 让"已执行规则检查"这个数字虚高，属于典型的假信息。
         }
     }
 }

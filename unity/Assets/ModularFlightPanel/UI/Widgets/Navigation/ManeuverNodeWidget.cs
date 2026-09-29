@@ -28,10 +28,6 @@ namespace ModularFlightPanel.UI.Widgets
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
-        // 声明式微控件
-        public TextWidget HeaderTitle = TextWidget.Title(I18n.Tr("WIDGET_NAV_MANEUVER_NODE", "机动节点"));
-        public TextWidget StatusBadge = TextWidget.Badge(I18n.Tr("PHASE_STANDBY", "待机"));
-
         // UI 层次节点
         private Image _bgImage;
         private Outline _bgOutline;
@@ -62,15 +58,15 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _btnDismissText;
 
         // 通配符通道与模板
-        private string _titleTemplate = "MANEUVER NODE";
+        private string _titleTemplate = I18n.Tr("WIDGET_MANEUVER_NODE_TITLE", "机动节点");
         private string _deltaVToken = "{MN:DV}";
         private string _totalDvToken = "{MN:TOTAL_DV}";
         private string _tNodeToken = "{MN:TNODE}";
         private string _burnTimeToken = "{MN:BURN}";
         private string _timeToBurnToken = "{MN:BURNTIME}";
         private string _unitTemplate = "m/s";
-        private string _warpTextTemplate = "WARP";
-        private string _delTextTemplate = "DEL";
+        private string _warpTextTemplate = I18n.Tr("WIDGET_MANEUVER_WARP", "跃迁");
+        private string _delTextTemplate = I18n.Tr("WIDGET_MANEUVER_DEL", "删除");
 
         // 运行时状态与脏标记缓存
         private readonly Cached<bool> _lastHasNode = new Cached<bool>(false);
@@ -119,50 +115,22 @@ namespace ModularFlightPanel.UI.Widgets
             _warpTextTemplate = GetTemplateChannel("WARP_LABEL", _warpTextTemplate);
             _delTextTemplate = GetTemplateChannel("DEL_LABEL", _delTextTemplate);
 
-            // 2. 顶部 Header (标题 + 状态徽标已由微控件挂载)
-            if (HeaderTitle != null && HeaderTitle.TextComponent != null)
-            {
-                HeaderTitle.Text = _titleTemplate;
-                HeaderTitle.SetRole(TextStyleRole.Label);
-                _headerTitleText = HeaderTitle.TextComponent;
-                RectTransform titleRt = _headerTitleText.rectTransform;
-                titleRt.pivot = new Vector2(0f, 0.5f);
-                titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 0.5f);
-                titleRt.sizeDelta = new Vector2(120f * s, 16f * s);
-                titleRt.anchoredPosition = new Vector2(-92f * s, 42f * s);
-            }
-            else
-            {
-                _headerTitleText = UIFactory.CreateText(transform, "Header_Title", _titleTemplate, Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleLeft,
-                    style.GetTextColor(TextStyleRole.Label, theme));
-                RectTransform titleRt = _headerTitleText.rectTransform;
-                titleRt.pivot = new Vector2(0f, 0.5f);
-                titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 0.5f);
-                titleRt.sizeDelta = new Vector2(120f * s, 16f * s);
-                titleRt.anchoredPosition = new Vector2(-92f * s, 42f * s);
-            }
+            // 2. 顶部 Header (标题 + 状态徽标)
+            _headerTitleText = UIFactory.CreateText(transform, "Header_Title", _titleTemplate, Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleLeft,
+                style.GetTextColor(TextStyleRole.Label, theme));
+            RectTransform titleRt = _headerTitleText.rectTransform;
+            titleRt.pivot = new Vector2(0f, 0.5f);
+            titleRt.anchorMin = titleRt.anchorMax = new Vector2(0.5f, 0.5f);
+            titleRt.sizeDelta = new Vector2(120f * s, 16f * s);
+            titleRt.anchoredPosition = new Vector2(-92f * s, 42f * s);
 
-            if (StatusBadge != null && StatusBadge.TextComponent != null)
-            {
-                StatusBadge.Text = I18n.Tr("PHASE_STANDBY", "待机");
-                StatusBadge.SetRole(TextStyleRole.SecondaryValue);
-                _statusBadgeText = StatusBadge.TextComponent;
-                RectTransform badgeRt = _statusBadgeText.rectTransform;
-                badgeRt.pivot = new Vector2(1f, 0.5f);
-                badgeRt.anchorMin = badgeRt.anchorMax = new Vector2(0.5f, 0.5f);
-                badgeRt.sizeDelta = new Vector2(60f * s, 16f * s);
-                badgeRt.anchoredPosition = new Vector2(92f * s, 42f * s);
-            }
-            else
-            {
-                _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", I18n.Tr("PHASE_STANDBY", "待机"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight,
-                    style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-                RectTransform badgeRt = _statusBadgeText.rectTransform;
-                badgeRt.pivot = new Vector2(1f, 0.5f);
-                badgeRt.anchorMin = badgeRt.anchorMax = new Vector2(0.5f, 0.5f);
-                badgeRt.sizeDelta = new Vector2(60f * s, 16f * s);
-                badgeRt.anchoredPosition = new Vector2(92f * s, 42f * s);
-            }
+            _statusBadgeText = UIFactory.CreateText(transform, "Status_Badge", I18n.Tr("PHASE_STANDBY", "待机"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight,
+                style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            RectTransform badgeRt = _statusBadgeText.rectTransform;
+            badgeRt.pivot = new Vector2(1f, 0.5f);
+            badgeRt.anchorMin = badgeRt.anchorMax = new Vector2(0.5f, 0.5f);
+            badgeRt.sizeDelta = new Vector2(60f * s, 16f * s);
+            badgeRt.anchoredPosition = new Vector2(92f * s, 42f * s);
 
             // 3. 核心主读数 (剩余 Delta-V + 单位)
             _deltaVValueText = UIFactory.CreateText(transform, "DeltaV_Value", "---", Mathf.RoundToInt(22f * s), TextAnchor.MiddleLeft,
@@ -501,6 +469,19 @@ namespace ModularFlightPanel.UI.Widgets
         private void OnDismissClicked()
         {
             FlightTelemetryContext.Current?.DeleteManeuverNode();
+        }
+
+        protected override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            _titleTemplate = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_MANEUVER_NODE_TITLE", "机动节点"));
+            _warpTextTemplate = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_MANEUVER_WARP", "跃迁"));
+            _delTextTemplate = GetTemplateChannel("DEL_LABEL", I18n.Tr("WIDGET_MANEUVER_DEL", "删除"));
+            if (_headerTitleText != null) _headerTitleText.text = _titleTemplate;
+            if (_btnWarpText != null) _btnWarpText.text = _warpTextTemplate;
+            if (_btnDismissText != null) _btnDismissText.text = _delTextTemplate;
+            if (_tNodeLabel != null) _tNodeLabel.text = I18n.Tr("WIDGET_NAV_TNODE", "节点倒计时");
+            if (_burnTimeLabel != null) _burnTimeLabel.text = I18n.Tr("WIDGET_NAV_BURN_TIME", "燃烧时长");
         }
 
         protected override void OnDestroy()

@@ -61,8 +61,6 @@ namespace ModularFlightPanel.UI.Widgets
         protected override bool AutoCreateCardFrame => false;
         public override bool IsInteractive => true;
 
-        // 声明式微控件
-        public TextWidget CollapseTitle = TextWidget.Title("« DOCK");
 
         private Image _panelBg;
         private Outline _panelOutline;

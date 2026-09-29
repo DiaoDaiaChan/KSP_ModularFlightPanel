@@ -472,12 +472,32 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
-        /// 判定指定语法节点是否属于遥测数据采样/物理量计算表达式
+        /// 判定指定语法节点是否属于遥测数据采样/物理量计算表达式。
+        /// 优先使用 Roslyn 语义符号穿透判定，无语义模型时回退到语法结构匹配。
         /// </summary>
-        public static bool IsTelemetryDataExpression(SyntaxNode node, out string matchedText)
+        public static bool IsTelemetryDataExpression(SyntaxNode node, out string matchedText, SemanticModel semanticModel = null)
         {
             matchedText = null;
             if (node == null) return false;
+
+            if (semanticModel != null)
+            {
+                ISymbol symbol = semanticModel.GetSymbolInfo(node).Symbol;
+                if (symbol == null && node is MemberAccessExpressionSyntax maSym)
+                {
+                    symbol = semanticModel.GetSymbolInfo(maSym.Name).Symbol;
+                }
+                if (symbol == null && node is InvocationExpressionSyntax invSym)
+                {
+                    symbol = semanticModel.GetSymbolInfo(invSym.Expression).Symbol;
+                }
+
+                if (SemanticCompilationProvider.IsTelemetrySymbol(symbol))
+                {
+                    matchedText = node.ToString();
+                    return true;
+                }
+            }
 
             if (node is MemberAccessExpressionSyntax ma)
             {
@@ -516,16 +536,48 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
-        /// 判定指定语法节点是否属于 UI 绘制、文本更新或材质/动效渲染表达式
+        /// 判定指定语法节点是否属于 UI 绘制、文本更新或材质/动效渲染表达式。
+        /// 优先使用 Roslyn 语义符号直达 UnityEngine.UI.Graphic / RectTransform / Material 底层基类，
+        /// 无语义模型时回退到语法结构匹配。
         /// </summary>
-        public static bool IsUIDrawExpression(SyntaxNode node, out string matchedText)
+        public static bool IsUIDrawExpression(SyntaxNode node, out string matchedText, SemanticModel semanticModel = null)
         {
             matchedText = null;
             if (node == null) return false;
 
-            if (node is AssignmentExpressionSyntax assign && assign.IsKind(SyntaxKind.SimpleAssignmentExpression))
+            if (semanticModel != null)
             {
-                string leftText = assign.Left.ToString();
+                if (node is AssignmentExpressionSyntax assign)
+                {
+                    var symbol = semanticModel.GetSymbolInfo(assign.Left).Symbol;
+                    if (symbol == null && assign.Left is MemberAccessExpressionSyntax maLeft)
+                    {
+                        symbol = semanticModel.GetSymbolInfo(maLeft.Name).Symbol;
+                    }
+                    if (SemanticCompilationProvider.IsUiDrawSymbol(symbol))
+                    {
+                        matchedText = assign.Left + " = ...";
+                        return true;
+                    }
+                }
+                else if (node is InvocationExpressionSyntax inv)
+                {
+                    var symbol = semanticModel.GetSymbolInfo(inv).Symbol;
+                    if (symbol == null && inv.Expression is MemberAccessExpressionSyntax maInv)
+                    {
+                        symbol = semanticModel.GetSymbolInfo(maInv.Name).Symbol;
+                    }
+                    if (SemanticCompilationProvider.IsUiDrawSymbol(symbol))
+                    {
+                        matchedText = inv.Expression + "(...)";
+                        return true;
+                    }
+                }
+            }
+
+            if (node is AssignmentExpressionSyntax assignSyntax && assignSyntax.IsKind(SyntaxKind.SimpleAssignmentExpression))
+            {
+                string leftText = assignSyntax.Left.ToString();
                 if (leftText.EndsWith(".Text", StringComparison.Ordinal) ||
                     leftText.EndsWith(".text", StringComparison.Ordinal) ||
                     leftText.EndsWith(".color", StringComparison.Ordinal) ||
@@ -691,16 +743,16 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
-        /// 扫描语法节点内出现的所有遥测数据采样/物理计算表达式
+        /// 扫描语法节点内出现的所有遥测数据采样/物理计算表达式（优先使用语义符号穿透判定）
         /// </summary>
-        public static List<AstMatchResult> FindTelemetryUpdateExpressions(SyntaxNode root)
+        public static List<AstMatchResult> FindTelemetryUpdateExpressions(SyntaxNode root, SemanticModel semanticModel = null)
         {
             var list = new List<AstMatchResult>();
             if (root == null) return list;
 
             foreach (var node in root.DescendantNodes())
             {
-                if (IsTelemetryDataExpression(node, out string matched))
+                if (IsTelemetryDataExpression(node, out string matched, semanticModel))
                 {
                     list.Add(new AstMatchResult(node, matched));
                 }
@@ -709,16 +761,16 @@ namespace ModularFlightPanel.UI.Auditing
         }
 
         /// <summary>
-        /// 扫描语法节点内出现的所有 UI 绘制与图元操作表达式
+        /// 扫描语法节点内出现的所有 UI 绘制与图元操作表达式（优先使用语义符号穿透判定直达 Graphic/RectTransform/Material）
         /// </summary>
-        public static List<AstMatchResult> FindUIDrawExpressions(SyntaxNode root)
+        public static List<AstMatchResult> FindUIDrawExpressions(SyntaxNode root, SemanticModel semanticModel = null)
         {
             var list = new List<AstMatchResult>();
             if (root == null) return list;
 
             foreach (var node in root.DescendantNodes())
             {
-                if (IsUIDrawExpression(node, out string matched))
+                if (IsUIDrawExpression(node, out string matched, semanticModel))
                 {
                     list.Add(new AstMatchResult(node, matched));
                 }

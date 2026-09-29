@@ -27,9 +27,10 @@ namespace ModularFlightPanel.UI
         public const string AutoRegistration = "MFP-SPEC-008";   // 必须声明 [FlightWidget] 自动注册与预设库元数据
         public const string WidgetPrivateCacheContract = "MFP-SPEC-009"; // 必须声明或使用智能私有缓存与死区脏检查 (Cached<T> / CachedFloat / CachedDouble 等)
         public const string HotLoopUnguardedOperation = "MFP-SPEC-010";   // 高频生命周期禁止无守卫堆分配、字符串插值与 UGUI 几何写入
+        public const string InternalControlOverlap = "MFP-SPEC-011"; // 禁止组件内部微控件与图元几何重叠冲突 (Internal Control Spatial Collision & Overlap)
         public const string TelemetryAssemblyWarning = "MFP-WARN-TELEM-ASSEMBLY"; // 微控件未支持标准化遥测装配警告
 
-        public const int RuleCount = 13;
+        public const int RuleCount = 14;
 
         /// <summary>审计内核自身问题（发现层失效 / 判定依据缺失）的统一报告名</summary>
         public const string KernelReportName = "AuditKernel";
@@ -95,6 +96,16 @@ namespace ModularFlightPanel.UI
         /// Cached<T> / CachedFloat / CachedDouble (全托管类，支持弱引用与反射全自动重置)
         /// DirtyField<T> / DirtyFloat / DirtyDouble (零 GC 局部值死区脏检查结构体)
         /// </summary>
+        private static readonly HashSet<string> ValidCacheTypeSet = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Cached",
+            "CachedFloat",
+            "CachedDouble",
+            "DirtyField",
+            "DirtyFloat",
+            "DirtyDouble"
+        };
+
         public static readonly IReadOnlyList<string> ValidCacheTypes = Array.AsReadOnly(new[]
         {
             "Cached",
@@ -106,18 +117,15 @@ namespace ModularFlightPanel.UI
         });
 
         /// <summary>
-        /// 判定类型名称是否为合规的私有缓存类型（自动解包数组 [] 与可空 ? 包装）
+        /// 判定类型名称是否为合规的私有缓存类型（自动解包泛型、数组 [] 与可空 ? 包装）
         /// </summary>
         public static bool IsValidCacheType(string typeName)
         {
             if (string.IsNullOrEmpty(typeName)) return false;
-            string clean = typeName.Replace("[]", "").Replace("?", "").Trim();
-            for (int i = 0; i < ValidCacheTypes.Count; i++)
-            {
-                if (string.Equals(ValidCacheTypes[i], clean, StringComparison.Ordinal))
-                    return true;
-            }
-            return false;
+            int angle = typeName.IndexOf('<');
+            string clean = angle > 0 ? typeName.Substring(0, angle) : typeName;
+            clean = clean.TrimEnd('[', ']', '?', ' ');
+            return ValidCacheTypeSet.Contains(clean);
         }
 
         // ==========================================================================================
@@ -177,6 +185,9 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public static readonly IReadOnlyList<string> SceneQueryExemptPrefixes = Array.AsReadOnly(new[] { "transform.Find", "Probe." });
 
+        private static readonly HashSet<string> SceneQueryStaticImportOwnerSet =
+            new HashSet<string>(SceneQueryStaticImportOwners, StringComparer.Ordinal);
+
         /// <summary>
         /// 判定一个调用/成员访问表达式是否命中场景查询 API 表。
         /// expression 形如 "Camera.main" / "UnityEngine.Object.FindObjectsByType<Camera>" / "Find("HUD")"。
@@ -190,9 +201,14 @@ namespace ModularFlightPanel.UI
                 if (expression.StartsWith(SceneQueryExemptPrefixes[i], StringComparison.Ordinal)) return false;
             }
 
-            string[] parts = expression.Split('.');
-            string member = parts[parts.Length - 1];
-            string owner = parts.Length >= 2 ? parts[parts.Length - 2] : null;
+            int lastDot = expression.LastIndexOf('.');
+            string member = lastDot >= 0 ? expression.Substring(lastDot + 1) : expression;
+            string owner = null;
+            if (lastDot > 0)
+            {
+                int secondLastDot = expression.LastIndexOf('.', lastDot - 1);
+                owner = secondLastDot >= 0 ? expression.Substring(secondLastDot + 1, lastDot - secondLastDot - 1) : expression.Substring(0, lastDot);
+            }
 
             for (int i = 0; i < SceneQueryApis.Count; i++)
             {
@@ -213,11 +229,7 @@ namespace ModularFlightPanel.UI
         public static bool IsBannedStaticImportOwner(string simpleTypeName)
         {
             if (string.IsNullOrEmpty(simpleTypeName)) return false;
-            for (int i = 0; i < SceneQueryStaticImportOwners.Count; i++)
-            {
-                if (string.Equals(SceneQueryStaticImportOwners[i], simpleTypeName, StringComparison.Ordinal)) return true;
-            }
-            return false;
+            return SceneQueryStaticImportOwnerSet.Contains(simpleTypeName);
         }
 
         // ==========================================================================================
@@ -409,14 +421,9 @@ namespace ModularFlightPanel.UI
         public static bool IsResidualDirtyField(string fieldName)
         {
             if (string.IsNullOrEmpty(fieldName)) return false;
-            for (int i = 0; i < ResidualDirtyFieldPrefixes.Count; i++)
-            {
-                if (fieldName.StartsWith(ResidualDirtyFieldPrefixes[i], StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-            return false;
+            return fieldName.StartsWith("_last", StringComparison.OrdinalIgnoreCase) ||
+                   fieldName.StartsWith("_prev", StringComparison.OrdinalIgnoreCase) ||
+                   fieldName.StartsWith("_dirty", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>高频方法名判定用的同步入口前缀（Sync* 视为高频受染入口）</summary>
@@ -494,20 +501,22 @@ namespace ModularFlightPanel.UI
         /// <summary>控件显示名解析失败时的兜底名（键 = 类型名）</summary>
         public static string DefaultControlDisplayName(string controlType)
         {
-            if (controlType == "WidgetReadoutControl") return "ReadoutControl";
-            if (controlType == "WidgetLinearBarControl") return "LinearBar";
-            return controlType ?? "Control";
+            switch (controlType)
+            {
+                case "WidgetReadoutControl": return "ReadoutControl";
+                case "WidgetLinearBarControl": return "LinearBar";
+                default: return controlType ?? "Control";
+            }
         }
+
+        private static readonly HashSet<string> TelemetryTokenDslTypeSet =
+            new HashSet<string>(TelemetryTokenDslTypes, StringComparer.Ordinal);
 
         /// <summary>该 DSL 控件类型是否属于"承载遥测 Token"的判定范围</summary>
         public static bool IsTelemetryTokenDslType(string simpleTypeName)
         {
             if (string.IsNullOrEmpty(simpleTypeName)) return false;
-            for (int i = 0; i < TelemetryTokenDslTypes.Count; i++)
-            {
-                if (string.Equals(TelemetryTokenDslTypes[i], simpleTypeName, StringComparison.Ordinal)) return true;
-            }
-            return false;
+            return TelemetryTokenDslTypeSet.Contains(simpleTypeName);
         }
 
         /// <summary>该调用表达式是否为 DSL 的 Token 承载工厂方法（TextWidget.Value / LinearBarWidget.BottomBar）</summary>
@@ -521,14 +530,13 @@ namespace ModularFlightPanel.UI
             return false;
         }
 
+        private static readonly HashSet<string> AuditedControlTypeSet =
+            new HashSet<string>(AuditedControlTypes, StringComparer.Ordinal);
+
         public static bool IsAuditedControlType(string simpleTypeName)
         {
             if (string.IsNullOrEmpty(simpleTypeName)) return false;
-            for (int i = 0; i < AuditedControlTypes.Count; i++)
-            {
-                if (string.Equals(AuditedControlTypes[i], simpleTypeName, StringComparison.Ordinal)) return true;
-            }
-            return false;
+            return AuditedControlTypeSet.Contains(simpleTypeName);
         }
 
         /// <summary>按"类型名 + 实参个数"查找构造函数形状；未登记的重载返回 null（调用方必须显式上报，不得静默放过）</summary>
@@ -609,26 +617,22 @@ namespace ModularFlightPanel.UI
             "WidgetModernizationAudit.cs",
             "WidgetColorLiteralAudit.cs",
             "WidgetFieldPenetrationAudit.cs",
-            "I18nSyntaxAuditor.cs"
+            "I18nSyntaxAuditor.cs",
+            "WidgetInternalLayoutAudit.cs"
         });
 
         /// <summary>插件本体的项目文件（用于校验 PluginExcludedAuditFiles 与 csproj 不漂移）</summary>
         public const string PluginCsprojRelativePath = "src/ModularFlightPanel/ModularFlightPanel.csproj";
 
+        private static readonly HashSet<string> PluginExcludedAuditFileSet =
+            new HashSet<string>(PluginExcludedAuditFiles, StringComparer.OrdinalIgnoreCase);
+
         /// <summary>按文件名判定是否属于"仅无头侧编译"的审计文件</summary>
         public static bool IsPluginExcludedAuditFile(string pathOrName)
         {
             if (string.IsNullOrEmpty(pathOrName)) return false;
-
-            string name = pathOrName.Replace('\\', '/');
-            int slash = name.LastIndexOf('/');
-            if (slash >= 0) name = name.Substring(slash + 1);
-
-            for (int i = 0; i < PluginExcludedAuditFiles.Count; i++)
-            {
-                if (string.Equals(PluginExcludedAuditFiles[i], name, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-            return false;
+            string name = System.IO.Path.GetFileName(pathOrName.Replace('\\', '/'));
+            return PluginExcludedAuditFileSet.Contains(name);
         }
 
         // ==========================================================================================
@@ -661,37 +665,28 @@ namespace ModularFlightPanel.UI
         public static List<string> ParseCompileRemoveFileNames(string csprojText)
         {
             var names = new List<string>();
-            if (string.IsNullOrEmpty(csprojText)) return names;
+            if (string.IsNullOrWhiteSpace(csprojText)) return names;
 
-            const string tag = "Compile";
-            const string remove = "Remove";
-
-            int cursor = 0;
-            while (true)
+            try
             {
-                int tagAt = csprojText.IndexOf("<" + tag, cursor, StringComparison.OrdinalIgnoreCase);
-                if (tagAt < 0) break;
-                cursor = tagAt + 1;
+                var doc = new System.Xml.XmlDocument();
+                doc.LoadXml(csprojText);
+                var nodes = doc.GetElementsByTagName("Compile");
+                foreach (System.Xml.XmlNode node in nodes)
+                {
+                    if (node.Attributes == null) continue;
+                    var removeAttr = node.Attributes["Remove"];
+                    if (removeAttr == null || string.IsNullOrEmpty(removeAttr.Value)) continue;
 
-                int tagEnd = csprojText.IndexOf('>', tagAt);
-                if (tagEnd < 0) break;
-                string element = csprojText.Substring(tagAt, tagEnd - tagAt);
-
-                int removeAt = element.IndexOf(remove, StringComparison.OrdinalIgnoreCase);
-                if (removeAt < 0) continue;
-
-                int quoteStart = element.IndexOf('"', removeAt);
-                if (quoteStart < 0) continue;
-                int quoteEnd = element.IndexOf('"', quoteStart + 1);
-                if (quoteEnd < 0) continue;
-
-                string raw = element.Substring(quoteStart + 1, quoteEnd - quoteStart - 1)
-                                    .Replace('\\', '/');
-                int slash = raw.LastIndexOf('/');
-                if (slash >= 0) raw = raw.Substring(slash + 1);
-                raw = raw.Trim();
-
-                if (!string.IsNullOrEmpty(raw) && !names.Contains(raw)) names.Add(raw);
+                    string file = System.IO.Path.GetFileName(removeAttr.Value.Replace('\\', '/')).Trim();
+                    if (!string.IsNullOrEmpty(file) && !names.Contains(file))
+                    {
+                        names.Add(file);
+                    }
+                }
+            }
+            catch
+            {
             }
             return names;
         }

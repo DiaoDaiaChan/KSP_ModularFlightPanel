@@ -183,6 +183,71 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public float CommittedScale { get; private set; } = 1.0f;
 
+        // ==========================================================================================
+        // 小分辨率锐利度契约 (Crisp Geometry Contract)
+        //
+        // 问题：UGUI 中的 Image 若被指定小于 1 个物理像素的边宽（例如 1.5 UI 单位 × 0.6 的 DPI 缩放
+        //       = 0.9 物理像素），光栅化时要么被完全丢弃（虚线抖断），要么以 < 1 的覆盖率渲染成
+        //       半透明灰线（糊边）。分辨率越低越严重 —— 这正是小尺寸组件"不够锐利"的根因。
+        //
+        // 对策：任何"细几何体"（圆弧分段、标尺、指针、刻度线、基准线）的线宽都必须经过
+        //       CrispLength 钳制到 >= MinCrispPhysicalPixels 个物理像素，并做半像素栅格对齐。
+        //
+        // 注意：本契约只用于**图元几何尺寸**，不适用于字号。字号在低分辨率下应"变大"（相对提升），
+        //       而非被钳制到某个最小物理像素。
+        // ==========================================================================================
+
+        /// <summary>细几何体的最小物理像素宽度。低于此值的 Image 会在低分辨率下丢线或糊边。</summary>
+        public const float MinCrispPhysicalPixels = 1.5f;
+
+        /// <summary>
+        /// 计算当前组件在屏幕上的物理像素 / UI 单位比值 (等价于 Canvas.scaleFactor × 全局缩放)。
+        /// 该值 <![CDATA[<]]> 1 表示组件被缩小显示，细几何体面临亚像素风险。
+        /// </summary>
+        public float CurrentPixelRatio
+        {
+            get
+            {
+                if (CurrentDpiScale > 0.0001f) return CurrentDpiScale;
+                var rm = WidgetRenderManager.Instance;
+                return rm != null ? rm.GetCanvasScaleFactor() : 1.0f;
+            }
+        }
+
+        /// <summary>
+        /// 将图元线宽钳制到至少 <see cref="MinCrispPhysicalPixels"/> 个物理像素，并做半像素栅格对齐。
+        /// 入参与返回均为 UI 单位；调用方应直接将其用于 sizeDelta / effectDistance。
+        /// </summary>
+        public float CrispLength(float uiLength, float minPhysicalPixels = MinCrispPhysicalPixels)
+        {
+            float ratio = CurrentPixelRatio;
+            if (ratio <= 0.0001f) ratio = 1.0f;
+
+            float uiLen = Mathf.Max(uiLength, minPhysicalPixels / ratio);
+
+            // 在当前物理像素栅格上量化到半像素边界，使边缘恰好落在像素中心，消除双线性糊边
+            float physical = uiLen * ratio;
+            physical = Mathf.Floor(physical) + 0.5f;
+            return physical / ratio;
+        }
+
+        /// <summary>
+        /// 在给定父级横向上居中放置一条宽度受钳制的水平细线，消除半像素偏移造成的糊边。
+        /// </summary>
+        public static RectTransform CrispHorizontalRule(RectTransform parent, float centerX, float centerY,
+            float uiWidth, float uiHeight)
+        {
+            GameObject go = UIFactory.CreatePanel(parent, "CrispRule", new Vector2(uiWidth, uiHeight),
+                new Vector2(centerX, centerY), Color.clear);
+            RectTransform rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 1f);
+            rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(centerX, centerY);
+            rt.sizeDelta = new Vector2(uiWidth, uiHeight);
+            return rt;
+        }
+
         public virtual void BaseInitialize(Transform parent, Canvas canvas, WidgetConfig config, ThemeConfig theme, float scale)
         {
             Config = config;
@@ -1702,7 +1767,7 @@ namespace ModularFlightPanel.UI
             return true;
         }
 
-        public void Reset(T value)
+        public void Reset(T value = default)
         {
             _value = value;
         }

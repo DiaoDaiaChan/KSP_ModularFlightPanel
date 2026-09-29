@@ -83,7 +83,9 @@ namespace ModularFlightPanel.Core
         /// <summary>姿态联动视角 (跟随飞船世界/轨道姿态实时偏转)</summary>
         AttitudeSync = 2,
         /// <summary>权威俯视视角 (带三维表面法线与边缘发光)</summary>
-        TopDown = 3
+        TopDown = 3,
+        /// <summary>机尾正视追随视角 (从尾部正视机头，座舱背侧朝上，天然对齐飞行姿态仪)</summary>
+        TailChase = 4
     }
 
     /// <summary>

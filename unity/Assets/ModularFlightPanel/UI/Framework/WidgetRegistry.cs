@@ -479,11 +479,9 @@ namespace ModularFlightPanel.UI
             RegisterExactId<BottomControlsWidget>("core.ref_rcs_sas");
             RegisterExactId<BottomControlsWidget>("core.rcs_ref_sas");
             RegisterExactId<StageControlWidget>("core.stage_control");
-            RegisterExactId<EcamStatusWidget>("core.ecam_status");
             RegisterExactId<EcamAlertLogWidget>("core.ecam_alert_log");
             RegisterExactId<EcamAlertLogWidget>("ecam.alert_log");
             RegisterExactId<EcamAlertLogWidget>("custom.ecam_alert_log");
-            RegisterExactId<OrbitalInfoWidget>("core.orbital_info");
             RegisterExactId<SASDialWidget>("core.sas_dial");
 
             RegisterExactId<B747EicasWidget>("custom.b747_eicas");
@@ -567,7 +565,6 @@ namespace ModularFlightPanel.UI
             string id = cfg.WidgetId ?? string.Empty;
             if (id.StartsWith("arc_tape.", StringComparison.OrdinalIgnoreCase) || id.StartsWith("curved_tape.", StringComparison.OrdinalIgnoreCase) || id.StartsWith("arc_alt.", StringComparison.OrdinalIgnoreCase) || id.StartsWith("arc_speed.", StringComparison.OrdinalIgnoreCase)) return typeof(ArcTapeWidget);
             if (id.StartsWith("tape.", StringComparison.OrdinalIgnoreCase)) return typeof(TapeGaugeWidget);
-            if (id.StartsWith("ecam.", StringComparison.OrdinalIgnoreCase)) return typeof(EcamDialGaugeWidget);
             if (id.StartsWith("gauge.", StringComparison.OrdinalIgnoreCase)) return typeof(AvionicsBarGaugeWidget);
             if (id.StartsWith("maneuver.", StringComparison.OrdinalIgnoreCase)) return typeof(ManeuverNodeWidget);
             if (id.StartsWith("toolbar.favorites", StringComparison.OrdinalIgnoreCase) || id.StartsWith("dock_favorites", StringComparison.OrdinalIgnoreCase)) return typeof(FavoriteToolbarWidget);

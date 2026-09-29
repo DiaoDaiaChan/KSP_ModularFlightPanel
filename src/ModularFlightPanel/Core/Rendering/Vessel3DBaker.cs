@@ -145,10 +145,10 @@ namespace ModularFlightPanel.Core
             {
                 Shader shader = AssetLoader.Vessel3DShader
                              ?? Shader.Find("ModularFlightPanel/Vessel3DTechnical")
-                             ?? Shader.Find("Diffuse")
-                             ?? Shader.Find("KSP/Diffuse")
-                             ?? Shader.Find("Standard")
-                             ?? Shader.Find("Unlit/Color");
+                             ?? Shader.Find("Sprites/Default")
+                             ?? Shader.Find("Unlit/Color")
+                             ?? Shader.Find("UI/Default")
+                             ?? Shader.Find("Diffuse");
 
                 _3dMaterial = new Material(shader);
             }
@@ -473,6 +473,11 @@ namespace ModularFlightPanel.Core
             {
                 // 权威俯视模式
                 camRot = Quaternion.LookRotation(-dorsal, forward);
+            }
+            else if (ViewMode == Vessel3DViewMode.TailChase)
+            {
+                // 机尾正视追随模式 (从尾部正视机头，座舱背侧朝上，天然对齐飞行姿态仪)
+                camRot = Quaternion.LookRotation(forward, dorsal);
             }
             else
             {

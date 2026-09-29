@@ -139,9 +139,6 @@ namespace ModularFlightPanel.UI.Settings
             {
                 DrawSectionTitle(I18n.Tr("LIB_SECTION_GAUGE_GENERATORS", "▼ 参数化仪表生成器 (可定制量程与数据源)"));
 
-                DrawDialPresetItem(I18n.Tr("LIB_ITEM_ECAM_SPD", "ECAM 圆弧通用仪表"), "{SPD}", 0, 100, 70, 90, true, "m/s",
-                    I18n.Tr("LIB_DESC_ECAM_SPD", "🛠️ 270° 马蹄形高对比度圆弧表盘，支持动态指针、数显与软上限爆表模式。可在装配台绑定任意遥测通配符。"));
-
                 DrawTapePresetItem(I18n.Tr("LIB_ITEM_TAPE_SPD", "PFD 垂直动态标尺带 (左侧/速度)"), "{SPD}", true, 10f, "m/s",
                     I18n.Tr("LIB_DESC_TAPE_SPD", "🛠️ PFD 风格平滑滚动动态标尺带（左侧布局），支持任意物理数据与步长。"));
 
@@ -462,43 +459,6 @@ namespace ModularFlightPanel.UI.Settings
                 case WidgetCategory.Controls: return "#66CCFF";
                 default: return "#FFFFFF";
             }
-        }
-
-        private static void DrawDialPresetItem(string title, string token, double min, double max, double caution, double warning, bool isSoft, string unit, string desc)
-        {
-            if (!FilterMatch(title, desc)) return;
-
-            MFPGuiSkin.BeginCard();
-            GUILayout.BeginHorizontal();
-
-            if (_showPreviews)
-            {
-                Texture2D previewTex = WidgetPreviewLoader.GetPreviewTexture("isolated_gauge_throttle.png", "ecam_dial", "throttle");
-                DrawThumbnailBox(previewTex, title, token, desc);
-                GUILayout.Space(8f);
-            }
-
-            GUILayout.BeginVertical();
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"<color=#00FF88><b>{title}</b></color> <color=#88AACC>[{token}]</color>", GUILayout.ExpandWidth(true));
-            string limitTag = isSoft ? I18n.Tr("LIB_SOFT_LIMIT", "软上限爆表") : I18n.Tr("LIB_HARD_LIMIT", "硬限幅");
-            MFPGuiSkin.DrawBadge(limitTag, isSoft ? MFPGuiSkin.AccentCyan : MFPGuiSkin.AccentAmber, new Color(0.04f, 0.12f, 0.20f, 0.9f));
-
-            if (GUILayout.Button(I18n.Tr("LIB_ADD_TO_PANEL", "+ 添加到面板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(110f), GUILayout.Height(24f)))
-            {
-                Vector2 pos = GetSmartSpawnPosition();
-                string newId = WidgetLayoutManager.Instance.AddEcamDialWidget(title, token, min, max, caution, warning, isSoft, unit, pos);
-                FlightHUDManager.Instance?.RebuildHUD();
-                OnWidgetAdded(newId, title);
-            }
-            GUILayout.EndHorizontal();
-
-            string rangeStr = I18n.TrFormat("LIB_RANGE_FMT", min, max, unit);
-            GUILayout.Label($"<color=#8899AA><size=11>{desc}{rangeStr}</size></color>");
-            GUILayout.EndVertical();
-
-            GUILayout.EndHorizontal();
-            MFPGuiSkin.EndCard();
         }
 
         private static void DrawTapePresetItem(string title, string token, bool isLeft, float step, string unit, string desc)

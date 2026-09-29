@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
 using UnityEngine.UI;
@@ -26,10 +27,6 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(260f, 275f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
-
-        // 声明式微控件
-        public TextWidget N2Title = TextWidget.Title("N2");
-        public TextWidget FfTitle = TextWidget.Title("FF");
 
         // 基础外框与背景
         private Image _bgImage;
@@ -101,9 +98,9 @@ namespace ModularFlightPanel.UI.Widgets
         private string _n2LabelText = "N2";
         private string _n3LabelText = "N3";
         private string _ffLabelText = "FF";
-        private string _oilPLabelText = "OIL P";
-        private string _oilTLabelText = "OIL T";
-        private string _oilQLabelText = "OIL Q";
+        private string _oilPLabelText = I18n.Tr("WIDGET_EICAS_LABEL_OIL_P", "OIL P");
+        private string _oilTLabelText = I18n.Tr("WIDGET_EICAS_LABEL_OIL_T", "OIL T");
+        private string _oilQLabelText = I18n.Tr("WIDGET_EICAS_LABEL_OIL_Q", "OIL Q");
         private string _vibLabelText = "VIB";
 
         // 脏检查文本与图元几何缓存
@@ -118,7 +115,6 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedFloat[] _lastOilPPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
         private readonly CachedFloat[] _lastOilTPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
         private readonly CachedFloat[] _lastVibPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
-        private static readonly float[] s_Variances = { -0.1f, 0.2f, -0.05f, 0.1f };
 
         // 双轨架构快照字段
         private bool _cachedHasVessel;
@@ -600,50 +596,68 @@ namespace ModularFlightPanel.UI.Widgets
 
             _cachedHasVessel = true;
 
-            double baseN2 = TelemetryTokenEngine.EvaluateNumeric(_n2Token, context.Telemetry);
-            double baseN3 = TelemetryTokenEngine.EvaluateNumeric(_n3Token, context.Telemetry);
-            double baseFf = TelemetryTokenEngine.EvaluateNumeric(_ffToken, context.Telemetry);
-            double baseOilP = TelemetryTokenEngine.EvaluateNumeric(_oilPToken, context.Telemetry);
-            double baseOilT = TelemetryTokenEngine.EvaluateNumeric(_oilTToken, context.Telemetry);
-            double baseOilQ = TelemetryTokenEngine.EvaluateNumeric(_oilQToken, context.Telemetry);
-            double baseVib = TelemetryTokenEngine.EvaluateNumeric(_vibToken, context.Telemetry);
+            // 逐台真实发动机数据接入 (自适应异构发动机集群)
+            //    N2  = 指令油门设定百分比   N3 = 实时推力占额定推力百分比
+            //    FF  = 计算油耗   OIL P = 比冲 {KER:isp}   OIL T = 净热通量 {SH:NetFluxKw}
+            //    OIL Q = 引擎健康 {TF:Status}   VIB = 故障率 {TF:FailureRate}
+            //    OIL/VIB 依赖可选外部 mod，未安装时优雅显示 "---"，绝不伪造读数。
+            IReadOnlyList<EngineTelemetryInfo> engines = context.Telemetry.Engines;
 
-            if (double.IsNaN(baseN2)) baseN2 = 50.0 + context.Telemetry.Throttle * 46.0;
-            if (double.IsNaN(baseN3)) baseN3 = 61.2 + context.Telemetry.Throttle * 39.0;
-            if (double.IsNaN(baseFf)) baseFf = 0.6 + context.Telemetry.Throttle * 4.8;
-            if (double.IsNaN(baseOilP)) baseOilP = 80.5 + context.Telemetry.Throttle * 5.5;
-            if (double.IsNaN(baseOilT)) baseOilT = 46.0 + context.Telemetry.Throttle * 46.0;
-            if (double.IsNaN(baseOilQ)) baseOilQ = 12.0;
-            if (double.IsNaN(baseVib)) baseVib = 0.4 + context.Telemetry.Throttle * 0.4;
+            double probeIsp = TelemetryTokenEngine.EvaluateNumeric("{KER:isp}", context.Telemetry);
+            double probeNetFlux = TelemetryTokenEngine.EvaluateNumeric("{SH:NetFluxKw}", context.Telemetry);
+            double probeFailRate = TelemetryTokenEngine.EvaluateNumeric("{TF:FailureRate}", context.Telemetry);
+            string probeStatus = TelemetryTokenEngine.Evaluate("{TF:Status}", context.Telemetry);
+            if (string.IsNullOrEmpty(probeStatus) || probeStatus.Contains("{")) probeStatus = "---";
 
             for (int i = 0; i < 4; i++)
             {
-                double n2Val = baseN2 + s_Variances[i] * 0.8;
-                double n3Val = baseN3 + s_Variances[i] * 0.5;
-                double ffVal = baseFf + s_Variances[i] * 0.1;
-                double oilPVal = baseOilP;
-                double oilTVal = baseOilT;
-                double oilQVal = baseOilQ;
-                double vibVal = baseVib;
+                bool hasEngine = engines != null && i < engines.Count;
+                if (hasEngine)
+                {
+                    EngineTelemetryInfo eng = engines[i];
 
-                _cachedN2Strs[i] = Mathf.RoundToInt((float)n2Val).ToString(CultureInfo.InvariantCulture);
+                    // N2: 指令油门设定
+                    double n2Val = eng.CommandedThrottle * 100.0;
+                    _cachedN2Strs[i] = Mathf.RoundToInt((float)n2Val).ToString(CultureInfo.InvariantCulture);
 
-                _cachedN3Strs[i] = n3Val >= 100.0 ? Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture) :
-                    (n3Val >= 50.0 ? Mathf.RoundToInt((float)n3Val * 10f).ToString(CultureInfo.InvariantCulture) : Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture));
-                _cachedN3Fracs[i] = Mathf.Clamp01((float)(n3Val / 105.0));
+                    // N3: 实时推力占比
+                    double n3Val = eng.ThrustFraction * 100.0;
+                    _cachedN3Strs[i] = Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture);
+                    _cachedN3Fracs[i] = Mathf.Clamp01((float)(n3Val / 105.0));
 
-                _cachedFfStrs[i] = ffVal < 1.0 ? $"0{Mathf.RoundToInt((float)ffVal * 10f)}" : Mathf.RoundToInt((float)ffVal * 10f).ToString(CultureInfo.InvariantCulture);
+                    // FF: 计算油耗
+                    double ffVal = eng.FuelFlow;
+                    _cachedFfStrs[i] = (ffVal * 10.0).ToString("0", CultureInfo.InvariantCulture);
 
-                _cachedOilPStrs[i] = Mathf.RoundToInt((float)oilPVal).ToString(CultureInfo.InvariantCulture);
-                _cachedOilPFracs[i] = Mathf.Clamp01((float)(oilPVal / 100.0));
+                    // OIL P: 比冲
+                    _cachedOilPStrs[i] = double.IsNaN(probeIsp) ? "---" : Mathf.RoundToInt((float)probeIsp).ToString(CultureInfo.InvariantCulture);
+                    _cachedOilPFracs[i] = double.IsNaN(probeIsp) ? 0f : Mathf.Clamp01((float)(probeIsp / 450.0));
 
-                _cachedOilTStrs[i] = Mathf.RoundToInt((float)oilTVal).ToString(CultureInfo.InvariantCulture);
-                _cachedOilTFracs[i] = Mathf.Clamp01((float)(oilTVal / 140.0));
+                    // OIL T: 净热通量 (居中)
+                    _cachedOilTStrs[i] = double.IsNaN(probeNetFlux) ? "---" : probeNetFlux.ToString("0", CultureInfo.InvariantCulture);
+                    _cachedOilTFracs[i] = double.IsNaN(probeNetFlux) ? 0.5f : Mathf.Clamp01((float)(probeNetFlux / 2000.0 + 0.5));
 
-                _cachedOilQStrs[i] = Mathf.RoundToInt((float)oilQVal).ToString(CultureInfo.InvariantCulture);
+                    // OIL Q: 引擎健康
+                    _cachedOilQStrs[i] = probeStatus;
 
-                _cachedVibStrs[i] = vibVal.ToString("0.0", CultureInfo.InvariantCulture);
-                _cachedVibFracs[i] = Mathf.Clamp01((float)(vibVal / 2.0));
+                    // VIB: 故障率
+                    _cachedVibStrs[i] = double.IsNaN(probeFailRate) ? "---" : probeFailRate.ToString("0.000", CultureInfo.InvariantCulture);
+                    _cachedVibFracs[i] = double.IsNaN(probeFailRate) ? 0f : Mathf.Clamp01((float)(probeFailRate * 1000.0));
+                }
+                else
+                {
+                    _cachedN2Strs[i] = "--";
+                    _cachedN3Strs[i] = "--";
+                    _cachedN3Fracs[i] = 0f;
+                    _cachedFfStrs[i] = "--";
+                    _cachedOilPStrs[i] = "--";
+                    _cachedOilPFracs[i] = 0f;
+                    _cachedOilTStrs[i] = "--";
+                    _cachedOilTFracs[i] = 0.5f;
+                    _cachedOilQStrs[i] = "--";
+                    _cachedVibStrs[i] = "--";
+                    _cachedVibFracs[i] = 0f;
+                }
             }
         }
 

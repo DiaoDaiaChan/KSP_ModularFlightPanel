@@ -33,9 +33,6 @@ namespace ModularFlightPanel.UI.Widgets
         protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
-        // 声明式微控件
-        public TextWidget TopTitle = TextWidget.Title("THR");
-        public TextWidget BottomTag = TextWidget.Badge(I18n.Tr("WIDGET_GAUGE_IDLE", "待机"));
 
         private BarGaugeKind _kind;
 
@@ -91,9 +88,8 @@ namespace ModularFlightPanel.UI.Widgets
         private RectTransform _cautionLineRt;
         private Image _cautionLineImg;
 
-        // 大气渐变纹理与精灵 (Procedural Atmospheric Multi-Layer Texture)
-        private Texture2D _atmosphereTex;
-        private Sprite _atmosphereSprite;
+        // 大气渐变矢量图元 (Procedural Atmospheric GPU Mesh)
+        private AtmosphereGradientGraphic _atmosphereGraphic;
 
         // 通配符通道与配置
         private string _valueToken = "{THR}";
@@ -180,12 +176,6 @@ namespace ModularFlightPanel.UI.Widgets
 
             RectTransform.sizeDelta = new Vector2(barWidth, barHeight);
 
-            // 若为大气压组件，首先烘焙基于当前主题的高保真大气多层渐变纹理
-            if (_kind == BarGaugeKind.AtmosphericPressure)
-            {
-                BakeAtmosphereGradient(theme);
-            }
-
             // 1. 构建光柱玻璃底轨 (Track: 宽度 24px, 高度 186px，与上下胶囊构成严整 240px 纵向构图)
             float trackWidth = 24f * s;
             float trackHeight = 186f * s;
@@ -249,96 +239,23 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyTheme(theme);
         }
 
-        /// <summary>
-        /// 烘焙基于主题语义调色的大气垂直分层渐变（从浓密海平面的深蓝 -> 对流层的天青 -> 平流层的冰蓝 -> 中间层的微亮淡蓝 -> 真空深空黑）
-        /// 100% 遵照主题着色管道，0 硬编码颜色
-        /// </summary>
-        private void BakeAtmosphereGradient(ThemeConfig theme)
-        {
-            ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
-            const int w = 4;
-            const int h = 128;
-            if (_atmosphereTex == null)
-            {
-                _atmosphereTex = new Texture2D(w, h, TextureFormat.RGBA32, false)
-                {
-                    name = "Atmosphere_MultiLayer_Tex",
-                    wrapMode = TextureWrapMode.Clamp,
-                    filterMode = FilterMode.Bilinear
-                };
-            }
-
-            // 阶段 1 (y = 0.00, 0.00 atm): 卡门线外太空深邃真空深空黑 (由暗晶底色超深度压暗派生)
-            Color vacSpace = WidgetStyleManager.Darken(resolved.FrameBgColor, 0.90f);
-            vacSpace.a = 1.0f;
-            // 阶段 2 (y = 0.15, ~0.03 atm): 中间层/热层边缘微光
-            Color mesoGlow = Color.Lerp(vacSpace, resolved.AccentSecondary, 0.22f);
-            mesoGlow.a = 1.0f;
-            // 阶段 3 (y = 0.45, ~0.25 atm): 平流层高空钛冰蓝 (淡蓝，纯净微发光)
-            Color stratIce = Color.Lerp(resolved.AccentSecondary, WidgetStyleManager.Lighten(resolved.SkyColor, 0.25f), 0.45f);
-            stratIce.a = 1.0f;
-            // 阶段 4 (y = 0.75, ~0.60 atm): 稠密对流层天青蔚蓝
-            Color tropAzure = Color.Lerp(resolved.SkyColor, resolved.AccentSecondary, 0.35f);
-            tropAzure.a = 1.0f;
-            // 阶段 5 (y = 1.00, 1.00 atm): 浓密近地海平面纯正深邃皇家大气蓝 (深蓝: 饱和深蓝，非浑浊暗灰)
-            Color seaNavy = Color.Lerp(resolved.SkyColor, resolved.AccentSecondary, 0.12f);
-            seaNavy = WidgetStyleManager.Lighten(seaNavy, 0.10f);
-            seaNavy.a = 1.0f;
-
-            Color[] pixels = new Color[w * h];
-            for (int y = 0; y < h; y++)
-            {
-                float t = (float)y / (h - 1);
-                Color rowCol;
-                if (t < 0.15f)
-                {
-                    rowCol = Color.Lerp(vacSpace, mesoGlow, t / 0.15f);
-                }
-                else if (t < 0.45f)
-                {
-                    rowCol = Color.Lerp(mesoGlow, stratIce, (t - 0.15f) / 0.30f);
-                }
-                else if (t < 0.75f)
-                {
-                    rowCol = Color.Lerp(stratIce, tropAzure, (t - 0.45f) / 0.30f);
-                }
-                else
-                {
-                    rowCol = Color.Lerp(tropAzure, seaNavy, (t - 0.75f) / 0.25f);
-                }
-
-                for (int x = 0; x < w; x++)
-                {
-                    pixels[y * w + x] = rowCol;
-                }
-            }
-
-            _atmosphereTex.SetPixels(pixels);
-            _atmosphereTex.Apply();
-
-            if (_atmosphereSprite != null)
-            {
-                DestroyImmediate(_atmosphereSprite);
-            }
-            _atmosphereSprite = Sprite.Create(_atmosphereTex, new Rect(0f, 0f, w, h), new Vector2(0.5f, 0.5f));
-        }
-
         private void BuildTrack(float w, float h, float s, ThemeConfig theme)
         {
-            _trackBg = CreateChild<Image>("Gauge_Track", transform, new Vector2(w, h), Vector2.zero);
-            GameObject trackObj = _trackBg.gameObject;
-            _trackRt = _trackBg.rectTransform;
-            _trackOutline = trackObj.AddComponent<Outline>();
-            _trackOutline.effectDistance = new Vector2(1f * s, 1f * s);
-
-            if (_kind == BarGaugeKind.AtmosphericPressure && _atmosphereSprite != null)
+            if (_kind == BarGaugeKind.AtmosphericPressure)
             {
-                _trackBg.sprite = _atmosphereSprite;
-                _trackBg.type = Image.Type.Simple;
-                _trackBg.color = WidgetStyleManager.NeutralOpaque;
+                _atmosphereGraphic = CreateChild<AtmosphereGradientGraphic>("Atmosphere_Gradient_Track", transform, new Vector2(w, h), Vector2.zero);
+                _trackRt = _atmosphereGraphic.rectTransform;
+                _atmosphereGraphic.Theme = theme;
+                _trackOutline = _atmosphereGraphic.gameObject.AddComponent<Outline>();
+                _trackOutline.effectDistance = new Vector2(1f * s, 1f * s);
+                _trackOutline.effectColor = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.35f);
             }
             else
             {
+                _trackBg = CreateChild<Image>("Gauge_Track", transform, new Vector2(w, h), Vector2.zero);
+                _trackRt = _trackBg.rectTransform;
+                _trackOutline = _trackBg.gameObject.AddComponent<Outline>();
+                _trackOutline.effectDistance = new Vector2(1f * s, 1f * s);
                 ApplyCard(_trackBg, _trackOutline, CardStyleRole.SubtleSlot, theme);
             }
 
@@ -750,15 +667,13 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
 
-            // 重新烘焙大气色彩渐变
+            // 更新大气色彩渐变
             if (_kind == BarGaugeKind.AtmosphericPressure)
             {
-                BakeAtmosphereGradient(theme);
-                if (_trackBg != null && _atmosphereSprite != null)
+                if (_atmosphereGraphic != null)
                 {
-                    _trackBg.sprite = _atmosphereSprite;
-                    _trackBg.type = Image.Type.Simple;
-                    _trackBg.color = WidgetStyleManager.NeutralOpaque;
+                    _atmosphereGraphic.Theme = theme;
+                    _atmosphereGraphic.SetVerticesDirty();
                 }
                 if (_trackOutline != null)
                 {
@@ -828,17 +743,57 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnDestroy()
         {
             this.Controls.UnregisterAll();
-            if (_atmosphereTex != null)
-            {
-                DestroyImmediate(_atmosphereTex);
-                _atmosphereTex = null;
-            }
-            if (_atmosphereSprite != null)
-            {
-                DestroyImmediate(_atmosphereSprite);
-                _atmosphereSprite = null;
-            }
             base.OnDestroy();
+        }
+    }
+
+    /// <summary>
+    /// UGUI GPU 矢量大气垂直多层色彩渐变网格 (零 CPU 软件光栅化，纯代码 GPU 顶点颜色插值)
+    /// </summary>
+    public class AtmosphereGradientGraphic : MaskableGraphic
+    {
+        public ThemeConfig Theme { get; set; }
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect r = GetPixelAdjustedRect();
+            ThemeConfig resolved = WidgetStyleManager.ResolveTheme(Theme);
+
+            Color vacSpace = WidgetStyleManager.Darken(resolved.FrameBgColor, 0.90f);
+            vacSpace.a = 1.0f;
+            Color mesoGlow = Color.Lerp(vacSpace, resolved.AccentSecondary, 0.22f);
+            mesoGlow.a = 1.0f;
+            Color stratIce = Color.Lerp(resolved.AccentSecondary, WidgetStyleManager.Lighten(resolved.SkyColor, 0.25f), 0.45f);
+            stratIce.a = 1.0f;
+            Color tropAzure = Color.Lerp(resolved.SkyColor, resolved.AccentSecondary, 0.35f);
+            tropAzure.a = 1.0f;
+            Color seaNavy = Color.Lerp(resolved.SkyColor, resolved.AccentSecondary, 0.12f);
+            seaNavy = WidgetStyleManager.Lighten(seaNavy, 0.10f);
+            seaNavy.a = 1.0f;
+
+            // 5 级大气垂直分层四边形 (从底到顶)
+            float y0 = r.yMin;
+            float y1 = Mathf.Lerp(r.yMin, r.yMax, 0.25f);
+            float y2 = Mathf.Lerp(r.yMin, r.yMax, 0.55f);
+            float y3 = Mathf.Lerp(r.yMin, r.yMax, 0.85f);
+            float y4 = r.yMax;
+
+            AddQuad(vh, r.xMin, r.xMax, y0, y1, seaNavy, tropAzure);
+            AddQuad(vh, r.xMin, r.xMax, y1, y2, tropAzure, stratIce);
+            AddQuad(vh, r.xMin, r.xMax, y2, y3, stratIce, mesoGlow);
+            AddQuad(vh, r.xMin, r.xMax, y3, y4, mesoGlow, vacSpace);
+        }
+
+        private static void AddQuad(VertexHelper vh, float xMin, float xMax, float yMin, float yMax, Color c0, Color c1)
+        {
+            int idx = vh.currentVertCount;
+            vh.AddVert(new Vector3(xMin, yMin), c0, Vector2.zero);
+            vh.AddVert(new Vector3(xMin, yMax), c1, Vector2.zero);
+            vh.AddVert(new Vector3(xMax, yMax), c1, Vector2.zero);
+            vh.AddVert(new Vector3(xMax, yMin), c0, Vector2.zero);
+            vh.AddTriangle(idx, idx + 1, idx + 2);
+            vh.AddTriangle(idx + 2, idx + 3, idx);
         }
     }
 }

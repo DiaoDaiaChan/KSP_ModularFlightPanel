@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
@@ -630,6 +632,9 @@ namespace ModularFlightPanel.Editor
             }
             Debug.Log($"[HeadlessUIRenderer] Render Optimization Metrics: {widgets.Length} active widgets, {subCanvasCount} isolated sub-canvases.");
 
+            // 7.B 运行时组件内部文本控件空间几何与重叠冲突动态审计
+            AuditRuntimeInternalTextOverlaps(widgets);
+
             // 触发所有离屏相机 (如姿态球 3D Camera) 渲染至其内部 RenderTexture
             Camera[] allCameras = UnityEngine.Object.FindObjectsOfType<Camera>();
             foreach (var c in allCameras)
@@ -831,6 +836,61 @@ namespace ModularFlightPanel.Editor
             }
         }
 
+        private static void AuditRuntimeInternalTextOverlaps(BaseFlightWidget[] widgets)
+        {
+            if (widgets == null) return;
+            Vector3[] cornersA = new Vector3[4];
+            Vector3[] cornersB = new Vector3[4];
+
+            foreach (var w in widgets)
+            {
+                if (w == null || !w.gameObject.activeInHierarchy) continue;
+
+                var texts = w.GetComponentsInChildren<Text>(false)
+                    .Where(t => t != null && t.gameObject.activeInHierarchy && t.color.a > 0.05f && !string.IsNullOrWhiteSpace(t.text))
+                    .ToList();
+
+                for (int i = 0; i < texts.Count; i++)
+                {
+                    for (int j = i + 1; j < texts.Count; j++)
+                    {
+                        var tA = texts[i];
+                        var tB = texts[j];
+
+                        // 如果其中一个是另一个的子级或祖先，跳过
+                        if (tA.transform.IsChildOf(tB.transform) || tB.transform.IsChildOf(tA.transform))
+                            continue;
+
+                        tA.rectTransform.GetWorldCorners(cornersA);
+                        tB.rectTransform.GetWorldCorners(cornersB);
+
+                        float minXA = cornersA[0].x, maxXA = cornersA[2].x;
+                        float minYA = cornersA[0].y, maxYA = cornersA[2].y;
+
+                        float minXB = cornersB[0].x, maxXB = cornersB[2].x;
+                        float minYB = cornersB[0].y, maxYB = cornersB[2].y;
+
+                        float overlapW = Mathf.Max(0f, Mathf.Min(maxXA, maxXB) - Mathf.Max(minXA, minXB));
+                        float overlapH = Mathf.Max(0f, Mathf.Min(maxYA, maxYB) - Mathf.Max(minYA, minYB));
+
+                        if (overlapW > 4f && overlapH > 4f)
+                        {
+                            float area = overlapW * overlapH;
+                            float areaA = (maxXA - minXA) * (maxYA - minYA);
+                            float areaB = (maxXB - minXB) * (maxYB - minYB);
+                            float minArea = Mathf.Min(areaA, areaB);
+                            float ratio = minArea > 0.01f ? area / minArea : 0f;
+
+                            if (ratio > 0.20f)
+                            {
+                                Debug.LogWarning($"[HeadlessUIRenderer] ⚠ 发现组件 '{w.DisplayName}' 内部文本空间重叠: '{tA.gameObject.name}' ('{tA.text}') 与 '{tB.gameObject.name}' ('{tB.text}') 存在 {ratio * 100:F1}% 视觉交叉 (重叠区域 {overlapW:F0}x{overlapH:F0}px)!");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         private static void EnablePreviewWidgets()
         {
             SetWidgetState("core.navball", true, 0f, 0f);
@@ -850,11 +910,6 @@ namespace ModularFlightPanel.Editor
             SetWidgetState("core.throttle", false, 0f, 0f);
             SetWidgetState("core.vsi", false, 0f, 0f);
             SetWidgetState("core.propellant", false, 0f, 0f);
-            SetWidgetState("core.orbital_info", false, 0f, -128f);
-            SetWidgetState("core.ecam_status", false, 0f, -188f);
-            SetWidgetState("ecam.gforce", false, -205f, 55f);
-            SetWidgetState("ecam.q", false, -205f, -48f);
-            SetWidgetState("ecam.throttle", false, 205f, 55f);
             SetWidgetState("custom.nd_navigation", false, -420f, 25f);
             SetWidgetState("custom.electrical", false, -420f, -165f);
             SetWidgetState("custom.rocket", false, 420f, 95f);
@@ -998,23 +1053,6 @@ namespace ModularFlightPanel.Editor
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(sc);
-                }
-                else if (id == "ecam.throttle")
-                {
-                    var thrDial = new WidgetConfig("ecam.throttle", "ECAM 引擎推力表", x, y, 1.0f)
-                    {
-                        WidgetType = "ecam_dial",
-                        NumericToken = "{THROTTLE}",
-                        MinValue = 0.0f,
-                        MaxValue = 100.0f,
-                        CautionThreshold = 85.0f,
-                        WarningThreshold = 100.0f,
-                        IsSoftLimit = false,
-                        LimitMode = "hard",
-                        UnitLabel = "%",
-                        IsEnabled = enabled
-                    };
-                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(thrDial);
                 }
                 else if (id == "nav.vessel_navball" || id == "nav.vessel_attitude_sphere" || id == "core.vessel_navball" || id == "nav.attitude_sphere_3d")
                 {

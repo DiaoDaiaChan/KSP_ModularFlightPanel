@@ -528,6 +528,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isFullMode)
             {
                 _lastDrawnSma.Reset(double.NaN); // 强制首次绘制
+                _lastMeshRebuildTime.Reset(-1f);
             }
         }
 
@@ -873,7 +874,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _lastDrawnTra.Update(_dataTra);
 
                     UpdateDiagramLabels(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataAp, _dataPe);
-                    if (_diagramGraphic != null) _diagramGraphic.SetVerticesDirty();
+                    if (_diagramGraphic != null) _diagramGraphic.InvalidateMesh();
                 }
                 UpdateSpacecraftOverlay(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop);
             }
@@ -2133,6 +2134,11 @@ namespace ModularFlightPanel.UI.Widgets
     public class OrbitalDiagramGraphic : MaskableGraphic
     {
         public OrbitalElementsWidget Widget { get; set; }
+
+        public void InvalidateMesh()
+        {
+            SetVerticesDirty();
+        }
 
         protected override void OnPopulateMesh(VertexHelper vh)
         {

@@ -22,25 +22,38 @@ namespace ModularFlightPanel.UI.Widgets
     ///    - EGT 底部左下角 (-130°) 红色起动温控警戒标线 (Start Limit Tick)；
     ///    - 顺时针旋转的主动动力针 (Needle Pointer)。
     /// 2. 动态自适应布局与宽屏动态长宽比 (Dynamic Responsive Layout & Aspect Ratio)：
-    ///    - 支持 1、2、3、4 发动机动态自适应感知与自动扩充画布宽幅 (280f ~ 490f x 340f)；
+    ///    - 支持 1、2、3、4 发动机动态自适应感知与自动扩充画布宽幅 (320f ~ 490f x 340f)；
     ///    - 宽屏大间距排版，彻底解决原版挤压紧凑问题，纵向 8 行与右侧 5 组系统完全呼吸透气；
-    ///    - 所有发控纵列、马蹄弧表盘、起落架、配平与环控微控件均已通过 WidgetControlManager 动态注册。
-    /// 3. 全闭环真实飞行遥测数据接入：
+    ///    - 所有发控纵列、马蹄弧表盘、起落架、配平与系统读数区均已通过 WidgetControlManager 动态注册。
+    /// 3. 全闭环真实飞行遥测数据接入 (100% Local Telemetry Reachability)：
     ///    - 俯仰配平驱动 STAB TRIM (ND/NU 标尺与绿色安全带配平药丸)；
     ///    - 偏航配平驱动 RUDDER TRIM (双向刻度与微光滑动指针)；
-    ///    - 客舱与大气物理压差解算真实 Δ P (psi)、CAB ALT (ft) 与 CAB RATE (ft/min)；
     ///    - 全机推进剂与起飞总重解算 GROSS WT / TOTAL FUEL (LBS X 1000)；
-    ///    - 全机震动 VIB 接入动态物理过载震荡与油门高频响应。
-    /// 4. 100% 严格遵守 SPEC-001 ~ SPEC-008 规范矩阵，零颜色字面量，零场景查询，全语义调色板。
+    ///    - 全机震动 VIB 接入动态物理过载震荡与油门高频响应；
+    ///    - 右侧系统读数区 100% 绑定真实本地通道：起落架、襟翼、航向、马赫、过载、电气 EC、通信信号与时间加速。
+    ///      **严禁编造本地不存在数据源的子系统**（座舱增压 ECS、气源导管压力、外流阀位、燃油温度等均为
+    ///      真实 787 存在但 KSP 本地无遥测通道的子系统，一律不得以常数或伪函数合成输出）。
+    /// 4. 小分辨率锐利度契约 (Crisp Geometry Contract)：
+    ///    - 全部细几何体（马蹄弧分段、同心内弧、基准切线、警戒标线、指针、通栏通量条）的线宽
+    ///      统一经基类 <c>CrispLength</c> 钳制到 >= 1.5 物理像素并做半像素栅格对齐；
+    ///    - 字号随物理缩放相对提升，杜绝 6.5px 级别亚像素字号糊字。
+    /// 5. 100% 严格遵守 SPEC-001 ~ SPEC-011 规范矩阵，零颜色字面量，零场景查询，全语义调色板。
     /// </summary>
     [FlightWidget("b787_eicas", "boeing_787_eicas", "787_eicas", Category = WidgetCategory.Systems,
         DisplayName = "B787 EICAS 综合航电发动机显示",
-        Description = "波音 787 风格全功能 EICAS：标志性马蹄圆弧表盘、动态长宽比多发自适应、STAB/RUDDER 配平、增压 ECS 与燃油重量统计。",
+        Description = "波音 787 风格全功能 EICAS：标志性马蹄圆弧表盘、动态长宽比多发自适应、STAB/RUDDER 配平、真实系统读数与燃油重量统计。",
         DefaultWidgetId = "custom.b787_eicas", DefaultX = -440f, DefaultY = 160f, IsSingleton = true,
         ExactIds = new[] { "custom.b787_eicas", "core.b787_eicas" })]
     public class B787EicasWidget : BaseFlightWidget
     {
-        public override Vector2 BaseSize => new Vector2(350f, 340f);
+        // ── 垂直布局铁律 ──
+        // 卡片高度固定 340f，但所有内部 Y 坐标均由 sVertical 纵向归一化因子驱动：
+        // sVertical = CurrentDpiScale * (340f / BASE_CARD_HEIGHT)
+        // 当卡片被纵向放大（例如用户把组件拉高）时，行距、表盘间距与右侧系统行距等比例伸展，
+        // 而线宽与字号只随 CurrentDpiScale 变化，从而保证"放大后更锐利"而不是"放大后更松散"。
+        private const float BASE_CARD_HEIGHT = 340f;
+
+        public override Vector2 BaseSize => new Vector2(390f, BASE_CARD_HEIGHT);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
@@ -61,8 +74,8 @@ namespace ModularFlightPanel.UI.Widgets
             public Outline BoxOutline;
             public Text BoxText;
             public Image Underline;
-            public List<Image> ArcSegments = new List<Image>();
-            public List<Image> InnerArcSegments = new List<Image>();
+            public System.Collections.Generic.List<Image> ArcSegments = new System.Collections.Generic.List<Image>();
+            public System.Collections.Generic.List<Image> InnerArcSegments = new System.Collections.Generic.List<Image>();
             public Image RedLimitTick;
             public Image AmberTick;
             public Image BottomRedTick;
@@ -155,7 +168,6 @@ namespace ModularFlightPanel.UI.Widgets
         private const int MAX_ENGINES = 4;
         private EngineColumnUI[] _engineCols = new EngineColumnUI[MAX_ENGINES];
         private readonly float[] _xCoords = new float[MAX_ENGINES];
-        private static readonly float[] s_Variances = { -0.15f, 0.15f, -0.05f, 0.05f };
         private int _currentEngineCount = 2; // 默认 787 双发
         private int _configuredEngineCount = -1; // -1: 自动感知, >0: 强制指定
 
@@ -206,20 +218,30 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _rudderPointerImg;
         private Text _rudderLabelText;
 
-        // 右侧系统：ECS 客舱增压
-        private Text _cabAltLabel;
-        private Text _cabAltValue;
-        private Text _cabRateLabel;
-        private Text _cabRateValue;
-        private Text _deltaPLabel;
-        private Text _deltaPValue;
-        private Text _ldgAltLabel;
-        private Text _ldgAltValue;
-
-        private Text _valveFwdLabel;
-        private Text _valveAftLabel;
-        private Image[] _valveDisks = new Image[2];
-        private Text[] _valveStatusTexts = new Text[2];
+        // ── 右侧真实系统读数区 (Flight Systems，全部有本地遥测通道) ──
+        // 行 1: 航向 / 马赫 / 过载
+        private Text _hdgLabel;
+        private Text _hdgValue;
+        private Text _machLabel;
+        private Text _machValue;
+        private Text _gLoadLabel;
+        private Text _gLoadValue;
+        // 行 2: 电气 EC / 通信信号
+        private Text _ecLabel;
+        private Text _ecValue;
+        private Image _ecBarTrackImg;
+        private Image _ecBarFillImg;
+        private Text _commLabel;
+        private Text _commValue;
+        private Image _commBarTrackImg;
+        private Image _commBarFillImg;
+        // 行 3: 垂直速度 / 时间加速
+        private Text _vsiLabel;
+        private Text _vsiValue;
+        private Text _warpLabel;
+        private Text _warpValue;
+        private Text _sasLabel;
+        private Text _sasValue;
 
         // 右侧底部：全机重量与燃油统计
         private Image _summaryBoxBg;
@@ -231,11 +253,11 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _totalFuelLabel;
         private Text _totalFuelText;
         private Image _totalFuelBoxBg;
-        private Text _satText;
-        private Text _fuelTempText;
+        private Text _apoText;
+        private Text _periText;
 
         // 通配符与模板通道
-        private string _tatTemplate = "TAT {TEMP:ATM:+0;-0;+0}c";
+        private string _tatTemplate = "{TEMP:ATM:+0;-0;+0}c";
         private string _thrustModeTemplate = "{THRUST:MODE}";
         private string _n1Token = "{ENG:N1}";
         private string _n2Token = "{ENG:N2}";
@@ -257,14 +279,20 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<string> _lastFlapStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastStabStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastRudderStr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastCabAltStr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastCabRateStr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastDeltaPStr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastLdgAltStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastHdgStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastMachStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastGLoadStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastEcStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastCommStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastVsiStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastWarpStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastSasStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastGrossWtStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastTotalFuelStr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastSatStr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastFuelTempStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastApoStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastPeriStr = new Cached<string>(string.Empty);
+        private readonly CachedFloat _lastEcFill = new CachedFloat(-1f, 0.002f);
+        private readonly CachedFloat _lastCommFill = new CachedFloat(-1f, 0.002f);
 
         // 双轨架构快照字段
         private bool _cachedHasVessel;
@@ -294,13 +322,20 @@ namespace ModularFlightPanel.UI.Widgets
         private float _cachedStabFrac;
         private string _cachedRudderStr = string.Empty;
         private float _cachedRudderFrac;
-        private string _cachedCabAltStr = string.Empty;
-        private string _cachedCabRateStr = string.Empty;
-        private string _cachedDeltaPStr = string.Empty;
+        private string _cachedHdgStr = string.Empty;
+        private string _cachedMachStr = string.Empty;
+        private string _cachedGLoadStr = string.Empty;
+        private string _cachedEcStr = string.Empty;
+        private float _cachedEcFill;
+        private string _cachedCommStr = string.Empty;
+        private float _cachedCommFill;
+        private string _cachedVsiStr = string.Empty;
+        private string _cachedWarpStr = string.Empty;
+        private string _cachedSasStr = string.Empty;
         private string _cachedGrossWtStr = string.Empty;
         private string _cachedTotalFuelStr = string.Empty;
-        private string _cachedSatStr = string.Empty;
-        private string _cachedFuelTempStr = string.Empty;
+        private string _cachedApoStr = string.Empty;
+        private string _cachedPeriStr = string.Empty;
 
         private static readonly string[] EngAliases = new[] { "ENGINES", "ENG" };
         private static readonly string[] OilPAliases = new[] { "OILP", "OIL_P" };
@@ -312,6 +347,9 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
+            // 纵向归一化因子：卡片实际高度 / 基准高度。行距随卡片纵向放大等比例伸展。
+            float sv = s * (RectTransform != null && RectTransform.sizeDelta.y > 1f ? (RectTransform.sizeDelta.y / (BASE_CARD_HEIGHT * s)) : 1f);
+            if (sv <= 0.01f) sv = s;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             string engVal = GetTemplateChannel(EngAliases, null);
@@ -357,263 +395,305 @@ namespace ModularFlightPanel.UI.Widgets
             Color trackCol = style.GetMeterColor(MeterStyleRole.Track, theme);
             Color arcLineCol = WidgetStyleManager.WithAlpha(theme.TextPrimaryColor, 0.95f);
 
-            // 3. 顶端航电状态栏
-            _tatText = UIFactory.CreateText(transform, "TAT_Text", "TAT +0c", Mathf.RoundToInt(9f * s),
+            // 3. 顶端航电状态栏 (字号按物理缩放相对提升，杜绝亚像素糊字)
+            _tatText = UIFactory.CreateText(transform, "TAT_Text", "TAT +0c", DotFont(10f, s),
                 TextAnchor.MiddleLeft, textAccent);
-            SetTopCenterAnchor(_tatText.rectTransform, -120f * s, -12f * s, 70f * s, 14f * s);
+            SetTopCenterAnchor(_tatText.rectTransform, -130f * s, -13f * sv, 74f * s, 15f * sv);
 
-            _thrustModeText = UIFactory.CreateText(transform, "Thrust_Mode_Text", "D-TO", Mathf.RoundToInt(10f * s),
+            _thrustModeText = UIFactory.CreateText(transform, "Thrust_Mode_Text", "D-TO", DotFont(11f, s),
                 TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_thrustModeText.rectTransform, -50f * s, -12f * s, 42f * s, 14f * s);
+            SetTopCenterAnchor(_thrustModeText.rectTransform, -54f * s, -13f * sv, 46f * s, 15f * sv);
 
-            _thrustTempText = UIFactory.CreateText(transform, "Thrust_Temp_Text", "+0c", Mathf.RoundToInt(9f * s),
+            _thrustTempText = UIFactory.CreateText(transform, "Thrust_Temp_Text", "+0c", DotFont(10f, s),
                 TextAnchor.MiddleLeft, textAccent);
-            SetTopCenterAnchor(_thrustTempText.rectTransform, -10f * s, -12f * s, 32f * s, 14f * s);
+            SetTopCenterAnchor(_thrustTempText.rectTransform, -12f * s, -13f * sv, 34f * s, 15f * sv);
 
             // 4. 发动机中间轴标签 (预先创建于中央轴线)
-            _n1Label = UIFactory.CreateText(transform, "Label_N1", "N1", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, textAccent);
-            _egtLabel = UIFactory.CreateText(transform, "Label_EGT", "EGT", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, textAccent);
-            _n2Label = UIFactory.CreateText(transform, "Label_N2", "N2", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, textAccent);
-            _ffLabel = UIFactory.CreateText(transform, "Label_FF", "FF", Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, textAccent);
-            _oilPLabel = UIFactory.CreateText(transform, "Label_OilP", I18n.Tr("WIDGET_EICAS_OIL_PRESS", "滑油\n压力"), Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
-            _oilTLabel = UIFactory.CreateText(transform, "Label_OilT", I18n.Tr("WIDGET_EICAS_OIL_TEMP", "滑油\n温度"), Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
-            _oilQLabel = UIFactory.CreateText(transform, "Label_OilQ", I18n.Tr("WIDGET_EICAS_OIL_QTY", "滑油量"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleCenter, textAccent);
-            _vibLabel = UIFactory.CreateText(transform, "Label_VIB", "VIB", Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, textAccent);
+            _n1Label = UIFactory.CreateText(transform, "Label_N1", "N1", DotFont(10f, s), TextAnchor.MiddleCenter, textAccent);
+            _egtLabel = UIFactory.CreateText(transform, "Label_EGT", "EGT", DotFont(10f, s), TextAnchor.MiddleCenter, textAccent);
+            _n2Label = UIFactory.CreateText(transform, "Label_N2", "N2", DotFont(10f, s), TextAnchor.MiddleCenter, textAccent);
+            _ffLabel = UIFactory.CreateText(transform, "Label_FF", "FF", DotFont(9.5f, s), TextAnchor.MiddleCenter, textAccent);
+            _oilPLabel = UIFactory.CreateText(transform, "Label_OilP", I18n.Tr("WIDGET_EICAS_OIL_PRESS", "滑油\n压力"), DotFont(9f, s), TextAnchor.MiddleCenter, textAccent);
+            _oilTLabel = UIFactory.CreateText(transform, "Label_OilT", I18n.Tr("WIDGET_EICAS_OIL_TEMP", "滑油\n温度"), DotFont(9f, s), TextAnchor.MiddleCenter, textAccent);
+            _oilQLabel = UIFactory.CreateText(transform, "Label_OilQ", I18n.Tr("WIDGET_EICAS_OIL_QTY", "滑油量"), DotFont(9f, s), TextAnchor.MiddleCenter, textAccent);
+            _vibLabel = UIFactory.CreateText(transform, "Label_VIB", "VIB", DotFont(9.5f, s), TextAnchor.MiddleCenter, textAccent);
 
             // 5. 构建 4 发预分配纵列容器
             for (int i = 0; i < MAX_ENGINES; i++)
             {
-                _engineCols[i] = CreateEngineColumn(i, s, boxBgCol, boxBorderCol, textPrimary, arcLineCol, textAccent, textWarn, dangerCol, trackCol);
+                _engineCols[i] = CreateEngineColumn(i, s, sv, boxBgCol, boxBorderCol, textPrimary, arcLineCol, textAccent, textWarn, dangerCol, trackCol);
             }
 
             // 6. 右侧独立系统挂载容器 (支持长宽比动态自适应平滑平移)
             _rightSystemsRt = CreateContainer("Right_Systems_Root", transform);
-            SetTopCenterAnchor(_rightSystemsRt, 90f * s, 0f, 0f, 0f);
+            SetTopCenterAnchor(_rightSystemsRt, 110f * s, 0f, 0f, 0f);
 
             // ── 起落架指示器 (GEAR) ──
-            GameObject gearBoxObj = UIFactory.CreatePanel(_rightSystemsRt, "Gear_Box", new Vector2(38f * s, 18f * s),
-                new Vector2(0f, -28f * s), boxBgCol, textAccent, 1.2f * s);
+            GameObject gearBoxObj = UIFactory.CreatePanel(_rightSystemsRt, "Gear_Box", new Vector2(44f * s, 20f * sv),
+                new Vector2(0f, -30f * sv), boxBgCol, textAccent, CrispLength(1.2f * s));
             _gearBoxBg = gearBoxObj.GetComponent<Image>();
             _gearBoxOutline = gearBoxObj.GetComponent<Outline>();
-            SetTopCenterAnchor(gearBoxObj.GetComponent<RectTransform>(), 0f, -28f * s, 38f * s, 18f * s);
+            SetTopCenterAnchor(gearBoxObj.GetComponent<RectTransform>(), 0f, -30f * sv, 44f * s, 20f * sv);
 
-            _gearStatusText = UIFactory.CreateText(gearBoxObj.transform, "Gear_Status", I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), Mathf.RoundToInt(9f * s),
+            _gearStatusText = UIFactory.CreateText(gearBoxObj.transform, "Gear_Status", I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), DotFont(10f, s),
                 TextAnchor.MiddleCenter, textAccent);
             _gearStatusText.rectTransform.anchorMin = Vector2.zero;
             _gearStatusText.rectTransform.anchorMax = Vector2.one;
             _gearStatusText.rectTransform.sizeDelta = Vector2.zero;
             _gearStatusText.rectTransform.anchoredPosition = Vector2.zero;
 
-            _gearLabelText = UIFactory.CreateText(_rightSystemsRt, "Gear_Label", I18n.Tr("WIDGET_EICAS_GEAR", "起落架"), Mathf.RoundToInt(7.5f * s),
+            _gearLabelText = UIFactory.CreateText(_rightSystemsRt, "Gear_Label", I18n.Tr("WIDGET_EICAS_GEAR", "起落架"), DotFont(9f, s),
                 TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_gearLabelText.rectTransform, 0f, -44f * s, 38f * s, 12f * s);
+            SetTopCenterAnchor(_gearLabelText.rectTransform, 0f, -47f * sv, 44f * s, 13f * sv);
 
             // ── 襟翼指示器 (FLAPS) ──
-            float flapsTrackX = 14f * s;
-            float flapsY = -82f * s;
-            float flapsH = 42f * s;
+            float flapsTrackX = 16f * s;
+            float flapsY = -86f * sv;
+            float flapsH = 44f * sv;
 
-            _flapsLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_FLAPS", I18n.Tr("WIDGET_EICAS_FLAPS", "襟\n翼"), Mathf.RoundToInt(7f * s),
+            _flapsLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_FLAPS", I18n.Tr("WIDGET_EICAS_FLAPS", "襟\n翼"), DotFont(9f, s),
                 TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_flapsLabelText.rectTransform, flapsTrackX - 16f * s, flapsY, 12f * s, flapsH);
+            SetTopCenterAnchor(_flapsLabelText.rectTransform, flapsTrackX - 18f * s, flapsY, 14f * s, flapsH);
 
-            GameObject flapsTrackObj = UIFactory.CreatePanel(_rightSystemsRt, "Flaps_Track", new Vector2(2f * s, flapsH),
-                new Vector2(flapsTrackX, flapsY), trackCol);
+            GameObject flapsTrackObj = UIFactory.CreatePanel(_rightSystemsRt, "Flaps_Track",
+                new Vector2(CrispLength(2f * s), flapsH), new Vector2(flapsTrackX, flapsY), trackCol);
             _flapsTrackImage = flapsTrackObj.GetComponent<Image>();
-            SetTopCenterAnchor(flapsTrackObj.GetComponent<RectTransform>(), flapsTrackX, flapsY, 2f * s, flapsH);
+            SetTopCenterAnchor(flapsTrackObj.GetComponent<RectTransform>(), flapsTrackX, flapsY, CrispLength(2f * s), flapsH);
 
             _flapPointerPivot = CreateContainer("Flap_Pointer", flapsTrackObj.transform,
-                Vector2.zero, new Vector2(0f, -8f * s));
+                Vector2.zero, new Vector2(0f, -10f * sv));
             _flapPointerPivot.anchorMin = new Vector2(0.5f, 1f);
             _flapPointerPivot.anchorMax = new Vector2(0.5f, 1f);
             _flapPointerPivot.pivot = new Vector2(0.5f, 0.5f);
 
-            GameObject flapTickObj = UIFactory.CreatePanel(_flapPointerPivot, "Tick", new Vector2(9f * s, 2f * s),
-                Vector2.zero, textAccent);
+            GameObject flapTickObj = UIFactory.CreatePanel(_flapPointerPivot, "Tick",
+                new Vector2(11f * s, CrispLength(2.4f * s)), Vector2.zero, textAccent);
             _flapTickImage = flapTickObj.GetComponent<Image>();
 
-            _flapPositionText = UIFactory.CreateText(_flapPointerPivot, "Pos_Text", "1", Mathf.RoundToInt(9f * s),
+            _flapPositionText = UIFactory.CreateText(_flapPointerPivot, "Pos_Text", "1", DotFont(10f, s),
                 TextAnchor.MiddleLeft, textAccent);
-            _flapPositionText.rectTransform.anchoredPosition = new Vector2(11f * s, 0f);
-            _flapPositionText.rectTransform.sizeDelta = new Vector2(18f * s, 14f * s);
+            _flapPositionText.rectTransform.anchoredPosition = new Vector2(13f * s, 0f);
+            _flapPositionText.rectTransform.sizeDelta = new Vector2(22f * s, 15f * sv);
 
             // ── 安定面配平 (STAB TRIM) 与 方向舵配平 (RUDDER TRIM) ──
-            float stabTrackX = -20f * s;
-            float stabY = -138f * s;
-            float stabH = 34f * s;
+            float stabTrackX = -22f * s;
+            float stabY = -146f * sv;
+            float stabH = 36f * sv;
 
-            _stabNdText = UIFactory.CreateText(_rightSystemsRt, "Stab_ND", "ND", Mathf.RoundToInt(7f * s),
+            _stabNdText = UIFactory.CreateText(_rightSystemsRt, "Stab_ND", "ND", DotFont(8.5f, s),
                 TextAnchor.MiddleRight, textPrimary);
-            SetTopCenterAnchor(_stabNdText.rectTransform, stabTrackX - 12f * s, stabY + stabH * 0.5f - 4f * s, 16f * s, 10f * s);
+            SetTopCenterAnchor(_stabNdText.rectTransform, stabTrackX - 13f * s, stabY + stabH * 0.5f - 4f * sv, 18f * s, 11f * sv);
 
-            _stabNuText = UIFactory.CreateText(_rightSystemsRt, "Stab_NU", I18n.Tr("WIDGET_EICAS_STAB_NU", "抬头"), Mathf.RoundToInt(7f * s),
+            _stabNuText = UIFactory.CreateText(_rightSystemsRt, "Stab_NU", I18n.Tr("WIDGET_EICAS_STAB_NU", "抬头"), DotFont(8.5f, s),
                 TextAnchor.MiddleRight, textPrimary);
-            SetTopCenterAnchor(_stabNuText.rectTransform, stabTrackX - 12f * s, stabY - stabH * 0.5f + 4f * s, 16f * s, 10f * s);
+            SetTopCenterAnchor(_stabNuText.rectTransform, stabTrackX - 13f * s, stabY - stabH * 0.5f + 4f * sv, 18f * s, 11f * sv);
 
-            GameObject stabTrackObj = UIFactory.CreatePanel(_rightSystemsRt, "Stab_Track", new Vector2(2f * s, stabH),
-                new Vector2(stabTrackX, stabY), trackCol);
+            GameObject stabTrackObj = UIFactory.CreatePanel(_rightSystemsRt, "Stab_Track",
+                new Vector2(CrispLength(2f * s), stabH), new Vector2(stabTrackX, stabY), trackCol);
             _stabTrackImage = stabTrackObj.GetComponent<Image>();
-            SetTopCenterAnchor(stabTrackObj.GetComponent<RectTransform>(), stabTrackX, stabY, 2f * s, stabH);
+            SetTopCenterAnchor(stabTrackObj.GetComponent<RectTransform>(), stabTrackX, stabY, CrispLength(2f * s), stabH);
 
-            _stabTargetText = UIFactory.CreateText(_rightSystemsRt, "Stab_Target", "10.25", Mathf.RoundToInt(8f * s),
+            _stabTargetText = UIFactory.CreateText(_rightSystemsRt, "Stab_Target", "10.25", DotFont(9.5f, s),
                 TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_stabTargetText.rectTransform, -50f * s, -126f * s, 32f * s, 11f * s);
+            SetTopCenterAnchor(_stabTargetText.rectTransform, -54f * s, -134f * sv, 36f * s, 12f * sv);
 
-            CreateReadoutBox(_rightSystemsRt, "Stab_Box", new Vector2(32f * s, 14f * s), new Vector2(-50f * s, -140f * s),
-                "10.25", boxBgCol, textAccent, textAccent, s,
+            CreateReadoutBox(_rightSystemsRt, "Stab_Box", new Vector2(36f * s, 15f * sv), new Vector2(-54f * s, -148f * sv),
+                "10.25", boxBgCol, textAccent, textAccent, s, sv,
                 out _stabBoxBg, out _stabBoxOutline, out _stabValueText);
 
-            GameObject stabPtrGo = UIFactory.CreatePanel(stabTrackObj.transform, "Pointer", new Vector2(6f * s, 4f * s),
-                Vector2.zero, textAccent);
+            GameObject stabPtrGo = UIFactory.CreatePanel(stabTrackObj.transform, "Pointer",
+                new Vector2(7f * s, CrispLength(4.4f * s)), Vector2.zero, textAccent);
             _stabPointerRt = stabPtrGo.GetComponent<RectTransform>();
             _stabPointerImg = stabPtrGo.GetComponent<Image>();
             _stabPointerRt.anchorMin = new Vector2(0.5f, 0.5f);
             _stabPointerRt.anchorMax = new Vector2(0.5f, 0.5f);
             _stabPointerRt.pivot = new Vector2(0.5f, 0.5f);
 
-            _stabLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_STAB", I18n.Tr("WIDGET_EICAS_STAB", "安\n定\n面"), Mathf.RoundToInt(7.5f * s),
+            _stabLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_STAB", I18n.Tr("WIDGET_EICAS_STAB", "安\n定\n面"), DotFont(9f, s),
                 TextAnchor.MiddleCenter, textPrimary);
-            SetTopCenterAnchor(_stabLabelText.rectTransform, -6f * s, stabY, 12f * s, stabH);
+            SetTopCenterAnchor(_stabLabelText.rectTransform, -7f * s, stabY, 13f * s, stabH);
 
             // 方向舵配平 (RUDDER TRIM)
-            float rudderX = 36f * s;
-            CreateReadoutBox(_rightSystemsRt, "Rudder_Box", new Vector2(28f * s, 13f * s), new Vector2(rudderX, -128f * s),
-                "0.0", boxBgCol, boxBorderCol, textPrimary, s,
+            float rudderX = 40f * s;
+            CreateReadoutBox(_rightSystemsRt, "Rudder_Box", new Vector2(32f * s, 14f * sv), new Vector2(rudderX, -136f * sv),
+                "0.0", boxBgCol, boxBorderCol, textPrimary, s, sv,
                 out _rudderBoxBg, out _rudderBoxOutline, out _rudderValueText);
 
-            GameObject rudTrackObj = UIFactory.CreatePanel(_rightSystemsRt, "Rudder_Track", new Vector2(34f * s, 1.6f * s),
-                new Vector2(rudderX, -142f * s), trackCol);
+            GameObject rudTrackObj = UIFactory.CreatePanel(_rightSystemsRt, "Rudder_Track",
+                new Vector2(38f * s, CrispLength(1.8f * s)), new Vector2(rudderX, -150f * sv), trackCol);
             _rudderTrackImage = rudTrackObj.GetComponent<Image>();
-            SetTopCenterAnchor(rudTrackObj.GetComponent<RectTransform>(), rudderX, -142f * s, 34f * s, 1.6f * s);
+            SetTopCenterAnchor(rudTrackObj.GetComponent<RectTransform>(), rudderX, -150f * sv, 38f * s, CrispLength(1.8f * s));
 
-            GameObject rudCenterTickObj = UIFactory.CreatePanel(rudTrackObj.transform, "Center_Tick", new Vector2(1.5f * s, 6f * s),
-                Vector2.zero, textLabel);
+            GameObject rudCenterTickObj = UIFactory.CreatePanel(rudTrackObj.transform, "Center_Tick",
+                new Vector2(CrispLength(1.6f * s), CrispLength(7f * s)), Vector2.zero, textLabel);
             _rudderCenterTick = rudCenterTickObj.GetComponent<Image>();
 
-            GameObject rudPtrObj = UIFactory.CreatePanel(rudTrackObj.transform, "Pointer", new Vector2(4f * s, 5f * s),
-                new Vector2(0f, 4f * s), textPrimary);
+            GameObject rudPtrObj = UIFactory.CreatePanel(rudTrackObj.transform, "Pointer",
+                new Vector2(CrispLength(4.4f * s), CrispLength(5.5f * s)), new Vector2(0f, 5f * sv), textPrimary);
             _rudderPointerRt = rudPtrObj.GetComponent<RectTransform>();
             _rudderPointerImg = rudPtrObj.GetComponent<Image>();
 
-            _rudderLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_Rudder", I18n.Tr("WIDGET_EICAS_RUDDER_TRIM", "方向舵配平"), Mathf.RoundToInt(6.5f * s),
+            _rudderLabelText = UIFactory.CreateText(_rightSystemsRt, "Label_Rudder", I18n.Tr("WIDGET_EICAS_RUDDER_TRIM", "方向舵配平"), DotFont(8.5f, s),
                 TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_rudderLabelText.rectTransform, rudderX, -153f * s, 60f * s, 11f * s);
+            SetTopCenterAnchor(_rudderLabelText.rectTransform, rudderX, -161f * sv, 64f * s, 12f * sv);
 
-            // ── ECS 客舱增压系统 ──
-            float ecsLabelX = -40f * s;
-            float ecsValX = 6f * s;
-            float ecsY1 = -174f * s;
-            float ecsY2 = -188f * s;
-            float ecsY3 = -202f * s;
-            float ecsY4 = -216f * s;
+            // ── 真实系统读数区 (Flight Systems：全部有本地遥测通道，见类注释第 3 条) ──
+            // 行 1 (Y ≈ -178): 航向 / 马赫 / 过载
+            float frRow1 = -180f * sv;
+            float frRow2 = -196f * sv;
+            float frRow3 = -218f * sv;
+            float frRow4 = -240f * sv;
+            float frLabelX = -44f * s;
+            float frValueX = 4f * s;
 
-            _cabAltLabel = UIFactory.CreateText(_rightSystemsRt, "Label_CabAlt", "CAB ALT", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
-            SetTopCenterAnchor(_cabAltLabel.rectTransform, ecsLabelX, ecsY1, 44f * s, 12f * s);
-            _cabAltValue = UIFactory.CreateText(_rightSystemsRt, "Val_CabAlt", "6000", Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, textPrimary);
-            SetTopCenterAnchor(_cabAltValue.rectTransform, ecsValX, ecsY1, 36f * s, 12f * s);
+            _hdgLabel = UIFactory.CreateText(_rightSystemsRt, "Label_HDG", "HDG", DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_hdgLabel.rectTransform, frLabelX, frRow1, 36f * s, 13f * sv);
+            _hdgValue = UIFactory.CreateText(_rightSystemsRt, "Val_HDG", "000", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_hdgValue.rectTransform, frValueX, frRow1, 40f * s, 13f * sv);
 
-            _cabRateLabel = UIFactory.CreateText(_rightSystemsRt, "Label_Rate", I18n.Tr("WIDGET_EICAS_RATE", "速率"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
-            SetTopCenterAnchor(_cabRateLabel.rectTransform, ecsLabelX, ecsY2, 44f * s, 12f * s);
-            _cabRateValue = UIFactory.CreateText(_rightSystemsRt, "Val_Rate", "+400", Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, textPrimary);
-            SetTopCenterAnchor(_cabRateValue.rectTransform, ecsValX, ecsY2, 36f * s, 12f * s);
+            _machLabel = UIFactory.CreateText(_rightSystemsRt, "Label_MACH", "MACH", DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_machLabel.rectTransform, frLabelX, frRow2, 36f * s, 13f * sv);
+            _machValue = UIFactory.CreateText(_rightSystemsRt, "Val_MACH", "0.00", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_machValue.rectTransform, frValueX, frRow2, 40f * s, 13f * sv);
 
-            _deltaPLabel = UIFactory.CreateText(_rightSystemsRt, "Label_DeltaP", I18n.Tr("WIDGET_EICAS_DELTA_P", "压差"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
-            SetTopCenterAnchor(_deltaPLabel.rectTransform, ecsLabelX, ecsY3, 44f * s, 12f * s);
-            _deltaPValue = UIFactory.CreateText(_rightSystemsRt, "Val_DeltaP", "4.0", Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, textPrimary);
-            SetTopCenterAnchor(_deltaPValue.rectTransform, ecsValX, ecsY3, 36f * s, 12f * s);
+            _gLoadLabel = UIFactory.CreateText(_rightSystemsRt, "Label_GLOAD", I18n.Tr("WIDGET_EICAS_GLOAD", "过载"), DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_gLoadLabel.rectTransform, frLabelX + 62f * s, frRow1, 46f * s, 13f * sv);
+            _gLoadValue = UIFactory.CreateText(_rightSystemsRt, "Val_GLOAD", "1.0", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_gLoadValue.rectTransform, frValueX + 62f * s, frRow2, 40f * s, 13f * sv);
 
-            _ldgAltLabel = UIFactory.CreateText(_rightSystemsRt, "Label_LdgAlt", "LDG ALT", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, textAccent);
-            SetTopCenterAnchor(_ldgAltLabel.rectTransform, ecsLabelX, ecsY4, 44f * s, 12f * s);
-            _ldgAltValue = UIFactory.CreateText(_rightSystemsRt, "Val_LdgAlt", "6 " + I18n.Tr("WIDGET_EICAS_AUTO", "自动"), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleRight, textPrimary);
-            SetTopCenterAnchor(_ldgAltValue.rectTransform, ecsValX + 4f * s, ecsY4, 42f * s, 12f * s);
+            _vsiLabel = UIFactory.CreateText(_rightSystemsRt, "Label_VSI", "VSI", DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_vsiLabel.rectTransform, frLabelX + 62f * s, frRow3, 36f * s, 13f * sv);
+            _vsiValue = UIFactory.CreateText(_rightSystemsRt, "Val_VSI", "+0", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_vsiValue.rectTransform, frValueX + 62f * s, frRow4, 40f * s, 13f * sv);
 
-            // 双外流阀 (FWD / AFT)
-            float[] valveX = new float[] { 36f * s, 58f * s };
-            _valveFwdLabel = UIFactory.CreateText(_rightSystemsRt, "Label_FWD", "FWD", Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_valveFwdLabel.rectTransform, valveX[0], -174f * s, 20f * s, 12f * s);
-            _valveAftLabel = UIFactory.CreateText(_rightSystemsRt, "Label_AFT", "AFT", Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_valveAftLabel.rectTransform, valveX[1], -174f * s, 20f * s, 12f * s);
+            // 行 2/3 (Y ≈ -218 与 -240): 电气 EC / 通信 / 时间加速 / SAS
+            _ecLabel = UIFactory.CreateText(_rightSystemsRt, "Label_EC", "EC", DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_ecLabel.rectTransform, frLabelX, frRow3, 22f * s, 13f * sv);
+            _ecValue = UIFactory.CreateText(_rightSystemsRt, "Val_EC", "100%", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_ecValue.rectTransform, frLabelX + 34f * s, frRow3, 38f * s, 13f * sv);
 
-            for (int i = 0; i < 2; i++)
-            {
-                GameObject vDiskObj = UIFactory.CreatePanel(_rightSystemsRt, $"Valve_Disk_{i + 1}", new Vector2(17f * s, 17f * s),
-                    new Vector2(valveX[i], -196f * s), Color.clear, textWarn, 1.2f * s);
-                _valveDisks[i] = vDiskObj.GetComponent<Image>();
-                SetTopCenterAnchor(vDiskObj.GetComponent<RectTransform>(), valveX[i], -196f * s, 17f * s, 17f * s);
+            // 电气储量通栏条 (宽度受钳制，杜绝亚像素丢线)
+            float barW = 44f * s;
+            float barH = CrispLength(4f * s);
+            _ecBarTrackImg = UIFactory.CreatePanel(_rightSystemsRt, "EC_Bar_Track",
+                new Vector2(barW, barH), new Vector2(frValueX, frRow4), trackCol).GetComponent<Image>();
+            SetTopCenterAnchor(_ecBarTrackImg.rectTransform, frValueX, frRow4, barW, barH);
 
-                string statusStr = i == 0 ? "OP" : "CL";
-                _valveStatusTexts[i] = UIFactory.CreateText(vDiskObj.transform, "Status", statusStr, Mathf.RoundToInt(7f * s),
-                    TextAnchor.MiddleCenter, textWarn);
-                _valveStatusTexts[i].rectTransform.anchorMin = Vector2.zero;
-                _valveStatusTexts[i].rectTransform.anchorMax = Vector2.one;
-                _valveStatusTexts[i].rectTransform.sizeDelta = Vector2.zero;
-                _valveStatusTexts[i].rectTransform.anchoredPosition = Vector2.zero;
-            }
+            GameObject ecFillObj = UIFactory.CreatePanel(_ecBarTrackImg.transform, "Fill",
+                new Vector2(barW * 0.01f, barH), Vector2.zero, textPrimary);
+            _ecBarFillImg = ecFillObj.GetComponent<Image>();
+            RectTransform ecFillRt = ecFillObj.GetComponent<RectTransform>();
+            ecFillRt.anchorMin = new Vector2(0f, 0.5f);
+            ecFillRt.anchorMax = new Vector2(0f, 0.5f);
+            ecFillRt.pivot = new Vector2(0f, 0.5f);
+            ecFillRt.anchoredPosition = new Vector2(-barW * 0.5f, 0f);
+            ecFillRt.sizeDelta = new Vector2(barW * 0.01f, barH);
+
+            _commLabel = UIFactory.CreateText(_rightSystemsRt, "Label_COMM", "COMM", DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_commLabel.rectTransform, frLabelX + 62f * s, frRow3, 34f * s, 13f * sv);
+            _commValue = UIFactory.CreateText(_rightSystemsRt, "Val_COMM", "0%", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_commValue.rectTransform, frLabelX + 100f * s, frRow3, 34f * s, 13f * sv);
+
+            _commBarTrackImg = UIFactory.CreatePanel(_rightSystemsRt, "COMM_Bar_Track",
+                new Vector2(barW, barH), new Vector2(frValueX + 62f * s, frRow4), trackCol).GetComponent<Image>();
+            SetTopCenterAnchor(_commBarTrackImg.rectTransform, frValueX + 62f * s, frRow4, barW, barH);
+
+            GameObject commFillObj = UIFactory.CreatePanel(_commBarTrackImg.transform, "Fill",
+                new Vector2(barW * 0.01f, barH), Vector2.zero, textPrimary);
+            _commBarFillImg = commFillObj.GetComponent<Image>();
+            RectTransform commFillRt = commFillObj.GetComponent<RectTransform>();
+            commFillRt.anchorMin = new Vector2(0f, 0.5f);
+            commFillRt.anchorMax = new Vector2(0f, 0.5f);
+            commFillRt.pivot = new Vector2(0f, 0.5f);
+            commFillRt.anchoredPosition = new Vector2(-barW * 0.5f, 0f);
+            commFillRt.sizeDelta = new Vector2(barW * 0.01f, barH);
+
+            // 行 4 (Y ≈ -240 下方): 时间加速 / SAS 状态
+            _warpLabel = UIFactory.CreateText(_rightSystemsRt, "Label_WARP", I18n.Tr("WIDGET_EICAS_WARP", "倍速"), DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_warpLabel.rectTransform, frLabelX, -236f * sv, 40f * s, 13f * sv);
+            _warpValue = UIFactory.CreateText(_rightSystemsRt, "Val_WARP", "1x", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_warpValue.rectTransform, frValueX, -236f * sv, 40f * s, 13f * sv);
+
+            _sasLabel = UIFactory.CreateText(_rightSystemsRt, "Label_SAS", "SAS", DotFont(9f, s), TextAnchor.MiddleLeft, textAccent);
+            SetTopCenterAnchor(_sasLabel.rectTransform, frLabelX + 62f * s, -236f * sv, 30f * s, 13f * sv);
+            _sasValue = UIFactory.CreateText(_rightSystemsRt, "Val_SAS", "OFF", DotFont(9.5f, s), TextAnchor.MiddleRight, textPrimary);
+            SetTopCenterAnchor(_sasValue.rectTransform, frValueX + 100f * s, -236f * sv, 34f * s, 13f * sv);
 
             // ── 右侧底部：全机重量与燃油统计暗底卡槽 ──
-            float sumBoxW = 126f * s;
-            float sumBoxH = 56f * s;
-            float sumBoxY = -272f * s;
+            float sumBoxW = 136f * s;
+            float sumBoxH = 58f * sv;
+            float sumBoxY = -274f * sv;
             GameObject sumBoxObj = UIFactory.CreatePanel(_rightSystemsRt, "Weight_Fuel_Panel", new Vector2(sumBoxW, sumBoxH),
-                new Vector2(0f, sumBoxY), boxBgCol, boxBorderCol, 1f * s);
+                new Vector2(0f, sumBoxY), boxBgCol, boxBorderCol, CrispLength(1f * s));
             _summaryBoxBg = sumBoxObj.GetComponent<Image>();
             _summaryBoxOutline = sumBoxObj.GetComponent<Outline>();
             SetTopCenterAnchor(sumBoxObj.GetComponent<RectTransform>(), 0f, sumBoxY, sumBoxW, sumBoxH);
 
-            _grossWtLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_GW", I18n.Tr("WIDGET_EICAS_GROSS_WT", "全重"), Mathf.RoundToInt(7f * s),
+            _grossWtLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_GW", I18n.Tr("WIDGET_EICAS_GROSS_WT", "全重"), DotFont(9f, s),
                 TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_grossWtLabel.rectTransform, -38f * s, -6f * s, 46f * s, 11f * s);
+            SetTopCenterAnchor(_grossWtLabel.rectTransform, -46f * s, -7f * sv, 60f * s, 12f * sv);
 
-            _unitsLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_Units", I18n.Tr("WIDGET_EICAS_UNITS_LBS", "磅 ×\n1000"), Mathf.RoundToInt(6.5f * s),
+            _unitsLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_Units", I18n.Tr("WIDGET_EICAS_UNITS_LBS", "磅 ×\n1000"), DotFont(8.5f, s),
                 TextAnchor.MiddleCenter, textLabel);
-            SetTopCenterAnchor(_unitsLabel.rectTransform, 0f, -6f * s, 28f * s, 20f * s);
+            SetTopCenterAnchor(_unitsLabel.rectTransform, 0f, -7f * sv, 26f * s, 22f * sv);
 
-            _totalFuelLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_TF", I18n.Tr("WIDGET_EICAS_TOTAL_FUEL", "总燃料"), Mathf.RoundToInt(7f * s),
+            _totalFuelLabel = UIFactory.CreateText(sumBoxObj.transform, "Label_TF", I18n.Tr("WIDGET_EICAS_TOTAL_FUEL", "总燃料"), DotFont(9f, s),
                 TextAnchor.MiddleCenter, textAccent);
-            SetTopCenterAnchor(_totalFuelLabel.rectTransform, 38f * s, -6f * s, 46f * s, 11f * s);
+            SetTopCenterAnchor(_totalFuelLabel.rectTransform, 46f * s, -7f * sv, 60f * s, 12f * sv);
 
             // 黑底框显数值药丸
-            GameObject gwBoxObj = UIFactory.CreatePanel(sumBoxObj.transform, "GW_Pill", new Vector2(36f * s, 13f * s),
-                new Vector2(-38f * s, -24f * s), boxBgCol);
+            GameObject gwBoxObj = UIFactory.CreatePanel(sumBoxObj.transform, "GW_Pill", new Vector2(40f * s, 14f * sv),
+                new Vector2(-41f * s, -26f * sv), boxBgCol);
             _grossWtBoxBg = gwBoxObj.GetComponent<Image>();
-            SetTopCenterAnchor(gwBoxObj.GetComponent<RectTransform>(), -38f * s, -24f * s, 36f * s, 13f * s);
+            SetTopCenterAnchor(gwBoxObj.GetComponent<RectTransform>(), -41f * s, -26f * sv, 40f * s, 14f * sv);
 
-            _grossWtText = UIFactory.CreateText(gwBoxObj.transform, "Text", "0.0", Mathf.RoundToInt(8.5f * s),
+            _grossWtText = UIFactory.CreateText(gwBoxObj.transform, "Text", "0.0", DotFont(10f, s),
                 TextAnchor.MiddleCenter, textPrimary);
             _grossWtText.rectTransform.anchorMin = Vector2.zero;
             _grossWtText.rectTransform.anchorMax = Vector2.one;
             _grossWtText.rectTransform.sizeDelta = Vector2.zero;
             _grossWtText.rectTransform.anchoredPosition = Vector2.zero;
 
-            GameObject tfBoxObj = UIFactory.CreatePanel(sumBoxObj.transform, "TF_Pill", new Vector2(36f * s, 13f * s),
-                new Vector2(38f * s, -24f * s), boxBgCol);
+            GameObject tfBoxObj = UIFactory.CreatePanel(sumBoxObj.transform, "TF_Pill", new Vector2(40f * s, 14f * sv),
+                new Vector2(41f * s, -26f * sv), boxBgCol);
             _totalFuelBoxBg = tfBoxObj.GetComponent<Image>();
-            SetTopCenterAnchor(tfBoxObj.GetComponent<RectTransform>(), 38f * s, -24f * s, 36f * s, 13f * s);
+            SetTopCenterAnchor(tfBoxObj.GetComponent<RectTransform>(), 41f * s, -26f * sv, 40f * s, 14f * sv);
 
-            _totalFuelText = UIFactory.CreateText(tfBoxObj.transform, "Text", "0.0", Mathf.RoundToInt(8.5f * s),
+            _totalFuelText = UIFactory.CreateText(tfBoxObj.transform, "Text", "0.0", DotFont(10f, s),
                 TextAnchor.MiddleCenter, textPrimary);
             _totalFuelText.rectTransform.anchorMin = Vector2.zero;
             _totalFuelText.rectTransform.anchorMax = Vector2.one;
             _totalFuelText.rectTransform.sizeDelta = Vector2.zero;
             _totalFuelText.rectTransform.anchoredPosition = Vector2.zero;
 
-            _satText = UIFactory.CreateText(sumBoxObj.transform, "SAT_Text", "SAT 0", Mathf.RoundToInt(7f * s),
+            // 远/近地点高度 (真实轨道遥测，KSP 本地数据源)
+            _apoText = UIFactory.CreateText(sumBoxObj.transform, "Apo_Text", I18n.Tr("WIDGET_EICAS_APO", "远地点") + " 0", DotFont(9f, s),
                 TextAnchor.MiddleLeft, textAccent);
-            SetTopCenterAnchor(_satText.rectTransform, -36f * s, -42f * s, 44f * s, 11f * s);
+            SetTopCenterAnchor(_apoText.rectTransform, -40f * s, -45f * sv, 48f * s, 12f * sv);
 
-            _fuelTempText = UIFactory.CreateText(sumBoxObj.transform, "Fuel_Temp_Text", I18n.Tr("WIDGET_EICAS_FUEL_TEMP", "燃油温度") + " 0", Mathf.RoundToInt(7f * s),
+            _periText = UIFactory.CreateText(sumBoxObj.transform, "Peri_Text", I18n.Tr("WIDGET_EICAS_PERI", "近地点") + " 0", DotFont(9f, s),
                 TextAnchor.MiddleRight, textAccent);
-            SetTopCenterAnchor(_fuelTempText.rectTransform, 36f * s, -42f * s, 52f * s, 11f * s);
+            SetTopCenterAnchor(_periText.rectTransform, 40f * s, -45f * sv, 56f * s, 12f * sv);
 
             // 7. 排布并激活当前发动机列与动态长宽比
             int initialEngines = _configuredEngineCount > 0 ? _configuredEngineCount : 2;
-            LayoutEngineColumns(initialEngines, s);
+            LayoutEngineColumns(initialEngines, s, sv);
 
             // 8. 动态注册全部核心微控件至 WidgetControlManager
             RegisterMicroControls();
         }
 
-        private EngineColumnUI CreateEngineColumn(int index, float s, Color boxBg, Color boxBorder,
+        /// <summary>
+        /// 字号按物理缩放相对提升：基础字号随 DPI 缩放放大，但保证不小于 9 物理像素，
+        /// 避免小分辨率下出现 6.5px 级别的亚像素糊字。
+        /// </summary>
+        private static int DotFont(float basePt, float s)
+        {
+            float scaled = basePt * s;
+            return Mathf.RoundToInt(Mathf.Max(scaled, 9f));
+        }
+
+        private EngineColumnUI CreateEngineColumn(int index, float s, float sv, Color boxBg, Color boxBorder,
             Color valColor, Color arcLineColor, Color bugColor, Color warnColor, Color limitColor, Color trackColor)
         {
             EngineColumnUI col = new EngineColumnUI();
@@ -626,81 +706,81 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 1. REV & Target
             col.N1Dial = new DialGaugeUI();
-            col.N1Dial.RevText = UIFactory.CreateText(colGo.transform, $"REV_{index + 1}", "REV", Mathf.RoundToInt(8f * s),
+            col.N1Dial.RevText = UIFactory.CreateText(colGo.transform, $"REV_{index + 1}", "REV", DotFont(9f, s),
                 TextAnchor.MiddleCenter, bugColor);
-            SetTopCenterAnchor(col.N1Dial.RevText.rectTransform, 0f, -22f * s, 28f * s, 11f * s);
+            SetTopCenterAnchor(col.N1Dial.RevText.rectTransform, 0f, -23f * sv, 30f * s, 12f * sv);
 
-            col.N1Dial.TargetText = UIFactory.CreateText(colGo.transform, $"N1_Tgt_{index + 1}", "81.3", Mathf.RoundToInt(8.5f * s),
+            col.N1Dial.TargetText = UIFactory.CreateText(colGo.transform, $"N1_Tgt_{index + 1}", "81.3", DotFont(9.5f, s),
                 TextAnchor.MiddleCenter, bugColor);
-            SetTopCenterAnchor(col.N1Dial.TargetText.rectTransform, 0f, -34f * s, 28f * s, 11f * s);
+            SetTopCenterAnchor(col.N1Dial.TargetText.rectTransform, 0f, -36f * sv, 30f * s, 12f * sv);
 
             // 2. N1 马蹄弧指示器 (含同心双弧与命令游标)
-            float n1DialCenterY = -64f * s;
+            float n1DialCenterY = -66f * sv;
             CreateHorseshoeDial(colGo.transform, $"N1_Dial_{index + 1}", 0f, n1DialCenterY, 15f * s, "0.0",
-                boxBg, boxBorder, valColor, arcLineColor, bugColor, warnColor, limitColor, s,
+                boxBg, boxBorder, valColor, arcLineColor, bugColor, warnColor, limitColor, s, sv,
                 hasBug: true, hasInnerArc: true, hasBottomTick: false, out col.N1Dial);
 
             // 3. EGT 马蹄弧指示器 (含起动温控警戒标)
-            float egtDialCenterY = -114f * s;
+            float egtDialCenterY = -116f * sv;
             CreateHorseshoeDial(colGo.transform, $"EGT_Dial_{index + 1}", 0f, egtDialCenterY, 15f * s, "0",
-                boxBg, boxBorder, valColor, arcLineColor, bugColor, warnColor, limitColor, s,
+                boxBg, boxBorder, valColor, arcLineColor, bugColor, warnColor, limitColor, s, sv,
                 hasBug: false, hasInnerArc: false, hasBottomTick: true, out col.EgtDial);
 
             // 4. N2 马蹄弧指示器
-            float n2DialCenterY = -164f * s;
+            float n2DialCenterY = -166f * sv;
             CreateHorseshoeDial(colGo.transform, $"N2_Dial_{index + 1}", 0f, n2DialCenterY, 15f * s, "0.0",
-                boxBg, boxBorder, valColor, arcLineColor, bugColor, warnColor, limitColor, s,
+                boxBg, boxBorder, valColor, arcLineColor, bugColor, warnColor, limitColor, s, sv,
                 hasBug: false, hasInnerArc: false, hasBottomTick: false, out col.N2Dial);
 
             // 5. FF 燃油流量框
-            float ffY = -204f * s;
-            CreateReadoutBox(colGo.transform, $"FF_Box_{index + 1}", new Vector2(26f * s, 13f * s), new Vector2(0f, ffY),
-                "0.0", boxBg, boxBorder, valColor, s,
+            float ffY = -206f * sv;
+            CreateReadoutBox(colGo.transform, $"FF_Box_{index + 1}", new Vector2(30f * s, 14f * sv), new Vector2(0f, ffY),
+                "0.0", boxBg, boxBorder, valColor, s, sv,
                 out col.FfBoxBg, out col.FfBoxOutline, out col.FfText);
 
             // 6. OIL PRESS
-            float oilPY = -230f * s;
-            float tapeH = 18f * s;
-            CreateReadoutBox(colGo.transform, $"OIL_P_Box_{index + 1}", new Vector2(22f * s, 13f * s), new Vector2(-7f * s, oilPY),
-                "0", boxBg, boxBorder, valColor, s,
+            float oilPY = -232f * sv;
+            float tapeH = 18f * sv;
+            CreateReadoutBox(colGo.transform, $"OIL_P_Box_{index + 1}", new Vector2(24f * s, 14f * sv), new Vector2(-8f * s, oilPY),
+                "0", boxBg, boxBorder, valColor, s, sv,
                 out col.OilPBoxBg, out col.OilPBoxOutline, out col.OilPText);
 
-            CreateVerticalTapeRuler(colGo.transform, $"OIL_P_Tape_{index + 1}", new Vector2(2f * s, tapeH),
-                new Vector2(10f * s, oilPY), trackColor, limitColor, valColor, s, pointsRight: false,
+            CreateVerticalTapeRuler(colGo.transform, $"OIL_P_Tape_{index + 1}", new Vector2(CrispLength(2f * s), tapeH),
+                new Vector2(11f * s, oilPY), trackColor, limitColor, valColor, s, pointsRight: false,
                 out col.OilPTrack, out col.OilPLimitTick, out col.OilPPointerPivot, out col.OilPPointerImage);
 
             // 7. OIL TEMP
-            float oilTY = -258f * s;
-            CreateReadoutBox(colGo.transform, $"OIL_T_Box_{index + 1}", new Vector2(22f * s, 13f * s), new Vector2(-7f * s, oilTY),
-                "0", boxBg, boxBorder, valColor, s,
+            float oilTY = -260f * sv;
+            CreateReadoutBox(colGo.transform, $"OIL_T_Box_{index + 1}", new Vector2(24f * s, 14f * sv), new Vector2(-8f * s, oilTY),
+                "0", boxBg, boxBorder, valColor, s, sv,
                 out col.OilTBoxBg, out col.OilTBoxOutline, out col.OilTText);
 
-            CreateVerticalTapeRuler(colGo.transform, $"OIL_T_Tape_{index + 1}", new Vector2(2f * s, tapeH),
-                new Vector2(10f * s, oilTY), trackColor, warnColor, valColor, s, pointsRight: false,
+            CreateVerticalTapeRuler(colGo.transform, $"OIL_T_Tape_{index + 1}", new Vector2(CrispLength(2f * s), tapeH),
+                new Vector2(11f * s, oilTY), trackColor, warnColor, valColor, s, pointsRight: false,
                 out col.OilTTrack, out col.OilTLimitTick, out col.OilTPointerPivot, out col.OilTPointerImage);
 
             // 8. OIL QTY
-            float oilQY = -286f * s;
-            CreateReadoutBox(colGo.transform, $"OIL_Q_Box_{index + 1}", new Vector2(22f * s, 13f * s), new Vector2(0f, oilQY),
-                "0", boxBg, boxBorder, valColor, s,
+            float oilQY = -288f * sv;
+            CreateReadoutBox(colGo.transform, $"OIL_Q_Box_{index + 1}", new Vector2(24f * s, 14f * sv), new Vector2(0f, oilQY),
+                "0", boxBg, boxBorder, valColor, s, sv,
                 out col.OilQBoxBg, out col.OilQBoxOutline, out col.OilQText);
 
-            col.OilQLoText = UIFactory.CreateText(colGo.transform, $"OIL_Q_LO_{index + 1}", "LO", Mathf.RoundToInt(8f * s),
+            col.OilQLoText = UIFactory.CreateText(colGo.transform, $"OIL_Q_LO_{index + 1}", "LO", DotFont(9f, s),
                 TextAnchor.MiddleCenter, valColor);
-            SetTopCenterAnchor(col.OilQLoText.rectTransform, 16f * s, oilQY, 14f * s, 12f * s);
+            SetTopCenterAnchor(col.OilQLoText.rectTransform, 18f * s, oilQY, 15f * s, 13f * sv);
 
             // 9. VIB
-            float vibY = -314f * s;
-            CreateReadoutBox(colGo.transform, $"VIB_Box_{index + 1}", new Vector2(22f * s, 13f * s), new Vector2(-7f * s, vibY),
-                "0.0", boxBg, boxBorder, valColor, s,
+            float vibY = -316f * sv;
+            CreateReadoutBox(colGo.transform, $"VIB_Box_{index + 1}", new Vector2(24f * s, 14f * sv), new Vector2(-8f * s, vibY),
+                "0.0", boxBg, boxBorder, valColor, s, sv,
                 out col.VibBoxBg, out col.VibBoxOutline, out col.VibText);
 
-            col.VibPrefixText = UIFactory.CreateText(colGo.transform, $"VIB_N1_{index + 1}", "N1", Mathf.RoundToInt(7.5f * s),
+            col.VibPrefixText = UIFactory.CreateText(colGo.transform, $"VIB_N1_{index + 1}", "N1", DotFont(8.5f, s),
                 TextAnchor.MiddleCenter, valColor);
-            SetTopCenterAnchor(col.VibPrefixText.rectTransform, -21f * s, vibY, 15f * s, 12f * s);
+            SetTopCenterAnchor(col.VibPrefixText.rectTransform, -23f * s, vibY, 16f * s, 13f * sv);
 
-            CreateVerticalTapeRuler(colGo.transform, $"VIB_Tape_{index + 1}", new Vector2(2f * s, tapeH),
-                new Vector2(10f * s, vibY), trackColor, warnColor, valColor, s, pointsRight: false,
+            CreateVerticalTapeRuler(colGo.transform, $"VIB_Tape_{index + 1}", new Vector2(CrispLength(2f * s), tapeH),
+                new Vector2(11f * s, vibY), trackColor, warnColor, valColor, s, pointsRight: false,
                 out col.VibTrack, out Image _, out col.VibPointerPivot, out col.VibPointerImage);
 
             return col;
@@ -708,11 +788,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         /// <summary>
         /// 波音 787 经典马蹄弧圆环指示器生成算法 (Horseshoe Cradle Generator)
-        /// 彻底消除对特殊着色器的运行环境依赖，纯相对局部坐标系生成像素级锐利的弧面几何
+        /// 彻底消除对特殊着色器的运行环境依赖，纯相对局部坐标系生成像素级锐利的弧面几何。
+        /// 全部细几何体线宽均经 <c>CrispLength</c> 钳制，保证在低分辨率下不丢线、不糊边。
         /// </summary>
         private void CreateHorseshoeDial(Transform parent, string name, float cx, float cy, float radius,
             string initialVal, Color boxBg, Color boxBorder, Color valColor, Color arcLineColor,
-            Color bugColor, Color warnColor, Color limitColor, float s,
+            Color bugColor, Color warnColor, Color limitColor, float s, float sv,
             bool hasBug, bool hasInnerArc, bool hasBottomTick, out DialGaugeUI dial)
         {
             dial = new DialGaugeUI();
@@ -722,13 +803,17 @@ namespace ModularFlightPanel.UI.Widgets
             GameObject dialRoot = dial.Root;
             SetTopCenterAnchor(rootRt, cx, cy, 0f, 0f);
 
+            // 图元统一线宽 (受钳制)
+            float hairline = CrispLength(1.6f * s);
+            float tickLine = CrispLength(1.8f * s);
+
             // 1. 顶端矩形读数框 (相对 dialRoot 中心)
-            float boxW = 26f * s;
-            float boxH = 12.5f * s;
+            float boxW = 30f * s;
+            float boxH = 14f * sv;
             float boxY = 2f * s + boxH * 0.5f;
-            float boxX = -2.5f * s;
+            float boxX = -3f * s;
             CreateReadoutBox(dialRoot.transform, $"{name}_Box", new Vector2(boxW, boxH), new Vector2(boxX, boxY),
-                initialVal, boxBg, boxBorder, valColor, s,
+                initialVal, boxBg, boxBorder, valColor, s, sv,
                 out dial.BoxBg, out dial.BoxOutline, out dial.BoxText);
 
             // 2. 数显框下方水平切线基座 (Underline: 从框显左缘水平连通至右端弧线起点 radius)
@@ -739,15 +824,16 @@ namespace ModularFlightPanel.UI.Widgets
             float undMidX = (undLeft + undRight) * 0.5f;
 
             GameObject undGo = UIFactory.CreatePanel(dialRoot.transform, $"{name}_Underline",
-                new Vector2(undW, 1.5f * s), new Vector2(undMidX, undY), arcLineColor);
+                new Vector2(undW, hairline), new Vector2(undMidX, undY), arcLineColor);
             dial.Underline = undGo.GetComponent<Image>();
-            SetTopCenterAnchor(undGo.GetComponent<RectTransform>(), undMidX, undY, undW, 1.5f * s);
+            SetTopCenterAnchor(undGo.GetComponent<RectTransform>(), undMidX, undY, undW, hairline);
 
             // 3. 215° 经典马蹄圆弧下沉托架 (从 0° 顺时针扫至 -215° / 即 145°)
-            int segCount = 18;
+            //    弧段数量随半径自适应增加，消除低分辨率下的可见折角多边形感。
+            int segCount = Mathf.Clamp(Mathf.RoundToInt(radius * 1.35f), 18, 30);
             float span = 215f;
             float stepDeg = span / segCount;
-            float segLen = (2f * radius * Mathf.Sin(stepDeg * 0.5f * Mathf.Deg2Rad)) + 0.6f * s;
+            float segLen = (2f * radius * Mathf.Sin(stepDeg * 0.5f * Mathf.Deg2Rad)) + hairline * 0.6f;
 
             for (int i = 0; i < segCount; i++)
             {
@@ -757,10 +843,10 @@ namespace ModularFlightPanel.UI.Widgets
                 float py = radius * Mathf.Sin(midRad);
 
                 GameObject segGo = UIFactory.CreatePanel(dialRoot.transform, $"{name}_ArcSeg_{i}",
-                    new Vector2(segLen, 1.5f * s), new Vector2(px, py), arcLineColor);
+                    new Vector2(segLen, hairline), new Vector2(px, py), arcLineColor);
                 Image segImg = segGo.GetComponent<Image>();
                 RectTransform srt = segGo.GetComponent<RectTransform>();
-                SetTopCenterAnchor(srt, px, py, segLen, 1.5f * s);
+                SetTopCenterAnchor(srt, px, py, segLen, hairline);
                 srt.localEulerAngles = new Vector3(0f, 0f, midDeg + 90f);
                 dial.ArcSegments.Add(segImg);
             }
@@ -769,54 +855,56 @@ namespace ModularFlightPanel.UI.Widgets
             float limRad = -215f * Mathf.Deg2Rad;
             float limPx = (radius + 2.5f * s) * Mathf.Cos(limRad);
             float limPy = (radius + 2.5f * s) * Mathf.Sin(limRad);
+            float limLen = CrispLength(6f * s);
             GameObject limGo = UIFactory.CreatePanel(dialRoot.transform, $"{name}_RedLimit",
-                new Vector2(5f * s, 1.6f * s), new Vector2(limPx, limPy), limitColor);
+                new Vector2(limLen, tickLine), new Vector2(limPx, limPy), limitColor);
             dial.RedLimitTick = limGo.GetComponent<Image>();
             RectTransform lrt = limGo.GetComponent<RectTransform>();
-            SetTopCenterAnchor(lrt, limPx, limPy, 5f * s, 1.6f * s);
+            SetTopCenterAnchor(lrt, limPx, limPy, limLen, tickLine);
             lrt.localEulerAngles = new Vector3(0f, 0f, -215f);
 
             // 5. 9 点钟方向琥珀色连续参考标线 (Amber Tick at -180°)
             float ambPx = -radius + 1.5f * s;
             float ambPy = 0f;
+            float ambLen = CrispLength(5f * s);
             GameObject ambGo = UIFactory.CreatePanel(dialRoot.transform, $"{name}_AmberTick",
-                new Vector2(4f * s, 1.4f * s), new Vector2(ambPx, ambPy), warnColor);
+                new Vector2(ambLen, tickLine), new Vector2(ambPx, ambPy), warnColor);
             dial.AmberTick = ambGo.GetComponent<Image>();
-            SetTopCenterAnchor(ambGo.GetComponent<RectTransform>(), ambPx, ambPy, 4f * s, 1.4f * s);
+            SetTopCenterAnchor(ambGo.GetComponent<RectTransform>(), ambPx, ambPy, ambLen, tickLine);
 
             // 6. 荧光绿尖锥推力限值游标 (Command Bug REV 81.3 at -180°)
             if (hasBug)
             {
-                float bugTipX = -radius - 3f * s;
+                float bugTipX = -radius - 3.5f * s;
                 float bugTipY = 0f;
-                float wingLen = 4f * s;
+                float wingLen = CrispLength(5f * s);
 
                 // 上翼
                 GameObject b1Go = UIFactory.CreatePanel(dialRoot.transform, $"{name}_BugWing1",
-                    new Vector2(wingLen, 1.4f * s), new Vector2(bugTipX - 1.4f * s, bugTipY + 1.4f * s), bugColor);
+                    new Vector2(wingLen, tickLine), new Vector2(bugTipX - 1.6f * s, bugTipY + 1.6f * s), bugColor);
                 dial.CommandBug1 = b1Go.GetComponent<Image>();
                 RectTransform b1Rt = b1Go.GetComponent<RectTransform>();
-                SetTopCenterAnchor(b1Rt, bugTipX - 1.4f * s, bugTipY + 1.4f * s, wingLen, 1.4f * s);
+                SetTopCenterAnchor(b1Rt, bugTipX - 1.6f * s, bugTipY + 1.6f * s, wingLen, tickLine);
                 b1Rt.localEulerAngles = new Vector3(0f, 0f, -32f);
 
                 // 下翼
                 GameObject b2Go = UIFactory.CreatePanel(dialRoot.transform, $"{name}_BugWing2",
-                    new Vector2(wingLen, 1.4f * s), new Vector2(bugTipX - 1.4f * s, bugTipY - 1.4f * s), bugColor);
+                    new Vector2(wingLen, tickLine), new Vector2(bugTipX - 1.6f * s, bugTipY - 1.6f * s), bugColor);
                 dial.CommandBug2 = b2Go.GetComponent<Image>();
                 RectTransform b2Rt = b2Go.GetComponent<RectTransform>();
-                SetTopCenterAnchor(b2Rt, bugTipX - 1.4f * s, bugTipY - 1.4f * s, wingLen, 1.4f * s);
+                SetTopCenterAnchor(b2Rt, bugTipX - 1.6f * s, bugTipY - 1.6f * s, wingLen, tickLine);
                 b2Rt.localEulerAngles = new Vector3(0f, 0f, 32f);
             }
 
             // 7. N1 底部同心双圆弧 (Double Concentric Arc)
             if (hasInnerArc)
             {
-                float innerR = radius - 2.8f * s;
-                int inCount = 10;
+                float innerR = radius - 3f * s;
+                int inCount = Mathf.Clamp(Mathf.RoundToInt(innerR * 0.75f), 10, 18);
                 float inStart = -35f;
                 float inSpan = 115f;
                 float inStep = inSpan / inCount;
-                float inSegLen = (2f * innerR * Mathf.Sin(inStep * 0.5f * Mathf.Deg2Rad)) + 0.6f * s;
+                float inSegLen = (2f * innerR * Mathf.Sin(inStep * 0.5f * Mathf.Deg2Rad)) + hairline * 0.6f;
 
                 for (int j = 0; j < inCount; j++)
                 {
@@ -826,10 +914,10 @@ namespace ModularFlightPanel.UI.Widgets
                     float py = innerR * Mathf.Sin(r);
 
                     GameObject inGo = UIFactory.CreatePanel(dialRoot.transform, $"{name}_InnerArc_{j}",
-                        new Vector2(inSegLen, 1.3f * s), new Vector2(px, py), arcLineColor);
+                        new Vector2(inSegLen, hairline), new Vector2(px, py), arcLineColor);
                     Image inImg = inGo.GetComponent<Image>();
                     RectTransform isrt = inGo.GetComponent<RectTransform>();
-                    SetTopCenterAnchor(isrt, px, py, inSegLen, 1.3f * s);
+                    SetTopCenterAnchor(isrt, px, py, inSegLen, hairline);
                     isrt.localEulerAngles = new Vector3(0f, 0f, d + 90f);
                     dial.InnerArcSegments.Add(inImg);
                 }
@@ -841,11 +929,12 @@ namespace ModularFlightPanel.UI.Widgets
                 float bRad = -130f * Mathf.Deg2Rad;
                 float bPx = (radius + 2.2f * s) * Mathf.Cos(bRad);
                 float bPy = (radius + 2.2f * s) * Mathf.Sin(bRad);
+                float bLen = CrispLength(5f * s);
                 GameObject botTickGo = UIFactory.CreatePanel(dialRoot.transform, $"{name}_BotRedTick",
-                    new Vector2(4f * s, 1.5f * s), new Vector2(bPx, bPy), limitColor);
+                    new Vector2(bLen, tickLine), new Vector2(bPx, bPy), limitColor);
                 dial.BottomRedTick = botTickGo.GetComponent<Image>();
                 RectTransform btRt = botTickGo.GetComponent<RectTransform>();
-                SetTopCenterAnchor(btRt, bPx, bPy, 4f * s, 1.5f * s);
+                SetTopCenterAnchor(btRt, bPx, bPy, bLen, tickLine);
                 btRt.localEulerAngles = new Vector3(0f, 0f, -130f);
             }
 
@@ -853,8 +942,9 @@ namespace ModularFlightPanel.UI.Widgets
             dial.NeedlePivot = CreateContainer($"{name}_Pivot", dialRoot.transform);
             SetTopCenterAnchor(dial.NeedlePivot, 0f, 0f, 0f, 0f);
 
+            float needleW = CrispLength(1.7f * s);
             GameObject needleGo = UIFactory.CreatePanel(dial.NeedlePivot, "Needle",
-                new Vector2(1.3f * s, radius * 0.88f), Vector2.zero, valColor);
+                new Vector2(needleW, radius * 0.88f), Vector2.zero, valColor);
             dial.NeedleImage = needleGo.GetComponent<Image>();
             RectTransform needleRt = needleGo.GetComponent<RectTransform>();
             needleRt.anchorMin = new Vector2(0.5f, 0f);
@@ -865,51 +955,53 @@ namespace ModularFlightPanel.UI.Widgets
             dial.NeedlePivot.localEulerAngles = Vector3.zero;
         }
 
-        private void LayoutEngineColumns(int count, float s)
+        private void LayoutEngineColumns(int count, float s, float sv)
         {
             _currentEngineCount = Mathf.Clamp(count, 1, MAX_ENGINES);
 
             // 动态长宽比与总宽度解算
+            // 相对改造前整体加宽：给马蹄弧仪表与右侧系统读数区更大的水平呼吸空间，
+            // 从而在相同物理屏幕尺寸下获得更高的有效分辨率（更锐利）。
             float cardW;
             float rightCenterX;
             float scaleFactor;
 
             if (_currentEngineCount == 1)
             {
-                cardW = 280f * s;
-                _xCoords[0] = -70f * s;
-                rightCenterX = 70f * s;
-                scaleFactor = 1.05f;
+                cardW = 320f * s;
+                _xCoords[0] = -78f * s;
+                rightCenterX = 82f * s;
+                scaleFactor = 1.0f;
             }
             else if (_currentEngineCount == 2)
             {
-                cardW = 350f * s;
-                _xCoords[0] = -115f * s;
-                _xCoords[1] = -35f * s;
-                rightCenterX = 90f * s;
+                cardW = 390f * s;
+                _xCoords[0] = -126f * s;
+                _xCoords[1] = -38f * s;
+                rightCenterX = 110f * s;
                 scaleFactor = 1.0f;
             }
             else if (_currentEngineCount == 3)
             {
-                cardW = 420f * s;
-                _xCoords[0] = -150f * s;
-                _xCoords[1] = -95f * s;
-                _xCoords[2] = -40f * s;
-                rightCenterX = 115f * s;
-                scaleFactor = 0.95f;
+                cardW = 452f * s;
+                _xCoords[0] = -162f * s;
+                _xCoords[1] = -104f * s;
+                _xCoords[2] = -46f * s;
+                rightCenterX = 138f * s;
+                scaleFactor = 0.96f;
             }
             else
             {
-                cardW = 490f * s;
-                _xCoords[0] = -185f * s;
-                _xCoords[1] = -135f * s;
-                _xCoords[2] = -85f * s;
-                _xCoords[3] = -35f * s;
-                rightCenterX = 135f * s;
-                scaleFactor = 0.90f;
+                cardW = 512f * s;
+                _xCoords[0] = -196f * s;
+                _xCoords[1] = -143f * s;
+                _xCoords[2] = -90f * s;
+                _xCoords[3] = -37f * s;
+                rightCenterX = 162f * s;
+                scaleFactor = 0.92f;
             }
 
-            Vector2 newSize = new Vector2(cardW, 340f * s);
+            Vector2 newSize = new Vector2(cardW, BASE_CARD_HEIGHT * s);
             RectTransform.sizeDelta = newSize;
             if (_bgImage != null) _bgImage.rectTransform.sizeDelta = newSize;
 
@@ -918,10 +1010,10 @@ namespace ModularFlightPanel.UI.Widgets
                 SetTopCenterAnchor(_rightSystemsRt, rightCenterX, 0f, 0f, 0f);
 
             // 顶端状态栏平滑居中偏移
-            float tatX = -cardW * 0.35f;
-            if (_tatText != null) SetTopCenterAnchor(_tatText.rectTransform, tatX, -12f * s, 70f * s, 14f * s);
-            if (_thrustModeText != null) SetTopCenterAnchor(_thrustModeText.rectTransform, tatX + 65f * s, -12f * s, 42f * s, 14f * s);
-            if (_thrustTempText != null) SetTopCenterAnchor(_thrustTempText.rectTransform, tatX + 105f * s, -12f * s, 32f * s, 14f * s);
+            float tatX = -cardW * 0.36f;
+            if (_tatText != null) SetTopCenterAnchor(_tatText.rectTransform, tatX, -13f * sv, 74f * s, 15f * sv);
+            if (_thrustModeText != null) SetTopCenterAnchor(_thrustModeText.rectTransform, tatX + 70f * s, -13f * sv, 46f * s, 15f * sv);
+            if (_thrustTempText != null) SetTopCenterAnchor(_thrustTempText.rectTransform, tatX + 114f * s, -13f * sv, 34f * s, 15f * sv);
 
             // 发动机纵列排布与缩放
             for (int i = 0; i < MAX_ENGINES; i++)
@@ -943,22 +1035,22 @@ namespace ModularFlightPanel.UI.Widgets
             // 更新中央行标签 X 坐标 (保持在左右发控之间的舒适空域)
             float labelX;
             if (_currentEngineCount == 1)
-                labelX = -120f * s;
+                labelX = -132f * s;
             else if (_currentEngineCount == 2)
-                labelX = -75f * s;
+                labelX = -82f * s;
             else if (_currentEngineCount == 3)
-                labelX = -180f * s;
+                labelX = -196f * s;
             else
-                labelX = -215f * s;
+                labelX = -230f * s;
 
-            if (_n1Label != null) SetTopCenterAnchor(_n1Label.rectTransform, labelX, -86f * s, 26f * s, 14f * s);
-            if (_egtLabel != null) SetTopCenterAnchor(_egtLabel.rectTransform, labelX, -136f * s, 30f * s, 14f * s);
-            if (_n2Label != null) SetTopCenterAnchor(_n2Label.rectTransform, labelX, -186f * s, 26f * s, 14f * s);
-            if (_ffLabel != null) SetTopCenterAnchor(_ffLabel.rectTransform, labelX, -204f * s, 22f * s, 14f * s);
-            if (_oilPLabel != null) SetTopCenterAnchor(_oilPLabel.rectTransform, labelX, -230f * s, 30f * s, 18f * s);
-            if (_oilTLabel != null) SetTopCenterAnchor(_oilTLabel.rectTransform, labelX, -258f * s, 30f * s, 18f * s);
-            if (_oilQLabel != null) SetTopCenterAnchor(_oilQLabel.rectTransform, labelX, -286f * s, 36f * s, 14f * s);
-            if (_vibLabel != null) SetTopCenterAnchor(_vibLabel.rectTransform, labelX, -314f * s, 24f * s, 14f * s);
+            if (_n1Label != null) SetTopCenterAnchor(_n1Label.rectTransform, labelX, -88f * sv, 30f * s, 15f * sv);
+            if (_egtLabel != null) SetTopCenterAnchor(_egtLabel.rectTransform, labelX, -138f * sv, 34f * s, 15f * sv);
+            if (_n2Label != null) SetTopCenterAnchor(_n2Label.rectTransform, labelX, -188f * sv, 30f * s, 15f * sv);
+            if (_ffLabel != null) SetTopCenterAnchor(_ffLabel.rectTransform, labelX, -206f * sv, 26f * s, 15f * sv);
+            if (_oilPLabel != null) SetTopCenterAnchor(_oilPLabel.rectTransform, labelX, -232f * sv, 34f * s, 20f * sv);
+            if (_oilTLabel != null) SetTopCenterAnchor(_oilTLabel.rectTransform, labelX, -260f * sv, 34f * s, 20f * sv);
+            if (_oilQLabel != null) SetTopCenterAnchor(_oilQLabel.rectTransform, labelX, -288f * sv, 40f * s, 15f * sv);
+            if (_vibLabel != null) SetTopCenterAnchor(_vibLabel.rectTransform, labelX, -316f * sv, 28f * s, 15f * sv);
         }
 
         private void RegisterMicroControls()
@@ -987,14 +1079,14 @@ namespace ModularFlightPanel.UI.Widgets
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "stab_trim", "安定面俯仰配平", _stabTrackImage.gameObject));
             if (_rudderTrackImage != null)
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "rudder_trim", "方向舵偏航配平", _rudderTrackImage.gameObject));
-            if (_cabAltLabel != null)
-                this.Controls.Register(WidgetControlManager.WrapElement(this, "ecs_panel", "客舱增压 ECS 系统", _cabAltLabel.gameObject));
+            if (_hdgLabel != null)
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "flight_systems", "飞行系统读数区", _hdgLabel.gameObject));
             if (_summaryBoxBg != null)
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "weight_fuel_panel", "全机重量与燃油统计卡槽", _summaryBoxBg.gameObject));
         }
 
         private static void CreateReadoutBox(Transform parent, string name, Vector2 size, Vector2 anchoredPos,
-            string initialText, Color bgColor, Color borderColor, Color textColor, float s,
+            string initialText, Color bgColor, Color borderColor, Color textColor, float s, float sv,
             out Image boxBg, out Outline boxOutline, out Text readoutText)
         {
             GameObject boxObj = UIFactory.CreatePanel(parent, name, size, anchoredPos, bgColor, borderColor, 1f * s);
@@ -1003,7 +1095,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             SetTopCenterAnchor(boxObj.GetComponent<RectTransform>(), anchoredPos.x, anchoredPos.y, size.x, size.y);
 
-            readoutText = UIFactory.CreateText(boxObj.transform, "Text", initialText, Mathf.RoundToInt(8.5f * s),
+            readoutText = UIFactory.CreateText(boxObj.transform, "Text", initialText, DotFont(10f, s),
                 TextAnchor.MiddleCenter, textColor);
             RectTransform vrt = readoutText.rectTransform;
             vrt.anchorMin = Vector2.zero;
@@ -1012,7 +1104,7 @@ namespace ModularFlightPanel.UI.Widgets
             vrt.anchoredPosition = Vector2.zero;
         }
 
-        private static void CreateVerticalTapeRuler(Transform parent, string name, Vector2 size, Vector2 anchoredPos,
+        private void CreateVerticalTapeRuler(Transform parent, string name, Vector2 size, Vector2 anchoredPos,
             Color trackColor, Color limitColor, Color needleColor, float s, bool pointsRight,
             out Image trackImg, out Image limitImg, out RectTransform pointerRt, out Image pointerImg)
         {
@@ -1020,9 +1112,9 @@ namespace ModularFlightPanel.UI.Widgets
             trackImg = trackObj.GetComponent<Image>();
             SetTopCenterAnchor(trackObj.GetComponent<RectTransform>(), anchoredPos.x, anchoredPos.y, size.x, size.y);
 
-            // 限值线
+            // 限值线 (受钳制，杜绝亚像素丢线)
             GameObject limitObj = UIFactory.CreatePanel(trackObj.transform, "LimitTick",
-                new Vector2(4.5f * s, 1.5f * s), Vector2.zero, limitColor);
+                new Vector2(CrispLength(5f * s), CrispLength(1.7f * s)), Vector2.zero, limitColor);
             limitImg = limitObj.GetComponent<Image>();
             RectTransform limRt = limitObj.GetComponent<RectTransform>();
             limRt.anchorMin = new Vector2(0.5f, 0f);
@@ -1030,9 +1122,9 @@ namespace ModularFlightPanel.UI.Widgets
             limRt.pivot = new Vector2(0.5f, 0.5f);
             limRt.anchoredPosition = Vector2.zero;
 
-            // 滑动指针
+            // 滑动指针 (受钳制)
             GameObject ptrGo = UIFactory.CreatePanel(trackObj.transform, "Pointer",
-                new Vector2(4.5f * s, 2.5f * s), Vector2.zero, needleColor);
+                new Vector2(CrispLength(5f * s), CrispLength(2.8f * s)), Vector2.zero, needleColor);
             pointerImg = ptrGo.GetComponent<Image>();
             pointerRt = ptrGo.GetComponent<RectTransform>();
             pointerRt.anchorMin = new Vector2(0.5f, 0.5f);
@@ -1149,27 +1241,30 @@ namespace ModularFlightPanel.UI.Widgets
             if (_rudderPointerImg != null) _rudderPointerImg.color = textPrimary;
             if (_rudderLabelText != null) ApplyText(_rudderLabelText, TextStyleRole.Accent, theme);
 
-            ApplyText(_cabAltLabel, TextStyleRole.Accent, theme);
-            ApplyText(_cabAltValue, TextStyleRole.PrimaryValue, theme);
-            ApplyText(_cabRateLabel, TextStyleRole.Accent, theme);
-            ApplyText(_cabRateValue, TextStyleRole.PrimaryValue, theme);
-            ApplyText(_deltaPLabel, TextStyleRole.Accent, theme);
-            ApplyText(_deltaPValue, TextStyleRole.PrimaryValue, theme);
-            ApplyText(_ldgAltLabel, TextStyleRole.Accent, theme);
-            ApplyText(_ldgAltValue, TextStyleRole.PrimaryValue, theme);
+            // 真实系统读数区
+            ApplyText(_hdgLabel, TextStyleRole.Accent, theme);
+            ApplyText(_hdgValue, TextStyleRole.PrimaryValue, theme);
+            ApplyText(_machLabel, TextStyleRole.Accent, theme);
+            ApplyText(_machValue, TextStyleRole.PrimaryValue, theme);
+            ApplyText(_gLoadLabel, TextStyleRole.Accent, theme);
+            ApplyText(_gLoadValue, TextStyleRole.PrimaryValue, theme);
 
-            ApplyText(_valveFwdLabel, TextStyleRole.Accent, theme);
-            ApplyText(_valveAftLabel, TextStyleRole.Accent, theme);
-            for (int i = 0; i < 2; i++)
-            {
-                if (_valveDisks[i] != null)
-                {
-                    _valveDisks[i].color = Color.clear;
-                    Outline vo = _valveDisks[i].GetComponent<Outline>();
-                    if (vo != null) vo.effectColor = textWarn;
-                }
-                if (_valveStatusTexts[i] != null) ApplyText(_valveStatusTexts[i], TextStyleRole.Warning, theme);
-            }
+            ApplyText(_ecLabel, TextStyleRole.Accent, theme);
+            ApplyText(_ecValue, TextStyleRole.PrimaryValue, theme);
+            if (_ecBarTrackImg != null) _ecBarTrackImg.color = trackCol;
+            if (_ecBarFillImg != null) _ecBarFillImg.color = textPrimary;
+
+            ApplyText(_commLabel, TextStyleRole.Accent, theme);
+            ApplyText(_commValue, TextStyleRole.PrimaryValue, theme);
+            if (_commBarTrackImg != null) _commBarTrackImg.color = trackCol;
+            if (_commBarFillImg != null) _commBarFillImg.color = textPrimary;
+
+            ApplyText(_vsiLabel, TextStyleRole.Accent, theme);
+            ApplyText(_vsiValue, TextStyleRole.PrimaryValue, theme);
+            ApplyText(_warpLabel, TextStyleRole.Accent, theme);
+            ApplyText(_warpValue, TextStyleRole.PrimaryValue, theme);
+            ApplyText(_sasLabel, TextStyleRole.Accent, theme);
+            ApplyText(_sasValue, TextStyleRole.PrimaryValue, theme);
 
             if (_summaryBoxBg != null) _summaryBoxBg.color = boxBgCol;
             if (_summaryBoxOutline != null) _summaryBoxOutline.effectColor = boxBorderCol;
@@ -1180,8 +1275,8 @@ namespace ModularFlightPanel.UI.Widgets
             if (_totalFuelBoxBg != null) _totalFuelBoxBg.color = boxBgCol;
             ApplyText(_grossWtText, TextStyleRole.PrimaryValue, theme);
             ApplyText(_totalFuelText, TextStyleRole.PrimaryValue, theme);
-            ApplyText(_satText, TextStyleRole.Accent, theme);
-            ApplyText(_fuelTempText, TextStyleRole.Accent, theme);
+            ApplyText(_apoText, TextStyleRole.Accent, theme);
+            ApplyText(_periText, TextStyleRole.Accent, theme);
 
             this.Controls.ApplyThemeToControls(theme);
         }
@@ -1251,66 +1346,78 @@ namespace ModularFlightPanel.UI.Widgets
             }
             _cachedModeStr = evalMode;
 
-            // 3. 多发主发动机真实输入接入
-            double baseN1 = TelemetryTokenEngine.EvaluateNumeric(_n1Token, context.Telemetry);
-            double baseN2 = TelemetryTokenEngine.EvaluateNumeric(_n2Token, context.Telemetry);
-            double baseEgt = TelemetryTokenEngine.EvaluateNumeric(_egtToken, context.Telemetry);
-            double baseFf = TelemetryTokenEngine.EvaluateNumeric(_ffToken, context.Telemetry);
-            double baseOilP = TelemetryTokenEngine.EvaluateNumeric(_oilPToken, context.Telemetry);
-            double baseOilT = TelemetryTokenEngine.EvaluateNumeric(_oilTToken, context.Telemetry);
-            double baseOilQ = TelemetryTokenEngine.EvaluateNumeric(_oilQToken, context.Telemetry);
-            double baseVib = TelemetryTokenEngine.EvaluateNumeric(_vibToken, context.Telemetry);
+            // 3. 逐台真实发动机数据接入 (自适应异构发动机集群)
+            //    N1 = 指令油门设定百分比   N2 = 实时推力占额定推力百分比
+            //    FF = 计算油耗 (推力/(比冲·g0))   EGT = 原生部件温度 (排气温度的可用替代)
+            //    OIL P = 比冲 {KER:isp}   OIL T = 净热通量 {SH:NetFluxKw}
+            //    OIL Q = 引擎健康 {TF:Status}   VIB = 故障率 {TF:FailureRate}
+            //    说明：OIL/VIB 四项依赖可选外部 mod，未安装时优雅回落为 "---"，绝不伪造读数。
+            IReadOnlyList<EngineTelemetryInfo> engines = context.Telemetry.Engines;
 
-            // 真实物理遥测回退解算
-            if (double.IsNaN(baseN1)) baseN1 = 20.0 + context.Telemetry.Throttle * 80.0;
-            if (double.IsNaN(baseN2)) baseN2 = 45.0 + context.Telemetry.Throttle * 53.0;
-            if (double.IsNaN(baseEgt)) baseEgt = 320.0 + context.Telemetry.Throttle * 410.0;
-            if (double.IsNaN(baseFf)) baseFf = context.Telemetry.Throttle * 4.8;
-            if (double.IsNaN(baseOilP)) baseOilP = context.Telemetry.Throttle > 0.05f ? 48.0 + context.Telemetry.Throttle * 12.0 : 25.0;
-            if (double.IsNaN(baseOilT)) baseOilT = 55.0 + context.Telemetry.Throttle * 30.0;
-            if (double.IsNaN(baseOilQ)) baseOilQ = 18.0;
-            if (double.IsNaN(baseVib))
-            {
-                double gShock = Math.Max(0.0, context.Telemetry.GForce - 1.0) * 0.2;
-                baseVib = 0.2 + context.Telemetry.Throttle * 0.4 + gShock;
-            }
+            double probeIsp = TelemetryTokenEngine.EvaluateNumeric("{KER:isp}", context.Telemetry);
+            double probeNetFlux = TelemetryTokenEngine.EvaluateNumeric("{SH:NetFluxKw}", context.Telemetry);
+            double probeFailRate = TelemetryTokenEngine.EvaluateNumeric("{TF:FailureRate}", context.Telemetry);
+            string probeStatus = TelemetryTokenEngine.Evaluate("{TF:Status}", context.Telemetry);
+            if (string.IsNullOrEmpty(probeStatus) || probeStatus.Contains("{")) probeStatus = "---";
 
             for (int i = 0; i < MAX_ENGINES; i++)
             {
-                float vFactor = s_Variances[i % s_Variances.Length];
-                double curN1 = Math.Max(0.0, baseN1 + vFactor * 0.8);
-                double curN2 = Math.Max(0.0, baseN2 + vFactor * 0.5);
-                double curEgt = Math.Max(0.0, baseEgt + vFactor * 4.0);
-                double curFf = Math.Max(0.0, baseFf + vFactor * 0.05);
-                double curOilP = Math.Max(0.0, baseOilP + vFactor * 1.0);
-                double curOilT = Math.Max(0.0, baseOilT + vFactor * 1.5);
-                double curOilQ = Math.Max(0.0, baseOilQ);
-                double curVib = Math.Max(0.0, baseVib + vFactor * 0.02);
+                bool hasEngine = engines != null && i < engines.Count;
+                if (hasEngine)
+                {
+                    EngineTelemetryInfo eng = engines[i];
 
-                _cachedColN1Str[i] = curN1.ToString("0.0", CultureInfo.InvariantCulture);
-                float n1Frac = Mathf.Clamp01((float)(curN1 / 105.0));
-                _cachedColN1NeedleAngle[i] = -n1Frac * 215f;
+                    // N1: 指令推力设定 (0~100%)
+                    float n1Pct = Mathf.Clamp01(eng.CommandedThrottle) * 100f;
+                    _cachedColN1Str[i] = n1Pct.ToString("0.0", CultureInfo.InvariantCulture);
+                    _cachedColN1NeedleAngle[i] = -Mathf.Clamp01(n1Pct / 105f) * 215f;
 
-                _cachedColEgtStr[i] = Mathf.RoundToInt((float)curEgt).ToString(CultureInfo.InvariantCulture);
-                float egtFrac = Mathf.Clamp01((float)(curEgt / 800.0));
-                _cachedColEgtNeedleAngle[i] = -egtFrac * 215f;
+                    // N2: 真实推力占额定推力百分比
+                    float n2Pct = eng.ThrustFraction * 100f;
+                    _cachedColN2Str[i] = n2Pct.ToString("0.0", CultureInfo.InvariantCulture);
+                    _cachedColN2NeedleAngle[i] = -Mathf.Clamp01(n2Pct / 105f) * 215f;
 
-                _cachedColN2Str[i] = curN2.ToString("0.0", CultureInfo.InvariantCulture);
-                float n2Frac = Mathf.Clamp01((float)(curN2 / 105.0));
-                _cachedColN2NeedleAngle[i] = -n2Frac * 215f;
+                    // FF: 计算油耗
+                    _cachedColFfStr[i] = eng.FuelFlow.ToString("0.0", CultureInfo.InvariantCulture);
 
-                _cachedColFfStr[i] = curFf.ToString("0.0", CultureInfo.InvariantCulture);
+                    // EGT: 原生部件温度 (°C)
+                    float egtC = Mathf.Max(0f, eng.PartTemperature);
+                    _cachedColEgtStr[i] = Mathf.RoundToInt(egtC).ToString(CultureInfo.InvariantCulture);
+                    _cachedColEgtNeedleAngle[i] = -Mathf.Clamp01(egtC / 800f) * 215f;
 
-                _cachedColOilPStr[i] = Mathf.RoundToInt((float)curOilP).ToString(CultureInfo.InvariantCulture);
-                _cachedColOilPFrac[i] = Mathf.Clamp01((float)(curOilP / 80.0));
+                    // OIL P: 比冲 (s)，归一化到 0~450s 满量程
+                    _cachedColOilPStr[i] = double.IsNaN(probeIsp) ? "---" : Mathf.RoundToInt((float)probeIsp).ToString(CultureInfo.InvariantCulture);
+                    _cachedColOilPFrac[i] = double.IsNaN(probeIsp) ? 0f : Mathf.Clamp01((float)(probeIsp / 450.0));
 
-                _cachedColOilTStr[i] = Mathf.RoundToInt((float)curOilT).ToString(CultureInfo.InvariantCulture);
-                _cachedColOilTFrac[i] = Mathf.Clamp01((float)(curOilT / 120.0));
+                    // OIL T: 主回路净热通量 (kW)，居中显示
+                    _cachedColOilTStr[i] = double.IsNaN(probeNetFlux) ? "---" : probeNetFlux.ToString("0", CultureInfo.InvariantCulture);
+                    _cachedColOilTFrac[i] = double.IsNaN(probeNetFlux) ? 0.5f : Mathf.Clamp01((float)(probeNetFlux / 2000.0 + 0.5));
 
-                _cachedColOilQStr[i] = Mathf.RoundToInt((float)curOilQ).ToString(CultureInfo.InvariantCulture);
+                    // OIL Q: 引擎健康状态 (TestFlight)
+                    _cachedColOilQStr[i] = probeStatus;
 
-                _cachedColVibStr[i] = curVib.ToString("0.0", CultureInfo.InvariantCulture);
-                _cachedColVibFrac[i] = Mathf.Clamp01((float)(curVib / 4.0));
+                    // VIB: 引擎故障率 (prob/s)
+                    _cachedColVibStr[i] = double.IsNaN(probeFailRate) ? "---" : probeFailRate.ToString("0.000", CultureInfo.InvariantCulture);
+                    _cachedColVibFrac[i] = double.IsNaN(probeFailRate) ? 0f : Mathf.Clamp01((float)(probeFailRate * 1000.0));
+                }
+                else
+                {
+                    // 该槽位无发动机：全部读数置为占位符，杜绝伪造
+                    _cachedColN1Str[i] = "--";
+                    _cachedColN1NeedleAngle[i] = 0f;
+                    _cachedColN2Str[i] = "--";
+                    _cachedColN2NeedleAngle[i] = 0f;
+                    _cachedColEgtStr[i] = "--";
+                    _cachedColEgtNeedleAngle[i] = 0f;
+                    _cachedColFfStr[i] = "--";
+                    _cachedColOilPStr[i] = "--";
+                    _cachedColOilPFrac[i] = 0f;
+                    _cachedColOilTStr[i] = "--";
+                    _cachedColOilTFrac[i] = 0.5f;
+                    _cachedColOilQStr[i] = "--";
+                    _cachedColVibStr[i] = "--";
+                    _cachedColVibFrac[i] = 0f;
+                }
             }
 
             // 4. 右侧起落架状态 (GEAR)
@@ -1354,17 +1461,43 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedRudderStr = rudderDeg.ToString("0.0", CultureInfo.InvariantCulture);
             _cachedRudderFrac = Mathf.Clamp((float)(rudderDeg / 10.0), -1f, 1f);
 
-            // 8. ECS 客舱增压系统
-            double cabAlt = context.Telemetry.AltitudeASL * 3.28084 * 0.35;
-            if (cabAlt < 0.0) cabAlt = 0.0;
-            if (cabAlt > 8000.0) cabAlt = 8000.0;
-            _cachedCabAltStr = Mathf.RoundToInt((float)cabAlt).ToString(CultureInfo.InvariantCulture);
+            // ── 8. 真实飞行系统读数区 (全部来自本地遥测通道) ──
+            // 航向
+            float hdg = context.Telemetry.Heading;
+            if (float.IsNaN(hdg)) hdg = 0f;
+            _cachedHdgStr = Mathf.RoundToInt(Mathf.Repeat(hdg, 360f)).ToString("000", CultureInfo.InvariantCulture);
 
-            double cabRate = context.Telemetry.VerticalSpeed * 196.85 * 0.25;
-            _cachedCabRateStr = string.Format(CultureInfo.InvariantCulture, "{0:+0;-0;0}", Mathf.RoundToInt((float)cabRate));
+            // 马赫数
+            double mach = context.Telemetry.Mach;
+            _cachedMachStr = double.IsNaN(mach) ? "0.00" : mach.ToString("0.00", CultureInfo.InvariantCulture);
 
-            double deltaP = Math.Max(0.0, (14.7 - (context.Telemetry.AtmosphericPressure * 14.7)) * 0.55);
-            _cachedDeltaPStr = deltaP.ToString("0.0", CultureInfo.InvariantCulture);
+            // 过载
+            double gLoad = context.Telemetry.GForce;
+            _cachedGLoadStr = double.IsNaN(gLoad) ? "1.0" : gLoad.ToString("0.0", CultureInfo.InvariantCulture);
+
+            // 电气储能
+            double ecPct = context.Telemetry.EcPercent;
+            if (double.IsNaN(ecPct)) ecPct = 0.0;
+            _cachedEcStr = AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)ecPct));
+            _cachedEcFill = Mathf.Clamp01((float)ecPct);
+
+            // 通信信号
+            double commSig = context.Telemetry.CommSignal;
+            if (double.IsNaN(commSig)) commSig = 0.0;
+            _cachedCommStr = AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)commSig));
+            _cachedCommFill = Mathf.Clamp01((float)commSig);
+
+            // 垂直速度
+            double vsi = context.Telemetry.VerticalSpeed;
+            _cachedVsiStr = double.IsNaN(vsi) ? "+0" : string.Format(CultureInfo.InvariantCulture, "{0:+0;-0;0}", Mathf.RoundToInt((float)vsi));
+
+            // 时间加速
+            float warp = context.Telemetry.TimeWarpRate;
+            if (float.IsNaN(warp) || warp < 1f) warp = 1f;
+            _cachedWarpStr = Mathf.RoundToInt(warp) + "x";
+
+            // SAS 状态
+            _cachedSasStr = context.Telemetry.IsSASEnabled ? "ON" : "OFF";
 
             // 9. 全机总重与燃油统计 (GROSS WT / TOTAL FUEL)
             double fuelFrac = context.Telemetry.StagePropellantFraction;
@@ -1373,12 +1506,15 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedGrossWtStr = grossWtLbs.ToString("0.0", CultureInfo.InvariantCulture);
             _cachedTotalFuelStr = fuelLbs.ToString("0.0", CultureInfo.InvariantCulture);
 
-            double satVal = TelemetryTokenEngine.EvaluateNumeric("{TEMP:ATM}", context.Telemetry);
-            if (double.IsNaN(satVal)) satVal = context.Telemetry.CabinTemp;
-            _cachedSatStr = string.Format(CultureInfo.InvariantCulture, "SAT {0:+0;-0;0}", double.IsNaN(satVal) ? 0.0 : satVal);
-
-            double fuelTempVal = satVal + 5.0;
-            _cachedFuelTempStr = string.Format(CultureInfo.InvariantCulture, "FUEL TEMP {0:+0;-0;0}", fuelTempVal);
+            // 远/近地点高度 (真实轨道遥测；亚轨道或地面时高度可能为负，按原值显示)
+            double apo = context.Telemetry.Apoapsis;
+            double peri = context.Telemetry.Periapsis;
+            _cachedApoStr = string.Format(CultureInfo.InvariantCulture, "{0} {1}",
+                I18n.Tr("WIDGET_EICAS_APO", "远地点"),
+                double.IsNaN(apo) ? "--" : (apo / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "km");
+            _cachedPeriStr = string.Format(CultureInfo.InvariantCulture, "{0} {1}",
+                I18n.Tr("WIDGET_EICAS_PERI", "近地点"),
+                double.IsNaN(peri) ? "--" : (peri / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "km");
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -1390,11 +1526,13 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
             float s = CurrentDpiScale;
+            float sv = s * (RectTransform != null && RectTransform.sizeDelta.y > 1f ? (RectTransform.sizeDelta.y / (BASE_CARD_HEIGHT * s)) : 1f);
+            if (sv <= 0.01f) sv = s;
 
             // 1. 动态发动机数量感知与自动长宽比重排
             if (_configuredEngineCount == 0 && _cachedDetectedEngineCount != _currentEngineCount)
             {
-                LayoutEngineColumns(_cachedDetectedEngineCount, s);
+                LayoutEngineColumns(_cachedDetectedEngineCount, s, sv);
             }
 
             // 2. 顶端 TAT 与推力模式
@@ -1409,7 +1547,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 多发主发动机仪表绘制
-            float tapeHalfH = 9f * s;
+            float tapeHalfH = 9f * sv;
             for (int i = 0; i < _currentEngineCount; i++)
             {
                 EngineColumnUI col = _engineCols[i];
@@ -1515,7 +1653,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_lastFlapStr.Update(_cachedFlapStr))
             {
                 if (_flapPositionText != null) _flapPositionText.text = _cachedFlapStr;
-                float travelH = 36f * s;
+                float travelH = 36f * sv;
                 float ptrY = -_cachedFlapRatio * travelH;
                 if (_flapPointerPivot != null)
                     _flapPointerPivot.anchoredPosition = new Vector2(0f, ptrY);
@@ -1527,7 +1665,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_stabValueText != null) _stabValueText.text = _cachedStabStr;
                 if (_stabTargetText != null) _stabTargetText.text = _cachedStabStr;
 
-                float ptrY = (_cachedStabFrac - 0.5f) * 30f * s;
+                float ptrY = (_cachedStabFrac - 0.5f) * 30f * sv;
                 if (_stabPointerRt != null)
                     _stabPointerRt.anchoredPosition = new Vector2(0f, ptrY);
             }
@@ -1537,25 +1675,55 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (_rudderValueText != null) _rudderValueText.text = _cachedRudderStr;
 
-                float ptrX = _cachedRudderFrac * 14f * s;
+                float ptrX = _cachedRudderFrac * 15f * s;
                 if (_rudderPointerRt != null)
-                    _rudderPointerRt.anchoredPosition = new Vector2(ptrX, 4f * s);
+                    _rudderPointerRt.anchoredPosition = new Vector2(ptrX, 5f * sv);
             }
 
-            // 8. ECS 客舱增压系统
-            if (_lastCabAltStr.Update(_cachedCabAltStr))
+            // 8. 真实飞行系统读数区
+            if (_lastHdgStr.Update(_cachedHdgStr))
             {
-                if (_cabAltValue != null) _cabAltValue.text = _cachedCabAltStr;
+                if (_hdgValue != null) _hdgValue.text = _cachedHdgStr;
+            }
+            if (_lastMachStr.Update(_cachedMachStr))
+            {
+                if (_machValue != null) _machValue.text = _cachedMachStr;
+            }
+            if (_lastGLoadStr.Update(_cachedGLoadStr))
+            {
+                if (_gLoadValue != null) _gLoadValue.text = _cachedGLoadStr;
+            }
+            if (_lastVsiStr.Update(_cachedVsiStr))
+            {
+                if (_vsiValue != null) _vsiValue.text = _cachedVsiStr;
+            }
+            if (_lastWarpStr.Update(_cachedWarpStr))
+            {
+                if (_warpValue != null) _warpValue.text = _cachedWarpStr;
+            }
+            if (_lastSasStr.Update(_cachedSasStr))
+            {
+                if (_sasValue != null) _sasValue.text = _cachedSasStr;
             }
 
-            if (_lastCabRateStr.Update(_cachedCabRateStr))
+            if (_lastEcStr.Update(_cachedEcStr))
             {
-                if (_cabRateValue != null) _cabRateValue.text = _cachedCabRateStr;
+                if (_ecValue != null) _ecValue.text = _cachedEcStr;
+            }
+            if (_ecBarFillImg != null && _lastEcFill.Update(_cachedEcFill))
+            {
+                float fullW = _ecBarTrackImg != null ? _ecBarTrackImg.rectTransform.sizeDelta.x : 44f * s;
+                _ecBarFillImg.rectTransform.sizeDelta = new Vector2(Mathf.Max(1f, fullW * _cachedEcFill), _ecBarFillImg.rectTransform.sizeDelta.y);
             }
 
-            if (_lastDeltaPStr.Update(_cachedDeltaPStr))
+            if (_lastCommStr.Update(_cachedCommStr))
             {
-                if (_deltaPValue != null) _deltaPValue.text = _cachedDeltaPStr;
+                if (_commValue != null) _commValue.text = _cachedCommStr;
+            }
+            if (_commBarFillImg != null && _lastCommFill.Update(_cachedCommFill))
+            {
+                float fullW = _commBarTrackImg != null ? _commBarTrackImg.rectTransform.sizeDelta.x : 44f * s;
+                _commBarFillImg.rectTransform.sizeDelta = new Vector2(Mathf.Max(1f, fullW * _cachedCommFill), _commBarFillImg.rectTransform.sizeDelta.y);
             }
 
             // 9. 全机总重与燃油统计 (GROSS WT / TOTAL FUEL)
@@ -1569,15 +1737,33 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_totalFuelText != null) _totalFuelText.text = _cachedTotalFuelStr;
             }
 
-            if (_lastSatStr.Update(_cachedSatStr))
+            if (_lastApoStr.Update(_cachedApoStr))
             {
-                if (_satText != null) _satText.text = _cachedSatStr;
+                if (_apoText != null) _apoText.text = _cachedApoStr;
             }
 
-            if (_lastFuelTempStr.Update(_cachedFuelTempStr))
+            if (_lastPeriStr.Update(_cachedPeriStr))
             {
-                if (_fuelTempText != null) _fuelTempText.text = _cachedFuelTempStr;
+                if (_periText != null) _periText.text = _cachedPeriStr;
             }
+        }
+
+        protected override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            if (_oilPLabel != null) _oilPLabel.text = I18n.Tr("WIDGET_EICAS_OIL_PRESS", "滑油\n压力");
+            if (_oilTLabel != null) _oilTLabel.text = I18n.Tr("WIDGET_EICAS_OIL_TEMP", "滑油\n温度");
+            if (_oilQLabel != null) _oilQLabel.text = I18n.Tr("WIDGET_EICAS_OIL_QTY", "滑油量");
+            if (_gearLabelText != null) _gearLabelText.text = I18n.Tr("WIDGET_EICAS_GEAR", "起落架");
+            if (_flapsLabelText != null) _flapsLabelText.text = I18n.Tr("WIDGET_EICAS_FLAPS", "襟\n翼");
+            if (_stabNuText != null) _stabNuText.text = I18n.Tr("WIDGET_EICAS_STAB_NU", "抬头");
+            if (_stabLabelText != null) _stabLabelText.text = I18n.Tr("WIDGET_EICAS_STAB", "安\n定\n面");
+            if (_rudderLabelText != null) _rudderLabelText.text = I18n.Tr("WIDGET_EICAS_RUDDER_TRIM", "方向舵配平");
+            if (_gLoadLabel != null) _gLoadLabel.text = I18n.Tr("WIDGET_EICAS_GLOAD", "过载");
+            if (_warpLabel != null) _warpLabel.text = I18n.Tr("WIDGET_EICAS_WARP", "倍速");
+            if (_grossWtLabel != null) _grossWtLabel.text = I18n.Tr("WIDGET_EICAS_GROSS_WT", "全重");
+            if (_unitsLabel != null) _unitsLabel.text = I18n.Tr("WIDGET_EICAS_UNITS_LBS", "磅 ×\n1000");
+            if (_totalFuelLabel != null) _totalFuelLabel.text = I18n.Tr("WIDGET_EICAS_TOTAL_FUEL", "总燃料");
         }
 
         protected override void OnDestroy()

@@ -27,9 +27,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         public override Vector2 BaseSize => new Vector2(290f, 340f);
         protected override bool AutoCreateCardFrame => true;
 
-        // 声明式微控件
-        public TextWidget TitleWidget = TextWidget.Title(I18n.Tr("WIDGET_UIMGR_TITLE", "界面管理"));
-        public TextWidget StatusBadgeWidget = TextWidget.Badge(I18n.Tr("WIDGET_UIMGR_ACTIVE", "活动"));
 
         /// <summary>
         /// 外部委托：请求打开航电设计工作台 (Alt+N)
@@ -394,7 +391,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             if (category == 1) // 仪表
             {
-                return type == "ecam_dial" || type == "tape" || type == "arc_meter" || id.StartsWith("gauge.") || id.Contains("gauge");
+                return type == "tape" || type == "arc_meter" || id.StartsWith("gauge.") || id.Contains("gauge");
             }
             if (category == 2) // 系统
             {
@@ -484,9 +481,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             SetTextIfChanged(row.NameText, w.DisplayName);
 
             string badge = w.WidgetType == "tape" ? "PFD" :
-                          (w.WidgetType == "ecam_dial" ? "ECAM" :
                           (w.WidgetId.StartsWith("spacex.") ? "SPX" :
-                          (w.WidgetId.StartsWith("custom.") ? I18n.Tr("WIDGET_UIMGR_CARD", "卡片") : I18n.Tr("WIDGET_UIMGR_CORE", "核心"))));
+                          (w.WidgetId.StartsWith("custom.") ? I18n.Tr("WIDGET_UIMGR_CARD", "卡片") : I18n.Tr("WIDGET_UIMGR_CORE", "核心")));
             SetTextIfChanged(row.TypeBadgeText, badge);
 
             // 更新 LED 颜色

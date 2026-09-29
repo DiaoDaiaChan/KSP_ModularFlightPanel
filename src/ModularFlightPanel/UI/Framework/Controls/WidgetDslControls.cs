@@ -210,7 +210,7 @@ namespace ModularFlightPanel.UI.Framework
             {
                 TextComponent.alignment = TextAnchor.MiddleLeft;
                 rt.anchorMin = new Vector2(0f, 0.25f);
-                rt.anchorMax = new Vector2(0.72f, 0.82f);
+                rt.anchorMax = new Vector2(0.72f, 0.74f);
                 rt.pivot = new Vector2(0f, 0.5f);
                 rt.anchoredPosition = new Vector2(8f * dpiScale, 0f);
                 rt.sizeDelta = Vector2.zero;

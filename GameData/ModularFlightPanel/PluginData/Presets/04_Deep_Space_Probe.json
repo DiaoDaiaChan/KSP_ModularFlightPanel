@@ -11,6 +11,15 @@
       "WidgetType": "core"
     },
     {
+      "WidgetId": "core.heading_arc",
+      "DisplayName": "PFD 航向指示弧 (Set 2)",
+      "IsEnabled": true,
+      "PositionX": 0,
+      "PositionY": 76,
+      "Scale": 1,
+      "WidgetType": "heading_arc"
+    },
+    {
       "WidgetId": "core.bottom_controls",
       "DisplayName": "RCS与SAS底控",
       "IsEnabled": true,
@@ -20,20 +29,11 @@
       "WidgetType": "core"
     },
     {
-      "WidgetId": "core.orbital_info",
-      "DisplayName": "轨道数据面板",
+      "WidgetId": "core.sas_dial",
+      "DisplayName": "环形 SAS 罗盘",
       "IsEnabled": true,
       "PositionX": 0,
-      "PositionY": -122,
-      "Scale": 1,
-      "WidgetType": "core"
-    },
-    {
-      "WidgetId": "core.ecam_status",
-      "DisplayName": "ECAM 飞行状态",
-      "IsEnabled": true,
-      "PositionX": 0,
-      "PositionY": -186,
+      "PositionY": -145,
       "Scale": 1,
       "WidgetType": "core"
     },
@@ -41,7 +41,7 @@
       "WidgetId": "tape.speed",
       "DisplayName": "PFD 轨道速度带",
       "IsEnabled": true,
-      "PositionX": -200,
+      "PositionX": -225,
       "PositionY": 0,
       "Scale": 1,
       "WidgetType": "tape",
@@ -54,7 +54,7 @@
       "WidgetId": "tape.altitude",
       "DisplayName": "PFD 轨道高度带",
       "IsEnabled": true,
-      "PositionX": 200,
+      "PositionX": 225,
       "PositionY": 0,
       "Scale": 1,
       "WidgetType": "tape",
@@ -62,6 +62,38 @@
       "StepInterval": 1000,
       "IsLeftOrientation": false,
       "UnitLabel": "m"
+    },
+    {
+      "WidgetId": "gauge.throttle",
+      "DisplayName": "AVIONICS 油门推力带",
+      "IsEnabled": true,
+      "PositionX": -160,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "bar_gauge",
+      "NumericToken": "{THROTTLE}",
+      "MinValue": 0,
+      "MaxValue": 100,
+      "CautionThreshold": 85,
+      "WarningThreshold": 100,
+      "UnitLabel": "%",
+      "IsLeftOrientation": true
+    },
+    {
+      "WidgetId": "gauge.barometer",
+      "DisplayName": "AVIONICS 动压气压带",
+      "IsEnabled": true,
+      "PositionX": 160,
+      "PositionY": 0,
+      "Scale": 1,
+      "WidgetType": "bar_gauge",
+      "NumericToken": "{Q}",
+      "MinValue": 0,
+      "MaxValue": 35,
+      "CautionThreshold": 20,
+      "WarningThreshold": 28,
+      "UnitLabel": "kPa",
+      "IsLeftOrientation": false
     },
     {
       "WidgetId": "custom.electrical",
@@ -80,38 +112,6 @@
       "PositionY": 150,
       "Scale": 1,
       "WidgetType": "signal"
-    },
-    {
-      "WidgetId": "ecam.gforce",
-      "DisplayName": "ECAM G力过载表",
-      "IsEnabled": true,
-      "PositionX": -320,
-      "PositionY": -35,
-      "Scale": 1,
-      "WidgetType": "ecam_dial",
-      "NumericToken": "{GFORCE}",
-      "MinValue": 0,
-      "MaxValue": 10,
-      "CautionThreshold": 4,
-      "WarningThreshold": 7,
-      "IsSoftLimit": true,
-      "UnitLabel": "G"
-    },
-    {
-      "WidgetId": "ecam.throttle",
-      "DisplayName": "ECAM 引擎推力表",
-      "IsEnabled": true,
-      "PositionX": 320,
-      "PositionY": -35,
-      "Scale": 1,
-      "WidgetType": "ecam_dial",
-      "NumericToken": "{THROTTLE}",
-      "MinValue": 0,
-      "MaxValue": 100,
-      "CautionThreshold": 85,
-      "WarningThreshold": 100,
-      "IsSoftLimit": false,
-      "UnitLabel": "%"
     }
   ]
 }

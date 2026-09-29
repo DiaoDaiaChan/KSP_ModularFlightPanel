@@ -25,9 +25,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
-        // 声明式微控件
-        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_SPX_SPEED", "速度"));
-        public TextWidget Value = TextWidget.Value("{SPD}");
 
         // UI 视图节点
         private Image _bgImage;

@@ -38,11 +38,8 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override Vector2 BaseSize => new Vector2(DefaultWidth, DefaultHeight);
         protected override bool AutoCreateCardFrame => true;
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
-
-        // 声明式微控件
-        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_ROCKET_TITLE", "火箭 2D"));
-        public TextWidget StatusBadge = TextWidget.Badge(I18n.Tr("WIDGET_ALERT_ARMED", "待发"));
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
 
         // 单级推进堆叠行 UI 结构
         private class StageRowUI
@@ -84,19 +81,22 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _summaryDvText;
         private Image _headerDivider;
 
-        // 左侧 2D 飞船剪影视窗 (Vehicle Silhouette Bay)
+        // 左侧 2D 飞船剪影视窗与姿态机构 (Vehicle Silhouette & Attitude Assembly)
         private GameObject _silhouetteBayObj;
         private Image _silhouetteBayBg;
         private Outline _silhouetteBayOutline;
         private Text _silhouetteBayTitle;
+        private GameObject _silhouetteBayFooterPill;
         private Text _silhouetteBayFooter;
+        private RectTransform _rocketAssemblyRt;
         private RawImage _silhouetteRawImage;
-        private static Texture2D _fallbackSilhouetteTexture;
+        private ProceduralRocketSilhouetteGraphic _proceduralSilhouetteGraphic;
 
         // 动态发动机喷流羽流 (Exhaust Plume)
-        private GameObject _plumeObj;
+        private GameObject _plumeRootObj;
         private RectTransform _plumeRt;
-        private Image _plumeImg;
+        private Image _plumeOuterImg;
+        private Image _plumeCoreImg;
 
         // 右侧动态多级推进栈
         private const int MaxDisplayedStages = 5;
@@ -105,7 +105,7 @@ namespace ModularFlightPanel.UI.Widgets
         // 几何尺寸
         private const float DefaultWidth = 260f;
         private const float DefaultHeight = 176f;
-        private const float FuelTrackMaxWidth = 48f;
+        private const float FuelTrackMaxWidth = 52f;
 
         // 风格与通配符配置
         private string _titleTemplate = "ROCKET 2D";
@@ -115,9 +115,12 @@ namespace ModularFlightPanel.UI.Widgets
         private string _twrToken = "{TWR}";
         private ThemeConfig _cachedTheme;
 
-        // 脏检查缓存
-        private readonly Cached<string> _cachedTitleSlot = new Cached<string>(string.Empty);
-        private readonly CachedFloat _lastPlumeFlutter = new CachedFloat(-1f, 0.005f);
+        // 姿态与视觉补间状态
+        private float _cachedPitch = 90f;
+        private float _cachedTargetTilt = 0f;
+        private float _currentTilt = 0f;
+        private float _cachedThrottle = 0f;
+        private string _cachedBayTitleStr = string.Empty;
 
         // 动画时间模拟支持 (用于无头单帧/连续帧确定性渲染)
         public static float CustomAnimationTime = -1f;
@@ -232,60 +235,98 @@ namespace ModularFlightPanel.UI.Widgets
             UIFactory.CreatePanel(_silhouetteBayObj.transform, "RetBR_H", new Vector2(retLen, retW), new Vector2(bayW * 0.5f - retLen * 0.5f, -bayH * 0.5f + retW * 0.5f), retCol);
             UIFactory.CreatePanel(_silhouetteBayObj.transform, "RetBR_V", new Vector2(retW, retLen), new Vector2(bayW * 0.5f - retW * 0.5f, -bayH * 0.5f + retLen * 0.5f), retCol);
 
-            // 视窗顶部标牌
+            // 俯仰 0° 水平基准微刻度 (Pitch 0° Horizon Reference Marks)
+            float tickW = 4f * s;
+            float tickH = 1.2f * s;
+            Color tickCol = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
+            UIFactory.CreatePanel(_silhouetteBayObj.transform, "HorizTick_L", new Vector2(tickW, tickH), new Vector2(-bayW * 0.5f + tickW * 0.5f + 1f * s, 0f), tickCol);
+            UIFactory.CreatePanel(_silhouetteBayObj.transform, "HorizTick_R", new Vector2(tickW, tickH), new Vector2(bayW * 0.5f - tickW * 0.5f - 1f * s, 0f), tickCol);
+
+            // 视窗顶部标牌 (动态呈现俯仰姿态 PITCH 72°)
             _silhouetteBayTitle = UIFactory.CreateText(_silhouetteBayObj.transform, "BayTitle", I18n.Tr("WIDGET_ROCKET_PROFILE", "剖面"),
-                Mathf.RoundToInt(6.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
+                Mathf.RoundToInt(6.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Cardinal, theme));
             _silhouetteBayTitle.fontStyle = FontStyle.Bold;
             RectTransform titleRt = _silhouetteBayTitle.GetComponent<RectTransform>();
-            titleRt.anchoredPosition = new Vector2(0f, bayH * 0.5f - 7.5f * s);
-            titleRt.sizeDelta = new Vector2(bayW - 4f * s, 11f * s);
+            titleRt.anchoredPosition = new Vector2(0f, bayH * 0.5f - 8f * s);
+            titleRt.sizeDelta = new Vector2(bayW - 4f * s, 12f * s);
 
-            // 2D 飞船剪影图元 (RawImage)
-            _silhouetteRawImage = CreateChild<RawImage>("VesselSilhouette_RawImage", _silhouetteBayObj.transform,
-                new Vector2(50f * s, 108f * s), new Vector2(0f, -2f * s));
+            // 中央飞船 2D 姿态云台机构 (Vessel Attitude & Staging Gimbal)
+            _rocketAssemblyRt = CreateContainer("RocketAssembly", _silhouetteBayObj.transform,
+                new Vector2(46f * s, 94f * s), new Vector2(0f, 0f));
+            _rocketAssemblyRt.pivot = new Vector2(0.5f, 0.40f);
+
+            // 2D 飞船剪影图元 (RawImage + 本地 GPU 矢量保底)
+            _silhouetteRawImage = CreateChild<RawImage>("VesselSilhouette_RawImage", _rocketAssemblyRt,
+                new Vector2(46f * s, 94f * s), Vector2.zero);
             _silhouetteRawImage.raycastTarget = false;
             _silhouetteRawImage.color = theme.AccentSecondary;
 
-            // 优先直通真实载具烘焙纹理，保底接入程序化矢量纹理
+            _proceduralSilhouetteGraphic = CreateChild<ProceduralRocketSilhouetteGraphic>("ProceduralSilhouette", _rocketAssemblyRt,
+                new Vector2(46f * s, 94f * s), Vector2.zero);
+            _proceduralSilhouetteGraphic.raycastTarget = false;
+            _proceduralSilhouetteGraphic.color = theme.AccentSecondary;
+
             Texture tex = VesselSilhouetteService.Provider?.SilhouetteTexture;
-            if (tex == null)
-            {
-                if (_fallbackSilhouetteTexture == null)
-                {
-                    _fallbackSilhouetteTexture = CreateProceduralRocketSilhouetteTexture();
-                }
-                tex = _fallbackSilhouetteTexture;
-            }
-            _silhouetteRawImage.texture = tex;
+            bool hasBakerTex = tex != null;
+            _silhouetteRawImage.gameObject.SetActive(hasBakerTex);
+            _proceduralSilhouetteGraphic.gameObject.SetActive(!hasBakerTex);
+            if (hasBakerTex) _silhouetteRawImage.texture = tex;
 
             if (VesselSilhouetteService.Provider != null)
             {
                 VesselSilhouetteService.Provider.OnSilhouetteUpdated += OnSilhouetteUpdated;
             }
 
-            // 发动机点火羽流 (Exhaust Plume)
-            _plumeObj = UIFactory.CreatePanel(_silhouetteBayObj.transform, "EnginePlume", new Vector2(10f * s, 12f * s),
-                Vector2.zero, style.GetMeterColor(MeterStyleRole.Warning, theme));
-            _plumeRt = _plumeObj.GetComponent<RectTransform>();
+            // 发动机点火羽流 (Exhaust Plume: 联动火箭倾角、超音速激波芯与膨胀羽流)
+            _plumeRt = CreateContainer("PlumeRoot", _rocketAssemblyRt,
+                new Vector2(10f * s, 14f * s), new Vector2(0f, -38f * s));
             _plumeRt.pivot = new Vector2(0.5f, 1f);
-            _plumeRt.anchoredPosition = new Vector2(0f, -bayH * 0.5f + 25f * s);
-            _plumeImg = _plumeObj.GetComponent<Image>();
-            _plumeObj.SetActive(false);
+            _plumeRootObj = _plumeRt.gameObject;
 
-            // 视窗底部标牌
-            _silhouetteBayFooter = UIFactory.CreateText(_silhouetteBayObj.transform, "BayFooter", "S-- · " + I18n.Tr("WIDGET_ALERT_ARMED", "待发"),
+            _plumeOuterImg = CreateChild<Image>("PlumeOuter", _plumeRt,
+                new Vector2(8f * s, 12f * s), Vector2.zero);
+            _plumeOuterImg.rectTransform.pivot = new Vector2(0.5f, 1f);
+            _plumeOuterImg.color = style.GetMeterColor(MeterStyleRole.Warning, theme);
+            _plumeOuterImg.raycastTarget = false;
+
+            _plumeCoreImg = CreateChild<Image>("PlumeCore", _plumeRt,
+                new Vector2(3.5f * s, 6f * s), Vector2.zero);
+            _plumeCoreImg.rectTransform.pivot = new Vector2(0.5f, 1f);
+            _plumeCoreImg.color = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.95f);
+            _plumeCoreImg.raycastTarget = false;
+
+            _plumeRootObj.SetActive(false);
+
+            // 视窗底部状态胶囊底板 (Bottom Status Pill)
+            _silhouetteBayFooterPill = UIFactory.CreatePanel(_silhouetteBayObj.transform, "BayFooterPill",
+                new Vector2(bayW - 8f * s, 14f * s), new Vector2(0f, -bayH * 0.5f + 9.5f * s),
+                WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme),
+                WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Normal), 0.8f * s);
+
+            _silhouetteBayFooter = UIFactory.CreateText(_silhouetteBayFooterPill.transform, "BayFooter", "S-- · " + I18n.Tr("WIDGET_ALERT_ARMED", "待发"),
                 Mathf.RoundToInt(7f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _silhouetteBayFooter.fontStyle = FontStyle.Bold;
             RectTransform footRt = _silhouetteBayFooter.GetComponent<RectTransform>();
-            footRt.anchoredPosition = new Vector2(0f, -bayH * 0.5f + 8f * s);
-            footRt.sizeDelta = new Vector2(bayW - 4f * s, 12f * s);
+            footRt.anchorMin = Vector2.zero;
+            footRt.anchorMax = Vector2.one;
+            footRt.sizeDelta = Vector2.zero;
+            footRt.anchoredPosition = Vector2.zero;
         }
 
         private void OnSilhouetteUpdated(Texture tex)
         {
-            if (_silhouetteRawImage != null && tex != null)
+            if (_silhouetteRawImage != null)
             {
-                _silhouetteRawImage.texture = tex;
+                bool hasBakerTex = tex != null;
+                _silhouetteRawImage.gameObject.SetActive(hasBakerTex);
+                if (_proceduralSilhouetteGraphic != null)
+                {
+                    _proceduralSilhouetteGraphic.gameObject.SetActive(!hasBakerTex);
+                }
+                if (hasBakerTex)
+                {
+                    _silhouetteRawImage.texture = tex;
+                }
             }
         }
 
@@ -457,15 +498,28 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_silhouetteBayTitle != null)
             {
-                _silhouetteBayTitle.color = style.GetTextColor(TextStyleRole.Label, theme);
+                _silhouetteBayTitle.color = style.GetTextColor(TextStyleRole.Cardinal, theme);
             }
             if (_silhouetteRawImage != null)
             {
                 _silhouetteRawImage.color = theme.AccentSecondary;
             }
-            if (_plumeImg != null)
+            if (_proceduralSilhouetteGraphic != null)
             {
-                _plumeImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+                _proceduralSilhouetteGraphic.color = theme.AccentSecondary;
+            }
+            if (_plumeOuterImg != null)
+            {
+                _plumeOuterImg.color = style.GetMeterColor(MeterStyleRole.Warning, theme);
+            }
+            if (_plumeCoreImg != null)
+            {
+                _plumeCoreImg.color = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.95f);
+            }
+            if (_silhouetteBayFooterPill != null)
+            {
+                var pillBg = _silhouetteBayFooterPill.GetComponent<Image>();
+                if (pillBg != null) pillBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             }
             if (_silhouetteBayFooter != null)
             {
@@ -529,12 +583,23 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedSubTitle = TelemetryTokenEngine.Evaluate(_subTitleTemplate, context.Telemetry);
 
             string twrVal = TelemetryTokenEngine.Evaluate(_twrToken, context.Telemetry);
-            _cachedTwrStr = $"TWR {twrVal}";
+            int activeEng = context.Telemetry.ActiveEngines;
+            string engSuffix = activeEng > 0 ? $" ({activeEng} ENG)" : string.Empty;
+            _cachedTwrStr = $"TWR {twrVal}{engSuffix}";
 
             string dvVal = TelemetryTokenEngine.Evaluate(_totalDvToken, context.Telemetry);
             _cachedDvStr = dvVal.EndsWith("m/s", StringComparison.OrdinalIgnoreCase) ? dvVal : $"{dvVal} m/s";
 
             _cachedSilhouetteTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
+
+            // 姿态解算 (Attitude & Staging Orientation: 90° 直立, 重力转向顺势倾斜)
+            float pitch = context.Telemetry.Pitch;
+            _cachedPitch = pitch;
+            float targetTilt = Mathf.Clamp(90f - pitch, -50f, 50f);
+            _cachedTargetTilt = targetTilt;
+            _cachedBayTitleStr = $"{I18n.Tr("WIDGET_AXIS_PITCH", "PITCH")} {pitch:F0}°";
+
+            _cachedThrottle = Mathf.Clamp01((float)context.Telemetry.Throttle);
 
             IReadOnlyList<StageDeltaVInfo> stages = context.Telemetry.StageDeltaVList;
             int stageCount = stages != null ? stages.Count : 0;
@@ -658,7 +723,9 @@ namespace ModularFlightPanel.UI.Widgets
 
             bool isFiring = curStage >= 0 && (context.Telemetry.ActiveEngines > 0 || context.Telemetry.Throttle > 0.01);
             _cachedIsFiring = isFiring;
-            _cachedBayFootStr = curStage >= 0 ? $"S{curStage:D2} · {(isFiring ? I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"))}" : I18n.Tr("WIDGET_ROCKET_SAFED", "已保险");
+            _cachedBayFootStr = curStage >= 0 
+                ? $"S{curStage:D2} · {(isFiring ? I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"))}" 
+                : I18n.Tr("WIDGET_ROCKET_SAFED", "已保险");
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -670,276 +737,182 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _cachedTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
             float s = CurrentDpiScale;
+            float dt = CustomAnimationDeltaTime >= 0f ? CustomAnimationDeltaTime : context.DeltaTime;
+            float time = CustomAnimationTime >= 0f ? CustomAnimationTime : Time.unscaledTime;
+            Vector2 panelSize = BaseSize * s;
 
             // 1. 顶部 Header 动态评估
-            SetTextIfChanged(_titleText, _cachedTitle);
-            SetTextIfChanged(_subTitleText, _cachedSubTitle);
-            SetTextIfChanged(_summaryTwrText, _cachedTwrStr);
-            SetTextIfChanged(_summaryDvText, _cachedDvStr);
+            _titleText.SetTextSafe(_cachedTitle);
+            _subTitleText.SetTextSafe(_cachedSubTitle);
+            _summaryTwrText.SetTextSafe(_cachedTwrStr);
+            _summaryDvText.SetTextSafe(_cachedDvStr);
 
-            // 2. 剪影视窗与纹理守卫
-            if (_silhouetteRawImage != null)
+            // 2. 剪影与姿态俯仰角旋转动画
+            _silhouetteBayTitle.SetTextSafe(_cachedBayTitleStr);
+
+            if (_rocketAssemblyRt != null)
             {
-                Texture tex = _cachedSilhouetteTex ?? _fallbackSilhouetteTexture;
-                if (_silhouetteRawImage.texture != tex)
+                _currentTilt = Mathf.MoveTowards(_currentTilt, _cachedTargetTilt, dt * 60f);
+                _rocketAssemblyRt.localRotation = Quaternion.Euler(0f, 0f, -_currentTilt);
+            }
+
+            if (_silhouetteRawImage != null && _cachedSilhouetteTex != null)
+            {
+                if (_silhouetteRawImage.texture != _cachedSilhouetteTex)
                 {
-                    _silhouetteRawImage.texture = tex;
+                    _silhouetteRawImage.texture = _cachedSilhouetteTex;
                 }
             }
 
-            // 4. 逐级更新推进栈各行
+            // 3. 动态发动机喷流羽流高频微颤 (26Hz Flame Flutter & Mach Shock Diamonds)
+            if (_plumeRootObj != null)
+            {
+                _plumeRootObj.SetActiveSafe(_cachedIsFiring);
+                if (_cachedIsFiring)
+                {
+                    float flutter = 1.0f + Mathf.Sin(time * 26f) * 0.12f;
+                    float thr = _cachedThrottle > 0.01f ? _cachedThrottle : 0.8f;
+                    float plumeH = Mathf.Clamp((8f + 5f * thr) * s * flutter, 6f * s, 14f * s);
+                    float plumeW = (7f + 2f * thr) * s * flutter;
+
+                    if (_plumeOuterImg != null)
+                    {
+                        _plumeOuterImg.rectTransform.SetSizeDeltaSafe(new Vector2(plumeW, plumeH));
+                        Color warnCol = style.GetMeterColor(MeterStyleRole.Warning, theme);
+                        _plumeOuterImg.SetColor(WidgetStyleManager.WithAlpha(warnCol, 0.82f + Mathf.Sin(time * 28f) * 0.16f));
+                    }
+                    if (_plumeCoreImg != null)
+                    {
+                        _plumeCoreImg.rectTransform.SetSizeDeltaSafe(new Vector2(plumeW * 0.45f, plumeH * 0.55f));
+                        _plumeCoreImg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.95f));
+                    }
+                }
+            }
+
+            // 4. 视窗底部状态标牌与胶囊底板
+            _silhouetteBayFooter.SetTextSafe(_cachedBayFootStr);
+            if (_cachedIsFiring)
+            {
+                _silhouetteBayFooter.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            }
+            else
+            {
+                _silhouetteBayFooter.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            }
+
+            // 5. 动态多级推进栈排版与数据绑定
             int displayCount = _cachedDisplayCount;
+            float stackH = 132f * s;
+            float rHeight = displayCount <= 4 ? 25.5f * s : 24f * s;
+            float rSpacing = displayCount > 1 
+                ? Mathf.Clamp((stackH - displayCount * rHeight) / (displayCount - 1), 3f * s, 6.5f * s) 
+                : 0f;
+            float startY = panelSize.y * 0.5f - 36f * s;
+
             for (int i = 0; i < _stageRows.Count; i++)
             {
                 StageRowUI row = _stageRows[i];
                 if (i < displayCount)
                 {
-                    row.Root.SetActive(true);
+                    row.Root.SetActiveSafe(true);
+                    float rowY = startY - i * (rHeight + rSpacing);
+                    row.RootRt.SetAnchoredPositionSafe(new Vector2(-panelSize.x * 0.5f + 74f * s, rowY));
+                    row.RootRt.SetSizeDeltaSafe(new Vector2(panelSize.x - 82f * s, rHeight));
+
                     var snap = _cachedStageSnapshots[i];
                     row.StageNumber = snap.StageNumber;
                     row.IsActiveStage = snap.IsActive;
                     row.IsBurning = snap.IsBurning;
 
                     // A. 徽章标号与全行高亮
-                    SetTextIfChanged(row.BadgeText, snap.BadgeText);
+                    row.BadgeText.SetTextSafe(snap.BadgeText);
                     if (snap.IsActive)
                     {
-                        row.BadgeBg.color = theme.AccentPrimary;
-                        row.BadgeText.color = style.GetTextColor(TextStyleRole.InverseOnAccent, theme);
-                        row.LeaderLine.color = theme.AccentPrimary;
-                        ApplyText(row.StageDvText, TextStyleRole.PrimaryValue, theme);
+                        row.BadgeBg.SetColor(theme.AccentPrimary);
+                        row.BadgeText.SetColor(style.GetTextColor(TextStyleRole.InverseOnAccent, theme));
+                        row.LeaderLine.SetColor(theme.AccentPrimary);
+                        row.StageDvText.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+
+                        // 激活级背景微光呼吸 (Active Stage Breathing Wave)
+                        float freq = snap.IsBurning ? 5.2f : 2.4f;
+                        float wave = Mathf.Sin(time * freq) * 0.5f + 0.5f;
+                        float alpha = snap.IsBurning ? (0.12f + wave * 0.12f) : (0.08f + wave * 0.08f);
+                        row.RowHighlightBg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPrimary, alpha));
                     }
                     else if (snap.IsExpended)
                     {
-                        row.BadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
-                        row.BadgeText.color = style.GetTextColor(TextStyleRole.Label, theme);
-                        row.LeaderLine.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
-                        ApplyText(row.StageDvText, TextStyleRole.Label, theme);
+                        row.BadgeBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme));
+                        row.BadgeText.SetColor(style.GetTextColor(TextStyleRole.Label, theme));
+                        row.LeaderLine.SetColor(WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost));
+                        row.StageDvText.SetColor(style.GetTextColor(TextStyleRole.Label, theme));
+                        row.RowHighlightBg.SetColor(Color.clear);
                     }
                     else
                     {
-                        row.BadgeBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme);
-                        row.BadgeText.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
-                        row.LeaderLine.color = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Normal);
-                        ApplyText(row.StageDvText, TextStyleRole.SecondaryValue, theme);
+                        row.BadgeBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Slot, theme));
+                        row.BadgeText.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        row.LeaderLine.SetColor(WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Normal));
+                        row.StageDvText.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+                        row.RowHighlightBg.SetColor(Color.clear);
                     }
 
                     // B. 分级角色
-                    SetTextIfChanged(row.StageRoleText, snap.RoleText);
+                    row.StageRoleText.SetTextSafe(snap.RoleText);
+                    if (snap.IsActive)
+                    {
+                        row.StageRoleText.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                    }
+                    else
+                    {
+                        row.StageRoleText.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+                    }
 
                     // C. 单级 ΔV 与烧燃倒计时
-                    SetTextIfChanged(row.StageDvText, snap.DvText);
-                    SetTextIfChanged(row.StageTimeText, snap.MetaText);
+                    row.StageDvText.SetTextSafe(snap.DvText);
+                    row.StageTimeText.SetTextSafe(snap.MetaText);
 
-                    // D. 推进剂余量推算
+                    // D. 推进剂余量推算与平滑阻尼衰减
                     float propFrac = snap.PropFrac;
                     row.TargetFuelFrac = propFrac;
                     if (row.CurrentFuelFrac < 0.001f && propFrac > 0.001f)
                     {
                         row.CurrentFuelFrac = propFrac;
                     }
+                    if (Mathf.Abs(row.CurrentFuelFrac - row.TargetFuelFrac) > 0.001f)
+                    {
+                        row.CurrentFuelFrac = Mathf.MoveTowards(row.CurrentFuelFrac, row.TargetFuelFrac, dt * 1.8f);
+                    }
 
                     float trackW = FuelTrackMaxWidth * s;
-                    if (row.LastFuelFrac.Update(row.CurrentFuelFrac))
+                    row.FuelFillRt.SetSizeDeltaSafe(new Vector2(trackW * row.CurrentFuelFrac, row.FuelFillRt.sizeDelta.y));
+                    string pctText = snap.IsExpended ? "JETT" : $"{(propFrac * 100f):F0}%";
+                    row.FuelPercentText.SetTextSafe(pctText);
+
+                    // 推进剂液位告警着色
+                    if (row.CurrentFuelFrac <= 0.05f && row.IsActiveStage)
                     {
-                        row.FuelFillRt.sizeDelta = new Vector2(trackW * row.CurrentFuelFrac, row.FuelFillRt.sizeDelta.y);
-                        string pctText = snap.IsExpended ? "JETT" : $"{(propFrac * 100f):F0}%";
-                        SetTextIfChanged(row.FuelPercentText, pctText);
+                        bool blinkOn = (Mathf.Sin(time * 30f) > 0f);
+                        Color dangerCol = style.GetMeterColor(MeterStyleRole.Danger, theme);
+                        row.FuelFill.SetColor(blinkOn ? dangerCol : WidgetStyleManager.WithAlpha(dangerCol, 0.2f));
+                    }
+                    else if (row.CurrentFuelFrac <= 0.20f && row.IsActiveStage)
+                    {
+                        float warnPulse = Mathf.Sin(time * 8f) * 0.35f + 0.65f;
+                        Color warnCol = style.GetMeterColor(MeterStyleRole.Warning, theme);
+                        row.FuelFill.SetColor(WidgetStyleManager.WithAlpha(warnCol, warnPulse));
+                    }
+                    else
+                    {
+                        row.FuelFill.SetColor(row.IsActiveStage 
+                            ? theme.AccentPrimary 
+                            : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Medium));
                     }
                 }
                 else
                 {
-                    row.Root.SetActive(false);
+                    row.Root.SetActiveSafe(false);
                 }
             }
-
-            // 5. 视窗底部状态与羽流控制
-            if (_plumeObj != null)
-            {
-                _plumeObj.SetActive(_cachedIsFiring);
-            }
-
-            SetTextIfChanged(_silhouetteBayFooter, _cachedBayFootStr);
-        }
-
-        protected override void Update()
-        {
-            base.Update();
-            if (!gameObject.activeInHierarchy) return;
-
-            float dt = CustomAnimationDeltaTime >= 0f ? CustomAnimationDeltaTime : Time.unscaledDeltaTime;
-            float time = CustomAnimationTime >= 0f ? CustomAnimationTime : Time.unscaledTime;
-            float s = CurrentDpiScale;
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-
-            // 1. 动态发动机喷流羽流高频微颤 (Combustion Flame Flutter 26Hz)
-            if (_plumeObj != null && _plumeObj.activeSelf)
-            {
-                float flutter = 1.0f + Mathf.Sin(time * 26f) * 0.12f;
-                if (_lastPlumeFlutter.Update(flutter))
-                {
-                    float thr = 1.0f;
-                    _plumeRt.sizeDelta = new Vector2(10f * s * flutter, (10f + 14f * thr) * s * flutter);
-                }
-                _plumeImg.color = WidgetStyleManager.WithAlpha(style.GetMeterColor(MeterStyleRole.Warning, theme), 0.85f + Mathf.Sin(time * 28f) * 0.15f);
-            }
-
-            // 2. 逐级推进栈行呼吸与液位平滑
-            for (int i = 0; i < _stageRows.Count; i++)
-            {
-                StageRowUI row = _stageRows[i];
-                if (!row.Root.activeSelf) continue;
-
-                // A. 激活级背景微光呼吸 (Active Stage Breathing Wave)
-                if (row.IsActiveStage)
-                {
-                    float freq = row.IsBurning ? 5.2f : 2.4f;
-                    float wave = Mathf.Sin(time * freq) * 0.5f + 0.5f;
-                    float alpha = row.IsBurning ? (0.12f + wave * 0.12f) : (0.08f + wave * 0.08f);
-                    row.RowHighlightBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, alpha);
-                }
-                else
-                {
-                    row.RowHighlightBg.color = Color.clear;
-                }
-
-                // B. 推进剂平滑阻尼衰减与告警频闪
-                if (Mathf.Abs(row.CurrentFuelFrac - row.TargetFuelFrac) > 0.001f)
-                {
-                    row.CurrentFuelFrac = Mathf.MoveTowards(row.CurrentFuelFrac, row.TargetFuelFrac, dt * 1.8f);
-                    float trackW = FuelTrackMaxWidth * s;
-                    row.FuelFillRt.sizeDelta = new Vector2(trackW * row.CurrentFuelFrac, row.FuelFillRt.sizeDelta.y);
-                }
-
-                if (row.CurrentFuelFrac <= 0.05f && row.IsActiveStage)
-                {
-                    // 极度危急频闪 (5Hz Emergency Strobe)
-                    bool blinkOn = (Mathf.Sin(time * 30f) > 0f);
-                    Color dangerCol = style.GetMeterColor(MeterStyleRole.Danger, theme);
-                    row.FuelFill.color = blinkOn ? dangerCol : WidgetStyleManager.WithAlpha(dangerCol, 0.2f);
-                }
-                else if (row.CurrentFuelFrac <= 0.20f && row.IsActiveStage)
-                {
-                    // 低燃料琥珀色呼吸预警 (2.5Hz Amber Warning)
-                    float warnPulse = Mathf.Sin(time * 8f) * 0.35f + 0.65f;
-                    Color warnCol = style.GetMeterColor(MeterStyleRole.Warning, theme);
-                    row.FuelFill.color = WidgetStyleManager.WithAlpha(warnCol, warnPulse);
-                }
-                else
-                {
-                    row.FuelFill.color = row.IsActiveStage 
-                        ? theme.AccentPrimary 
-                        : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Medium);
-                }
-            }
-        }
-
-        /// <summary>
-        /// 程序化高精多级火箭矢量二维剪影纹理 (用于无头测试与原地沙盒无活跃飞船时的保底呈现)
-        /// </summary>
-        private static Texture2D CreateProceduralRocketSilhouetteTexture()
-        {
-            int w = 128;
-            int h = 256;
-            Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            Color[] cols = new Color[w * h];
-            float centerX = (w - 1) * 0.5f;
-
-            for (int y = 0; y < h; y++)
-            {
-                float ny = (float)y / (h - 1); // 0.0 (底部) .. 1.0 (顶部)
-
-                for (int x = 0; x < w; x++)
-                {
-                    float dx = Mathf.Abs(x - centerX) / centerX; // 0.0 (中轴线) .. 1.0 (侧边缘)
-                    bool inside = false;
-                    bool isLine = false;
-
-                    // 1. 顶部载荷整流罩 / 头锥 (ny: 0.80 .. 0.96)
-                    if (ny >= 0.80f && ny <= 0.96f)
-                    {
-                        float t = (ny - 0.80f) / 0.16f;
-                        float fairingW = Mathf.Lerp(0.22f, 0.02f, Mathf.Pow(t, 0.75f));
-                        if (dx <= fairingW) inside = true;
-                    }
-                    // 2. 上面级 (ny: 0.65 .. 0.795)
-                    else if (ny >= 0.65f && ny < 0.795f)
-                    {
-                        if (dx <= 0.22f) inside = true;
-                    }
-                    // 3. 主芯级 (ny: 0.22 .. 0.645)
-                    else if (ny >= 0.22f && ny < 0.645f)
-                    {
-                        if (dx <= 0.22f) inside = true;
-                    }
-                    // 4. 底部主发动机喷管 (ny: 0.14 .. 0.215)
-                    else if (ny >= 0.14f && ny < 0.215f)
-                    {
-                        float t = (ny - 0.14f) / 0.075f;
-                        float nozzleW = Mathf.Lerp(0.26f, 0.18f, t);
-                        if (dx <= nozzleW) inside = true;
-                    }
-
-                    // 5. 两侧捆绑助推器 (ny: 0.24 .. 0.60)
-                    if (ny >= 0.24f && ny <= 0.60f)
-                    {
-                        float boosterCenter = 0.38f;
-                        float boosterHalfW = 0.09f;
-                        float bstDx = Mathf.Abs(dx - boosterCenter);
-
-                        if (ny > 0.54f)
-                        {
-                            float t = (ny - 0.54f) / 0.06f;
-                            float curW = Mathf.Lerp(boosterHalfW, 0.01f, t);
-                            if (bstDx <= curW) inside = true;
-                        }
-                        else
-                        {
-                            if (bstDx <= boosterHalfW) inside = true;
-                        }
-                    }
-
-                    // 6. 助推器底部喷管 (ny: 0.17 .. 0.235)
-                    if (ny >= 0.17f && ny < 0.235f)
-                    {
-                        float boosterCenter = 0.38f;
-                        float bstDx = Mathf.Abs(dx - boosterCenter);
-                        if (bstDx <= 0.06f) inside = true;
-                    }
-
-                    // 7. 级间隔框细线刻痕
-                    if (inside && (Mathf.Abs(ny - 0.795f) < 0.005f || Mathf.Abs(ny - 0.645f) < 0.005f))
-                    {
-                        isLine = true;
-                    }
-
-                    // 8. 脊线高光
-                    if (inside && dx <= 0.02f && ny >= 0.24f && ny <= 0.90f)
-                    {
-                        isLine = true;
-                    }
-
-                    Color c = Color.clear;
-                    if (inside)
-                    {
-                        c = isLine
-                            ? WidgetStyleManager.Weighted(WidgetStyleManager.NeutralOpaque, LineWeight.Strong)
-                            : WidgetStyleManager.NeutralOpaque;
-                    }
-
-                    cols[y * w + x] = c;
-                }
-            }
-
-            tex.SetPixels(cols);
-            tex.Apply(false, true);
-            return tex;
         }
 
         protected override void OnDestroy()
@@ -951,6 +924,105 @@ namespace ModularFlightPanel.UI.Widgets
             }
             _stageRows.Clear();
             base.OnDestroy();
+        }
+    }
+
+    /// <summary>
+    /// UGUI GPU 矢量火箭剪影图元 (零 CPU 软件光栅化，纯代码 GPU 三角形与四边形)
+    /// </summary>
+    public class ProceduralRocketSilhouetteGraphic : MaskableGraphic
+    {
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect r = GetPixelAdjustedRect();
+            float w = r.width;
+            float h = r.height;
+            float cx = r.center.x;
+            float cy = r.center.y;
+
+            Color c = color;
+            Color lineCol = WidgetStyleManager.Weighted(c, LineWeight.Strong);
+
+            // 1. 头锥 / 整流罩 (Apex: top center; Base: core stage width)
+            float coreHalfW = w * 0.18f;
+            float yTop = cy + h * 0.44f;
+            float yFairingBase = cy + h * 0.28f;
+            AddTri(vh, cx, yTop, cx - coreHalfW, yFairingBase, cx + coreHalfW, yFairingBase, c);
+
+            // 2. 主芯级筒段 (Core Stage)
+            float yEngineBase = cy - h * 0.28f;
+            AddQuad(vh, cx - coreHalfW, cx + coreHalfW, yEngineBase, yFairingBase, c, c);
+
+            // 级间隔框细线
+            float yStage1 = cy + h * 0.12f;
+            float yStage2 = cy - h * 0.08f;
+            AddQuad(vh, cx - coreHalfW, cx + coreHalfW, yStage1 - 0.75f, yStage1 + 0.75f, lineCol, lineCol);
+            AddQuad(vh, cx - coreHalfW, cx + coreHalfW, yStage2 - 0.75f, yStage2 + 0.75f, lineCol, lineCol);
+
+            // 3. 底部主发动机喷管 (Nozzle)
+            float yNozzleBase = cy - h * 0.38f;
+            float nozzleTopHalfW = coreHalfW * 0.65f;
+            float nozzleBtmHalfW = coreHalfW * 0.90f;
+            AddTrapezoid(vh, cx, yEngineBase, nozzleTopHalfW, yNozzleBase, nozzleBtmHalfW, c);
+
+            // 4. 两侧捆绑助推器 (Side Boosters)
+            float boosterHalfW = coreHalfW * 0.55f;
+            float boosterDist = coreHalfW * 1.65f;
+            float bTop = cy + h * 0.15f;
+            float bNose = cy + h * 0.22f;
+            float bBtm = cy - h * 0.24f;
+            float bNozzle = cy - h * 0.32f;
+
+            // 左助推器
+            float bxL = cx - boosterDist;
+            AddTri(vh, bxL, bNose, bxL - boosterHalfW, bTop, bxL + boosterHalfW, bTop, c);
+            AddQuad(vh, bxL - boosterHalfW, bxL + boosterHalfW, bBtm, bTop, c, c);
+            AddTrapezoid(vh, bxL, bBtm, boosterHalfW * 0.8f, bNozzle, boosterHalfW * 1.1f, c);
+
+            // 右助推器
+            float bxR = cx + boosterDist;
+            AddTri(vh, bxR, bNose, bxR - boosterHalfW, bTop, bxR + boosterHalfW, bTop, c);
+            AddQuad(vh, bxR - boosterHalfW, bxR + boosterHalfW, bBtm, bTop, c, c);
+            AddTrapezoid(vh, bxR, bBtm, boosterHalfW * 0.8f, bNozzle, boosterHalfW * 1.1f, c);
+
+            // 5. 气动稳定翼 (Fins)
+            float finSpan = coreHalfW * 2.2f;
+            float finTop = cy - h * 0.20f;
+            float finBtm = cy - h * 0.28f;
+            AddTri(vh, cx - coreHalfW, finTop, cx - finSpan, finBtm, cx - coreHalfW, finBtm, c);
+            AddTri(vh, cx + coreHalfW, finTop, cx + finSpan, finBtm, cx + coreHalfW, finBtm, c);
+        }
+
+        private static void AddTri(VertexHelper vh, float x0, float y0, float x1, float y1, float x2, float y2, Color c)
+        {
+            int idx = vh.currentVertCount;
+            vh.AddVert(new Vector3(x0, y0), c, Vector2.zero);
+            vh.AddVert(new Vector3(x1, y1), c, Vector2.zero);
+            vh.AddVert(new Vector3(x2, y2), c, Vector2.zero);
+            vh.AddTriangle(idx, idx + 1, idx + 2);
+        }
+
+        private static void AddQuad(VertexHelper vh, float xMin, float xMax, float yMin, float yMax, Color c0, Color c1)
+        {
+            int idx = vh.currentVertCount;
+            vh.AddVert(new Vector3(xMin, yMin), c0, Vector2.zero);
+            vh.AddVert(new Vector3(xMin, yMax), c1, Vector2.zero);
+            vh.AddVert(new Vector3(xMax, yMax), c1, Vector2.zero);
+            vh.AddVert(new Vector3(xMax, yMin), c0, Vector2.zero);
+            vh.AddTriangle(idx, idx + 1, idx + 2);
+            vh.AddTriangle(idx + 2, idx + 3, idx);
+        }
+
+        private static void AddTrapezoid(VertexHelper vh, float cx, float yTop, float halfWTop, float yBtm, float halfWBtm, Color c)
+        {
+            int idx = vh.currentVertCount;
+            vh.AddVert(new Vector3(cx - halfWTop, yTop), c, Vector2.zero);
+            vh.AddVert(new Vector3(cx + halfWTop, yTop), c, Vector2.zero);
+            vh.AddVert(new Vector3(cx + halfWBtm, yBtm), c, Vector2.zero);
+            vh.AddVert(new Vector3(cx - halfWBtm, yBtm), c, Vector2.zero);
+            vh.AddTriangle(idx, idx + 1, idx + 2);
+            vh.AddTriangle(idx + 2, idx + 3, idx);
         }
     }
 }

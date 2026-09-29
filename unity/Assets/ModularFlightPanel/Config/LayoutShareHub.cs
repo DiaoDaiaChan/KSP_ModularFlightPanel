@@ -364,15 +364,15 @@ namespace ModularFlightPanel.Config
                 data.Widgets.Add(new WidgetConfig("tape.altitude", I18n.GetWidgetName("tape.altitude", "PFD 高度标尺带"), 225f, 0f, 1.0f) { WidgetType = "tape", NumericToken = "{ALT}", StepInterval = 100f, IsLeftOrientation = false, UnitLabel = "m", IsEnabled = true });
                 data.Widgets.Add(new WidgetConfig("custom.electrical", I18n.GetWidgetName("custom.electrical", "ELEC 电力分配系统"), -440f, 160f, 1.0f) { WidgetType = "electrical", IsEnabled = true });
                 data.Widgets.Add(new WidgetConfig("custom.rocket", I18n.GetWidgetName("custom.rocket", "ROCKET 2D 分级姿态卡"), 440f, 160f, 1.0f) { WidgetType = "rocket2d", IsEnabled = true });
-                data.Widgets.Add(new WidgetConfig("ecam.gforce", I18n.GetWidgetName("ecam.gforce", "ECAM G力过载表"), -345f, -30f, 1.0f) { WidgetType = "ecam_dial", NumericToken = "{GFORCE}", MinValue = 0, MaxValue = 15, CautionThreshold = 5, WarningThreshold = 8, IsSoftLimit = true, UnitLabel = "G", IsEnabled = true });
-                data.Widgets.Add(new WidgetConfig("ecam.q", I18n.GetWidgetName("ecam.q", "ECAM 动压监控表"), 345f, -30f, 1.0f) { WidgetType = "ecam_dial", NumericToken = "{Q}", MinValue = 0, MaxValue = 35, CautionThreshold = 25, WarningThreshold = 32, IsSoftLimit = false, UnitLabel = "kPa", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("gauge.throttle", I18n.GetWidgetName("gauge.throttle", "AVIONICS 油门推力带"), -158f, 0f, 1.0f) { WidgetType = "bar_gauge", NumericToken = "{THROTTLE}", MinValue = 0, MaxValue = 100, CautionThreshold = 85, WarningThreshold = 100, UnitLabel = "%", IsLeftOrientation = true, IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("gauge.barometer", I18n.GetWidgetName("gauge.barometer", "AVIONICS 大气压强带"), 158f, 0f, 1.0f) { WidgetType = "bar_gauge", NumericToken = "{Q}", MinValue = 0, MaxValue = 35, CautionThreshold = 20, WarningThreshold = 28, UnitLabel = "kPa", IsLeftOrientation = false, IsEnabled = true });
             }
             else if (key.Contains("apollo") || key.Contains("登月") || key.Contains("阿波罗"))
             {
                 // 阿波罗复古：强调推重比与降落真高
                 data.Widgets.Add(new WidgetConfig("tape.speed", I18n.GetWidgetName("tape.speed", "PFD 速度标尺带"), -225f, 0f, 1.0f) { WidgetType = "tape", NumericToken = "{SPD:SURF}", StepInterval = 10f, IsLeftOrientation = true, UnitLabel = "m/s", IsEnabled = true });
                 data.Widgets.Add(new WidgetConfig("tape.altitude", I18n.GetWidgetName("tape.altitude", "PFD 雷达真高带"), 225f, 0f, 1.0f) { WidgetType = "tape", NumericToken = "{ALT:AGL}", StepInterval = 50f, IsLeftOrientation = false, UnitLabel = "m", IsEnabled = true });
-                data.Widgets.Add(new WidgetConfig("ecam.throttle", I18n.GetWidgetName("ecam.throttle", "ECAM 引擎推力表"), -345f, 50f, 1.0f) { WidgetType = "ecam_dial", NumericToken = "{THROTTLE}", MinValue = 0, MaxValue = 100, CautionThreshold = 85, WarningThreshold = 100, IsSoftLimit = false, UnitLabel = "%", IsEnabled = true });
+                data.Widgets.Add(new WidgetConfig("gauge.throttle", I18n.GetWidgetName("gauge.throttle", "AVIONICS 油门推力带"), -158f, 0f, 1.0f) { WidgetType = "bar_gauge", NumericToken = "{THROTTLE}", MinValue = 0, MaxValue = 100, CautionThreshold = 85, WarningThreshold = 100, UnitLabel = "%", IsLeftOrientation = true, IsEnabled = true });
                 data.Widgets.Add(new WidgetConfig("custom.life", I18n.GetWidgetName("custom.life", "LIFE SUPPORT 维生监控"), -440f, -80f, 1.0f) { WidgetType = "life_support", IsEnabled = true });
             }
             else if (key.Contains("deep") || key.Contains("probe") || key.Contains("深空") || key.Contains("探测"))

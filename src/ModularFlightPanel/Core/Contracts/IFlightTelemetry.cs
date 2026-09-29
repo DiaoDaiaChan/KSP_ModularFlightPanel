@@ -32,6 +32,44 @@ namespace ModularFlightPanel.Core
     }
 
     /// <summary>
+    /// 单台发动机的实时遥测快照 (纯 C# 值类型，无 KSP 依赖)。
+    /// 用于 EICAS 类多发表组件逐台渲染，天然支持异构发动机集群
+    /// (不同推力/不同燃料类型的发动机各自持有独立读数)。
+    /// </summary>
+    public struct EngineTelemetryInfo
+    {
+        /// <summary>该发动机所在部件名称 (异构集群下用于区分不同型号)。</summary>
+        public string PartName;
+
+        /// <summary>该发动机使用的推进剂显示名 (如 "Liquid Fuel/Oxidizer")。</summary>
+        public string PropellantName;
+
+        /// <summary>指令推力设定 (0~1)：即玩家油门/发动机限制百分比，对应 EICAS 的 N1 读数。</summary>
+        public float CommandedThrottle;
+
+        /// <summary>实时推力 (kN)：该发动机当前实际输出的推力，对应 EICAS 的 N2 读数。</summary>
+        public float CurrentThrust;
+
+        /// <summary>该发动机满推力额定值 (kN)，用于推力百分比归一化。</summary>
+        public float MaxThrust;
+
+        /// <summary>实时燃料消耗率 (kg/s 或单位/s)：用于 FF 读数。</summary>
+        public float FuelFlow;
+
+        /// <summary>是否处于工作状态 (已点火且未熄火)。</summary>
+        public bool IsOperational;
+
+        /// <summary>实时推力占额定推力的比例 (0~1)，安全归一化。</summary>
+        public float ThrustFraction => MaxThrust > 0.001f ? Mathf.Clamp01(CurrentThrust / MaxThrust) : 0f;
+
+        /// <summary>
+        /// 该发动机部件的实时温度 (°C)。取自 KSP 原生 part.temperature，
+        /// 引擎工作时会真实升温，作为 EGT (排气温度) 的可用替代量（非真实排气温度）。
+        /// </summary>
+        public float PartTemperature;
+    }
+
+    /// <summary>
     /// 标准化机载遥测数据接口 (Pure Unity / C# 契约)
     /// 彻底剥离对 KSP 游戏内部类 (Vessel, FlightGlobals, Part, ModuleEngines) 的依赖。
     /// 无论是在真实游戏飞行中、仿真测试模式下，还是在独立的 Unity 编辑器 / 无头渲染环境中，
@@ -87,6 +125,12 @@ namespace ModularFlightPanel.Core
         int CurrentStage { get; }
         int ActiveEngines { get; }
         int TotalStageEngines { get; }
+
+        /// <summary>
+        /// 当前分级所有发动机的逐台遥测快照。顺序稳定 (与部件挂载顺序一致)，
+        /// 供 EICAS 多发组件自适应渲染；无发动机时返回空列表而非 null。
+        /// </summary>
+        IReadOnlyList<EngineTelemetryInfo> Engines { get; }
 
         // 轨道力学与机动节点
         double Apoapsis { get; }

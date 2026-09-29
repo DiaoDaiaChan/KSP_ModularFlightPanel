@@ -860,11 +860,23 @@ namespace ModularFlightPanel.Core
             RegisterNumericToken("VOLT", (t, sub) => t.BusVoltage, "VOLTAGE");
             RegisterStringToken("VOLT", (t, sub, fmt) => FormatNumber(t.BusVoltage, fmt, "F1") + " V", "VOLTAGE");
 
-            RegisterNumericToken("ENG", (t, sub) => (sub == "TOTAL" || sub == "STAGE" || sub == "ALL") ? t.TotalStageEngines : t.ActiveEngines, "ENGINES");
+            RegisterNumericToken("ENG", (t, sub) =>
+            {
+                if (sub == "TOTAL" || sub == "STAGE" || sub == "ALL") return t.TotalStageEngines;
+                if (sub == "N1") return AverageEngineMetric(t, EngineMetric.CommandedThrottlePct);
+                if (sub == "N2") return AverageEngineMetric(t, EngineMetric.ThrustPct);
+                if (sub == "FF") return AverageEngineMetric(t, EngineMetric.FuelFlow);
+                if (sub == "THRUST") return AverageEngineMetric(t, EngineMetric.CurrentThrust);
+                return t.ActiveEngines;
+            }, "ENGINES");
             RegisterStringToken("ENG", (t, sub, fmt) =>
             {
                 if (sub == "TOTAL" || sub == "STAGE" || sub == "ALL") return t.TotalStageEngines.ToString();
                 if (sub == "CLUSTER") return $"{t.ActiveEngines}/{t.TotalStageEngines}";
+                if (sub == "N1") return FormatNumber(AverageEngineMetric(t, EngineMetric.CommandedThrottlePct), fmt, "F1") + "%";
+                if (sub == "N2") return FormatNumber(AverageEngineMetric(t, EngineMetric.ThrustPct), fmt, "F1") + "%";
+                if (sub == "FF") return FormatNumber(AverageEngineMetric(t, EngineMetric.FuelFlow), fmt, "F2");
+                if (sub == "THRUST") return FormatNumber(AverageEngineMetric(t, EngineMetric.CurrentThrust), fmt, "F1") + " kN";
                 return t.ActiveEngines.ToString();
             }, "ENGINES");
 
@@ -952,6 +964,34 @@ namespace ModularFlightPanel.Core
         #endregion
 
         #region Value Formatting Utilities
+
+        private enum EngineMetric { CommandedThrottlePct, ThrustPct, CurrentThrust, FuelFlow }
+
+        /// <summary>
+        /// 对当前分级的全部发动机取指定指标的平均值 (多发表 EICAS 的单值通配符入口)。
+        /// 无发动机时返回 NaN，交由 FormatNumber 渲染为 "---"，绝不伪造读数。
+        /// </summary>
+        private static double AverageEngineMetric(IFlightTelemetry t, EngineMetric metric)
+        {
+            var engines = t.Engines;
+            if (engines == null || engines.Count == 0) return double.NaN;
+
+            double sum = 0.0;
+            int n = 0;
+            for (int i = 0; i < engines.Count; i++)
+            {
+                EngineTelemetryInfo e = engines[i];
+                switch (metric)
+                {
+                    case EngineMetric.CommandedThrottlePct: sum += e.CommandedThrottle * 100.0; break;
+                    case EngineMetric.ThrustPct: sum += e.ThrustFraction * 100.0; break;
+                    case EngineMetric.CurrentThrust: sum += e.CurrentThrust; break;
+                    case EngineMetric.FuelFlow: sum += e.FuelFlow; break;
+                }
+                n++;
+            }
+            return n > 0 ? sum / n : double.NaN;
+        }
 
         private static string FormatNumber(double val, string format, string defaultFmt, string fastSlot = null)
         {
