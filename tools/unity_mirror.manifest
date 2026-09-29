@@ -25,6 +25,7 @@
 !Core/Hooks/StockStageIconHook.cs
 !Core/Hooks/MFPToolbarButton.cs
 !Core/Hooks/DockAnchorTracker.cs
+!Core/Hooks/StockToolbarLifecycle.cs
 !Core/Rendering/VesselSilhouetteBaker.cs
 !Core/Rendering/Vessel3DBaker.cs
 

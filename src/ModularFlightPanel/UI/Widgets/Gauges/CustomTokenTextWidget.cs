@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
@@ -7,221 +9,667 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
-    /// 多通道遥测综合矩阵卡片 (Multi-Channel Flight Telemetry Matrix Card)
-    /// 标准化航电 2x3 高集成度矩阵：
-    /// 默认提供 6 大核心飞行遥测实时监控 (空速/地速、真高、垂直升降率、推重比 TWR、大气动压 Q 与过载 G)，
-    /// 具备独立通道量纲单位与智能告警变色机制，同时向下兼容自定义通配符模板重载。
-    /// 100% 遵照 SPEC-001..008 核心架构规范。
+    /// 多通道遥测综合矩阵卡片 (MechJeb Telemetry Matrix Card)
+    /// 标准化 MechJeb 风格航电矩阵：
+    /// 1. 深度对标 MechJeb 经典监控窗口与 Delta-V 状态表格；
+    /// 2. 支持任意增删行数与列数（1~12 列，1~20 行）；
+    /// 3. 支持键值监控网格 (Key-Value) 与数据表格 (Table) 双模式切换；
+    /// 4. 彻底杜绝文字重叠：标签居左、读数居右、动态弹性分列与微光分隔线；
+    /// 5. 接入 IAdaptiveSizeWidget 动态尺寸自适应协议与 IDynamicSlotWidget 槽位编排协议；
+    /// 6. 100% 遵照 SPEC-001..008 核心架构规范与零颜色字面量铁律。
     /// </summary>
-    [FlightWidget("custom_token", "custom_text", "custom", "telemetry_matrix",
+    [FlightWidget("custom_token", "custom_text", "custom", "telemetry_matrix", "mj_matrix",
         Category = WidgetCategory.Gauges,
         DisplayName = "多通道遥测综合矩阵卡",
-        Description = "开箱即用 2x3 航电遥测数据矩阵：空速、真高、升降率、推重比、动压与过载实时监视，支持通配符模板重载。",
+        Description = "MechJeb 风格高集成度遥测监控矩阵卡：支持任意自定义增减行与列、自由定义标签与通配符、提供键值监控与分级数据表格双模式，智能越限告警变色。",
         DefaultWidgetId = "custom.telemetry_card",
         DefaultX = 0f,
         DefaultY = 0f)]
-    public class CustomTokenTextWidget : BaseFlightWidget
+    public class CustomTokenTextWidget : BaseFlightWidget, IAdaptiveSizeWidget, IDynamicSlotWidget
     {
-        public override Vector2 BaseSize => new Vector2(240f, 96f);
+        public override Vector2 BaseSize => GetDynamicBaseSize();
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Slow;
 
-        /// <summary>
-        /// 语义主题管道 (MFP-SPEC-003)：显式接入 WidgetStyleManager 单向主题下发。
-        /// 视觉全部来自语义角色微控件，因此由基类把主题推送给全部已注册微控件即可。
-        /// </summary>
+        // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget)
+        public bool AllowNonUniformScale => true;
+        public Vector2 MinBaseSize => new Vector2(160f, 50f);
+        public Vector2 MaxBaseSize => new Vector2(1600f, 1000f);
+
+        private float _currentWidth = 280f;
+        private float _currentHeight = 100f;
+        private bool _isCustomResized = false;
+
+        // 顶部标题栏
+        private GameObject _headerObj;
+        private Text _titleText;
+        private Text _badgeText;
+        private Image _headerDivider;
+
+        // 矩阵内容容器
+        private GameObject _gridContainerObj;
+        private RectTransform _gridContainerRt;
+
+        // 运行期网格单元 UI 模型
+        private class CellRuntimeUI
+        {
+            public int Row;
+            public int Col;
+            public string Label = "";
+            public string Token = "";
+
+            public GameObject CellObj;
+            public RectTransform CellRt;
+            public Text LabelText;
+            public Text ValText;
+            public Image ColDivider;
+
+            public string PendingValue = "---";
+            public TextStyleRole PendingRole = TextStyleRole.PrimaryValue;
+            public string LastRenderedValue = null;
+            public TextStyleRole LastRenderedRole = (TextStyleRole)(-1);
+        }
+
+        private class RowRuntimeUI
+        {
+            public int RowIndex;
+            public GameObject RowObj;
+            public RectTransform RowRt;
+            public Image RowBg;
+            public readonly List<CellRuntimeUI> Cells = new List<CellRuntimeUI>();
+        }
+
+        private class TableHeaderRuntimeUI
+        {
+            public GameObject HeaderObj;
+            public RectTransform HeaderRt;
+            public Image HeaderBg;
+            public Image HeaderDivider;
+            public readonly List<Text> HeaderTexts = new List<Text>();
+        }
+
+        private readonly List<RowRuntimeUI> _runtimeRows = new List<RowRuntimeUI>();
+        private TableHeaderRuntimeUI _tableHeaderUI = null;
+        private TelemetryMatrixData _activeData = null;
+        private string _cachedTemplate = null;
+
+        private string _pendingTitle = "多通道遥测综合矩阵卡";
+        private string _pendingBadge = "MJ MATRIX";
+        private string _lastRenderedTitle = null;
+        private string _lastRenderedBadge = null;
+
+        protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
+        {
+            theme = WidgetStyleManager.ResolveTheme(theme);
+            float s = CurrentDpiScale;
+
+            _headerObj = new GameObject("HeaderRow", typeof(RectTransform));
+            _headerObj.transform.SetParent(transform, false);
+            RectTransform hRt = _headerObj.GetComponent<RectTransform>();
+            hRt.anchorMin = new Vector2(0f, 1f);
+            hRt.anchorMax = new Vector2(1f, 1f);
+            hRt.pivot = new Vector2(0.5f, 1f);
+            hRt.anchoredPosition = Vector2.zero;
+            hRt.sizeDelta = new Vector2(0f, 26f * s);
+
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+            _titleText = UIFactory.CreateText(_headerObj.transform, "Title", DisplayName, Mathf.RoundToInt(10f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
+            RectTransform tRt = _titleText.rectTransform;
+            tRt.anchorMin = new Vector2(0f, 0f);
+            tRt.anchorMax = new Vector2(0.7f, 1f);
+            tRt.offsetMin = new Vector2(10f * s, 0f);
+            tRt.offsetMax = Vector2.zero;
+
+            _badgeText = UIFactory.CreateText(_headerObj.transform, "Badge", I18n.Tr("WIDGET_MJ_MATRIX_BADGE", "MJ 矩阵"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            RectTransform bRt = _badgeText.rectTransform;
+            bRt.anchorMin = new Vector2(0.65f, 0f);
+            bRt.anchorMax = new Vector2(1f, 1f);
+            bRt.offsetMin = Vector2.zero;
+            bRt.offsetMax = new Vector2(-10f * s, 0f);
+
+            GameObject divObj = UIFactory.CreatePanel(_headerObj.transform, "HeaderDivider", new Vector2(0f, 1f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
+            _headerDivider = divObj.GetComponent<Image>();
+            RectTransform divRt = _headerDivider.rectTransform;
+            divRt.anchorMin = new Vector2(0f, 0f);
+            divRt.anchorMax = new Vector2(1f, 0f);
+            divRt.pivot = new Vector2(0.5f, 0f);
+            divRt.sizeDelta = new Vector2(-16f * s, 1f * s);
+            divRt.anchoredPosition = new Vector2(0f, 1f * s);
+
+            _gridContainerObj = new GameObject("GridContainer", typeof(RectTransform));
+            _gridContainerObj.transform.SetParent(transform, false);
+            _gridContainerRt = _gridContainerObj.GetComponent<RectTransform>();
+            _gridContainerRt.anchorMin = new Vector2(0f, 0f);
+            _gridContainerRt.anchorMax = new Vector2(1f, 1f);
+            _gridContainerRt.offsetMin = new Vector2(6f * s, 6f * s);
+            _gridContainerRt.offsetMax = new Vector2(-6f * s, -28f * s);
+
+            _cachedTemplate = Config?.CustomTemplate;
+            _activeData = TelemetryMatrixData.FromTemplate(_cachedTemplate);
+            RebuildUI(theme);
+        }
+
+        private Vector2 GetDynamicBaseSize()
+        {
+            var data = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            if (data.Mode == MatrixDisplayMode.Table)
+            {
+                float w = Mathf.Max(260f, data.Columns * 64f + 20f);
+                float h = 28f + 20f + data.Rows * 18f + 10f;
+                return new Vector2(w, h);
+            }
+            else
+            {
+                float colW = data.Columns == 1 ? 240f : 140f;
+                float w = Mathf.Max(200f, data.Columns * colW + 16f);
+                float h = 28f + data.Rows * 20f + 10f;
+                return new Vector2(w, h);
+            }
+        }
+
+        public void OnAdaptiveResize(Vector2 pixelSize)
+        {
+            float s = CurrentDpiScale;
+            _currentWidth = pixelSize.x / s;
+            _currentHeight = pixelSize.y / s;
+            _isCustomResized = true;
+            UpdateLayoutGeometry();
+        }
+
         public override void ApplyTheme(ThemeConfig theme)
         {
             base.ApplyTheme(theme);
+            if (theme == null) return;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            if (_titleText != null) _titleText.color = style.GetTextColor(TextStyleRole.Label, theme);
+            if (_badgeText != null) _badgeText.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
+            if (_headerDivider != null) _headerDivider.color = style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme);
+
+            Color rowTintEven = style.GetSurfaceColor(SurfaceStyleRole.SlotActive, theme);
+            rowTintEven.a = 0.08f;
+            Color rowTintOdd = Color.clear;
+
+            if (_tableHeaderUI != null)
+            {
+                if (_tableHeaderUI.HeaderBg != null) _tableHeaderUI.HeaderBg.color = rowTintEven;
+                if (_tableHeaderUI.HeaderDivider != null) _tableHeaderUI.HeaderDivider.color = style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme);
+                for (int i = 0; i < _tableHeaderUI.HeaderTexts.Count; i++)
+                {
+                    if (_tableHeaderUI.HeaderTexts[i] != null)
+                    {
+                        _tableHeaderUI.HeaderTexts[i].color = style.GetTextColor(TextStyleRole.Label, theme);
+                    }
+                }
+            }
+
+            for (int r = 0; r < _runtimeRows.Count; r++)
+            {
+                var row = _runtimeRows[r];
+                if (row.RowBg != null)
+                {
+                    row.RowBg.color = (r % 2 == 0) ? rowTintEven : rowTintOdd;
+                }
+                for (int c = 0; c < row.Cells.Count; c++)
+                {
+                    var cell = row.Cells[c];
+                    if (cell.LabelText != null) cell.LabelText.color = style.GetTextColor(TextStyleRole.Label, theme);
+                    if (cell.ValText != null) cell.ValText.color = style.GetTextColor(cell.PendingRole, theme);
+                    if (cell.ColDivider != null) cell.ColDivider.color = style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme);
+                }
+            }
         }
 
-        // ── 顶部标题与徽章 ──
-        public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵"));
-        public TextWidget Badge = TextWidget.Badge("6-CH MON");
-
-        // ── 2 列 x 3 行通道矩阵 (左列: 运动学 / 右列: 动力学与力环境) ──
-        // Row 1: SPD (空速) | TWR (推重比)
-        public TextWidget Ch1Label = new TextWidget(TextStyleRole.Label, -112f, 16f, 32f, 16f, 8.5f, TextAnchor.MiddleLeft, "SPD");
-        public TextWidget Ch1Val = new TextWidget(TextStyleRole.PrimaryValue, -80f, 16f, 54f, 16f, 11f, TextAnchor.MiddleRight, "0.0");
-        public TextWidget Ch1Unit = new TextWidget(TextStyleRole.Unit, -24f, 16f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "m/s");
-
-        public TextWidget Ch2Label = new TextWidget(TextStyleRole.Label, 6f, 16f, 32f, 16f, 8.5f, TextAnchor.MiddleLeft, "TWR");
-        public TextWidget Ch2Val = new TextWidget(TextStyleRole.PrimaryValue, 38f, 16f, 54f, 16f, 11f, TextAnchor.MiddleRight, "0.00");
-        public TextWidget Ch2Unit = new TextWidget(TextStyleRole.Unit, 94f, 16f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "x");
-
-        // Row 2: RALT (雷达高) | Q (动压)
-        public TextWidget Ch3Label = new TextWidget(TextStyleRole.Label, -112f, -6f, 32f, 16f, 8.5f, TextAnchor.MiddleLeft, "RALT");
-        public TextWidget Ch3Val = new TextWidget(TextStyleRole.PrimaryValue, -80f, -6f, 54f, 16f, 11f, TextAnchor.MiddleRight, "0");
-        public TextWidget Ch3Unit = new TextWidget(TextStyleRole.Unit, -24f, -6f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "m");
-
-        public TextWidget Ch4Label = new TextWidget(TextStyleRole.Label, 6f, -6f, 32f, 16f, 8.5f, TextAnchor.MiddleLeft, "Q");
-        public TextWidget Ch4Val = new TextWidget(TextStyleRole.PrimaryValue, 38f, -6f, 54f, 16f, 11f, TextAnchor.MiddleRight, "0.0");
-        public TextWidget Ch4Unit = new TextWidget(TextStyleRole.Unit, 94f, -6f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "kPa");
-
-        // Row 3: VSI (升降率) | G (过载)
-        public TextWidget Ch5Label = new TextWidget(TextStyleRole.Label, -112f, -28f, 32f, 16f, 8.5f, TextAnchor.MiddleLeft, "VSI");
-        public TextWidget Ch5Val = new TextWidget(TextStyleRole.PrimaryValue, -80f, -28f, 54f, 16f, 11f, TextAnchor.MiddleRight, "+0.0");
-        public TextWidget Ch5Unit = new TextWidget(TextStyleRole.Unit, -24f, -28f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "m/s");
-
-        public TextWidget Ch6Label = new TextWidget(TextStyleRole.Label, 6f, -28f, 32f, 16f, 8.5f, TextAnchor.MiddleLeft, "G");
-        public TextWidget Ch6Val = new TextWidget(TextStyleRole.PrimaryValue, 38f, -28f, 54f, 16f, 11f, TextAnchor.MiddleRight, "1.00");
-        public TextWidget Ch6Unit = new TextWidget(TextStyleRole.Unit, 94f, -28f, 20f, 16f, 8f, TextAnchor.MiddleLeft, "G");
-
-        // 零 GC 常量池：通道分隔符静态复用，杜绝帧循环内 new[]{...} 堆数组分配
-        private static readonly char[] MultiChannelSeparators = { ';', '\n', '\r' };
-        private static readonly char[] DelimitedSeparators = { '|', '\n', '\r' };
-
-        private string _titleText = string.Empty;
-        private string _ch1Text = "---";
-        private TextStyleRole _ch1Role = TextStyleRole.PrimaryValue;
-        private string _ch2Text = "---";
-        private TextStyleRole _ch2Role = TextStyleRole.PrimaryValue;
-        private string _ch3Text = "---";
-        private TextStyleRole _ch3Role = TextStyleRole.PrimaryValue;
-        private string _ch4Text = "---";
-        private TextStyleRole _ch4Role = TextStyleRole.PrimaryValue;
-        private string _ch5Text = "---";
-        private TextStyleRole _ch5Role = TextStyleRole.PrimaryValue;
-        private string _ch6Text = "---";
-        private TextStyleRole _ch6Role = TextStyleRole.PrimaryValue;
+        private bool _needsUiRebuild = false;
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
             IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
+
+            string curTpl = Config?.CustomTemplate;
+            if (curTpl != _cachedTemplate)
             {
-                _ch1Text = "---";
-                _ch2Text = "---";
-                _ch3Text = "---";
-                _ch4Text = "---";
-                _ch5Text = "---";
-                _ch6Text = "---";
+                _cachedTemplate = curTpl;
+                _activeData = TelemetryMatrixData.FromTemplate(_cachedTemplate);
+                _needsUiRebuild = true;
+            }
+
+            string displayTitle = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : I18n.Tr("WIDGET_NAME_CUSTOM_TOKEN", "多通道遥测综合矩阵卡");
+            _pendingTitle = EvalToken(displayTitle, telemetry, displayTitle);
+
+            if (_activeData != null)
+            {
+                _pendingBadge = (_activeData.Mode == MatrixDisplayMode.Table) 
+                    ? $"{_activeData.Columns}-COL TABLE" 
+                    : $"{_activeData.Rows}x{_activeData.Columns} MJ";
+            }
+
+            if (_activeData == null || telemetry == null || !telemetry.HasVessel)
+            {
+                SetAllCellsFallback("---", TextStyleRole.PrimaryValue);
                 return;
             }
 
-            // 自定义标题更新
-            string titleTpl = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵");
-            _titleText = EvalToken(titleTpl, telemetry, I18n.Tr("WIDGET_GAUGE_TELEM_MATRIX", "遥测矩阵"));
-
-            // 检查是否有自定义模板覆盖
-            string customTpl = Config?.CustomTemplate;
-            if (!string.IsNullOrEmpty(customTpl))
+            for (int r = 0; r < _runtimeRows.Count; r++)
             {
-                if (customTpl.IndexOf('=') >= 0)
+                var row = _runtimeRows[r];
+                for (int c = 0; c < row.Cells.Count; c++)
                 {
-                    // 具备通道键值对解析：CH1=...;CH2=...
-                    ParseCustomMultiChannel(customTpl, telemetry);
-                    return;
-                }
-                else
-                {
-                    // 智能容错：用户输入了未带通道前缀的由 '|'、换行或逗号分隔的通配符列表
-                    ParseDelimitedChannels(customTpl, telemetry);
-                    return;
+                    var cell = row.Cells[c];
+                    if (string.IsNullOrEmpty(cell.Token))
+                    {
+                        cell.PendingValue = "---";
+                        cell.PendingRole = TextStyleRole.PrimaryValue;
+                        continue;
+                    }
+
+                    string evalStr = EvalToken(cell.Token, telemetry, "---");
+                    cell.PendingValue = evalStr;
+
+                    // 航电语义越限告警判定 (Q 动压、过载 G、推重比 TWR、升降率 VSI 智能求值)
+                    cell.PendingRole = EvaluateSemanticRole(cell.Token, telemetry);
                 }
             }
-
-            // 1. SPD: 当前地速/空速 (优先参考系真实速度)
-            double spd = telemetry.SurfaceSpeed;
-            _ch1Text = spd >= 10000.0 ? (spd * 0.001).ToString("F1") + "k" : spd.ToString("F1");
-            _ch1Role = TextStyleRole.PrimaryValue;
-
-            // 2. TWR: 实际可用推重比
-            double twr = telemetry.TWR;
-            _ch2Text = twr.ToString("F2");
-            _ch2Role = twr > 0.05 && twr < 1.0 && telemetry.AltitudeAGL < 1000.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue;
-
-            // 3. RALT: 雷达真高 (AGL)
-            double ralt = telemetry.AltitudeAGL;
-            _ch3Text = ralt >= 100000.0 ? (ralt * 0.001).ToString("F0") + "k" : ralt.ToString("F0");
-            _ch3Role = TextStyleRole.PrimaryValue;
-
-            // 4. Q: 动压 (kPa)
-            double q = telemetry.DynamicPressure;
-            _ch4Text = q.ToString("F1");
-            _ch4Role = q > 35.0 ? TextStyleRole.Danger : (q > 25.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
-
-            // 5. VSI: 垂直速度
-            double vsi = telemetry.VerticalSpeed;
-            _ch5Text = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
-            _ch5Role = vsi < -50.0 && ralt < 3000.0 ? TextStyleRole.Danger : TextStyleRole.PrimaryValue;
-
-            // 6. G: 当前加速度过载
-            double g = telemetry.GForce;
-            _ch6Text = g.ToString("F2");
-            _ch6Role = g > 6.0 ? TextStyleRole.Danger : (g > 4.0 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
 
-            Title.Text = _titleText;
-
-            Ch1Val.Text = _ch1Text;
-            Ch1Val.SetRole(_ch1Role);
-
-            Ch2Val.Text = _ch2Text;
-            Ch2Val.SetRole(_ch2Role);
-
-            Ch3Val.Text = _ch3Text;
-            Ch3Val.SetRole(_ch3Role);
-
-            Ch4Val.Text = _ch4Text;
-            Ch4Val.SetRole(_ch4Role);
-
-            Ch5Val.Text = _ch5Text;
-            Ch5Val.SetRole(_ch5Role);
-
-            Ch6Val.Text = _ch6Text;
-            Ch6Val.SetRole(_ch6Role);
-        }
-
-        private void ParseCustomMultiChannel(string template, IFlightTelemetry telemetry)
-        {
-            string[] pairs = template.Split(MultiChannelSeparators, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var p in pairs)
+            if (_needsUiRebuild)
             {
-                int eq = p.IndexOf('=');
-                if (eq <= 0) continue;
-                string key = p.Substring(0, eq).Trim().ToUpperInvariant();
-                string token = (eq < p.Length - 1) ? p.Substring(eq + 1).Trim() : string.Empty;
-                switch (key)
+                _needsUiRebuild = false;
+                RebuildUI(context.Theme);
+            }
+
+            if (_titleText != null && _pendingTitle != _lastRenderedTitle)
+            {
+                _lastRenderedTitle = _pendingTitle;
+                _titleText.SetTextSafe(_pendingTitle);
+            }
+
+            if (_badgeText != null && _badgeBadgeChanged())
+            {
+                _lastRenderedBadge = _pendingBadge;
+                _badgeText.SetTextSafe(_pendingBadge);
+            }
+
+            var theme = context.Theme;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            for (int r = 0; r < _runtimeRows.Count; r++)
+            {
+                var row = _runtimeRows[r];
+                for (int c = 0; c < row.Cells.Count; c++)
                 {
-                    case "CH1": _ch1Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH2": _ch2Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH3": _ch3Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH4": _ch4Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH5": _ch5Text = EvalToken(token, telemetry, "---"); break;
-                    case "CH6": _ch6Text = EvalToken(token, telemetry, "---"); break;
+                    var cell = row.Cells[c];
+                    if (cell.ValText != null)
+                    {
+                        if (cell.PendingValue != cell.LastRenderedValue)
+                        {
+                            cell.LastRenderedValue = cell.PendingValue;
+                            cell.ValText.SetTextSafe(cell.PendingValue);
+                        }
+
+                        if (cell.PendingRole != cell.LastRenderedRole)
+                        {
+                            cell.LastRenderedRole = cell.PendingRole;
+                            cell.ValText.color = style.GetTextColor(cell.PendingRole, theme);
+                        }
+                    }
                 }
             }
         }
 
-        private void ParseDelimitedChannels(string template, IFlightTelemetry telemetry)
+        private bool _badgeBadgeChanged()
         {
-            string[] tokens = template.Split(DelimitedSeparators, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < tokens.Length && i < 6; i++)
-            {
-                string tok = tokens[i].Trim();
-                int braceStart = tok.IndexOf('{');
-                int braceEnd = tok.LastIndexOf('}');
-                string evalStr = (braceStart >= 0 && braceEnd > braceStart) 
-                    ? tok.Substring(braceStart, braceEnd - braceStart + 1) 
-                    : tok;
+            return _pendingBadge != _lastRenderedBadge;
+        }
 
-                string res = EvalToken(evalStr, telemetry, "---");
-                switch (i)
+        private TextStyleRole EvaluateSemanticRole(string token, IFlightTelemetry telemetry)
+        {
+            string u = token.ToUpperInvariant();
+            if (u.Contains("Q") && !u.Contains("STATUS") && !u.Contains("EQUAT"))
+            {
+                double q = telemetry.DynamicPressure;
+                if (q > 35.0) return TextStyleRole.Danger;
+                if (q > 25.0) return TextStyleRole.Warning;
+            }
+            else if (u.Contains("GFORCE") || u == "{G}")
+            {
+                double g = telemetry.GForce;
+                if (g > 6.0) return TextStyleRole.Danger;
+                if (g > 4.0) return TextStyleRole.Warning;
+            }
+            else if (u.Contains("TWR"))
+            {
+                double twr = telemetry.TWR;
+                if (twr > 0.05 && twr < 1.0 && telemetry.AltitudeAGL < 1000.0) return TextStyleRole.Warning;
+            }
+            else if (u.Contains("VSI"))
+            {
+                double vsi = telemetry.VerticalSpeed;
+                if (vsi < -50.0 && telemetry.AltitudeAGL < 3000.0) return TextStyleRole.Danger;
+            }
+            return TextStyleRole.PrimaryValue;
+        }
+
+        private void SetAllCellsFallback(string fallback, TextStyleRole role)
+        {
+            for (int r = 0; r < _runtimeRows.Count; r++)
+            {
+                var row = _runtimeRows[r];
+                for (int c = 0; c < row.Cells.Count; c++)
                 {
-                    case 0: _ch1Text = res; break;
-                    case 1: _ch2Text = res; break;
-                    case 2: _ch3Text = res; break;
-                    case 3: _ch4Text = res; break;
-                    case 4: _ch5Text = res; break;
-                    case 5: _ch6Text = res; break;
+                    row.Cells[c].PendingValue = fallback;
+                    row.Cells[c].PendingRole = role;
                 }
             }
+        }
+
+        private void RebuildUI(ThemeConfig theme)
+        {
+            theme = theme ?? WidgetStyleManager.ResolveTheme(null);
+            if (!_isCustomResized)
+            {
+                Vector2 dynSize = GetDynamicBaseSize();
+                _currentWidth = dynSize.x;
+                _currentHeight = dynSize.y;
+                RectTransform.sizeDelta = dynSize * CurrentDpiScale;
+            }
+
+            BuildGridUI(theme);
+            ApplyTheme(theme);
+        }
+
+        private void BuildGridUI(ThemeConfig theme)
+        {
+            float s = CurrentDpiScale;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
+            // 清理既有网格节点
+            for (int i = _gridContainerRt.childCount - 1; i >= 0; i--)
+            {
+                Destroy(_gridContainerRt.GetChild(i).gameObject);
+            }
+            _runtimeRows.Clear();
+            _tableHeaderUI = null;
+
+            if (_activeData == null) return;
+
+            bool isTable = (_activeData.Mode == MatrixDisplayMode.Table);
+
+            // 1. 若为表格模式，构建顶部列标题行
+            if (isTable)
+            {
+                _tableHeaderUI = new TableHeaderRuntimeUI();
+                GameObject thGo = UIFactory.CreatePanel(_gridContainerRt, "TableHeaderRow", new Vector2(0f, 20f * s), Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.SlotActive, theme));
+                _tableHeaderUI.HeaderObj = thGo;
+                _tableHeaderUI.HeaderRt = thGo.GetComponent<RectTransform>();
+                _tableHeaderUI.HeaderBg = thGo.GetComponent<Image>();
+
+                _tableHeaderUI.HeaderRt.anchorMin = new Vector2(0f, 1f);
+                _tableHeaderUI.HeaderRt.anchorMax = new Vector2(1f, 1f);
+                _tableHeaderUI.HeaderRt.pivot = new Vector2(0f, 1f);
+                _tableHeaderUI.HeaderRt.anchoredPosition = Vector2.zero;
+                _tableHeaderUI.HeaderRt.sizeDelta = new Vector2(0f, 20f * s);
+
+                // 表头下横线
+                GameObject hDivObj = UIFactory.CreatePanel(thGo.transform, "HLine", new Vector2(0f, 1f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
+                _tableHeaderUI.HeaderDivider = hDivObj.GetComponent<Image>();
+                RectTransform hDivRt = _tableHeaderUI.HeaderDivider.rectTransform;
+                hDivRt.anchorMin = new Vector2(0f, 0f);
+                hDivRt.anchorMax = new Vector2(1f, 0f);
+                hDivRt.pivot = new Vector2(0f, 0f);
+                hDivRt.sizeDelta = new Vector2(0f, 1f * s);
+                hDivRt.anchoredPosition = Vector2.zero;
+
+                for (int c = 0; c < _activeData.Columns; c++)
+                {
+                    string hText = (c < _activeData.TableHeaders.Count) ? _activeData.TableHeaders[c] : $"Col {c + 1}";
+                    Text txt = UIFactory.CreateText(thGo.transform, $"H_{c}", hText, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
+                    _tableHeaderUI.HeaderTexts.Add(txt);
+                }
+            }
+
+            // 2. 构建数据行与单元格
+            for (int r = 0; r < _activeData.Rows; r++)
+            {
+                var rowUi = new RowRuntimeUI { RowIndex = r };
+                GameObject rGo = UIFactory.CreatePanel(_gridContainerRt, $"Row_{r}", new Vector2(0f, 20f * s), Vector2.zero, Color.clear);
+                rowUi.RowObj = rGo;
+                rowUi.RowRt = rGo.GetComponent<RectTransform>();
+                rowUi.RowBg = rGo.GetComponent<Image>();
+
+                rowUi.RowRt.anchorMin = new Vector2(0f, 1f);
+                rowUi.RowRt.anchorMax = new Vector2(1f, 1f);
+                rowUi.RowRt.pivot = new Vector2(0f, 1f);
+
+                for (int c = 0; c < _activeData.Columns; c++)
+                {
+                    var cellData = (r < _activeData.Grid.Count && c < _activeData.Grid[r].Count) ? _activeData.Grid[r][c] : new MatrixCellData();
+                    var cellUi = new CellRuntimeUI
+                    {
+                        Row = r,
+                        Col = c,
+                        Label = cellData.Label,
+                        Token = cellData.Token
+                    };
+
+                    GameObject cGo = new GameObject($"Cell_{r}_{c}", typeof(RectTransform));
+                    cGo.transform.SetParent(rGo.transform, false);
+                    cellUi.CellObj = cGo;
+                    cellUi.CellRt = cGo.GetComponent<RectTransform>();
+
+                    if (isTable)
+                    {
+                        // 表格数据单元格：单数值居中或靠右
+                        cellUi.ValText = UIFactory.CreateText(cGo.transform, "Val", "---", Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        RectTransform vRt = cellUi.ValText.rectTransform;
+                        vRt.anchorMin = Vector2.zero;
+                        vRt.anchorMax = Vector2.one;
+                        vRt.offsetMin = new Vector2(2f * s, 0f);
+                        vRt.offsetMax = new Vector2(-2f * s, 0f);
+                    }
+                    else
+                    {
+                        // 键值网格单元格：左侧标签，右侧数值，绝不重叠
+                        cellUi.LabelText = UIFactory.CreateText(cGo.transform, "Lbl", cellUi.Label, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
+                        RectTransform lRt = cellUi.LabelText.rectTransform;
+                        lRt.anchorMin = new Vector2(0f, 0f);
+                        lRt.anchorMax = new Vector2(0.48f, 1f);
+                        lRt.offsetMin = new Vector2(6f * s, 0f);
+                        lRt.offsetMax = Vector2.zero;
+
+                        cellUi.ValText = UIFactory.CreateText(cGo.transform, "Val", "---", Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        RectTransform vRt = cellUi.ValText.rectTransform;
+                        vRt.anchorMin = new Vector2(0.48f, 0f);
+                        vRt.anchorMax = new Vector2(1f, 1f);
+                        vRt.offsetMin = Vector2.zero;
+                        vRt.offsetMax = new Vector2(-6f * s, 0f);
+
+                        // 列间微光垂直分割线
+                        if (c > 0)
+                        {
+                            GameObject sep = UIFactory.CreatePanel(cGo.transform, "VSep", new Vector2(1f * s, 14f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
+                            cellUi.ColDivider = sep.GetComponent<Image>();
+                            RectTransform sepRt = cellUi.ColDivider.rectTransform;
+                            sepRt.anchorMin = new Vector2(0f, 0.5f);
+                            sepRt.anchorMax = new Vector2(0f, 0.5f);
+                            sepRt.pivot = new Vector2(0.5f, 0.5f);
+                            sepRt.anchoredPosition = Vector2.zero;
+                            sepRt.sizeDelta = new Vector2(1f * s, 14f * s);
+                        }
+                    }
+
+                    rowUi.Cells.Add(cellUi);
+                }
+
+                _runtimeRows.Add(rowUi);
+            }
+
+            UpdateLayoutGeometry();
+        }
+
+        private void UpdateLayoutGeometry()
+        {
+            if (_activeData == null) return;
+            float s = CurrentDpiScale;
+            bool isTable = (_activeData.Mode == MatrixDisplayMode.Table);
+
+            int cols = Mathf.Max(1, _activeData.Columns);
+            int rows = Mathf.Max(1, _activeData.Rows);
+
+            float headerH = isTable ? 20f * s : 0f;
+            float totalContentH = _currentHeight * s - 36f * s;
+            float availRowsH = Mathf.Max(20f * s, totalContentH - headerH);
+            float rowH = Mathf.Max(16f * s, availRowsH / rows);
+
+            if (_tableHeaderUI != null && isTable)
+            {
+                _tableHeaderUI.HeaderRt.anchoredPosition = Vector2.zero;
+                _tableHeaderUI.HeaderRt.sizeDelta = new Vector2(0f, headerH);
+                for (int c = 0; c < _tableHeaderUI.HeaderTexts.Count; c++)
+                {
+                    Text t = _tableHeaderUI.HeaderTexts[c];
+                    if (t != null)
+                    {
+                        RectTransform tRt = t.rectTransform;
+                        tRt.anchorMin = new Vector2((float)c / cols, 0f);
+                        tRt.anchorMax = new Vector2((float)(c + 1) / cols, 1f);
+                        tRt.offsetMin = new Vector2(2f * s, 0f);
+                        tRt.offsetMax = new Vector2(-2f * s, 0f);
+                    }
+                }
+            }
+
+            float startY = isTable ? -headerH : 0f;
+            for (int r = 0; r < _runtimeRows.Count; r++)
+            {
+                var rowUi = _runtimeRows[r];
+                rowUi.RowRt.anchoredPosition = new Vector2(0f, startY - r * rowH);
+                rowUi.RowRt.sizeDelta = new Vector2(0f, rowH);
+
+                for (int c = 0; c < rowUi.Cells.Count; c++)
+                {
+                    var cell = rowUi.Cells[c];
+                    cell.CellRt.anchorMin = new Vector2((float)c / cols, 0f);
+                    cell.CellRt.anchorMax = new Vector2((float)(c + 1) / cols, 1f);
+                    cell.CellRt.offsetMin = Vector2.zero;
+                    cell.CellRt.offsetMax = Vector2.zero;
+                }
+            }
+        }
+
+        // ==========================================
+        // IDynamicSlotWidget 契约接口显式实现
+        // ==========================================
+        public string SlotOrchestratorTitle => I18n.Tr("MJ_SLOT_ORCHESTRATOR_TITLE", "MJ 综合遥测矩阵: 自由加减行与列、自定义标签与 736+ 参数");
+
+        private readonly List<DynamicSlotDescriptor> _cachedDescriptors = new List<DynamicSlotDescriptor>();
+        public IReadOnlyList<DynamicSlotDescriptor> DynamicSlots
+        {
+            get
+            {
+                _cachedDescriptors.Clear();
+                if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+                for (int r = 0; r < _activeData.Rows; r++)
+                {
+                    for (int c = 0; c < _activeData.Columns; c++)
+                    {
+                        var cell = _activeData.Grid[r][c];
+                        string title = string.IsNullOrEmpty(cell.Label) ? $"R{r + 1}C{c + 1}" : cell.Label;
+                        _cachedDescriptors.Add(new DynamicSlotDescriptor($"slot_{r}_{c}", title, cell.Token, c < _activeData.Columns - 1));
+                    }
+                }
+                return _cachedDescriptors;
+            }
+        }
+
+        public void AddDynamicSlot(string token, string title = null)
+        {
+            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            _activeData.AddRow();
+            int lastRow = _activeData.Rows - 1;
+            if (_activeData.Grid[lastRow].Count > 0)
+            {
+                _activeData.Grid[lastRow][0].Token = token;
+                if (!string.IsNullOrEmpty(title)) _activeData.Grid[lastRow][0].Label = title;
+            }
+            SaveAndApplyTemplate();
+        }
+
+        public void RemoveDynamicSlot(int index)
+        {
+            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            if (index >= 0 && index < _activeData.Rows)
+            {
+                _activeData.RemoveRow(index);
+                SaveAndApplyTemplate();
+            }
+        }
+
+        public void MoveDynamicSlot(int fromIndex, int toIndex)
+        {
+            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            _activeData.MoveRow(fromIndex, toIndex);
+            SaveAndApplyTemplate();
+        }
+
+        public void ToggleDynamicSlotSeparator(int index)
+        {
+            // 分割线随列数自动维护
+        }
+
+        public void UpdateDynamicSlotToken(int index, string newToken)
+        {
+            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            int cols = _activeData.Columns;
+            int r = index / cols;
+            int c = index % cols;
+            if (r < _activeData.Rows && c < cols)
+            {
+                _activeData.Grid[r][c].Token = newToken;
+                SaveAndApplyTemplate();
+            }
+        }
+
+        public void UpdateDynamicSlotTitle(int index, string newTitle)
+        {
+            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            int cols = _activeData.Columns;
+            int r = index / cols;
+            int c = index % cols;
+            if (r < _activeData.Rows && c < cols)
+            {
+                _activeData.Grid[r][c].Label = newTitle;
+                SaveAndApplyTemplate();
+            }
+        }
+
+        public void ResetToDefaultDynamicSlots()
+        {
+            _activeData = TelemetryMatrixData.CreateDefaultKeyValue();
+            SaveAndApplyTemplate();
+        }
+
+        private void SaveAndApplyTemplate()
+        {
+            if (Config != null)
+            {
+                Config.CustomTemplate = _activeData.ToTemplate();
+            }
+            _cachedTemplate = Config?.CustomTemplate;
+            _needsUiRebuild = true;
+            WidgetLayoutManager.Instance?.SaveLayout();
+        }
+
+        protected override void OnDestroy()
+        {
+            this.Controls.UnregisterAll();
+            base.OnDestroy();
         }
     }
 }

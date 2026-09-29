@@ -152,12 +152,12 @@ namespace ModularFlightPanel.Core
                         }
                     }
                 }
-#endif
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[ModularFlightPanel] HideStockToolbar warning: {ex.Message}");
             }
+#endif
         }
 
 #if KSP_RUNTIME

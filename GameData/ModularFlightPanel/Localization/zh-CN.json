@@ -1319,7 +1319,21 @@
     "DRAWER_BTN_APPLY": "✔ 选用",
     "DRAWER_TOAST_APPLIED": "已填入参数: {0}",
     "DRAWER_BTN_COPY": "\uD83D\uDCCB 复制",
-    "DRAWER_TOAST_COPIED": "已复制 {0} 到剪贴板",
-    "SPX_HEADER_SLOT_TITLE": "SpaceX 顶栏动态槽位: 可自由加减数据列、调整顺序与分隔线"
+    "SPX_HEADER_SLOT_TITLE": "SpaceX 顶栏动态槽位: 可自由加减数据列、调整顺序与分隔线",
+    "MJ_SLOT_ORCHESTRATOR_TITLE": "MJ 综合遥测矩阵: 自由加减行与列、自定义标签与 736+ 参数",
+    "ASM_CARD_CHANNELS_MJ": "🎛️ MechJeb 综合遥测矩阵配置",
+    "ASM_MODE_KV": "🎛️ 键值网格模式",
+    "ASM_MODE_TABLE": "📊 数据表格模式",
+    "ASM_PRESET_MJ_2COL": "🚀 经典 2 列 (6 通道)",
+    "ASM_PRESET_MJ_1COL": "📋 单列监控",
+    "ASM_PRESET_MJ_TABLE": "📊 分级 ΔV 表格",
+    "ASM_PRESET_MJ_ORBIT": "🛰️ 轨道机动",
+    "ASM_COLS_LABEL": "列数: {0}",
+    "ASM_ROWS_LABEL": "行数: {0}",
+    "ASM_BTN_ADD_ROW": "+ 添加行",
+    "ASM_BTN_DEL_ROW": "🗑 删除",
+    "ASM_ROW_HEADER": "行 #{0}",
+    "ASM_TBL_HEADERS_TITLE": "表格各列标题 (表头):",
+    "WIDGET_MJ_MATRIX_BADGE": "MJ 矩阵"
   }
 }

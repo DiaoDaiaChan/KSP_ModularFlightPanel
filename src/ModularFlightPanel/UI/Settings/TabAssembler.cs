@@ -388,7 +388,7 @@ namespace ModularFlightPanel.UI.Settings
             }
             else if (typeName == "custom_token" || typeName == "custom")
             {
-                newCfg.CustomTemplate = "CH1={SPD};CH2={TWR};CH3={ALT:AGL};CH4={Q};CH5={VSI};CH6={GFORCE};";
+                newCfg.CustomTemplate = TelemetryMatrixData.CreateDefaultKeyValue().ToTemplate();
             }
 
             layout.Widgets.Add(newCfg);
@@ -719,12 +719,12 @@ namespace ModularFlightPanel.UI.Settings
         {
             MFPGuiSkin.BeginCard();
 
-            // 标题与模式切换
+            // 标题与源码/可视化模式切换
             GUILayout.BeginHorizontal();
-            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CARD_CHANNELS", "🎛️ 多通道遥测矩阵插槽配置"));
+            MFPGuiSkin.DrawHeader(I18n.Tr("ASM_CARD_CHANNELS_MJ", "🎛️ MechJeb 综合遥测矩阵配置"));
 
-            string modeBtnLabel = _showRawTemplateSource ? I18n.Tr("ASM_MODE_VISUAL", "🎛️ 可视化插槽模式") : I18n.Tr("ASM_MODE_RAW", "📝 原始模板源码");
-            if (GUILayout.Button(modeBtnLabel, MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(125f), GUILayout.Height(22f)))
+            string modeBtnLabel = _showRawTemplateSource ? I18n.Tr("ASM_MODE_VISUAL", "🎛️ 可视化矩阵模式") : I18n.Tr("ASM_MODE_RAW", "📝 原始模板源码");
+            if (GUILayout.Button(modeBtnLabel, MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(130f), GUILayout.Height(22f)))
             {
                 _showRawTemplateSource = !_showRawTemplateSource;
             }
@@ -736,8 +736,8 @@ namespace ModularFlightPanel.UI.Settings
                 // 模式 1: 原始模板源码 (Raw Code)
                 // ==========================================
                 MFPGuiSkin.BeginInset();
-                GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=11>{I18n.Tr("ASM_RAW_TPL_DESC", "直接编辑分号或管道分隔模板 (格式: CH1={TOKEN};CH2={TOKEN}; 或 TOKEN1 | TOKEN2)：")}</size></color>");
-                string newTemplate = GUILayout.TextArea(w.CustomTemplate ?? "", GUILayout.Height(55f));
+                GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=11>{I18n.Tr("ASM_RAW_TPL_DESC", "直接编辑结构化通道模板 (格式: MODE=KV/TABLE;COLS=N;ROWS=M; 或 CH1={TOKEN};)：")}</size></color>");
+                string newTemplate = GUILayout.TextArea(w.CustomTemplate ?? "", GUILayout.Height(65f));
                 if (newTemplate != w.CustomTemplate)
                 {
                     w.CustomTemplate = newTemplate;
@@ -746,11 +746,6 @@ namespace ModularFlightPanel.UI.Settings
                 }
 
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button(I18n.Tr("ASM_BTN_ADD_PIPE", "+ ' | ' 分隔符"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f)))
-                {
-                    w.CustomTemplate = (w.CustomTemplate ?? "") + " | ";
-                    MarkDirty();
-                }
                 if (GUILayout.Button(I18n.Tr("ASM_BTN_ADD_SEMICOLON", "+ 分号 ';'"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f)))
                 {
                     w.CustomTemplate = (w.CustomTemplate ?? "") + ";";
@@ -768,71 +763,317 @@ namespace ModularFlightPanel.UI.Settings
             else
             {
                 // ==========================================
-                // 模式 2: 可视化通道插槽 (Visual Channel Form)
+                // 模式 2: 可视化矩阵编排 (Visual Matrix Form)
                 // ==========================================
-                var channelDict = ParseChannelsFromTemplate(w.CustomTemplate);
+                var matrixData = TelemetryMatrixData.FromTemplate(w.CustomTemplate);
+                bool isTable = (matrixData.Mode == MatrixDisplayMode.Table);
 
-                for (int i = 0; i < 6; i++)
-                {
-                    string chKey = DefaultChannelKeys[i];
-                    string chName = GetDefaultChannelName(i);
-                    string defaultToken = DefaultChannelTokens[i];
-
-                    string currentVal;
-                    bool isCustom = channelDict.TryGetValue(chKey, out currentVal);
-                    if (!isCustom) currentVal = defaultToken;
-
-                    MFPGuiSkin.BeginInset();
-                    GUILayout.BeginHorizontal();
-
-                    // 通道标签
-                    GUILayout.Label($"<b>{chKey}</b> <size=10><color=#{MFPGuiSkin.HexTextSecondary}>({chName})</color></size>", GUILayout.Width(140f));
-
-                    // Token 输入框
-                    string editedToken = GUILayout.TextField(currentVal ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Width(170f));
-                    if (editedToken != currentVal)
-                    {
-                        SetChannelInTemplate(w, chKey, editedToken);
-                    }
-
-                    // 🔍 选参数按钮
-                    if (GUILayout.Button(I18n.Tr("ASM_BTN_PICK_PARAM", "🔍 选参数"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(72f), GUILayout.Height(22f)))
-                    {
-                        string targetKey = chKey;
-                        TelemetryParamDrawer.Open($"{w.DisplayName} {targetKey}", token =>
-                        {
-                            SetChannelInTemplate(w, targetKey, token);
-                        });
-                    }
-
-                    // 实时解算采样预览
-                    string sampleVal = GetSampledTokenValue(currentVal);
-                    GUILayout.Space(6f);
-                    GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color>", GUILayout.Width(80f));
-
-                    GUILayout.FlexibleSpace();
-
-                    // 还原或清空
-                    if (GUILayout.Button("↺", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f), GUILayout.Height(22f)))
-                    {
-                        SetChannelInTemplate(w, chKey, defaultToken);
-                    }
-
-                    GUILayout.EndHorizontal();
-                    MFPGuiSkin.EndInset();
-                    GUILayout.Space(2f);
-                }
-
-                GUILayout.Space(2f);
+                // 1. 常用 MechJeb 预设快速生成栏
+                MFPGuiSkin.BeginInset();
+                GUILayout.Label($"<b><size=10><color=#{MFPGuiSkin.HexAccentCyan}>{I18n.Tr("ASM_QUICK_PRESET_TITLE", "MechJeb 航电矩阵常用预设:")}</color></size></b>");
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button(I18n.Tr("ASM_BTN_RESET_CHANNELS", "↺ 一键恢复 6 通道标准预设"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(22f)))
+                if (GUILayout.Button(I18n.Tr("ASM_PRESET_MJ_2COL", "🚀 经典 2 列 (6 通道)"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
                 {
-                    w.CustomTemplate = "CH1={SPD};CH2={TWR};CH3={ALT:AGL};CH4={Q};CH5={VSI};CH6={GFORCE};";
+                    w.CustomTemplate = TelemetryMatrixData.CreateDefaultKeyValue().ToTemplate();
                     MarkDirty();
                     FlightHUDManager.Instance?.RebuildHUD();
-                    ShowToast(I18n.Tr("ASM_TOAST_RESET_CHANNELS", "✔ 已重置为 6 通道航电标准预设"));
+                    ShowToast("✔ 已应用 MechJeb 经典 2 列遥测矩阵");
+                    return;
+                }
+                if (GUILayout.Button(I18n.Tr("ASM_PRESET_MJ_1COL", "📋 单列监控"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+                {
+                    w.CustomTemplate = TelemetryMatrixData.CreateSingleColumnMonitor().ToTemplate();
+                    MarkDirty();
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    ShowToast("✔ 已应用 MechJeb 单列综合监控卡");
+                    return;
+                }
+                if (GUILayout.Button(I18n.Tr("ASM_PRESET_MJ_TABLE", "📊 分级 ΔV 表格"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+                {
+                    w.CustomTemplate = TelemetryMatrixData.CreateDefaultTable().ToTemplate();
+                    MarkDirty();
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    ShowToast("✔ 已应用 MechJeb 分级 ΔV 数据表");
+                    return;
+                }
+                if (GUILayout.Button(I18n.Tr("ASM_PRESET_MJ_ORBIT", "🛰️ 轨道机动"), MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+                {
+                    w.CustomTemplate = TelemetryMatrixData.CreateOrbitalMatrix().ToTemplate();
+                    MarkDirty();
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    ShowToast("✔ 已应用轨道与机动参数矩阵");
+                    return;
                 }
                 GUILayout.EndHorizontal();
+                MFPGuiSkin.EndInset();
+
+                GUILayout.Space(4f);
+
+                // 2. 模式与行列维度控制栏
+                MFPGuiSkin.BeginInset();
+                GUILayout.BeginHorizontal();
+
+                // 模式切换
+                bool newIsTable = GUILayout.Toggle(isTable, isTable ? I18n.Tr("ASM_MODE_TABLE", "📊 数据表格模式") : I18n.Tr("ASM_MODE_KV", "🎛️ 键值网格模式"), GUILayout.Width(130f));
+                if (newIsTable != isTable)
+                {
+                    matrixData.Mode = newIsTable ? MatrixDisplayMode.Table : MatrixDisplayMode.KeyValue;
+                    if (newIsTable && matrixData.TableHeaders.Count == 0)
+                    {
+                        for (int c = 0; c < matrixData.Columns; c++) matrixData.TableHeaders.Add($"Col {c + 1}");
+                    }
+                    w.CustomTemplate = matrixData.ToTemplate();
+                    MarkDirty();
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    return;
+                }
+
+                GUILayout.Space(10f);
+
+                // 列数步进器
+                GUILayout.Label(string.Format(I18n.Tr("ASM_COLS_LABEL", "列数: {0}"), matrixData.Columns), GUILayout.Width(65f));
+                if (GUILayout.Button("-", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(20f)))
+                {
+                    if (matrixData.Columns > 1)
+                    {
+                        matrixData.SetColumns(matrixData.Columns - 1);
+                        w.CustomTemplate = matrixData.ToTemplate();
+                        MarkDirty();
+                        FlightHUDManager.Instance?.RebuildHUD();
+                        return;
+                    }
+                }
+                if (GUILayout.Button("+", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(20f)))
+                {
+                    if (matrixData.Columns < 12)
+                    {
+                        matrixData.SetColumns(matrixData.Columns + 1);
+                        w.CustomTemplate = matrixData.ToTemplate();
+                        MarkDirty();
+                        FlightHUDManager.Instance?.RebuildHUD();
+                        return;
+                    }
+                }
+
+                GUILayout.Space(12f);
+
+                // 行数提示与添加行按钮
+                GUILayout.Label(string.Format(I18n.Tr("ASM_ROWS_LABEL", "行数: {0}"), matrixData.Rows), GUILayout.Width(65f));
+                if (GUILayout.Button(I18n.Tr("ASM_BTN_ADD_ROW", "+ 添加行"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(80f), GUILayout.Height(22f)))
+                {
+                    matrixData.AddRow();
+                    w.CustomTemplate = matrixData.ToTemplate();
+                    MarkDirty();
+                    FlightHUDManager.Instance?.RebuildHUD();
+                    return;
+                }
+
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+                MFPGuiSkin.EndInset();
+
+                GUILayout.Space(4f);
+
+                // 3. 矩阵单元格逐行逐列表单
+                if (isTable)
+                {
+                    // 表格模式：表头设置
+                    MFPGuiSkin.BeginInset();
+                    GUILayout.Label($"<b><size=10>{I18n.Tr("ASM_TBL_HEADERS_TITLE", "表格各列标题 (表头):")}</size></b>");
+                    GUILayout.BeginHorizontal();
+                    for (int c = 0; c < matrixData.Columns; c++)
+                    {
+                        string curH = (c < matrixData.TableHeaders.Count) ? matrixData.TableHeaders[c] : $"Col {c + 1}";
+                        string newH = GUILayout.TextField(curH ?? "", MFPGuiSkin.SearchFieldStyle, GUILayout.Width(75f));
+                        if (newH != curH)
+                        {
+                            while (matrixData.TableHeaders.Count <= c) matrixData.TableHeaders.Add($"Col {matrixData.TableHeaders.Count + 1}");
+                            matrixData.TableHeaders[c] = newH;
+                            w.CustomTemplate = matrixData.ToTemplate();
+                            MarkDirty();
+                            FlightHUDManager.Instance?.RebuildHUD();
+                        }
+                    }
+                    GUILayout.EndHorizontal();
+                    MFPGuiSkin.EndInset();
+                    GUILayout.Space(4f);
+
+                    // 表格数据行
+                    for (int r = 0; r < matrixData.Rows; r++)
+                    {
+                        int rowIdx = r;
+                        MFPGuiSkin.BeginInset();
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label($"<b>{string.Format(I18n.Tr("ASM_ROW_HEADER", "行 #{0}"), r + 1)}</b>", GUILayout.Width(50f));
+
+                        GUI.enabled = (r > 0);
+                        if (GUILayout.Button("▲", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(20f), GUILayout.Height(20f)))
+                        {
+                            matrixData.MoveRow(r, r - 1);
+                            w.CustomTemplate = matrixData.ToTemplate();
+                            MarkDirty();
+                            FlightHUDManager.Instance?.RebuildHUD();
+                            return;
+                        }
+                        GUI.enabled = (r < matrixData.Rows - 1);
+                        if (GUILayout.Button("▼", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(20f), GUILayout.Height(20f)))
+                        {
+                            matrixData.MoveRow(r, r + 1);
+                            w.CustomTemplate = matrixData.ToTemplate();
+                            MarkDirty();
+                            FlightHUDManager.Instance?.RebuildHUD();
+                            return;
+                        }
+                        GUI.enabled = (matrixData.Rows > 1);
+                        if (GUILayout.Button(I18n.Tr("ASM_BTN_DEL_ROW", "🗑 删除"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+                        {
+                            matrixData.RemoveRow(r);
+                            w.CustomTemplate = matrixData.ToTemplate();
+                            MarkDirty();
+                            FlightHUDManager.Instance?.RebuildHUD();
+                            return;
+                        }
+                        GUI.enabled = true;
+
+                        GUILayout.EndHorizontal();
+
+                        // 行内各列 Token 输入
+                        GUILayout.BeginHorizontal();
+                        for (int c = 0; c < matrixData.Columns; c++)
+                        {
+                            int colIdx = c;
+                            var cell = (rowIdx < matrixData.Grid.Count && colIdx < matrixData.Grid[rowIdx].Count) ? matrixData.Grid[rowIdx][colIdx] : new MatrixCellData();
+                            string curTok = cell.Token ?? "";
+
+                            string newTok = GUILayout.TextField(curTok, MFPGuiSkin.SearchFieldStyle, GUILayout.Width(68f));
+                            if (newTok != curTok)
+                            {
+                                cell.Token = newTok;
+                                w.CustomTemplate = matrixData.ToTemplate();
+                                MarkDirty();
+                                FlightHUDManager.Instance?.RebuildHUD();
+                            }
+
+                            if (GUILayout.Button("🔍", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(20f), GUILayout.Height(20f)))
+                            {
+                                string colName = (colIdx < matrixData.TableHeaders.Count) ? matrixData.TableHeaders[colIdx] : $"C{colIdx + 1}";
+                                TelemetryParamDrawer.Open($"{colName} R{rowIdx + 1}", chosenToken =>
+                                {
+                                    cell.Token = chosenToken;
+                                    w.CustomTemplate = matrixData.ToTemplate();
+                                    MarkDirty();
+                                    FlightHUDManager.Instance?.RebuildHUD();
+                                });
+                            }
+                        }
+                        GUILayout.EndHorizontal();
+
+                        MFPGuiSkin.EndInset();
+                        GUILayout.Space(2f);
+                    }
+                }
+                else
+                {
+                    // 键值网格模式：每一行展示各列的 [标签] + [Token] + [选参数] + [实时采样]
+                    for (int r = 0; r < matrixData.Rows; r++)
+                    {
+                        int rowIdx = r;
+                        MFPGuiSkin.BeginInset();
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label($"<b>{string.Format(I18n.Tr("ASM_ROW_HEADER", "行 #{0}"), r + 1)}</b>", GUILayout.Width(60f));
+
+                        GUI.enabled = (r > 0);
+                        if (GUILayout.Button("▲", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(20f), GUILayout.Height(20f)))
+                        {
+                            matrixData.MoveRow(r, r - 1);
+                            w.CustomTemplate = matrixData.ToTemplate();
+                            MarkDirty();
+                            FlightHUDManager.Instance?.RebuildHUD();
+                            return;
+                        }
+                        GUI.enabled = (r < matrixData.Rows - 1);
+                        if (GUILayout.Button("▼", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(20f), GUILayout.Height(20f)))
+                        {
+                            matrixData.MoveRow(r, r + 1);
+                            w.CustomTemplate = matrixData.ToTemplate();
+                            MarkDirty();
+                            FlightHUDManager.Instance?.RebuildHUD();
+                            return;
+                        }
+                        GUI.enabled = (matrixData.Rows > 1);
+                        if (GUILayout.Button(I18n.Tr("ASM_BTN_DEL_ROW", "🗑 删除"), MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+                        {
+                            matrixData.RemoveRow(r);
+                            w.CustomTemplate = matrixData.ToTemplate();
+                            MarkDirty();
+                            FlightHUDManager.Instance?.RebuildHUD();
+                            return;
+                        }
+                        GUI.enabled = true;
+
+                        GUILayout.FlexibleSpace();
+                        GUILayout.EndHorizontal();
+
+                        // 逐列渲染单元格表单
+                        for (int c = 0; c < matrixData.Columns; c++)
+                        {
+                            int colIdx = c;
+                            var cell = (rowIdx < matrixData.Grid.Count && colIdx < matrixData.Grid[rowIdx].Count) ? matrixData.Grid[rowIdx][colIdx] : new MatrixCellData();
+
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=10>C{c + 1}</size></color>", GUILayout.Width(20f));
+
+                            // 标签
+                            string curLbl = cell.Label ?? "";
+                            string newLbl = GUILayout.TextField(curLbl, MFPGuiSkin.SearchFieldStyle, GUILayout.Width(70f));
+                            if (newLbl != curLbl)
+                            {
+                                cell.Label = newLbl;
+                                w.CustomTemplate = matrixData.ToTemplate();
+                                MarkDirty();
+                                FlightHUDManager.Instance?.RebuildHUD();
+                            }
+
+                            // Token
+                            string curTok = cell.Token ?? "";
+                            string newTok = GUILayout.TextField(curTok, MFPGuiSkin.SearchFieldStyle, GUILayout.Width(130f));
+                            if (newTok != curTok)
+                            {
+                                cell.Token = newTok;
+                                w.CustomTemplate = matrixData.ToTemplate();
+                                MarkDirty();
+                                FlightHUDManager.Instance?.RebuildHUD();
+                            }
+
+                            // 🔍 选参数
+                            if (GUILayout.Button("🔍", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(26f), GUILayout.Height(20f)))
+                            {
+                                TelemetryParamDrawer.Open($"{cell.Label} 遥测参数", chosenToken =>
+                                {
+                                    cell.Token = chosenToken;
+                                    var meta = TelemetryCatalog.FindByToken(chosenToken);
+                                    if (string.IsNullOrEmpty(cell.Label) || cell.Label.StartsWith("CH") || cell.Label.StartsWith("R"))
+                                    {
+                                        cell.Label = meta != null ? meta.DisplayName : chosenToken.Trim('{', '}');
+                                    }
+                                    w.CustomTemplate = matrixData.ToTemplate();
+                                    MarkDirty();
+                                    FlightHUDManager.Instance?.RebuildHUD();
+                                });
+                            }
+
+                            // 实时采样值预览
+                            string sampleVal = GetSampledTokenValue(curTok);
+                            GUILayout.Space(4f);
+                            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color>", GUILayout.Width(75f));
+
+                            GUILayout.EndHorizontal();
+                        }
+
+                        MFPGuiSkin.EndInset();
+                        GUILayout.Space(2f);
+                    }
+                }
             }
 
             GUILayout.Space(6f);

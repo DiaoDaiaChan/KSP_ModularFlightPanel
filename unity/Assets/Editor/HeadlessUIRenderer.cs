@@ -1259,6 +1259,16 @@ namespace ModularFlightPanel.Editor
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
                 }
+                else if (id.StartsWith("custom.telemetry") || id == "custom_token" || id == "custom.telemetry_card" || id == "telemetry_matrix")
+                {
+                    cfg = new WidgetConfig("custom.telemetry_card", "多通道遥测综合矩阵卡", x, y, 1.0f)
+                    {
+                        WidgetType = "custom_token",
+                        IsEnabled = enabled,
+                        CustomTemplate = "MODE=KV;COLS=2;ROWS=3;R0C0_LBL=SPD;R0C0_VAL={SPD};R0C1_LBL=ASL;R0C1_VAL={ALT:ASL:DIST};R1C0_LBL=RALT;R1C0_VAL={ALT:AGL:DIST};R1C1_LBL=Q;R1C1_VAL={Q};R2C0_LBL=VSI;R2C0_VAL={VSI};R2C1_LBL=G;R2C1_VAL={GFORCE};"
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
             }
         }
 

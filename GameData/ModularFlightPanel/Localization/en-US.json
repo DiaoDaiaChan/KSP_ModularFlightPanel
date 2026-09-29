@@ -1319,7 +1319,21 @@
     "DRAWER_BTN_APPLY": "✔ Apply",
     "DRAWER_TOAST_APPLIED": "Applied parameter: {0}",
     "DRAWER_BTN_COPY": "\uD83D\uDCCB Copy",
-    "DRAWER_TOAST_COPIED": "Copied {0} to clipboard",
-    "SPX_HEADER_SLOT_TITLE": "SpaceX Header Dynamic Slots: Add/remove columns, reorder and toggle separators"
+    "SPX_HEADER_SLOT_TITLE": "SpaceX Header Dynamic Slots: Add/remove columns, reorder and toggle separators",
+    "MJ_SLOT_ORCHESTRATOR_TITLE": "MJ Telemetry Matrix: Freely add rows & cols, custom labels & 736+ tokens",
+    "ASM_CARD_CHANNELS_MJ": "🎛️ MechJeb Telemetry Matrix Setup",
+    "ASM_MODE_KV": "🎛️ Key-Value Mode",
+    "ASM_MODE_TABLE": "📊 Data Table Mode",
+    "ASM_PRESET_MJ_2COL": "🚀 Classic 2-Col (6-CH)",
+    "ASM_PRESET_MJ_1COL": "📋 Single Column",
+    "ASM_PRESET_MJ_TABLE": "📊 Stage ΔV Table",
+    "ASM_PRESET_MJ_ORBIT": "🛰️ Orbit Maneuver",
+    "ASM_COLS_LABEL": "Cols: {0}",
+    "ASM_ROWS_LABEL": "Rows: {0}",
+    "ASM_BTN_ADD_ROW": "+ Add Row",
+    "ASM_BTN_DEL_ROW": "🗑 Delete",
+    "ASM_ROW_HEADER": "Row #{0}",
+    "ASM_TBL_HEADERS_TITLE": "Table Column Headers:",
+    "WIDGET_MJ_MATRIX_BADGE": "MJ MATRIX"
   }
 }
