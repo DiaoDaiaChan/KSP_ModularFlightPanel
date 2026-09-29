@@ -19,6 +19,7 @@ namespace ModularFlightPanel.Config
         public static bool IsStockCommNetHidden { get; set; } = false;
         public static bool IsStockToolbarHidden { get; set; } = false;
         public int ToolbarStyleMode { get; set; } = 1;
+        public int NonFlightToolbarMode { get; set; } = 1;
         public bool EnableGpu2DUIAcceleration { get; set; } = true;
         public List<DockButtonRule> DockRules { get; set; } = new List<DockButtonRule>();
         public bool DockShowHiddenDrawer { get; set; } = false;
@@ -158,6 +159,7 @@ namespace ModularFlightPanel.Config
                     HideStockCommNet = IsStockCommNetHidden,
                     HideStockToolbar = IsStockToolbarHidden,
                     ToolbarStyleMode = ToolbarStyleMode,
+                    NonFlightToolbarMode = NonFlightToolbarMode,
                     MasterBypass = MasterBypass,
                     ShowPerformanceBadge = ShowPerformanceBadge,
                     EnableGpu2DUIAcceleration = EnableGpu2DUIAcceleration,
@@ -218,6 +220,7 @@ namespace ModularFlightPanel.Config
                     IsStockCommNetHidden = data.HideStockCommNet;
                     IsStockToolbarHidden = data.HideStockToolbar;
                     ToolbarStyleMode = data.ToolbarStyleMode;
+                    NonFlightToolbarMode = data.NonFlightToolbarMode;
                     MasterBypass = data.MasterBypass;
                     ShowPerformanceBadge = data.ShowPerformanceBadge;
                     EnableGpu2DUIAcceleration = data.EnableGpu2DUIAcceleration;

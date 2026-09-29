@@ -25,12 +25,18 @@ namespace ModularFlightPanel.Core
     {
         public string WidgetId;
         public string DisplayName;
-        public double LastMs;
-        public double AvgMs;
+        public double LastMs;        // 最近一次单次执行耗时 (Exec Last)
+        public double AvgMs;         // 单次触发指数平滑均值 (Exec Avg)
+        public double FrameAvgMs;    // 60 帧每帧等效平摊耗时 (Frame Avg: 对齐组件管线呈现)
         public double MaxMs;
         public long StartTick;
         public int SampleCount;
         public int LastSampleFrame;
+
+        // 内部 60 帧环形缓冲区与当前帧累加 (零 GC，避免每帧堆分配)
+        public double CurrentFrameAccumMs;
+        public readonly double[] HistoryFrameMs = new double[60];
+        public int HistoryCount;
     }
 
     /// <summary>
@@ -118,12 +124,6 @@ namespace ModularFlightPanel.Core
         private static readonly double[] _historyHooksMs = new double[HistorySize];
         private static int _historyIndex = 0;
         private static int _historyCount = 0;
-        private static double _runningSumTotal = 0.0;
-        private static double _runningSumTelemetry = 0.0;
-        private static double _runningSumProbes = 0.0;
-        private static double _runningSumWidgets = 0.0;
-        private static double _runningSumSilhouette = 0.0;
-        private static double _runningSumHooks = 0.0;
         private static float _memSampleTimer = 0f;
 
         // 实时汇总统计属性 (供 UI/通配符/遥测面板读取)
@@ -269,12 +269,13 @@ namespace ModularFlightPanel.Core
                     double ms = elapsedTicks * TicksToMs;
                     data.LastMs = ms;
                     data.LastSampleFrame = Time.frameCount;
+                    data.CurrentFrameAccumMs += ms;
                     if (ms > data.MaxMs) data.MaxMs = ms;
 
                     if (data.SampleCount == 0)
                         data.AvgMs = ms;
                     else
-                        data.AvgMs = data.AvgMs * 0.90 + ms * 0.10; // 快速平滑指数衰减平均
+                        data.AvgMs = Math.Max(0.0, data.AvgMs * 0.90 + ms * 0.10); // 快速平滑指数衰减平均
 
                     data.SampleCount++;
 
@@ -387,16 +388,23 @@ namespace ModularFlightPanel.Core
 
         private static void InjectSimulatedWidget(string id, string name, double lastMs, double avgMs, double maxMs)
         {
-            _widgetProfiles[id] = new WidgetProfileData
+            var data = new WidgetProfileData
             {
                 WidgetId = id,
                 DisplayName = name,
                 LastMs = lastMs,
                 AvgMs = avgMs,
+                FrameAvgMs = avgMs,
                 MaxMs = maxMs,
                 SampleCount = 100,
                 LastSampleFrame = Time.frameCount
             };
+            for (int i = 0; i < HistorySize; i++)
+            {
+                data.HistoryFrameMs[i] = avgMs;
+            }
+            data.HistoryCount = HistorySize;
+            _widgetProfiles[id] = data;
         }
 
         // ------------------ Overlay 绘制控制 ------------------
@@ -462,11 +470,11 @@ namespace ModularFlightPanel.Core
             }
 
             TopOffenderWidgetId = _currentFrameTopWidgetId;
-            TopOffenderWidgetMs = _currentFrameTopWidgetMs;
+            TopOffenderWidgetMs = Math.Max(0.0, _currentFrameTopWidgetMs);
 
             float dt = Time.unscaledDeltaTime;
-            UnityFrameTimeMs = dt * 1000.0;
-            CurrentFPS = dt > 0.0001f ? 1.0f / dt : 0f;
+            UnityFrameTimeMs = Math.Max(0.001, dt * 1000.0);
+            CurrentFPS = dt > 0.0001f ? Math.Max(0f, 1.0f / dt) : 0f;
 
             if (_isMasterBypassed)
             {
@@ -479,35 +487,31 @@ namespace ModularFlightPanel.Core
                 AvgHooksMs = 0.0;
                 FrameBudgetPercent = 0.0;
                 SpikeCount = 0;
-                _runningSumTotal = 0.0;
-                _runningSumTelemetry = 0.0;
-                _runningSumProbes = 0.0;
-                _runningSumWidgets = 0.0;
-                _runningSumSilhouette = 0.0;
-                _runningSumHooks = 0.0;
+                _historyCount = 0;
+                _historyIndex = 0;
+                Array.Clear(_historyTotalMs, 0, HistorySize);
+                Array.Clear(_historyTelemetryMs, 0, HistorySize);
+                Array.Clear(_historyProbesMs, 0, HistorySize);
+                Array.Clear(_historyWidgetsMs, 0, HistorySize);
+                Array.Clear(_historySilhouetteMs, 0, HistorySize);
+                Array.Clear(_historyHooksMs, 0, HistorySize);
                 _sortedWidgetList.Clear();
                 return;
             }
 
-            double curTelem = _timings[(int)ProfilerSection.Telemetry].AccumulatedMs;
-            double curProbes = _timings[(int)ProfilerSection.Probes].AccumulatedMs;
-            double curWidgets = _timings[(int)ProfilerSection.Widgets].AccumulatedMs;
-            double curSil = _timings[(int)ProfilerSection.Silhouette].AccumulatedMs;
-            double curHooks = _timings[(int)ProfilerSection.Hooks].AccumulatedMs;
-            double measuredTotal = _timings[(int)ProfilerSection.TotalMFP].AccumulatedMs;
+            double curTelem = Math.Max(0.0, _timings[(int)ProfilerSection.Telemetry].AccumulatedMs);
+            double curProbes = Math.Max(0.0, _timings[(int)ProfilerSection.Probes].AccumulatedMs);
+            double curWidgets = Math.Max(0.0, _timings[(int)ProfilerSection.Widgets].AccumulatedMs);
+            double curSil = Math.Max(0.0, _timings[(int)ProfilerSection.Silhouette].AccumulatedMs);
+            double curHooks = Math.Max(0.0, _timings[(int)ProfilerSection.Hooks].AccumulatedMs);
+            double measuredTotal = Math.Max(0.0, _timings[(int)ProfilerSection.TotalMFP].AccumulatedMs);
 
-            // 真实 MFP CPU 耗时：由 Update + LateUpdate 实测耗时与各子系统耗时并集严格校准
-            double curTotal = Math.Max(measuredTotal, curTelem + curProbes + curWidgets + curSil + curHooks);
+            // 真实 MFP CPU 耗时：由 Update + LateUpdate 实测耗时与各子系统耗时之和严格校准，保证总耗时不低于子项之和
+            double subSum = curTelem + curProbes + curWidgets + curSil + curHooks;
+            double curTotal = Math.Max(measuredTotal, subSum);
             LastTotalMs = curTotal;
 
-            double oldTotal = _historyTotalMs[_historyIndex];
-            double oldTelem = _historyTelemetryMs[_historyIndex];
-            double oldProbes = _historyProbesMs[_historyIndex];
-            double oldWidgets = _historyWidgetsMs[_historyIndex];
-            double oldSil = _historySilhouetteMs[_historyIndex];
-            double oldHooks = _historyHooksMs[_historyIndex];
-
-            // 写入环形缓冲区
+            // 写入环形缓冲区当前槽位
             _historyTotalMs[_historyIndex] = curTotal;
             _historyTelemetryMs[_historyIndex] = curTelem;
             _historyProbesMs[_historyIndex] = curProbes;
@@ -515,39 +519,88 @@ namespace ModularFlightPanel.Core
             _historySilhouetteMs[_historyIndex] = curSil;
             _historyHooksMs[_historyIndex] = curHooks;
 
-            _runningSumTotal += curTotal - oldTotal;
-            _runningSumTelemetry += curTelem - oldTelem;
-            _runningSumProbes += curProbes - oldProbes;
-            _runningSumWidgets += curWidgets - oldWidgets;
-            _runningSumSilhouette += curSil - oldSil;
-            _runningSumHooks += curHooks - oldHooks;
+            // 同步写入每个活跃组件的当前帧耗时槽位并清空帧累加器
+            if ((ShowOverlay || EnableWidgetProfiling) && _widgetProfiles.Count > 0)
+            {
+                int currentFrame = Time.frameCount;
+                foreach (var kvp in _widgetProfiles)
+                {
+                    var d = kvp.Value;
+                    if (currentFrame - d.LastSampleFrame < 180)
+                    {
+                        d.HistoryFrameMs[_historyIndex] = d.CurrentFrameAccumMs;
+                        if (d.HistoryCount < HistorySize) d.HistoryCount++;
+                    }
+                    else
+                    {
+                        d.HistoryFrameMs[_historyIndex] = 0.0;
+                    }
+                    d.CurrentFrameAccumMs = 0.0;
+                }
+            }
 
             _historyIndex = (_historyIndex + 1) % HistorySize;
             if (_historyCount < HistorySize) _historyCount++;
 
-            AvgTotalMs = _runningSumTotal / _historyCount;
-            AvgTelemetryMs = _runningSumTelemetry / _historyCount;
-            AvgProbesMs = _runningSumProbes / _historyCount;
-            AvgWidgetsMs = _runningSumWidgets / _historyCount;
-            AvgSilhouetteMs = _runningSumSilhouette / _historyCount;
-            AvgHooksMs = _runningSumHooks / _historyCount;
+            // 核心修复：直接无漂移快速求和 (Zero-Drift Direct Summation)
+            // 彻底废除增量加减导致的 IEEE 754 精度漂移，杜绝 -0.001 ms 与总耗时下溢萎缩
+            double sumTotal = 0.0;
+            double sumTelem = 0.0;
+            double sumProbes = 0.0;
+            double sumWidgets = 0.0;
+            double sumSil = 0.0;
+            double sumHooks = 0.0;
 
-            FrameBudgetPercent = UnityFrameTimeMs > 0.001 ? (AvgTotalMs / UnityFrameTimeMs) * 100.0 : 0.0;
+            for (int i = 0; i < _historyCount; i++)
+            {
+                sumTotal += _historyTotalMs[i];
+                sumTelem += _historyTelemetryMs[i];
+                sumProbes += _historyProbesMs[i];
+                sumWidgets += _historyWidgetsMs[i];
+                sumSil += _historySilhouetteMs[i];
+                sumHooks += _historyHooksMs[i];
+            }
 
-            // 维护活跃组件降序列表 (供悬浮 HUD 与监控屏读取，节流至每 10 帧排序一次，杜绝每帧 GC 与 CPU 尖峰)
-            if ((ShowOverlay || EnableWidgetProfiling) && Time.frameCount % 10 == 0)
+            int count = Math.Max(1, _historyCount);
+            AvgTelemetryMs = Math.Max(0.0, sumTelem / count);
+            AvgProbesMs = Math.Max(0.0, sumProbes / count);
+            AvgWidgetsMs = Math.Max(0.0, sumWidgets / count);
+            AvgSilhouetteMs = Math.Max(0.0, sumSil / count);
+            AvgHooksMs = Math.Max(0.0, sumHooks / count);
+
+            // 物理守恒：总耗时必须 >= 各子模块求和
+            double calcAvgTotal = sumTotal / count;
+            double calcSubSum = AvgTelemetryMs + AvgProbesMs + AvgWidgetsMs + AvgSilhouetteMs + AvgHooksMs;
+            AvgTotalMs = Math.Max(0.0, Math.Max(calcAvgTotal, calcSubSum));
+
+            FrameBudgetPercent = UnityFrameTimeMs > 0.001 ? Math.Max(0.0, (AvgTotalMs / UnityFrameTimeMs) * 100.0) : 0.0;
+
+            // 维护活跃组件降序列表 (节流至每 5 帧排序一次)
+            if ((ShowOverlay || EnableWidgetProfiling) && Time.frameCount % 5 == 0)
             {
                 _sortedWidgetList.Clear();
                 int currentFrame = Time.frameCount;
                 foreach (var kvp in _widgetProfiles)
                 {
                     var d = kvp.Value;
-                    if (currentFrame - d.LastSampleFrame < 180) // 保持 3 秒内活跃过的组件
+                    if (currentFrame - d.LastSampleFrame < 180)
                     {
+                        // 计算该组件的 60 帧每帧平摊耗时 (FrameAvgMs)
+                        double sumW = 0.0;
+                        for (int j = 0; j < _historyCount; j++)
+                        {
+                            sumW += d.HistoryFrameMs[j];
+                        }
+                        d.FrameAvgMs = Math.Max(0.0, sumW / count);
                         _sortedWidgetList.Add(d);
                     }
                 }
-                _sortedWidgetList.Sort((a, b) => b.AvgMs.CompareTo(a.AvgMs));
+                // 优先按每帧平摊耗时排序，若平摊耗时相同则按单次触发均值排序
+                _sortedWidgetList.Sort((a, b) =>
+                {
+                    int cmp = b.FrameAvgMs.CompareTo(a.FrameAvgMs);
+                    return cmp != 0 ? cmp : b.AvgMs.CompareTo(a.AvgMs);
+                });
             }
 
             // 仅在开启详细覆盖层时遍历极值与尖峰，彻底消除主循环常驻开销
@@ -563,8 +616,8 @@ namespace ModularFlightPanel.Core
                     if (v > max) max = v;
                     if (v > 16.6667) spikes++;
                 }
-                MinTotalMs = min;
-                MaxTotalMs = max;
+                MinTotalMs = _historyCount > 0 ? Math.Max(0.0, min) : 0.0;
+                MaxTotalMs = _historyCount > 0 ? Math.Max(0.0, max) : 0.0;
                 SpikeCount = spikes;
             }
 
@@ -738,7 +791,7 @@ namespace ModularFlightPanel.Core
             GUILayout.BeginHorizontal();
             DrawHeaderCell(I18n.Tr("PROF_COL_NAME", "组件名称 / ID"), 190f);
             DrawHeaderCell(I18n.Tr("PROF_COL_AVG", "均值"), 75f);
-            DrawHeaderCell(I18n.Tr("PROF_COL_LAST", "实时 / 峰值"), -1f);
+            DrawHeaderCell(I18n.Tr("PROF_COL_LAST", "单次 / 峰值"), -1f);
             GUILayout.EndHorizontal();
 
             _widgetScrollPos = GUILayout.BeginScrollView(_widgetScrollPos, GUILayout.Height(150f));
@@ -749,12 +802,20 @@ namespace ModularFlightPanel.Core
                 string displayName = !string.IsNullOrEmpty(w.DisplayName) && w.DisplayName != w.WidgetId
                     ? $"{w.DisplayName}"
                     : w.WidgetId;
-                string tooltip = $"{w.WidgetId}\n{I18n.Tr("PROF_TOOLTIP_LAST", "末次")}: {w.LastMs:F3} ms\n{I18n.Tr("PROF_TOOLTIP_AVG", "均值")}: {w.AvgMs:F3} ms\n{I18n.Tr("PROF_TOOLTIP_MAX", "峰值")}: {w.MaxMs:F3} ms";
+                double frameMs = Math.Max(0.0, w.FrameAvgMs);
+                double execAvg = Math.Max(0.0, w.AvgMs);
+                double lastMs = Math.Max(0.0, w.LastMs);
+                double maxMs = Math.Max(0.0, w.MaxMs);
+                string tooltip = $"{w.WidgetId}\n" +
+                                 $"{I18n.Tr("PROF_TOOLTIP_FRAME_AVG", "每帧平摊")}: {frameMs:F3} ms\n" +
+                                 $"{I18n.Tr("PROF_TOOLTIP_EXEC_AVG", "单次触发")}: {execAvg:F3} ms\n" +
+                                 $"{I18n.Tr("PROF_TOOLTIP_LAST", "实时单次")}: {lastMs:F3} ms\n" +
+                                 $"{I18n.Tr("PROF_TOOLTIP_MAX", "历史峰值")}: {maxMs:F3} ms";
                 GUILayout.Label(new GUIContent($"<color=#D0D0D0>{displayName}</color>", tooltip), GUILayout.Width(190f));
 
-                string color = w.AvgMs < 0.1 ? "#00E5FF" : (w.AvgMs < 0.4 ? "#FFE000" : "#FF5555");
-                GUILayout.Label($"<color={color}><b>{w.AvgMs:F3} ms</b></color>", GUILayout.Width(75f));
-                GUILayout.Label($"<color=#888888>{w.LastMs:F2} / {w.MaxMs:F2}</color>", GUILayout.ExpandWidth(true));
+                string color = frameMs < 0.05 ? "#00E5FF" : (frameMs < 0.2 ? "#34C759" : (frameMs < 0.5 ? "#FFE000" : "#FF5555"));
+                GUILayout.Label($"<color={color}><b>{frameMs:F3} ms</b></color>", GUILayout.Width(75f));
+                GUILayout.Label($"<color=#888888>{execAvg:F2} / {maxMs:F2}</color>", GUILayout.ExpandWidth(true));
                 GUILayout.EndHorizontal();
             }
             if (activeCount == 0)
@@ -956,6 +1017,7 @@ namespace ModularFlightPanel.Core
 
         private static void DrawStatRow(string label, double ms)
         {
+            ms = Math.Max(0.0, ms);
             GUILayout.BeginHorizontal();
             GUILayout.Label($"<color=#AAAAAA>{label}</color>", GUILayout.Width(180f));
             string color = ms < 0.2 ? "#00E5FF" : (ms < 0.8 ? "#FFE000" : "#FF5555");

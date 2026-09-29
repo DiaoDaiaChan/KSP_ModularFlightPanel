@@ -62,13 +62,13 @@ namespace ModularFlightPanel.UI.Widgets
         private const int MaxExpandedRows = 4;
         private readonly AntennaRowUI[] _expandedRows = new AntennaRowUI[MaxExpandedRows];
 
-        // 脏检查与缓存守卫
-        private string _lastTargetName = string.Empty;
-        private string _lastRouteType = string.Empty;
-        private string _lastRateStr = string.Empty;
-        private string _lastCtrlBadge = string.Empty;
-        private string _lastHwSummary = string.Empty;
-        private bool _lastConnectedState = false;
+        // 统一全自动纳管私有 UI 脏检查缓存 (切船/重置时 BaseFlightWidget 自动复位，0 样板代码)
+        private readonly Cached<string> _lastTargetName = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRouteType = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRateStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastCtrlBadge = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastHwSummary = new Cached<string>(string.Empty);
+        private readonly Cached<bool> _lastConnectedState = new Cached<bool>(false);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -416,19 +416,25 @@ namespace ModularFlightPanel.UI.Widgets
             public string Status;
             public bool IsActive;
         }
+
+        private struct CommNetSnapshot
+        {
+            public bool HasVessel;
+            public bool IsConnected;
+            public double SignalStrength;
+            public bool IsPartial;
+            public string TargetName;
+            public string RouteDesc;
+            public string RateStr;
+            public bool HasTx;
+            public bool HasRx;
+            public int ActiveRfBars;
+            public string HwSummary;
+            public int AntennaCount;
+        }
+
+        private CommNetSnapshot _snap;
         private readonly AntennaRowSnapshot[] _cachedAntennaSnapshots = new AntennaRowSnapshot[MaxExpandedRows];
-        private int _cachedAntennaCount;
-        private bool _cachedHasVessel;
-        private bool _cachedIsConnected;
-        private double _cachedSignalStrength;
-        private bool _cachedIsPartial;
-        private string _cachedTargetName;
-        private string _cachedRouteDesc;
-        private string _cachedRateStr;
-        private bool _cachedHasTx;
-        private bool _cachedHasRx;
-        private int _cachedActiveRfBars;
-        private string _cachedHwSummary;
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
@@ -436,21 +442,21 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (context.Telemetry == null || !context.Telemetry.HasVessel)
             {
-                _cachedHasVessel = false;
+                _snap.HasVessel = false;
                 return;
             }
 
-            _cachedHasVessel = true;
+            _snap.HasVessel = true;
 
             bool isConnected = context.Telemetry.IsConnected;
-            _cachedIsConnected = isConnected;
+            _snap.IsConnected = isConnected;
             double signalStrength = Mathf.Clamp01((float)context.Telemetry.CommSignal);
-            _cachedSignalStrength = signalStrength;
+            _snap.SignalStrength = signalStrength;
 
             string ctrlLevel = context.Telemetry.ControlLevelStr
                 ?? (isConnected ? I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制") : I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路"));
             bool isPartial = ctrlLevel.IndexOf("PART", StringComparison.OrdinalIgnoreCase) >= 0 || (isConnected && signalStrength < 0.35);
-            _cachedIsPartial = isPartial;
+            _snap.IsPartial = isPartial;
 
             string rawTarget = context.Telemetry.DirectLinkTarget;
             string targetName;
@@ -483,8 +489,8 @@ namespace ModularFlightPanel.UI.Widgets
                 targetName = I18n.Tr("WIDGET_SIG_NO_STATION_LINK", "无测控站链路");
                 routeDesc = I18n.Tr("WIDGET_SIG_SEARCHING_LINK", "搜索链路中");
             }
-            _cachedTargetName = targetName;
-            _cachedRouteDesc = routeDesc;
+            _snap.TargetName = targetName;
+            _snap.RouteDesc = routeDesc;
 
             double bps = context.Telemetry.DataRateBps;
             string rateStr;
@@ -500,12 +506,12 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 rateStr = CommLinkInfo.FormatRate(100000.0 * signalStrength);
             }
-            _cachedRateStr = rateStr;
+            _snap.RateStr = rateStr;
 
-            _cachedHasTx = context.Telemetry.SignalTx > 0.01;
-            _cachedHasRx = context.Telemetry.SignalRx > 0.01;
+            _snap.HasTx = context.Telemetry.SignalTx > 0.01;
+            _snap.HasRx = context.Telemetry.SignalRx > 0.01;
 
-            _cachedActiveRfBars = isConnected ? Mathf.Clamp(Mathf.CeilToInt((float)signalStrength * RfBarCount), 1, RfBarCount) : 0;
+            _snap.ActiveRfBars = isConnected ? Mathf.Clamp(Mathf.CeilToInt((float)signalStrength * RfBarCount), 1, RfBarCount) : 0;
 
             var antennas = context.Telemetry.Antennas;
             int totalAnts = (antennas != null && antennas.Count > 0) ? antennas.Count : (context.Telemetry.AntennaCount > 0 ? context.Telemetry.AntennaCount : 1);
@@ -528,12 +534,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (activeAnts == 0 && isConnected) activeAnts = 1;
 
-            _cachedHwSummary = isConnected
+            _snap.HwSummary = isConnected
                 ? I18n.TrFormat("WIDGET_SIG_HW_SUMMARY", primaryAntName, activeAnts, totalAnts)
                 : I18n.TrFormat("WIDGET_SIG_HW_NOLINK", totalAnts);
 
             int antCount = (antennas != null) ? antennas.Count : 0;
-            _cachedAntennaCount = antCount;
+            _snap.AntennaCount = antCount;
             for (int i = 0; i < MaxExpandedRows; i++)
             {
                 if (antennas != null && i < antCount)
@@ -569,14 +575,14 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            if (!_cachedHasVessel) return;
+            if (!_snap.HasVessel) return;
 
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            bool isConnected = _cachedIsConnected;
-            double signalStrength = _cachedSignalStrength;
-            bool isPartial = _cachedIsPartial;
+            bool isConnected = _snap.IsConnected;
+            double signalStrength = _snap.SignalStrength;
+            bool isPartial = _snap.IsPartial;
 
             // 1. 顶栏控制权徽章与温和心跳呼吸
             StatusSurfaceRole statusRole = !isConnected ? StatusSurfaceRole.Danger : (isPartial ? StatusSurfaceRole.Caution : StatusSurfaceRole.Success);
@@ -598,7 +604,10 @@ namespace ModularFlightPanel.UI.Widgets
                     ? "✕ " + I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路")
                     : (isPartial ? "▲ " + I18n.Tr("WIDGET_SIG_CTRL_PARTIAL", "部分控制") : "● " + I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制"));
             }
-            _ctrlBadgeText.SetTextSafe(displayCtrl);
+            if (_lastCtrlBadge.Update(displayCtrl))
+            {
+                _ctrlBadgeText.SetTextSafe(displayCtrl);
+            }
 
             // 心跳微光动画 (0.82 ~ 1.0)
             Color ctrlCol = style.GetTextColor(textRole, theme);
@@ -606,26 +615,34 @@ namespace ModularFlightPanel.UI.Widgets
             _ctrlBadgeText.SetColor(WidgetStyleManager.WithAlpha(ctrlCol, animAlpha));
 
             // 2. 目标测控站与拓扑
-            _targetNameText.SetTextSafe(_cachedTargetName);
-            _routeTypeText.SetTextSafe(_cachedRouteDesc);
-            if (isConnected != _lastConnectedState)
+            if (_lastTargetName.Update(_snap.TargetName))
             {
-                _lastConnectedState = isConnected;
+                _targetNameText.SetTextSafe(_snap.TargetName);
+            }
+            if (_lastRouteType.Update(_snap.RouteDesc))
+            {
+                _routeTypeText.SetTextSafe(_snap.RouteDesc);
+            }
+            if (_lastConnectedState.Update(isConnected))
+            {
                 ApplyText(_targetNameText, isConnected ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
             }
 
             // 3. 速率与 TX/RX 遥测收发微光动画
-            _rateText.SetTextSafe(_cachedRateStr);
+            if (_lastRateStr.Update(_snap.RateStr))
+            {
+                _rateText.SetTextSafe(_snap.RateStr);
+            }
 
             if (_txText != null && _rxText != null && _txText.gameObject.activeSelf)
             {
                 Color txBase = style.GetTextColor(TextStyleRole.Accent, theme);
                 Color rxBase = style.GetTextColor(TextStyleRole.Cardinal, theme);
 
-                if (isConnected && (_cachedRateStr != "0.0 bps" || signalStrength > 0.01))
+                if (isConnected && (_snap.RateStr != "0.0 bps" || signalStrength > 0.01))
                 {
-                    float txA = _cachedHasTx ? (0.60f + 0.40f * Mathf.Sin(Time.time * 6.5f)) : 0.30f;
-                    float rxA = _cachedHasRx ? (0.60f + 0.40f * Mathf.Cos(Time.time * 6.5f)) : 0.30f;
+                    float txA = _snap.HasTx ? (0.60f + 0.40f * Mathf.Sin(Time.time * 6.5f)) : 0.30f;
+                    float rxA = _snap.HasRx ? (0.60f + 0.40f * Mathf.Cos(Time.time * 6.5f)) : 0.30f;
                     _txText.SetColor(WidgetStyleManager.WithAlpha(txBase, txA));
                     _rxText.SetColor(WidgetStyleManager.WithAlpha(rxBase, rxA));
                 }
@@ -637,7 +654,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 5 阶主射频光柱
-            int activeRfBars = _cachedActiveRfBars;
+            int activeRfBars = _snap.ActiveRfBars;
             MeterStyleRole barRole = !isConnected ? MeterStyleRole.Track : (signalStrength < 0.35 ? MeterStyleRole.Warning : MeterStyleRole.Primary);
             Color activeCol = style.GetMeterColor(barRole, theme);
             Color trackCol = style.GetMeterColor(MeterStyleRole.Track, theme);
@@ -668,7 +685,10 @@ namespace ModularFlightPanel.UI.Widgets
             // 5. 硬件信息
             if (_hardwareSummaryText != null && _hardwareSummaryText.gameObject.activeSelf)
             {
-                _hardwareSummaryText.SetTextSafe(_cachedHwSummary);
+                if (_lastHwSummary.Update(_snap.HwSummary))
+                {
+                    _hardwareSummaryText.SetTextSafe(_snap.HwSummary);
+                }
             }
 
             // 展开模式：清单

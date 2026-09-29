@@ -652,7 +652,50 @@ namespace ModularFlightPanel.Core
         #region Cache Lifecycle Management
 
         /// <summary>
-        /// 场景切换或换船时清除瞬态缓存，杜绝内存泄漏
+        /// 组件私有缓存重置契约接口
+        /// </summary>
+        public interface IWidgetPrivateCache
+        {
+            void ResetPrivateCache();
+        }
+
+        private readonly List<WeakReference<IWidgetPrivateCache>> _registeredWidgetCaches = new List<WeakReference<IWidgetPrivateCache>>(64);
+
+        /// <summary>
+        /// 注册需要纳管私有生命周期重置的组件
+        /// </summary>
+        public void RegisterWidgetCache(IWidgetPrivateCache widget)
+        {
+            if (widget == null) return;
+            // 弱引用注册，彻底杜绝静态引用引发的内存泄漏
+            _registeredWidgetCaches.Add(new WeakReference<IWidgetPrivateCache>(widget));
+        }
+
+        /// <summary>
+        /// 注销组件私有缓存
+        /// </summary>
+        public void UnregisterWidgetCache(IWidgetPrivateCache widget)
+        {
+            if (widget == null) return;
+            for (int i = _registeredWidgetCaches.Count - 1; i >= 0; i--)
+            {
+                if (_registeredWidgetCaches[i].TryGetTarget(out var target))
+                {
+                    if (ReferenceEquals(target, widget))
+                    {
+                        _registeredWidgetCaches.RemoveAt(i);
+                        break;
+                    }
+                }
+                else
+                {
+                    _registeredWidgetCaches.RemoveAt(i);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 场景切换或换船时清除瞬态缓存，并向所有注册组件广播私有缓存复位通知
         /// </summary>
         public void ClearTransient()
         {
@@ -666,6 +709,26 @@ namespace ModularFlightPanel.Core
             _cachedFlightEventSnapshot = default;
             TotalRequests = 0;
             CacheHits = 0;
+
+            // 广播通知所有活跃组件重置其私有数据快照与脏标记
+            for (int i = _registeredWidgetCaches.Count - 1; i >= 0; i--)
+            {
+                if (_registeredWidgetCaches[i].TryGetTarget(out var widget))
+                {
+                    try
+                    {
+                        widget.ResetPrivateCache();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[ModularFlightPanel] Error in ResetPrivateCache: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    _registeredWidgetCaches.RemoveAt(i);
+                }
+            }
         }
 
         /// <summary>

@@ -139,35 +139,47 @@ namespace ModularFlightPanel.UI.Widgets
         // 动效与交互计时器
         private float _fireBtnRecoilTimer = 0f;
         private float _currentPropFrac = 1f;
+        private float _lastLayoutW = -1f;
+        private float _lastLayoutH = -1f;
 
-        // 脏检查与缓存守卫
+        // 统一私有遥测快照 (零 GC 结构体，解耦遥测心跳与 UI 渲染)
+        private struct StageSnapshot
+        {
+            public bool HasVessel;
+            public bool IsLocked;
+            public int CurrentStage;
+            public double StageDeltaV;
+            public double StageBurnTime;
+            public float Twr;
+            public int ActiveEngines;
+            public float PitchInput;
+            public float PitchTrim;
+            public float RollInput;
+            public float RollTrim;
+            public float YawInput;
+            public float YawTrim;
+            public float StagePropellantFraction;
+            public string PropName;
+            public bool IsPrecisionControl;
+            public bool IsDockingMode;
+        }
+
+        private StageSnapshot _snap;
+
+        // 统一全自动纳管私有状态 (切船/重置时 BaseFlightWidget 全自动复位，无需手写 OnResetPrivateCache！)
         private ThemeConfig _cachedTheme;
-        private string _lastStageNumStr = string.Empty;
-        private string _lastStageDvStr = string.Empty;
-        private string _lastStageTwrStr = string.Empty;
-        private string _lastPropNameStr = string.Empty;
-        private bool _lastLockedState = false;
-        private bool _lastPrecState = false;
-        private bool _lastDockState = false;
-
-        // ── 数据心跳与 UI 绘制解耦状态缓存 ──
-        private bool _dataHasVessel = false;
-        private bool _dataIsLocked = false;
-        private int _dataCurrentStage = 0;
-        private double _dataStageDeltaV = 0.0;
-        private double _dataStageBurnTime = 0.0;
-        private float _dataTwr = 0f;
-        private int _dataActiveEngines = 0;
-        private float _dataPitchInput = 0f;
-        private float _dataPitchTrim = 0f;
-        private float _dataRollInput = 0f;
-        private float _dataRollTrim = 0f;
-        private float _dataYawInput = 0f;
-        private float _dataYawTrim = 0f;
-        private float _dataStagePropellantFraction = 0f;
-        private string _dataPropName = "PROPELLANT";
-        private bool _dataIsPrecisionControl = false;
-        private bool _dataIsDockingMode = false;
+        private readonly Cached<bool> _dirtyLocked = new Cached<bool>(false);
+        private readonly Cached<bool> _dirtyPrec = new Cached<bool>(false);
+        private readonly Cached<bool> _dirtyDock = new Cached<bool>(false);
+        private readonly Cached<int> _dirtyStageNum = new Cached<int>(-1);
+        private readonly CachedDouble _dirtyStageDv = new CachedDouble(-1.0, tolerance: 0.5);
+        private readonly Cached<string> _dirtyPropName = new Cached<string>(null);
+        private readonly Cached<int> _lastPitchPct = new Cached<int>(-9999);
+        private readonly Cached<int> _lastRollPct = new Cached<int>(-9999);
+        private readonly Cached<int> _lastYawPct = new Cached<int>(-9999);
+        private string _lastPitchStr;
+        private string _lastRollStr;
+        private string _lastYawStr;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -757,26 +769,26 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (context.Telemetry == null || !context.Telemetry.HasVessel)
             {
-                _dataHasVessel = false;
+                _snap.HasVessel = false;
                 return;
             }
 
-            _dataHasVessel = true;
+            _snap.HasVessel = true;
             IFlightTelemetry telem = context.Telemetry;
 
-            _dataIsLocked = telem.IsStageLocked || StockStageActionService.IsStagingLocked;
-            _dataCurrentStage = telem.CurrentStage;
-            _dataStageDeltaV = telem.StageDeltaV;
-            _dataStageBurnTime = telem.StageBurnTime;
-            _dataTwr = (float)telem.TWR;
-            _dataActiveEngines = telem.ActiveEngines;
-            _dataPitchInput = telem.PitchInput;
-            _dataPitchTrim = telem.PitchTrim;
-            _dataRollInput = telem.RollInput;
-            _dataRollTrim = telem.RollTrim;
-            _dataYawInput = telem.YawInput;
-            _dataYawTrim = telem.YawTrim;
-            _dataStagePropellantFraction = Mathf.Clamp01((float)telem.StagePropellantFraction);
+            _snap.IsLocked = telem.IsStageLocked || StockStageActionService.IsStagingLocked;
+            _snap.CurrentStage = telem.CurrentStage;
+            _snap.StageDeltaV = telem.StageDeltaV;
+            _snap.StageBurnTime = telem.StageBurnTime;
+            _snap.Twr = (float)telem.TWR;
+            _snap.ActiveEngines = telem.ActiveEngines;
+            _snap.PitchInput = telem.PitchInput;
+            _snap.PitchTrim = telem.PitchTrim;
+            _snap.RollInput = telem.RollInput;
+            _snap.RollTrim = telem.RollTrim;
+            _snap.YawInput = telem.YawInput;
+            _snap.YawTrim = telem.YawTrim;
+            _snap.StagePropellantFraction = Mathf.Clamp01((float)telem.StagePropellantFraction);
 
             string rawName = telem.StagePropellantName;
             if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
@@ -785,17 +797,17 @@ namespace ModularFlightPanel.UI.Widgets
             else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
                 rawName = rawName.Substring(4).Trim();
             if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
-            _dataPropName = rawName.ToUpperInvariant();
+            _snap.PropName = rawName.ToUpperInvariant();
 
-            _dataIsPrecisionControl = telem.IsPrecisionControl;
-            _dataIsDockingMode = telem.IsDockingMode;
+            _snap.IsPrecisionControl = telem.IsPrecisionControl;
+            _snap.IsDockingMode = telem.IsDockingMode;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
 
-            if (!_dataHasVessel) return;
+            if (!_snap.HasVessel) return;
 
             float s = CurrentDpiScale;
             float dt = context.DeltaTime;
@@ -803,16 +815,20 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(_cachedTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 1. 自适应排版重算
+            // 1. 自适应排版重算 (增加尺寸脏检查，杜绝每帧重复 ApplyLayout)
             float currentW = RectTransform.rect.width > 10f ? RectTransform.rect.width : BaseSize.x * s;
             float currentH = RectTransform.rect.height > 10f ? RectTransform.rect.height : BaseSize.y * s;
-            ApplyLayout(currentW, currentH);
-
-            // 2. 分级安全锁与就绪联动
-            bool isLocked = _dataIsLocked;
-            if (isLocked != _lastLockedState)
+            if (Math.Abs(currentW - _lastLayoutW) > 0.5f || Math.Abs(currentH - _lastLayoutH) > 0.5f)
             {
-                _lastLockedState = isLocked;
+                _lastLayoutW = currentW;
+                _lastLayoutH = currentH;
+                ApplyLayout(currentW, currentH);
+            }
+
+            // 2. 分级安全锁与就绪联动 (DirtyField 守卫)
+            if (_dirtyLocked.Update(_snap.IsLocked))
+            {
+                bool isLocked = _dirtyLocked.Value;
                 string lockLabel = isLocked
                     ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定")
                     : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
@@ -856,59 +872,50 @@ namespace ModularFlightPanel.UI.Widgets
                 _fireBtn.transform.localScale = Vector3.one;
             }
 
-            // 3. 分级数字读数与性能参数 (Dirty Checking)
-            string sNumStr = $"{_dataCurrentStage:D2}";
-            if (sNumStr != _lastStageNumStr)
+            // 3. 分级数字读数与性能参数 (DirtyField 守卫)
+            if (_dirtyStageNum.Update(_snap.CurrentStage))
             {
-                _lastStageNumStr = sNumStr;
-                SetTextIfChanged(_stageNumText, sNumStr);
+                SetTextIfChanged(_stageNumText, _snap.CurrentStage.ToString("D2"));
             }
 
-            double dv = _dataStageDeltaV;
-            string dvStr = dv > 0.1 ? $"{dv:N0} m/s" : "0 m/s";
-            if (dvStr != _lastStageDvStr)
+            if (_dirtyStageDv.Update(_snap.StageDeltaV))
             {
-                _lastStageDvStr = dvStr;
+                double dv = _dirtyStageDv.Value;
+                string dvStr = dv > 0.1 ? $"{dv:N0} m/s" : "0 m/s";
                 SetTextIfChanged(_stageDvText, dvStr);
             }
 
-            int burnSec = Mathf.Max(0, (int)_dataStageBurnTime);
+            int burnSec = Mathf.Max(0, (int)_snap.StageBurnTime);
             int m = burnSec / 60;
             int sec = burnSec % 60;
-            string twrStr = _dataTwr > 0.01f 
-                ? $"⏱ {m:00}:{sec:00} · {_dataTwr:F2} TWR · ⚙ {_dataActiveEngines} ENG" 
-                : $"⏱ {m:00}:{sec:00} · ⚙ {_dataActiveEngines} ENG";
-            if (twrStr != _lastStageTwrStr)
-            {
-                _lastStageTwrStr = twrStr;
-                SetTextIfChanged(_stageTwrEngText, twrStr);
-            }
+            string twrStr = _snap.Twr > 0.01f 
+                ? $"⏱ {m:00}:{sec:00} · {_snap.Twr:F2} TWR · ⚙ {_snap.ActiveEngines} ENG" 
+                : $"⏱ {m:00}:{sec:00} · ⚙ {_snap.ActiveEngines} ENG";
+            SetTextIfChanged(_stageTwrEngText, twrStr);
 
             if (_stageAccentBar != null)
             {
-                _stageAccentBar.color = _dataActiveEngines > 0 ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+                _stageAccentBar.color = _snap.ActiveEngines > 0 ? theme.AccentPrimary : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             }
 
             // 4. 三轴舵面偏转与配平
             float curTrackW = _cachedTrackWidth * s;
-            UpdateAxisVisuals(_pitchMeter, _dataPitchInput, _dataPitchTrim, curTrackW, s, theme);
-            UpdateAxisVisuals(_rollMeter, _dataRollInput, _dataRollTrim, curTrackW, s, theme);
-            UpdateAxisVisuals(_yawMeter, _dataYawInput, _dataYawTrim, curTrackW, s, theme);
+            UpdateAxisVisuals(_pitchMeter, _snap.PitchInput, _snap.PitchTrim, curTrackW, s, theme, _lastPitchPct, ref _lastPitchStr);
+            UpdateAxisVisuals(_rollMeter, _snap.RollInput, _snap.RollTrim, curTrackW, s, theme, _lastRollPct, ref _lastRollStr);
+            UpdateAxisVisuals(_yawMeter, _snap.YawInput, _snap.YawTrim, curTrackW, s, theme, _lastYawPct, ref _lastYawStr);
 
             // 5. 分级推进剂指示条 (100% 语义驱动)
-            float targetPropFrac = _dataStagePropellantFraction;
+            float targetPropFrac = _snap.StagePropellantFraction;
             _currentPropFrac = Mathf.Lerp(_currentPropFrac < 0f ? targetPropFrac : _currentPropFrac, targetPropFrac, 0.25f);
 
-            string pNameStr = _dataPropName;
-            if (pNameStr != _lastPropNameStr)
+            if (_dirtyPropName.Update(_snap.PropName))
             {
-                _lastPropNameStr = pNameStr;
-                SetTextIfChanged(_propNameText, pNameStr);
+                SetTextIfChanged(_propNameText, _dirtyPropName.Value);
             }
 
             float contentW = currentW - 16f * s;
-            string pPctStr = $"{_currentPropFrac * 100f:F1}%";
-            SetTextIfChanged(_propPctText, pPctStr);
+            int propPctInt = Mathf.Clamp(Mathf.RoundToInt(_currentPropFrac * 100f), 0, 100);
+            SetTextIfChanged(_propPctText, CacheManager.FastPercent(propPctInt));
 
             TextStyleRole pRole = (_currentPropFrac > 0.25f) ? TextStyleRole.PrimaryValue : ((_currentPropFrac > 0.10f) ? TextStyleRole.Warning : TextStyleRole.Danger);
             ApplyText(_propPctText, pRole, theme);
@@ -933,10 +940,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 6. 底部模式按键
-            bool isPrec = _dataIsPrecisionControl;
-            if (isPrec != _lastPrecState)
+            if (_dirtyPrec.Update(_snap.IsPrecisionControl))
             {
-                _lastPrecState = isPrec;
+                bool isPrec = _dirtyPrec.Value;
                 string pStr = isPrec ? "● PREC" : "NORM";
                 SetTextIfChanged(_precText, pStr);
                 ApplyText(_precText, isPrec ? TextStyleRole.Warning : TextStyleRole.SecondaryValue, theme);
@@ -944,10 +950,9 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_precOutline != null) _precOutline.effectColor = isPrec ? WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             }
 
-            bool isDock = _dataIsDockingMode;
-            if (isDock != _lastDockState)
+            if (_dirtyDock.Update(_snap.IsDockingMode))
             {
-                _lastDockState = isDock;
+                bool isDock = _dirtyDock.Value;
                 string mStr = isDock ? "● DCK" : "STG";
                 SetTextIfChanged(_modeText, mStr);
                 ApplyText(_modeText, isDock ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
@@ -956,7 +961,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void UpdateAxisVisuals(AxisMeterUI meter, float input, float trim, float trackW, float s, ThemeConfig theme)
+        private void UpdateAxisVisuals(AxisMeterUI meter, float input, float trim, float trackW, float s, ThemeConfig theme, Cached<int> lastPct, ref string lastStr)
         {
             if (meter == null) return;
             float halfWidth = trackW * 0.5f;
@@ -979,10 +984,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (meter.ValText != null)
             {
                 int pct = Mathf.RoundToInt(clampedInput * 100f);
-                string str = (pct > 0) ? $"+{pct}%" : $"{pct}%";
-                SetTextIfChanged(meter.ValText, str);
-                TextStyleRole role = Mathf.Abs(pct) > 3 ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue;
-                ApplyText(meter.ValText, role, theme);
+                if (lastPct.Update(pct))
+                {
+                    lastStr = (pct > 0) ? "+" + CacheManager.FastPercent(pct) : (pct == 0 ? "0%" : CacheManager.FastInt(pct) + "%");
+                    SetTextIfChanged(meter.ValText, lastStr);
+                    TextStyleRole role = Mathf.Abs(pct) > 3 ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue;
+                    ApplyText(meter.ValText, role, theme);
+                }
             }
         }
 
@@ -1001,15 +1009,16 @@ namespace ModularFlightPanel.UI.Widgets
                 Title.SetRole(TextStyleRole.Cardinal);
             }
 
-            if (_statusBadgePillBg != null) _statusBadgePillBg.color = _lastLockedState ? WidgetStyleManager.WithAlpha(theme.DangerColor, 0.15f) : WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.15f);
-            if (_statusBadgePillOutline != null) _statusBadgePillOutline.effectColor = _lastLockedState ? WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost);
-            if (_statusBadgeText != null) ApplyText(_statusBadgeText, _lastLockedState ? TextStyleRole.Danger : TextStyleRole.Accent, theme);
+            bool locked = _dirtyLocked.Value;
+            if (_statusBadgePillBg != null) _statusBadgePillBg.color = locked ? WidgetStyleManager.WithAlpha(theme.DangerColor, 0.15f) : WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.15f);
+            if (_statusBadgePillOutline != null) _statusBadgePillOutline.effectColor = locked ? WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost);
+            if (_statusBadgeText != null) ApplyText(_statusBadgeText, locked ? TextStyleRole.Danger : TextStyleRole.Accent, theme);
 
-            if (_lockBtnBg != null) _lockBtnBg.color = _lastLockedState ? WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme) : WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success);
+            if (_lockBtnBg != null) _lockBtnBg.color = locked ? WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme) : WidgetStyleManager.StatusPanel(StatusSurfaceRole.Success);
             if (_lockBtnOutline != null) _lockBtnOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (_lockBtnText != null) ApplyText(_lockBtnText, _lastLockedState ? TextStyleRole.Danger : TextStyleRole.Accent, theme);
+            if (_lockBtnText != null) ApplyText(_lockBtnText, locked ? TextStyleRole.Danger : TextStyleRole.Accent, theme);
 
-            if (_fireBtnBg != null) _fireBtnBg.color = _lastLockedState ? WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme) : style.GetMeterColor(MeterStyleRole.Warning, theme);
+            if (_fireBtnBg != null) _fireBtnBg.color = locked ? WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme) : style.GetMeterColor(MeterStyleRole.Warning, theme);
             if (_fireBtnOutline != null) _fireBtnOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             if (_fireBtnText != null) ApplyText(_fireBtnText, TextStyleRole.PrimaryValue, theme);
 
@@ -1040,13 +1049,15 @@ namespace ModularFlightPanel.UI.Widgets
             if (_propFillImg != null) _propFillImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
 
             // 底部按键
-            if (_precImg != null) _precImg.color = _lastPrecState ? WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme) : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            if (_precOutline != null) _precOutline.effectColor = _lastPrecState ? WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (_precText != null) ApplyText(_precText, _lastPrecState ? TextStyleRole.Warning : TextStyleRole.SecondaryValue, theme);
+            bool prec = _dirtyPrec.Value;
+            if (_precImg != null) _precImg.color = prec ? WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme) : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_precOutline != null) _precOutline.effectColor = prec ? WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            if (_precText != null) ApplyText(_precText, prec ? TextStyleRole.Warning : TextStyleRole.SecondaryValue, theme);
 
-            if (_modeImg != null) _modeImg.color = _lastDockState ? WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme) : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-            if (_modeOutline != null) _modeOutline.effectColor = _lastDockState ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
-            if (_modeText != null) ApplyText(_modeText, _lastDockState ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
+            bool dock = _dirtyDock.Value;
+            if (_modeImg != null) _modeImg.color = dock ? WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep, theme) : WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
+            if (_modeOutline != null) _modeOutline.effectColor = dock ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
+            if (_modeText != null) ApplyText(_modeText, dock ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
 
             if (_stockToggleImg != null) _stockToggleImg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
             if (_stockToggleOutline != null) _stockToggleOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);

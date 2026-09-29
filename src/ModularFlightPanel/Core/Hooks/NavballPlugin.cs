@@ -99,6 +99,8 @@ namespace ModularFlightPanel.Core
             try { if (_telemetry != null) Destroy(_telemetry); } catch { }
             try { if (_settings != null) Destroy(_settings); } catch { }
 
+            try { StockToolbarHook.ApplyNonFlightStyleMode(); } catch (Exception ex) { MFPLogger.Warn(MFPLogger.CatCore, $"Error applying non-flight toolbar: {ex.Message}"); }
+
             GlobalExceptionSentinel.Uninstall();
         }
     }

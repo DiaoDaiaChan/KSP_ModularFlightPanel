@@ -441,6 +441,12 @@ namespace ModularFlightPanel.UI
                 _hudRoot.SetActive(true);
             }
             _canvasManager.SetRaycasterEnabled(WidgetDragHandler.IsEditModeActive && _isUIVisible);
+
+            // 确保工具栏接管模式与原版显示状态同步
+            if (ThemeManager.Instance != null)
+            {
+                StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
+            }
         }
 
         public T SpawnWidget<T>(WidgetConfig cfg, ThemeConfig theme) where T : BaseFlightWidget
@@ -567,11 +573,144 @@ namespace ModularFlightPanel.UI
             BuildHUD();
         }
 
-        public void RebuildHUD()
+        /// <summary>
+        /// 针对工具栏模式切换 (0=原版, 1=黑晶重肤, 2=收纳坞) 的专属轻量切换中枢。
+        /// 绝不重建整个 HUD (避免导航球、高度计等几十个无关组件闪烁与画面顿挫)，
+        /// 仅在 HUD 树中就地装配或卸载工具栏组件，并平滑下发工具栏接管状态。
+        /// </summary>
+        public void SwitchToolbarMode(int newMode)
         {
             try
             {
-                if (WidgetLayoutManager.Instance != null && WidgetLayoutManager.Instance.CurrentLayout != null)
+                if (ThemeManager.Instance != null)
+                {
+                    ThemeManager.Instance.ToolbarStyleMode = newMode;
+                    ThemeManager.Instance.SaveSettings();
+                }
+
+                if (newMode == 2)
+                {
+                    EnsureToolbarWidgetPresent();
+                }
+                else
+                {
+                    RemoveToolbarWidgetsFromHUD();
+                }
+
+                StockToolbarHook.ApplyStyleMode(newMode);
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Error(MFPLogger.CatUI, $"SwitchToolbarMode error: {ex}");
+            }
+        }
+
+        private void EnsureToolbarWidgetPresent()
+        {
+            if (_hudRoot == null || _canvasManager == null || _canvasManager.Canvas == null) return;
+
+            ThemeConfig theme = ThemeManager.Instance != null ? ThemeManager.Instance.CurrentTheme : null;
+            bool hasDock = false;
+            for (int i = 0; i < _modularWidgets.Count; i++)
+            {
+                if (_modularWidgets[i] is ModernToolbarWidget)
+                {
+                    hasDock = true;
+                    break;
+                }
+            }
+
+            if (!hasDock)
+            {
+                var dockCfg = WidgetLayoutManager.Instance != null ? WidgetLayoutManager.Instance.GetConfig("core.toolbar") : null;
+                if (dockCfg == null)
+                {
+                    dockCfg = new WidgetConfig("core.toolbar", I18n.GetWidgetName("core.toolbar", "AVIONICS 折叠工具栏收纳坞"), -460f, 0f, 1.0f)
+                    {
+                        WidgetType = "toolbar",
+                        IsEnabled = true
+                    };
+                }
+                BaseFlightWidget dockWidget = WidgetRegistry.Spawn(dockCfg, theme, _hudRoot.transform, _canvasManager.Canvas, CustomScale);
+                if (dockWidget != null)
+                {
+                    _modularWidgets.Add(dockWidget);
+                    WidgetRenderManager.Instance.RegisterWidget(dockWidget, dockWidget.RefreshTier);
+                    dockWidget.IsManagedByRenderManager = true;
+                }
+            }
+
+            if (ThemeManager.Instance != null && ThemeManager.Instance.DockEnableFavoritePanel)
+            {
+                bool hasFav = false;
+                for (int i = 0; i < _modularWidgets.Count; i++)
+                {
+                    if (_modularWidgets[i] is FavoriteToolbarWidget)
+                    {
+                        hasFav = true;
+                        break;
+                    }
+                }
+                if (!hasFav)
+                {
+                    var favCfg = WidgetLayoutManager.Instance != null ? WidgetLayoutManager.Instance.GetConfig("core.dock_favorites") : null;
+                    if (favCfg == null)
+                    {
+                        favCfg = new WidgetConfig("core.dock_favorites", I18n.GetWidgetName("core.dock_favorites", "AVIONICS 常用快捷工具栏"), ThemeManager.Instance.DockFavoritePosX, ThemeManager.Instance.DockFavoritePosY, 1.0f)
+                        {
+                            WidgetType = "dock_favorites",
+                            IsEnabled = true
+                        };
+                    }
+                    BaseFlightWidget favWidget = WidgetRegistry.Spawn(favCfg, theme, _hudRoot.transform, _canvasManager.Canvas, CustomScale);
+                    if (favWidget != null)
+                    {
+                        _modularWidgets.Add(favWidget);
+                        WidgetRenderManager.Instance.RegisterWidget(favWidget, favWidget.RefreshTier);
+                        favWidget.IsManagedByRenderManager = true;
+                    }
+                }
+            }
+
+            WidgetLayerManager.NormalizeAndSyncLayers(recordHistory: false);
+        }
+
+        private void RemoveToolbarWidgetsFromHUD()
+        {
+            var toRemove = new List<BaseFlightWidget>();
+            for (int i = 0; i < _modularWidgets.Count; i++)
+            {
+                var w = _modularWidgets[i];
+                if (w is ModernToolbarWidget || w is FavoriteToolbarWidget)
+                {
+                    toRemove.Add(w);
+                }
+            }
+
+            for (int i = 0; i < toRemove.Count; i++)
+            {
+                var w = toRemove[i];
+                _modularWidgets.Remove(w);
+                WidgetSelectionManager.Deselect(w);
+                WidgetRenderManager.Instance?.UnregisterWidget(w);
+                if (w != null && w.gameObject != null)
+                {
+                    if (Application.isPlaying) Destroy(w.gameObject);
+                    else DestroyImmediate(w.gameObject);
+                }
+            }
+
+            if (toRemove.Count > 0)
+            {
+                WidgetLayerManager.NormalizeAndSyncLayers(recordHistory: false);
+            }
+        }
+
+        public void RebuildHUD(bool forceFullRebuild = false)
+        {
+            try
+            {
+                if (!forceFullRebuild && WidgetLayoutManager.Instance != null && WidgetLayoutManager.Instance.CurrentLayout != null)
                 {
                     if (TryInPlaceUpdateLayout(WidgetLayoutManager.Instance.CurrentLayout))
                     {
@@ -595,6 +734,19 @@ namespace ModularFlightPanel.UI
         public bool TryInPlaceUpdateLayout(WidgetLayoutData layout)
         {
             if (layout == null || layout.Widgets == null || _hudRoot == null || _modularWidgets == null) return false;
+
+            // 模式 2 (折叠收纳坞) 拓扑一致性保护：若当前工具栏挂载状态与设置不一致，必须全量重构
+            bool hasToolbarWidget = false;
+            for (int i = 0; i < _modularWidgets.Count; i++)
+            {
+                if (_modularWidgets[i] is ModernToolbarWidget)
+                {
+                    hasToolbarWidget = true;
+                    break;
+                }
+            }
+            bool shouldHaveToolbarWidget = (ThemeManager.Instance != null && ThemeManager.Instance.ToolbarStyleMode == 2);
+            if (hasToolbarWidget != shouldHaveToolbarWidget) return false;
 
             var activeConfigs = layout.Widgets.Where(c => c != null && c.IsEnabled).ToList();
             if (activeConfigs.Count != _modularWidgets.Count) return false;

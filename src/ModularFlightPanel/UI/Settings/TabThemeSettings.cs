@@ -483,28 +483,68 @@ namespace ModularFlightPanel.UI.Settings
             string tb0 = curTbMode == 0 ? I18n.Tr("THM_TB_CLASSIC_ON", "● 原版经典 (0)") : I18n.Tr("THM_TB_CLASSIC_OFF", "○ 原版经典 (0)");
             if (GUILayout.Button(tb0, curTbMode == 0 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
             {
-                ThemeManager.Instance.ToolbarStyleMode = 0;
-                StockToolbarHook.ApplyStyleMode(0);
-                ThemeManager.Instance.SaveSettings();
-                FlightHUDManager.Instance?.RebuildHUD();
+                if (FlightHUDManager.Instance != null)
+                {
+                    FlightHUDManager.Instance.SwitchToolbarMode(0);
+                }
+                else
+                {
+                    ThemeManager.Instance.ToolbarStyleMode = 0;
+                    ThemeManager.Instance.SaveSettings();
+                    StockToolbarHook.ApplyStyleMode(0);
+                }
             }
 
             string tb1 = curTbMode == 1 ? I18n.Tr("THM_TB_SKIN_ON", "● 黑晶重肤 (1)") : I18n.Tr("THM_TB_SKIN_OFF", "○ 黑晶重肤 (1)");
             if (GUILayout.Button(tb1, curTbMode == 1 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
             {
-                ThemeManager.Instance.ToolbarStyleMode = 1;
-                StockToolbarHook.ApplyStyleMode(1);
-                ThemeManager.Instance.SaveSettings();
-                FlightHUDManager.Instance?.RebuildHUD();
+                if (FlightHUDManager.Instance != null)
+                {
+                    FlightHUDManager.Instance.SwitchToolbarMode(1);
+                }
+                else
+                {
+                    ThemeManager.Instance.ToolbarStyleMode = 1;
+                    ThemeManager.Instance.SaveSettings();
+                    StockToolbarHook.ApplyStyleMode(1);
+                }
             }
 
             string tb2 = curTbMode == 2 ? I18n.Tr("THM_TB_DOCK_ON", "● 折叠收纳坞 (2)") : I18n.Tr("THM_TB_DOCK_OFF", "○ 折叠收纳坞 (2)");
             if (GUILayout.Button(tb2, curTbMode == 2 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
             {
-                ThemeManager.Instance.ToolbarStyleMode = 2;
-                StockToolbarHook.ApplyStyleMode(2);
+                if (FlightHUDManager.Instance != null)
+                {
+                    FlightHUDManager.Instance.SwitchToolbarMode(2);
+                }
+                else
+                {
+                    ThemeManager.Instance.ToolbarStyleMode = 2;
+                    ThemeManager.Instance.SaveSettings();
+                    StockToolbarHook.ApplyStyleMode(2);
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b>{I18n.Tr("THM_NONFLIGHT_TB_MODE", "非飞行场景 (航天中心/VAB/SPH):")}</b>", GUILayout.Width(240f));
+            int nonFlightMode = ThemeManager.Instance.NonFlightToolbarMode;
+
+            string nftb1 = nonFlightMode == 1 ? I18n.Tr("THM_NFTB_RESKIN_ON", "● 保持黑晶重肤 (Hook)") : I18n.Tr("THM_NFTB_RESKIN_OFF", "○ 保持黑晶重肤 (Hook)");
+            if (GUILayout.Button(nftb1, nonFlightMode == 1 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
+            {
+                ThemeManager.Instance.NonFlightToolbarMode = 1;
+                StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
                 ThemeManager.Instance.SaveSettings();
-                FlightHUDManager.Instance?.RebuildHUD();
+            }
+
+            string nftb0 = nonFlightMode == 0 ? I18n.Tr("THM_NFTB_STOCK_ON", "● 恢复原版经典 (Stock)") : I18n.Tr("THM_NFTB_STOCK_OFF", "○ 恢复原版经典 (Stock)");
+            if (GUILayout.Button(nftb0, nonFlightMode == 0 ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.ExpandWidth(true)))
+            {
+                ThemeManager.Instance.NonFlightToolbarMode = 0;
+                StockToolbarHook.ApplyStyleMode(ThemeManager.Instance.ToolbarStyleMode);
+                ThemeManager.Instance.SaveSettings();
             }
             GUILayout.EndHorizontal();
 

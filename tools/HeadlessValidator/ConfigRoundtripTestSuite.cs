@@ -419,6 +419,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 HideStockCommNet = true,
                 HideStockToolbar = false,
                 ToolbarStyleMode = 2,
+                NonFlightToolbarMode = 1,
                 MasterBypass = false,
                 ShowPerformanceBadge = true,
                 EnableGpu2DUIAcceleration = true,
@@ -712,6 +713,7 @@ namespace ModularFlightPanel.HeadlessValidator
             if (a.HideStockCommNet != b.HideStockCommNet) { PrintError($"[{context}] HideStockCommNet: {a.HideStockCommNet} vs {b.HideStockCommNet}"); diffs++; }
             if (a.HideStockToolbar != b.HideStockToolbar) { PrintError($"[{context}] HideStockToolbar: {a.HideStockToolbar} vs {b.HideStockToolbar}"); diffs++; }
             if (a.ToolbarStyleMode != b.ToolbarStyleMode) { PrintError($"[{context}] ToolbarStyleMode: {a.ToolbarStyleMode} vs {b.ToolbarStyleMode}"); diffs++; }
+            if (a.NonFlightToolbarMode != b.NonFlightToolbarMode) { PrintError($"[{context}] NonFlightToolbarMode: {a.NonFlightToolbarMode} vs {b.NonFlightToolbarMode}"); diffs++; }
             if (a.MasterBypass != b.MasterBypass) { PrintError($"[{context}] MasterBypass: {a.MasterBypass} vs {b.MasterBypass}"); diffs++; }
             if (a.ShowPerformanceBadge != b.ShowPerformanceBadge) { PrintError($"[{context}] ShowPerformanceBadge: {a.ShowPerformanceBadge} vs {b.ShowPerformanceBadge}"); diffs++; }
             if (a.EnableGpu2DUIAcceleration != b.EnableGpu2DUIAcceleration) { PrintError($"[{context}] EnableGpu2DUIAcceleration: {a.EnableGpu2DUIAcceleration} vs {b.EnableGpu2DUIAcceleration}"); diffs++; }

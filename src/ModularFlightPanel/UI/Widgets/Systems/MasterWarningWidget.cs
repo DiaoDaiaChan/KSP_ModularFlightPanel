@@ -221,6 +221,8 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastRenderedEventSub;
         private string _lastRenderedEventLeftIcon;
         private string _lastRenderedEventRightIcon;
+        private bool _nominalDataDirty = true;
+        private bool _isQuiescentFlightState = false;
 
         // 左舱：Caution (黄色注意) 视图组件
         private GameObject _cautCell;
@@ -1289,25 +1291,28 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             float dt = context.DeltaTime;
 
-            // 1. 更新座舱全局同步时钟与闪烁节拍
-            _clock += dt;
-            _blink1Hz = ((int)(_clock * 2f) % 2) == 0;
-            _blink2Hz = ((int)(_clock * 4f) % 2) == 0;
-
-            // 2. 定时交替轮播推进
-            _rotateTimer += dt;
-            if (_rotateTimer >= _switchInterval)
+            // 1. 若两侧告警均有活跃条目，推进闪烁时钟与定时轮播
+            bool hasAlerts = _cautAlerts.Count > 0 || _warnAlerts.Count > 0;
+            if (hasAlerts)
             {
-                _rotateTimer = 0f;
-                if (_cautAlerts.Count > 1) _cautIndex = (_cautIndex + 1) % _cautAlerts.Count;
-                if (_warnAlerts.Count > 1) _warnIndex = (_warnIndex + 1) % _warnAlerts.Count;
+                _clock += dt;
+                _blink1Hz = ((int)(_clock * 2f) % 2) == 0;
+                _blink2Hz = ((int)(_clock * 4f) % 2) == 0;
+
+                _rotateTimer += dt;
+                if (_rotateTimer >= _switchInterval)
+                {
+                    _rotateTimer = 0f;
+                    if (_cautAlerts.Count > 1) _cautIndex = (_cautIndex + 1) % _cautAlerts.Count;
+                    if (_warnAlerts.Count > 1) _warnIndex = (_warnIndex + 1) % _warnAlerts.Count;
+                }
             }
 
-            // 3. 依据 2 模块或 3 模块架构分流驱动视觉
+            // 2. 依据 2 模块或 3 模块架构分流驱动视觉
             if (_modulesCount == 3)
             {
                 // 3模块 金字塔形态：
-                // 上层甲板：Caution 与 Warning 光字牌永不遮挡，全天候独立工作
+                // 上层甲板：若无告警且已处于暗舱静止状态，零额外 UGUI 触摸
                 RenderVisualCells(theme);
 
                 // 下层底座：若有瞬态事件由状态机驱动展示，无事件时展示巡航工况
@@ -1550,16 +1555,35 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (telem == null) return;
 
+            string curSit = telem.FlightSituation;
+            bool hasNode = telem.HasManeuverNode;
+            float throttle = telem.Throttle;
+
+            // 稳态静默期识别 (Quiescent Steady-State Detection)
+            bool isSteadyOrbit = curSit == "ORBITING" && !hasNode && telem.ActiveEngines == 0 && throttle <= 0.001f;
+            bool isSteadyPad = (curSit == "LANDED" || curSit == "PRELAUNCH") && telem.SurfaceSpeed < 0.5 && telem.ActiveEngines == 0 && throttle <= 0.001f;
+            _isQuiescentFlightState = isSteadyOrbit || isSteadyPad;
+
             double atmoCutoff = _cachedAtmoCutoff;
             double effectivePe = _cachedEffectivePe;
             double effectiveAp = _cachedEffectiveAp;
+
+            // 若在稳态静默巡航轨道中且工况文本未失效，直接复用，免除全部后续分流与格式化逻辑
+            if (isSteadyOrbit && _dataNominalTitle == _cachedStrOrbitCruise && Math.Abs(effectiveAp - _lastRenderedAp) <= 500.0)
+            {
+                return;
+            }
+            if (isSteadyPad && _dataNominalTitle == _cachedStrReady)
+            {
+                return;
+            }
 
             string title;
             string sub;
             string icon;
             EventColorRole role;
 
-            if (telem.HasManeuverNode)
+            if (hasNode)
             {
                 title = _cachedStrNodeArmed ?? (_cachedStrNodeArmed = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命"));
                 double dv = telem.ManeuverDeltaV;
@@ -1659,33 +1683,47 @@ namespace ModularFlightPanel.UI.Widgets
                 role = EventColorRole.AccentPrimary;
             }
 
-            _dataNominalTitle = title;
-            _dataNominalSub = sub;
-            _dataNominalIcon = icon;
-            _dataNominalRole = role;
+            if (!object.ReferenceEquals(_dataNominalTitle, title) ||
+                !object.ReferenceEquals(_dataNominalSub, sub) ||
+                !object.ReferenceEquals(_dataNominalIcon, icon) ||
+                _dataNominalRole != role)
+            {
+                _dataNominalTitle = title;
+                _dataNominalSub = sub;
+                _dataNominalIcon = icon;
+                _dataNominalRole = role;
+                _nominalDataDirty = true;
+            }
         }
 
         private void RenderNominalFlightPhaseUI(ThemeConfig theme)
         {
             if (_bannerCell == null || !_bannerCell.activeSelf) return;
 
+            // ── 静默巡航极速短路 (Nominal Quiescent Fast-Path) ──
+            // 当巡航工况文本、图标与主题配色无变化时，0 额外开销，直接返回
+            if (!_nominalDataDirty && !_nominalStyleNeedsUpdate) return;
+
             Color phaseColor = ResolveEventColor(_dataNominalRole, theme);
 
-            if (!object.ReferenceEquals(_lastRenderedNominalTitle, _dataNominalTitle) && _lastRenderedNominalTitle != _dataNominalTitle)
+            if (_nominalDataDirty)
             {
-                _lastRenderedNominalTitle = _dataNominalTitle;
-                if (_bannerTitle != null) _bannerTitle.SetTextSafe(_dataNominalTitle);
-            }
-            if (!object.ReferenceEquals(_lastRenderedNominalSub, _dataNominalSub) && _lastRenderedNominalSub != _dataNominalSub)
-            {
-                _lastRenderedNominalSub = _dataNominalSub;
-                if (_bannerSub != null) _bannerSub.SetTextSafe(_dataNominalSub);
-            }
-            if (!object.ReferenceEquals(_lastRenderedNominalIcon, _dataNominalIcon) && _lastRenderedNominalIcon != _dataNominalIcon)
-            {
-                _lastRenderedNominalIcon = _dataNominalIcon;
-                if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_dataNominalIcon);
-                if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_dataNominalIcon);
+                if (!object.ReferenceEquals(_lastRenderedNominalTitle, _dataNominalTitle) && _lastRenderedNominalTitle != _dataNominalTitle)
+                {
+                    _lastRenderedNominalTitle = _dataNominalTitle;
+                    if (_bannerTitle != null) _bannerTitle.SetTextSafe(_dataNominalTitle);
+                }
+                if (!object.ReferenceEquals(_lastRenderedNominalSub, _dataNominalSub) && _lastRenderedNominalSub != _dataNominalSub)
+                {
+                    _lastRenderedNominalSub = _dataNominalSub;
+                    if (_bannerSub != null) _bannerSub.SetTextSafe(_dataNominalSub);
+                }
+                if (!object.ReferenceEquals(_lastRenderedNominalIcon, _dataNominalIcon) && _lastRenderedNominalIcon != _dataNominalIcon)
+                {
+                    _lastRenderedNominalIcon = _dataNominalIcon;
+                    if (_bannerLeftIcon != null) _bannerLeftIcon.SetTextSafe(_dataNominalIcon);
+                    if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(_dataNominalIcon);
+                }
             }
 
             if (_lastNominalPhaseColor != phaseColor || _nominalStyleNeedsUpdate)
@@ -1706,6 +1744,8 @@ namespace ModularFlightPanel.UI.Widgets
                 _bannerLeftIcon?.SetColor(deadFrontGhost);
                 _bannerRightIcon?.SetColor(deadFrontGhost);
             }
+
+            _nominalDataDirty = false;
         }
 
         private void EvaluateTelemetryAlertsStaggered(IFlightTelemetry telem, float dt, bool forceAll)
@@ -1717,8 +1757,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (UpdateAlertBucket(_urgentCautAlerts, _tempCaut)) _alertsDirty = true;
             if (UpdateAlertBucket(_urgentWarnAlerts, _tempWarn)) _alertsDirty = true;
 
-            // ── Tier 2: 飞船资源与子系统状态 (5Hz 判定，偶数拍执行) ──
-            if (forceAll || (_heartbeatTick % 2 == 0))
+            // 稳态静默工况智能降频 (Quiescent Steady-State Alert Throttling)：
+            // 当飞船处于稳定巡航轨道或发射台静止待命且无发动机点火/告警时，外围子系统与进近探测降频至 2Hz/1Hz，节约高达 75% 的诊断探测开销
+            bool isQuiescent = _isQuiescentFlightState && _cautAlerts.Count == 0 && _warnAlerts.Count == 0;
+
+            // ── Tier 2: 飞船资源与子系统状态 (常规 5Hz / 稳态静默 2Hz) ──
+            bool runTier2 = forceAll || (isQuiescent ? (_heartbeatTick % 5 == 0) : (_heartbeatTick % 2 == 0));
+            if (runTier2)
             {
                 _tempCaut.Clear();
                 _tempWarn.Clear();
@@ -1727,8 +1772,9 @@ namespace ModularFlightPanel.UI.Widgets
                 if (UpdateAlertBucket(_subsysWarnAlerts, _tempWarn)) _alertsDirty = true;
             }
 
-            // ── Tier 3: 进近、气动与姿轨导航安全 (5Hz 判定，奇数拍执行) ──
-            if (forceAll || (_heartbeatTick % 2 == 1))
+            // ── Tier 3: 进近、气动与姿轨导航安全 (常规 5Hz / 稳态静默 1Hz) ──
+            bool runTier3 = forceAll || (isQuiescent ? (_heartbeatTick % 10 == 1) : (_heartbeatTick % 2 == 1));
+            if (runTier3)
             {
                 _tempCaut.Clear();
                 _tempWarn.Clear();
@@ -1737,8 +1783,9 @@ namespace ModularFlightPanel.UI.Widgets
                 if (UpdateAlertBucket(_apprWarnAlerts, _tempWarn)) _alertsDirty = true;
             }
 
-            // ── Tier 4: 慢速外围环境与深度诊断探针 (2Hz 判定，每 5 拍执行) ──
-            if (forceAll || (_heartbeatTick % 5 == 0))
+            // ── Tier 4: 慢速外围环境与深度诊断探针 (常规 2Hz / 稳态静默 1Hz) ──
+            bool runTier4 = forceAll || (isQuiescent ? (_heartbeatTick % 10 == 0) : (_heartbeatTick % 5 == 0));
+            if (runTier4)
             {
                 _tempCaut.Clear();
                 _tempWarn.Clear();
@@ -2121,8 +2168,16 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             if (theme == null) return;
 
-            // ── A. 渲染左舱：CAUTION ──
+            // ── 静默待命极速短路 (Dormant Quiescent Fast-Path) ──
+            // 当左右光字牌均无告警且已完成暗舱待命渲染时，跳过全部字符串比对与颜色更新
             bool isCautActive = _cautAlerts.Count > 0;
+            bool isWarnActive = _warnAlerts.Count > 0;
+            if (!isCautActive && !isWarnActive && _cautWasDeadFront && _warnWasDeadFront && !_cellsStyleNeedsUpdate)
+            {
+                return;
+            }
+
+            // ── A. 渲染左舱：CAUTION ──
             if (isCautActive)
             {
                 _cautWasDeadFront = false;
@@ -2185,7 +2240,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // ── B. 渲染右舱：WARNING ──
-            bool isWarnActive = _warnAlerts.Count > 0;
             if (isWarnActive)
             {
                 _warnWasDeadFront = false;
@@ -2299,10 +2353,72 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        protected override void OnDestroy()
+        protected override void OnResetPrivateCache()
         {
             _bannerQueue.Clear();
             _eventLastTriggerTimes.Clear();
+            _currentEvent = default;
+            _bannerState = BannerDisplayState.Normal;
+            _bannerTimer = 0f;
+            _cautAlerts.Clear();
+            _warnAlerts.Clear();
+            _urgentCautAlerts.Clear();
+            _urgentWarnAlerts.Clear();
+            _subsysCautAlerts.Clear();
+            _subsysWarnAlerts.Clear();
+            _apprCautAlerts.Clear();
+            _apprWarnAlerts.Clear();
+            _slowCautAlerts.Clear();
+            _slowWarnAlerts.Clear();
+            _tempCaut.Clear();
+            _tempWarn.Clear();
+            _heartbeatTick = 0;
+            _alertsDirty = true;
+            _cautAcknowledged = false;
+            _warnAcknowledged = false;
+            _lastCautCount = -1;
+            _lastWarnCount = -1;
+            _cautIndex = 0;
+            _warnIndex = 0;
+            _rotateTimer = 0f;
+            _cellsStyleNeedsUpdate = true;
+            _nominalStyleNeedsUpdate = true;
+            _lastNominalPhaseColor = Color.clear;
+            _lastRenderedAp = -9999999.0;
+            _lastRenderedPe = -9999999.0;
+            _lastRenderedDv = -999.0;
+            _lastRenderedMach = -1f;
+            _lastRenderedVsi = -9999f;
+            _cachedApSub = null;
+            _cachedPeSub = null;
+            _cachedDvSub = null;
+            _cachedMachSub = null;
+            _cachedVsiSub = null;
+            _lastRenderedNominalTitle = null;
+            _lastRenderedNominalSub = null;
+            _lastRenderedNominalIcon = null;
+            _lastRenderedEventTitle = null;
+            _lastRenderedEventSub = null;
+            _lastRenderedEventLeftIcon = null;
+            _lastRenderedEventRightIcon = null;
+            _lastAglMeters = -9999;
+            _lastVsiVal = -9999;
+            _lastGForceVal = -999.0;
+            _lastTempInt = -9999;
+            _lastTtiSec = -9999;
+            _lastClosureRateVal = -999.0;
+            _lastVMassVal = -999.0;
+            _lastRadVal = -999.0;
+            _lastPressVal = -999.0;
+            _nominalDataDirty = true;
+            _isQuiescentFlightState = false;
+            _lastDbsSec = -9999;
+            _lastDbsMin = -9999;
+        }
+
+        protected override void OnDestroy()
+        {
+            OnResetPrivateCache();
             if (_cautBtn != null) _cautBtn.onClick.RemoveAllListeners();
             if (_warnBtn != null) _warnBtn.onClick.RemoveAllListeners();
             if (_centerDividerBtn != null) _centerDividerBtn.onClick.RemoveAllListeners();

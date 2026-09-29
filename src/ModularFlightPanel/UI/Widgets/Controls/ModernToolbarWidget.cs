@@ -131,12 +131,6 @@ namespace ModularFlightPanel.UI.Widgets
             SetupDockStructure();
             PopulateToolbarButtons(_contentRt, s);
 
-            // 模式 2 激活时隐藏原版工具栏
-            if (ThemeManager.Instance.ToolbarStyleMode == 2)
-            {
-                StockToolbarHook.HideStockToolbar(true);
-            }
-
             // 标准化组件内部控件注册至管理器
             if (_panelBg != null)
             {
@@ -1489,7 +1483,8 @@ namespace ModularFlightPanel.UI.Widgets
 #if KSP_RUNTIME
             DockAnchorTracker.UnregisterWidget(this);
 #endif
-            if (ThemeManager.Instance.ToolbarStyleMode != 2)
+            // 仅在已退出收纳坞模式 (模式 0 或 1) 或场景整体销毁时还原原版工具栏显示，杜绝 HUD 重构期间反复震荡闪烁
+            if (ThemeManager.Instance == null || ThemeManager.Instance.ToolbarStyleMode != 2)
             {
                 StockToolbarHook.HideStockToolbar(false);
             }

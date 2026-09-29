@@ -698,6 +698,7 @@ namespace ModularFlightPanel.Config
                 data.HideStockCommNet = root.GetBool("HideStockCommNet", false);
                 data.HideStockToolbar = root.GetBool("HideStockToolbar", false);
                 data.ToolbarStyleMode = root.GetInt("ToolbarStyleMode", 1);
+                data.NonFlightToolbarMode = root.GetInt("NonFlightToolbarMode", 1);
                 data.MasterBypass = root.GetBool("MasterBypass", false);
                 data.ShowPerformanceBadge = root.GetBool("ShowPerformanceBadge", false);
                 data.EnableGpu2DUIAcceleration = root.GetBool("EnableGpu2DUIAcceleration", true);
@@ -766,6 +767,7 @@ namespace ModularFlightPanel.Config
             root.Add("HideStockCommNet", data.HideStockCommNet);
             root.Add("HideStockToolbar", data.HideStockToolbar);
             root.Add("ToolbarStyleMode", data.ToolbarStyleMode);
+            root.Add("NonFlightToolbarMode", data.NonFlightToolbarMode);
             root.Add("MasterBypass", data.MasterBypass);
             root.Add("ShowPerformanceBadge", data.ShowPerformanceBadge);
             root.Add("EnableGpu2DUIAcceleration", data.EnableGpu2DUIAcceleration);

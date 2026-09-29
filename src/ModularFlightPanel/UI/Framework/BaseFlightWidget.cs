@@ -16,7 +16,7 @@ namespace ModularFlightPanel.UI
     /// 全自动化交互侦测与 EventSystem 射线按需裁剪 (Raycast Target Pruning)、
     /// 集中式数据心跳驱动与物理步长解算 (IDataHeartBeat)
     /// </summary>
-    public abstract class BaseFlightWidget : MonoBehaviour, IDataHeartBeat, IUIDrawLoop
+    public abstract class BaseFlightWidget : MonoBehaviour, IDataHeartBeat, IUIDrawLoop, CacheManager.IWidgetPrivateCache
     {
         public WidgetConfig Config { get; set; }
         public string WidgetId => Config?.WidgetId ?? "unknown";
@@ -362,13 +362,38 @@ namespace ModularFlightPanel.UI
 
         public GraphicRaycaster SubRaycaster { get; private set; }
 
+        private List<IResetableCache> _autoDiscoveredCaches;
+
         protected virtual void Awake()
         {
             WidgetDragHandler.OnEditModeChanged += HandleEditModeChanged;
+            CacheManager.Instance.RegisterWidgetCache(this);
+            DiscoverResetableCaches();
+        }
+
+        private void DiscoverResetableCaches()
+        {
+            if (_autoDiscoveredCaches != null) return;
+            var fields = GetType().GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            for (int i = 0; i < fields.Length; i++)
+            {
+                var f = fields[i];
+                if (typeof(IResetableCache).IsAssignableFrom(f.FieldType))
+                {
+                    var cacheObj = f.GetValue(this) as IResetableCache;
+                    if (cacheObj != null)
+                    {
+                        if (_autoDiscoveredCaches == null) _autoDiscoveredCaches = new List<IResetableCache>(8);
+                        _autoDiscoveredCaches.Add(cacheObj);
+                    }
+                }
+            }
         }
 
         public virtual void Teardown()
         {
+            CacheManager.Instance.UnregisterWidgetCache(this);
+            _autoDiscoveredCaches?.Clear();
             this.Controls.UnregisterAll();
             WidgetDragHandler.OnEditModeChanged -= HandleEditModeChanged;
             if (DragHandler != null)
@@ -378,6 +403,31 @@ namespace ModularFlightPanel.UI
             WidgetRenderManager.Instance?.UnregisterWidget(this);
             I18nManager.OnLanguageChanged -= HandleLanguageChanged;
         }
+
+        /// <summary>
+        /// 响应 CacheManager 全局瞬态缓存清空广播 (换船/切场景/重置)，触发派生组件私有状态复位
+        /// </summary>
+        void CacheManager.IWidgetPrivateCache.ResetPrivateCache()
+        {
+            // 1. 全自动执行所有声明为 Cached / CachedFloat / CachedDouble 等字段的复位
+            if (_autoDiscoveredCaches != null)
+            {
+                for (int i = 0; i < _autoDiscoveredCaches.Count; i++)
+                {
+                    _autoDiscoveredCaches[i].ResetToDefault();
+                }
+            }
+
+            // 2. 触发派生类额外自定义复位逻辑
+            OnResetPrivateCache();
+        }
+
+        /// <summary>
+        /// 当换船 (Switch Vessel)、场景卸载、UI 重置或 CacheManager.ClearTransient() 被调用时触发。
+        /// 若组件字段已采用 Cached / CachedFloat / CachedDouble 声明，父类已全自动复位，
+        /// 派生组件通常完全无需重写此方法（仅在有特异化队列需清空时重写）。
+        /// </summary>
+        protected virtual void OnResetPrivateCache() { }
 
         protected virtual void OnDestroy()
         {
@@ -1610,5 +1660,265 @@ namespace ModularFlightPanel.UI
         public override Vector2 BaseSize => new Vector2(160f, 50f);
         protected override bool AutoCreateCardFrame => true;
     }
+
+    #region Zero-GC Component Private State Helpers
+
+    /// <summary>
+    /// 可自动复位的组件私有缓存契约接口
+    /// </summary>
+    public interface IResetableCache
+    {
+        void ResetToDefault();
+    }
+
+    /// <summary>
+    /// 全自动纳管私有缓存包装器 (通用类型：bool, int, enum, string 等)。
+    /// 声明为组件私有字段后，BaseFlightWidget 会在切船/重置时全自动调用复位，组件无需手写任何重置代码！
+    /// </summary>
+    public class Cached<T> : IResetableCache
+    {
+        private T _value;
+        private readonly T _defaultValue;
+
+        public Cached(T initial = default)
+        {
+            _value = initial;
+            _defaultValue = initial;
+        }
+
+        public T Value
+        {
+            get => _value;
+            set => _value = value;
+        }
+
+        public bool Update(T next)
+        {
+            if (EqualityComparer<T>.Default.Equals(_value, next))
+            {
+                return false;
+            }
+            _value = next;
+            return true;
+        }
+
+        public void Reset(T value)
+        {
+            _value = value;
+        }
+
+        public void ResetToDefault()
+        {
+            _value = _defaultValue;
+        }
+
+        public static implicit operator T(Cached<T> c) => c != null ? c._value : default;
+        public override string ToString() => _value != null ? _value.ToString() : string.Empty;
+    }
+
+    /// <summary>
+    /// 全自动纳管私有浮点死区缓存包装器 (带容差死区过滤)。
+    /// 声明为组件私有字段后，BaseFlightWidget 会在切船/重置时全自动调用复位，组件无需手写任何重置代码！
+    /// </summary>
+    public class CachedFloat : IResetableCache
+    {
+        private float _value;
+        private readonly float _defaultValue;
+        private readonly float _tolerance;
+
+        public CachedFloat(float initial = 0f, float tolerance = 0.001f)
+        {
+            _value = initial;
+            _defaultValue = initial;
+            _tolerance = tolerance;
+        }
+
+        public float Value
+        {
+            get => _value;
+            set => _value = value;
+        }
+
+        public bool Update(float next)
+        {
+            if (Math.Abs(next - _value) <= _tolerance)
+            {
+                return false;
+            }
+            _value = next;
+            return true;
+        }
+
+        public void Reset(float value)
+        {
+            _value = value;
+        }
+
+        public void ResetToDefault()
+        {
+            _value = _defaultValue;
+        }
+
+        public static implicit operator float(CachedFloat c) => c != null ? c._value : 0f;
+        public override string ToString() => _value.ToString();
+    }
+
+    /// <summary>
+    /// 全自动纳管私有双精度浮点死区缓存包装器 (带容差死区过滤)。
+    /// 声明为组件私有字段后，BaseFlightWidget 会在切船/重置时全自动调用复位，组件无需手写任何重置代码！
+    /// </summary>
+    public class CachedDouble : IResetableCache
+    {
+        private double _value;
+        private readonly double _defaultValue;
+        private readonly double _tolerance;
+
+        public CachedDouble(double initial = 0.0, double tolerance = 0.001)
+        {
+            _value = initial;
+            _defaultValue = initial;
+            _tolerance = tolerance;
+        }
+
+        public double Value
+        {
+            get => _value;
+            set => _value = value;
+        }
+
+        public bool Update(double next)
+        {
+            if (Math.Abs(next - _value) <= _tolerance)
+            {
+                return false;
+            }
+            _value = next;
+            return true;
+        }
+
+        public void Reset(double value)
+        {
+            _value = value;
+        }
+
+        public void ResetToDefault()
+        {
+            _value = _defaultValue;
+        }
+
+        public static implicit operator double(CachedDouble c) => c != null ? c._value : 0.0;
+        public override string ToString() => _value.ToString();
+    }
+
+    /// <summary>
+    /// 零 GC 通用值脏检查结构体槽位 (适合高性能局部值比较)
+    /// </summary>
+    public struct DirtyField<T> : IEquatable<DirtyField<T>>
+    {
+        private T _value;
+
+        public DirtyField(T initial)
+        {
+            _value = initial;
+        }
+
+        public T Value => _value;
+
+        public bool Update(T next)
+        {
+            if (EqualityComparer<T>.Default.Equals(_value, next))
+            {
+                return false;
+            }
+            _value = next;
+            return true;
+        }
+
+        public void Reset(T value = default)
+        {
+            _value = value;
+        }
+
+        public bool Equals(DirtyField<T> other) => EqualityComparer<T>.Default.Equals(_value, other._value);
+        public override bool Equals(object obj) => obj is DirtyField<T> other && Equals(other);
+        public override int GetHashCode() => _value != null ? EqualityComparer<T>.Default.GetHashCode(_value) : 0;
+        public static implicit operator T(DirtyField<T> field) => field._value;
+    }
+
+    /// <summary>
+    /// 零 GC 浮点数死区脏检查结构体槽位 (带绝对容差过滤，阻断高频微动重绘)
+    /// </summary>
+    public struct DirtyFloat : IEquatable<DirtyFloat>
+    {
+        private float _value;
+        private readonly float _tolerance;
+
+        public DirtyFloat(float initial, float tolerance = 0.001f)
+        {
+            _value = initial;
+            _tolerance = tolerance;
+        }
+
+        public float Value => _value;
+
+        public bool Update(float next)
+        {
+            if (Math.Abs(next - _value) <= _tolerance)
+            {
+                return false;
+            }
+            _value = next;
+            return true;
+        }
+
+        public void Reset(float value = 0f)
+        {
+            _value = value;
+        }
+
+        public bool Equals(DirtyFloat other) => _value.Equals(other._value);
+        public override bool Equals(object obj) => obj is DirtyFloat other && Equals(other);
+        public override int GetHashCode() => _value.GetHashCode();
+        public static implicit operator float(DirtyFloat field) => field._value;
+    }
+
+    /// <summary>
+    /// 零 GC 双精度死区脏检查结构体槽位 (带绝对容差过滤，阻断高频微动重绘)
+    /// </summary>
+    public struct DirtyDouble : IEquatable<DirtyDouble>
+    {
+        private double _value;
+        private readonly double _tolerance;
+
+        public DirtyDouble(double initial, double tolerance = 0.001)
+        {
+            _value = initial;
+            _tolerance = tolerance;
+        }
+
+        public double Value => _value;
+
+        public bool Update(double next)
+        {
+            if (Math.Abs(next - _value) <= _tolerance)
+            {
+                return false;
+            }
+            _value = next;
+            return true;
+        }
+
+        public void Reset(double value = 0.0)
+        {
+            _value = value;
+        }
+
+        public bool Equals(DirtyDouble other) => _value.Equals(other._value);
+        public override bool Equals(object obj) => obj is DirtyDouble other && Equals(other);
+        public override int GetHashCode() => _value.GetHashCode();
+        public static implicit operator double(DirtyDouble field) => field._value;
+    }
+
+    #endregion
 }
 

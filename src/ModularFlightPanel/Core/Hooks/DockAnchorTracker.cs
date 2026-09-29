@@ -173,32 +173,13 @@ namespace ModularFlightPanel.Core
 
         private static void SyncEntryTransform(TrackedButtonEntry entry)
         {
-            if (entry == null || entry.KspButton == null || entry.TargetRt == null) return;
+            if (entry == null || entry.TargetRt == null) return;
             if (!entry.TargetRt.gameObject.activeInHierarchy) return;
 
+            // 仅对齐并缓存 Dock 界面按钮世界边界 (供 Harmony GetAnchor 系列补丁提供计算基准)
+            // 绝不直接暴力修改 KSPButton 及其 container 的 Transform.position，
+            // 彻底根除原版 SimpleLayout 布局器每帧与位置同步抢占冲突导致的剧烈高频晃动与闪烁！
             entry.TargetRt.GetWorldCorners(entry.CachedWorldCorners);
-            Vector3[] c = entry.CachedWorldCorners;
-            Vector2 screenCenter = (c[0] + c[2]) * 0.5f;
-
-            Vector3 worldPos = ScreenToMainCanvasWorld(screenCenter);
-
-            try
-            {
-                if (entry.KspButton.transform != null && (entry.KspButton.transform.position - worldPos).sqrMagnitude > 0.01f)
-                {
-                    entry.KspButton.transform.position = worldPos;
-                }
-                if (entry.KspButton.container != null && entry.KspButton.container.transform != null && (entry.KspButton.container.transform.position - worldPos).sqrMagnitude > 0.01f)
-                {
-                    entry.KspButton.container.transform.position = worldPos;
-                }
-                if (entry.KspButton.toggleButton != null && entry.KspButton.toggleButton.transform != null && (entry.KspButton.toggleButton.transform.position - worldPos).sqrMagnitude > 0.01f)
-                {
-                    entry.KspButton.toggleButton.transform.position = worldPos;
-                }
-            }
-            catch { }
-
             entry.LastSyncTime = Time.unscaledTime;
         }
 

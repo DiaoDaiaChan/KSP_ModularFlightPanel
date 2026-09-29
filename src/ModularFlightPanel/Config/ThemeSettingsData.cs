@@ -36,6 +36,7 @@ namespace ModularFlightPanel.Config
         public bool HideStockCommNet = false;
         public bool HideStockToolbar = false;
         public int ToolbarStyleMode = 1; // 0 = Stock, 1 = Reskin, 2 = ModernWidget
+        public int NonFlightToolbarMode = 1; // 0 = Stock (恢复原版经典), 1 = Reskin (保持黑晶重肤 Hook)
         public bool MasterBypass = false;
         public bool ShowPerformanceBadge = false;
         public bool EnableGpu2DUIAcceleration = true; // 开启 2D 仪表 GPU 单 Quad 程序化渲染加速

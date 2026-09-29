@@ -19,7 +19,8 @@ namespace ModularFlightPanel.Core
         public static bool IsReskinned => _isReskinned;
         public static bool IsStockHidden => _isStockHidden;
 
-        private static readonly Dictionary<Graphic, Color> _cachedColors = new Dictionary<Graphic, Color>();
+        // 永久缓存原版初始颜色，绝不覆盖已有记录，杜绝重复重肤导致重绘颜色污染为原始颜色的恶性循环！
+        private static readonly Dictionary<Graphic, Color> _originalStockColors = new Dictionary<Graphic, Color>();
         private static readonly List<Outline> _addedOutlines = new List<Outline>();
 
         static StockToolbarHook()
@@ -42,17 +43,22 @@ namespace ModularFlightPanel.Core
         /// </summary>
         public static void ApplyStyleMode(int mode)
         {
+#if KSP_RUNTIME
+            if (!HighLogic.LoadedSceneIsFlight)
+            {
+                ApplyNonFlightStyleMode();
+                return;
+            }
+#endif
             switch (mode)
             {
                 case 0: // 原版经典 (Stock)
                     RestoreStockToolbar();
                     break;
                 case 1: // 黑晶重肤 (Reskin)
-                    RestoreStockToolbar();
                     ReskinStockToolbar();
                     break;
                 case 2: // 折叠收纳坞 (Dock)
-                    RestoreStockToolbar();
                     HideStockToolbar(true);
                     break;
                 default:
@@ -62,40 +68,88 @@ namespace ModularFlightPanel.Core
         }
 
         /// <summary>
-        /// 彻底隐藏/打开原版工具栏
+        /// 调度非飞行场景 (航天中心 / VAB / SPH / 追踪站等) 的工具栏视觉状态：
+        /// 0 = 恢复原版经典 (Restore Stock)
+        /// 1 = 保持黑晶重肤 (Keep Reskin Hook)
+        /// 绝不隐藏原版工具栏，100% 保障按钮可点击与可交互。
+        /// </summary>
+        public static void ApplyNonFlightStyleMode()
+        {
+            // 确保原版工具栏解除隐藏
+            HideStockToolbar(false);
+
+            int globalMode = ThemeManager.Instance != null ? ThemeManager.Instance.ToolbarStyleMode : 1;
+            int nonFlightMode = ThemeManager.Instance != null ? ThemeManager.Instance.NonFlightToolbarMode : 1;
+
+            if (globalMode == 0 || nonFlightMode == 0)
+            {
+                RestoreStockToolbar();
+            }
+            else
+            {
+                ReskinStockToolbar();
+            }
+        }
+
+        /// <summary>
+        /// 彻底隐藏/打开原版工具栏 (纯净 CanvasGroup 控制，绝不添加 Sub-Canvas 以免破坏摄像机绑定引发闪烁与丢失)
         /// </summary>
         public static void HideStockToolbar(bool hide)
         {
+#if KSP_RUNTIME
+            // 关键安全防线：非飞行场景 (航天中心 / VAB / SPH / 追踪站等) 绝对禁止隐藏原版工具栏！
+            // 因为收纳坞 (ModernToolbarWidget) 仅在飞行场景运行，非飞行场景隐藏将导致玩家无工具栏可用。
+            if (hide && !HighLogic.LoadedSceneIsFlight)
+            {
+                Debug.LogWarning("[ModularFlightPanel] Blocked attempt to hide stock toolbar in non-flight scene.");
+                _isStockHidden = false;
+                hide = false;
+            }
+#endif
             _isStockHidden = hide;
+
+#if KSP_RUNTIME
             try
             {
-#if KSP_RUNTIME
                 if (KSP.UI.Screens.ApplicationLauncher.Instance != null)
                 {
                     GameObject go = KSP.UI.Screens.ApplicationLauncher.Instance.gameObject;
                     if (go != null)
                     {
+                        // 1. 彻底销毁历史可能附着的 Sub-Canvas，恢复原生画布继承，彻底杜绝摄像机丢失引发的逐帧闪烁与黑洞
                         Canvas subCanvas = go.GetComponent<Canvas>();
-                        if (subCanvas == null)
+                        if (subCanvas != null)
                         {
-                            subCanvas = go.AddComponent<Canvas>();
-                            Canvas parentCanvas = go.transform.parent != null ? go.transform.parent.GetComponentInParent<Canvas>() : null;
-                            if (parentCanvas != null && subCanvas.worldCamera == null)
-                            {
-                                subCanvas.worldCamera = parentCanvas.worldCamera;
-                                subCanvas.planeDistance = parentCanvas.planeDistance;
-                            }
-                        }
-                        if (subCanvas != null && subCanvas.enabled != !hide)
-                        {
-                            subCanvas.enabled = !hide;
+                            UnityEngine.Object.Destroy(subCanvas);
                         }
 
+                        // 2. 纯净 CanvasGroup 隐蔽与显隐：零开销、零摄像机绑定风险、零剔除冲突
                         var cg = go.GetComponent<CanvasGroup>();
-                        if (cg == null) cg = go.AddComponent<CanvasGroup>();
-                        cg.alpha = hide ? 0f : 1f;
-                        cg.blocksRaycasts = !hide;
-                        cg.interactable = !hide;
+                        if (hide)
+                        {
+                            if (cg == null) cg = go.AddComponent<CanvasGroup>();
+                            cg.alpha = 0f;
+                            cg.blocksRaycasts = false;
+                            cg.interactable = false;
+                        }
+                        else
+                        {
+                            if (cg != null)
+                            {
+                                int curMode = ThemeManager.Instance != null ? ThemeManager.Instance.ToolbarStyleMode : 0;
+                                if (curMode == 0)
+                                {
+                                    // 模式 0 下彻底移除 CanvasGroup，完全恢复官方原始运行环境
+                                    UnityEngine.Object.Destroy(cg);
+                                }
+                                else
+                                {
+                                    cg.alpha = 1f;
+                                    cg.blocksRaycasts = true;
+                                    cg.interactable = true;
+                                }
+                            }
+                        }
                     }
                 }
 #endif
@@ -151,7 +205,7 @@ namespace ModularFlightPanel.Core
                     var divider = simpleLayout.GetModListDivider();
                     if (divider != null)
                     {
-                        if (!_cachedColors.ContainsKey(divider)) _cachedColors[divider] = divider.color;
+                        if (!_originalStockColors.ContainsKey(divider)) _originalStockColors[divider] = divider.color;
                         divider.color = accent;
                     }
 
@@ -164,7 +218,7 @@ namespace ModularFlightPanel.Core
                             var img = imgs[i];
                             if (img != null)
                             {
-                                if (!_cachedColors.ContainsKey(img)) _cachedColors[img] = img.color;
+                                if (!_originalStockColors.ContainsKey(img)) _originalStockColors[img] = img.color;
                                 img.color = accent;
                             }
                         }
@@ -179,7 +233,7 @@ namespace ModularFlightPanel.Core
                             var img = imgs[i];
                             if (img != null)
                             {
-                                if (!_cachedColors.ContainsKey(img)) _cachedColors[img] = img.color;
+                                if (!_originalStockColors.ContainsKey(img)) _originalStockColors[img] = img.color;
                                 img.color = accent;
                             }
                         }
@@ -211,6 +265,10 @@ namespace ModularFlightPanel.Core
 
                 // 3. 挂载常驻监听器，保证飞行中动态加载的 Mod 按钮自动同步重肤
                 EnsureWatcher(launcher.gameObject);
+                if (_watcher != null)
+                {
+                    _watcher.SetButtonCount(buttons.Count);
+                }
 
                 _isReskinned = true;
 #endif
@@ -231,47 +289,39 @@ namespace ModularFlightPanel.Core
             Color activeTile = Color.Lerp(tileNormal, accent, 0.25f);
             Color effectiveTile = isActive ? activeTile : tileNormal;
 
-            // 获取按钮背景底图 (通过 btn 子级 Image，排除 sprite 因为它是 RawImage 图标)
-            var images = btn.GetComponentsInChildren<Image>(true);
-            for (int i = 0; i < images.Length; i++)
+            // 安全重绘底图：优先仅修改 toggleButton 背景 Image，坚决不染黑图标 (RawImage / 模组自定义 Icon Image)
+            Image bgImg = null;
+            if (btn.toggleButton != null)
             {
-                Image img = images[i];
-                if (img == null) continue;
-
-                if (!_cachedColors.ContainsKey(img)) _cachedColors[img] = img.color;
-                img.color = effectiveTile;
-
-                var outline = img.GetComponent<Outline>();
-                if (outline == null)
+                bgImg = btn.toggleButton.GetComponent<Image>();
+            }
+            if (bgImg == null)
+            {
+                var imgs = btn.GetComponentsInChildren<Image>(true);
+                for (int i = 0; i < imgs.Length; i++)
                 {
-                    outline = img.gameObject.AddComponent<Outline>();
-                    _addedOutlines.Add(outline);
+                    if (imgs[i] != null && !imgs[i].name.ToLowerInvariant().Contains("icon"))
+                    {
+                        bgImg = imgs[i];
+                        break;
+                    }
                 }
-                outline.effectColor = effectiveBorder;
-                outline.effectDistance = new Vector2(1f, -1f);
             }
 
-            // 若 container 不在自身子级中，单独检查 container
-            if (btn.container != null && !btn.container.transform.IsChildOf(btn.transform))
+            if (bgImg != null)
             {
-                var containerImages = btn.container.GetComponentsInChildren<Image>(true);
-                for (int i = 0; i < containerImages.Length; i++)
+                if (!_originalStockColors.ContainsKey(bgImg)) _originalStockColors[bgImg] = bgImg.color;
+                bgImg.color = effectiveTile;
+
+                var outline = bgImg.GetComponent<Outline>();
+                if (outline == null)
                 {
-                    Image img = containerImages[i];
-                    if (img == null) continue;
-
-                    if (!_cachedColors.ContainsKey(img)) _cachedColors[img] = img.color;
-                    img.color = effectiveTile;
-
-                    var outline = img.GetComponent<Outline>();
-                    if (outline == null)
-                    {
-                        outline = img.gameObject.AddComponent<Outline>();
-                        _addedOutlines.Add(outline);
-                    }
-                    outline.effectColor = effectiveBorder;
-                    outline.effectDistance = new Vector2(1f, -1f);
+                    outline = bgImg.gameObject.AddComponent<Outline>();
+                    _addedOutlines.Add(outline);
                 }
+                outline.enabled = true;
+                outline.effectColor = effectiveBorder;
+                outline.effectDistance = new Vector2(1f, -1f);
             }
         }
 
@@ -290,6 +340,12 @@ namespace ModularFlightPanel.Core
         {
             private float _lastCheck = 0f;
             private int _lastButtonCount = -1;
+
+            public void SetButtonCount(int count)
+            {
+                _lastButtonCount = count;
+                _lastCheck = Time.unscaledTime;
+            }
 
             private void Update()
             {
@@ -312,7 +368,7 @@ namespace ModularFlightPanel.Core
                     return;
                 }
 
-                ThemeConfig theme = ThemeManager.Instance.CurrentTheme;
+                ThemeConfig theme = ThemeManager.Instance != null ? ThemeManager.Instance.CurrentTheme : null;
                 if (theme == null) return;
                 Color borderCol = (Color)theme.FrameBorderColor;
                 Color accent = (Color)theme.AccentPrimary;
@@ -331,41 +387,47 @@ namespace ModularFlightPanel.Core
             {
                 if (btn == null || btn.toggleButton == null) return;
                 bool isActive = (btn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True);
-                var outlines = btn.GetComponentsInChildren<Outline>(true);
+                Color targetCol = isActive ? accent : borderCol;
+                var outlines = btn.GetComponentsInChildren<Outline>(false); // 仅扫描当前激活且生效的 Outline
                 for (int i = 0; i < outlines.Length; i++)
                 {
-                    if (outlines[i] != null) outlines[i].effectColor = isActive ? accent : borderCol;
+                    if (outlines[i] != null && outlines[i].enabled && outlines[i].effectColor != targetCol)
+                    {
+                        outlines[i].effectColor = targetCol;
+                    }
                 }
             }
         }
 #endif
 
         /// <summary>
-        /// 恢复官方原始外观与材质
+        /// 恢复官方原始外观与材质 (安全还原，零帧延迟，零 GC)
         /// </summary>
         public static void RestoreStockToolbar()
         {
             try
             {
                 HideStockToolbar(false);
-
-                foreach (var kvp in _cachedColors)
+#if KSP_RUNTIME
+                DockAnchorTracker.ClearAll();
+#endif
+                // 还原所有已缓存的原版初始颜色 (字典永久保留，绝不因重复切换而被重绘颜色污染)
+                foreach (var kvp in _originalStockColors)
                 {
                     if (kvp.Key != null)
                     {
                         kvp.Key.color = kvp.Value;
                     }
                 }
-                _cachedColors.Clear();
 
+                // 禁用全部添加的外边框，无需销毁 GameObject 组件，消除帧末销毁延迟与闪烁
                 for (int i = 0; i < _addedOutlines.Count; i++)
                 {
                     if (_addedOutlines[i] != null)
                     {
-                        UnityEngine.Object.Destroy(_addedOutlines[i]);
+                        _addedOutlines[i].enabled = false;
                     }
                 }
-                _addedOutlines.Clear();
 
                 _isReskinned = false;
             }
