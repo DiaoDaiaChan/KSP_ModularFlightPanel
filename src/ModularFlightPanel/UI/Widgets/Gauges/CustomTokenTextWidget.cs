@@ -9,14 +9,160 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
+    /// 单元格快照 (0 GC struct)
+    /// </summary>
+    public struct CustomTokenCellSnapshot
+    {
+        public string Value;
+        public TextStyleRole Role;
+    }
+
+    /// <summary>
+    /// 多通道遥测综合矩阵卡状态快照 (0 GC struct)
+    /// </summary>
+    public struct CustomTokenTextState : IEquatable<CustomTokenTextState>
+    {
+        public bool HasVessel;
+        public string Title;
+        public string Badge;
+        public int Version;
+
+        public bool Equals(CustomTokenTextState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Version == other.Version &&
+                   Title == other.Title &&
+                   Badge == other.Badge;
+        }
+
+        public override bool Equals(object obj) => obj is CustomTokenTextState other && Equals(other);
+        public override int GetHashCode() => (Title, Badge, Version).GetHashCode();
+    }
+
+    /// <summary>
+    /// 多通道遥测综合矩阵卡业务大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class CustomTokenTextLogic : WidgetLogic<CustomTokenTextState>
+    {
+        public TelemetryMatrixData ActiveData;
+        public string DisplayTitleTemplate;
+
+        private CustomTokenCellSnapshot[] _cellSnapshots = new CustomTokenCellSnapshot[64];
+        private int _version = 0;
+
+        public CustomTokenCellSnapshot GetCell(int r, int c)
+        {
+            if (ActiveData == null) return default;
+            int idx = r * ActiveData.Columns + c;
+            if (idx >= 0 && idx < _cellSnapshots.Length)
+            {
+                return _cellSnapshots[idx];
+            }
+            return default;
+        }
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            _version = 0;
+            for (int i = 0; i < _cellSnapshots.Length; i++)
+            {
+                _cellSnapshots[i] = default;
+            }
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (ActiveData == null || telemetry == null || !telemetry.HasVessel)
+            {
+                if (CurrentState.HasVessel)
+                {
+                    CurrentState = new CustomTokenTextState { HasVessel = false };
+                }
+                return;
+            }
+
+            string displayTitle = !string.IsNullOrEmpty(DisplayTitleTemplate) ? DisplayTitleTemplate : "多通道遥测综合矩阵卡";
+            string title = BaseFlightWidget.EvalToken(displayTitle, telemetry, displayTitle);
+
+            string badge = (ActiveData.Mode == MatrixDisplayMode.Table) 
+                ? $"{ActiveData.Columns}-COL TABLE" 
+                : $"{ActiveData.Rows}x{ActiveData.Columns} MJ";
+
+            int totalCells = ActiveData.Rows * ActiveData.Columns;
+            if (_cellSnapshots.Length < totalCells)
+            {
+                _cellSnapshots = new CustomTokenCellSnapshot[Math.Max(totalCells, _cellSnapshots.Length * 2)];
+            }
+
+            for (int r = 0; r < ActiveData.Rows; r++)
+            {
+                for (int c = 0; c < ActiveData.Columns; c++)
+                {
+                    int idx = r * ActiveData.Columns + c;
+                    string token = (r < ActiveData.Grid.Count && c < ActiveData.Grid[r].Count) ? ActiveData.Grid[r][c].Token : null;
+                    if (string.IsNullOrEmpty(token))
+                    {
+                        _cellSnapshots[idx] = new CustomTokenCellSnapshot
+                        {
+                            Value = "---",
+                            Role = TextStyleRole.PrimaryValue
+                        };
+                        continue;
+                    }
+
+                    string evalStr = BaseFlightWidget.EvalToken(token, telemetry, "---");
+                    TextStyleRole role = EvaluateSemanticRole(token, telemetry);
+                    _cellSnapshots[idx] = new CustomTokenCellSnapshot
+                    {
+                        Value = evalStr,
+                        Role = role
+                    };
+                }
+            }
+
+            _version++;
+            CurrentState = new CustomTokenTextState
+            {
+                HasVessel = true,
+                Title = title,
+                Badge = badge,
+                Version = _version
+            };
+        }
+
+        public static TextStyleRole EvaluateSemanticRole(string token, IFlightTelemetry telemetry)
+        {
+            if (telemetry == null) return TextStyleRole.PrimaryValue;
+            string u = token.ToUpperInvariant();
+            if (u.Contains("Q") && !u.Contains("STATUS") && !u.Contains("EQUAT"))
+            {
+                double q = telemetry.DynamicPressure;
+                if (q > 35.0) return TextStyleRole.Danger;
+                if (q > 25.0) return TextStyleRole.Warning;
+            }
+            else if (u.Contains("GFORCE") || u == "{G}")
+            {
+                double g = telemetry.GForce;
+                if (g > 6.0) return TextStyleRole.Danger;
+                if (g > 4.0) return TextStyleRole.Warning;
+            }
+            else if (u.Contains("TWR"))
+            {
+                double twr = telemetry.TWR;
+                if (twr > 0.05 && twr < 1.0 && telemetry.AltitudeAGL < 1000.0) return TextStyleRole.Warning;
+            }
+            else if (u.Contains("VSI"))
+            {
+                double vsi = telemetry.VerticalSpeed;
+                if (vsi < -50.0 && telemetry.AltitudeAGL < 3000.0) return TextStyleRole.Danger;
+            }
+            return TextStyleRole.PrimaryValue;
+        }
+    }
+
+    /// <summary>
     /// 多通道遥测综合矩阵卡片 (MechJeb Telemetry Matrix Card)
-    /// 标准化 MechJeb 风格航电矩阵：
-    /// 1. 深度对标 MechJeb 经典监控窗口与 Delta-V 状态表格；
-    /// 2. 支持任意增删行数与列数（1~12 列，1~20 行）；
-    /// 3. 支持键值监控网格 (Key-Value) 与数据表格 (Table) 双模式切换；
-    /// 4. 彻底杜绝文字重叠：标签居左、读数居右、动态弹性分列与微光分隔线；
-    /// 5. 接入 IAdaptiveSizeWidget 动态尺寸自适应协议与 IDynamicSlotWidget 槽位编排协议；
-    /// 6. 100% 遵照 SPEC-001..008 核心架构规范与零颜色字面量铁律。
     /// </summary>
     [FlightWidget("custom_token", "custom_text", "custom", "telemetry_matrix", "mj_matrix",
         Category = WidgetCategory.Gauges,
@@ -32,7 +178,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
         public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Slow;
 
-        // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget)
+        private readonly CustomTokenTextLogic _logic = new CustomTokenTextLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         public bool AllowNonUniformScale => true;
         public Vector2 MinBaseSize => new Vector2(160f, 50f);
         public Vector2 MaxBaseSize => new Vector2(1600f, 1000f);
@@ -41,17 +189,14 @@ namespace ModularFlightPanel.UI.Widgets
         private float _currentHeight = 100f;
         private bool _isCustomResized = false;
 
-        // 顶部标题栏
         private GameObject _headerObj;
         private Text _titleText;
         private Text _badgeText;
         private Image _headerDivider;
 
-        // 矩阵内容容器
         private GameObject _gridContainerObj;
         private RectTransform _gridContainerRt;
 
-        // 运行期网格单元 UI 模型
         private class CellRuntimeUI
         {
             public int Row;
@@ -64,11 +209,6 @@ namespace ModularFlightPanel.UI.Widgets
             public Text LabelText;
             public Text ValText;
             public Image ColDivider;
-
-            public string PendingValue = "---";
-            public TextStyleRole PendingRole = TextStyleRole.PrimaryValue;
-            public string LastRenderedValue = null;
-            public TextStyleRole LastRenderedRole = (TextStyleRole)(-1);
         }
 
         private class RowRuntimeUI
@@ -93,20 +233,15 @@ namespace ModularFlightPanel.UI.Widgets
         private TableHeaderRuntimeUI _tableHeaderUI = null;
         private TelemetryMatrixData _activeData = null;
         private string _cachedTemplate = null;
-
-        private string _pendingTitle = "多通道遥测综合矩阵卡";
-        private string _pendingBadge = "MJ MATRIX";
-        private readonly Cached<string> _lastRenderedTitle = new Cached<string>(null);
-        private readonly Cached<string> _lastRenderedBadge = new Cached<string>(null);
+        private bool _needsUiRebuild = false;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
 
-            _headerObj = new GameObject("HeaderRow", typeof(RectTransform));
-            _headerObj.transform.SetParent(transform, false);
-            RectTransform hRt = _headerObj.GetComponent<RectTransform>();
+            RectTransform hRt = CreateContainer("HeaderRow", transform);
+            _headerObj = hRt.gameObject;
             hRt.anchorMin = new Vector2(0f, 1f);
             hRt.anchorMax = new Vector2(1f, 1f);
             hRt.pivot = new Vector2(0.5f, 1f);
@@ -137,9 +272,8 @@ namespace ModularFlightPanel.UI.Widgets
             divRt.sizeDelta = new Vector2(-16f * s, 1f * s);
             divRt.anchoredPosition = new Vector2(0f, 1f * s);
 
-            _gridContainerObj = new GameObject("GridContainer", typeof(RectTransform));
-            _gridContainerObj.transform.SetParent(transform, false);
-            _gridContainerRt = _gridContainerObj.GetComponent<RectTransform>();
+            _gridContainerRt = CreateContainer("GridContainer", transform);
+            _gridContainerObj = _gridContainerRt.gameObject;
             _gridContainerRt.anchorMin = new Vector2(0f, 0f);
             _gridContainerRt.anchorMax = new Vector2(1f, 1f);
             _gridContainerRt.offsetMin = new Vector2(6f * s, 6f * s);
@@ -147,6 +281,9 @@ namespace ModularFlightPanel.UI.Widgets
 
             _cachedTemplate = Config?.CustomTemplate;
             _activeData = TelemetryMatrixData.FromTemplate(_cachedTemplate);
+            _logic.ActiveData = _activeData;
+            _logic.DisplayTitleTemplate = Config?.DisplayName;
+
             RebuildUI(theme);
         }
 
@@ -183,9 +320,9 @@ namespace ModularFlightPanel.UI.Widgets
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            if (_titleText != null) _titleText.color = style.GetTextColor(TextStyleRole.Label, theme);
-            if (_badgeText != null) _badgeText.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
-            if (_headerDivider != null) _headerDivider.color = style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme);
+            if (_titleText != null) _titleText.SetColor(style.GetTextColor(TextStyleRole.Label, theme));
+            if (_badgeText != null) _badgeText.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            if (_headerDivider != null) _headerDivider.SetColor(style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
 
             Color rowTintEven = style.GetSurfaceColor(SurfaceStyleRole.SlotActive, theme);
             rowTintEven.a = 0.08f;
@@ -193,13 +330,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_tableHeaderUI != null)
             {
-                if (_tableHeaderUI.HeaderBg != null) _tableHeaderUI.HeaderBg.color = rowTintEven;
-                if (_tableHeaderUI.HeaderDivider != null) _tableHeaderUI.HeaderDivider.color = style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme);
+                if (_tableHeaderUI.HeaderBg != null) _tableHeaderUI.HeaderBg.SetColor(rowTintEven);
+                if (_tableHeaderUI.HeaderDivider != null) _tableHeaderUI.HeaderDivider.SetColor(style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
                 for (int i = 0; i < _tableHeaderUI.HeaderTexts.Count; i++)
                 {
                     if (_tableHeaderUI.HeaderTexts[i] != null)
                     {
-                        _tableHeaderUI.HeaderTexts[i].color = style.GetTextColor(TextStyleRole.Label, theme);
+                        _tableHeaderUI.HeaderTexts[i].SetColor(style.GetTextColor(TextStyleRole.Label, theme));
                     }
                 }
             }
@@ -209,92 +346,66 @@ namespace ModularFlightPanel.UI.Widgets
                 var row = _runtimeRows[r];
                 if (row.RowBg != null)
                 {
-                    row.RowBg.color = (r % 2 == 0) ? rowTintEven : rowTintOdd;
+                    row.RowBg.SetColor((r % 2 == 0) ? rowTintEven : rowTintOdd);
                 }
                 for (int c = 0; c < row.Cells.Count; c++)
                 {
                     var cell = row.Cells[c];
-                    if (cell.LabelText != null) cell.LabelText.color = style.GetTextColor(TextStyleRole.Label, theme);
-                    if (cell.ValText != null) cell.ValText.color = style.GetTextColor(cell.PendingRole, theme);
-                    if (cell.ColDivider != null) cell.ColDivider.color = style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme);
+                    if (cell.LabelText != null) cell.LabelText.SetColor(style.GetTextColor(TextStyleRole.Label, theme));
+                    if (cell.ValText != null) cell.ValText.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                    if (cell.ColDivider != null) cell.ColDivider.SetColor(style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
                 }
             }
         }
 
-        private bool _needsUiRebuild = false;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-
             string curTpl = Config?.CustomTemplate;
             if (curTpl != _cachedTemplate)
             {
                 _cachedTemplate = curTpl;
                 _activeData = TelemetryMatrixData.FromTemplate(_cachedTemplate);
+                _logic.ActiveData = _activeData;
                 _needsUiRebuild = true;
             }
 
-            string displayTitle = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : I18n.Tr("WIDGET_NAME_CUSTOM_TOKEN", "多通道遥测综合矩阵卡");
-            _pendingTitle = EvalToken(displayTitle, telemetry, displayTitle);
+            _logic.DisplayTitleTemplate = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : I18n.Tr("WIDGET_NAME_CUSTOM_TOKEN", "多通道遥测综合矩阵卡");
 
-            if (_activeData != null)
-            {
-                _pendingBadge = (_activeData.Mode == MatrixDisplayMode.Table) 
-                    ? $"{_activeData.Columns}-COL TABLE" 
-                    : $"{_activeData.Rows}x{_activeData.Columns} MJ";
-            }
-
-            if (_activeData == null || telemetry == null || !telemetry.HasVessel)
-            {
-                SetAllCellsFallback("---", TextStyleRole.PrimaryValue);
-                return;
-            }
-
-            for (int r = 0; r < _runtimeRows.Count; r++)
-            {
-                var row = _runtimeRows[r];
-                for (int c = 0; c < row.Cells.Count; c++)
-                {
-                    var cell = row.Cells[c];
-                    if (string.IsNullOrEmpty(cell.Token))
-                    {
-                        cell.PendingValue = "---";
-                        cell.PendingRole = TextStyleRole.PrimaryValue;
-                        continue;
-                    }
-
-                    string evalStr = EvalToken(cell.Token, telemetry, "---");
-                    cell.PendingValue = evalStr;
-
-                    // 航电语义越限告警判定 (Q 动压、过载 G、推重比 TWR、升降率 VSI 智能求值)
-                    cell.PendingRole = EvaluateSemanticRole(cell.Token, telemetry);
-                }
-            }
+            base.OnDataHeartBeat(in context);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
-            base.OnUIDrawLoop(ref context);
-
             if (_needsUiRebuild)
             {
                 _needsUiRebuild = false;
                 RebuildUI(context.Theme);
             }
 
-            if (_titleText != null && _lastRenderedTitle.Update(_pendingTitle))
+            base.OnUIDrawLoop(ref context);
+        }
+
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+
+            if (_titleText != null)
             {
-                _titleText.SetTextSafe(_pendingTitle);
+                _titleText.SetTextSafe(state.Title);
             }
 
-            if (_badgeText != null && _lastRenderedBadge.Update(_pendingBadge))
+            if (_badgeText != null)
             {
-                _badgeText.SetTextSafe(_pendingBadge);
+                _badgeText.SetTextSafe(state.Badge);
             }
 
-            var theme = context.Theme;
+            if (!state.HasVessel)
+            {
+                SetAllCellsFallback("---", TextStyleRole.PrimaryValue);
+                return;
+            }
+
+            var theme = WidgetStyleManager.Instance.CurrentTheme;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             for (int r = 0; r < _runtimeRows.Count; r++)
@@ -305,59 +416,28 @@ namespace ModularFlightPanel.UI.Widgets
                     var cell = row.Cells[c];
                     if (cell.ValText != null)
                     {
-                        if (cell.PendingValue != cell.LastRenderedValue)
-                        {
-                            cell.LastRenderedValue = cell.PendingValue;
-                            cell.ValText.SetTextSafe(cell.PendingValue);
-                        }
-
-                        if (cell.PendingRole != cell.LastRenderedRole)
-                        {
-                            cell.LastRenderedRole = cell.PendingRole;
-                            cell.ValText.color = style.GetTextColor(cell.PendingRole, theme);
-                        }
+                        var snap = _logic.GetCell(r, c);
+                        cell.ValText.SetTextSafe(snap.Value ?? "---");
+                        cell.ValText.SetColor(style.GetTextColor(snap.Role, theme));
                     }
                 }
             }
         }
 
-        private TextStyleRole EvaluateSemanticRole(string token, IFlightTelemetry telemetry)
-        {
-            string u = token.ToUpperInvariant();
-            if (u.Contains("Q") && !u.Contains("STATUS") && !u.Contains("EQUAT"))
-            {
-                double q = telemetry.DynamicPressure;
-                if (q > 35.0) return TextStyleRole.Danger;
-                if (q > 25.0) return TextStyleRole.Warning;
-            }
-            else if (u.Contains("GFORCE") || u == "{G}")
-            {
-                double g = telemetry.GForce;
-                if (g > 6.0) return TextStyleRole.Danger;
-                if (g > 4.0) return TextStyleRole.Warning;
-            }
-            else if (u.Contains("TWR"))
-            {
-                double twr = telemetry.TWR;
-                if (twr > 0.05 && twr < 1.0 && telemetry.AltitudeAGL < 1000.0) return TextStyleRole.Warning;
-            }
-            else if (u.Contains("VSI"))
-            {
-                double vsi = telemetry.VerticalSpeed;
-                if (vsi < -50.0 && telemetry.AltitudeAGL < 3000.0) return TextStyleRole.Danger;
-            }
-            return TextStyleRole.PrimaryValue;
-        }
-
         private void SetAllCellsFallback(string fallback, TextStyleRole role)
         {
+            var theme = WidgetStyleManager.Instance.CurrentTheme;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
             for (int r = 0; r < _runtimeRows.Count; r++)
             {
                 var row = _runtimeRows[r];
                 for (int c = 0; c < row.Cells.Count; c++)
                 {
-                    row.Cells[c].PendingValue = fallback;
-                    row.Cells[c].PendingRole = role;
+                    if (row.Cells[c].ValText != null)
+                    {
+                        row.Cells[c].ValText.SetTextSafe(fallback);
+                        row.Cells[c].ValText.SetColor(style.GetTextColor(role, theme));
+                    }
                 }
             }
         }
@@ -382,7 +462,6 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 清理既有网格节点
             for (int i = _gridContainerRt.childCount - 1; i >= 0; i--)
             {
                 Destroy(_gridContainerRt.GetChild(i).gameObject);
@@ -394,7 +473,6 @@ namespace ModularFlightPanel.UI.Widgets
 
             bool isTable = (_activeData.Mode == MatrixDisplayMode.Table);
 
-            // 1. 若为表格模式，构建顶部列标题行
             if (isTable)
             {
                 _tableHeaderUI = new TableHeaderRuntimeUI();
@@ -409,7 +487,6 @@ namespace ModularFlightPanel.UI.Widgets
                 _tableHeaderUI.HeaderRt.anchoredPosition = Vector2.zero;
                 _tableHeaderUI.HeaderRt.sizeDelta = new Vector2(0f, 20f * s);
 
-                // 表头下横线
                 GameObject hDivObj = UIFactory.CreatePanel(thGo.transform, "HLine", new Vector2(0f, 1f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
                 _tableHeaderUI.HeaderDivider = hDivObj.GetComponent<Image>();
                 RectTransform hDivRt = _tableHeaderUI.HeaderDivider.rectTransform;
@@ -427,7 +504,6 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 2. 构建数据行与单元格
             for (int r = 0; r < _activeData.Rows; r++)
             {
                 var rowUi = new RowRuntimeUI { RowIndex = r };
@@ -451,15 +527,13 @@ namespace ModularFlightPanel.UI.Widgets
                         Token = cellData.Token
                     };
 
-                    GameObject cGo = new GameObject($"Cell_{r}_{c}", typeof(RectTransform));
-                    cGo.transform.SetParent(rGo.transform, false);
-                    cellUi.CellObj = cGo;
-                    cellUi.CellRt = cGo.GetComponent<RectTransform>();
+                    RectTransform cellRt = CreateContainer($"Cell_{r}_{c}", rGo.transform);
+                    cellUi.CellObj = cellRt.gameObject;
+                    cellUi.CellRt = cellRt;
 
                     if (isTable)
                     {
-                        // 表格数据单元格：单数值居中或靠右
-                        cellUi.ValText = UIFactory.CreateText(cGo.transform, "Val", "---", Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        cellUi.ValText = UIFactory.CreateText(cellUi.CellObj.transform, "Val", "---", Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                         RectTransform vRt = cellUi.ValText.rectTransform;
                         vRt.anchorMin = Vector2.zero;
                         vRt.anchorMax = Vector2.one;
@@ -468,25 +542,23 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     else
                     {
-                        // 键值网格单元格：左侧标签，右侧数值，绝不重叠
-                        cellUi.LabelText = UIFactory.CreateText(cGo.transform, "Lbl", cellUi.Label, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
+                        cellUi.LabelText = UIFactory.CreateText(cellUi.CellObj.transform, "Lbl", cellUi.Label, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
                         RectTransform lRt = cellUi.LabelText.rectTransform;
                         lRt.anchorMin = new Vector2(0f, 0f);
                         lRt.anchorMax = new Vector2(0.48f, 1f);
                         lRt.offsetMin = new Vector2(6f * s, 0f);
                         lRt.offsetMax = Vector2.zero;
 
-                        cellUi.ValText = UIFactory.CreateText(cGo.transform, "Val", "---", Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        cellUi.ValText = UIFactory.CreateText(cellUi.CellObj.transform, "Val", "---", Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                         RectTransform vRt = cellUi.ValText.rectTransform;
                         vRt.anchorMin = new Vector2(0.48f, 0f);
                         vRt.anchorMax = new Vector2(1f, 1f);
                         vRt.offsetMin = Vector2.zero;
                         vRt.offsetMax = new Vector2(-6f * s, 0f);
 
-                        // 列间微光垂直分割线
                         if (c > 0)
                         {
-                            GameObject sep = UIFactory.CreatePanel(cGo.transform, "VSep", new Vector2(1f * s, 14f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
+                            GameObject sep = UIFactory.CreatePanel(cellUi.CellObj.transform, "VSep", new Vector2(1f * s, 14f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
                             cellUi.ColDivider = sep.GetComponent<Image>();
                             RectTransform sepRt = cellUi.ColDivider.rectTransform;
                             sepRt.anchorMin = new Vector2(0f, 0.5f);
@@ -556,9 +628,6 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        // ==========================================
-        // IDynamicSlotWidget 契约接口显式实现
-        // ==========================================
         public string SlotOrchestratorTitle => I18n.Tr("MJ_SLOT_ORCHESTRATOR_TITLE", "MJ 综合遥测矩阵: 自由加减行与列、自定义标签与 736+ 参数");
 
         private readonly List<DynamicSlotDescriptor> _cachedDescriptors = new List<DynamicSlotDescriptor>();
@@ -613,7 +682,6 @@ namespace ModularFlightPanel.UI.Widgets
 
         public void ToggleDynamicSlotSeparator(int index)
         {
-            // 分割线随列数自动维护
         }
 
         public void UpdateDynamicSlotToken(int index, string newToken)
@@ -655,8 +723,15 @@ namespace ModularFlightPanel.UI.Widgets
                 Config.CustomTemplate = _activeData.ToTemplate();
             }
             _cachedTemplate = Config?.CustomTemplate;
+            _logic.ActiveData = _activeData;
             _needsUiRebuild = true;
             WidgetLayoutManager.Instance?.SaveLayout();
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
         }
 
         protected override void OnDestroy()
