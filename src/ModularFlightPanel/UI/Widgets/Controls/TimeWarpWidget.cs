@@ -17,6 +17,100 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 游戏暂停与物理加速 (PHYSICS) 琥珀色警示状态机
     /// 5. 原版顶部时间栏非破坏性安全隐显切换 (STOCK TOGGLE)
     /// </summary>
+    /// <summary>
+    /// 时间加速与任务时钟零 GC 不可变遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct TimeWarpState : IEquatable<TimeWarpState>
+    {
+        public bool HasVessel;
+        public string ClockStr;
+        public bool IsPaused;
+        public bool IsPhys;
+        public double Rate;
+        public int ActiveIndex;
+        public int MaxIndex;
+        public string ModeLabel;
+
+        public bool Equals(TimeWarpState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   string.Equals(ClockStr, other.ClockStr, StringComparison.Ordinal) &&
+                   IsPaused == other.IsPaused &&
+                   IsPhys == other.IsPhys &&
+                   Math.Abs(Rate - other.Rate) < 0.001 &&
+                   ActiveIndex == other.ActiveIndex &&
+                   MaxIndex == other.MaxIndex &&
+                   string.Equals(ModeLabel, other.ModeLabel, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj) => obj is TimeWarpState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = HasVessel.GetHashCode();
+                hash = (hash * 397) ^ (ClockStr != null ? ClockStr.GetHashCode() : 0);
+                hash = (hash * 397) ^ IsPaused.GetHashCode();
+                hash = (hash * 397) ^ IsPhys.GetHashCode();
+                hash = (hash * 397) ^ Rate.GetHashCode();
+                hash = (hash * 397) ^ ActiveIndex;
+                hash = (hash * 397) ^ MaxIndex;
+                hash = (hash * 397) ^ (ModeLabel != null ? ModeLabel.GetHashCode() : 0);
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 时间加速与任务时钟纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class TimeWarpLogic : WidgetLogic<TimeWarpState>
+    {
+        public const int MaxChevronCount = 8;
+        public bool ShowUniversalTime { get; set; } = false;
+        public string UtTemplate { get; set; } = "{UT}";
+        public string MetTemplate { get; set; } = "{MET}";
+        public string PhysLabel { get; set; } = I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS");
+        public string WarpLabel { get; set; } = I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP");
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                if (CurrentState.HasVessel)
+                {
+                    Reset();
+                }
+                return;
+            }
+
+            string tpl = ShowUniversalTime ? UtTemplate : MetTemplate;
+            string clockStr = TelemetryTokenEngine.Evaluate(tpl, telemetry);
+
+            bool isPhys = telemetry.IsPhysicsWarp;
+            string modeLabel = isPhys ? PhysLabel : WarpLabel;
+            int maxIdx = Mathf.Clamp(telemetry.MaxTimeWarpRateIndex, 1, MaxChevronCount - 1);
+
+            CurrentState = new TimeWarpState
+            {
+                HasVessel = true,
+                ClockStr = clockStr,
+                IsPaused = telemetry.IsGamePaused,
+                IsPhys = isPhys,
+                Rate = telemetry.TimeWarpRate,
+                ActiveIndex = telemetry.TimeWarpRateIndex,
+                MaxIndex = maxIdx,
+                ModeLabel = modeLabel
+            };
+        }
+    }
+
     [FlightWidget("time_warp", "timewarp", "warp_control", Category = WidgetCategory.Controls, DisplayName = "平滑时间加速控制器", Description = "物理/轨道时间加速等级指示器与一键平滑倍率切换条。", DefaultWidgetId = "core.time_warp", DefaultX = 0f, DefaultY = 210f, IsSingleton = true, ExactIds = new[] { "core.time_warp", "core.timewarp" })]
     public class TimeWarpWidget : BaseFlightWidget
     {
@@ -53,7 +147,9 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Image[] _chevronImgs = new Image[MaxChevronCount];
         private readonly Button[] _chevronBtns = new Button[MaxChevronCount];
 
-        private bool _showUniversalTime = false;
+        private readonly TimeWarpLogic _logic = new TimeWarpLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         private bool _stockHidden = true;
         private ThemeConfig _currentTheme;
         private IFlightTelemetry _telemetry;
@@ -208,9 +304,13 @@ namespace ModularFlightPanel.UI.Widgets
             ModularFlightPanel.UI.Framework.WidgetControlManager.Register(this,
                 new ModularFlightPanel.UI.Framework.WidgetActionButtonControl(this, "cancel_btn", "1X瞬时归一按键", _cancelBtn.gameObject, _cancelBtn, _cancelBtn.GetComponent<Image>(), null, _cancelBtnText, null, "1X", OnCancelWarp, false));
 
+            _logic.PhysLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS"));
+            _logic.WarpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP"));
+            _logic.UtTemplate = GetTemplateChannel("UT_FORMAT", "{UT}");
+            _logic.MetTemplate = GetTemplateChannel("MET_FORMAT", "{MET}");
+
             ApplyTheme(theme);
         }
-
 
         private readonly Cached<string> _dirtyClockStr = new Cached<string>(string.Empty);
         private readonly CachedDouble _cachedRateDirty = new CachedDouble(-1.0, tolerance: 0.001);
@@ -219,61 +319,29 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<int> _dirtyActiveIndex = new Cached<int>(-1);
         private readonly Cached<int> _dirtyMaxIndex = new Cached<int>(-1);
 
-        private bool _cachedHasVessel;
-        private string _cachedClockStr;
-        private bool _cachedIsPaused;
-        private bool _cachedIsPhys;
-        private double _cachedRate;
-        private int _cachedActiveIndex;
-        private int _cachedMaxIndex;
-        private string _cachedModeLabel = string.Empty;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
             _telemetry = context.Telemetry;
-
-            string utTpl = GetTemplateChannel("UT_FORMAT", "{UT}");
-            string metTpl = GetTemplateChannel("MET_FORMAT", "{MET}");
-            _cachedClockStr = _showUniversalTime
-                ? TelemetryTokenEngine.Evaluate(utTpl, context.Telemetry)
-                : TelemetryTokenEngine.Evaluate(metTpl, context.Telemetry);
-
-            _cachedIsPaused = context.Telemetry.IsGamePaused;
-            _cachedIsPhys = context.Telemetry.IsPhysicsWarp;
-            _cachedRate = context.Telemetry.TimeWarpRate;
-            _cachedActiveIndex = context.Telemetry.TimeWarpRateIndex;
-            _cachedMaxIndex = Mathf.Clamp(context.Telemetry.MaxTimeWarpRateIndex, 1, MaxChevronCount - 1);
-
-            string physLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS"));
-            string warpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP"));
-            _cachedModeLabel = _cachedIsPhys ? physLabel : warpLabel;
+            base.OnDataHeartBeat(in context);
         }
 
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context) => base.OnUIDrawLoop(ref context);
+
+        protected override void OnRenderState()
         {
-            base.OnUIDrawLoop(ref context);
+            TimeWarpState snap = _logic.CurrentState;
+            if (!snap.HasVessel) return;
 
-            if (!_cachedHasVessel) return;
-
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme);
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_currentTheme);
 
             // 1. 更新时钟读数
-            if (_clockText != null && _dirtyClockStr.Update(_cachedClockStr))
+            if (_clockText != null && _dirtyClockStr.Update(snap.ClockStr))
             {
-                SetTextIfChanged(_clockText, _cachedClockStr);
+                SetTextIfChanged(_clockText, snap.ClockStr);
             }
 
             // 2. 暂停状态提示
-            bool isPaused = _cachedIsPaused;
+            bool isPaused = snap.IsPaused;
             if (_dirtyPausedState.Update(isPaused))
             {
                 if (_pauseBtnText != null && _pauseBtn != null)
@@ -290,19 +358,19 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 加速模式与倍率
-            bool isPhys = _cachedIsPhys;
+            bool isPhys = snap.IsPhys;
             if (_dirtyPhysState.Update(isPhys))
             {
                 if (_warpModeText != null)
                 {
-                    _warpModeText.text = _cachedModeLabel;
+                    _warpModeText.text = snap.ModeLabel;
                     ApplyText(_warpModeText, isPhys ? TextStyleRole.Warning : TextStyleRole.Label, theme);
                 }
             }
 
             if (_warpRateText != null)
             {
-                double rate = _cachedRate;
+                double rate = snap.Rate;
                 if (_cachedRateDirty.Update(rate))
                 {
                     string rStr = (rate >= 1000.0) ? $"{rate:N0}x" : ((rate > 1.0) ? $"{rate:0.#}x" : "1x");
@@ -312,8 +380,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 加速光段状态机
-            int activeIndex = _cachedActiveIndex;
-            int maxIndex = _cachedMaxIndex;
+            int activeIndex = snap.ActiveIndex;
+            int maxIndex = snap.MaxIndex;
             bool activeDirty = _dirtyActiveIndex.Update(activeIndex);
             bool maxDirty = _dirtyMaxIndex.Update(maxIndex);
 
@@ -400,10 +468,10 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnToggleMode()
         {
-            _showUniversalTime = !_showUniversalTime;
+            _logic.ShowUniversalTime = !_logic.ShowUniversalTime;
             if (_modeBtnText != null)
             {
-                _modeBtnText.text = _showUniversalTime ? "UT" : "MET";
+                _modeBtnText.text = _logic.ShowUniversalTime ? "UT" : "MET";
             }
         }
 
@@ -443,6 +511,8 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnLanguageChanged()
         {
             base.OnLanguageChanged();
+            _logic.PhysLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS"));
+            _logic.WarpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP"));
             _dirtyClockStr.Reset(string.Empty);
             _dirtyPausedState.Reset(false);
             _dirtyPhysState.Reset(false);
@@ -452,9 +522,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_warpModeText != null)
             {
-                string physLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "PHYS"));
-                string warpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "WARP"));
-                _warpModeText.text = _dirtyPhysState.Value ? physLabel : warpLabel;
+                _warpModeText.text = _dirtyPhysState.Value ? _logic.PhysLabel : _logic.WarpLabel;
             }
         }
 
