@@ -24,6 +24,409 @@ namespace ModularFlightPanel.UI.Widgets
         Mode3D = 1
     }
 
+    public enum DirectorVisualState
+    {
+        Inactive,
+        Locked,
+        Guiding,
+        Dim
+    }
+
+    public readonly struct SASDialState : IEquatable<SASDialState>
+    {
+        public readonly bool HasVessel;
+        public readonly bool SasOn;
+        public readonly FlightSASMode CurrentMode;
+        public readonly double Roll;
+        public readonly double Pitch;
+        public readonly double Heading;
+        public readonly bool AttDirty;
+        public readonly bool ModeChanged;
+        public readonly float TargetRotZ;
+        public readonly DirectorVisualState DirectorState;
+        public readonly bool IsDirectorLocked;
+        public readonly Vector2 TargetDirectorNormPos;
+        public readonly float TargetDirectorRotZ;
+        public readonly string StatusText;
+        public readonly TextStyleRole BadgeRole;
+
+        public SASDialState(
+            bool hasVessel,
+            bool sasOn,
+            FlightSASMode currentMode,
+            double roll,
+            double pitch,
+            double heading,
+            bool attDirty,
+            bool modeChanged,
+            float targetRotZ,
+            DirectorVisualState directorState,
+            bool isDirectorLocked,
+            Vector2 targetDirectorNormPos,
+            float targetDirectorRotZ,
+            string statusText,
+            TextStyleRole badgeRole)
+        {
+            HasVessel = hasVessel;
+            SasOn = sasOn;
+            CurrentMode = currentMode;
+            Roll = roll;
+            Pitch = pitch;
+            Heading = heading;
+            AttDirty = attDirty;
+            ModeChanged = modeChanged;
+            TargetRotZ = targetRotZ;
+            DirectorState = directorState;
+            IsDirectorLocked = isDirectorLocked;
+            TargetDirectorNormPos = targetDirectorNormPos;
+            TargetDirectorRotZ = targetDirectorRotZ;
+            StatusText = statusText;
+            BadgeRole = badgeRole;
+        }
+
+        public bool Equals(SASDialState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   SasOn == other.SasOn &&
+                   CurrentMode == other.CurrentMode &&
+                   Math.Abs(Roll - other.Roll) < 0.001 &&
+                   Math.Abs(Pitch - other.Pitch) < 0.001 &&
+                   Math.Abs(Heading - other.Heading) < 0.001 &&
+                   AttDirty == other.AttDirty &&
+                   ModeChanged == other.ModeChanged &&
+                   Mathf.Abs(TargetRotZ - other.TargetRotZ) < 0.001f &&
+                   DirectorState == other.DirectorState &&
+                   IsDirectorLocked == other.IsDirectorLocked &&
+                   TargetDirectorNormPos == other.TargetDirectorNormPos &&
+                   Mathf.Abs(TargetDirectorRotZ - other.TargetDirectorRotZ) < 0.001f &&
+                   string.Equals(StatusText, other.StatusText, StringComparison.Ordinal) &&
+                   BadgeRole == other.BadgeRole;
+        }
+
+        public override bool Equals(object obj) => obj is SASDialState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ SasOn.GetHashCode();
+                hash = (hash * 397) ^ ((int)CurrentMode).GetHashCode();
+                hash = (hash * 397) ^ Roll.GetHashCode();
+                hash = (hash * 397) ^ Pitch.GetHashCode();
+                hash = (hash * 397) ^ Heading.GetHashCode();
+                hash = (hash * 397) ^ AttDirty.GetHashCode();
+                hash = (hash * 397) ^ ModeChanged.GetHashCode();
+                hash = (hash * 397) ^ TargetRotZ.GetHashCode();
+                hash = (hash * 397) ^ ((int)DirectorState).GetHashCode();
+                hash = (hash * 397) ^ IsDirectorLocked.GetHashCode();
+                hash = (hash * 397) ^ TargetDirectorNormPos.GetHashCode();
+                hash = (hash * 397) ^ TargetDirectorRotZ.GetHashCode();
+                hash = (hash * 397) ^ (StatusText != null ? StatusText.GetHashCode() : 0);
+                hash = (hash * 397) ^ ((int)BadgeRole).GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    public class SASDialLogic : WidgetLogic<SASDialState>
+    {
+        private double _lastRoll = -9999.0;
+        private double _lastPitch = -9999.0;
+        private double _lastHeading = -9999.0;
+        private FlightSASMode _lastMode = (FlightSASMode)(-1);
+        private bool _lastSasOn = false;
+        private bool _hasInitializedState = false;
+        private bool _isDirectorLocked = false;
+        private Vector3 _currentMarkerDir = Vector3.forward;
+        private bool _currentMarkerVisible = false;
+        private bool _currentMarkerHasDir = false;
+        private float _currentMarkerAngleDeg = 0f;
+
+        public string OffLabel { get; set; } = string.Empty;
+        public string BadgePrefix { get; set; } = string.Empty;
+
+        public override void Reset()
+        {
+            _lastRoll = -9999.0;
+            _lastPitch = -9999.0;
+            _lastHeading = -9999.0;
+            _lastMode = (FlightSASMode)(-1);
+            _lastSasOn = false;
+            _hasInitializedState = false;
+            _isDirectorLocked = false;
+            _currentMarkerDir = Vector3.forward;
+            _currentMarkerVisible = false;
+            _currentMarkerHasDir = false;
+            _currentMarkerAngleDeg = 0f;
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                string offText = !string.IsNullOrEmpty(OffLabel) ? OffLabel : I18n.Tr("SAS_STATUS_OFF", "SAS: OFF");
+                CurrentState = new SASDialState(
+                    hasVessel: false,
+                    sasOn: false,
+                    currentMode: FlightSASMode.StabilityAssist,
+                    roll: 0.0,
+                    pitch: 0.0,
+                    heading: 0.0,
+                    attDirty: false,
+                    modeChanged: false,
+                    targetRotZ: 0f,
+                    directorState: DirectorVisualState.Inactive,
+                    isDirectorLocked: false,
+                    targetDirectorNormPos: Vector2.zero,
+                    targetDirectorRotZ: 0f,
+                    statusText: offText,
+                    badgeRole: TextStyleRole.Warning
+                );
+                return;
+            }
+
+            bool sasOn = telemetry.IsSASEnabled;
+            FlightSASMode currentMode = telemetry.CurrentSASMode;
+            bool modeChanged = !_hasInitializedState || currentMode != _lastMode || sasOn != _lastSasOn;
+            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.05 ||
+                            Math.Abs(telemetry.Pitch - _lastPitch) > 0.05 ||
+                            Math.Abs(telemetry.Heading - _lastHeading) > 0.05;
+
+            // 1. 目标航向导引计算 (纯几何与向量判定)
+            ComputeSASFlightDirectorData(telemetry, sasOn, currentMode, attDirty, modeChanged,
+                out var directorState, out bool isDirectorLocked, out var targetDirectorNormPos, out float targetDirectorRotZ);
+
+            // 2. 飞船剪影目标旋转角计算 (纯数学)
+            float targetRotZ = ComputeSilhouetteTargetRotZ(telemetry, sasOn, currentMode, isDirectorLocked);
+
+            // 3. 底部状态指示胶囊文本与样式角色 (纯文本格式化)
+            ComputeStatusBadgeData(currentMode, sasOn, isDirectorLocked, out string statusText, out var badgeRole);
+
+            _lastRoll = telemetry.Roll;
+            _lastPitch = telemetry.Pitch;
+            _lastHeading = telemetry.Heading;
+            _lastMode = currentMode;
+            _lastSasOn = sasOn;
+            _hasInitializedState = true;
+
+            CurrentState = new SASDialState(
+                hasVessel: true,
+                sasOn: sasOn,
+                currentMode: currentMode,
+                roll: telemetry.Roll,
+                pitch: telemetry.Pitch,
+                heading: telemetry.Heading,
+                attDirty: attDirty,
+                modeChanged: modeChanged,
+                targetRotZ: targetRotZ,
+                directorState: directorState,
+                isDirectorLocked: isDirectorLocked,
+                targetDirectorNormPos: targetDirectorNormPos,
+                targetDirectorRotZ: targetDirectorRotZ,
+                statusText: statusText,
+                badgeRole: badgeRole
+            );
+        }
+
+        private float ComputeSilhouetteTargetRotZ(IFlightTelemetry telemetry, bool sasOn, FlightSASMode mode, bool isDirectorLocked)
+        {
+            float targetRotZ;
+            if (!sasOn || mode == FlightSASMode.StabilityAssist)
+            {
+                targetRotZ = (float)-telemetry.Roll;
+            }
+            else
+            {
+                float baseRotZ = GetSASModeDialAngle(mode) - 90f;
+                if (isDirectorLocked || !_currentMarkerHasDir || !_currentMarkerVisible)
+                {
+                    targetRotZ = baseRotZ;
+                }
+                else
+                {
+                    float projLen = Mathf.Sqrt(_currentMarkerDir.x * _currentMarkerDir.x + _currentMarkerDir.y * _currentMarkerDir.y);
+                    float beta;
+                    if (_currentMarkerDir.z > 0.05f && projLen > 0.001f)
+                    {
+                        beta = Mathf.Atan2(_currentMarkerDir.x, _currentMarkerDir.y) * Mathf.Rad2Deg;
+                        beta = Mathf.Clamp(beta, -60f, 60f);
+                    }
+                    else
+                    {
+                        beta = 0f;
+                    }
+                    targetRotZ = baseRotZ + beta;
+                }
+            }
+            return targetRotZ;
+        }
+
+        private void ComputeSASFlightDirectorData(IFlightTelemetry telemetry, bool sasOn, FlightSASMode mode, bool attDirty, bool modeChanged,
+            out DirectorVisualState visualState, out bool isLocked, out Vector2 targetNormPos, out float targetRotZ)
+        {
+            if (!sasOn)
+            {
+                isLocked = false;
+                _isDirectorLocked = false;
+                _currentMarkerHasDir = false;
+                _currentMarkerVisible = false;
+                _currentMarkerAngleDeg = 0f;
+                visualState = DirectorVisualState.Inactive;
+                targetNormPos = Vector2.zero;
+                targetRotZ = 0f;
+                return;
+            }
+
+            if (mode == FlightSASMode.StabilityAssist)
+            {
+                isLocked = true;
+                _isDirectorLocked = true;
+                _currentMarkerHasDir = true;
+                _currentMarkerVisible = false;
+                _currentMarkerAngleDeg = 0f;
+                visualState = DirectorVisualState.Inactive;
+                targetNormPos = Vector2.zero;
+                targetRotZ = 0f;
+                return;
+            }
+
+            string markerKey = GetMarkerKeyForSASMode(mode);
+            Vector3 dir = Vector3.forward;
+            bool isVisible = false;
+            bool hasDir = false;
+
+            var hook = NavBallHookService.Provider;
+            if (hook != null && !string.IsNullOrEmpty(markerKey))
+            {
+                hasDir = hook.GetMarkerDirection(markerKey, out dir, out isVisible);
+            }
+            if (!hasDir && NavBallHookService.MarkerDirectionFallback != null && !string.IsNullOrEmpty(markerKey))
+            {
+                hasDir = NavBallHookService.MarkerDirectionFallback(markerKey, out dir, out isVisible);
+            }
+
+            _currentMarkerDir = dir;
+            _currentMarkerHasDir = hasDir;
+            _currentMarkerVisible = isVisible;
+
+            if (hasDir && isVisible)
+            {
+                Vector2 screenDir = new Vector2(dir.x, dir.y);
+                float screenDist = screenDir.magnitude;
+                float angleDeg = Mathf.Atan2(screenDist, Mathf.Max(0.001f, dir.z)) * Mathf.Rad2Deg;
+                if (dir.z < 0f)
+                {
+                    angleDeg = 180f - angleDeg;
+                }
+                _currentMarkerAngleDeg = angleDeg;
+
+                if (_isDirectorLocked)
+                {
+                    if (angleDeg > 3.5f) _isDirectorLocked = false;
+                }
+                else
+                {
+                    if (angleDeg <= 1.5f) _isDirectorLocked = true;
+                }
+
+                isLocked = _isDirectorLocked;
+
+                if (_isDirectorLocked)
+                {
+                    targetNormPos = Vector2.zero;
+                    targetRotZ = 0f;
+                    visualState = DirectorVisualState.Locked;
+                }
+                else
+                {
+                    float normDist = Mathf.Clamp01(angleDeg / 45f);
+                    targetNormPos = screenDist > 0.001f ? (screenDir / screenDist) * normDist : Vector2.zero;
+                    targetRotZ = Mathf.Atan2(screenDir.y, screenDir.x) * Mathf.Rad2Deg - 90f;
+                    visualState = DirectorVisualState.Guiding;
+                }
+            }
+            else
+            {
+                _isDirectorLocked = false;
+                isLocked = false;
+                _currentMarkerAngleDeg = 0f;
+                targetNormPos = Vector2.zero;
+                targetRotZ = 0f;
+                visualState = DirectorVisualState.Dim;
+            }
+        }
+
+        private void ComputeStatusBadgeData(FlightSASMode currentMode, bool sasOn, bool isLocked, out string statusText, out TextStyleRole textRole)
+        {
+            if (!sasOn)
+            {
+                statusText = !string.IsNullOrEmpty(OffLabel) ? OffLabel : I18n.Tr("SAS_STATUS_OFF", "SAS: OFF");
+                textRole = TextStyleRole.Warning;
+            }
+            else
+            {
+                string prefix = !string.IsNullOrEmpty(BadgePrefix) ? BadgePrefix : "SAS: ";
+                string modeStr = GetSASModeDisplayName(currentMode);
+                string lockSuffix = isLocked ? I18n.Tr("SAS_STATUS_LOCK", " [LOCK]") : string.Empty;
+                statusText = $"{prefix}{modeStr}{lockSuffix}";
+                textRole = isLocked ? TextStyleRole.Accent : TextStyleRole.PrimaryValue;
+            }
+        }
+
+        public static float GetSASModeDialAngle(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.StabilityAssist: return 90f;
+                case FlightSASMode.Prograde: return 45f;
+                case FlightSASMode.Retrograde: return 135f;
+                case FlightSASMode.Normal: return 0f;
+                case FlightSASMode.Antinormal: return 180f;
+                case FlightSASMode.RadialIn: return 315f;
+                case FlightSASMode.RadialOut: return 225f;
+                case FlightSASMode.Maneuver: return 285f;
+                case FlightSASMode.Target: return 255f;
+                default: return 90f;
+            }
+        }
+
+        public static string GetMarkerKeyForSASMode(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.Prograde: return "prograde";
+                case FlightSASMode.Retrograde: return "retrograde";
+                case FlightSASMode.Normal: return "normal";
+                case FlightSASMode.Antinormal: return "antinormal";
+                case FlightSASMode.RadialIn: return "radialin";
+                case FlightSASMode.RadialOut: return "radialout";
+                case FlightSASMode.Target: return "target";
+                case FlightSASMode.Maneuver: return "maneuver";
+                default: return null;
+            }
+        }
+
+        public static string GetSASModeDisplayName(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.StabilityAssist: return I18n.Tr("SAS_MODE_STABILITY", "STABILITY");
+                case FlightSASMode.Prograde: return I18n.Tr("SAS_MODE_PROGRADE", "PROGRADE");
+                case FlightSASMode.Retrograde: return I18n.Tr("SAS_MODE_RETROGRADE", "RETROGRADE");
+                case FlightSASMode.Normal: return I18n.Tr("SAS_MODE_NORMAL", "NORMAL");
+                case FlightSASMode.Antinormal: return I18n.Tr("SAS_MODE_ANTINORMAL", "ANTINORMAL");
+                case FlightSASMode.RadialIn: return I18n.Tr("SAS_MODE_RADIAL_IN", "RADIAL IN");
+                case FlightSASMode.RadialOut: return I18n.Tr("SAS_MODE_RADIAL_OUT", "RADIAL OUT");
+                case FlightSASMode.Target: return I18n.Tr("SAS_MODE_TARGET", "TARGET");
+                case FlightSASMode.Maneuver: return I18n.Tr("SAS_MODE_MANEUVER", "MANEUVER");
+                default: return mode.ToString().ToUpperInvariant();
+            }
+        }
+    }
+
     /// <summary>
     /// 双键交互分发器：左键快速切换 STAB / SAS，右键无缝切换 2D 纯矢量剪影 / 3D 姿态地平视差模式
     /// </summary>
@@ -88,11 +491,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         private SASDialDisplayMode _displayMode = SASDialDisplayMode.Mode2D;
         private bool _is3DMode = false;
-        private bool _isDirectorLocked = false;
-        private Vector3 _currentMarkerDir = Vector3.forward;
-        private bool _currentMarkerVisible = false;
-        private bool _currentMarkerHasDir = false;
-        private float _currentMarkerAngleDeg = 0f;
+        private readonly SASDialLogic _logic = new SASDialLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly Cached<FlightSASMode> _lastRenderedMode = new Cached<FlightSASMode>((FlightSASMode)(-1));
+        private readonly Cached<bool> _lastRenderedSasOn = new Cached<bool>(false);
+        private readonly Cached<string> _lastStatusText = new Cached<string>(null);
+        private bool _hasInitializedState = false;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -113,6 +517,9 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 _displayMode = SASDialDisplayMode.Mode2D;
             }
+
+            _logic.OffLabel = GetTemplateChannel("OFF_LABEL", I18n.Tr("SAS_STATUS_OFF", "SAS: OFF"));
+            _logic.BadgePrefix = GetTemplateChannel("BADGE_PREFIX", "SAS: ");
 
             if (_fallbackRocketTexture == null)
             {
@@ -262,8 +669,11 @@ namespace ModularFlightPanel.UI.Widgets
         {
             _displayMode = (_displayMode == SASDialDisplayMode.Mode2D) ? SASDialDisplayMode.Mode3D : SASDialDisplayMode.Mode2D;
             ApplyDisplayMode();
+            _logic.Reset();
             _hasInitializedState = false;
             _lastStatusText.Reset(null);
+            _lastRenderedMode.Reset((FlightSASMode)(-1));
+            _lastRenderedSasOn.Reset(false);
         }
 
         private void ApplyDisplayMode()
@@ -415,33 +825,6 @@ namespace ModularFlightPanel.UI.Widgets
             FlightTelemetryContext.Current?.SetSASMode(mode);
         }
 
-        private readonly CachedDouble _lastRoll = new CachedDouble(-9999.0);
-        private readonly CachedDouble _lastPitch = new CachedDouble(-9999.0);
-        private readonly CachedDouble _lastHeading = new CachedDouble(-9999.0);
-        private readonly Cached<FlightSASMode> _lastMode = new Cached<FlightSASMode>((FlightSASMode)(-1));
-        private readonly Cached<bool> _lastSasOn = new Cached<bool>(false);
-        private readonly Cached<string> _lastStatusText = new Cached<string>(null);
-        private bool _hasInitializedState = false;
-
-        private enum DirectorVisualState { Inactive, Locked, Guiding, Dim }
-
-        // ── 数据心跳与 UI 绘制解耦状态缓存 ──
-        private bool _dataHasVessel = false;
-        private bool _dataSasOn = false;
-        private FlightSASMode _dataCurrentMode = FlightSASMode.StabilityAssist;
-        private double _dataRoll = 0.0;
-        private double _dataPitch = 0.0;
-        private double _dataHeading = 0.0;
-        private bool _dataAttDirty = false;
-        private bool _dataModeChanged = false;
-        private float _dataTargetRotZ = 0f;
-        private DirectorVisualState _dataDirectorState = DirectorVisualState.Inactive;
-        private bool _dataIsDirectorLocked = false;
-        private Vector2 _dataTargetDirectorPos = Vector2.zero;
-        private float _dataTargetDirectorRotZ = 0f;
-        private string _dataStatusText = "SAS: OFF";
-        private TextStyleRole _dataBadgeRole = TextStyleRole.Warning;
-
         // ── 平滑阻尼状态 (消除跳变) ──
         private float _smoothedRotZ = 0f;
         private float _rotZVelocity = 0f;
@@ -452,72 +835,24 @@ namespace ModularFlightPanel.UI.Widgets
         private const float kSilhouetteSmoothTime = 0.12f; // 剪影旋转平滑时间常数
         private const float kDirectorSmoothTime = 0.08f;   // 导引标平滑时间常数
 
-        // ═════════════════════════════════════════════════════════════════
-        // SPEC-004C: 数据心跳独立解算循环 (受 HeartBeatTier = Relaxed 节流)
-        // 专用于 SAS 模式推算、导航矢量与探针查询、机动转向误差角计算 (0 UI 绘制)
-        // ═════════════════════════════════════════════════════════════════
-        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context) => base.OnDataHeartBeat(in context);
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context) => base.OnUIDrawLoop(ref context);
+
+        protected override void OnRenderState()
         {
-            base.OnDataHeartBeat(in context);
-
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _dataHasVessel = false;
-                _dataSasOn = false;
-                _dataStatusText = GetTemplateChannel("OFF_LABEL", I18n.Tr("SAS_STATUS_OFF", "SAS: OFF"));
-                _dataBadgeRole = TextStyleRole.Warning;
-                return;
-            }
-
-            _dataHasVessel = true;
-            bool sasOn = telemetry.IsSASEnabled;
-            FlightSASMode currentMode = telemetry.CurrentSASMode;
-            bool modeChanged = !_hasInitializedState || currentMode != _lastMode.Value || sasOn != _lastSasOn.Value;
-            bool attDirty = Math.Abs(telemetry.Roll - _lastRoll.Value) > 0.05 || Math.Abs(telemetry.Pitch - _lastPitch.Value) > 0.05 || Math.Abs(telemetry.Heading - _lastHeading.Value) > 0.05;
-
-            _dataSasOn = sasOn;
-            _dataCurrentMode = currentMode;
-            _dataRoll = telemetry.Roll;
-            _dataPitch = telemetry.Pitch;
-            _dataHeading = telemetry.Heading;
-            _dataAttDirty = attDirty;
-            _dataModeChanged = modeChanged;
-
-            // 1. 目标航向导引计算 (纯几何与向量判定)
-            ComputeSASFlightDirectorData(telemetry, sasOn, currentMode, attDirty, modeChanged, CurrentDpiScale,
-                out _dataDirectorState, out _dataIsDirectorLocked, out _dataTargetDirectorPos, out _dataTargetDirectorRotZ);
-
-            // 2. 飞船剪影目标旋转角计算 (纯数学)
-            _dataTargetRotZ = ComputeSilhouetteTargetRotZ(telemetry, sasOn, currentMode, _dataIsDirectorLocked);
-
-            // 3. 底部状态指示胶囊文本与样式角色 (纯文本格式化)
-            ComputeStatusBadgeData(currentMode, sasOn, _dataIsDirectorLocked, out _dataStatusText, out _dataBadgeRole);
-
-            _lastRoll.Update(telemetry.Roll);
-            _lastPitch.Update(telemetry.Pitch);
-            _lastHeading.Update(telemetry.Heading);
-        }
-
-        // ═════════════════════════════════════════════════════════════════
-        // SPEC-004D: UI 独立绘制循环 (随 RefreshTier = Slow/30Hz 驱动)
-        // 专注于 Transform 平滑阻尼补间、UGUI 读数刷新与材质着色 (0 物理采样)
-        // ═════════════════════════════════════════════════════════════════
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
-        {
-            base.OnUIDrawLoop(ref context);
-
-            ThemeConfig theme = context.Theme;
+            SASDialState state = _logic.CurrentState;
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme;
             float s = CurrentDpiScale;
-            float dt = context.DeltaTime;
+            float dt = Time.unscaledDeltaTime;
 
-            if (!_dataHasVessel)
+            if (!state.HasVessel)
             {
                 if (_sasDirectorRoot != null && _sasDirectorRoot.gameObject.activeSelf)
                     _sasDirectorRoot.gameObject.SetActive(false);
                 if (_horizonRoot != null && _horizonRoot.gameObject.activeSelf)
                     _horizonRoot.gameObject.SetActive(false);
-                RenderStatusBadge(_dataStatusText, _dataBadgeRole, theme);
+                RenderStatusBadge(state.StatusText, state.BadgeRole, theme);
                 return;
             }
 
@@ -527,11 +862,11 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_horizonRoot != null)
                 {
                     _horizonRoot.SetActiveSafe(true);
-                    if (_dataAttDirty)
+                    if (state.AttDirty)
                     {
-                        float pitchOffset = Mathf.Clamp((float)-_dataPitch * 0.16f * s, -16f * s, 16f * s);
+                        float pitchOffset = Mathf.Clamp((float)-state.Pitch * 0.16f * s, -16f * s, 16f * s);
                         _horizonRoot.SetAnchoredPositionSafe(new Vector2(0f, pitchOffset));
-                        _horizonRoot.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, (float)_dataRoll));
+                        _horizonRoot.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, (float)state.Roll));
                     }
                 }
             }
@@ -544,10 +879,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 导引标平滑位移与旋转驱动
-            RenderDirectorVisuals(_dataDirectorState, _dataTargetDirectorPos, _dataTargetDirectorRotZ, dt, theme);
+            Vector2 targetDirectorPos = state.TargetDirectorNormPos * (22f * s);
+            RenderDirectorVisuals(state.DirectorState, targetDirectorPos, state.TargetDirectorRotZ, dt, theme);
 
             // 3. 飞船剪影旋转与 3D 俯仰透视收缩 (平滑阻尼)
-            RenderSilhouetteVisuals(_dataTargetRotZ, (float)_dataPitch, _dataAttDirty, _dataModeChanged, dt);
+            RenderSilhouetteVisuals(state.TargetRotZ, (float)state.Pitch, state.AttDirty, state.ModeChanged, dt);
 
             // 4. 纹理保底检查
             if (_silhouetteRawImage != null && _silhouetteRawImage.texture == null)
@@ -559,15 +895,14 @@ namespace ModularFlightPanel.UI.Widgets
             RenderNoseTipVisuals(s);
 
             // 6. 当前 SAS 模式与开关高亮指示 (Dirty Checking + 100% 语义化驱动)
-            if (!_hasInitializedState || _dataCurrentMode != _lastMode.Value || _dataSasOn != _lastSasOn.Value)
+            bool modeDirty = _lastRenderedMode.Update(state.CurrentMode);
+            bool sasDirty = _lastRenderedSasOn.Update(state.SasOn);
+            if (!_hasInitializedState || modeDirty || sasDirty)
             {
-                _lastMode.Update(_dataCurrentMode);
-                _lastSasOn.Update(_dataSasOn);
-
                 for (int i = 0; i < _buttons.Count; i++)
                 {
                     var b = _buttons[i];
-                    bool isCurrent = (b.Mode == _dataCurrentMode) && _dataSasOn;
+                    bool isCurrent = (b.Mode == state.CurrentMode) && state.SasOn;
                     ButtonVisualRole role = isCurrent ? ButtonVisualRole.ActiveToggle : ButtonVisualRole.Normal;
                     ApplyButton(b.Button, b.Image, b.Label, role, isCurrent, theme);
                 }
@@ -576,162 +911,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 7. 底部状态指示胶囊文本与描边
-            RenderStatusBadge(_dataStatusText, _dataBadgeRole, theme);
-        }
-
-        private float ComputeSilhouetteTargetRotZ(IFlightTelemetry telemetry, bool sasOn, FlightSASMode mode, bool isDirectorLocked)
-        {
-            float targetRotZ;
-            if (!sasOn || mode == FlightSASMode.StabilityAssist)
-            {
-                targetRotZ = (float)-telemetry.Roll;
-            }
-            else
-            {
-                float baseRotZ = GetSASModeDialAngle(mode) - 90f;
-                if (isDirectorLocked || !_currentMarkerHasDir || !_currentMarkerVisible)
-                {
-                    targetRotZ = baseRotZ;
-                }
-                else
-                {
-                    float projLen = Mathf.Sqrt(_currentMarkerDir.x * _currentMarkerDir.x + _currentMarkerDir.y * _currentMarkerDir.y);
-                    float beta;
-                    if (_currentMarkerDir.z > 0.05f && projLen > 0.001f)
-                    {
-                        beta = Mathf.Atan2(_currentMarkerDir.x, _currentMarkerDir.y) * Mathf.Rad2Deg;
-                        beta = Mathf.Clamp(beta, -60f, 60f);
-                    }
-                    else
-                    {
-                        beta = 0f;
-                    }
-                    targetRotZ = baseRotZ + beta;
-                }
-            }
-            return targetRotZ;
-        }
-
-        private void ComputeSASFlightDirectorData(IFlightTelemetry telemetry, bool sasOn, FlightSASMode mode, bool attDirty, bool modeChanged, float s,
-            out DirectorVisualState visualState, out bool isLocked, out Vector2 targetPos, out float targetRotZ)
-        {
-            if (!sasOn)
-            {
-                isLocked = false;
-                _isDirectorLocked = false;
-                _currentMarkerHasDir = false;
-                _currentMarkerVisible = false;
-                _currentMarkerAngleDeg = 0f;
-                visualState = DirectorVisualState.Inactive;
-                targetPos = Vector2.zero;
-                targetRotZ = 0f;
-                return;
-            }
-
-            if (mode == FlightSASMode.StabilityAssist)
-            {
-                isLocked = true;
-                _isDirectorLocked = true;
-                _currentMarkerHasDir = true;
-                _currentMarkerVisible = false;
-                _currentMarkerAngleDeg = 0f;
-                visualState = DirectorVisualState.Inactive;
-                targetPos = Vector2.zero;
-                targetRotZ = 0f;
-                return;
-            }
-
-            if (_isDirectorLocked && !attDirty && !modeChanged && _directorPosVelocity.sqrMagnitude < 0.0001f && _smoothedDirectorPos.sqrMagnitude < 0.0001f)
-            {
-                isLocked = true;
-                visualState = DirectorVisualState.Locked;
-                targetPos = Vector2.zero;
-                targetRotZ = 0f;
-                return;
-            }
-
-            string markerKey = GetMarkerKeyForSASMode(mode);
-            Vector3 dir = Vector3.forward;
-            bool isVisible = false;
-            bool hasDir = false;
-
-            var hook = NavBallHookService.Provider;
-            if (hook != null && !string.IsNullOrEmpty(markerKey))
-            {
-                hasDir = hook.GetMarkerDirection(markerKey, out dir, out isVisible);
-            }
-            if (!hasDir && NavBallHookService.MarkerDirectionFallback != null && !string.IsNullOrEmpty(markerKey))
-            {
-                hasDir = NavBallHookService.MarkerDirectionFallback(markerKey, out dir, out isVisible);
-            }
-
-            _currentMarkerDir = dir;
-            _currentMarkerHasDir = hasDir;
-            _currentMarkerVisible = isVisible;
-
-            if (hasDir && isVisible)
-            {
-                Vector2 screenDir = new Vector2(dir.x, dir.y);
-                float screenDist = screenDir.magnitude;
-                float angleDeg = Mathf.Atan2(screenDist, Mathf.Max(0.001f, dir.z)) * Mathf.Rad2Deg;
-                if (dir.z < 0f)
-                {
-                    angleDeg = 180f - angleDeg;
-                }
-                _currentMarkerAngleDeg = angleDeg;
-
-                if (_isDirectorLocked)
-                {
-                    if (angleDeg > 3.5f) _isDirectorLocked = false;
-                }
-                else
-                {
-                    if (angleDeg <= 1.5f) _isDirectorLocked = true;
-                }
-
-                isLocked = _isDirectorLocked;
-
-                if (_isDirectorLocked)
-                {
-                    targetPos = Vector2.zero;
-                    targetRotZ = 0f;
-                    visualState = DirectorVisualState.Locked;
-                }
-                else
-                {
-                    float maxRadius = 22f * s;
-                    float normDist = Mathf.Clamp01(angleDeg / 45f);
-                    targetPos = screenDist > 0.001f ? (screenDir / screenDist) * (normDist * maxRadius) : Vector2.zero;
-                    targetRotZ = Mathf.Atan2(screenDir.y, screenDir.x) * Mathf.Rad2Deg - 90f;
-                    visualState = DirectorVisualState.Guiding;
-                }
-            }
-            else
-            {
-                _isDirectorLocked = false;
-                isLocked = false;
-                _currentMarkerAngleDeg = 0f;
-                targetPos = Vector2.zero;
-                targetRotZ = 0f;
-                visualState = DirectorVisualState.Dim;
-            }
-        }
-
-        private void ComputeStatusBadgeData(FlightSASMode currentMode, bool sasOn, bool isLocked, out string statusText, out TextStyleRole textRole)
-        {
-            if (!sasOn)
-            {
-                statusText = GetTemplateChannel("OFF_LABEL", I18n.Tr("SAS_STATUS_OFF", "SAS: OFF"));
-                textRole = TextStyleRole.Warning;
-            }
-            else
-            {
-                string prefix = GetTemplateChannel("BADGE_PREFIX", "SAS: ");
-                string modeStr = GetSASModeDisplayName(currentMode);
-                string lockSuffix = isLocked ? I18n.Tr("SAS_STATUS_LOCK", " [LOCK]") : "";
-                statusText = $"{prefix}{modeStr}{lockSuffix}";
-                textRole = isLocked ? TextStyleRole.Accent : TextStyleRole.PrimaryValue;
-            }
+            RenderStatusBadge(state.StatusText, state.BadgeRole, theme);
         }
 
         private void RenderSilhouetteVisuals(float targetRotZ, float pitch, bool attDirty, bool modeChanged, float dt)
@@ -830,55 +1010,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        public static float GetSASModeDialAngle(FlightSASMode mode)
-        {
-            switch (mode)
-            {
-                case FlightSASMode.StabilityAssist: return 90f;
-                case FlightSASMode.Prograde: return 45f;
-                case FlightSASMode.Retrograde: return 135f;
-                case FlightSASMode.Normal: return 0f;
-                case FlightSASMode.Antinormal: return 180f;
-                case FlightSASMode.RadialIn: return 315f;
-                case FlightSASMode.RadialOut: return 225f;
-                case FlightSASMode.Maneuver: return 285f;
-                case FlightSASMode.Target: return 255f;
-                default: return 90f;
-            }
-        }
-
-        private static string GetMarkerKeyForSASMode(FlightSASMode mode)
-        {
-            switch (mode)
-            {
-                case FlightSASMode.Prograde: return "prograde";
-                case FlightSASMode.Retrograde: return "retrograde";
-                case FlightSASMode.Normal: return "normal";
-                case FlightSASMode.Antinormal: return "antinormal";
-                case FlightSASMode.RadialIn: return "radialin";
-                case FlightSASMode.RadialOut: return "radialout";
-                case FlightSASMode.Target: return "target";
-                case FlightSASMode.Maneuver: return "maneuver";
-                default: return null;
-            }
-        }
-
-        private static string GetSASModeDisplayName(FlightSASMode mode)
-        {
-            switch (mode)
-            {
-                case FlightSASMode.StabilityAssist: return I18n.Tr("SAS_MODE_STABILITY", "STABILITY");
-                case FlightSASMode.Prograde: return I18n.Tr("SAS_MODE_PROGRADE", "PROGRADE");
-                case FlightSASMode.Retrograde: return I18n.Tr("SAS_MODE_RETROGRADE", "RETROGRADE");
-                case FlightSASMode.Normal: return I18n.Tr("SAS_MODE_NORMAL", "NORMAL");
-                case FlightSASMode.Antinormal: return I18n.Tr("SAS_MODE_ANTINORMAL", "ANTINORMAL");
-                case FlightSASMode.RadialIn: return I18n.Tr("SAS_MODE_RADIAL_IN", "RADIAL IN");
-                case FlightSASMode.RadialOut: return I18n.Tr("SAS_MODE_RADIAL_OUT", "RADIAL OUT");
-                case FlightSASMode.Target: return I18n.Tr("SAS_MODE_TARGET", "TARGET");
-                case FlightSASMode.Maneuver: return I18n.Tr("SAS_MODE_MANEUVER", "MANEUVER");
-                default: return mode.ToString().ToUpperInvariant();
-            }
-        }
+        public static float GetSASModeDialAngle(FlightSASMode mode) => SASDialLogic.GetSASModeDialAngle(mode);
 
         public override void ApplyTheme(ThemeConfig theme)
         {
@@ -886,6 +1018,8 @@ namespace ModularFlightPanel.UI.Widgets
             base.ApplyTheme(theme);
             _hasInitializedState = false;
             _lastStatusText.Reset(null);
+            _lastRenderedMode.Reset((FlightSASMode)(-1));
+            _lastRenderedSasOn.Reset(false);
 
             if (_silhouetteRawImage != null) _silhouetteRawImage.color = theme.AccentSecondary;
             if (_noseTipRawImage != null) _noseTipRawImage.color = theme.WarningColor;
@@ -901,7 +1035,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_sasDirectorRawImage != null)
             {
-                _sasDirectorRawImage.color = _isDirectorLocked ? theme.AccentPrimary : theme.WarningColor;
+                _sasDirectorRawImage.color = _logic.CurrentState.IsDirectorLocked ? theme.AccentPrimary : theme.WarningColor;
             }
 
             ApplyCard(_statusBg, _statusOutline, CardStyleRole.Normal, theme);
@@ -1488,8 +1622,13 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnLanguageChanged()
         {
             base.OnLanguageChanged();
+            _logic.OffLabel = GetTemplateChannel("OFF_LABEL", I18n.Tr("SAS_STATUS_OFF", "SAS: OFF"));
+            _logic.BadgePrefix = GetTemplateChannel("BADGE_PREFIX", "SAS: ");
+            _logic.Reset();
             _hasInitializedState = false;
             _lastStatusText.Reset(null);
+            _lastRenderedMode.Reset((FlightSASMode)(-1));
+            _lastRenderedSasOn.Reset(false);
         }
 
         protected override void OnDestroy()
