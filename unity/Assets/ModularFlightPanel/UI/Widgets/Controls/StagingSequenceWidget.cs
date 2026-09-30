@@ -33,6 +33,143 @@ namespace ModularFlightPanel.UI.Widgets.Controls
     /// 6. 严格遵守 MFP 规范：
     ///    0 颜色字面量 (MFP-SPEC-006)、0 场景查询 (MFP-SPEC-007)、纯 C# 服务解耦。
     /// </summary>
+    /// <summary>
+    /// 火箭分级序列仪零 GC 不可变遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct StagingSequenceState : IEquatable<StagingSequenceState>
+    {
+        public bool HasVessel;
+        public string Title;
+        public double TotalDv;
+        public bool IsLocked;
+        public int CurrentStage;
+        public float Throttle;
+        public double VerticalSpeed;
+        public float PropFrac;
+        public int StageCount;
+
+        public bool Equals(StagingSequenceState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   string.Equals(Title, other.Title, StringComparison.Ordinal) &&
+                   Math.Abs(TotalDv - other.TotalDv) < 0.5 &&
+                   IsLocked == other.IsLocked &&
+                   CurrentStage == other.CurrentStage &&
+                   Math.Abs(Throttle - other.Throttle) < 0.01f &&
+                   Math.Abs(VerticalSpeed - other.VerticalSpeed) < 0.1 &&
+                   Math.Abs(PropFrac - other.PropFrac) < 0.005f &&
+                   StageCount == other.StageCount;
+        }
+
+        public override bool Equals(object obj) => obj is StagingSequenceState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = HasVessel.GetHashCode();
+                hash = (hash * 397) ^ (Title != null ? Title.GetHashCode() : 0);
+                hash = (hash * 397) ^ TotalDv.GetHashCode();
+                hash = (hash * 397) ^ IsLocked.GetHashCode();
+                hash = (hash * 397) ^ CurrentStage;
+                hash = (hash * 397) ^ Throttle.GetHashCode();
+                hash = (hash * 397) ^ VerticalSpeed.GetHashCode();
+                hash = (hash * 397) ^ PropFrac.GetHashCode();
+                hash = (hash * 397) ^ StageCount;
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 火箭分级序列仪纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class StagingSequenceLogic : WidgetLogic<StagingSequenceState>
+    {
+        public string TitleTemplate = I18n.Tr("WIDGET_CTRL_STAGING", "STAGING");
+        public string TotalDvToken = "{DV:TOTAL}";
+        public string StageDvToken = "{DV:STAGE}";
+        public string StageOrder = string.Empty;
+
+        public readonly List<StageDeltaVInfo> ReusableSortedStages = new List<StageDeltaVInfo>();
+        private static readonly Comparison<StageDeltaVInfo> _stageOrderAscending = (a, b) => a.Stage.CompareTo(b.Stage);
+        private static readonly Comparison<StageDeltaVInfo> _stageOrderDescending = (a, b) => b.Stage.CompareTo(a.Stage);
+
+        public int HighestStageNumber { get; private set; } = 0;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            ReusableSortedStages.Clear();
+            HighestStageNumber = 0;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                if (CurrentState.HasVessel)
+                {
+                    Reset();
+                }
+                return;
+            }
+
+            string title = TelemetryTokenEngine.Evaluate(TitleTemplate, telemetry);
+            double totalDv = TelemetryTokenEngine.EvaluateNumeric(TotalDvToken, telemetry);
+            if (double.IsNaN(totalDv)) totalDv = telemetry.TotalDeltaV;
+
+            bool isLocked = StockStageActionService.IsStagingLocked || telemetry.IsStageLocked;
+            int curStage = telemetry.CurrentStage;
+            float throttle = (float)telemetry.Throttle;
+            double verticalSpeed = telemetry.VerticalSpeed;
+            float propFrac = Mathf.Clamp01((float)telemetry.StagePropellantFraction);
+
+            IReadOnlyList<StageDeltaVInfo> stages = telemetry.StageDeltaVList;
+            int stageCount = stages != null ? stages.Count : 0;
+
+            HighestStageNumber = curStage;
+            if (stages != null && stages.Count > 0)
+            {
+                for (int i = 0; i < stages.Count; i++)
+                {
+                    if (stages[i].Stage > HighestStageNumber) HighestStageNumber = stages[i].Stage;
+                }
+            }
+
+            ReusableSortedStages.Clear();
+            if (stageCount > 0)
+            {
+                ReusableSortedStages.AddRange(stages);
+                if (StageOrder == "REVERSE")
+                {
+                    ReusableSortedStages.Sort(_stageOrderDescending);
+                }
+                else
+                {
+                    ReusableSortedStages.Sort(_stageOrderAscending);
+                }
+            }
+            else
+            {
+                ReusableSortedStages.Add(new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
+            }
+
+            CurrentState = new StagingSequenceState
+            {
+                HasVessel = true,
+                Title = title,
+                TotalDv = totalDv,
+                IsLocked = isLocked,
+                CurrentStage = curStage,
+                Throttle = throttle,
+                VerticalSpeed = verticalSpeed,
+                PropFrac = propFrac,
+                StageCount = ReusableSortedStages.Count
+            };
+        }
+    }
+
     [FlightWidget("staging_sequence", "stage_sequence", Category = WidgetCategory.Controls, DisplayName = "STAGE 垂直分级时序序列仪", Description = "垂直火箭分级序列仪：逐级剩余 ΔV、燃烧时间、推重比与单级推进剂微量程，重构原版左侧分级。", DefaultWidgetId = "custom.staging_sequence", DefaultX = -440f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "custom.staging_sequence", "custom.stage_sequence", "core.staging_sequence" })]
     public class StagingSequenceWidget : BaseFlightWidget, IAdaptiveSizeWidget
     {
@@ -134,21 +271,21 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             public string CachedMetaStr;
         }
 
+        private readonly StagingSequenceLogic _logic = new StagingSequenceLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         private const int InitialPooledStages = 10;
         private const int MaxDisplayedStages = 32;
         private const int MaxChipsPerStage = 24;
         private readonly List<StageItemUI> _stageItems = new List<StageItemUI>();
         private readonly CachedFloat _lastLayoutW = new CachedFloat(-1f);
         private readonly CachedFloat _lastLayoutH = new CachedFloat(-1f);
-        private readonly List<StageDeltaVInfo> _reusableSortedStages = new List<StageDeltaVInfo>();
-        private static readonly Comparison<StageDeltaVInfo> _stageOrderAscending = (a, b) => a.Stage.CompareTo(b.Stage);
-        private static readonly Comparison<StageDeltaVInfo> _stageOrderDescending = (a, b) => b.Stage.CompareTo(a.Stage);
 
         // 可滚动分级视口组件
         private ScrollRect _scrollRect;
         private RectTransform _scrollViewportRt;
         private RectTransform _scrollContentRt;
-        private string _stageOrder = "STOCK";
+        private string _stageOrder = string.Empty;
 
         // 底栏安全与触发指示
         private Image _bottomDivider;
@@ -209,7 +346,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private readonly Cached<string> _lastTotalDvStr = new Cached<string>(string.Empty);
         private readonly CachedDouble _lastTotalDv = new CachedDouble(double.NaN);
 
-        private int _highestStageNumber = 0;
+        private int _highestStageNumber => _logic.HighestStageNumber;
         private readonly Cached<int> _lastActiveStage = new Cached<int>(-1);
         private float _stageTriggerRecoilTimer = 0f;
         private float _stageTriggerFlashTimer = 0f;
@@ -222,7 +359,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         // 风格配置
         private string _frameMode = "FAINT";
-        private string _titleTemplate = "STAGING";
+        private string _titleTemplate = I18n.Tr("WIDGET_CTRL_STAGING", "STAGING");
         private string _totalDvToken = "{DV:TOTAL}";
         private string _stageDvToken = "{DV:STAGE}";
 
@@ -239,6 +376,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _stageDvToken = GetTemplateChannel("STAGE_DV_TOKEN", "{DV:STAGE}");
             string order = GetTemplateChannel("ORDER", null);
             _stageOrder = !string.IsNullOrEmpty(order) ? order.ToUpperInvariant() : "STOCK";
+
+            _logic.TitleTemplate = _titleTemplate;
+            _logic.TotalDvToken = _totalDvToken;
+            _logic.StageDvToken = _stageDvToken;
+            _logic.StageOrder = _stageOrder;
 
             // 1. 组件包围盒 (基准 160x260 逻辑像素)
             Vector2 size = BaseSize * s;
@@ -824,77 +966,15 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (_tooltipSub != null) ApplyText(_tooltipSub, TextStyleRole.SecondaryValue, theme);
         }
 
-        private bool _cachedHasVessel;
-        private string _cachedTitle;
-        private double _cachedTotalDv;
-        private bool _cachedIsLocked;
-        private int _cachedCurStage;
-        private float _cachedThrottle;
-        private double _cachedVerticalSpeed;
-        private float _cachedPropFrac;
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context) => base.OnDataHeartBeat(in context);
 
-        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context) => base.OnUIDrawLoop(ref context);
+
+        protected override void OnRenderState()
         {
-            base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
-            _cachedTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, context.Telemetry);
-
-            double totalDv = TelemetryTokenEngine.EvaluateNumeric(_totalDvToken, context.Telemetry);
-            if (double.IsNaN(totalDv)) totalDv = context.Telemetry.TotalDeltaV;
-            _cachedTotalDv = totalDv;
-
-            _cachedIsLocked = StockStageActionService.IsStagingLocked || context.Telemetry.IsStageLocked;
-
-            int curStage = context.Telemetry.CurrentStage;
-            _cachedCurStage = curStage;
-            _cachedThrottle = (float)context.Telemetry.Throttle;
-            _cachedVerticalSpeed = context.Telemetry.VerticalSpeed;
-            _cachedPropFrac = Mathf.Clamp01((float)context.Telemetry.StagePropellantFraction);
-
-            IReadOnlyList<StageDeltaVInfo> stages = context.Telemetry.StageDeltaVList;
-            int stageCount = stages != null ? stages.Count : 0;
-
-            _highestStageNumber = curStage;
-            if (stages != null && stages.Count > 0)
-            {
-                for (int i = 0; i < stages.Count; i++)
-                {
-                    if (stages[i].Stage > _highestStageNumber) _highestStageNumber = stages[i].Stage;
-                }
-            }
-
-            _reusableSortedStages.Clear();
-            if (stageCount > 0)
-            {
-                _reusableSortedStages.AddRange(stages);
-                if (_stageOrder == "REVERSE")
-                {
-                    _reusableSortedStages.Sort(_stageOrderDescending);
-                }
-                else
-                {
-                    _reusableSortedStages.Sort(_stageOrderAscending);
-                }
-            }
-            else
-            {
-                _reusableSortedStages.Add(new StageDeltaVInfo(curStage, context.Telemetry.StageDeltaV, context.Telemetry.StageBurnTime, context.Telemetry.TWR, 310.0, true));
-            }
-        }
-
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
-        {
-            base.OnUIDrawLoop(ref context);
-
-            if (!_cachedHasVessel) return;
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _cachedTheme);
+            StagingSequenceState snap = _logic.CurrentState;
+            if (!snap.HasVessel) return;
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
@@ -909,12 +989,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 2. 动态标题与全级总 ΔV
-            if (Title != null && Title.Text != _cachedTitle)
+            if (Title != null && Title.Text != snap.Title)
             {
-                Title.Text = _cachedTitle;
+                Title.Text = snap.Title;
             }
 
-            double totalDv = _cachedTotalDv;
+            double totalDv = snap.TotalDv;
             if (Math.Abs(totalDv - _lastTotalDv.Value) >= 0.5 || string.IsNullOrEmpty(_lastTotalDvStr.Value))
             {
                 _lastTotalDv.Update(totalDv);
@@ -923,7 +1003,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 3. 分级安全锁与状态
-            bool isLocked = _cachedIsLocked;
+            bool isLocked = snap.IsLocked;
             if (_lastStageLocked.Update(isLocked))
             {
                 string statusText = isLocked ? I18n.Tr("WIDGET_STAGE_LOCKED", "锁定") : I18n.Tr("WIDGET_ALERT_ARMED", "待发");
@@ -933,14 +1013,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
             }
 
-            int curStage = _cachedCurStage;
+            int curStage = snap.CurrentStage;
 
             // 获取当前有效图集
             Texture stockAtlas = StockStageIconService.Provider?.StockAtlas;
             bool isUsingStockAtlas = stockAtlas != null;
             Texture currentAtlas = isUsingStockAtlas ? stockAtlas : StageIconAtlasGenerator.GetAtlas();
 
-            List<StageDeltaVInfo> sortedStages = _reusableSortedStages;
+            List<StageDeltaVInfo> sortedStages = _logic.ReusableSortedStages;
 
             if (_lastActiveStage.Value >= 0 && _lastActiveStage.Value != curStage)
             {
@@ -1038,7 +1118,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 item.StageNumber = stg.Stage;
                 bool isActive = stg.IsActive || (stg.Stage == curStage);
                 item.IsActiveStage = isActive;
-                item.IsBurning = isActive && (_cachedThrottle > 0.01f || _cachedVerticalSpeed > 1f || stg.BurnTime > 0.01);
+                item.IsBurning = isActive && (snap.Throttle > 0.01f || snap.VerticalSpeed > 1f || stg.BurnTime > 0.01);
 
                 if (!item.HasUserToggled)
                 {
@@ -1070,7 +1150,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
 
                 bool hasProp = isActive;
-                float propFrac = isActive ? _cachedPropFrac : 0f;
+                float propFrac = isActive ? snap.PropFrac : 0f;
 
                 item.TargetPropFrac = propFrac;
                 if (item.CurrentPropFrac < 0.001f && propFrac > 0.001f)
