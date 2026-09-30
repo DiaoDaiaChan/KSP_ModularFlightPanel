@@ -75,8 +75,13 @@ namespace ModularFlightPanel.UI.Widgets
     /// </summary>
     public class RectangularNavballLogic : WidgetLogic<RectangularNavballState>
     {
+        private string _lastRawCat = null;
+        private string _cachedCatUpper = null;
+
         public override void Reset()
         {
+            _lastRawCat = null;
+            _cachedCatUpper = null;
             CurrentState = default;
         }
 
@@ -106,6 +111,12 @@ namespace ModularFlightPanel.UI.Widgets
                 frameName = hook.FrameName;
             }
 
+            if (!object.ReferenceEquals(rawCat, _lastRawCat) && rawCat != _lastRawCat)
+            {
+                _lastRawCat = rawCat;
+                _cachedCatUpper = rawCat.ToUpperInvariant();
+            }
+
             float heading = (hook != null && hook.HasStockNavBall) ? hook.HeadingAngle : ((telemetry != null) ? (float)telemetry.Heading : 0f);
 
             CurrentState = new RectangularNavballState
@@ -116,7 +127,7 @@ namespace ModularFlightPanel.UI.Widgets
                 TexScale = texScale,
                 TexOffset = texOffset,
                 RefCategory = rawCat,
-                RefCategoryUpper = rawCat.ToUpperInvariant(),
+                RefCategoryUpper = _cachedCatUpper ?? rawCat,
                 FrameName = frameName,
                 Heading = heading
             };
@@ -384,6 +395,15 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
+            UpdateProceduralDetailScale();
+        }
+
+        protected override void OnScaleChanged(float targetScale, float relativeRatio)
+        {
+            base.OnScaleChanged(targetScale, relativeRatio);
+            _detailScale = -1f;
+            _detailScaleDirty = true;
+            UpdateProceduralDetailScale();
         }
 
         public void OnAdaptiveResize(Vector2 pixelSize)
@@ -422,6 +442,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             UpdateBankAngleTicksPositions();
             _detailScaleDirty = true;
+            UpdateProceduralDetailScale();
         }
 
         private void CreateBezelBox(Transform parent, float width, float height, float dpiScale, ThemeConfig theme)
@@ -909,7 +930,6 @@ namespace ModularFlightPanel.UI.Widgets
 
             SyncAttitudeAndVisuals();
             SyncMarkers();
-            UpdateProceduralDetailScale();
             IFlightTelemetry curTelem = FlightTelemetryContext.Current;
             UpdateRollPointer(curTelem, _currentAttitudeRotation);
             UpdateSASAndGuidanceVisuals(curTelem);
@@ -952,8 +972,7 @@ namespace ModularFlightPanel.UI.Widgets
             Quaternion rawRot;
             if (hasHook)
             {
-                Quaternion camRot = hook.CameraRotation;
-                rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
+                rawRot = hook.ViewRotation;
             }
             else
             {

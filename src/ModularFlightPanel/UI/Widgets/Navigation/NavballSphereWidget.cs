@@ -992,7 +992,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _frameText.rectTransform.SetLocalScaleSafe(new Vector3(bScale, bScale, 1.0f));
                 Color fCol = GetFrameAccentColor(category, curTheme);
                 fCol.a = Mathf.Lerp(0.5f, 1.0f, bt);
-                _frameText.color = fCol;
+                _frameText.SetColor(fCol);
             }
             else
             {
@@ -1391,9 +1391,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     if (alphaChanged)
                     {
-                        Color c = img.color;
-                        c.a = alpha;
-                        img.color = c;
+                        img.SetAlpha(alpha);
                         lastState.Alpha = alpha;
                     }
                     slot.LastRenderState = lastState;
@@ -1427,8 +1425,8 @@ namespace ModularFlightPanel.UI.Widgets
                     if (!_markerHoverTooltipObj.activeSelf) _markerHoverTooltipObj.SetActive(true);
                     _markerHoverTooltipObj.transform.SetAsLastSibling();
 
-                    _markerHoverTooltipText.text = tipData.title;
-                    _markerHoverTooltipSub.text = tipData.sub;
+                    _markerHoverTooltipText.SetTextSafe(tipData.title);
+                    _markerHoverTooltipSub.SetTextSafe(tipData.sub);
 
                     float s = CurrentDpiScale;
                     Vector2 tipPos = _activeHoveredMarkerPos;
@@ -1442,14 +1440,14 @@ namespace ModularFlightPanel.UI.Widgets
                     FlightSASMode? mode = GetSASModeForMarker(_activeHoveredMarkerKey);
                     Color borderCol = mode.HasValue ? NavballMarkerFactory.GetSASModeColor(mode.Value, curTheme) : (curTheme?.AccentPrimary ?? WidgetStyleManager.NeutralOpaque);
 
-                    if (_markerHoverTooltipOutline != null) _markerHoverTooltipOutline.effectColor = borderCol;
-                    if (_markerHoverTooltipText != null) _markerHoverTooltipText.color = borderCol;
-                    if (_markerHoverTooltipSub != null) _markerHoverTooltipSub.color = curTheme?.TextPrimaryColor ?? WidgetStyleManager.NeutralOpaque;
+                    if (_markerHoverTooltipOutline != null) _markerHoverTooltipOutline.SetColor(borderCol);
+                    if (_markerHoverTooltipText != null) _markerHoverTooltipText.SetColor(borderCol);
+                    if (_markerHoverTooltipSub != null) _markerHoverTooltipSub.SetColor(curTheme?.TextPrimaryColor ?? WidgetStyleManager.NeutralOpaque);
                     if (_markerHoverTooltipBg != null)
                     {
                         Color bg = curTheme?.FrameBgColor ?? WidgetStyleManager.NeutralOpaque;
                         bg.a = 0.90f;
-                        _markerHoverTooltipBg.color = bg;
+                        _markerHoverTooltipBg.SetColor(bg);
                     }
                 }
                 else
@@ -1531,10 +1529,7 @@ namespace ModularFlightPanel.UI.Widgets
                     ? (theme != null ? (Color)theme.WarningColor : WidgetStyleManager.NeutralOpaque)
                     : (theme != null ? (Color)theme.HorizonLineColor : WidgetStyleManager.NeutralOpaque);
                 baseCol.a = _rollPointerAlpha;
-                if (_bankRollPointerImg.color != baseCol)
-                {
-                    _bankRollPointerImg.color = baseCol;
-                }
+                _bankRollPointerImg.SetColor(baseCol);
             }
         }
 
@@ -1552,9 +1547,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 if (visible && alphaChanged)
                 {
-                    Color c = img.color;
-                    c.a = alpha * 0.85f;
-                    img.color = c;
+                    img.SetAlpha(alpha * 0.85f);
                 }
             }
         }
@@ -1578,7 +1571,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _sasRippleRt.SetLocalScaleSafe(new Vector3(s, s, 1.0f));
                     Color rc = _sasRippleColor;
                     rc.a = Mathf.Lerp(0.95f, 0.0f, t * t);
-                    _sasRippleImage.color = rc;
+                    _sasRippleImage.SetColor(rc);
                 }
             }
 
@@ -1623,10 +1616,7 @@ namespace ModularFlightPanel.UI.Widgets
                     ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
                     Color lockCol = NavballMarkerFactory.GetSASModeColor(curSASMode, curTheme);
                     lockCol.a = 0.92f;
-                    if (_sasLockReticleImage.color != lockCol)
-                    {
-                        _sasLockReticleImage.color = lockCol;
-                    }
+                    _sasLockReticleImage.SetColor(lockCol);
                 }
                 else
                 {
@@ -1683,7 +1673,7 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         Color c = chevronCol;
                         c.a = alpha;
-                        chev.color = c;
+                        chev.SetColor(c);
                     }
                 }
             }
