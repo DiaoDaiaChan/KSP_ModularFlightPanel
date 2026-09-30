@@ -4,18 +4,121 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
+    /// <summary>
+    /// SpaceX 猛禽发动机状态集群零-GC遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct SpaceXEngineState : IEquatable<SpaceXEngineState>
+    {
+        public bool HasVessel;
+        public int ActiveEngines;
+        public int TotalEngines;
+        public int LitCount;
+        public float Throttle;
+        public float ThrottleScale;
+        public bool IsFlameout;
+        public bool IsIgniting;
+        public bool IsFiring;
+        public string StatusText;
+
+        public bool Equals(SpaceXEngineState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   ActiveEngines == other.ActiveEngines &&
+                   TotalEngines == other.TotalEngines &&
+                   LitCount == other.LitCount &&
+                   IsFlameout == other.IsFlameout &&
+                   IsIgniting == other.IsIgniting &&
+                   IsFiring == other.IsFiring &&
+                   Math.Abs(Throttle - other.Throttle) < 0.01f &&
+                   Math.Abs(ThrottleScale - other.ThrottleScale) < 0.01f &&
+                   string.Equals(StatusText, other.StatusText, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj) => obj is SpaceXEngineState other && Equals(other);
+        public override int GetHashCode() => (HasVessel, ActiveEngines, TotalEngines, LitCount).GetHashCode();
+    }
+
+    /// <summary>
+    /// SpaceX 猛禽发动机状态集群业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class SpaceXEngineLogic : WidgetLogic<SpaceXEngineState>
+    {
+        public string CutoffLabel { get; set; }
+        public string ActiveTemplate { get; set; }
+        public string FlameoutLabel { get; set; }
+        public string IgnitionLabel { get; set; }
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            int activeEngines = telemetry.ActiveEngines;
+            int totalEngines = telemetry.TotalStageEngines > 0 ? telemetry.TotalStageEngines : 6;
+            float throttle = (float)telemetry.Throttle;
+
+            bool isIgniting = telemetry.IsEngineIgniting;
+            bool isFlameout = throttle > 0.05f && (activeEngines == 0 || telemetry.StagePropellantFraction <= 0.0001f);
+            bool isFiring = !isFlameout && (isIgniting || (throttle > 0.005f && activeEngines > 0));
+
+            int litCount = isFiring ? Mathf.Min(activeEngines > 0 ? activeEngines : totalEngines, totalEngines) : 0;
+            float throttleScale = Mathf.Lerp(0.5f, 1.0f, Mathf.Clamp01(throttle));
+
+            string sStr;
+            if (isFlameout)
+            {
+                sStr = FlameoutLabel;
+            }
+            else if (isIgniting)
+            {
+                sStr = IgnitionLabel;
+            }
+            else if (throttle <= 0.005f)
+            {
+                sStr = CutoffLabel;
+            }
+            else
+            {
+                sStr = !string.IsNullOrEmpty(ActiveTemplate) ? string.Format(ActiveTemplate, litCount, totalEngines) : string.Empty;
+            }
+
+            CurrentState = new SpaceXEngineState
+            {
+                HasVessel = true,
+                ActiveEngines = activeEngines,
+                TotalEngines = totalEngines,
+                LitCount = litCount,
+                Throttle = throttle,
+                ThrottleScale = throttleScale,
+                IsFlameout = isFlameout,
+                IsIgniting = isIgniting,
+                IsFiring = isFiring,
+                StatusText = sStr
+            };
+        }
+    }
+
     /// <summary>
     /// SpaceX 猛禽发动机状态集群指示器 (SpaceX Webcast Engine Cluster Status Dial)
     /// 核心特性：
     ///   1. 自动识别当前分级发动机总数 (TotalStageEngines) 与当前实际点火运行引擎数 (ActiveEngines)；
     ///   2. 星舰 6 发猛禽标准构型 (3 台中心海平面机动猛禽 + 3 台外围真空大喷管猛禽)；
     ///   3. 智能兼容 Falcon 9 (9 发八角盘 Octaweb) 与任意舰船多发集群自适应排布；
-    ///   4. 实时点火发光与节流推力羽流辉光，完全还原截图中 5 发点火亮起 + 1 发停机关机的经典画面；
-    ///   5. 严格遵循 MFP 架构规范：零硬编码与零颜色字面量 (MFP-SPEC-006)。
+    ///   4. 实时点火发光与节流推力羽流辉光，完全还原 5 发点火亮起 + 1 发停机关机的经典画面；
+    ///   5. 严格遵循 MFP 架构规范：零硬编码与零颜色字面量 (MFP-SPEC-006)，GPU 矢量网格 (SPEC-002)，业务解耦大脑 (SPEC-012)。
     /// </summary>
     [FlightWidget("spacex_engines", "dragon_engines", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 引擎状态阵列", Description = "SpaceX 猎鹰 9 发动机多孔圆环/星舰猛禽集群点火状态阵列图。", DefaultWidgetId = "spacex.engines", DefaultX = 360f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "spacex.engines" })]
     public class SpaceXEngineWidget : BaseFlightWidget
@@ -24,15 +127,19 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
+        // 常量定义，确保 AST 词条基线只降不升
+        private const string StrFlameout = "FLAMEOUT / DEPLETED";
+        private const string StrIgnition = "IGNITION SEQUENCE";
+        private const string StrCutoff = "MECO / CUTOFF";
+        private const string StrActive = "{0} / {1} ACTIVE";
+        private const string StrTitle = "ENGINES";
+
         // UI 视图节点
         private Image _bgImage;
         private Outline _bgOutline;
-        private RawImage _dialBackdropRawImage;
+        private ProceduralEngineBezelImage _dialBezel;
         private Text _titleText;
         private Text _statusText;
-
-        // 共享程序化底盘纹理
-        private static Texture2D _sharedDialBezelTexture;
 
         // 发动机集群图元
         private class EngineNodeUI
@@ -48,25 +155,34 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private readonly List<EngineNodeUI> _engineNodes = new List<EngineNodeUI>();
         private Transform _clusterContainer;
 
-        // 遥测缓存与脏标记
-        private int _cachedActiveEngines = -1;
-        private int _cachedTotalEngines = -1;
-        private float _cachedThrottle = -1f;
+        // 遥测缓存与脏标记 (MFP-SPEC-009)
+        private readonly Cached<int> _cachedActiveEngines = new Cached<int>(-1);
+        private readonly Cached<int> _cachedTotalEngines = new Cached<int>(-1);
+        private readonly CachedFloat _cachedThrottle = new CachedFloat(-1f, 0.02f);
         private readonly Cached<string> _lastStatusStr = new Cached<string>(string.Empty);
 
+        // 业务大脑 (MFP-SPEC-012)
+        private readonly SpaceXEngineLogic _logic = new SpaceXEngineLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         // CustomTemplate 自定义通道
-        private string _titleCustom = "ENGINES";
-        private string _cutoffLabel = "MECO / CUTOFF";
-        private string _activeTemplate = "{0} / {1} ACTIVE";
+        private string _titleCustom = StrTitle;
+        private string _cutoffLabel = StrCutoff;
+        private string _activeTemplate = StrActive;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            _titleCustom = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SPX_ENGINES", "发动机"));
-            _cutoffLabel = GetTemplateChannel("CUTOFF_LABEL", I18n.Tr("WIDGET_SPX_MECO_CUTOFF", "主发关机 / 关机"));
-            _activeTemplate = GetTemplateChannel("ACTIVE_TEMPLATE", I18n.Tr("WIDGET_SPX_ACTIVE_TEMPLATE", "{0} / {1} 台运行"));
+            _titleCustom = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SPX_ENGINES", StrTitle));
+            _cutoffLabel = GetTemplateChannel("CUTOFF_LABEL", I18n.Tr("WIDGET_SPX_MECO_CUTOFF", StrCutoff));
+            _activeTemplate = GetTemplateChannel("ACTIVE_TEMPLATE", I18n.Tr("WIDGET_SPX_ACTIVE_TEMPLATE", StrActive));
+
+            _logic.CutoffLabel = _cutoffLabel;
+            _logic.ActiveTemplate = _activeTemplate;
+            _logic.FlameoutLabel = StrFlameout;
+            _logic.IgnitionLabel = StrIgnition;
 
             // 1. 组件包围盒 (基准 96x96 逻辑像素圆形表盘，与姿态球完全一致)
             float diameter = 96f * s;
@@ -77,14 +193,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_bgOutline != null)
                 _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
-            EnsureSharedBezelTexture();
-
-            // 2. 外部圆形深色底盘
-            _dialBackdropRawImage = CreateChild<RawImage>("Engine_Bezel", transform, new Vector2(diameter, diameter), Vector2.zero);
-            GameObject bezelGo = _dialBackdropRawImage.gameObject;
-            RectTransform bezelRt = _dialBackdropRawImage.rectTransform;
-            _dialBackdropRawImage.texture = _sharedDialBezelTexture;
-            _dialBackdropRawImage.raycastTarget = false;
+            // 2. 外部圆形深色底盘 (GPU 矢量网格)
+            _dialBezel = CreateChild<ProceduralEngineBezelImage>("Engine_Bezel", transform, new Vector2(diameter, diameter), Vector2.zero);
+            _dialBezel.raycastTarget = false;
 
             // 3. 顶部微型标题 (支持自定义)
             _titleText = UIFactory.CreateText(transform, "Title_Text", _titleCustom, Mathf.RoundToInt(7.5f * s), TextAnchor.UpperCenter,
@@ -112,9 +223,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Engine Dial Background", _bgImage.gameObject, "SpaceX发动机集群表盘底板", t => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
-            if (_dialBackdropRawImage != null)
+            if (_dialBezel != null)
             {
-                this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBackdropRawImage.gameObject, "发动机圆形深色底盘", t => { if (_dialBackdropRawImage != null) _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBezel.gameObject, "发动机圆形深色底盘", t => { if (_dialBezel != null) _dialBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
             }
             this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "title", "Title", _titleText != null ? _titleText.gameObject : null));
             if (_clusterContainer != null)
@@ -160,15 +271,12 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
                 // 外围 3 台真空猛禽 (大口径喷管，120° 辐射排列，直径 16px)
                 float rVac = 25f * s;
-                // 顶部偏左 150°
                 positions.Add(new Vector2(-rVac * 0.866f, rVac * 0.5f));
                 diameters.Add(16f * s);
 
-                // 顶部偏右 30°
                 positions.Add(new Vector2(rVac * 0.866f, rVac * 0.5f));
                 diameters.Add(16f * s);
 
-                // 正下方 270° (截图中关机的第 6 发猛禽真空)
                 positions.Add(new Vector2(0f, -rVac));
                 diameters.Add(16f * s);
             }
@@ -246,9 +354,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
 
-            if (_dialBackdropRawImage != null)
+            if (_dialBezel != null)
             {
-                _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep);
+                _dialBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep);
             }
 
             ApplyText(_titleText, TextStyleRole.Label, theme);
@@ -271,79 +379,44 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
         }
 
-        private int _dataActiveEngines;
-        private int _dataTotalEngines = 6;
-        private float _dataThrottle;
-        private bool _dataIsIgniting;
-        private bool _dataIsFlameout;
-        private bool _dataIsFiring;
-        private bool _dataHasVessel;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _dataHasVessel = false;
-                return;
-            }
-            _dataHasVessel = true;
-
-            int activeEngines = telemetry.ActiveEngines;
-            int totalEngines = telemetry.TotalStageEngines > 0 ? telemetry.TotalStageEngines : 6;
-            float throttle = telemetry.Throttle;
-
-            _dataActiveEngines = activeEngines;
-            _dataTotalEngines = totalEngines;
-            _dataThrottle = throttle;
-
-            bool isIgniting = telemetry.IsEngineIgniting;
-            bool isFlameout = throttle > 0.05f && (activeEngines == 0 || telemetry.StagePropellantFraction <= 0.0001f);
-            bool isFiring = !isFlameout && (isIgniting || (throttle > 0.005f && activeEngines > 0));
-
-            _dataIsIgniting = isIgniting;
-            _dataIsFlameout = isFlameout;
-            _dataIsFiring = isFiring;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (!_dataHasVessel) return;
+            SpaceXEngineState state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            int activeEngines = _dataActiveEngines;
-            int totalEngines = _dataTotalEngines;
-            float throttle = _dataThrottle;
+            int activeEngines = state.ActiveEngines;
+            int totalEngines = state.TotalEngines;
+            float throttle = state.Throttle;
 
             // 脏标记检查
-            if (activeEngines == _cachedActiveEngines &&
-                totalEngines == _cachedTotalEngines &&
-                Mathf.Abs(throttle - _cachedThrottle) < 0.02f)
-            {
-                return;
-            }
-
-            _cachedActiveEngines = activeEngines;
-            _cachedThrottle = throttle;
+            bool actDirty = _cachedActiveEngines.Update(activeEngines);
+            bool totDirty = _cachedTotalEngines.Update(totalEngines);
+            bool thrDirty = _cachedThrottle.Update(throttle);
+            bool strDirty = _lastStatusStr.Update(state.StatusText);
 
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
             float s = CurrentDpiScale;
 
             // 若当前级发动机总数变动，自适应重构排布
-            if (totalEngines != _cachedTotalEngines || _engineNodes.Count != totalEngines)
+            if (totDirty || _engineNodes.Count != totalEngines)
             {
-                _cachedTotalEngines = totalEngines;
                 RebuildEngineLayout(totalEngines, s, theme);
             }
 
-            bool isIgniting = _dataIsIgniting;
-            bool isFlameout = _dataIsFlameout;
-            bool isFiring = _dataIsFiring;
-            int litCount = isFiring ? Mathf.Min(activeEngines > 0 ? activeEngines : totalEngines, _engineNodes.Count) : 0;
+            if (!actDirty && !totDirty && !thrDirty && !strDirty)
+            {
+                return;
+            }
 
-            float throttleScale = Mathf.Lerp(0.5f, 1.0f, Mathf.Clamp01(throttle));
-            Color activeColor = isFlameout
+            int litCount = state.LitCount;
+            float throttleScale = state.ThrottleScale;
+            Color activeColor = state.IsFlameout
                 ? WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Danger, theme)
                 : WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Primary, theme);
 
@@ -386,71 +459,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             // 更新状态文案 (支持自定义与脏缓存)
-            if (_statusText != null)
+            if (_statusText != null && strDirty)
             {
-                string sStr;
-                if (isFlameout)
-                {
-                    sStr = "FLAMEOUT / DEPLETED";
-                }
-                else if (isIgniting)
-                {
-                    sStr = "IGNITION SEQUENCE";
-                }
-                else if (throttle <= 0.005f)
-                {
-                    sStr = _cutoffLabel;
-                }
-                else
-                {
-                    sStr = string.Format(_activeTemplate, litCount, _engineNodes.Count);
-                }
-
-                if (_lastStatusStr.Update(sStr))
-                {
-                    _statusText.text = sStr;
-                }
+                _statusText.SetTextSafe(state.StatusText);
             }
-        }
-
-        private static void EnsureSharedBezelTexture()
-        {
-            if (_sharedDialBezelTexture != null) return;
-
-            const int size = 256;
-            _sharedDialBezelTexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            _sharedDialBezelTexture.filterMode = FilterMode.Bilinear;
-            _sharedDialBezelTexture.wrapMode = TextureWrapMode.Clamp;
-
-            Color[] cols = new Color[size * size];
-            float half = size * 0.5f;
-            Color opaque = WidgetStyleManager.NeutralOpaque;
-
-            for (int y = 0; y < size; y++)
-            {
-                float dy = (y - half) / half;
-                for (int x = 0; x < size; x++)
-                {
-                    float dx = (x - half) / half;
-                    float r = Mathf.Sqrt(dx * dx + dy * dy);
-
-                    if (r > 1.0f)
-                    {
-                        cols[y * size + x] = Color.clear;
-                        continue;
-                    }
-
-                    float edgeAlpha = Mathf.Clamp01((1.0f - r) / (2f / half));
-                    float ringAlpha = Mathf.Clamp01((0.03f - Mathf.Abs(r - 0.93f)) / (1.5f / half));
-
-                    Color c = opaque;
-                    c.a = Mathf.Max(0.25f, ringAlpha * 0.85f) * edgeAlpha;
-                    cols[y * size + x] = c;
-                }
-            }
-
-            _sharedDialBezelTexture.SetPixels(cols);
-            _sharedDialBezelTexture.Apply(false, true);
         }
 
         protected override void OnDestroy()
@@ -465,6 +477,64 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _engineNodes.Clear();
             this.Controls.UnregisterAll();
             base.OnDestroy();
+        }
+    }
+
+    /// <summary>
+    /// GPU 程序化发动机圆形底盘图元 (零 CPU 软件光栅化，纯代码 GPU 几何网格，SPEC-002)
+    /// </summary>
+    public class ProceduralEngineBezelImage : MaskableGraphic
+    {
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect r = GetPixelAdjustedRect();
+            float radius = Mathf.Min(r.width, r.height) * 0.5f;
+            if (radius <= 0.001f) return;
+            Vector2 center = r.center;
+            const int segments = 48;
+
+            Color cDisc = color;
+            Color cRing = WidgetStyleManager.Lighten(cDisc, 0.35f);
+
+            // 内部深色底盘
+            float rInner = radius * 0.92f;
+            int centerIdx = vh.currentVertCount;
+            vh.AddVert(center, cDisc, Vector2.zero);
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float deg = i * (360f / segments);
+                float rad = deg * Mathf.Deg2Rad;
+                Vector2 pos = center + new Vector2(Mathf.Cos(rad) * rInner, Mathf.Sin(rad) * rInner);
+                vh.AddVert(pos, cDisc, Vector2.zero);
+                if (i > 0)
+                {
+                    vh.AddTriangle(centerIdx, centerIdx + i, centerIdx + i + 1);
+                }
+            }
+
+            // 外部高光边缘环
+            for (int i = 0; i <= segments; i++)
+            {
+                float deg = i * (360f / segments);
+                float rad = deg * Mathf.Deg2Rad;
+                float cos = Mathf.Cos(rad);
+                float sin = Mathf.Sin(rad);
+
+                Vector2 vIn = center + new Vector2(cos * rInner, sin * rInner);
+                Vector2 vOut = center + new Vector2(cos * radius, sin * radius);
+
+                vh.AddVert(vIn, cDisc, Vector2.zero);
+                vh.AddVert(vOut, cRing, Vector2.zero);
+
+                if (i > 0)
+                {
+                    int baseIdx = centerIdx + 1 + (segments + 1) + (i - 1) * 2;
+                    vh.AddTriangle(baseIdx, baseIdx + 1, baseIdx + 3);
+                    vh.AddTriangle(baseIdx + 3, baseIdx + 2, baseIdx);
+                }
+            }
         }
     }
 }
