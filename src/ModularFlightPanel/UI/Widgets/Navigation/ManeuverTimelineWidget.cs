@@ -24,6 +24,219 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     /// 5. 严格遵守 MFP 规范：
     ///    0 颜色字面量 (MFP-SPEC-006)、0 场景查询 (MFP-SPEC-007)、纯 C# IFlightTelemetry 解耦。
     /// </summary>
+    /// <summary>
+    /// 机动时序状态快照 (0 GC 值类型)
+    /// </summary>
+    public struct ManeuverTimelineState : IEquatable<ManeuverTimelineState>
+    {
+        public bool HasNode;
+        public double DeltaV;
+        public double TotalDeltaV;
+        public double TimeToNode;
+        public double BurnTime;
+        public double TimeToBurn;
+        public double ProgradeDv;
+        public double NormalDv;
+        public double RadialDv;
+        public float PipProgress;
+        public CardStyleRole CardRole;
+        public string CountdownLabel;
+        public string CountdownStr;
+        public string DvStr;
+        public string SubtitleStr;
+
+        public bool Equals(ManeuverTimelineState other)
+        {
+            return HasNode == other.HasNode &&
+                   Math.Abs(DeltaV - other.DeltaV) < 0.05 &&
+                   Math.Abs(TotalDeltaV - other.TotalDeltaV) < 0.05 &&
+                   Math.Abs(TimeToBurn - other.TimeToBurn) < 0.1 &&
+                   Math.Abs(PipProgress - other.PipProgress) < 0.002f &&
+                   CardRole == other.CardRole &&
+                   CountdownLabel == other.CountdownLabel &&
+                   CountdownStr == other.CountdownStr &&
+                   DvStr == other.DvStr &&
+                   SubtitleStr == other.SubtitleStr;
+        }
+
+        public override bool Equals(object obj) => obj is ManeuverTimelineState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasNode.GetHashCode();
+                hash = (hash * 397) ^ DeltaV.GetHashCode();
+                hash = (hash * 397) ^ PipProgress.GetHashCode();
+                hash = (hash * 397) ^ (int)CardRole;
+                if (CountdownStr != null) hash = (hash * 397) ^ CountdownStr.GetHashCode();
+                if (DvStr != null) hash = (hash * 397) ^ DvStr.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 轨道机动时序与三轴矢量轴业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class ManeuverTimelineLogic : WidgetLogic<ManeuverTimelineState>
+    {
+        public const float ZoneIgnitionNorm = 0.38f;
+        public const float ZoneBurnoutNorm = 0.88f;
+
+        public string DeltaVToken { get; set; } = "{MN:DV}";
+        public string TotalDvToken { get; set; } = "{MN:TOTAL_DV}";
+        public string TNodeToken { get; set; } = "{MN:T_NODE}";
+        public string BurnTimeToken { get; set; } = "{MN:BURN_TIME}";
+        public string TimeToBurnToken { get; set; } = "{MN:T_BURN}";
+        public string ProToken { get; set; } = "{MN:PRO}";
+        public string NormToken { get; set; } = "{MN:NORM}";
+        public string RadToken { get; set; } = "{MN:RAD}";
+        public string SourceToken { get; set; } = "{MN:SOURCE}";
+        public string StatusToken { get; set; } = "{MN:STATUS}";
+
+        public double ValueDeltaThreshold { get; set; } = 0.05;
+
+        private double _lastPrograde = double.NaN;
+        private double _lastNormal = double.NaN;
+        private double _lastRadial = double.NaN;
+        private string _cachedSubtitle = string.Empty;
+
+        public override void Reset()
+        {
+            _lastPrograde = double.NaN;
+            _lastNormal = double.NaN;
+            _lastRadial = double.NaN;
+            _cachedSubtitle = string.Empty;
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel || !telemetry.HasManeuverNode)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            double dv = TelemetryTokenEngine.EvaluateNumeric(DeltaVToken, telemetry);
+            if (double.IsNaN(dv)) dv = telemetry.ManeuverDeltaV;
+
+            double totalDv = TelemetryTokenEngine.EvaluateNumeric(TotalDvToken, telemetry);
+            if (double.IsNaN(totalDv) || totalDv < 0.01) totalDv = telemetry.ManeuverTotalDeltaV;
+            if (totalDv < dv) totalDv = dv;
+
+            double timeToNode = TelemetryTokenEngine.EvaluateNumeric(TNodeToken, telemetry);
+            if (double.IsNaN(timeToNode)) timeToNode = telemetry.ManeuverTimeToNode;
+
+            double burnTime = TelemetryTokenEngine.EvaluateNumeric(BurnTimeToken, telemetry);
+            if (double.IsNaN(burnTime)) burnTime = telemetry.ManeuverBurnTime;
+
+            double timeToBurn = TelemetryTokenEngine.EvaluateNumeric(TimeToBurnToken, telemetry);
+            if (double.IsNaN(timeToBurn)) timeToBurn = telemetry.ManeuverTimeToBurn;
+
+            double proDv = TelemetryTokenEngine.EvaluateNumeric(ProToken, telemetry);
+            if (double.IsNaN(proDv)) proDv = telemetry.ManeuverDeltaVPrograde;
+
+            double normDv = TelemetryTokenEngine.EvaluateNumeric(NormToken, telemetry);
+            if (double.IsNaN(normDv)) normDv = telemetry.ManeuverDeltaVNormal;
+
+            double radDv = TelemetryTokenEngine.EvaluateNumeric(RadToken, telemetry);
+            if (double.IsNaN(radDv)) radDv = telemetry.ManeuverDeltaVRadial;
+
+            string srcStr = TelemetryTokenEngine.Evaluate(SourceToken, telemetry);
+            if (string.IsNullOrEmpty(srcStr) || srcStr.StartsWith("{")) srcStr = telemetry.ManeuverSource ?? "MANEUVER";
+
+            CardStyleRole targetRole = CardStyleRole.Normal;
+            if (timeToBurn <= 0.0 && dv > 0.1)
+            {
+                targetRole = CardStyleRole.Emphasized;
+            }
+
+            float pipProgress;
+            if (timeToBurn > 0.0)
+            {
+                float approachRatio = Mathf.Clamp01(1.0f - (float)(timeToBurn / Math.Max(timeToBurn + 30.0, 120.0)));
+                pipProgress = Mathf.Lerp(0.08f, ZoneIgnitionNorm, approachRatio);
+            }
+            else if (dv > 0.1)
+            {
+                float burnProgress = totalDv > 0.01 ? Mathf.Clamp01(1.0f - (float)(dv / totalDv)) : 0.5f;
+                pipProgress = Mathf.Lerp(ZoneIgnitionNorm, ZoneBurnoutNorm, burnProgress);
+            }
+            else
+            {
+                pipProgress = 0.90f;
+            }
+
+            string labelStr;
+            string countdownStr;
+            string dvStr;
+
+            if (timeToBurn > 0.0)
+            {
+                labelStr = "COUNTDOWN";
+                int totalSec = Mathf.Abs((int)timeToBurn);
+                countdownStr = $"T- {totalSec / 60:00}:{totalSec % 60:00}";
+                dvStr = $"{dv:F1} m/s";
+            }
+            else if (dv > 0.1)
+            {
+                labelStr = "BURN ELAPSED";
+                int elapsed = Mathf.Abs((int)timeToBurn);
+                countdownStr = $"T+ {elapsed / 60:00}:{elapsed % 60:00}";
+                dvStr = $"{dv:F1} m/s";
+            }
+            else
+            {
+                labelStr = "STATUS";
+                countdownStr = "COMPLETE";
+                dvStr = "0.0 m/s";
+            }
+
+            double deltaThreshold = ValueDeltaThreshold > 0.0 ? ValueDeltaThreshold : 0.05;
+            if (double.IsNaN(_lastPrograde) || Math.Abs(proDv - _lastPrograde) > deltaThreshold ||
+                Math.Abs(normDv - _lastNormal) > deltaThreshold || Math.Abs(radDv - _lastRadial) > deltaThreshold ||
+                string.IsNullOrEmpty(_cachedSubtitle))
+            {
+                _lastPrograde = proDv;
+                _lastNormal = normDv;
+                _lastRadial = radDv;
+
+                string proSign = proDv >= 0 ? "+" : "";
+                string normSign = normDv >= 0 ? "+" : "";
+                string radSign = radDv >= 0 ? "+" : "";
+
+                string subStr = $"[{srcStr}]  PRO {proSign}{proDv:F1}  ·  NRM {normSign}{normDv:F1}  ·  RAD {radSign}{radDv:F1} m/s";
+                if (dv <= 0.1)
+                {
+                    subStr = $"[{srcStr}]  NOMINAL BURNOUT  ·  ALL NODES EXECUTED";
+                }
+                _cachedSubtitle = subStr;
+            }
+
+            CurrentState = new ManeuverTimelineState
+            {
+                HasNode = true,
+                DeltaV = dv,
+                TotalDeltaV = totalDv,
+                TimeToNode = timeToNode,
+                BurnTime = burnTime,
+                TimeToBurn = timeToBurn,
+                ProgradeDv = proDv,
+                NormalDv = normDv,
+                RadialDv = radDv,
+                PipProgress = pipProgress,
+                CardRole = targetRole,
+                CountdownLabel = labelStr,
+                CountdownStr = countdownStr,
+                DvStr = dvStr,
+                SubtitleStr = _cachedSubtitle
+            };
+        }
+    }
+
     [FlightWidget("maneuver_timeline", "burn_timeline", Category = WidgetCategory.Navigation, DisplayName = "MANEUVER 轨道机动时序与三轴矢量轴", Description = "横排时间轴形式机动节点指示器：点火窗口时序轨、T0 节点与 Prograde/Normal/Radial 三轴矢量分解。", DefaultWidgetId = "custom.maneuver_timeline", DefaultX = 0f, DefaultY = 260f, IsSingleton = true, ExactIds = new[] { "custom.maneuver_timeline", "core.maneuver_timeline" })]
     public class ManeuverTimelineWidget : BaseFlightWidget
     {
@@ -31,8 +244,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
 
-        // 注意: 本组件不使用声明式 DSL 微控件 (TextWidget.Value/Unit)，
-        // 时间轴 Hero 与 Subtitle 由 OnInitialize 手动构建以支持多段异构布局。
+        private readonly ManeuverTimelineLogic _logic = new ManeuverTimelineLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // UI 背景与卡片
         private Image _bgImage;
@@ -75,17 +288,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private readonly Cached<string> _lastSubtitleStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastDvStr = new Cached<string>(string.Empty);
 
-        // 双轨快照
-        private bool _pendingHasNode = false;
-        private double _pendingDeltaV = 0.0;
-        private float _pendingPipProgress = 0.08f;
-        private CardStyleRole _pendingCardRole = CardStyleRole.Normal;
-        private string _pendingCountdownLabel = string.Empty;
-        private string _pendingCountdownStr = string.Empty;
-        private string _pendingDvStr = string.Empty;
-        private string _pendingSubtitleStr = string.Empty;
-        private bool _hasPendingHeartbeat = false;
-
         // 几何参数 (基准像素)
         private const float TrackWidth = 460f;
         private const float TrackCenterY = 32f;
@@ -123,7 +325,17 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _normToken = GetTemplateChannel("NORM_TOKEN", "{MN:NORM}");
             _radToken = GetTemplateChannel("RAD_TOKEN", "{MN:RAD}");
             _sourceToken = GetTemplateChannel("SOURCE_TOKEN", "{MN:SOURCE}");
-            _statusToken = GetTemplateChannel("STATUS_TOKEN", "{MN:STATUS}");
+            _logic.DeltaVToken = _deltaVToken;
+            _logic.TotalDvToken = _totalDvToken;
+            _logic.TNodeToken = _tNodeToken;
+            _logic.BurnTimeToken = _burnTimeToken;
+            _logic.TimeToBurnToken = _timeToBurnToken;
+            _logic.ProToken = _proToken;
+            _logic.NormToken = _normToken;
+            _logic.RadToken = _radToken;
+            _logic.SourceToken = _sourceToken;
+            _logic.StatusToken = _statusToken;
+            _logic.ValueDeltaThreshold = config.ValueDeltaThreshold > 0.0 ? config.ValueDeltaThreshold : 0.05;
 
             // 1. 组件包围盒 (基准 520×100 逻辑像素，三级分层布局)
             Vector2 size = BaseSize * s;
@@ -371,132 +583,15 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel) return;
-
-            if (!telemetry.HasManeuverNode)
-            {
-                _pendingHasNode = false;
-                _hasPendingHeartbeat = true;
-                return;
-            }
-
-            _pendingHasNode = true;
-
-            double dv = TelemetryTokenEngine.EvaluateNumeric(_deltaVToken, telemetry);
-            if (double.IsNaN(dv)) dv = telemetry.ManeuverDeltaV;
-
-            double totalDv = TelemetryTokenEngine.EvaluateNumeric(_totalDvToken, telemetry);
-            if (double.IsNaN(totalDv) || totalDv < 0.01) totalDv = telemetry.ManeuverTotalDeltaV;
-            if (totalDv < dv) totalDv = dv;
-
-            double timeToNode = TelemetryTokenEngine.EvaluateNumeric(_tNodeToken, telemetry);
-            if (double.IsNaN(timeToNode)) timeToNode = telemetry.ManeuverTimeToNode;
-
-            double burnTime = TelemetryTokenEngine.EvaluateNumeric(_burnTimeToken, telemetry);
-            if (double.IsNaN(burnTime)) burnTime = telemetry.ManeuverBurnTime;
-
-            double timeToBurn = TelemetryTokenEngine.EvaluateNumeric(_timeToBurnToken, telemetry);
-            if (double.IsNaN(timeToBurn)) timeToBurn = telemetry.ManeuverTimeToBurn;
-
-            double proDv = TelemetryTokenEngine.EvaluateNumeric(_proToken, telemetry);
-            if (double.IsNaN(proDv)) proDv = telemetry.ManeuverDeltaVPrograde;
-
-            double normDv = TelemetryTokenEngine.EvaluateNumeric(_normToken, telemetry);
-            if (double.IsNaN(normDv)) normDv = telemetry.ManeuverDeltaVNormal;
-
-            double radDv = TelemetryTokenEngine.EvaluateNumeric(_radToken, telemetry);
-            if (double.IsNaN(radDv)) radDv = telemetry.ManeuverDeltaVRadial;
-
-            string srcStr = TelemetryTokenEngine.Evaluate(_sourceToken, telemetry);
-            if (string.IsNullOrEmpty(srcStr) || srcStr.StartsWith("{")) srcStr = telemetry.ManeuverSource ?? "MANEUVER";
-
-            CardStyleRole targetRole = CardStyleRole.Normal;
-            if (timeToBurn <= 0.0 && dv > 0.1)
-            {
-                targetRole = CardStyleRole.Emphasized;
-            }
-            _pendingCardRole = targetRole;
-
-            float pipProgress;
-            if (timeToBurn > 0.0)
-            {
-                float approachRatio = Mathf.Clamp01(1.0f - (float)(timeToBurn / Math.Max(timeToBurn + 30.0, 120.0)));
-                pipProgress = Mathf.Lerp(0.08f, ZoneIgnitionNorm, approachRatio);
-            }
-            else if (dv > 0.1)
-            {
-                float burnProgress = totalDv > 0.01 ? Mathf.Clamp01(1.0f - (float)(dv / totalDv)) : 0.5f;
-                pipProgress = Mathf.Lerp(ZoneIgnitionNorm, ZoneBurnoutNorm, burnProgress);
-            }
-            else
-            {
-                pipProgress = 0.90f;
-            }
-            _pendingPipProgress = pipProgress;
-
-            string labelStr;
-            string countdownStr;
-            string dvStr;
-
-            if (timeToBurn > 0.0)
-            {
-                labelStr = "COUNTDOWN";
-                int totalSec = Mathf.Abs((int)timeToBurn);
-                countdownStr = $"T- {totalSec / 60:00}:{totalSec % 60:00}";
-                dvStr = $"{dv:F1} m/s";
-            }
-            else if (dv > 0.1)
-            {
-                labelStr = "BURN ELAPSED";
-                int elapsed = Mathf.Abs((int)timeToBurn);
-                countdownStr = $"T+ {elapsed / 60:00}:{elapsed % 60:00}";
-                dvStr = $"{dv:F1} m/s";
-            }
-            else
-            {
-                labelStr = "STATUS";
-                countdownStr = "COMPLETE";
-                dvStr = "0.0 m/s";
-            }
-
-            _pendingCountdownLabel = labelStr;
-            _pendingCountdownStr = countdownStr;
-            _pendingDvStr = dvStr;
-            _pendingDeltaV = dv;
-
-            double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (double.IsNaN(_lastPrograde.Value) || Math.Abs(proDv - _lastPrograde.Value) > deltaThreshold ||
-                Math.Abs(normDv - _lastNormal.Value) > deltaThreshold || Math.Abs(radDv - _lastRadial.Value) > deltaThreshold)
-            {
-                _lastPrograde.Update(proDv);
-                _lastNormal.Update(normDv);
-                _lastRadial.Update(radDv);
-
-                string proSign = proDv >= 0 ? "+" : "";
-                string normSign = normDv >= 0 ? "+" : "";
-                string radSign = radDv >= 0 ? "+" : "";
-
-                string subStr = $"[{srcStr}]  PRO {proSign}{proDv:F1}  ·  NRM {normSign}{normDv:F1}  ·  RAD {radSign}{radDv:F1} m/s";
-                if (dv <= 0.1)
-                {
-                    subStr = $"[{srcStr}]  NOMINAL BURNOUT  ·  ALL NODES EXECUTED";
-                }
-                _pendingSubtitleStr = subStr;
-            }
-
-            _hasPendingHeartbeat = true;
         }
 
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        protected override void OnRenderState()
         {
-            base.OnUIDrawLoop(ref context);
-            if (!_hasPendingHeartbeat) return;
-
-            ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(_cachedTheme);
+            var state = _logic.CurrentState;
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
 
-            if (!_pendingHasNode)
+            if (!state.HasNode)
             {
                 ShowStandby(theme, s);
                 return;
@@ -504,25 +599,25 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             _lastHasNode.Update(true);
 
-            if (_currentCardRole != _pendingCardRole)
+            if (_currentCardRole != state.CardRole)
             {
-                _currentCardRole = _pendingCardRole;
+                _currentCardRole = state.CardRole;
                 if (_frameMode == "FAINT" && _bgOutline != null)
                 {
-                    _bgOutline.effectColor = _pendingCardRole == CardStyleRole.Emphasized
+                    _bgOutline.effectColor = _currentCardRole == CardStyleRole.Emphasized
                         ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
                         : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
                 }
                 else if (_frameMode == "NORMAL")
                 {
-                    ApplyCard(_bgImage, _bgOutline, _pendingCardRole, theme);
+                    ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
                 }
             }
 
-            if (Mathf.Abs(_pendingPipProgress - _lastCachedPipProgress.Value) > 0.002f)
+            if (Mathf.Abs(state.PipProgress - _lastCachedPipProgress.Value) > 0.002f)
             {
-                _lastCachedPipProgress.Update(_pendingPipProgress);
-                float pipX = (_pendingPipProgress - 0.5f) * TrackWidth * s;
+                _lastCachedPipProgress.Update(state.PipProgress);
+                float pipX = (state.PipProgress - 0.5f) * TrackWidth * s;
                 if (_progressPipRt != null)
                 {
                     _progressPipRt.SetAnchoredPositionSafe(new Vector2(pipX, TrackCenterY * s));
@@ -535,7 +630,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
                     for (int i = 0; i < _milestones.Length; i++)
                     {
-                        bool passed = _pendingPipProgress >= _milestones[i].NormalizedX - 0.01f;
+                        bool passed = state.PipProgress >= _milestones[i].NormalizedX - 0.01f;
                         if (_milestones[i].Dot != null)
                         {
                             _milestones[i].Dot.color = passed ? activeDot : inactiveDot;
@@ -548,21 +643,27 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            if (_lastHeroStr.Update(_pendingCountdownStr))
+            if (_lastHeroStr.Update(state.CountdownStr))
             {
-                SetTextIfChanged(_countdownText, _pendingCountdownStr);
-                SetTextIfChanged(_countdownLabel, _pendingCountdownLabel);
+                SetTextIfChanged(_countdownText, state.CountdownStr);
+                SetTextIfChanged(_countdownLabel, state.CountdownLabel);
             }
 
-            if (_lastDvStr.Update(_pendingDvStr) || _lastDeltaV.Update(_pendingDeltaV))
+            if (_lastDvStr.Update(state.DvStr) || _lastDeltaV.Update(state.DeltaV))
             {
-                SetTextIfChanged(_deltaVText, _pendingDvStr);
+                SetTextIfChanged(_deltaVText, state.DvStr);
             }
 
-            if (_pendingSubtitleStr != null && _lastSubtitleStr.Update(_pendingSubtitleStr))
+            if (state.SubtitleStr != null && _lastSubtitleStr.Update(state.SubtitleStr))
             {
-                SetTextIfChanged(_vectorSubtitleText, _pendingSubtitleStr);
+                SetTextIfChanged(_vectorSubtitleText, state.SubtitleStr);
             }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
         }
 
         private void ShowStandby(ThemeConfig theme, float s)
