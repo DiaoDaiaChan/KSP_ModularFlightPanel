@@ -4,38 +4,314 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
+    /// 单级推进栈数据快照 (0-GC 纯值类型，SPEC-012)
+    /// </summary>
+    public struct StageSnapshot : IEquatable<StageSnapshot>
+    {
+        public int StageNumber;
+        public bool IsActive;
+        public bool IsExpended;
+        public bool IsBurning;
+        public string BadgeText;
+        public string RoleText;
+        public string DvText;
+        public string MetaText;
+        public float PropFrac;
+        public bool Visible;
+
+        public bool Equals(StageSnapshot other)
+        {
+            return StageNumber == other.StageNumber &&
+                   IsActive == other.IsActive &&
+                   IsExpended == other.IsExpended &&
+                   IsBurning == other.IsBurning &&
+                   BadgeText == other.BadgeText &&
+                   RoleText == other.RoleText &&
+                   DvText == other.DvText &&
+                   MetaText == other.MetaText &&
+                   Math.Abs(PropFrac - other.PropFrac) < 0.001f &&
+                   Visible == other.Visible;
+        }
+    }
+
+    /// <summary>
+    /// ROCKET 2D 纯业务逻辑状态快照 (0-GC 纯值类型，SPEC-012)
+    /// </summary>
+    public struct Rocket2DState : IEquatable<Rocket2DState>
+    {
+        public bool HasVessel;
+        public string Title;
+        public string SubTitle;
+        public string TwrStr;
+        public string DvStr;
+        public float Pitch;
+        public float TargetTilt;
+        public string BayTitleStr;
+        public float Throttle;
+        public bool IsFiring;
+        public string BayFootStr;
+        public int DisplayCount;
+        public StageSnapshot Stage0;
+        public StageSnapshot Stage1;
+        public StageSnapshot Stage2;
+        public StageSnapshot Stage3;
+        public StageSnapshot Stage4;
+
+        public StageSnapshot GetStage(int index)
+        {
+            switch (index)
+            {
+                case 0: return Stage0;
+                case 1: return Stage1;
+                case 2: return Stage2;
+                case 3: return Stage3;
+                case 4: return Stage4;
+                default: return default;
+            }
+        }
+
+        public bool Equals(Rocket2DState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   DisplayCount == other.DisplayCount &&
+                   IsFiring == other.IsFiring &&
+                   Math.Abs(Throttle - other.Throttle) < 0.001f &&
+                   Math.Abs(Pitch - other.Pitch) < 0.1f &&
+                   Math.Abs(TargetTilt - other.TargetTilt) < 0.1f &&
+                   Title == other.Title &&
+                   SubTitle == other.SubTitle &&
+                   TwrStr == other.TwrStr &&
+                   DvStr == other.DvStr &&
+                   BayTitleStr == other.BayTitleStr &&
+                   BayFootStr == other.BayFootStr &&
+                   Stage0.Equals(other.Stage0) &&
+                   Stage1.Equals(other.Stage1) &&
+                   Stage2.Equals(other.Stage2) &&
+                   Stage3.Equals(other.Stage3) &&
+                   Stage4.Equals(other.Stage4);
+        }
+    }
+
+    /// <summary>
+    /// ROCKET 2D 纯逻辑大脑 (100% 游戏与引擎解耦，SPEC-012)
+    /// </summary>
+    public class Rocket2DLogic : WidgetLogic<Rocket2DState>
+    {
+        private const int MaxDisplayedStages = 5;
+        private readonly List<StageDeltaVInfo> _reusableSortedStages = new List<StageDeltaVInfo>(16);
+
+        private string _titleTemplate = null;
+        private string _subTitleTemplate = null;
+        private string _stageDvToken = "{STAGE:DV}";
+        private string _totalDvToken = "{DV:TOTAL}";
+        private string _twrToken = "{TWR}";
+
+        public void ConfigureTemplates(string title, string sub, string stageDvToken, string totalDvToken, string twrToken)
+        {
+            if (!string.IsNullOrEmpty(title)) _titleTemplate = title;
+            if (!string.IsNullOrEmpty(sub)) _subTitleTemplate = sub;
+            if (!string.IsNullOrEmpty(stageDvToken)) _stageDvToken = stageDvToken;
+            if (!string.IsNullOrEmpty(totalDvToken)) _totalDvToken = totalDvToken;
+            if (!string.IsNullOrEmpty(twrToken)) _twrToken = twrToken;
+        }
+
+        public override void Reset()
+        {
+            _reusableSortedStages.Clear();
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            Rocket2DState state = default;
+            state.HasVessel = true;
+
+            string titleTemplate = !string.IsNullOrEmpty(_titleTemplate) ? _titleTemplate : I18n.Tr("WIDGET_ROCKET_TITLE", "ROCKET 2D");
+            string subTitleTemplate = !string.IsNullOrEmpty(_subTitleTemplate) ? _subTitleTemplate : I18n.Tr("WIDGET_SIG_CTRL_STAGING", "STAGING");
+            state.Title = TelemetryTokenEngine.Evaluate(titleTemplate, telemetry);
+            state.SubTitle = TelemetryTokenEngine.Evaluate(subTitleTemplate, telemetry);
+
+            string twrVal = TelemetryTokenEngine.Evaluate(_twrToken, telemetry);
+            int activeEng = telemetry.ActiveEngines;
+            string engSuffix = activeEng > 0 ? $" ({activeEng} ENG)" : string.Empty;
+            state.TwrStr = $"TWR {twrVal}{engSuffix}";
+
+            string dvVal = TelemetryTokenEngine.Evaluate(_totalDvToken, telemetry);
+            state.DvStr = dvVal.EndsWith("m/s", StringComparison.OrdinalIgnoreCase) ? dvVal : $"{dvVal} m/s";
+
+            // 姿态解算 (Attitude & Staging Orientation: 90° 直立, 重力转向顺势倾斜)
+            float pitch = (float)telemetry.Pitch;
+            state.Pitch = pitch;
+            state.TargetTilt = Math.Max(-50f, Math.Min(50f, 90f - pitch));
+            state.BayTitleStr = $"{I18n.Tr("WIDGET_AXIS_PITCH", "PITCH")} {pitch:F0}°";
+
+            state.Throttle = Math.Max(0f, Math.Min(1f, (float)telemetry.Throttle));
+
+            IReadOnlyList<StageDeltaVInfo> stages = telemetry.StageDeltaVList;
+            int stageCount = stages != null ? stages.Count : 0;
+            int curStage = telemetry.CurrentStage;
+
+            _reusableSortedStages.Clear();
+            if (stageCount > 0)
+            {
+                _reusableSortedStages.AddRange(stages);
+                _reusableSortedStages.Sort((a, b) => a.Stage.CompareTo(b.Stage));
+            }
+            else
+            {
+                _reusableSortedStages.Add(new StageDeltaVInfo(curStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
+            }
+
+            int curIdx = -1;
+            for (int k = 0; k < _reusableSortedStages.Count; k++)
+            {
+                if (_reusableSortedStages[k].Stage == curStage)
+                {
+                    curIdx = k;
+                    break;
+                }
+            }
+            if (curIdx < 0) curIdx = _reusableSortedStages.Count - 1;
+
+            int windowStart = 0;
+            if (_reusableSortedStages.Count > MaxDisplayedStages)
+            {
+                windowStart = Math.Max(0, Math.Min(_reusableSortedStages.Count - MaxDisplayedStages, curIdx - (MaxDisplayedStages - 1)));
+            }
+            int displayCount = Math.Min(_reusableSortedStages.Count, MaxDisplayedStages);
+            state.DisplayCount = displayCount;
+
+            for (int i = 0; i < MaxDisplayedStages; i++)
+            {
+                StageSnapshot snap = default;
+                if (i < displayCount)
+                {
+                    StageDeltaVInfo stg = _reusableSortedStages[windowStart + i];
+                    bool isActive = stg.IsActive || (stg.Stage == curStage);
+                    bool isExpended = stg.Stage > curStage;
+                    bool isBurning = isActive && (telemetry.Throttle > 0.01 || telemetry.ActiveEngines > 0 || stg.BurnTime > 0.01);
+
+                    string roleStr = null;
+                    if (stg.PartIcons != null && stg.PartIcons.Count > 0)
+                    {
+                        for (int p = 0; p < stg.PartIcons.Count; p++)
+                        {
+                            string itype = stg.PartIcons[p].IconType;
+                            if (itype == "LAUNCH_CLAMP") { roleStr = "PAD RELEASE"; break; }
+                            if (itype == "SOLID_BOOSTER") { roleStr = "SOLID BOOSTER"; break; }
+                            if (itype == "PARACHUTES") { roleStr = "RECOVERY CHUTE"; break; }
+                            if (itype == "DECOUPLER_HOR") { roleStr = "RADIAL SEP"; break; }
+                            if (itype == "DECOUPLER_VERT") { roleStr = "STAGE DECOUPLER"; break; }
+                            if (itype == "FAIRING") { roleStr = "FAIRING JETT"; break; }
+                        }
+                    }
+                    if (string.IsNullOrEmpty(roleStr))
+                    {
+                        if (stg.Stage == 0) roleStr = "PAYLOAD / ORBIT";
+                        else if (stg.DeltaV > 2000.0) roleStr = "CORE STAGE";
+                        else if (stg.TWR > 1.8) roleStr = "BOOSTER CLUSTER";
+                        else if (stg.DeltaV > 800.0) roleStr = "UPPER STAGE";
+                        else if (stg.DeltaV < 0.01 && stg.BurnTime < 0.01) roleStr = "STAGE SEP";
+                        else roleStr = $"STAGE {stg.Stage:D2}";
+                    }
+
+                    string dvTextStr = stg.DeltaV > 0.01 ? $"{stg.DeltaV:N0} m/s" : "---";
+                    int burnSec = Math.Max(0, (int)stg.BurnTime);
+                    int m = burnSec / 60;
+                    int sec = burnSec % 60;
+                    string metaStr = stg.TWR > 0.01 
+                        ? $"{m:D2}:{sec:D2} · {stg.TWR:F2}T" 
+                        : $"{m:D2}:{sec:D2} · {stg.Isp:F0}s";
+
+                    float propFrac = 0f;
+                    if (isActive)
+                    {
+                        propFrac = Math.Max(0f, Math.Min(1f, (float)telemetry.StagePropellantFraction));
+                    }
+                    else if (isExpended)
+                    {
+                        propFrac = 0f;
+                    }
+                    else if (stg.PartIcons != null)
+                    {
+                        for (int p = 0; p < stg.PartIcons.Count; p++)
+                        {
+                            if (stg.PartIcons[p].PropellantFraction >= 0f)
+                            {
+                                propFrac = Math.Max(0f, Math.Min(1f, stg.PartIcons[p].PropellantFraction));
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        propFrac = 1.0f;
+                    }
+
+                    snap = new StageSnapshot
+                    {
+                        StageNumber = stg.Stage,
+                        IsActive = isActive,
+                        IsExpended = isExpended,
+                        IsBurning = isBurning,
+                        BadgeText = $"S{stg.Stage:D2}",
+                        RoleText = roleStr,
+                        DvText = dvTextStr,
+                        MetaText = metaStr,
+                        PropFrac = propFrac,
+                        Visible = true
+                    };
+                }
+                else
+                {
+                    snap = new StageSnapshot { Visible = false };
+                }
+
+                switch (i)
+                {
+                    case 0: state.Stage0 = snap; break;
+                    case 1: state.Stage1 = snap; break;
+                    case 2: state.Stage2 = snap; break;
+                    case 3: state.Stage3 = snap; break;
+                    case 4: state.Stage4 = snap; break;
+                }
+            }
+
+            bool isFiring = curStage >= 0 && (telemetry.ActiveEngines > 0 || telemetry.Throttle > 0.01);
+            state.IsFiring = isFiring;
+            state.BayFootStr = curStage >= 0 
+                ? $"S{curStage:D2} · {(isFiring ? I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"))}" 
+                : I18n.Tr("WIDGET_ROCKET_SAFED", "已保险");
+
+            CurrentState = state;
+        }
+    }
+
+    /// <summary>
     /// ====================================================================================
     /// Modular Flight Panel (MFP) 飞船分级二维拓扑结构仪 (2D Vessel Silhouette Staging Topology)
     /// ====================================================================================
-    /// 核心特性：
-    /// 1. 左侧 2D 飞船剪影拓扑视窗 (Vehicle Silhouette Bay)：
-    ///    - 优先联动 VesselSilhouetteBaker (IVesselSilhouetteProvider) 获取游戏内真实飞船实时烘焙轮廓，支持助推器/整流罩脱落视觉飞离；
-    ///    - 离线、无头渲染或原地沙盒下自适应切换至高精多级火箭程序化矢量剪影保底；
-    ///    - 动态发动机喷流羽流 (Exhaust Plume)：在激活发动机正下方呈现随油门缩放并伴随高频喷焰微颤（26Hz）的动态羽流；
-    ///    - 视窗四角航电瞄准框标 (Corner Reticles) 与动态底标 (STAGE S06 / ACTIVE)。
-    /// 2. 右侧动态多级垂直推进栈 (Multistage Propulsion Stack)：
-    ///    - 全面摒弃写死 3 级限制，动态读取并展示 StageDeltaVList 真实载具多级推进数据；
-    ///    - 采用标准航电分级顺序（自顶向下：S00 载荷/卫星至当前点火底级）；
-    ///    - 单级卡片集成：左侧激光连接引线、分级徽章 (S06)、分级角色 (BOOSTER / CORE / UPPER / PAYLOAD)、
-    ///      推进剂液位量程条 (带平滑阻尼插值与 <5% 烈度频闪)、单级 ΔV 读数、燃烧倒计时 (⏱ mm:ss) 与 TWR 推重比。
-    /// 3. 顶部航电综合简报栏 (Avionics Header Summary)：
-    ///    - 标题与副标题动态求值 (ROCKET / 2D · STAGING TOPOLOGY)；
-    ///    - 中央实时 TWR 与激活发动机计数；
-    ///    - 右侧全级总 ΔV 汇总与战备状态光字 (● ARMED / ● BURNING / ● SAFED)。
-    /// 4. 严格落实 MFP-SPEC-001..007 铁律：
-    ///    - 0 颜色字面量 (MFP-SPEC-006)：100% 经由 WidgetStyleManager 语义着色；
-    ///    - 0 场景查询 (MFP-SPEC-007)；
-    ///    - 纯 C# UGUI 架构与零 GC 文本脏检查守护 (SetTextIfChanged)；
-    ///    - 支持 CustomTemplate 通配符通道覆写。
+    /// 遵循 MFP-SPEC-012 (架构分层与 WidgetLogic 解耦)、MFP-SPEC-009 (托管缓存与脏检查)、
+    /// MFP-SPEC-004D (显式帧循环与生命周期) 现代化标准重构。
     /// </summary>
     [FlightWidget("rocket2d", "rocket", "staging_diagram", Category = WidgetCategory.Systems, DisplayName = "ROCKET 2D 垂直推进栈姿态卡", Description = "多级火箭垂直推进栈、推进剂实时耗尽进度条、发动机工况与本级 dV。", DefaultWidgetId = "custom.rocket", DefaultX = 440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "custom.rocket", "custom.stage", "custom.staging", "core.rocket2d" })]
     public class Rocket2DWidget : BaseFlightWidget
     {
+        private readonly Rocket2DLogic _logic = new Rocket2DLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         public override Vector2 BaseSize => new Vector2(DefaultWidth, DefaultHeight);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
@@ -116,11 +392,15 @@ namespace ModularFlightPanel.UI.Widgets
         private ThemeConfig _cachedTheme;
 
         // 姿态与视觉补间状态
-        private float _cachedPitch = 90f;
-        private float _cachedTargetTilt = 0f;
         private float _currentTilt = 0f;
-        private float _cachedThrottle = 0f;
-        private string _cachedBayTitleStr = string.Empty;
+
+        // 托管缓存 (SPEC-009)
+        private readonly Cached<string> _lastRenderedTitle = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRenderedSubTitle = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRenderedTwr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRenderedDv = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRenderedBayTitle = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastRenderedBayFooter = new Cached<string>(string.Empty);
 
         // 动画时间模拟支持 (用于无头单帧/连续帧确定性渲染)
         public static float CustomAnimationTime = -1f;
@@ -131,12 +411,13 @@ namespace ModularFlightPanel.UI.Widgets
             _cachedTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
             _titleTemplate = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_ROCKET_TITLE", "ROCKET 2D"));
             _subTitleTemplate = GetTemplateChannel("SUBTITLE", I18n.Tr("WIDGET_SIG_CTRL_STAGING", "STAGING"));
             _stageDvToken = GetTemplateChannel(new[] { "STAGE_DV", "DV_TOKEN" }, "{STAGE:DV}");
             _totalDvToken = GetTemplateChannel(new[] { "TOTAL_DV", "TOTAL_DV_TOKEN" }, "{DV:TOTAL}");
             _twrToken = GetTemplateChannel(new[] { "TWR", "TWR_TOKEN" }, "{TWR}");
+
+            _logic.ConfigureTemplates(_titleTemplate, _subTitleTemplate, _stageDvToken, _totalDvToken, _twrToken);
 
             Vector2 panelSize = BaseSize * s;
             _bgImage = CardBackground;
@@ -156,6 +437,14 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.Register(new WidgetReadoutControl("twr_dv_readout", "TWR与总速度增量", _summaryDvText != null ? _summaryDvText.gameObject : null, _summaryDvText, _summaryTwrText, TextStyleRole.PrimaryValue, _totalDvToken));
             if (_silhouetteBayObj != null) this.Controls.Register(WidgetControlManager.WrapElement(this, "silhouette_bay", "飞船剪影视窗", _silhouetteBayObj));
             if (_stageRows.Count > 0) this.Controls.Register(WidgetControlManager.WrapElement(this, "propulsion_stack", "多级推进栈", _stageRows[0].Root));
+        }
+
+        protected override void OnLanguageChanged()
+        {
+            base.OnLanguageChanged();
+            _titleTemplate = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_ROCKET_TITLE", "ROCKET 2D"));
+            _subTitleTemplate = GetTemplateChannel("SUBTITLE", I18n.Tr("WIDGET_SIG_CTRL_STAGING", "STAGING"));
+            _logic.ConfigureTemplates(_titleTemplate, _subTitleTemplate, _stageDvToken, _totalDvToken, _twrToken);
         }
 
         private void BuildHeader(Transform parent, Vector2 panelSize, float s, ThemeConfig theme)
@@ -542,197 +831,18 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        private struct StageRowSnapshot
-        {
-            public int StageNumber;
-            public bool IsActive;
-            public bool IsExpended;
-            public bool IsBurning;
-            public string BadgeText;
-            public string RoleText;
-            public string DvText;
-            public string MetaText;
-            public float PropFrac;
-            public bool Visible;
-        }
-        private readonly StageRowSnapshot[] _cachedStageSnapshots = new StageRowSnapshot[16];
-        private readonly List<StageDeltaVInfo> _reusableSortedStages = new List<StageDeltaVInfo>();
-        private bool _cachedHasVessel;
-        private string _cachedTitle;
-        private string _cachedSubTitle;
-        private string _cachedTwrStr;
-        private string _cachedDvStr;
-        private Texture _cachedSilhouetteTex;
-        private bool _cachedIsFiring;
-        private string _cachedBayFootStr;
-        private int _cachedDisplayCount;
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
-
-            _cachedTitle = TelemetryTokenEngine.Evaluate(_titleTemplate, context.Telemetry);
-            _cachedSubTitle = TelemetryTokenEngine.Evaluate(_subTitleTemplate, context.Telemetry);
-
-            string twrVal = TelemetryTokenEngine.Evaluate(_twrToken, context.Telemetry);
-            int activeEng = context.Telemetry.ActiveEngines;
-            string engSuffix = activeEng > 0 ? $" ({activeEng} ENG)" : string.Empty;
-            _cachedTwrStr = $"TWR {twrVal}{engSuffix}";
-
-            string dvVal = TelemetryTokenEngine.Evaluate(_totalDvToken, context.Telemetry);
-            _cachedDvStr = dvVal.EndsWith("m/s", StringComparison.OrdinalIgnoreCase) ? dvVal : $"{dvVal} m/s";
-
-            _cachedSilhouetteTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
-
-            // 姿态解算 (Attitude & Staging Orientation: 90° 直立, 重力转向顺势倾斜)
-            float pitch = context.Telemetry.Pitch;
-            _cachedPitch = pitch;
-            float targetTilt = Mathf.Clamp(90f - pitch, -50f, 50f);
-            _cachedTargetTilt = targetTilt;
-            _cachedBayTitleStr = $"{I18n.Tr("WIDGET_AXIS_PITCH", "PITCH")} {pitch:F0}°";
-
-            _cachedThrottle = Mathf.Clamp01((float)context.Telemetry.Throttle);
-
-            IReadOnlyList<StageDeltaVInfo> stages = context.Telemetry.StageDeltaVList;
-            int stageCount = stages != null ? stages.Count : 0;
-            int curStage = context.Telemetry.CurrentStage;
-
-            _reusableSortedStages.Clear();
-            if (stageCount > 0)
-            {
-                _reusableSortedStages.AddRange(stages);
-                _reusableSortedStages.Sort((a, b) => a.Stage.CompareTo(b.Stage));
-            }
-            else
-            {
-                _reusableSortedStages.Add(new StageDeltaVInfo(curStage, context.Telemetry.StageDeltaV, context.Telemetry.StageBurnTime, context.Telemetry.TWR, 310.0, true));
-            }
-
-            int curIdx = -1;
-            for (int k = 0; k < _reusableSortedStages.Count; k++)
-            {
-                if (_reusableSortedStages[k].Stage == curStage)
-                {
-                    curIdx = k;
-                    break;
-                }
-            }
-            if (curIdx < 0) curIdx = _reusableSortedStages.Count - 1;
-
-            int windowStart = 0;
-            if (_reusableSortedStages.Count > MaxDisplayedStages)
-            {
-                windowStart = Mathf.Clamp(curIdx - (MaxDisplayedStages - 1), 0, _reusableSortedStages.Count - MaxDisplayedStages);
-            }
-            int displayCount = Mathf.Min(_reusableSortedStages.Count, MaxDisplayedStages);
-            _cachedDisplayCount = displayCount;
-
-            for (int i = 0; i < _stageRows.Count && i < _cachedStageSnapshots.Length; i++)
-            {
-                if (i < displayCount)
-                {
-                    StageDeltaVInfo stg = _reusableSortedStages[windowStart + i];
-                    bool isActive = stg.IsActive || (stg.Stage == curStage);
-                    bool isExpended = stg.Stage > curStage;
-                    bool isBurning = isActive && (context.Telemetry.Throttle > 0.01 || context.Telemetry.ActiveEngines > 0 || stg.BurnTime > 0.01);
-
-                    string roleStr = null;
-                    if (stg.PartIcons != null && stg.PartIcons.Count > 0)
-                    {
-                        for (int p = 0; p < stg.PartIcons.Count; p++)
-                        {
-                            string itype = stg.PartIcons[p].IconType;
-                            if (itype == "LAUNCH_CLAMP") { roleStr = "PAD RELEASE"; break; }
-                            if (itype == "SOLID_BOOSTER") { roleStr = "SOLID BOOSTER"; break; }
-                            if (itype == "PARACHUTES") { roleStr = "RECOVERY CHUTE"; break; }
-                            if (itype == "DECOUPLER_HOR") { roleStr = "RADIAL SEP"; break; }
-                            if (itype == "DECOUPLER_VERT") { roleStr = "STAGE DECOUPLER"; break; }
-                            if (itype == "FAIRING") { roleStr = "FAIRING JETT"; break; }
-                        }
-                    }
-                    if (string.IsNullOrEmpty(roleStr))
-                    {
-                        if (stg.Stage == 0) roleStr = "PAYLOAD / ORBIT";
-                        else if (stg.DeltaV > 2000.0) roleStr = "CORE STAGE";
-                        else if (stg.TWR > 1.8) roleStr = "BOOSTER CLUSTER";
-                        else if (stg.DeltaV > 800.0) roleStr = "UPPER STAGE";
-                        else if (stg.DeltaV < 0.01 && stg.BurnTime < 0.01) roleStr = "STAGE SEP";
-                        else roleStr = $"STAGE {stg.Stage:D2}";
-                    }
-
-                    string dvTextStr = stg.DeltaV > 0.01 ? $"{stg.DeltaV:N0} m/s" : "---";
-                    int burnSec = Mathf.Max(0, (int)stg.BurnTime);
-                    int m = burnSec / 60;
-                    int sec = burnSec % 60;
-                    string metaStr = stg.TWR > 0.01 
-                        ? $"{m:D2}:{sec:D2} · {stg.TWR:F2}T" 
-                        : $"{m:D2}:{sec:D2} · {stg.Isp:F0}s";
-
-                    float propFrac = 0f;
-                    if (isActive)
-                    {
-                        propFrac = Mathf.Clamp01((float)context.Telemetry.StagePropellantFraction);
-                    }
-                    else if (isExpended)
-                    {
-                        propFrac = 0f;
-                    }
-                    else if (stg.PartIcons != null)
-                    {
-                        for (int p = 0; p < stg.PartIcons.Count; p++)
-                        {
-                            if (stg.PartIcons[p].PropellantFraction >= 0f)
-                            {
-                                propFrac = Mathf.Clamp01(stg.PartIcons[p].PropellantFraction);
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        propFrac = 1.0f;
-                    }
-
-                    _cachedStageSnapshots[i] = new StageRowSnapshot
-                    {
-                        StageNumber = stg.Stage,
-                        IsActive = isActive,
-                        IsExpended = isExpended,
-                        IsBurning = isBurning,
-                        BadgeText = $"S{stg.Stage:D2}",
-                        RoleText = roleStr,
-                        DvText = dvTextStr,
-                        MetaText = metaStr,
-                        PropFrac = propFrac,
-                        Visible = true
-                    };
-                }
-                else
-                {
-                    _cachedStageSnapshots[i] = new StageRowSnapshot { Visible = false };
-                }
-            }
-
-            bool isFiring = curStage >= 0 && (context.Telemetry.ActiveEngines > 0 || context.Telemetry.Throttle > 0.01);
-            _cachedIsFiring = isFiring;
-            _cachedBayFootStr = curStage >= 0 
-                ? $"S{curStage:D2} · {(isFiring ? I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") : I18n.Tr("WIDGET_ALERT_ARMED", "待发"))}" 
-                : I18n.Tr("WIDGET_ROCKET_SAFED", "已保险");
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
 
-            if (!_cachedHasVessel) return;
+            Rocket2DState state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _cachedTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
@@ -742,36 +852,37 @@ namespace ModularFlightPanel.UI.Widgets
             Vector2 panelSize = BaseSize * s;
 
             // 1. 顶部 Header 动态评估
-            _titleText.SetTextSafe(_cachedTitle);
-            _subTitleText.SetTextSafe(_cachedSubTitle);
-            _summaryTwrText.SetTextSafe(_cachedTwrStr);
-            _summaryDvText.SetTextSafe(_cachedDvStr);
+            _titleText.SetTextSafe(state.Title);
+            _subTitleText.SetTextSafe(state.SubTitle);
+            _summaryTwrText.SetTextSafe(state.TwrStr);
+            _summaryDvText.SetTextSafe(state.DvStr);
 
             // 2. 剪影与姿态俯仰角旋转动画
-            _silhouetteBayTitle.SetTextSafe(_cachedBayTitleStr);
+            _silhouetteBayTitle.SetTextSafe(state.BayTitleStr);
 
             if (_rocketAssemblyRt != null)
             {
-                _currentTilt = Mathf.MoveTowards(_currentTilt, _cachedTargetTilt, dt * 60f);
+                _currentTilt = Mathf.MoveTowards(_currentTilt, state.TargetTilt, dt * 60f);
                 _rocketAssemblyRt.localRotation = Quaternion.Euler(0f, 0f, -_currentTilt);
             }
 
-            if (_silhouetteRawImage != null && _cachedSilhouetteTex != null)
+            Texture silTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
+            if (_silhouetteRawImage != null && silTex != null)
             {
-                if (_silhouetteRawImage.texture != _cachedSilhouetteTex)
+                if (_silhouetteRawImage.texture != silTex)
                 {
-                    _silhouetteRawImage.texture = _cachedSilhouetteTex;
+                    _silhouetteRawImage.texture = silTex;
                 }
             }
 
             // 3. 动态发动机喷流羽流高频微颤 (26Hz Flame Flutter & Mach Shock Diamonds)
             if (_plumeRootObj != null)
             {
-                _plumeRootObj.SetActiveSafe(_cachedIsFiring);
-                if (_cachedIsFiring)
+                _plumeRootObj.SetActiveSafe(state.IsFiring);
+                if (state.IsFiring)
                 {
                     float flutter = 1.0f + Mathf.Sin(time * 26f) * 0.12f;
-                    float thr = _cachedThrottle > 0.01f ? _cachedThrottle : 0.8f;
+                    float thr = state.Throttle > 0.01f ? state.Throttle : 0.8f;
                     float plumeH = Mathf.Clamp((8f + 5f * thr) * s * flutter, 6f * s, 14f * s);
                     float plumeW = (7f + 2f * thr) * s * flutter;
 
@@ -790,8 +901,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 视窗底部状态标牌与胶囊底板
-            _silhouetteBayFooter.SetTextSafe(_cachedBayFootStr);
-            if (_cachedIsFiring)
+            _silhouetteBayFooter.SetTextSafe(state.BayFootStr);
+            if (state.IsFiring)
             {
                 _silhouetteBayFooter.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             }
@@ -801,7 +912,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 动态多级推进栈排版与数据绑定
-            int displayCount = _cachedDisplayCount;
+            int displayCount = state.DisplayCount;
             float stackH = 132f * s;
             float rHeight = displayCount <= 4 ? 25.5f * s : 24f * s;
             float rSpacing = displayCount > 1 
@@ -819,7 +930,7 @@ namespace ModularFlightPanel.UI.Widgets
                     row.RootRt.SetAnchoredPositionSafe(new Vector2(-panelSize.x * 0.5f + 74f * s, rowY));
                     row.RootRt.SetSizeDeltaSafe(new Vector2(panelSize.x - 82f * s, rHeight));
 
-                    var snap = _cachedStageSnapshots[i];
+                    StageSnapshot snap = state.GetStage(i);
                     row.StageNumber = snap.StageNumber;
                     row.IsActiveStage = snap.IsActive;
                     row.IsBurning = snap.IsBurning;
@@ -927,9 +1038,6 @@ namespace ModularFlightPanel.UI.Widgets
         }
     }
 
-    /// <summary>
-    /// UGUI GPU 矢量火箭剪影图元 (零 CPU 软件光栅化，纯代码 GPU 三角形与四边形)
-    /// </summary>
     public class ProceduralRocketSilhouetteGraphic : MaskableGraphic
     {
         protected override void OnPopulateMesh(VertexHelper vh)
