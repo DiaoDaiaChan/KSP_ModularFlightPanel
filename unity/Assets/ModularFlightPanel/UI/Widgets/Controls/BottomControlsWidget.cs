@@ -21,6 +21,138 @@ namespace ModularFlightPanel.UI.Widgets
     /// 3. 右侧：SAS 稳定性增益开关 (自保持状态高亮，快捷键 T)
     /// 严格遵照 MFP 标准：0 颜色字面量、0 场景查询、统一语义主题管线。
     /// </summary>
+    /// <summary>
+    /// 底控台零 GC 不可变遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct BottomControlsState : IEquatable<BottomControlsState>
+    {
+        public bool HasVessel;
+        public bool IsRcsActive;
+        public bool IsSasActive;
+        public string RefCategory;
+        public string RefTitle;
+
+        public bool Equals(BottomControlsState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   IsRcsActive == other.IsRcsActive &&
+                   IsSasActive == other.IsSasActive &&
+                   RefCategory == other.RefCategory &&
+                   RefTitle == other.RefTitle;
+        }
+
+        public override bool Equals(object obj) => obj is BottomControlsState other && Equals(other);
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = HasVessel.GetHashCode();
+                hash = (hash * 397) ^ IsRcsActive.GetHashCode();
+                hash = (hash * 397) ^ IsSasActive.GetHashCode();
+                if (RefCategory != null) hash = (hash * 397) ^ RefCategory.GetHashCode();
+                if (RefTitle != null) hash = (hash * 397) ^ RefTitle.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 底控台纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class BottomControlsLogic : WidgetLogic<BottomControlsState>
+    {
+        public string TypeToken = "{FRAME:TYPE}";
+        public string FrameToken = "{FRAME}";
+        public string FramePrefix = "";
+
+        private SpeedDisplayMode _lastSpeedMode = (SpeedDisplayMode)(-1);
+        private string _lastNavHookCategory = null;
+        private string _lastNavHookTitle = null;
+        private string _cachedCategory = "ORBIT";
+        private string _cachedTitle = "ORBIT";
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            _lastSpeedMode = (SpeedDisplayMode)(-1);
+            _lastNavHookCategory = null;
+            _lastNavHookTitle = null;
+            _cachedCategory = "ORBIT";
+            _cachedTitle = "ORBIT";
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                if (CurrentState.HasVessel)
+                {
+                    Reset();
+                }
+                return;
+            }
+
+            bool rcs = telemetry.IsRCSEnabled;
+            bool sas = telemetry.IsSASEnabled;
+
+            SpeedDisplayMode curSpeedMode = telemetry.CurrentSpeedMode;
+            var navHook = NavBallHookService.Provider;
+            string curHookCat = navHook != null ? navHook.ReferenceFrameCategory : null;
+            string curHookTitle = navHook != null ? navHook.FrameName : null;
+
+            bool frameDirty = curSpeedMode != _lastSpeedMode 
+                || curHookCat != _lastNavHookCategory 
+                || curHookTitle != _lastNavHookTitle;
+
+            if (frameDirty)
+            {
+                _lastSpeedMode = curSpeedMode;
+                _lastNavHookCategory = curHookCat;
+                _lastNavHookTitle = curHookTitle;
+
+                string curSpeedModeName = telemetry.SpeedModeName;
+
+                string category = BaseFlightWidget.EvalToken(TypeToken, telemetry);
+                if (string.IsNullOrEmpty(category) || category == "---")
+                {
+                    if (!string.IsNullOrEmpty(curHookCat))
+                    {
+                        category = curHookCat;
+                    }
+                    else
+                    {
+                        category = !string.IsNullOrEmpty(curSpeedModeName) ? curSpeedModeName.ToUpperInvariant() : "ORBIT";
+                    }
+                }
+
+                string title = BaseFlightWidget.EvalToken(FrameToken, telemetry);
+                if (string.IsNullOrEmpty(title) || title == "---")
+                {
+                    if (!string.IsNullOrEmpty(curHookTitle))
+                    {
+                        title = curHookTitle;
+                    }
+                    else
+                    {
+                        title = curSpeedModeName ?? category;
+                    }
+                }
+
+                _cachedCategory = category;
+                _cachedTitle = !string.IsNullOrEmpty(FramePrefix) ? $"{FramePrefix}{title}" : title;
+            }
+
+            CurrentState = new BottomControlsState
+            {
+                HasVessel = true,
+                IsRcsActive = rcs,
+                IsSasActive = sas,
+                RefCategory = _cachedCategory,
+                RefTitle = _cachedTitle
+            };
+        }
+    }
+
     [FlightWidget("bottom_controls", "bottom_bar_controls", "rcs_ref_sas", "ref_rcs_sas",
         Category = WidgetCategory.Controls,
         DisplayName = "RCS/REF/SAS 底控台",
@@ -92,120 +224,58 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        // ── 字段缓存与脏检查 ──
-        private string _typeToken = "{FRAME:TYPE}";
-        private string _frameToken = "{FRAME}";
-        private string _framePrefix = "";
-        private readonly Cached<SpeedDisplayMode> _lastSpeedMode = new Cached<SpeedDisplayMode>((SpeedDisplayMode)(-1));
-        private readonly Cached<string> _lastNavHookCategory = new Cached<string>(null);
-        private readonly Cached<string> _lastNavHookTitle = new Cached<string>(null);
-        private bool _dataHasVessel = false;
-        private readonly Cached<bool> _lastRcs = new Cached<bool>(false);
-        private readonly Cached<bool> _lastSas = new Cached<bool>(false);
-        private readonly Cached<string> _lastRefCategory = new Cached<string>(null);
-        private readonly Cached<string> _lastRefTitle = new Cached<string>(null);
-        private bool _refFrameDirty = false;
+        // ── 业务解耦大脑与私有缓存槽 ──
+        private readonly BottomControlsLogic _logic = new BottomControlsLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly CachedDouble _lastRcsVal = new CachedDouble(0);
 
         // ── 视图初始化钩子：绑定多语言悬浮提示 ──
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             ApplyTooltips();
-            _typeToken = GetTemplateChannel("TYPE_TOKEN", "{FRAME:TYPE}");
-            _frameToken = GetTemplateChannel("FRAME_TOKEN", "{FRAME}");
-            _framePrefix = GetTemplateChannel("FRAME_PREFIX", "");
+            _logic.TypeToken = GetTemplateChannel("TYPE_TOKEN", "{FRAME:TYPE}");
+            _logic.FrameToken = GetTemplateChannel("FRAME_TOKEN", "{FRAME}");
+            _logic.FramePrefix = GetTemplateChannel("FRAME_PREFIX", "");
         }
 
-        // ── 航电数据心跳：中频 10Hz 解析与物理状态脏检查 ──
+        // ── 航电数据心跳与绘制循环 ──
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _dataHasVessel = false;
-                return;
-            }
-
-            _dataHasVessel = true;
-            IFlightTelemetry telem = context.Telemetry;
-
-            _lastRcs.Update(telem.IsRCSEnabled);
-            _lastSas.Update(telem.IsSASEnabled);
-
-            // 参考系模式状态同步：仅在速度模式或探针参考系变更时执行慢速重构，巡航静默 0 开销
-            SpeedDisplayMode curSpeedMode = telem.CurrentSpeedMode;
-            var navHook = NavBallHookService.Provider;
-            string curHookCat = navHook != null ? navHook.ReferenceFrameCategory : null;
-            string curHookTitle = navHook != null ? navHook.FrameName : null;
-
-            bool frameDirty = curSpeedMode != _lastSpeedMode.Value 
-                || curHookCat != _lastNavHookCategory.Value 
-                || curHookTitle != _lastNavHookTitle.Value;
-
-            if (frameDirty)
-            {
-                _lastSpeedMode.Update(curSpeedMode);
-                _lastNavHookCategory.Update(curHookCat);
-                _lastNavHookTitle.Update(curHookTitle);
-
-                string curSpeedModeName = telem.SpeedModeName;
-
-                string category = TelemetryTokenEngine.Evaluate(_typeToken, telem);
-                if (string.IsNullOrEmpty(category) || category == "---")
-                {
-                    if (!string.IsNullOrEmpty(curHookCat))
-                    {
-                        category = curHookCat;
-                    }
-                    else
-                    {
-                        category = !string.IsNullOrEmpty(curSpeedModeName) ? curSpeedModeName.ToUpperInvariant() : "ORBIT";
-                    }
-                }
-
-                string title = TelemetryTokenEngine.Evaluate(_frameToken, telem);
-                if (string.IsNullOrEmpty(title) || title == "---")
-                {
-                    if (!string.IsNullOrEmpty(curHookTitle))
-                    {
-                        title = curHookTitle;
-                    }
-                    else
-                    {
-                        title = curSpeedModeName ?? category;
-                    }
-                }
-
-                _lastRefCategory.Update(category);
-                _lastRefTitle.Update(!string.IsNullOrEmpty(_framePrefix) ? $"{_framePrefix}{title}" : title);
-                _refFrameDirty = true;
-            }
         }
 
-        // ── 航电视图渲染：按需应用视觉状态 ──
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (!_dataHasVessel) return;
+        }
 
-            if (Rcs.IsActive != _lastRcs.Value)
-                Rcs.IsActive = _lastRcs.Value;
-            if (Sas.IsActive != _lastSas.Value)
-                Sas.IsActive = _lastSas.Value;
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            if (_refFrameDirty)
-            {
-                _refFrameDirty = false;
-                Ref.UpdateFrame(_lastRefCategory.Value, _lastRefTitle.Value, context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null));
-            }
+            if (Rcs.IsActive != state.IsRcsActive)
+                Rcs.IsActive = state.IsRcsActive;
+            if (Sas.IsActive != state.IsSasActive)
+                Sas.IsActive = state.IsSasActive;
+
+            Ref.UpdateFrame(state.RefCategory, state.RefTitle, ThemeManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null));
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _lastRcsVal.Reset(0);
+            _logic.Reset();
         }
 
         // ── 视觉主题与通道文本应用 ──
         public override void ApplyTheme(ThemeConfig theme)
         {
             base.ApplyTheme(theme);
-            _typeToken = GetTemplateChannel("TYPE_TOKEN", "{FRAME:TYPE}");
-            _frameToken = GetTemplateChannel("FRAME_TOKEN", "{FRAME}");
-            _framePrefix = GetTemplateChannel("FRAME_PREFIX", "");
+            _logic.TypeToken = GetTemplateChannel("TYPE_TOKEN", "{FRAME:TYPE}");
+            _logic.FrameToken = GetTemplateChannel("FRAME_TOKEN", "{FRAME}");
+            _logic.FramePrefix = GetTemplateChannel("FRAME_PREFIX", "");
             Rcs.Text = GetTemplateChannel("RCS_LABEL", "RCS");
             Sas.Text = GetTemplateChannel("SAS_LABEL", "SAS");
             Ref.ApplyTheme(theme);
