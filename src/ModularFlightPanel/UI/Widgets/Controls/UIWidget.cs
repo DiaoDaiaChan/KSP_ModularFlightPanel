@@ -19,10 +19,81 @@ namespace ModularFlightPanel.UI.Widgets.Controls
     /// 4. 自由拖拽编辑模式联动、磁吸网格对齐与快速打开 Alt+N 航电工程工作台
     /// 5. 100% 遵从 0 颜色字面量与阶梯分频刷新规范 (Relaxed 10Hz)
     /// </summary>
+    /// <summary>
+    /// UI 航电控制中枢零 GC 不可变快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct UIWidgetState : IEquatable<UIWidgetState>
+    {
+        public bool HasStats;
+        public int TotalWidgets;
+        public int ActiveWidgets;
+
+        public bool Equals(UIWidgetState other)
+        {
+            return HasStats == other.HasStats &&
+                   TotalWidgets == other.TotalWidgets &&
+                   ActiveWidgets == other.ActiveWidgets;
+        }
+
+        public override bool Equals(object obj) => obj is UIWidgetState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = HasStats.GetHashCode();
+                hash = (hash * 397) ^ TotalWidgets;
+                hash = (hash * 397) ^ ActiveWidgets;
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// UI 航电控制中枢纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class UIWidgetLogic : WidgetLogic<UIWidgetState>
+    {
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            var widgets = WidgetLayoutManager.Instance?.CurrentLayout?.Widgets;
+            if (widgets == null)
+            {
+                if (CurrentState.HasStats)
+                {
+                    Reset();
+                }
+                return;
+            }
+
+            int total = widgets.Count;
+            int active = 0;
+            for (int i = 0; i < total; i++)
+            {
+                if (widgets[i].IsEnabled) active++;
+            }
+
+            CurrentState = new UIWidgetState
+            {
+                HasStats = true,
+                TotalWidgets = total,
+                ActiveWidgets = active
+            };
+        }
+    }
+
     [FlightWidget("ui_widget", "ui_manager", "dock_manager", Category = WidgetCategory.Controls, DisplayName = "UI 航电控制中枢", Description = "原生挂载在飞行屏幕上的 UGUI 高度集成管理仪表：实时组件列表、快速分类、一键显隐与自由拖拽联动。", DefaultWidgetId = "core.ui_widget", DefaultX = 380f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "core.ui_widget", "custom.ui_widget" })]
     public class UIWidget : BaseFlightWidget
     {
         public static UIWidget Instance { get; private set; }
+
+        private readonly UIWidgetLogic _logic = new UIWidgetLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         public override Vector2 BaseSize => new Vector2(290f, 340f);
         protected override bool AutoCreateCardFrame => true;
@@ -559,40 +630,17 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
         }
 
-        private int _cachedTotalWidgets;
-        private int _cachedActiveWidgets;
-        private bool _hasWidgetStats;
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context) => base.OnDataHeartBeat(in context);
 
-        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context) => base.OnUIDrawLoop(ref context);
+
+        protected override void OnRenderState()
         {
-            base.OnDataHeartBeat(in context);
+            UIWidgetState snap = _logic.CurrentState;
+            if (!snap.HasStats) return;
 
-            var widgets = WidgetLayoutManager.Instance.CurrentLayout?.Widgets;
-            if (widgets == null)
-            {
-                _hasWidgetStats = false;
-                return;
-            }
-
-            int total = widgets.Count;
-            int active = 0;
-            for (int i = 0; i < total; i++)
-            {
-                if (widgets[i].IsEnabled) active++;
-            }
-            _cachedTotalWidgets = total;
-            _cachedActiveWidgets = active;
-            _hasWidgetStats = true;
-        }
-
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
-        {
-            base.OnUIDrawLoop(ref context);
-
-            if (!_hasWidgetStats) return;
-
-            int total = _cachedTotalWidgets;
-            int active = _cachedActiveWidgets;
+            int total = snap.TotalWidgets;
+            int active = snap.ActiveWidgets;
 
             if (total != _lastWidgetCount.Value || active != _lastActiveCount.Value)
             {
