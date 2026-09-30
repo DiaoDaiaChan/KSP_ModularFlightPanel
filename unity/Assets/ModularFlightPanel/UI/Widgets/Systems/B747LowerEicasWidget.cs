@@ -21,9 +21,225 @@ namespace ModularFlightPanel.UI.Widgets
     /// 7. Row 7: VIB (机械震动等级) 宽频 BB / 转子 N2 读数 + 真实双 U 型括号标尺与滑动指针 + VIB 标签
     /// 8. 100% 由 TelemetryTokenEngine 与 CustomTemplate 双驱动，零硬编码，统一样式管道。
     /// </summary>
+    /// <summary>
+    /// 经典波音 747 下部辅助发动机单发槽位状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct B747LowerEngineSlotState : IEquatable<B747LowerEngineSlotState>
+    {
+        public bool HasEngine;
+        public string N2Text;
+        public string N3Text;
+        public float N3Fraction;
+        public string FfText;
+        public string OilPText;
+        public float OilPFraction;
+        public string OilTText;
+        public float OilTFraction;
+        public string OilQText;
+        public string VibText;
+        public float VibFraction;
+
+        public bool Equals(B747LowerEngineSlotState other)
+        {
+            return HasEngine == other.HasEngine &&
+                   N2Text == other.N2Text &&
+                   N3Text == other.N3Text &&
+                   Math.Abs(N3Fraction - other.N3Fraction) < 0.002f &&
+                   FfText == other.FfText &&
+                   OilPText == other.OilPText &&
+                   Math.Abs(OilPFraction - other.OilPFraction) < 0.002f &&
+                   OilTText == other.OilTText &&
+                   Math.Abs(OilTFraction - other.OilTFraction) < 0.002f &&
+                   OilQText == other.OilQText &&
+                   VibText == other.VibText &&
+                   Math.Abs(VibFraction - other.VibFraction) < 0.002f;
+        }
+
+        public override bool Equals(object obj) => obj is B747LowerEngineSlotState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (HasEngine ? 1 : 0);
+                hash = (hash * 397) ^ (N2Text != null ? N2Text.GetHashCode() : 0);
+                hash = (hash * 397) ^ (N3Text != null ? N3Text.GetHashCode() : 0);
+                hash = (hash * 397) ^ (FfText != null ? FfText.GetHashCode() : 0);
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 经典波音 747 下部辅助发动机 EICAS 状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct B747LowerEicasState : IEquatable<B747LowerEicasState>
+    {
+        public bool HasVessel;
+
+        public B747LowerEngineSlotState Eng0;
+        public B747LowerEngineSlotState Eng1;
+        public B747LowerEngineSlotState Eng2;
+        public B747LowerEngineSlotState Eng3;
+
+        public B747LowerEngineSlotState GetEngine(int index)
+        {
+            switch (index)
+            {
+                case 0: return Eng0;
+                case 1: return Eng1;
+                case 2: return Eng2;
+                case 3: return Eng3;
+                default: return default;
+            }
+        }
+
+        public void SetEngine(int index, in B747LowerEngineSlotState eng)
+        {
+            switch (index)
+            {
+                case 0: Eng0 = eng; break;
+                case 1: Eng1 = eng; break;
+                case 2: Eng2 = eng; break;
+                case 3: Eng3 = eng; break;
+            }
+        }
+
+        public bool Equals(B747LowerEicasState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Eng0.Equals(other.Eng0) &&
+                   Eng1.Equals(other.Eng1) &&
+                   Eng2.Equals(other.Eng2) &&
+                   Eng3.Equals(other.Eng3);
+        }
+
+        public override bool Equals(object obj) => obj is B747LowerEicasState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (HasVessel ? 1 : 0);
+                hash = (hash * 397) ^ Eng0.GetHashCode();
+                hash = (hash * 397) ^ Eng1.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 经典波音 747 下部辅助发动机 EICAS 航电纯业务解耦大脑 (0 GC / 100% 游戏引擎解耦)
+    /// </summary>
+    public class B747LowerEicasLogic : WidgetLogic<B747LowerEicasState>
+    {
+        public const int EngineCount = 4;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            B747LowerEicasState newState = default;
+            newState.HasVessel = true;
+
+            IReadOnlyList<EngineTelemetryInfo> engines = telemetry.Engines;
+
+            double probeIsp = TelemetryTokenEngine.EvaluateNumeric("{KER:isp}", telemetry);
+            double probeNetFlux = TelemetryTokenEngine.EvaluateNumeric("{SH:NetFluxKw}", telemetry);
+            double probeFailRate = TelemetryTokenEngine.EvaluateNumeric("{TF:FailureRate}", telemetry);
+            string probeStatus = TelemetryTokenEngine.Evaluate("{TF:Status}", telemetry);
+            if (string.IsNullOrEmpty(probeStatus) || probeStatus.Contains("{")) probeStatus = "---";
+
+            for (int i = 0; i < EngineCount; i++)
+            {
+                bool hasEngine = engines != null && i < engines.Count;
+                if (hasEngine)
+                {
+                    EngineTelemetryInfo eng = engines[i];
+
+                    // N2: 指令油门设定
+                    double n2Val = eng.CommandedThrottle * 100.0;
+                    string n2Text = Mathf.RoundToInt((float)n2Val).ToString(CultureInfo.InvariantCulture);
+
+                    // N3: 实时推力占比
+                    double n3Val = eng.ThrustFraction * 100.0;
+                    string n3Text = Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture);
+                    float n3Frac = Mathf.Clamp01((float)(n3Val / 105.0));
+
+                    // FF: 计算油耗
+                    double ffVal = eng.FuelFlow;
+                    string ffText = (ffVal * 10.0).ToString("0", CultureInfo.InvariantCulture);
+
+                    // OIL P: 比冲
+                    string oilPText = double.IsNaN(probeIsp) ? "---" : Mathf.RoundToInt((float)probeIsp).ToString(CultureInfo.InvariantCulture);
+                    float oilPFrac = double.IsNaN(probeIsp) ? 0f : Mathf.Clamp01((float)(probeIsp / 450.0));
+
+                    // OIL T: 净热通量 (居中)
+                    string oilTText = double.IsNaN(probeNetFlux) ? "---" : probeNetFlux.ToString("0", CultureInfo.InvariantCulture);
+                    float oilTFrac = double.IsNaN(probeNetFlux) ? 0.5f : Mathf.Clamp01((float)(probeNetFlux / 2000.0 + 0.5));
+
+                    // OIL Q: 引擎健康
+                    string oilQText = probeStatus;
+
+                    // VIB: 故障率
+                    string vibText = double.IsNaN(probeFailRate) ? "---" : probeFailRate.ToString("0.000", CultureInfo.InvariantCulture);
+                    float vibFrac = double.IsNaN(probeFailRate) ? 0f : Mathf.Clamp01((float)(probeFailRate * 1000.0));
+
+                    newState.SetEngine(i, new B747LowerEngineSlotState
+                    {
+                        HasEngine = true,
+                        N2Text = n2Text,
+                        N3Text = n3Text,
+                        N3Fraction = n3Frac,
+                        FfText = ffText,
+                        OilPText = oilPText,
+                        OilPFraction = oilPFrac,
+                        OilTText = oilTText,
+                        OilTFraction = oilTFrac,
+                        OilQText = oilQText,
+                        VibText = vibText,
+                        VibFraction = vibFrac
+                    });
+                }
+                else
+                {
+                    newState.SetEngine(i, new B747LowerEngineSlotState
+                    {
+                        HasEngine = false,
+                        N2Text = "--",
+                        N3Text = "--",
+                        N3Fraction = 0f,
+                        FfText = "--",
+                        OilPText = "--",
+                        OilPFraction = 0f,
+                        OilTText = "--",
+                        OilTFraction = 0.5f,
+                        OilQText = "--",
+                        VibText = "--",
+                        VibFraction = 0f
+                    });
+                }
+            }
+
+            CurrentState = newState;
+        }
+    }
+
     [FlightWidget("b747_lower_eicas", "eicas_lower", Category = WidgetCategory.Systems, DisplayName = "B747 下部辅助发动机 EICAS", Description = "经典波音 747 四发下部系统 CRT：N2/N3 转速表条、燃油流量 FF、滑油压力/温度双轴游标表与震动监控。", DefaultWidgetId = "custom.b747_lower_eicas", DefaultX = -440f, DefaultY = -120f, IsSingleton = true, ExactIds = new[] { "custom.b747_lower_eicas", "core.b747_lower_eicas" })]
     public class B747LowerEicasWidget : BaseFlightWidget
     {
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly B747LowerEicasLogic _logic = new B747LowerEicasLogic();
+
         public override Vector2 BaseSize => new Vector2(260f, 275f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
@@ -115,20 +331,6 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedFloat[] _lastOilPPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
         private readonly CachedFloat[] _lastOilTPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
         private readonly CachedFloat[] _lastVibPos = new[] { new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f), new CachedFloat(-9999f, 0.1f) };
-
-        // 双轨架构快照字段
-        private bool _cachedHasVessel;
-        private readonly string[] _cachedN2Strs = new string[4];
-        private readonly string[] _cachedN3Strs = new string[4];
-        private readonly float[] _cachedN3Fracs = new float[4];
-        private readonly string[] _cachedFfStrs = new string[4];
-        private readonly string[] _cachedOilPStrs = new string[4];
-        private readonly float[] _cachedOilPFracs = new float[4];
-        private readonly string[] _cachedOilTStrs = new string[4];
-        private readonly float[] _cachedOilTFracs = new float[4];
-        private readonly string[] _cachedOilQStrs = new string[4];
-        private readonly string[] _cachedVibStrs = new string[4];
-        private readonly float[] _cachedVibFracs = new float[4];
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -587,85 +789,17 @@ namespace ModularFlightPanel.UI.Widgets
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
-
-            // 逐台真实发动机数据接入 (自适应异构发动机集群)
-            //    N2  = 指令油门设定百分比   N3 = 实时推力占额定推力百分比
-            //    FF  = 计算油耗   OIL P = 比冲 {KER:isp}   OIL T = 净热通量 {SH:NetFluxKw}
-            //    OIL Q = 引擎健康 {TF:Status}   VIB = 故障率 {TF:FailureRate}
-            //    OIL/VIB 依赖可选外部 mod，未安装时优雅显示 "---"，绝不伪造读数。
-            IReadOnlyList<EngineTelemetryInfo> engines = context.Telemetry.Engines;
-
-            double probeIsp = TelemetryTokenEngine.EvaluateNumeric("{KER:isp}", context.Telemetry);
-            double probeNetFlux = TelemetryTokenEngine.EvaluateNumeric("{SH:NetFluxKw}", context.Telemetry);
-            double probeFailRate = TelemetryTokenEngine.EvaluateNumeric("{TF:FailureRate}", context.Telemetry);
-            string probeStatus = TelemetryTokenEngine.Evaluate("{TF:Status}", context.Telemetry);
-            if (string.IsNullOrEmpty(probeStatus) || probeStatus.Contains("{")) probeStatus = "---";
-
-            for (int i = 0; i < 4; i++)
-            {
-                bool hasEngine = engines != null && i < engines.Count;
-                if (hasEngine)
-                {
-                    EngineTelemetryInfo eng = engines[i];
-
-                    // N2: 指令油门设定
-                    double n2Val = eng.CommandedThrottle * 100.0;
-                    _cachedN2Strs[i] = Mathf.RoundToInt((float)n2Val).ToString(CultureInfo.InvariantCulture);
-
-                    // N3: 实时推力占比
-                    double n3Val = eng.ThrustFraction * 100.0;
-                    _cachedN3Strs[i] = Mathf.RoundToInt((float)n3Val).ToString(CultureInfo.InvariantCulture);
-                    _cachedN3Fracs[i] = Mathf.Clamp01((float)(n3Val / 105.0));
-
-                    // FF: 计算油耗
-                    double ffVal = eng.FuelFlow;
-                    _cachedFfStrs[i] = (ffVal * 10.0).ToString("0", CultureInfo.InvariantCulture);
-
-                    // OIL P: 比冲
-                    _cachedOilPStrs[i] = double.IsNaN(probeIsp) ? "---" : Mathf.RoundToInt((float)probeIsp).ToString(CultureInfo.InvariantCulture);
-                    _cachedOilPFracs[i] = double.IsNaN(probeIsp) ? 0f : Mathf.Clamp01((float)(probeIsp / 450.0));
-
-                    // OIL T: 净热通量 (居中)
-                    _cachedOilTStrs[i] = double.IsNaN(probeNetFlux) ? "---" : probeNetFlux.ToString("0", CultureInfo.InvariantCulture);
-                    _cachedOilTFracs[i] = double.IsNaN(probeNetFlux) ? 0.5f : Mathf.Clamp01((float)(probeNetFlux / 2000.0 + 0.5));
-
-                    // OIL Q: 引擎健康
-                    _cachedOilQStrs[i] = probeStatus;
-
-                    // VIB: 故障率
-                    _cachedVibStrs[i] = double.IsNaN(probeFailRate) ? "---" : probeFailRate.ToString("0.000", CultureInfo.InvariantCulture);
-                    _cachedVibFracs[i] = double.IsNaN(probeFailRate) ? 0f : Mathf.Clamp01((float)(probeFailRate * 1000.0));
-                }
-                else
-                {
-                    _cachedN2Strs[i] = "--";
-                    _cachedN3Strs[i] = "--";
-                    _cachedN3Fracs[i] = 0f;
-                    _cachedFfStrs[i] = "--";
-                    _cachedOilPStrs[i] = "--";
-                    _cachedOilPFracs[i] = 0f;
-                    _cachedOilTStrs[i] = "--";
-                    _cachedOilTFracs[i] = 0.5f;
-                    _cachedOilQStrs[i] = "--";
-                    _cachedVibStrs[i] = "--";
-                    _cachedVibFracs[i] = 0f;
-                }
-            }
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            if (!_cachedHasVessel) return;
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
             float s = CurrentDpiScale;
             float n3GaugeMaxH = 22f * s;
@@ -674,34 +808,38 @@ namespace ModularFlightPanel.UI.Widgets
 
             for (int i = 0; i < 4; i++)
             {
+                var eng = state.GetEngine(i);
+
                 // 1. N2 读数框
-                if (_lastN2Strs[i].Update(_cachedN2Strs[i]))
+                if (_lastN2Strs[i].Update(eng.N2Text))
                 {
-                    if (_n2ReadoutTexts[i] != null) _n2ReadoutTexts[i].text = _cachedN2Strs[i];
+                    SetTextIfChanged(_n2ReadoutTexts[i], eng.N2Text);
                 }
 
                 // 2. N3 读数框与垂直柱
-                if (_lastN3Strs[i].Update(_cachedN3Strs[i]))
+                if (_lastN3Strs[i].Update(eng.N3Text))
                 {
-                    if (_n3ReadoutTexts[i] != null) _n3ReadoutTexts[i].text = _cachedN3Strs[i];
+                    SetTextIfChanged(_n3ReadoutTexts[i], eng.N3Text);
                 }
-                if (_n3GaugeFills[i] != null && _lastN3Fills[i].Update(_cachedN3Fracs[i]))
-                    _n3GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, n3GaugeMaxH * _cachedN3Fracs[i]);
+                if (_n3GaugeFills[i] != null && _lastN3Fills[i].Update(eng.N3Fraction))
+                {
+                    _n3GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, n3GaugeMaxH * eng.N3Fraction);
+                }
 
                 // 3. FF 燃油流量框
-                if (_lastFfStrs[i].Update(_cachedFfStrs[i]))
+                if (_lastFfStrs[i].Update(eng.FfText))
                 {
-                    if (_ffReadoutTexts[i] != null) _ffReadoutTexts[i].text = _cachedFfStrs[i];
+                    SetTextIfChanged(_ffReadoutTexts[i], eng.FfText);
                 }
 
                 // 4. OIL P 读数与指针位移
-                if (_lastOilPStrs[i].Update(_cachedOilPStrs[i]))
+                if (_lastOilPStrs[i].Update(eng.OilPText))
                 {
-                    if (_oilPReadoutTexts[i] != null) _oilPReadoutTexts[i].text = _cachedOilPStrs[i];
+                    SetTextIfChanged(_oilPReadoutTexts[i], eng.OilPText);
                 }
                 if (_oilPPointerTransforms[i] != null)
                 {
-                    float ptrY = -92f * s - oilAxisHalfH + ((_cachedOilPFracs[i] - 0.5f) * oilAxisHalfH * 1.6f);
+                    float ptrY = -92f * s - oilAxisHalfH + ((eng.OilPFraction - 0.5f) * oilAxisHalfH * 1.6f);
                     if (_lastOilPPos[i].Update(ptrY))
                     {
                         _oilPPointerTransforms[i].anchoredPosition = new Vector2(_oilPPointerTransforms[i].anchoredPosition.x, ptrY);
@@ -709,13 +847,13 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // 5. OIL T 读数与指针位移
-                if (_lastOilTStrs[i].Update(_cachedOilTStrs[i]))
+                if (_lastOilTStrs[i].Update(eng.OilTText))
                 {
-                    if (_oilTReadoutTexts[i] != null) _oilTReadoutTexts[i].text = _cachedOilTStrs[i];
+                    SetTextIfChanged(_oilTReadoutTexts[i], eng.OilTText);
                 }
                 if (_oilTPointerTransforms[i] != null)
                 {
-                    float ptrY = -128f * s - oilAxisHalfH + ((_cachedOilTFracs[i] - 0.5f) * oilAxisHalfH * 1.6f);
+                    float ptrY = -128f * s - oilAxisHalfH + ((eng.OilTFraction - 0.5f) * oilAxisHalfH * 1.6f);
                     if (_lastOilTPos[i].Update(ptrY))
                     {
                         _oilTPointerTransforms[i].anchoredPosition = new Vector2(_oilTPointerTransforms[i].anchoredPosition.x, ptrY);
@@ -723,24 +861,44 @@ namespace ModularFlightPanel.UI.Widgets
                 }
 
                 // 6. OIL Q 读数
-                if (_lastOilQStrs[i].Update(_cachedOilQStrs[i]))
+                if (_lastOilQStrs[i].Update(eng.OilQText))
                 {
-                    if (_oilQReadoutTexts[i] != null) _oilQReadoutTexts[i].text = _cachedOilQStrs[i];
+                    SetTextIfChanged(_oilQReadoutTexts[i], eng.OilQText);
                 }
 
                 // 7. VIB 读数与滑块位移
-                if (_lastVibStrs[i].Update(_cachedVibStrs[i]))
+                if (_lastVibStrs[i].Update(eng.VibText))
                 {
-                    if (_vibReadoutTexts[i] != null) _vibReadoutTexts[i].text = _cachedVibStrs[i];
+                    SetTextIfChanged(_vibReadoutTexts[i], eng.VibText);
                 }
                 if (_vibPointerTransforms[i] != null)
                 {
-                    float ptrY = -184f * s - vibRailHalfH + ((_cachedVibFracs[i] - 0.5f) * vibRailHalfH * 1.6f);
+                    float ptrY = -184f * s - vibRailHalfH + ((eng.VibFraction - 0.5f) * vibRailHalfH * 1.6f);
                     if (_lastVibPos[i].Update(ptrY))
                     {
                         _vibPointerTransforms[i].anchoredPosition = new Vector2(_vibPointerTransforms[i].anchoredPosition.x, ptrY);
                     }
                 }
+            }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
+            for (int i = 0; i < 4; i++)
+            {
+                _lastN2Strs[i].Reset(string.Empty);
+                _lastN3Strs[i].Reset(string.Empty);
+                _lastFfStrs[i].Reset(string.Empty);
+                _lastOilPStrs[i].Reset(string.Empty);
+                _lastOilTStrs[i].Reset(string.Empty);
+                _lastOilQStrs[i].Reset(string.Empty);
+                _lastVibStrs[i].Reset(string.Empty);
+                _lastN3Fills[i].Reset(-1f);
+                _lastOilPPos[i].Reset(-9999f);
+                _lastOilTPos[i].Reset(-9999f);
+                _lastVibPos[i].Reset(-9999f);
             }
         }
 
