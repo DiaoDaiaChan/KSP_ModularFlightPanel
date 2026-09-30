@@ -28,9 +28,275 @@ namespace ModularFlightPanel.UI.Widgets
     ///    注：引气导管压力 (DUCT PRESS)、座舱增压高度/着陆高度 (CAB ALT / LDG ALT) 与
     ///    燃油温度 (FUEL TEMP) 在 KSP 中无对应遥测数据源，已移除，不再伪造读数。
     /// </summary>
+    /// <summary>
+    /// 经典波音 747 单发仪表槽位状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct B747EngineSlotState : IEquatable<B747EngineSlotState>
+    {
+        public bool HasEngine;
+        public string EprText;
+        public float EprFraction;
+        public string N1Text;
+        public float N1Fraction;
+        public string EgtText;
+        public float EgtFraction;
+
+        public bool Equals(B747EngineSlotState other)
+        {
+            return HasEngine == other.HasEngine &&
+                   EprText == other.EprText &&
+                   Math.Abs(EprFraction - other.EprFraction) < 0.002f &&
+                   N1Text == other.N1Text &&
+                   Math.Abs(N1Fraction - other.N1Fraction) < 0.002f &&
+                   EgtText == other.EgtText &&
+                   Math.Abs(EgtFraction - other.EgtFraction) < 0.002f;
+        }
+
+        public override bool Equals(object obj) => obj is B747EngineSlotState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (HasEngine ? 1 : 0);
+                hash = (hash * 397) ^ (EprText != null ? EprText.GetHashCode() : 0);
+                hash = (hash * 397) ^ (N1Text != null ? N1Text.GetHashCode() : 0);
+                hash = (hash * 397) ^ (EgtText != null ? EgtText.GetHashCode() : 0);
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 经典波音 747 主发动机与机组告警显示状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct B747EicasState : IEquatable<B747EicasState>
+    {
+        public bool HasVessel;
+        public string TatText;
+        public string ThrustModeText;
+        public string Cas1Text;
+        public string Cas2Text;
+        public bool IsTouchdownAlert;
+        public bool IsSasEnabled;
+        public string GearText;
+        public bool IsGearDown;
+        public string SystemsLineText;
+        public string FuelLineText;
+        public string OrbitLineText;
+
+        public B747EngineSlotState Eng0;
+        public B747EngineSlotState Eng1;
+        public B747EngineSlotState Eng2;
+        public B747EngineSlotState Eng3;
+
+        public B747EngineSlotState GetEngine(int index)
+        {
+            switch (index)
+            {
+                case 0: return Eng0;
+                case 1: return Eng1;
+                case 2: return Eng2;
+                case 3: return Eng3;
+                default: return default;
+            }
+        }
+
+        public void SetEngine(int index, in B747EngineSlotState eng)
+        {
+            switch (index)
+            {
+                case 0: Eng0 = eng; break;
+                case 1: Eng1 = eng; break;
+                case 2: Eng2 = eng; break;
+                case 3: Eng3 = eng; break;
+            }
+        }
+
+        public bool Equals(B747EicasState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   TatText == other.TatText &&
+                   ThrustModeText == other.ThrustModeText &&
+                   Cas1Text == other.Cas1Text &&
+                   Cas2Text == other.Cas2Text &&
+                   IsTouchdownAlert == other.IsTouchdownAlert &&
+                   IsSasEnabled == other.IsSasEnabled &&
+                   GearText == other.GearText &&
+                   IsGearDown == other.IsGearDown &&
+                   SystemsLineText == other.SystemsLineText &&
+                   FuelLineText == other.FuelLineText &&
+                   OrbitLineText == other.OrbitLineText &&
+                   Eng0.Equals(other.Eng0) &&
+                   Eng1.Equals(other.Eng1) &&
+                   Eng2.Equals(other.Eng2) &&
+                   Eng3.Equals(other.Eng3);
+        }
+
+        public override bool Equals(object obj) => obj is B747EicasState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (HasVessel ? 1 : 0);
+                hash = (hash * 397) ^ (TatText != null ? TatText.GetHashCode() : 0);
+                hash = (hash * 397) ^ (ThrustModeText != null ? ThrustModeText.GetHashCode() : 0);
+                hash = (hash * 397) ^ (GearText != null ? GearText.GetHashCode() : 0);
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 经典波音 747 EICAS 航电纯业务解耦大脑 (0 GC / 100% 游戏引擎解耦)
+    /// </summary>
+    public class B747EicasLogic : WidgetLogic<B747EicasState>
+    {
+        public const int EngineCount = 4;
+
+        public string TatTemplate { get; set; } = "TAT {TEMP:ATM:+0;-0;+0} c";
+        public string ThrustModeTemplate { get; set; } = "{THRUST:MODE}";
+        public string Cas1Template { get; set; } = I18n.Tr("WIDGET_EICAS_CAS_DOORS_AUTO", "DOORS AUTO");
+        public string Cas2Template { get; set; } = "{CAS:MEMO}";
+        public string GearToken { get; set; } = "{GEAR}";
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            B747EicasState newState = default;
+            newState.HasVessel = true;
+
+            // 1. 顶端 TAT 与推力模式更新
+            string evalTat = TelemetryTokenEngine.Evaluate(TatTemplate, telemetry);
+            if (string.IsNullOrEmpty(evalTat) || evalTat.Contains("{"))
+            {
+                double temp = TelemetryTokenEngine.EvaluateNumeric("{TEMP}", telemetry);
+                evalTat = $"TAT {(double.IsNaN(temp) ? 15.0 : temp):+0;-0;+0} c";
+            }
+            newState.TatText = evalTat;
+
+            string evalMode = TelemetryTokenEngine.Evaluate(ThrustModeTemplate, telemetry);
+            if (string.IsNullOrEmpty(evalMode) || evalMode.Contains("{"))
+            {
+                evalMode = telemetry.Throttle > 0.85f ? "TO" : (telemetry.VerticalSpeed > 8 ? "CLB" : "CRZ");
+            }
+            newState.ThrustModeText = evalMode;
+
+            // 2. 四发独立真实遥测更新
+            IReadOnlyList<EngineTelemetryInfo> engines = telemetry.Engines;
+            for (int i = 0; i < EngineCount; i++)
+            {
+                bool hasEngine = engines != null && i < engines.Count;
+                if (hasEngine)
+                {
+                    EngineTelemetryInfo eng = engines[i];
+                    double eprVal = 1.0 + eng.ThrustFraction;
+                    string eprText = eprVal.ToString("0.00", CultureInfo.InvariantCulture);
+                    float eprFrac = Mathf.Clamp01((float)((eprVal - 0.8) / 1.0));
+
+                    double n1Val = eng.CommandedThrottle * 100.0;
+                    string n1Text = n1Val >= 10.0 ? n1Val.ToString("00.0", CultureInfo.InvariantCulture) : n1Val.ToString("0.0", CultureInfo.InvariantCulture);
+                    float n1Frac = Mathf.Clamp01((float)(n1Val / 105.0));
+
+                    double egtVal = Mathf.Max(0f, (float)eng.PartTemperature);
+                    string egtText = Mathf.RoundToInt((float)egtVal).ToString(CultureInfo.InvariantCulture);
+                    float egtFrac = Mathf.Clamp01((float)(egtVal / 750.0));
+
+                    newState.SetEngine(i, new B747EngineSlotState
+                    {
+                        HasEngine = true,
+                        EprText = eprText,
+                        EprFraction = eprFrac,
+                        N1Text = n1Text,
+                        N1Fraction = n1Frac,
+                        EgtText = egtText,
+                        EgtFraction = egtFrac
+                    });
+                }
+                else
+                {
+                    newState.SetEngine(i, new B747EngineSlotState
+                    {
+                        HasEngine = false,
+                        EprText = "--",
+                        EprFraction = 0f,
+                        N1Text = "--",
+                        N1Fraction = 0f,
+                        EgtText = "--",
+                        EgtFraction = 0f
+                    });
+                }
+            }
+
+            // 3. 右侧机组告警与起落架更新
+            string evalCas1 = TelemetryTokenEngine.Evaluate(Cas1Template, telemetry);
+            newState.Cas1Text = evalCas1;
+
+            string evalCas2 = TelemetryTokenEngine.Evaluate(Cas2Template, telemetry);
+            if (string.IsNullOrEmpty(evalCas2) || evalCas2.Contains("{"))
+            {
+                evalCas2 = telemetry.IsTouchdownAlert
+                    ? I18n.Tr("WIDGET_EICAS_CAS_TERRAIN_PULL_UP", "地形拉升")
+                    : (telemetry.IsSASEnabled ? I18n.Tr("WIDGET_EICAS_CAS_SAS_ACTIVE", "SAS 接通") : I18n.Tr("WIDGET_EICAS_CAS_STAB_TRIM", "安定面配平"));
+            }
+            newState.Cas2Text = evalCas2;
+            newState.IsTouchdownAlert = telemetry.IsTouchdownAlert;
+            newState.IsSasEnabled = telemetry.IsSASEnabled;
+
+            string gearStr = TelemetryTokenEngine.Evaluate(GearToken, telemetry);
+            if (string.IsNullOrEmpty(gearStr) || gearStr.Contains("{"))
+            {
+                bool isGearDown = telemetry.AltitudeAGL < 600.0 || telemetry.IsTouchdownAlert || telemetry.FlightSituation == "LANDED" || telemetry.FlightSituation == "PRELAUNCH";
+                gearStr = isGearDown ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
+            }
+            newState.GearText = gearStr;
+            newState.IsGearDown = gearStr.Equals("DOWN", StringComparison.OrdinalIgnoreCase) ||
+                                  gearStr.Equals(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase);
+
+            // 4. 底部系统行：电气/通信 · 燃油 · 轨道高度
+            double ecPct = telemetry.EcPercent;
+            double commSig = telemetry.CommSignal;
+            newState.SystemsLineText = string.Format(CultureInfo.InvariantCulture,
+                "{0} {1}   {2} {3}",
+                I18n.Tr("WIDGET_EICAS_EC", "电气"),
+                double.IsNaN(ecPct) ? "--" : AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)ecPct)),
+                I18n.Tr("WIDGET_EICAS_COMM", "通信"),
+                double.IsNaN(commSig) ? "--" : AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)commSig)));
+
+            double fuelFrac = telemetry.StagePropellantFraction;
+            newState.FuelLineText = fuelFrac >= -0.001
+                ? I18n.Tr("WIDGET_EICAS_FUEL_LINE", "剩余燃油") + " " + AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)fuelFrac))
+                : I18n.Tr("WIDGET_EICAS_NO_FUEL", "无燃料数据");
+
+            double apo = telemetry.Apoapsis;
+            double peri = telemetry.Periapsis;
+            string apoStr = double.IsNaN(apo) ? "--" : (apo / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "km";
+            string periStr = double.IsNaN(peri) ? "--" : (peri / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "km";
+            newState.OrbitLineText = string.Format(CultureInfo.InvariantCulture, "{0} {1}   {2} {3}",
+                I18n.Tr("WIDGET_EICAS_APO", "远地点"), apoStr,
+                I18n.Tr("WIDGET_EICAS_PERI", "近地点"), periStr);
+
+            CurrentState = newState;
+        }
+    }
+
     [FlightWidget("b747_eicas", "boeing_eicas", "eicas", Category = WidgetCategory.Systems, DisplayName = "B747 EICAS 主发动机与机组告警显示", Description = "经典波音 747 四发主发动机 CRT：EPR/N1/EGT 四发柱状表、数字框显、TAT/推力模式与起落架状态。", DefaultWidgetId = "custom.b747_eicas", DefaultX = -440f, DefaultY = 160f, IsSingleton = true, ExactIds = new[] { "custom.b747_eicas", "core.b747_eicas" })]
     public class B747EicasWidget : BaseFlightWidget
     {
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly B747EicasLogic _logic = new B747EicasLogic();
+
         public override Vector2 BaseSize => new Vector2(260f, 275f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
@@ -125,25 +391,6 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedFloat[] _lastEprFills = new[] { new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f) };
         private readonly CachedFloat[] _lastN1Fills = new[] { new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f) };
         private readonly CachedFloat[] _lastEgtFills = new[] { new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f), new CachedFloat(-1f, 0.002f) };
-
-        // 双轨架构快照字段
-        private bool _cachedHasVessel;
-        private string _cachedTatStr = string.Empty;
-        private string _cachedModeStr = string.Empty;
-        private readonly string[] _cachedEprStrs = new string[4];
-        private readonly string[] _cachedN1Strs = new string[4];
-        private readonly string[] _cachedEgtStrs = new string[4];
-        private readonly float[] _cachedEprFracs = new float[4];
-        private readonly float[] _cachedN1Fracs = new float[4];
-        private readonly float[] _cachedEgtFracs = new float[4];
-        private string _cachedCas1Str = string.Empty;
-        private string _cachedCas2Str = string.Empty;
-        private bool _cachedIsTouchdownAlert;
-        private bool _cachedIsSasEnabled;
-        private string _cachedGearStr = string.Empty;
-        private string _cachedDuctStr = string.Empty;
-        private string _cachedCabStr = string.Empty;
-        private string _cachedFuelStr = string.Empty;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -524,186 +771,94 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            _logic.TatTemplate = _tatTemplate;
+            _logic.ThrustModeTemplate = _thrustModeTemplate;
+            _logic.Cas1Template = _cas1Template;
+            _logic.Cas2Template = _cas2Template;
+            _logic.GearToken = _gearToken;
             base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
-
-            // 1. 顶端 TAT 与推力模式更新 (100% 由 TokenEngine 驱动)
-            string evalTat = TelemetryTokenEngine.Evaluate(_tatTemplate, context.Telemetry);
-            if (string.IsNullOrEmpty(evalTat) || evalTat.Contains("{"))
-            {
-                double temp = TelemetryTokenEngine.EvaluateNumeric("{TEMP}", context.Telemetry);
-                evalTat = $"TAT {(double.IsNaN(temp) ? 15.0 : temp):+0;-0;+0} c";
-            }
-            _cachedTatStr = evalTat;
-
-            string evalMode = TelemetryTokenEngine.Evaluate(_thrustModeTemplate, context.Telemetry);
-            if (string.IsNullOrEmpty(evalMode) || evalMode.Contains("{"))
-            {
-                evalMode = context.Telemetry.Throttle > 0.85f ? "TO" : (context.Telemetry.VerticalSpeed > 8 ? "CLB" : "CRZ");
-            }
-            _cachedModeStr = evalMode;
-
-            // 2. 四发独立真实遥测更新 (自适应异构发动机集群)
-            //    EPR = 推力比 (实时推力/额定推力，EPR 无本地数据源故以推力比呈现)
-            //    N1  = 指令油门设定百分比    EGT = 原生部件温度 (排气温度的可用替代)
-            //    无对应发动机的槽位显示 "--"，绝不伪造读数。
-            IReadOnlyList<EngineTelemetryInfo> engines = context.Telemetry.Engines;
-
-            for (int i = 0; i < 4; i++)
-            {
-                bool hasEngine = engines != null && i < engines.Count;
-                if (hasEngine)
-                {
-                    EngineTelemetryInfo eng = engines[i];
-
-                    // EPR: 推力比 (1.0 = 满额定推力)
-                    double eprVal = 1.0 + eng.ThrustFraction;
-                    _cachedEprStrs[i] = eprVal.ToString("0.00", CultureInfo.InvariantCulture);
-                    _cachedEprFracs[i] = Mathf.Clamp01((float)((eprVal - 0.8) / 1.0));
-
-                    // N1: 指令油门设定
-                    double n1Val = eng.CommandedThrottle * 100.0;
-                    _cachedN1Strs[i] = n1Val >= 10.0 ? n1Val.ToString("00.0", CultureInfo.InvariantCulture) : n1Val.ToString("0.0", CultureInfo.InvariantCulture);
-                    _cachedN1Fracs[i] = Mathf.Clamp01((float)(n1Val / 105.0));
-
-                    // EGT: 原生部件温度
-                    double egtVal = Mathf.Max(0f, eng.PartTemperature);
-                    _cachedEgtStrs[i] = Mathf.RoundToInt((float)egtVal).ToString(CultureInfo.InvariantCulture);
-                    _cachedEgtFracs[i] = Mathf.Clamp01((float)(egtVal / 750.0));
-                }
-                else
-                {
-                    _cachedEprStrs[i] = "--";
-                    _cachedEprFracs[i] = 0f;
-                    _cachedN1Strs[i] = "--";
-                    _cachedN1Fracs[i] = 0f;
-                    _cachedEgtStrs[i] = "--";
-                    _cachedEgtFracs[i] = 0f;
-                }
-            }
-
-            // 3. 右侧机组告警与起落架更新
-            string evalCas1 = TelemetryTokenEngine.Evaluate(_cas1Template, context.Telemetry);
-            _cachedCas1Str = evalCas1;
-
-            string evalCas2 = TelemetryTokenEngine.Evaluate(_cas2Template, context.Telemetry);
-            if (string.IsNullOrEmpty(evalCas2) || evalCas2.Contains("{"))
-            {
-                evalCas2 = context.Telemetry.IsTouchdownAlert ? I18n.Tr("WIDGET_EICAS_CAS_TERRAIN_PULL_UP", "地形拉升") : (context.Telemetry.IsSASEnabled ? I18n.Tr("WIDGET_EICAS_CAS_SAS_ACTIVE", "SAS 接通") : I18n.Tr("WIDGET_EICAS_CAS_STAB_TRIM", "安定面配平"));
-            }
-            _cachedCas2Str = evalCas2;
-            _cachedIsTouchdownAlert = context.Telemetry.IsTouchdownAlert;
-            _cachedIsSasEnabled = context.Telemetry.IsSASEnabled;
-
-            // 起落架状态
-            string gearStr = TelemetryTokenEngine.Evaluate(_gearToken, context.Telemetry);
-            if (string.IsNullOrEmpty(gearStr) || gearStr.Contains("{"))
-            {
-                bool isGearDown = context.Telemetry.AltitudeAGL < 600.0 || context.Telemetry.IsTouchdownAlert || context.Telemetry.FlightSituation == "LANDED" || context.Telemetry.FlightSituation == "PRELAUNCH";
-                gearStr = isGearDown ? I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下") : I18n.Tr("WIDGET_EICAS_GEAR_UP", "收起");
-            }
-            _cachedGearStr = gearStr;
-
-            // 4. 底部系统行：电气/通信 · 燃油 · 轨道高度 (全部真实遥测)
-            double ecPct = context.Telemetry.EcPercent;
-            double commSig = context.Telemetry.CommSignal;
-            _cachedDuctStr = string.Format(CultureInfo.InvariantCulture,
-                "{0} {1}   {2} {3}",
-                I18n.Tr("WIDGET_EICAS_EC", "电气"),
-                double.IsNaN(ecPct) ? "--" : AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)ecPct)),
-                I18n.Tr("WIDGET_EICAS_COMM", "通信"),
-                double.IsNaN(commSig) ? "--" : AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)commSig)));
-
-            double fuelFrac = context.Telemetry.StagePropellantFraction;
-            _cachedCabStr = fuelFrac >= -0.001
-                ? I18n.Tr("WIDGET_EICAS_FUEL_LINE", "剩余燃油") + " " + AvionicsFastFormat.FastPercent((float)Mathf.Clamp01((float)fuelFrac))
-                : I18n.Tr("WIDGET_EICAS_NO_FUEL", "无燃料数据");
-
-            double apo = context.Telemetry.Apoapsis;
-            double peri = context.Telemetry.Periapsis;
-            string apoStr = double.IsNaN(apo) ? "--" : (apo / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "km";
-            string periStr = double.IsNaN(peri) ? "--" : (peri / 1000.0).ToString("0.0", CultureInfo.InvariantCulture) + "km";
-            _cachedFuelStr = string.Format(CultureInfo.InvariantCulture, "{0} {1}   {2} {3}",
-                I18n.Tr("WIDGET_EICAS_APO", "远地点"), apoStr,
-                I18n.Tr("WIDGET_EICAS_PERI", "近地点"), periStr);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            if (!_cachedHasVessel) return;
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme);
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(WidgetStyleManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 顶端 TAT 与推力模式更新
-            if (_lastTatStr.Update(_cachedTatStr))
+            if (_lastTatStr.Update(state.TatText))
             {
-                if (_tatText != null) _tatText.text = _cachedTatStr;
+                SetTextIfChanged(_tatText, state.TatText);
             }
 
-            if (_lastModeStr.Update(_cachedModeStr))
+            if (_lastModeStr.Update(state.ThrustModeText))
             {
-                if (_thrustModeText != null) _thrustModeText.text = _cachedModeStr;
+                SetTextIfChanged(_thrustModeText, state.ThrustModeText);
             }
 
             // 2. 四发独立仪表更新
             float gaugeMaxH = 24f * CurrentDpiScale;
             for (int i = 0; i < 4; i++)
             {
-                if (_lastEprStrs[i].Update(_cachedEprStrs[i]))
-                {
-                    if (_eprReadoutTexts[i] != null) _eprReadoutTexts[i].text = _cachedEprStrs[i];
-                }
-                if (_eprGaugeFills[i] != null && _lastEprFills[i].Update(_cachedEprFracs[i]))
-                    _eprGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedEprFracs[i]);
+                var eng = state.GetEngine(i);
 
-                if (_lastN1Strs[i].Update(_cachedN1Strs[i]))
+                if (_lastEprStrs[i].Update(eng.EprText))
                 {
-                    if (_n1ReadoutTexts[i] != null) _n1ReadoutTexts[i].text = _cachedN1Strs[i];
+                    SetTextIfChanged(_eprReadoutTexts[i], eng.EprText);
                 }
-                if (_n1GaugeFills[i] != null && _lastN1Fills[i].Update(_cachedN1Fracs[i]))
-                    _n1GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedN1Fracs[i]);
+                if (_eprGaugeFills[i] != null && _lastEprFills[i].Update(eng.EprFraction))
+                {
+                    _eprGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * eng.EprFraction);
+                }
 
-                if (_lastEgtStrs[i].Update(_cachedEgtStrs[i]))
+                if (_lastN1Strs[i].Update(eng.N1Text))
                 {
-                    if (_egtReadoutTexts[i] != null) _egtReadoutTexts[i].text = _cachedEgtStrs[i];
+                    SetTextIfChanged(_n1ReadoutTexts[i], eng.N1Text);
                 }
-                if (_egtGaugeFills[i] != null && _lastEgtFills[i].Update(_cachedEgtFracs[i]))
-                    _egtGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * _cachedEgtFracs[i]);
+                if (_n1GaugeFills[i] != null && _lastN1Fills[i].Update(eng.N1Fraction))
+                {
+                    _n1GaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * eng.N1Fraction);
+                }
+
+                if (_lastEgtStrs[i].Update(eng.EgtText))
+                {
+                    SetTextIfChanged(_egtReadoutTexts[i], eng.EgtText);
+                }
+                if (_egtGaugeFills[i] != null && _lastEgtFills[i].Update(eng.EgtFraction))
+                {
+                    _egtGaugeFills[i].rectTransform.sizeDelta = new Vector2(0f, gaugeMaxH * eng.EgtFraction);
+                }
             }
 
             // 3. 右侧机组告警与起落架更新
-            if (_lastCas1Str.Update(_cachedCas1Str))
+            if (_lastCas1Str.Update(state.Cas1Text))
             {
-                if (_casMemo1Text != null) _casMemo1Text.text = _cachedCas1Str;
+                SetTextIfChanged(_casMemo1Text, state.Cas1Text);
             }
 
-            if (_lastCas2Str.Update(_cachedCas2Str))
+            if (_lastCas2Str.Update(state.Cas2Text))
             {
                 if (_casMemo2Text != null)
                 {
-                    _casMemo2Text.text = _cachedCas2Str;
-                    TextStyleRole casRole = _cachedIsTouchdownAlert ? TextStyleRole.Danger : (_cachedIsSasEnabled ? TextStyleRole.Accent : TextStyleRole.Label);
+                    SetTextIfChanged(_casMemo2Text, state.Cas2Text);
+                    TextStyleRole casRole = state.IsTouchdownAlert ? TextStyleRole.Danger : (state.IsSasEnabled ? TextStyleRole.Accent : TextStyleRole.Label);
                     ApplyText(_casMemo2Text, casRole, theme);
                 }
             }
 
-            if (_lastGearStr.Update(_cachedGearStr))
+            if (_lastGearStr.Update(state.GearText))
             {
                 if (_gearStatusText != null)
                 {
-                    _gearStatusText.text = _cachedGearStr;
-                    bool isDown = _cachedGearStr.Equals("DOWN", StringComparison.OrdinalIgnoreCase)
-                               || _cachedGearStr.Equals(I18n.Tr("WIDGET_EICAS_GEAR_DOWN", "放下"), StringComparison.OrdinalIgnoreCase);
+                    SetTextIfChanged(_gearStatusText, state.GearText);
+                    bool isDown = state.IsGearDown;
                     ApplyText(_gearStatusText, isDown ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
                     if (_gearBoxOutline != null)
                     {
@@ -715,19 +870,42 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 底部系统行更新 (电气/通信 · 燃油 · 轨道)
-            if (_lastDuctStr.Update(_cachedDuctStr))
+            if (_lastDuctStr.Update(state.SystemsLineText))
             {
-                if (_systemsLineText != null) _systemsLineText.text = _cachedDuctStr;
+                SetTextIfChanged(_systemsLineText, state.SystemsLineText);
             }
 
-            if (_lastCabStr.Update(_cachedCabStr))
+            if (_lastCabStr.Update(state.FuelLineText))
             {
-                if (_fuelLineText != null) _fuelLineText.text = _cachedCabStr;
+                SetTextIfChanged(_fuelLineText, state.FuelLineText);
             }
 
-            if (_lastFuelStr.Update(_cachedFuelStr))
+            if (_lastFuelStr.Update(state.OrbitLineText))
             {
-                if (_orbitLineText != null) _orbitLineText.text = _cachedFuelStr;
+                SetTextIfChanged(_orbitLineText, state.OrbitLineText);
+            }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
+            _lastTatStr.Reset(string.Empty);
+            _lastModeStr.Reset(string.Empty);
+            _lastCas1Str.Reset(string.Empty);
+            _lastCas2Str.Reset(string.Empty);
+            _lastGearStr.Reset(string.Empty);
+            _lastDuctStr.Reset(string.Empty);
+            _lastCabStr.Reset(string.Empty);
+            _lastFuelStr.Reset(string.Empty);
+            for (int i = 0; i < 4; i++)
+            {
+                _lastEprStrs[i].Reset(string.Empty);
+                _lastN1Strs[i].Reset(string.Empty);
+                _lastEgtStrs[i].Reset(string.Empty);
+                _lastEprFills[i].Reset(-1f);
+                _lastN1Fills[i].Reset(-1f);
+                _lastEgtFills[i].Reset(-1f);
             }
         }
 
