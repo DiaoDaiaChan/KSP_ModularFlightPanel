@@ -9,6 +9,283 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
+    /// 航电天线硬件槽位状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct AntennaRowSnapshot : IEquatable<AntennaRowSnapshot>
+    {
+        public string Name;
+        public string Status;
+        public bool IsActive;
+
+        public bool Equals(AntennaRowSnapshot other)
+        {
+            return Name == other.Name &&
+                   Status == other.Status &&
+                   IsActive == other.IsActive;
+        }
+
+        public override bool Equals(object obj) => obj is AntennaRowSnapshot other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (IsActive ? 1 : 0);
+                hash = (hash * 397) ^ (Name != null ? Name.GetHashCode() : 0);
+                hash = (hash * 397) ^ (Status != null ? Status.GetHashCode() : 0);
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 航电通信网络与链路状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct SignalStatusState : IEquatable<SignalStatusState>
+    {
+        public bool HasVessel;
+        public bool IsConnected;
+        public double SignalStrength;
+        public bool IsPartial;
+        public string TargetName;
+        public string RouteDesc;
+        public string RateStr;
+        public bool HasTx;
+        public bool HasRx;
+        public int ActiveRfBars;
+        public string HwSummary;
+        public int AntennaCount;
+        public AntennaRowSnapshot Ant0;
+        public AntennaRowSnapshot Ant1;
+        public AntennaRowSnapshot Ant2;
+        public AntennaRowSnapshot Ant3;
+
+        public AntennaRowSnapshot GetAntenna(int index)
+        {
+            switch (index)
+            {
+                case 0: return Ant0;
+                case 1: return Ant1;
+                case 2: return Ant2;
+                case 3: return Ant3;
+                default: return default;
+            }
+        }
+
+        public bool Equals(SignalStatusState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   IsConnected == other.IsConnected &&
+                   Math.Abs(SignalStrength - other.SignalStrength) < 0.005 &&
+                   IsPartial == other.IsPartial &&
+                   TargetName == other.TargetName &&
+                   RouteDesc == other.RouteDesc &&
+                   RateStr == other.RateStr &&
+                   HasTx == other.HasTx &&
+                   HasRx == other.HasRx &&
+                   ActiveRfBars == other.ActiveRfBars &&
+                   HwSummary == other.HwSummary &&
+                   AntennaCount == other.AntennaCount &&
+                   Ant0.Equals(other.Ant0) &&
+                   Ant1.Equals(other.Ant1) &&
+                   Ant2.Equals(other.Ant2) &&
+                   Ant3.Equals(other.Ant3);
+        }
+
+        public override bool Equals(object obj) => obj is SignalStatusState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (HasVessel ? 1 : 0);
+                hash = (hash * 397) ^ (IsConnected ? 1 : 0);
+                hash = (hash * 397) ^ ActiveRfBars;
+                hash = (hash * 397) ^ (TargetName != null ? TargetName.GetHashCode() : 0);
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 航电通信网络与链路纯业务逻辑大脑 (0 GC / 100% 游戏引擎解耦)
+    /// </summary>
+    public class SignalStatusLogic : WidgetLogic<SignalStatusState>
+    {
+        public const int RfBarCount = 5;
+        public const int MaxExpandedRows = 4;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            bool isConnected = telemetry.IsConnected;
+            double signalStrength = Mathf.Clamp01((float)telemetry.CommSignal);
+
+            string ctrlLevel = telemetry.ControlLevelStr
+                ?? (isConnected ? I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制") : I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路"));
+            bool isPartial = ctrlLevel.IndexOf("PART", StringComparison.OrdinalIgnoreCase) >= 0 || (isConnected && signalStrength < 0.35);
+
+            string rawTarget = telemetry.DirectLinkTarget;
+            string targetName;
+            string routeDesc;
+            var links = telemetry.ActiveCommLinks;
+            bool hasRealLinks = links != null && links.Count > 0;
+
+            if (isConnected)
+            {
+                if (!string.IsNullOrEmpty(rawTarget) && rawTarget != "NONE")
+                {
+                    targetName = rawTarget.ToUpperInvariant();
+                }
+                else if (hasRealLinks)
+                {
+                    targetName = links[0].PeerName.ToUpperInvariant();
+                }
+                else
+                {
+                    targetName = I18n.Tr("WIDGET_SIG_KERBIN_DSN_DIRECT", "坎星深空网直连");
+                }
+
+                bool isDirect = !hasRealLinks || links[0].IsDirectHome || links.Count == 1;
+                routeDesc = isDirect
+                    ? I18n.Tr("WIDGET_SIG_DIRECT_HOME_DSN", "直连 · 深空网主站")
+                    : I18n.TrFormat("WIDGET_SIG_RELAY_HOPS", links.Count);
+            }
+            else
+            {
+                targetName = I18n.Tr("WIDGET_SIG_NO_STATION_LINK", "无测控站链路");
+                routeDesc = I18n.Tr("WIDGET_SIG_SEARCHING_LINK", "搜索链路中");
+            }
+
+            double bps = telemetry.DataRateBps;
+            string rateStr;
+            if (!isConnected)
+            {
+                rateStr = "0.0 bps";
+            }
+            else if (bps > 0.0)
+            {
+                rateStr = CommLinkInfo.FormatRate(bps);
+            }
+            else
+            {
+                rateStr = CommLinkInfo.FormatRate(100000.0 * signalStrength);
+            }
+
+            bool hasTx = telemetry.SignalTx > 0.01;
+            bool hasRx = telemetry.SignalRx > 0.01;
+            int activeRfBars = isConnected ? Mathf.Clamp(Mathf.CeilToInt((float)signalStrength * RfBarCount), 1, RfBarCount) : 0;
+
+            var antennas = telemetry.Antennas;
+            int totalAnts = (antennas != null && antennas.Count > 0) ? antennas.Count : (telemetry.AntennaCount > 0 ? telemetry.AntennaCount : 1);
+            int activeAnts = 0;
+            string primaryAntName = I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线");
+
+            if (antennas != null && antennas.Count > 0)
+            {
+                for (int a = 0; a < antennas.Count; a++)
+                {
+                    if (antennas[a].IsOperational && antennas[a].Status == "LINKED")
+                    {
+                        activeAnts++;
+                        if (primaryAntName == I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线"))
+                        {
+                            primaryAntName = CleanAntennaName(antennas[a].Name, a);
+                        }
+                    }
+                }
+            }
+            if (activeAnts == 0 && isConnected) activeAnts = 1;
+
+            string hwSummary = isConnected
+                ? I18n.TrFormat("WIDGET_SIG_HW_SUMMARY", primaryAntName, activeAnts, totalAnts)
+                : I18n.TrFormat("WIDGET_SIG_HW_NOLINK", totalAnts);
+
+            int antCount = (antennas != null) ? antennas.Count : 0;
+            AntennaRowSnapshot ant0 = default, ant1 = default, ant2 = default, ant3 = default;
+
+            for (int i = 0; i < MaxExpandedRows; i++)
+            {
+                AntennaRowSnapshot snap;
+                if (antennas != null && i < antCount)
+                {
+                    var ant = antennas[i];
+                    snap = new AntennaRowSnapshot
+                    {
+                        Name = CleanAntennaName(ant.Name, i),
+                        Status = ant.Status,
+                        IsActive = true
+                    };
+                }
+                else if (i == 0)
+                {
+                    snap = new AntennaRowSnapshot
+                    {
+                        Name = I18n.Tr("WIDGET_SIG_INTERNAL_POD_ANTENNA", "内置舱段天线"),
+                        Status = isConnected ? "LINKED" : "OFFLINE",
+                        IsActive = true
+                    };
+                }
+                else
+                {
+                    snap = new AntennaRowSnapshot { IsActive = false };
+                }
+
+                switch (i)
+                {
+                    case 0: ant0 = snap; break;
+                    case 1: ant1 = snap; break;
+                    case 2: ant2 = snap; break;
+                    case 3: ant3 = snap; break;
+                }
+            }
+
+            CurrentState = new SignalStatusState
+            {
+                HasVessel = true,
+                IsConnected = isConnected,
+                SignalStrength = signalStrength,
+                IsPartial = isPartial,
+                TargetName = targetName,
+                RouteDesc = routeDesc,
+                RateStr = rateStr,
+                HasTx = hasTx,
+                HasRx = hasRx,
+                ActiveRfBars = activeRfBars,
+                HwSummary = hwSummary,
+                AntennaCount = antCount,
+                Ant0 = ant0,
+                Ant1 = ant1,
+                Ant2 = ant2,
+                Ant3 = ant3
+            };
+        }
+
+        public static string CleanAntennaName(string rawName, int slotIndex)
+        {
+            if (string.IsNullOrEmpty(rawName)) return I18n.TrFormat("WIDGET_SIG_ANTENNA_SLOT", slotIndex + 1);
+            string s = rawName.Trim();
+            if (s.IndexOf("[PROCEDURAL]", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                s = s.Replace("[PROCEDURAL]", "").Replace("[procedural]", "").Trim();
+                if (string.IsNullOrEmpty(s)) s = "AVIONICS RF";
+                return $"{s} #{slotIndex + 1}";
+            }
+            return s.ToUpperInvariant();
+        }
+    }
+
+    /// <summary>
     /// 现代化全玻璃座舱通信网络极简航电组件 (Avionics CommNet Streamlined Hub)
     /// 专为游戏内高频飞行视角优化：
     /// 1. 彻底摒弃冗余的嵌套边框、嵌套卡片与重复信号计量柱，呈现极简一体化玻璃座舱质感；
@@ -23,6 +300,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(250f, 76f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
+
+        private readonly SignalStatusLogic _logic = new SignalStatusLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget)
         public bool AllowNonUniformScale => true;
@@ -408,181 +688,29 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         // ==========================================
-        // 5. 遥测业务求值与平滑光度动画 (OnUpdateTelemetry)
+        // 5. 遥测业务求值与平滑光度动画 (OnRenderState)
         // ==========================================
-        private struct AntennaRowSnapshot
-        {
-            public string Name;
-            public string Status;
-            public bool IsActive;
-        }
-
-        private struct CommNetSnapshot
-        {
-            public bool HasVessel;
-            public bool IsConnected;
-            public double SignalStrength;
-            public bool IsPartial;
-            public string TargetName;
-            public string RouteDesc;
-            public string RateStr;
-            public bool HasTx;
-            public bool HasRx;
-            public int ActiveRfBars;
-            public string HwSummary;
-            public int AntennaCount;
-        }
-
-        private CommNetSnapshot _snap;
-        private readonly AntennaRowSnapshot[] _cachedAntennaSnapshots = new AntennaRowSnapshot[MaxExpandedRows];
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _snap.HasVessel = false;
-                return;
-            }
-
-            _snap.HasVessel = true;
-
-            bool isConnected = context.Telemetry.IsConnected;
-            _snap.IsConnected = isConnected;
-            double signalStrength = Mathf.Clamp01((float)context.Telemetry.CommSignal);
-            _snap.SignalStrength = signalStrength;
-
-            string ctrlLevel = context.Telemetry.ControlLevelStr
-                ?? (isConnected ? I18n.Tr("WIDGET_SIG_CTRL_FULL", "全权控制") : I18n.Tr("WIDGET_SIG_CTRL_NO_LINK", "无链路"));
-            bool isPartial = ctrlLevel.IndexOf("PART", StringComparison.OrdinalIgnoreCase) >= 0 || (isConnected && signalStrength < 0.35);
-            _snap.IsPartial = isPartial;
-
-            string rawTarget = context.Telemetry.DirectLinkTarget;
-            string targetName;
-            string routeDesc;
-            var links = context.Telemetry.ActiveCommLinks;
-            bool hasRealLinks = links != null && links.Count > 0;
-
-            if (isConnected)
-            {
-                if (!string.IsNullOrEmpty(rawTarget) && rawTarget != "NONE")
-                {
-                    targetName = rawTarget.ToUpperInvariant();
-                }
-                else if (hasRealLinks)
-                {
-                    targetName = links[0].PeerName.ToUpperInvariant();
-                }
-                else
-                {
-                    targetName = I18n.Tr("WIDGET_SIG_KERBIN_DSN_DIRECT", "坎星深空网直连");
-                }
-
-                bool isDirect = !hasRealLinks || links[0].IsDirectHome || links.Count == 1;
-                routeDesc = isDirect
-                    ? I18n.Tr("WIDGET_SIG_DIRECT_HOME_DSN", "直连 · 深空网主站")
-                    : I18n.TrFormat("WIDGET_SIG_RELAY_HOPS", links.Count);
-            }
-            else
-            {
-                targetName = I18n.Tr("WIDGET_SIG_NO_STATION_LINK", "无测控站链路");
-                routeDesc = I18n.Tr("WIDGET_SIG_SEARCHING_LINK", "搜索链路中");
-            }
-            _snap.TargetName = targetName;
-            _snap.RouteDesc = routeDesc;
-
-            double bps = context.Telemetry.DataRateBps;
-            string rateStr;
-            if (!isConnected)
-            {
-                rateStr = "0.0 bps";
-            }
-            else if (bps > 0.0)
-            {
-                rateStr = CommLinkInfo.FormatRate(bps);
-            }
-            else
-            {
-                rateStr = CommLinkInfo.FormatRate(100000.0 * signalStrength);
-            }
-            _snap.RateStr = rateStr;
-
-            _snap.HasTx = context.Telemetry.SignalTx > 0.01;
-            _snap.HasRx = context.Telemetry.SignalRx > 0.01;
-
-            _snap.ActiveRfBars = isConnected ? Mathf.Clamp(Mathf.CeilToInt((float)signalStrength * RfBarCount), 1, RfBarCount) : 0;
-
-            var antennas = context.Telemetry.Antennas;
-            int totalAnts = (antennas != null && antennas.Count > 0) ? antennas.Count : (context.Telemetry.AntennaCount > 0 ? context.Telemetry.AntennaCount : 1);
-            int activeAnts = 0;
-            string primaryAntName = I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线");
-
-            if (antennas != null && antennas.Count > 0)
-            {
-                for (int a = 0; a < antennas.Count; a++)
-                {
-                    if (antennas[a].IsOperational && antennas[a].Status == "LINKED")
-                    {
-                        activeAnts++;
-                        if (primaryAntName == I18n.Tr("WIDGET_SIG_INTERNAL_ANTENNA", "内置天线"))
-                        {
-                            primaryAntName = CleanAntennaName(antennas[a].Name, a);
-                        }
-                    }
-                }
-            }
-            if (activeAnts == 0 && isConnected) activeAnts = 1;
-
-            _snap.HwSummary = isConnected
-                ? I18n.TrFormat("WIDGET_SIG_HW_SUMMARY", primaryAntName, activeAnts, totalAnts)
-                : I18n.TrFormat("WIDGET_SIG_HW_NOLINK", totalAnts);
-
-            int antCount = (antennas != null) ? antennas.Count : 0;
-            _snap.AntennaCount = antCount;
-            for (int i = 0; i < MaxExpandedRows; i++)
-            {
-                if (antennas != null && i < antCount)
-                {
-                    var ant = antennas[i];
-                    _cachedAntennaSnapshots[i] = new AntennaRowSnapshot
-                    {
-                        Name = CleanAntennaName(ant.Name, i),
-                        Status = ant.Status,
-                        IsActive = true
-                    };
-                }
-                else if (i == 0)
-                {
-                    _cachedAntennaSnapshots[i] = new AntennaRowSnapshot
-                    {
-                        Name = I18n.Tr("WIDGET_SIG_INTERNAL_POD_ANTENNA", "内置舱段天线"),
-                        Status = isConnected ? "LINKED" : "OFFLINE",
-                        IsActive = true
-                    };
-                }
-                else
-                {
-                    _cachedAntennaSnapshots[i] = new AntennaRowSnapshot
-                    {
-                        IsActive = false
-                    };
-                }
-            }
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            if (!_snap.HasVessel) return;
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            bool isConnected = _snap.IsConnected;
-            double signalStrength = _snap.SignalStrength;
-            bool isPartial = _snap.IsPartial;
+            bool isConnected = state.IsConnected;
+            double signalStrength = state.SignalStrength;
+            bool isPartial = state.IsPartial;
 
             // 1. 顶栏控制权徽章与温和心跳呼吸
             StatusSurfaceRole statusRole = !isConnected ? StatusSurfaceRole.Danger : (isPartial ? StatusSurfaceRole.Caution : StatusSurfaceRole.Success);
@@ -615,13 +743,13 @@ namespace ModularFlightPanel.UI.Widgets
             _ctrlBadgeText.SetColor(WidgetStyleManager.WithAlpha(ctrlCol, animAlpha));
 
             // 2. 目标测控站与拓扑
-            if (_lastTargetName.Update(_snap.TargetName))
+            if (_lastTargetName.Update(state.TargetName))
             {
-                _targetNameText.SetTextSafe(_snap.TargetName);
+                _targetNameText.SetTextSafe(state.TargetName);
             }
-            if (_lastRouteType.Update(_snap.RouteDesc))
+            if (_lastRouteType.Update(state.RouteDesc))
             {
-                _routeTypeText.SetTextSafe(_snap.RouteDesc);
+                _routeTypeText.SetTextSafe(state.RouteDesc);
             }
             if (_lastConnectedState.Update(isConnected))
             {
@@ -629,9 +757,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 速率与 TX/RX 遥测收发微光动画
-            if (_lastRateStr.Update(_snap.RateStr))
+            if (_lastRateStr.Update(state.RateStr))
             {
-                _rateText.SetTextSafe(_snap.RateStr);
+                _rateText.SetTextSafe(state.RateStr);
             }
 
             if (_txText != null && _rxText != null && _txText.gameObject.activeSelf)
@@ -639,10 +767,10 @@ namespace ModularFlightPanel.UI.Widgets
                 Color txBase = style.GetTextColor(TextStyleRole.Accent, theme);
                 Color rxBase = style.GetTextColor(TextStyleRole.Cardinal, theme);
 
-                if (isConnected && (_snap.RateStr != "0.0 bps" || signalStrength > 0.01))
+                if (isConnected && (state.RateStr != "0.0 bps" || signalStrength > 0.01))
                 {
-                    float txA = _snap.HasTx ? (0.60f + 0.40f * Mathf.Sin(Time.time * 6.5f)) : 0.30f;
-                    float rxA = _snap.HasRx ? (0.60f + 0.40f * Mathf.Cos(Time.time * 6.5f)) : 0.30f;
+                    float txA = state.HasTx ? (0.60f + 0.40f * Mathf.Sin(Time.time * 6.5f)) : 0.30f;
+                    float rxA = state.HasRx ? (0.60f + 0.40f * Mathf.Cos(Time.time * 6.5f)) : 0.30f;
                     _txText.SetColor(WidgetStyleManager.WithAlpha(txBase, txA));
                     _rxText.SetColor(WidgetStyleManager.WithAlpha(rxBase, rxA));
                 }
@@ -654,7 +782,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 5 阶主射频光柱
-            int activeRfBars = _snap.ActiveRfBars;
+            int activeRfBars = state.ActiveRfBars;
             MeterStyleRole barRole = !isConnected ? MeterStyleRole.Track : (signalStrength < 0.35 ? MeterStyleRole.Warning : MeterStyleRole.Primary);
             Color activeCol = style.GetMeterColor(barRole, theme);
             Color trackCol = style.GetMeterColor(MeterStyleRole.Track, theme);
@@ -685,9 +813,9 @@ namespace ModularFlightPanel.UI.Widgets
             // 5. 硬件信息
             if (_hardwareSummaryText != null && _hardwareSummaryText.gameObject.activeSelf)
             {
-                if (_lastHwSummary.Update(_snap.HwSummary))
+                if (_lastHwSummary.Update(state.HwSummary))
                 {
-                    _hardwareSummaryText.SetTextSafe(_snap.HwSummary);
+                    _hardwareSummaryText.SetTextSafe(state.HwSummary);
                 }
             }
 
@@ -697,7 +825,7 @@ namespace ModularFlightPanel.UI.Widgets
                 var row = _expandedRows[i];
                 if (row == null || row.Root == null || !row.Root.activeSelf) continue;
 
-                var snapshot = _cachedAntennaSnapshots[i];
+                var snapshot = state.GetAntenna(i);
                 if (snapshot.IsActive)
                 {
                     row.NameText.SetTextSafe(snapshot.Name);
@@ -714,6 +842,18 @@ namespace ModularFlightPanel.UI.Widgets
                     row.Root.SetActiveSafe(false);
                 }
             }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
+            _lastTargetName.Reset(string.Empty);
+            _lastRouteType.Reset(string.Empty);
+            _lastRateStr.Reset(string.Empty);
+            _lastCtrlBadge.Reset(string.Empty);
+            _lastHwSummary.Reset(string.Empty);
+            _lastConnectedState.Reset(false);
         }
 
         /// <summary>
@@ -735,19 +875,6 @@ namespace ModularFlightPanel.UI.Widgets
                 case "NONE": return I18n.Tr("WIDGET_SIGNAL_NONE", "无");
                 default: return status;
             }
-        }
-
-        private static string CleanAntennaName(string rawName, int slotIndex)
-        {
-            if (string.IsNullOrEmpty(rawName)) return I18n.TrFormat("WIDGET_SIG_ANTENNA_SLOT", slotIndex + 1);
-            string s = rawName.Trim();
-            if (s.IndexOf("[PROCEDURAL]", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                s = s.Replace("[PROCEDURAL]", "").Replace("[procedural]", "").Trim();
-                if (string.IsNullOrEmpty(s)) s = "AVIONICS RF";
-                return $"{s} #{slotIndex + 1}";
-            }
-            return s.ToUpperInvariant();
         }
 
         public override void ApplyTheme(ThemeConfig theme)
