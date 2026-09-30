@@ -30,6 +30,298 @@ namespace ModularFlightPanel.UI.Widgets
     ///     速度矢量 v 取中性近白；航天器本体沿用正向状态色；赤道盘与 XYZ 轴为中性基准。
     /// 100% 遵照 SPEC-001..008 核心架构规范，0 颜色字面量，0 场景查询。
     /// </summary>
+    /// <summary>
+    /// 轨道六根数状态快照 (0 GC 值类型)
+    /// </summary>
+    public struct OrbitalElementsState : IEquatable<OrbitalElementsState>
+    {
+        public bool HasVessel;
+        public double Ap;
+        public double Pe;
+        public double TAp;
+        public double TPe;
+        public double Sma;
+        public double Ecc;
+        public double Inc;
+        public double Lan;
+        public double Aop;
+        public double Tra;
+        public double Period;
+        public string BadgeText;
+        public TextStyleRole BadgeRole;
+        public string TitleText;
+
+        public bool Equals(OrbitalElementsState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Math.Abs(Ap - other.Ap) < 1.0 &&
+                   Math.Abs(Pe - other.Pe) < 1.0 &&
+                   Math.Abs(TAp - other.TAp) < 0.5 &&
+                   Math.Abs(TPe - other.TPe) < 0.5 &&
+                   Math.Abs(Sma - other.Sma) < 1.0 &&
+                   Math.Abs(Ecc - other.Ecc) < 0.0001 &&
+                   Math.Abs(Inc - other.Inc) < 0.01 &&
+                   Math.Abs(Lan - other.Lan) < 0.01 &&
+                   Math.Abs(Aop - other.Aop) < 0.01 &&
+                   Math.Abs(Tra - other.Tra) < 0.05 &&
+                   Math.Abs(Period - other.Period) < 0.5 &&
+                   BadgeText == other.BadgeText &&
+                   BadgeRole == other.BadgeRole &&
+                   TitleText == other.TitleText;
+        }
+
+        public override bool Equals(object obj) => obj is OrbitalElementsState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ Ap.GetHashCode();
+                hash = (hash * 397) ^ Pe.GetHashCode();
+                hash = (hash * 397) ^ Sma.GetHashCode();
+                hash = (hash * 397) ^ Ecc.GetHashCode();
+                if (BadgeText != null) hash = (hash * 397) ^ BadgeText.GetHashCode();
+                if (TitleText != null) hash = (hash * 397) ^ TitleText.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 轨道六根数全息态势业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class OrbitalElementsLogic : WidgetLogic<OrbitalElementsState>
+    {
+        private double _cachedSma = double.NaN;
+        private double _cachedEcc = double.NaN;
+        private double _cachedInc = double.NaN;
+        private double _cachedLan = double.NaN;
+        private double _cachedAop = double.NaN;
+        private double _cachedPeriod = double.NaN;
+        private bool _cachedIsPrincipia = false;
+        private int _evalCount = 0;
+
+        public override void Reset()
+        {
+            _cachedSma = double.NaN;
+            _cachedEcc = double.NaN;
+            _cachedInc = double.NaN;
+            _cachedLan = double.NaN;
+            _cachedAop = double.NaN;
+            _cachedPeriod = double.NaN;
+            _cachedIsPrincipia = false;
+            _evalCount = 0;
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            _evalCount++;
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = new OrbitalElementsState
+                {
+                    HasVessel = false,
+                    BadgeText = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL"),
+                    BadgeRole = TextStyleRole.Muted,
+                    TitleText = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS")
+                };
+                return;
+            }
+
+            // 1. 基础拱点与时钟采样
+            double ap = telemetry.Apoapsis;
+            double pe = telemetry.Periapsis;
+            double tAp = telemetry.TimeToAp;
+            double tPe = telemetry.TimeToPe;
+
+            // 2. 开普勒六根数：稳态两体节拍守卫与外部探针按需查询
+            bool isManeuvering = telemetry.Throttle > 0.001f || telemetry.DynamicPressure > 0.1 || telemetry.HasManeuverNode;
+            bool needKeplerianRecalc = isManeuvering || double.IsNaN(_cachedSma) || (_evalCount % 3 == 0);
+
+            double sma, ecc, inc, lan, aop, period;
+            bool isPrincipia;
+
+            if (needKeplerianRecalc)
+            {
+                sma = telemetry.SemiMajorAxis;
+                ecc = telemetry.Eccentricity;
+                inc = telemetry.Inclination;
+                lan = telemetry.LongitudeOfAscendingNode;
+                aop = telemetry.ArgumentOfPeriapsis;
+                period = telemetry.OrbitalPeriod;
+                isPrincipia = false;
+
+                bool prinAvail = ExternalProbeRegistry.NumericResolver != null;
+                if (prinAvail)
+                {
+                    double pSma = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SMA");
+                    if (!double.IsNaN(pSma) && pSma > 0.0) { sma = pSma; isPrincipia = true; }
+                    double pEcc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "ECC");
+                    if (!double.IsNaN(pEcc) && pEcc >= 0.0) { ecc = pEcc; isPrincipia = true; }
+                    double pInc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "INC");
+                    if (!double.IsNaN(pInc)) { inc = pInc; isPrincipia = true; }
+                    double pLan = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LAN");
+                    if (!double.IsNaN(pLan)) { lan = pLan; isPrincipia = true; }
+                    double pAop = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LPE");
+                    if (!double.IsNaN(pAop)) { aop = pAop; isPrincipia = true; }
+
+                    double pNodal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "NODALPERIOD");
+                    if (!double.IsNaN(pNodal) && pNodal > 0.0) { period = pNodal; isPrincipia = true; }
+                    else
+                    {
+                        double pSidereal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SIDEREALPERIOD");
+                        if (!double.IsNaN(pSidereal) && pSidereal > 0.0) { period = pSidereal; isPrincipia = true; }
+                    }
+                }
+
+                lan = OrbitalElementsWidget.NormalizeDegrees(lan);
+                aop = OrbitalElementsWidget.NormalizeDegrees(aop);
+                if (double.IsNaN(inc) || double.IsInfinity(inc)) inc = 0.0;
+                inc = Math.Min(180.0, Math.Max(0.0, inc));
+
+                // 几何回退
+                if (double.IsNaN(ecc) || ecc < 0.0)
+                {
+                    double rA = Math.Max(10000.0, OrbitalElementsWidget.DefaultKerbinRadius + ap);
+                    double rP = OrbitalElementsWidget.DefaultKerbinRadius + pe;
+                    ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
+                }
+
+                if (double.IsNaN(sma) || sma <= 0.0)
+                {
+                    double rA = OrbitalElementsWidget.DefaultKerbinRadius + ap;
+                    double rP = OrbitalElementsWidget.DefaultKerbinRadius + pe;
+                    sma = (rA + rP) * 0.5;
+                }
+
+                if (double.IsNaN(period) || period <= 0.0)
+                    period = ecc < 1.0 ? Math.Abs(tAp - tPe) * 2.0 : 0.0;
+
+                _cachedSma = sma;
+                _cachedEcc = ecc;
+                _cachedInc = inc;
+                _cachedLan = lan;
+                _cachedAop = aop;
+                _cachedPeriod = period;
+                _cachedIsPrincipia = isPrincipia;
+            }
+            else
+            {
+                sma = _cachedSma;
+                ecc = _cachedEcc;
+                inc = _cachedInc;
+                lan = _cachedLan;
+                aop = _cachedAop;
+                period = _cachedPeriod;
+                isPrincipia = _cachedIsPrincipia;
+            }
+
+            // 真近点角（连续平滑演进）
+            double tra = telemetry.TrueAnomaly;
+            if (isPrincipia && ExternalProbeRegistry.NumericResolver != null)
+            {
+                double pTra = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "TRA");
+                if (!double.IsNaN(pTra)) tra = pTra;
+            }
+            tra = OrbitalElementsWidget.NormalizeDegrees(tra);
+
+            // Principia 参考系标题解算 (纯字符串，不更新 UI)
+            string titleText = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
+            if (isPrincipia && ExternalProbeRegistry.StringResolver != null)
+            {
+                string prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "NAVBALLNAME", "");
+                if (string.IsNullOrEmpty(prinFrame) || prinFrame == "---")
+                    prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
+                if (!string.IsNullOrEmpty(prinFrame) && prinFrame != "---")
+                {
+                    titleText = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
+                }
+            }
+
+            // 3. 轨道能量状态解算 (纯物理状态判定)
+            ComputeOrbitStateBadge(ap, pe, ecc, telemetry.AtmosphereDepth, telemetry.HasAtmosphere, isPrincipia,
+                out string badgeText, out TextStyleRole badgeRole);
+
+            CurrentState = new OrbitalElementsState
+            {
+                HasVessel = true,
+                Ap = ap,
+                Pe = pe,
+                TAp = tAp,
+                TPe = tPe,
+                Sma = sma,
+                Ecc = ecc,
+                Inc = inc,
+                Lan = lan,
+                Aop = aop,
+                Tra = tra,
+                Period = period,
+                BadgeText = badgeText,
+                BadgeRole = badgeRole,
+                TitleText = titleText
+            };
+        }
+
+        public static void ComputeOrbitStateBadge(double ap, double pe, double ecc, double atmDepth, bool hasAtm, bool isPrincipia,
+            out string badgeText, out TextStyleRole badgeRole)
+        {
+            // 优先接入 Principia 轨道分析高阶物理描述
+            if (isPrincipia)
+            {
+                string pDesc = ExternalProbeRegistry.ResolveString("PRINCIPIA", "ORBITDESC", "");
+                if (!string.IsNullOrEmpty(pDesc) && pDesc != "---")
+                {
+                    string clean = pDesc.Replace("\n", " ").Trim();
+                    if (clean.Length > 15) clean = clean.Substring(0, 15).Trim();
+                    badgeText = clean.ToUpperInvariant();
+                    badgeRole = TextStyleRole.Accent;
+                    return;
+                }
+            }
+
+            double safeAlt = hasAtm ? atmDepth : 0.0;
+
+            // 获取天体名称用于标题增强 (通过探针查表，SPEC-007 禁止场景查询)
+            string bodyName = ExternalProbeRegistry.ResolveString("ORBIT", "BODY", "");
+            bool hasBodyName = !string.IsNullOrEmpty(bodyName) && bodyName != "---";
+
+            if (ecc >= 1.0)
+            {
+                badgeText = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE");
+                badgeRole = TextStyleRole.Danger;
+            }
+            else if (pe < 0.0)
+            {
+                badgeText = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC");
+                badgeRole = TextStyleRole.Danger;
+            }
+            else if (pe < safeAlt)
+            {
+                badgeText = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBIT");
+                badgeRole = TextStyleRole.Warning;
+            }
+            else if (ecc < 0.015)
+            {
+                badgeText = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR");
+                badgeRole = TextStyleRole.Accent;
+            }
+            else
+            {
+                badgeText = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC");
+                badgeRole = TextStyleRole.PrimaryValue;
+            }
+
+            // 天体名称联动到 OrbitBadge 后缀 (如 "圆轨道 EARTH" → 增强态势感知)
+            if (hasBodyName)
+            {
+                badgeText = $"{badgeText} ({bodyName.ToUpperInvariant()})";
+            }
+        }
+    }
+
     [FlightWidget("orbital_elements", "orbit_elements", "orbital_3d",
         Category = WidgetCategory.Navigation,
         DisplayName = "ORBITAL ELEMENTS 轨道六根数面板",
@@ -45,22 +337,8 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
         protected override bool AutoCreateCardFrame => true;
 
-        // ── 数据心跳与 UI 绘制解耦状态缓存 ──
-        private bool _hasVessel = false;
-        private double _dataAp = double.NaN;
-        private double _dataPe = double.NaN;
-        private double _dataTAp = double.NaN;
-        private double _dataTPe = double.NaN;
-        private double _dataSma = double.NaN;
-        private double _dataEcc = double.NaN;
-        private double _dataInc = double.NaN;
-        private double _dataLan = double.NaN;
-        private double _dataAop = double.NaN;
-        private double _dataTra = double.NaN;
-        private double _dataPeriod = double.NaN;
-        private string _dataBadgeText = "---";
-        private TextStyleRole _dataBadgeRole = TextStyleRole.Muted;
-        private string _dataTitleText = "ORBIT ELEMENTS";
+        private readonly OrbitalElementsLogic _logic = new OrbitalElementsLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // ── 性能节流与状态缓存 ──
         private readonly CachedFloat _lastMeshRebuildTime = new CachedFloat(-1f);
@@ -205,7 +483,7 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedDouble _lastDrawnAop = new CachedDouble(double.NaN);
         private readonly CachedDouble _lastDrawnTra = new CachedDouble(double.NaN);
 
-        private const double DefaultKerbinRadius = 600000.0;
+        public const double DefaultKerbinRadius = 600000.0;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -693,190 +971,45 @@ namespace ModularFlightPanel.UI.Widgets
         // SPEC-004C: 数据心跳独立解算循环 (受 HeartBeatTier 严格节流)
         // 专用于开普勒轨道六根数物理计算、Principia 探针查询与状态评估 (0 UI 绘制)
         // ═════════════════════════════════════════════════════════════════
-        private double _cachedSma = double.NaN;
-        private double _cachedEcc = double.NaN;
-        private double _cachedInc = double.NaN;
-        private double _cachedLan = double.NaN;
-        private double _cachedAop = double.NaN;
-        private double _cachedPeriod = double.NaN;
-        private bool _cachedIsPrincipia = false;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _hasVessel = false;
-                _dataBadgeText = I18n.Tr("ORBIT_NO_VESSEL", "NO VESSEL");
-                _dataBadgeRole = TextStyleRole.Muted;
-                return;
-            }
-
-            _hasVessel = true;
-
-            // 1. 基础拱点与时钟采样
-            _dataAp = telemetry.Apoapsis;
-            _dataPe = telemetry.Periapsis;
-            _dataTAp = telemetry.TimeToAp;
-            _dataTPe = telemetry.TimeToPe;
-
-            // 2. 开普勒六根数：稳态两体节拍守卫与外部探针按需查询
-            bool isManeuvering = telemetry.Throttle > 0.001f || telemetry.DynamicPressure > 0.1 || telemetry.HasManeuverNode;
-            bool needKeplerianRecalc = isManeuvering || double.IsNaN(_cachedSma) || context.Every(3);
-
-            double sma, ecc, inc, lan, aop, period;
-            bool isPrincipia;
-
-            if (needKeplerianRecalc)
-            {
-                sma = telemetry.SemiMajorAxis;
-                ecc = telemetry.Eccentricity;
-                inc = telemetry.Inclination;
-                lan = telemetry.LongitudeOfAscendingNode;
-                aop = telemetry.ArgumentOfPeriapsis;
-                period = telemetry.OrbitalPeriod;
-                isPrincipia = false;
-
-                bool prinAvail = ExternalProbeRegistry.NumericResolver != null;
-                if (prinAvail)
-                {
-                    double pSma = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SMA");
-                    if (!double.IsNaN(pSma) && pSma > 0.0) { sma = pSma; isPrincipia = true; }
-                    double pEcc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "ECC");
-                    if (!double.IsNaN(pEcc) && pEcc >= 0.0) { ecc = pEcc; isPrincipia = true; }
-                    double pInc = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "INC");
-                    if (!double.IsNaN(pInc)) { inc = pInc; isPrincipia = true; }
-                    double pLan = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LAN");
-                    if (!double.IsNaN(pLan)) { lan = pLan; isPrincipia = true; }
-                    double pAop = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "LPE");
-                    if (!double.IsNaN(pAop)) { aop = pAop; isPrincipia = true; }
-
-                    double pNodal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "NODALPERIOD");
-                    if (!double.IsNaN(pNodal) && pNodal > 0.0) { period = pNodal; isPrincipia = true; }
-                    else
-                    {
-                        double pSidereal = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "SIDEREALPERIOD");
-                        if (!double.IsNaN(pSidereal) && pSidereal > 0.0) { period = pSidereal; isPrincipia = true; }
-                    }
-                }
-
-                lan = NormalizeDegrees(lan);
-                aop = NormalizeDegrees(aop);
-                if (double.IsNaN(inc) || double.IsInfinity(inc)) inc = 0.0;
-                inc = Math.Min(180.0, Math.Max(0.0, inc));
-
-                // 几何回退
-                if (double.IsNaN(ecc) || ecc < 0.0)
-                {
-                    double rA = Math.Max(10000.0, DefaultKerbinRadius + _dataAp);
-                    double rP = DefaultKerbinRadius + _dataPe;
-                    ecc = rP <= 0.0 ? 1.05 : Math.Max(0.0, (rA - rP) / (rA + rP));
-                }
-
-                if (double.IsNaN(sma) || sma <= 0.0)
-                {
-                    double rA = DefaultKerbinRadius + _dataAp;
-                    double rP = DefaultKerbinRadius + _dataPe;
-                    sma = (rA + rP) * 0.5;
-                }
-
-                if (double.IsNaN(period) || period <= 0.0)
-                    period = ecc < 1.0 ? Math.Abs(_dataTAp - _dataTPe) * 2.0 : 0.0;
-
-                _cachedSma = sma;
-                _cachedEcc = ecc;
-                _cachedInc = inc;
-                _cachedLan = lan;
-                _cachedAop = aop;
-                _cachedPeriod = period;
-                _cachedIsPrincipia = isPrincipia;
-            }
-            else
-            {
-                sma = _cachedSma;
-                ecc = _cachedEcc;
-                inc = _cachedInc;
-                lan = _cachedLan;
-                aop = _cachedAop;
-                period = _cachedPeriod;
-                isPrincipia = _cachedIsPrincipia;
-            }
-
-            _dataSma = sma;
-            _dataEcc = ecc;
-            _dataInc = inc;
-            _dataLan = lan;
-            _dataAop = aop;
-            _dataPeriod = period;
-
-            // 真近点角（连续平滑演进）
-            double tra = telemetry.TrueAnomaly;
-            if (isPrincipia && ExternalProbeRegistry.NumericResolver != null)
-            {
-                double pTra = ExternalProbeRegistry.ResolveNumeric("PRINCIPIA", "TRA");
-                if (!double.IsNaN(pTra)) tra = pTra;
-            }
-            _dataTra = NormalizeDegrees(tra);
-
-            // Principia 参考系标题解算 (纯字符串，不更新 UI)
-            bool hasPrinFrame = false;
-            if (isPrincipia && ExternalProbeRegistry.StringResolver != null)
-            {
-                string prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "NAVBALLNAME", "");
-                if (string.IsNullOrEmpty(prinFrame) || prinFrame == "---")
-                    prinFrame = ExternalProbeRegistry.ResolveString("PRINCIPIA", "FRAME", "");
-                if (!string.IsNullOrEmpty(prinFrame) && prinFrame != "---")
-                {
-                    _dataTitleText = $"ORBIT [{prinFrame.ToUpperInvariant()}]";
-                    hasPrinFrame = true;
-                }
-            }
-            if (!hasPrinFrame)
-            {
-                _dataTitleText = I18n.Tr("ORBIT_TITLE", "ORBIT ELEMENTS");
-            }
-
-            // 3. 轨道能量状态解算 (纯物理状态判定)
-            ComputeOrbitStateBadge(_dataAp, _dataPe, _dataEcc, telemetry.AtmosphereDepth, telemetry.HasAtmosphere, isPrincipia,
-                out _dataBadgeText, out _dataBadgeRole);
         }
 
-        // ═════════════════════════════════════════════════════════════════
-        // SPEC-004D: UI 独立绘制循环 (随 RefreshTier 满频触发)
-        // 专注于 UGUI 文本刷新、矢量硬件覆盖层 Transform 补间与网格渲染 (0 物理采样)
-        // ═════════════════════════════════════════════════════════════════
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            Title.Text = _dataTitleText;
-            OrbitBadge.Text = _dataBadgeText;
-            OrbitBadge.SetRole(_dataBadgeRole);
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            Title.Text = state.TitleText;
+            OrbitBadge.Text = state.BadgeText;
+            OrbitBadge.SetRole(state.BadgeRole);
 
-            if (!_hasVessel) return;
+            if (!state.HasVessel) return;
 
             if (_isFullMode)
             {
                 if (_labelsRoot != null && !_labelsRoot.activeSelf) _labelsRoot.SetActive(true);
-                UpdateFullModeReadouts(_dataAp, _dataPe, _dataTAp, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
-                float now = context.UnscaledTime;
-                bool geomDirty = CheckDirty(_dataSma, _dataEcc, _dataInc, _dataLan, _dataAop);
-                bool traDirty = double.IsNaN(_lastDrawnTra.Value) || Math.Abs(NormalizeDegrees(_dataTra) - NormalizeDegrees(_lastDrawnTra.Value)) > 1.5;
+                UpdateFullModeReadouts(state.Ap, state.Pe, state.TAp, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop, state.Tra, state.Period);
+                float now = Time.unscaledTime;
+                bool geomDirty = CheckDirty(state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop);
+                bool traDirty = double.IsNaN(_lastDrawnTra.Value) || Math.Abs(NormalizeDegrees(state.Tra) - NormalizeDegrees(_lastDrawnTra.Value)) > 1.5;
 
                 if ((now - _lastMeshRebuildTime.Value >= 0.25f || _lastMeshRebuildTime.Value < 0f) && (geomDirty || traDirty))
                 {
                     _lastMeshRebuildTime.Update(now);
-                    _lastDrawnSma.Update(_dataSma); _lastDrawnEcc.Update(_dataEcc); _lastDrawnInc.Update(_dataInc);
-                    _lastDrawnLan.Update(_dataLan); _lastDrawnAop.Update(_dataAop);
-                    _lastDrawnAp.Update(_dataAp); _lastDrawnPe.Update(_dataPe);
-                    _lastDrawnTra.Update(_dataTra);
+                    _lastDrawnSma.Update(state.Sma); _lastDrawnEcc.Update(state.Ecc); _lastDrawnInc.Update(state.Inc);
+                    _lastDrawnLan.Update(state.Lan); _lastDrawnAop.Update(state.Aop);
+                    _lastDrawnAp.Update(state.Ap); _lastDrawnPe.Update(state.Pe);
+                    _lastDrawnTra.Update(state.Tra);
 
-                    UpdateDiagramLabels(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataAp, _dataPe);
+                    UpdateDiagramLabels(state.Tra, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop, state.Ap, state.Pe);
                     if (_diagramGraphic != null) _diagramGraphic.InvalidateMesh();
                 }
-                UpdateSpacecraftOverlay(_dataTra, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop);
+                UpdateSpacecraftOverlay(state.Tra, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop);
             }
             else
             {
@@ -884,64 +1017,45 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_scRadiusLine != null && _scRadiusLine.activeSelf) _scRadiusLine.SetActive(false);
                 if (_scVelocityArrow != null && _scVelocityArrow.activeSelf) _scVelocityArrow.SetActive(false);
                 if (_labelsRoot != null && _labelsRoot.activeSelf) _labelsRoot.SetActive(false);
-                UpdateCompactModeReadouts(_dataAp, _dataPe, _dataTAp, _dataTPe, _dataSma, _dataEcc, _dataInc, _dataLan, _dataAop, _dataTra, _dataPeriod);
+                UpdateCompactModeReadouts(state.Ap, state.Pe, state.TAp, state.TPe, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop, state.Tra, state.Period);
             }
         }
 
-        private static void ComputeOrbitStateBadge(double ap, double pe, double ecc, double atmDepth, bool hasAtm, bool isPrincipia,
-            out string badgeText, out TextStyleRole badgeRole)
+        protected override void OnResetPrivateCache()
         {
-            // 优先接入 Principia 轨道分析高阶物理描述
-            if (isPrincipia)
-            {
-                string pDesc = ExternalProbeRegistry.ResolveString("PRINCIPIA", "ORBITDESC", "");
-                if (!string.IsNullOrEmpty(pDesc) && pDesc != "---")
-                {
-                    string clean = pDesc.Replace("\n", " ").Trim();
-                    if (clean.Length > 15) clean = clean.Substring(0, 15).Trim();
-                    badgeText = clean.ToUpperInvariant();
-                    badgeRole = TextStyleRole.Accent;
-                    return;
-                }
-            }
+            base.OnResetPrivateCache();
+            _logic.Reset();
+            _lastCompactAp.Reset(double.NaN);
+            _lastCompactPe.Reset(double.NaN);
+            _lastCompactSec.Reset(-1);
+            _lastCompactSma.Reset(double.NaN);
+            _lastCompactEcc.Reset(double.NaN);
+            _lastCompactInc.Reset(double.NaN);
+            _lastCompactLan.Reset(double.NaN);
+            _lastCompactAop.Reset(double.NaN);
+            _lastCompactTa.Reset(double.NaN);
+            _lastCompactPer.Reset(double.NaN);
 
-            double safeAlt = hasAtm ? atmDepth : 0.0;
+            _lastFullAp.Reset(double.NaN);
+            _lastFullPe.Reset(double.NaN);
+            _lastFullSec.Reset(-1);
+            _lastFullSma.Reset(double.NaN);
+            _lastFullEcc.Reset(double.NaN);
+            _lastFullLan.Reset(double.NaN);
+            _lastFullAop.Reset(double.NaN);
+            _lastFullInc.Reset(double.NaN);
+            _lastFullTa.Reset(double.NaN);
+            _lastFullPer.Reset(double.NaN);
 
-            // 获取天体名称用于标题增强 (通过探针查表，SPEC-007 禁止场景查询)
-            string bodyName = ExternalProbeRegistry.ResolveString("ORBIT", "BODY", "");
-            bool hasBodyName = !string.IsNullOrEmpty(bodyName) && bodyName != "---";
-
-            if (ecc >= 1.0)
-            {
-                badgeText = I18n.Tr("ORBIT_BADGE_ESCAPE", "ESCAPE");
-                badgeRole = TextStyleRole.Danger;
-            }
-            else if (pe < 0.0)
-            {
-                badgeText = I18n.Tr("ORBIT_BADGE_BALLISTIC", "BALLISTIC");
-                badgeRole = TextStyleRole.Danger;
-            }
-            else if (pe < safeAlt)
-            {
-                badgeText = I18n.Tr("ORBIT_BADGE_SUBORBIT", "SUBORBIT");
-                badgeRole = TextStyleRole.Warning;
-            }
-            else if (ecc < 0.015)
-            {
-                badgeText = I18n.Tr("ORBIT_BADGE_CIRCULAR", "CIRCULAR");
-                badgeRole = TextStyleRole.Accent;
-            }
-            else
-            {
-                badgeText = I18n.Tr("ORBIT_BADGE_ELLIPTIC", "ELLIPTIC");
-                badgeRole = TextStyleRole.PrimaryValue;
-            }
-
-            // 天体名称联动到 OrbitBadge 后缀 (如 "圆轨道 EARTH" → 增强态势感知)
-            if (hasBodyName)
-            {
-                badgeText = $"{badgeText} ({bodyName.ToUpperInvariant()})";
-            }
+            _lastDrawnSma.Reset(double.NaN);
+            _lastDrawnEcc.Reset(double.NaN);
+            _lastDrawnInc.Reset(double.NaN);
+            _lastDrawnLan.Reset(double.NaN);
+            _lastDrawnAop.Reset(double.NaN);
+            _lastDrawnTra.Reset(double.NaN);
+            _lastDrawnAp.Reset(double.NaN);
+            _lastDrawnPe.Reset(double.NaN);
+            _lastMeshRebuildTime.Reset(-1f);
         }
 
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,
@@ -2074,7 +2188,7 @@ namespace ModularFlightPanel.UI.Widgets
         // ═════════════════════════════════════════════════════════════════
 
         /// <summary>角度归一化到 [0, 360) —— 兼容 NaN/Inf 与负值、超 360° 的外部探针返回</summary>
-        private static double NormalizeDegrees(double degrees)
+        public static double NormalizeDegrees(double degrees)
         {
             if (double.IsNaN(degrees) || double.IsInfinity(degrees)) return 0.0;
             double m = degrees % 360.0;
