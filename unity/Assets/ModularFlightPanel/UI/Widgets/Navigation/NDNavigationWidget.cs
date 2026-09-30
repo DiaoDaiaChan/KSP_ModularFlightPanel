@@ -9,6 +9,117 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI.Widgets
 {
     /// <summary>
+    /// 综合水平态势导航屏状态快照 (0 GC 值类型)
+    /// </summary>
+    public struct NDNavigationState : IEquatable<NDNavigationState>
+    {
+        public bool HasVessel;
+        public float Heading;
+        public string TensStr;
+        public string GsTas;
+        public string Wind;
+        public string Procedure;
+        public string Waypoint;
+        public string Eta;
+        public string Vor1;
+        public string Vor2;
+        public string Drift;
+
+        public bool Equals(NDNavigationState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Mathf.Abs(Heading - other.Heading) < 0.05f &&
+                   TensStr == other.TensStr &&
+                   GsTas == other.GsTas &&
+                   Wind == other.Wind &&
+                   Procedure == other.Procedure &&
+                   Waypoint == other.Waypoint &&
+                   Eta == other.Eta &&
+                   Vor1 == other.Vor1 &&
+                   Vor2 == other.Vor2 &&
+                   Drift == other.Drift;
+        }
+
+        public override bool Equals(object obj) => obj is NDNavigationState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ Heading.GetHashCode();
+                if (TensStr != null) hash = (hash * 397) ^ TensStr.GetHashCode();
+                if (GsTas != null) hash = (hash * 397) ^ GsTas.GetHashCode();
+                if (Waypoint != null) hash = (hash * 397) ^ Waypoint.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 综合水平态势导航屏业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class NDNavigationLogic : WidgetLogic<NDNavigationState>
+    {
+        public string HeadingToken { get; set; }
+        public string GsTasTemplate { get; set; }
+        public string WindTemplate { get; set; }
+        public string ProcedureTemplate { get; set; }
+        public string WaypointNameDistTemplate { get; set; }
+        public string WaypointEtaTemplate { get; set; }
+        public string Vor1Template { get; set; }
+        public string Vor2Template { get; set; }
+        public string DriftTemplate { get; set; }
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            double evalHdg = TelemetryTokenEngine.EvaluateNumeric(HeadingToken, telemetry);
+            float heading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)telemetry.Heading;
+            if (float.IsNaN(heading)) heading = 0f;
+
+            int tens = Mathf.RoundToInt(heading / 10f) % 36;
+            if (tens < 0) tens += 36;
+            string tensStr = $"{tens:D2}";
+
+            string gsTas = TelemetryTokenEngine.Evaluate(GsTasTemplate, telemetry);
+            string wind = TelemetryTokenEngine.Evaluate(WindTemplate, telemetry);
+            string proc = TelemetryTokenEngine.Evaluate(ProcedureTemplate, telemetry);
+            string wp = TelemetryTokenEngine.Evaluate(WaypointNameDistTemplate, telemetry);
+            string eta = TelemetryTokenEngine.Evaluate(WaypointEtaTemplate, telemetry);
+            string vor1 = TelemetryTokenEngine.Evaluate(Vor1Template, telemetry);
+            string vor2 = TelemetryTokenEngine.Evaluate(Vor2Template, telemetry);
+            string drift = TelemetryTokenEngine.Evaluate(DriftTemplate, telemetry);
+
+            CurrentState = new NDNavigationState
+            {
+                HasVessel = true,
+                Heading = heading,
+                TensStr = tensStr,
+                GsTas = gsTas,
+                Wind = wind,
+                Procedure = proc,
+                Waypoint = wp,
+                Eta = eta,
+                Vor1 = vor1,
+                Vor2 = vor2,
+                Drift = drift
+            };
+        }
+    }
+
+    /// <summary>
     /// 民航客机/现代先进战机风格导航显示器 (Navigation Display - ND in ARC Mode - Set 1 / 图1)
     /// 具备上部罗盘圆弧标尺带 (10度双数字数显)、基准三角游标与航向跟踪线 (Green Track Vector)、
     /// 20/40/60 虚线同心测距环 (Range Rings)、中心金黄飞机微标 (Yellow Aircraft Symbol)、
@@ -21,6 +132,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(280f, 260f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
+
+        private readonly NDNavigationLogic _logic = new NDNavigationLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // 声明式微控件
         public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_NAV_AERO_ND", "航空导航屏"));
@@ -113,6 +227,16 @@ namespace ModularFlightPanel.UI.Widgets
             _vor1Template = GetTemplateChannel("VOR1", _vor1Template);
             _vor2Template = GetTemplateChannel("VOR2", _vor2Template);
             _driftTemplate = GetTemplateChannel("DRIFT", _driftTemplate);
+
+            _logic.HeadingToken = _headingToken;
+            _logic.GsTasTemplate = _gsTasTemplate;
+            _logic.WindTemplate = _windTemplate;
+            _logic.ProcedureTemplate = _procedureTemplate;
+            _logic.WaypointNameDistTemplate = _waypointNameDistTemplate;
+            _logic.WaypointEtaTemplate = _waypointEtaTemplate;
+            _logic.Vor1Template = _vor1Template;
+            _logic.Vor2Template = _vor2Template;
+            _logic.DriftTemplate = _driftTemplate;
 
             // 1. 半透明暗色玻璃卡片底板 (由基类 AutoCreateCardFrame 托管)
             _bgImage = CardBackground;
@@ -403,108 +527,75 @@ namespace ModularFlightPanel.UI.Widgets
             driftRt.anchoredPosition = _aircraftCenterPos + new Vector2(-28f * s, 0f);
         }
 
-        private bool _cachedHasVessel;
-        private float _cachedHeading;
-        private string _cachedTensStr;
-        private string _cachedGsTas;
-        private string _cachedWind;
-        private string _cachedProc;
-        private string _cachedWp;
-        private string _cachedEta;
-        private string _cachedVor1;
-        private string _cachedVor2;
-        private string _cachedDrift;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
-
-            double evalHdg = TelemetryTokenEngine.EvaluateNumeric(_headingToken, context.Telemetry);
-            float heading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)context.Telemetry.Heading;
-            if (float.IsNaN(heading)) heading = 0f;
-            _cachedHeading = heading;
-
-            int tens = Mathf.RoundToInt(heading / 10f) % 36;
-            if (tens < 0) tens += 36;
-            _cachedTensStr = $"{tens:D2}";
-
-            _cachedGsTas = TelemetryTokenEngine.Evaluate(_gsTasTemplate, context.Telemetry);
-            _cachedWind = TelemetryTokenEngine.Evaluate(_windTemplate, context.Telemetry);
-            _cachedProc = TelemetryTokenEngine.Evaluate(_procedureTemplate, context.Telemetry);
-            _cachedWp = TelemetryTokenEngine.Evaluate(_waypointNameDistTemplate, context.Telemetry);
-            _cachedEta = TelemetryTokenEngine.Evaluate(_waypointEtaTemplate, context.Telemetry);
-            _cachedVor1 = TelemetryTokenEngine.Evaluate(_vor1Template, context.Telemetry);
-            _cachedVor2 = TelemetryTokenEngine.Evaluate(_vor2Template, context.Telemetry);
-            _cachedDrift = TelemetryTokenEngine.Evaluate(_driftTemplate, context.Telemetry);
         }
 
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        protected override void OnRenderState()
         {
-            base.OnUIDrawLoop(ref context);
-
-            if (!_cachedHasVessel) return;
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
             // 1. 更新顶部大十位数显 (如 24 代表 240°)
-            if (_lastTens.Update(_cachedTensStr))
+            if (_lastTens.Update(state.TensStr))
             {
-                if (_topHeadingText != null) _topHeadingText.text = _cachedTensStr;
+                if (_topHeadingText != null) _topHeadingText.text = state.TensStr;
             }
 
             // 2. 动态更新四角航电读数
-            if (_lastGsTas.Update(_cachedGsTas))
+            if (_lastGsTas.Update(state.GsTas))
             {
-                if (_gsTasText != null) _gsTasText.text = _cachedGsTas;
+                if (_gsTasText != null) _gsTasText.text = state.GsTas;
             }
 
-            if (_lastWind.Update(_cachedWind))
+            if (_lastWind.Update(state.Wind))
             {
-                if (_windText != null) _windText.text = _cachedWind;
+                if (_windText != null) _windText.text = state.Wind;
             }
 
-            if (_lastProc.Update(_cachedProc))
+            if (_lastProc.Update(state.Procedure))
             {
-                if (_procedureText != null) _procedureText.text = _cachedProc;
+                if (_procedureText != null) _procedureText.text = state.Procedure;
             }
 
-            if (_lastWp.Update(_cachedWp))
+            if (_lastWp.Update(state.Waypoint))
             {
-                if (_waypointNameDistText != null) _waypointNameDistText.text = _cachedWp;
+                if (_waypointNameDistText != null) _waypointNameDistText.text = state.Waypoint;
             }
 
-            if (_lastEta.Update(_cachedEta))
+            if (_lastEta.Update(state.Eta))
             {
-                if (_waypointEtaText != null) _waypointEtaText.text = _cachedEta;
+                if (_waypointEtaText != null) _waypointEtaText.text = state.Eta;
             }
 
-            if (_lastVor1.Update(_cachedVor1))
+            if (_lastVor1.Update(state.Vor1))
             {
-                if (_vor1Text != null) _vor1Text.text = _cachedVor1;
+                if (_vor1Text != null) _vor1Text.text = state.Vor1;
             }
 
-            if (_lastVor2.Update(_cachedVor2))
+            if (_lastVor2.Update(state.Vor2))
             {
-                if (_vor2Text != null) _vor2Text.text = _cachedVor2;
+                if (_vor2Text != null) _vor2Text.text = state.Vor2;
             }
 
-            if (_lastDrift.Update(_cachedDrift))
+            if (_lastDrift.Update(state.Drift))
             {
-                if (_driftText != null) _driftText.text = _cachedDrift;
+                if (_driftText != null) _driftText.text = state.Drift;
             }
 
             // 3. 动态更新罗盘圆弧十度刻度带
-            if (Mathf.Abs(Mathf.DeltaAngle(_cachedHeading, _lastRenderedHeading.Value)) > 0.05f)
+            if (Mathf.Abs(Mathf.DeltaAngle(state.Heading, _lastRenderedHeading.Value)) > 0.05f)
             {
-                _lastRenderedHeading.Update(_cachedHeading);
-                UpdateArcCompassRose(_cachedHeading, context.Theme);
+                _lastRenderedHeading.Update(state.Heading);
+                UpdateArcCompassRose(state.Heading);
             }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
         }
 
         private void UpdateArcCompassRose(float currentHeading, ThemeConfig themeOverride = null)
