@@ -4,6 +4,8 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Diagnostics;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.Settings;
 
@@ -34,13 +36,230 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public Image SeparatorImage;
         public WidgetReadoutControl Control;
 
-        // Dirty tracking & dual-track pending state
+        // Dirty tracking
         public string LastValue = string.Empty;
         public string LastTitle = string.Empty;
         public double LastNumeric = double.NaN;
         public int LastSec = -1;
-        public string PendingValue = null;
-        public string PendingTitle = null;
+    }
+
+    /// <summary>
+    /// 单个槽位渲染快照 (0 GC, SPEC-012)
+    /// </summary>
+    public struct SpaceXHeaderSlotState : IEquatable<SpaceXHeaderSlotState>
+    {
+        public string Id;
+        public string Title;
+        public string Value;
+
+        public bool Equals(SpaceXHeaderSlotState other)
+        {
+            return string.Equals(Id, other.Id, StringComparison.Ordinal) &&
+                   string.Equals(Title, other.Title, StringComparison.Ordinal) &&
+                   string.Equals(Value, other.Value, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// SpaceX 顶栏遥测零-GC快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct SpaceXHeaderState : IEquatable<SpaceXHeaderState>
+    {
+        public bool HasVessel;
+        public int SlotCount;
+        public SpaceXHeaderSlotState[] Slots;
+
+        public bool Equals(SpaceXHeaderState other)
+        {
+            if (HasVessel != other.HasVessel || SlotCount != other.SlotCount) return false;
+            if (Slots == null && other.Slots == null) return true;
+            if (Slots == null || other.Slots == null) return false;
+            for (int i = 0; i < SlotCount; i++)
+            {
+                if (!Slots[i].Equals(other.Slots[i])) return false;
+            }
+            return true;
+        }
+
+        public override bool Equals(object obj) => obj is SpaceXHeaderState other && Equals(other);
+        public override int GetHashCode() => (HasVessel, SlotCount).GetHashCode();
+    }
+
+    public struct SpaceXHeaderSlotConfig
+    {
+        public string Id;
+        public SpaceXSlotType Type;
+        public string Title;
+        public string Token;
+    }
+
+    /// <summary>
+    /// SpaceX 顶栏遥测业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class SpaceXHeaderLogic : WidgetLogic<SpaceXHeaderState>
+    {
+        private readonly List<SpaceXHeaderSlotConfig> _configuredSlots = new List<SpaceXHeaderSlotConfig>();
+        private SpaceXHeaderSlotState[] _slotsBuffer = new SpaceXHeaderSlotState[32];
+
+        public void SyncSlots(IReadOnlyList<SpaceXSlotItem> slots)
+        {
+            _configuredSlots.Clear();
+            if (slots != null)
+            {
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    var s = slots[i];
+                    _configuredSlots.Add(new SpaceXHeaderSlotConfig
+                    {
+                        Id = s.Id,
+                        Type = s.Type,
+                        Title = s.Title,
+                        Token = s.Token
+                    });
+                }
+            }
+        }
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            int count = _configuredSlots.Count;
+            if (_slotsBuffer.Length < count)
+            {
+                _slotsBuffer = new SpaceXHeaderSlotState[Math.Max(count, _slotsBuffer.Length * 2)];
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                var slot = _configuredSlots[i];
+                string title = slot.Title;
+                string val = string.Empty;
+
+                if (slot.Type == SpaceXSlotType.PhaseBadge)
+                {
+                    if (string.IsNullOrEmpty(slot.Token) || slot.Token == "{SITUATION}")
+                    {
+                        val = InferFlightPhase(telemetry);
+                    }
+                    else
+                    {
+                        val = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
+                    }
+                }
+                else if (slot.Type == SpaceXSlotType.Timer)
+                {
+                    if (string.IsNullOrEmpty(slot.Token) || slot.Token == "{MET}")
+                    {
+                        bool isNode = telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode > 0;
+                        string tLbl = isNode ? "TIME TO NODE" : (slot.Title ?? "MET");
+                        title = tLbl;
+                        val = isNode ? ("T-" + AvionicsFormatting.FormatDuration(telemetry.ManeuverTimeToNode)) : ("MET " + AvionicsFormatting.FormatDuration(telemetry.MissionTime));
+                    }
+                    else
+                    {
+                        val = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
+                    }
+                }
+                else
+                {
+                    if (slot.Id == "vel" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{SPD}"))
+                    {
+                        double spd = telemetry.OrbitalSpeed > 10.0 ? telemetry.OrbitalSpeed : telemetry.CurrentSpeed;
+                        val = AvionicsFormatting.FormatMetricSpeed(spd);
+                    }
+                    else if (slot.Id == "alt" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{ALT:ASL:DIST}"))
+                    {
+                        val = AvionicsFormatting.FormatMetricDistance(telemetry.AltitudeASL);
+                    }
+                    else if ((slot.Id == "ap" || slot.Id == "apo") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{AP:DIST}"))
+                    {
+                        val = AvionicsFormatting.FormatMetricDistance(telemetry.Apoapsis);
+                    }
+                    else if ((slot.Id == "pe" || slot.Id == "peri") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{PE:DIST}"))
+                    {
+                        double pe = telemetry.Periapsis;
+                        if (pe < -100000.0) val = "IMPACT";
+                        else val = AvionicsFormatting.FormatMetricDistance(pe);
+                    }
+                    else if (slot.Id == "inc" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{INC}"))
+                    {
+                        val = $"{telemetry.Inclination:F2}°";
+                    }
+                    else
+                    {
+                        string tok = !string.IsNullOrEmpty(slot.Token) ? slot.Token : "{ALT:ASL:DIST}";
+                        val = TelemetryTokenEngine.Evaluate(tok, telemetry);
+                    }
+                }
+
+                _slotsBuffer[i] = new SpaceXHeaderSlotState
+                {
+                    Id = slot.Id,
+                    Title = title,
+                    Value = val
+                };
+            }
+
+            CurrentState = new SpaceXHeaderState
+            {
+                HasVessel = true,
+                SlotCount = count,
+                Slots = _slotsBuffer
+            };
+        }
+
+        private static string InferFlightPhase(IFlightTelemetry t)
+        {
+            if (t.FlightSituation == "PRELAUNCH" || (t.CurrentSpeed < 1.0 && t.AltitudeASL < 150.0))
+                return "PAD HOLD";
+
+            if (t.FlightSituation == "SPLASHED")
+                return "SPLASHDOWN NOMINAL";
+
+            if (t.FlightSituation == "LANDED")
+                return "TOUCHDOWN NOMINAL";
+
+            if (t.IsTouchdownAlert)
+                return "TERMINAL DESCENT";
+
+            if (t.IsStageSeparating)
+                return "STAGE SEPARATION";
+
+            if (t.IsEngineIgniting)
+                return "IGNITION SEQUENCE";
+
+            if (t.IsDockingMode)
+                return t.HasTarget && t.TargetDistance < 50.0 ? "DOCKING FINAL" : "DOCKING APPROACH";
+
+            double atmDepth = t.HasAtmosphere ? t.AtmosphereDepth : 0.0;
+
+            if (t.HasAtmosphere && t.AltitudeASL < atmDepth)
+            {
+                if (t.VerticalSpeed < -50.0) return "REENTRY ENTRY";
+                if (t.Mach >= 0.8 && t.Mach <= 1.3) return "TRANSONIC PASS";
+                if (t.VerticalSpeed > 10.0) return "ASCENT POWERED";
+                if (t.AltitudeAGL < 400.0 && t.VerticalSpeed < -2.0) return "CHUTE DESCENT";
+            }
+
+            if (t.Periapsis > atmDepth && t.Eccentricity < 1.0)
+            {
+                if (t.HasManeuverNode) return "APPROACH / BURN";
+                return "ORBITAL COAST";
+            }
+
+            if (t.HasManeuverNode) return "MANEUVER BURN";
+            return "SUBORBITAL FLIGHT";
+        }
     }
 
     /// <summary>
@@ -73,7 +292,11 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private readonly List<SpaceXSlotItem> _slots = new List<SpaceXSlotItem>();
         public IReadOnlyList<SpaceXSlotItem> Slots => _slots;
 
-        // ── 智能私有缓存与脏检查 ──
+        // 业务大脑 (MFP-SPEC-012)
+        private readonly SpaceXHeaderLogic _logic = new SpaceXHeaderLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
+        // ── 智能私有缓存与脏检查 (MFP-SPEC-009) ──
         private readonly Cached<int> _lastSlotCount = new Cached<int>(-1);
         private readonly Cached<bool> _lastHasVessel = new Cached<bool>(false);
 
@@ -123,6 +346,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 2. 加载槽位并构建 UI
             LoadSlotsFromConfig(config);
             BuildSlotsUI(theme);
+
+            _logic.SyncSlots(_slots);
 
             ApplyTheme(theme);
         }
@@ -319,7 +544,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                     slot.SeparatorImage = null;
                 }
 
-                // 注册进标准化微控件治理体系 (token 传 null，由 OnUpdateTelemetry 精确直读与死区防抖，杜绝每帧重复解析)
                 slot.Control = new WidgetReadoutControl(
                     slot.Id,
                     slot.Title ?? slot.Id,
@@ -333,6 +557,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             ApplyDynamicLayout();
+
+            _logic.SyncSlots(_slots);
 
             this.Controls.BindConfigToControls(Config);
             this.Controls.ApplyThemeToControls(theme);
@@ -399,7 +625,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 }
             }
 
-            // 2. 依序应用坐标与尺寸
+            // 2. 刷新布局中各列位置
             float curX = -w * 0.5f + pad;
             for (int i = 0; i < n; i++)
             {
@@ -409,22 +635,36 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
                 if (slot.Root != null)
                 {
-                    RectTransform rt = slot.Root.GetComponent<RectTransform>();
-                    if (rt != null)
+                    RectTransform rRt = slot.Root.GetComponent<RectTransform>();
+                    if (rRt != null)
                     {
-                        rt.sizeDelta = new Vector2(colW, slot.Type == SpaceXSlotType.PhaseBadge ? 30f * s : h);
-                        rt.anchoredPosition = new Vector2(colCenterX, 0f);
+                        rRt.anchoredPosition = new Vector2(colCenterX, 0f);
+                        rRt.sizeDelta = new Vector2(colW, h);
                     }
+                }
+
+                if (slot.BadgeBg != null)
+                {
+                    slot.BadgeBg.rectTransform.sizeDelta = new Vector2(colW - 8f * s, 26f * s);
+                }
+
+                if (slot.TitleLabel != null)
+                {
+                    slot.TitleLabel.rectTransform.sizeDelta = new Vector2(colW, 14f * s);
+                }
+
+                if (slot.ValueText != null)
+                {
+                    slot.ValueText.rectTransform.sizeDelta = new Vector2(colW, 20f * s);
                 }
 
                 curX += colW;
 
-                if (slot.SeparatorImage != null)
+                if (slot.SeparatorImage != null && i < n - 1)
                 {
-                    RectTransform sepRt = slot.SeparatorImage.rectTransform;
                     float sepX = curX + sepSpacing * 0.5f;
-                    sepRt.sizeDelta = new Vector2(1f * s, h * 0.55f);
-                    sepRt.anchoredPosition = new Vector2(sepX, 0f);
+                    slot.SeparatorImage.rectTransform.anchoredPosition = new Vector2(sepX, 0f);
+                    slot.SeparatorImage.rectTransform.sizeDelta = new Vector2(1f * s, h * 0.55f);
                     curX += sepSpacing;
                 }
             }
@@ -433,205 +673,109 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private void CreatePhaseBadge(Transform parent, SpaceXSlotItem slot, float centerX, float width, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject badgeGo = UIFactory.CreatePanel(parent, $"PhaseBadgeBg_{slot.Id}", new Vector2(width, 30f * s), new Vector2(centerX, 0f), style.GetSurfaceColor(SurfaceStyleRole.SlotActive, theme));
-            slot.Root = badgeGo;
-            slot.BadgeBg = badgeGo.GetComponent<Image>();
-            slot.BadgeOutline = badgeGo.AddComponent<Outline>();
-            slot.BadgeOutline.effectDistance = new Vector2(1f * s, 1f * s);
-            slot.BadgeOutline.effectColor = style.GetLineColor(theme.AccentSecondary, LineWeight.Subtle, theme);
+            GameObject root = new GameObject($"Slot_{slot.Id}", typeof(RectTransform));
+            root.transform.SetParent(parent, false);
+            RectTransform rRt = root.GetComponent<RectTransform>();
+            rRt.sizeDelta = new Vector2(width, _currentHeight);
+            rRt.anchoredPosition = new Vector2(centerX, 0f);
+            slot.Root = root;
 
-            slot.TitleLabel = UIFactory.CreateText(badgeGo.transform, $"{slot.Id}_Label", slot.Title ?? I18n.Tr("WIDGET_SPX_ACTIVE_PHASE", "活动段"), Mathf.RoundToInt(8f * s), TextAnchor.UpperLeft, style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform plRt = slot.TitleLabel.rectTransform;
-            plRt.anchorMin = new Vector2(0f, 0.5f);
-            plRt.anchorMax = new Vector2(1f, 1f);
-            plRt.anchoredPosition = new Vector2(8f * s, -2f * s);
-            plRt.sizeDelta = new Vector2(-16f * s, 0f);
+            // 药丸微标背景
+            GameObject badgeObj = UIFactory.CreatePanel(root.transform, "Phase_Badge", new Vector2(width - 8f * s, 26f * s), new Vector2(0f, 0f),
+                style.GetSurfaceColor(SurfaceStyleRole.SlotActive, theme));
+            slot.BadgeBg = badgeObj.GetComponent<Image>();
 
-            slot.ValueText = UIFactory.CreateText(badgeGo.transform, $"{slot.Id}_Value", I18n.Tr("WIDGET_SPX_ORBITAL_COAST", "轨道滑行"), Mathf.RoundToInt(11f * s), TextAnchor.LowerLeft, style.GetTextColor(TextStyleRole.Accent, theme));
-            RectTransform pvRt = slot.ValueText.rectTransform;
-            pvRt.anchorMin = new Vector2(0f, 0f);
-            pvRt.anchorMax = new Vector2(1f, 0.65f);
-            pvRt.anchoredPosition = new Vector2(8f * s, 3f * s);
-            pvRt.sizeDelta = new Vector2(-16f * s, 0f);
+            Outline outline = badgeObj.AddComponent<Outline>();
+            outline.effectColor = style.GetLineColor(theme.AccentSecondary, LineWeight.Subtle, theme);
+            outline.effectDistance = new Vector2(1f * s, 1f * s);
+            slot.BadgeOutline = outline;
+
+            // 标题微标
+            slot.TitleLabel = UIFactory.CreateText(badgeObj.transform, "Title", slot.Title ?? "PHASE", Mathf.RoundToInt(6.5f * s), TextAnchor.UpperCenter,
+                style.GetTextColor(TextStyleRole.Label, theme));
+            slot.TitleLabel.fontStyle = FontStyle.Bold;
+            RectTransform titRt = slot.TitleLabel.rectTransform;
+            titRt.sizeDelta = new Vector2(width - 8f * s, 10f * s);
+            titRt.anchoredPosition = new Vector2(0f, 6.5f * s);
+
+            // 状态值
+            slot.ValueText = UIFactory.CreateText(badgeObj.transform, "Value", "---", Mathf.RoundToInt(10.5f * s), TextAnchor.LowerCenter,
+                style.GetTextColor(TextStyleRole.Accent, theme));
+            slot.ValueText.fontStyle = FontStyle.Bold;
+            RectTransform valRt = slot.ValueText.rectTransform;
+            valRt.sizeDelta = new Vector2(width - 8f * s, 16f * s);
+            valRt.anchoredPosition = new Vector2(0f, -4f * s);
         }
 
         private void CreateReadoutColumn(Transform parent, SpaceXSlotItem slot, float centerX, float width, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject colGo = new GameObject($"Col_{slot.Id}", typeof(RectTransform));
-            colGo.transform.SetParent(parent, false);
-            RectTransform colRt = colGo.GetComponent<RectTransform>();
-            colRt.anchorMin = new Vector2(0.5f, 0.5f);
-            colRt.anchorMax = new Vector2(0.5f, 0.5f);
-            colRt.pivot = new Vector2(0.5f, 0.5f);
-            colRt.anchoredPosition = new Vector2(centerX, 0f);
-            colRt.sizeDelta = new Vector2(width, 42f * s);
-            slot.Root = colGo;
+            GameObject root = new GameObject($"Slot_{slot.Id}", typeof(RectTransform));
+            root.transform.SetParent(parent, false);
+            RectTransform rRt = root.GetComponent<RectTransform>();
+            rRt.sizeDelta = new Vector2(width, _currentHeight);
+            rRt.anchoredPosition = new Vector2(centerX, 0f);
+            slot.Root = root;
 
-            slot.TitleLabel = UIFactory.CreateText(colGo.transform, $"{slot.Id}_Label", slot.Title ?? "", Mathf.RoundToInt(8f * s), TextAnchor.UpperCenter, style.GetTextColor(TextStyleRole.Label, theme));
-            RectTransform lRt = slot.TitleLabel.rectTransform;
-            lRt.sizeDelta = new Vector2(width, 14f * s);
-            lRt.anchoredPosition = new Vector2(0f, 8f * s);
+            slot.TitleLabel = UIFactory.CreateText(root.transform, "Title", slot.Title ?? slot.Id.ToUpperInvariant(), Mathf.RoundToInt(7.5f * s), TextAnchor.UpperCenter,
+                style.GetTextColor(TextStyleRole.Label, theme));
+            slot.TitleLabel.fontStyle = FontStyle.Bold;
+            RectTransform titRt = slot.TitleLabel.rectTransform;
+            titRt.sizeDelta = new Vector2(width, 14f * s);
+            titRt.anchoredPosition = new Vector2(0f, 9f * s);
 
-            int valFontSize = width < 75f * s ? Mathf.RoundToInt(10f * s) : Mathf.RoundToInt(12f * s);
-            slot.ValueText = UIFactory.CreateText(colGo.transform, $"{slot.Id}_Value", "--", valFontSize, TextAnchor.LowerCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            RectTransform vRt = slot.ValueText.rectTransform;
-            vRt.sizeDelta = new Vector2(width, 18f * s);
-            vRt.anchoredPosition = new Vector2(0f, -6f * s);
+            int valFontSize = Mathf.RoundToInt((slot.Type == SpaceXSlotType.Timer ? 13f : 14.5f) * s);
+            slot.ValueText = UIFactory.CreateText(root.transform, "Value", "---", valFontSize, TextAnchor.LowerCenter,
+                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            slot.ValueText.fontStyle = FontStyle.Bold;
+            RectTransform valRt = slot.ValueText.rectTransform;
+            valRt.sizeDelta = new Vector2(width, 20f * s);
+            valRt.anchoredPosition = new Vector2(0f, -7f * s);
         }
 
-        private Image CreateSeparator(Transform parent, float posX, float height, float s, ThemeConfig theme)
+        private Image CreateSeparator(Transform parent, float x, float height, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject sepGo = UIFactory.CreatePanel(parent, "Separator", new Vector2(1f * s, height * 0.55f), new Vector2(posX, 0f), style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
-            return sepGo.GetComponent<Image>();
+            GameObject sepObj = UIFactory.CreatePanel(parent, "Sep", new Vector2(1f * s, height * 0.55f), new Vector2(x, 0f),
+                style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
+            return sepObj.GetComponent<Image>();
         }
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            _lastSlotCount.Update(_slots.Count);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _lastHasVessel.Update(false);
-                return;
-            }
-            _lastHasVessel.Update(true);
-
-            for (int i = 0; i < _slots.Count; i++)
-            {
-                var slot = _slots[i];
-
-                if (slot.Type == SpaceXSlotType.PhaseBadge)
-                {
-                    if (string.IsNullOrEmpty(slot.Token) || slot.Token == "{SITUATION}")
-                    {
-                        slot.PendingValue = InferFlightPhase(telemetry);
-                    }
-                    else
-                    {
-                        slot.PendingValue = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
-                    }
-                }
-                else if (slot.Type == SpaceXSlotType.Timer)
-                {
-                    if (string.IsNullOrEmpty(slot.Token) || slot.Token == "{MET}")
-                    {
-                        bool isNode = telemetry.HasManeuverNode && telemetry.ManeuverTimeToNode > 0;
-                        string tLbl = isNode ? "TIME TO NODE" : (slot.Title ?? "MET");
-                        slot.PendingTitle = tLbl;
-                        slot.PendingValue = isNode ? ("T-" + FormatDuration(telemetry.ManeuverTimeToNode)) : ("MET " + FormatDuration(telemetry.MissionTime));
-                    }
-                    else
-                    {
-                        slot.PendingValue = TelemetryTokenEngine.Evaluate(slot.Token, telemetry);
-                    }
-                }
-                else
-                {
-                    if (slot.Id == "vel" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{SPD}"))
-                    {
-                        double spd = telemetry.OrbitalSpeed > 10.0 ? telemetry.OrbitalSpeed : telemetry.CurrentSpeed;
-                        slot.PendingValue = FormatMetricSpeed(spd);
-                    }
-                    else if (slot.Id == "alt" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{ALT:ASL:DIST}"))
-                    {
-                        slot.PendingValue = FormatMetricDistance(telemetry.AltitudeASL);
-                    }
-                    else if ((slot.Id == "ap" || slot.Id == "apo") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{AP:DIST}"))
-                    {
-                        slot.PendingValue = FormatMetricDistance(telemetry.Apoapsis);
-                    }
-                    else if ((slot.Id == "pe" || slot.Id == "peri") && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{PE:DIST}"))
-                    {
-                        double pe = telemetry.Periapsis;
-                        if (pe < -100000.0) slot.PendingValue = "IMPACT";
-                        else slot.PendingValue = FormatMetricDistance(pe);
-                    }
-                    else if (slot.Id == "inc" && (string.IsNullOrEmpty(slot.Token) || slot.Token == "{INC}"))
-                    {
-                        slot.PendingValue = $"{telemetry.Inclination:F2}°";
-                    }
-                    else
-                    {
-                        string tok = !string.IsNullOrEmpty(slot.Token) ? slot.Token : "{ALT:ASL:DIST}";
-                        slot.PendingValue = TelemetryTokenEngine.Evaluate(tok, telemetry);
-                    }
-                }
-            }
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (!_lastHasVessel.Value) return;
+            SpaceXHeaderState state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            for (int i = 0; i < _slots.Count; i++)
+            for (int i = 0; i < state.SlotCount && i < _slots.Count; i++)
             {
                 var slot = _slots[i];
-                if (slot.TitleLabel != null && slot.PendingTitle != null && slot.PendingTitle != slot.LastTitle)
+                ref var slotState = ref state.Slots[i];
+
+                if (slot.TitleLabel != null && slotState.Title != null && slotState.Title != slot.LastTitle)
                 {
-                    slot.LastTitle = slot.PendingTitle;
-                    slot.TitleLabel.text = slot.PendingTitle;
+                    slot.LastTitle = slotState.Title;
+                    slot.TitleLabel.SetTextSafe(slotState.Title);
                 }
 
-                if (slot.PendingValue != null && slot.PendingValue != slot.LastValue)
+                if (slotState.Value != null && slotState.Value != slot.LastValue)
                 {
-                    slot.LastValue = slot.PendingValue;
+                    slot.LastValue = slotState.Value;
                     if (slot.Control != null)
                     {
-                        slot.Control.SetValue(slot.PendingValue);
+                        slot.Control.SetValue(slotState.Value);
                     }
                     else if (slot.ValueText != null)
                     {
-                        slot.ValueText.text = slot.PendingValue;
+                        slot.ValueText.SetTextSafe(slotState.Value);
                     }
                 }
             }
-        }
-
-        private static string InferFlightPhase(IFlightTelemetry t)
-        {
-            if (t.FlightSituation == "PRELAUNCH" || (t.CurrentSpeed < 1.0 && t.AltitudeASL < 150.0))
-                return "PAD HOLD";
-
-            if (t.FlightSituation == "SPLASHED")
-                return "SPLASHDOWN NOMINAL";
-
-            if (t.FlightSituation == "LANDED")
-                return "TOUCHDOWN NOMINAL";
-
-            if (t.IsTouchdownAlert)
-                return "TERMINAL DESCENT";
-
-            if (t.IsStageSeparating)
-                return "STAGE SEPARATION";
-
-            if (t.IsEngineIgniting)
-                return "IGNITION SEQUENCE";
-
-            if (t.IsDockingMode)
-                return t.HasTarget && t.TargetDistance < 50.0 ? "DOCKING FINAL" : "DOCKING APPROACH";
-
-            double atmDepth = t.HasAtmosphere ? t.AtmosphereDepth : 0.0;
-
-            if (t.HasAtmosphere && t.AltitudeASL < atmDepth)
-            {
-                if (t.VerticalSpeed < -50.0) return "REENTRY ENTRY";
-                if (t.Mach >= 0.8 && t.Mach <= 1.3) return "TRANSONIC PASS";
-                if (t.VerticalSpeed > 10.0) return "ASCENT POWERED";
-                if (t.AltitudeAGL < 400.0 && t.VerticalSpeed < -2.0) return "CHUTE DESCENT";
-            }
-
-            if (t.Periapsis > atmDepth && t.Eccentricity < 1.0)
-            {
-                if (t.HasManeuverNode) return "APPROACH / BURN";
-                return "ORBITAL COAST";
-            }
-
-            if (t.HasManeuverNode) return "MANEUVER BURN";
-            return "SUBORBITAL FLIGHT";
         }
 
         public override void ApplyTheme(ThemeConfig theme)
@@ -780,6 +924,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 {
                     Config.CustomTemplate = SerializeSlots();
                 }
+                _logic.SyncSlots(_slots);
                 WidgetLayoutManager.Instance?.SaveLayout();
             }
         }
