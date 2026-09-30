@@ -19,6 +19,262 @@ namespace ModularFlightPanel.UI.Widgets
     /// 2. 原版贴图 (StockTexture): 单 Quad 采样原版 / TextureReplacer 材质贴图并辅以微锐化滤波
     /// 3. 原版导航球 (StockDirect): 直接调用官方 3D 导航球并剔除外围杂项
     /// </summary>
+    /// <summary>
+    /// 3D 姿态球状态快照 (0 GC 值类型)
+    /// </summary>
+    public struct NavballSphereState : IEquatable<NavballSphereState>
+    {
+        public bool HasVessel;
+        public NavballRenderMode RenderMode;
+        public Texture StockTexture;
+        public Vector2 TextureScale;
+        public Vector2 TextureOffset;
+        public string RefCategory;
+        public string RefCategoryUpper;
+        public string FrameName;
+        public string FormattedFrame;
+        public string FormattedHeading;
+        public float Heading;
+        public float RollAngle;
+        public Quaternion AttitudeRotation;
+        public string SpeedMode;
+        public FlightSASMode SasMode;
+        public bool SasActive;
+        public bool HasTarget;
+        public bool HasManeuverNode;
+        public float GroundHazardAlert;
+
+        public bool Equals(NavballSphereState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   RenderMode == other.RenderMode &&
+                   ReferenceEquals(StockTexture, other.StockTexture) &&
+                   TextureScale == other.TextureScale &&
+                   TextureOffset == other.TextureOffset &&
+                   RefCategory == other.RefCategory &&
+                   RefCategoryUpper == other.RefCategoryUpper &&
+                   FrameName == other.FrameName &&
+                   FormattedFrame == other.FormattedFrame &&
+                   FormattedHeading == other.FormattedHeading &&
+                   Mathf.Abs(Heading - other.Heading) < 0.05f &&
+                   Mathf.Abs(RollAngle - other.RollAngle) < 0.05f &&
+                   Quaternion.Angle(AttitudeRotation, other.AttitudeRotation) < 0.01f &&
+                   SpeedMode == other.SpeedMode &&
+                   SasMode == other.SasMode &&
+                   SasActive == other.SasActive &&
+                   HasTarget == other.HasTarget &&
+                   HasManeuverNode == other.HasManeuverNode &&
+                   Mathf.Abs(GroundHazardAlert - other.GroundHazardAlert) < 0.01f;
+        }
+
+        public override bool Equals(object obj) => obj is NavballSphereState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ (int)RenderMode;
+                if (RefCategory != null) hash = (hash * 397) ^ RefCategory.GetHashCode();
+                if (RefCategoryUpper != null) hash = (hash * 397) ^ RefCategoryUpper.GetHashCode();
+                if (FormattedFrame != null) hash = (hash * 397) ^ FormattedFrame.GetHashCode();
+                if (FormattedHeading != null) hash = (hash * 397) ^ FormattedHeading.GetHashCode();
+                hash = (hash * 397) ^ Heading.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 3D 姿态球主控仪表业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class NavballSphereLogic : WidgetLogic<NavballSphereState>
+    {
+        private int _lastHdgVal = -1;
+        private string _lastCatUpper = null;
+        private string _cachedHdgText = string.Empty;
+
+        private string _lastRawFrame = null;
+        private string _lastFrameCat = null;
+        private string _cachedFrameText = string.Empty;
+
+        public override void Reset()
+        {
+            _lastHdgVal = -1;
+            _lastCatUpper = null;
+            _cachedHdgText = string.Empty;
+            _lastRawFrame = null;
+            _lastFrameCat = null;
+            _cachedFrameText = string.Empty;
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            NavballRenderMode mode = ThemeManager.Instance?.GlobalRenderMode ?? NavballRenderMode.ProceduralVector;
+            if (mode == NavballRenderMode.ProceduralBake) mode = NavballRenderMode.ProceduralVector;
+
+            var hook = NavBallHookService.Provider;
+            Texture stockTex = null;
+            Vector2 texScale = Vector2.one;
+            Vector2 texOffset = Vector2.zero;
+            string rawCat = "SURFACE";
+            string rawFrame = null;
+            float heading = 0f;
+            Quaternion attitudeRot = Quaternion.identity;
+            float rollAngle = 0f;
+
+            if (hook != null)
+            {
+                if (mode == NavballRenderMode.StockTexture)
+                {
+                    stockTex = hook.BallTexture;
+                    texScale = hook.TextureScale;
+                    texOffset = hook.TextureOffset;
+                }
+                rawCat = hook.ReferenceFrameCategory;
+                if (string.IsNullOrEmpty(rawCat)) rawCat = "SURFACE";
+                rawFrame = hook.FrameName;
+
+                if (hook.HasStockNavBall)
+                {
+                    heading = hook.HeadingAngle;
+                    attitudeRot = Quaternion.Inverse(hook.CameraRotation) * hook.BallRotation;
+                }
+                else if (telemetry != null)
+                {
+                    heading = (float)telemetry.Heading;
+                    attitudeRot = telemetry.AttitudeRotation;
+                }
+            }
+            else if (telemetry != null)
+            {
+                heading = (float)telemetry.Heading;
+                attitudeRot = telemetry.AttitudeRotation;
+            }
+
+            if (telemetry != null)
+            {
+                rollAngle = (float)telemetry.Roll;
+            }
+            else
+            {
+                rollAngle = attitudeRot.eulerAngles.z;
+                if (rollAngle > 180f) rollAngle -= 360f;
+            }
+
+            string catUpper = rawCat.ToUpperInvariant();
+
+            int iHdg = (Mathf.RoundToInt(heading) % 360 + 360) % 360;
+            if (iHdg != _lastHdgVal || catUpper != _lastCatUpper)
+            {
+                _lastHdgVal = iHdg;
+                _lastCatUpper = catUpper;
+                switch (catUpper)
+                {
+                    case "INERTIAL":
+                        int raH = Mathf.FloorToInt(iHdg / 15f);
+                        int raM = Mathf.FloorToInt(((iHdg % 15) / 15f) * 60f);
+                        _cachedHdgText = $"RA {raH:D2}h{raM:D2}m";
+                        break;
+                    case "BODY_FIXED":
+                    case "BODY_SURFACE":
+                        _cachedHdgText = CacheManager.FastLon(iHdg);
+                        break;
+                    case "ORBIT":
+                    case "ORBITAL":
+                        _cachedHdgText = CacheManager.FastObt(iHdg);
+                        break;
+                    case "TARGET":
+                        _cachedHdgText = CacheManager.FastTgt(iHdg);
+                        break;
+                    case "LAGRANGE":
+                    case "BARYCENTRIC":
+                        _cachedHdgText = $"LAG {iHdg:D3}°";
+                        break;
+                    default:
+                        _cachedHdgText = CacheManager.FastHdg(iHdg);
+                        break;
+                }
+            }
+
+            if (rawFrame != _lastRawFrame || catUpper != _lastFrameCat)
+            {
+                _lastRawFrame = rawFrame;
+                _lastFrameCat = catUpper;
+                string frame = rawFrame;
+                if (string.IsNullOrEmpty(frame))
+                {
+                    switch (catUpper)
+                    {
+                        case "INERTIAL": frame = "INERT"; break;
+                        case "BODY_FIXED":
+                        case "BODY_SURFACE": frame = "FIXED"; break;
+                        case "ORBIT":
+                        case "ORBITAL": frame = "ORBIT"; break;
+                        case "TARGET": frame = "TARGT"; break;
+                        case "LAGRANGE":
+                        case "BARYCENTRIC": frame = "LAGRN"; break;
+                        default: frame = "SURF"; break;
+                    }
+                }
+                else if (frame.Length > 5)
+                {
+                    frame = frame.Substring(0, 5).ToUpperInvariant();
+                }
+                else
+                {
+                    frame = frame.ToUpperInvariant();
+                }
+                _cachedFrameText = frame;
+            }
+
+            string speedMode = telemetry != null ? (telemetry.SpeedModeName ?? string.Empty) : string.Empty;
+            FlightSASMode sasMode = telemetry != null ? telemetry.CurrentSASMode : FlightSASMode.StabilityAssist;
+            bool sasActive = telemetry != null && telemetry.IsSASEnabled;
+            bool hasVessel = telemetry != null && telemetry.HasVessel;
+            bool hasTarget = telemetry != null && telemetry.HasTarget;
+            bool hasManeuver = telemetry != null && telemetry.HasManeuverNode;
+
+            float hazardAlert = 0.0f;
+            if (hasVessel)
+            {
+                double rAlt = telemetry.AltitudeAGL;
+                double vSpeed = telemetry.VerticalSpeed;
+                if (rAlt > 0.1 && rAlt < 800.0 && vSpeed < -18.0)
+                {
+                    float sinkHazard = Mathf.Clamp01((float)(-vSpeed - 18.0) / 45.0f);
+                    float altHazard = Mathf.Clamp01((float)(800.0 - rAlt) / 750.0f);
+                    hazardAlert = sinkHazard * altHazard;
+                }
+            }
+
+            CurrentState = new NavballSphereState
+            {
+                HasVessel = hasVessel,
+                RenderMode = mode,
+                StockTexture = stockTex,
+                TextureScale = texScale,
+                TextureOffset = texOffset,
+                RefCategory = rawCat,
+                RefCategoryUpper = catUpper,
+                FrameName = rawFrame,
+                FormattedFrame = _cachedFrameText,
+                FormattedHeading = _cachedHdgText,
+                Heading = heading,
+                RollAngle = rollAngle,
+                AttitudeRotation = attitudeRot,
+                SpeedMode = speedMode,
+                SasMode = sasMode,
+                SasActive = sasActive,
+                HasTarget = hasTarget,
+                HasManeuverNode = hasManeuver,
+                GroundHazardAlert = hazardAlert
+            };
+        }
+    }
+
     [DefaultExecutionOrder(10000)]
     [AlwaysFullPower]
     [FlightWidget("navball", "navball_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 姿态球", Description = "现代超清矢量/贴图 3D 姿态球核心，支持无极缩放、姿态导引十字与全量机动矢量。", DefaultWidgetId = "core.navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, AlwaysFullPower = true, ExactIds = new[] { "core.navball" })]
@@ -26,75 +282,33 @@ namespace ModularFlightPanel.UI.Widgets
     {
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
+        private readonly NavballSphereLogic _logic = new NavballSphereLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         public override FlightNavballPipeline GetNavballPipeline()
         {
             return new FlightNavballPipeline(_sphereMaterial, null, null, false, 512, this);
         }
 
-        private NavballRenderMode _cachedRenderMode;
-        private Texture _cachedStockTex;
-        private Vector2 _cachedTexScale = Vector2.one;
-        private Vector2 _cachedTexOffset = Vector2.zero;
-        private string _cachedRefCategory = "SURFACE";
-        private string _cachedRefCategoryUpper = "SURFACE";
-        private float _cachedHeading;
-        private string _cachedFrameName;
-        private readonly Cached<string> _lastRawCategory = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastRawFrameName = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastAppliedCategoryForFrame = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastAppliedHeadingText = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastAppliedFrameText = new Cached<string>(string.Empty);
         private readonly Cached<Color> _lastAppliedFrameColor = new Cached<Color>(Color.clear);
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            _cachedRenderMode = ThemeManager.Instance?.GlobalRenderMode ?? NavballRenderMode.ProceduralVector;
-            if (_cachedRenderMode == NavballRenderMode.ProceduralBake) _cachedRenderMode = NavballRenderMode.ProceduralVector;
-
-            var hook = NavBallHookService.Provider;
-            if (hook != null)
-            {
-                // 仅在 StockTexture 贴图模式下才提取原版贴图元数据，在现代 ProceduralVector 纯矢量模式下 100% 旁路，节约大量 native C++ 查询
-                if (_cachedRenderMode == NavballRenderMode.StockTexture)
-                {
-                    _cachedStockTex = hook.BallTexture;
-                    _cachedTexScale = hook.TextureScale;
-                    _cachedTexOffset = hook.TextureOffset;
-                }
-                else
-                {
-                    _cachedStockTex = null;
-                }
-
-                string rawCat = hook.ReferenceFrameCategory;
-                if (string.IsNullOrEmpty(rawCat)) rawCat = "SURFACE";
-                _cachedRefCategory = rawCat;
-                if (_lastRawCategory.Update(rawCat))
-                {
-                    _cachedRefCategoryUpper = rawCat.ToUpperInvariant();
-                }
-
-                _cachedFrameName = hook.FrameName;
-            }
-            else
-            {
-                _cachedStockTex = null;
-                _cachedTexScale = Vector2.one;
-                _cachedTexOffset = Vector2.zero;
-                _cachedRefCategory = "SURFACE";
-                _cachedRefCategoryUpper = "SURFACE";
-                _cachedFrameName = null;
-            }
-
-            _cachedHeading = (hook != null && hook.HasStockNavBall) ? hook.HeadingAngle : ((context.Telemetry != null) ? context.Telemetry.Heading : 0f);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            var mode = _cachedRenderMode;
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            var mode = state.RenderMode;
+
             if (mode == NavballRenderMode.StockDirect)
             {
                 if (_displayImage != null && _displayImage.enabled) _displayImage.enabled = false;
@@ -117,104 +331,52 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (mode == NavballRenderMode.StockTexture)
             {
-                Texture stockTex = _cachedStockTex;
+                Texture stockTex = state.StockTexture;
                 if (stockTex != null && _displayImage != null && _displayImage.texture != stockTex)
                 {
                     _displayImage.texture = stockTex;
                     _sphereMaterial.mainTexture = stockTex;
-                    _sphereMaterial.SetTextureScale("_MainTex", _cachedTexScale);
-                    _sphereMaterial.SetTextureOffset("_MainTex", _cachedTexOffset);
+                    _sphereMaterial.SetTextureScale("_MainTex", state.TextureScale);
+                    _sphereMaterial.SetTextureOffset("_MainTex", state.TextureOffset);
                 }
             }
 
             // 更新航向读数盒与参考系模式显示
-            string catUpper = _cachedRefCategoryUpper;
             if (_headingText != null)
             {
-                float hdg = _cachedHeading;
-                int iHdg = (Mathf.RoundToInt(hdg) % 360 + 360) % 360;
-
-                bool hdgDirty = _lastHeadingValue.Update(iHdg);
-                bool catDirty = _lastHeadingCategory.Update(catUpper);
-                if (hdgDirty || catDirty)
+                if (_lastAppliedHeadingText.Update(state.FormattedHeading))
                 {
-                    switch (catUpper)
-                    {
-                        case "INERTIAL":
-                            int raH = Mathf.FloorToInt(iHdg / 15f);
-                            int raM = Mathf.FloorToInt(((iHdg % 15) / 15f) * 60f);
-                            SetTextIfChanged(_headingText, $"RA {raH:D2}h{raM:D2}m");
-                            break;
-                        case "BODY_FIXED":
-                        case "BODY_SURFACE":
-                            SetTextIfChanged(_headingText, CacheManager.FastLon(iHdg));
-                            break;
-                        case "ORBIT":
-                        case "ORBITAL":
-                            SetTextIfChanged(_headingText, CacheManager.FastObt(iHdg));
-                            break;
-                        case "TARGET":
-                            SetTextIfChanged(_headingText, CacheManager.FastTgt(iHdg));
-                            break;
-                        case "LAGRANGE":
-                        case "BARYCENTRIC":
-                            SetTextIfChanged(_headingText, $"LAG {iHdg:D3}°");
-                            break;
-                        default:
-                            SetTextIfChanged(_headingText, CacheManager.FastHdg(iHdg));
-                            break;
-                    }
+                    SetTextIfChanged(_headingText, state.FormattedHeading);
                 }
             }
 
             if (_frameText != null)
             {
-                bool rawFrameDirty = _lastRawFrameName.Update(_cachedFrameName);
-                bool appliedCatDirty = _lastAppliedCategoryForFrame.Update(catUpper);
-                if (rawFrameDirty || appliedCatDirty)
+                if (_lastAppliedFrameText.Update(state.FormattedFrame))
                 {
-                    string frame = _cachedFrameName;
-                    if (string.IsNullOrEmpty(frame))
-                    {
-                        switch (catUpper)
-                        {
-                            case "INERTIAL": frame = "INERT"; break;
-                            case "BODY_FIXED":
-                            case "BODY_SURFACE": frame = "FIXED"; break;
-                            case "ORBIT":
-                            case "ORBITAL": frame = "ORBIT"; break;
-                            case "TARGET": frame = "TARGT"; break;
-                            case "LAGRANGE":
-                            case "BARYCENTRIC": frame = "LAGRN"; break;
-                            default: frame = "SURF"; break;
-                        }
-                    }
-                    else if (frame.Length > 5)
-                    {
-                        frame = frame.Substring(0, 5).ToUpperInvariant();
-                    }
-                    else
-                    {
-                        frame = frame.ToUpperInvariant();
-                    }
-
-                    if (_lastAppliedFrameText.Update(frame))
-                    {
-                        SetTextIfChanged(_frameText, frame);
-                    }
+                    SetTextIfChanged(_frameText, state.FormattedFrame);
                 }
 
                 // 参考系角标切变颜色同步 (仅在动画结束后且颜色发生改变时写入 UGUI)
                 if (_frameBadgeAnimTimer >= 0.40f)
                 {
-                    ThemeConfig curTheme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
-                    Color accentCol = GetFrameAccentColor(catUpper, curTheme);
+                    ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+                    Color accentCol = GetFrameAccentColor(state.RefCategoryUpper, curTheme);
                     if (_lastAppliedFrameColor.Update(accentCol))
                     {
                         _frameText.color = accentCol;
                     }
                 }
             }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
+            _lastAppliedHeadingText.Reset(string.Empty);
+            _lastAppliedFrameText.Reset(string.Empty);
+            _lastAppliedFrameColor.Reset(Color.clear);
         }
 
         // ── 渲染显示组件 ──
@@ -420,8 +582,6 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedFloat _lastBreathScale = new CachedFloat(-1f, 0.015f);
 
         // ── 航向与姿态死区更新缓存 ──
-        private readonly Cached<int> _lastHeadingValue = new Cached<int>(-1);
-        private readonly Cached<string> _lastHeadingCategory = new Cached<string>(null);
         private readonly CachedFloat _lastRollPointerAngle = new CachedFloat(-9999f, 0.05f);
         private readonly CachedFloat _lastBankTicksAlpha = new CachedFloat(-1f, 0.025f);
 
@@ -794,9 +954,8 @@ namespace ModularFlightPanel.UI.Widgets
             SyncMarkers();
             UpdateReticleDynamics();
             UpdateProceduralDetailScale();
-            IFlightTelemetry curTelem = FlightTelemetryContext.Current;
-            UpdateRollPointer(curTelem, _currentAttitudeRotation);
-            UpdateSASAndGuidanceVisuals(curTelem);
+            UpdateRollPointer();
+            UpdateSASAndGuidanceVisuals();
             UpdateFrameBadgeAnimation();
         }
 
@@ -860,6 +1019,7 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
 
             // 1. 权威姿态四元数解算
+            var state = _logic.CurrentState;
             Quaternion rawRot;
             if (hasHook)
             {
@@ -868,15 +1028,13 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                IFlightTelemetry telem = FlightTelemetryContext.Current;
-                rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
+                rawRot = state.AttitudeRotation;
             }
 
             // 2. 坐标系切变（自动/手动/Principia）探测与平滑过渡动画启动
-            string category = hook?.ReferenceFrameCategory ?? "SURFACE";
-            string frameName = hook?.FrameName ?? "";
-            IFlightTelemetry curTelem = FlightTelemetryContext.Current;
-            string speedMode = curTelem?.SpeedModeName ?? "";
+            string category = hook?.ReferenceFrameCategory ?? (state.RefCategory ?? "SURFACE");
+            string frameName = hook?.FrameName ?? (state.FrameName ?? "");
+            string speedMode = state.SpeedMode ?? "";
 
             bool isFrameSwitch = false;
             if (_paletteInitialized)
@@ -1024,18 +1182,7 @@ namespace ModularFlightPanel.UI.Widgets
                 // GPWS / 近地大下沉率防撞动态斑马纹警示驱动 (Ground Terrain Hazard Pull-Up Alert)
                 if (_hasPropGroundHazardAlert)
                 {
-                    float hazardAlert = 0.0f;
-                    if (curTelem != null)
-                    {
-                        double rAlt = curTelem.AltitudeAGL;
-                        double vSpeed = curTelem.VerticalSpeed;
-                        if (rAlt > 0.1 && rAlt < 800.0 && vSpeed < -18.0)
-                        {
-                            float sinkHazard = Mathf.Clamp01((float)(-vSpeed - 18.0) / 45.0f);
-                            float altHazard = Mathf.Clamp01((float)(800.0 - rAlt) / 750.0f);
-                            hazardAlert = sinkHazard * altHazard;
-                        }
-                    }
+                    float hazardAlert = state.GroundHazardAlert;
                     if (Mathf.Abs(hazardAlert - _uploadedHazardAlert) > 0.015f)
                     {
                         _uploadedHazardAlert = hazardAlert;
@@ -1047,7 +1194,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_hasPropVernierScaleDetail)
                 {
                     float vernier = 1.0f;
-                    if (curTelem != null)
+                    if (state.HasVessel)
                     {
                         float pitchRate = Mathf.Abs(_smoothedAngularVelocity.x);
                         vernier = 1.0f - Mathf.Clamp01(pitchRate / 18.0f);
@@ -1067,10 +1214,10 @@ namespace ModularFlightPanel.UI.Widgets
             int avoidIdx = 0;
             for (int i = 0; i < 4; i++) _cachedAvoidVectors[i] = Vector4.zero;
 
-            IFlightTelemetry curTelem = FlightTelemetryContext.Current;
-            bool hasTarget = curTelem != null && curTelem.HasTarget;
-            bool hasManeuver = curTelem != null && curTelem.HasManeuverNode;
-            bool isSurfaceMode = _cachedRefCategoryUpper == "SURFACE" || _cachedRefCategoryUpper == "BODY_SURFACE" || _cachedRefCategoryUpper == "BODY_FIXED";
+            var state = _logic.CurrentState;
+            bool hasTarget = state.HasTarget;
+            bool hasManeuver = state.HasManeuverNode;
+            bool isSurfaceMode = state.RefCategoryUpper == "SURFACE" || state.RefCategoryUpper == "BODY_SURFACE" || state.RefCategoryUpper == "BODY_FIXED";
 
             for (int slotIdx = 0; slotIdx < _markerSlots.Length; slotIdx++)
             {
@@ -1318,11 +1465,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void UpdateRollPointer(IFlightTelemetry telemetry, Quaternion rawRot)
+        private void UpdateRollPointer()
         {
             if (_bankRollPointerRoot == null) return;
 
-            string category = _cachedRefCategoryUpper;
+            string category = _logic.CurrentState.RefCategoryUpper;
             bool isSurface = category == "SURFACE" ||
                              category == "BODY_FIXED" ||
                              category == "BODY_SURFACE";
@@ -1343,16 +1490,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (!_bankRollPointerRoot.gameObject.activeSelf) _bankRollPointerRoot.gameObject.SetActive(true);
             SetBankTicksVisibility(true, _rollPointerAlpha);
 
-            float rollAngle = 0f;
-            if (telemetry != null)
-            {
-                rollAngle = telemetry.Roll;
-            }
-            else
-            {
-                rollAngle = rawRot.eulerAngles.z;
-                if (rollAngle > 180f) rollAngle -= 360f;
-            }
+            float rollAngle = _logic.CurrentState.RollAngle;
 
             if (_lastRollPointerAngle.Update(rollAngle))
             {
@@ -1395,7 +1533,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void UpdateSASAndGuidanceVisuals(IFlightTelemetry telemetry)
+        private void UpdateSASAndGuidanceVisuals()
         {
             float dt = Time.unscaledDeltaTime;
 
@@ -1419,8 +1557,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. SAS 动态角括号锁定框 (Active SAS Lock Reticle)
-            bool sasActive = telemetry != null && telemetry.IsSASEnabled;
-            FlightSASMode curSASMode = telemetry != null ? telemetry.CurrentSASMode : FlightSASMode.StabilityAssist;
+            var state = _logic.CurrentState;
+            bool sasActive = state.SasActive;
+            FlightSASMode curSASMode = state.SasMode;
 
             // 优化：StabilityAssist 属于基础姿态阻尼保持，准星本身已是基准，无需常驻黄色方框遮挡机头
             // 仅当锁定在具体导引矢量标 (Prograde, Retrograde, Normal, Maneuver, Target 等) 时显式呈现角括号锁定框
@@ -2143,8 +2282,6 @@ namespace ModularFlightPanel.UI.Widgets
             _currentMarkerDirs.Clear();
             _transitionStartMarkerDirs.Clear();
             _markerRenderStates.Clear();
-            _lastHeadingValue.Reset(-1);
-            _lastHeadingCategory.Reset(null);
             _lastRollPointerAngle.Reset(-9999f);
             _lastBankTicksAlpha.Reset(-1f);
             _uploadedHazardAlert = -999f;
