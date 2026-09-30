@@ -68,28 +68,17 @@ namespace ModularFlightPanel.UI.Widgets
         private string _warpTextTemplate = I18n.Tr("WIDGET_MANEUVER_WARP", "跃迁");
         private string _delTextTemplate = I18n.Tr("WIDGET_MANEUVER_DEL", "删除");
 
-        // 运行时状态与脏标记缓存
+        private readonly ManeuverNodeLogic _logic = new ManeuverNodeLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
+        // 智能私有缓存 (SPEC-009)
         private readonly Cached<bool> _lastHasNode = new Cached<bool>(false);
         private readonly CachedDouble _lastDeltaV = new CachedDouble(double.NaN);
-        private readonly CachedDouble _lastTimeToNode = new CachedDouble(double.NaN);
-        private readonly CachedDouble _lastBurnTime = new CachedDouble(double.NaN);
-        private readonly CachedDouble _lastTimeToBurn = new CachedDouble(double.NaN);
-        private CardStyleRole _currentCardRole = CardStyleRole.Normal;
-        private readonly Cached<string> _lastFormattedDeltaV = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastTitleStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastBadgeStr = new Cached<string>(string.Empty);
-
-        // 双轨快照
-        private bool _pendingHasNode = false;
-        private string _pendingTitleStr = string.Empty;
-        private string _pendingDeltaVStr = string.Empty;
-        private float _pendingMeterFraction = 1f;
-        private string _pendingTNodeStr = string.Empty;
-        private string _pendingBurnTimeStr = string.Empty;
-        private string _pendingBurnInStr = string.Empty;
-        private CardStyleRole _pendingCardRole = CardStyleRole.Normal;
-        private string _pendingBadgeStr = string.Empty;
-        private bool _hasPendingHeartbeat = false;
+        private readonly Cached<CardStyleRole> _lastCardRole = new Cached<CardStyleRole>(CardStyleRole.Normal);
+        private readonly Cached<string> _lastTNodeStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBurnTimeStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBurnInStr = new Cached<string>(string.Empty);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -229,7 +218,7 @@ namespace ModularFlightPanel.UI.Widgets
             _btnDismissText.rectTransform.anchoredPosition = Vector2.zero;
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, _currentCardRole, t)));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => ApplyCard(_bgImage, _bgOutline, _lastCardRole.Value, t)));
             this.Controls.Register(new WidgetHeaderControl("header", "标题栏", _headerTitleText != null ? _headerTitleText.gameObject : null, _headerTitleText, _statusBadgeText));
             this.Controls.Register(new WidgetReadoutControl("deltav_readout", "DeltaV读数", _deltaVValueText != null ? _deltaVValueText.gameObject : null, _deltaVValueText, _unitText, TextStyleRole.PrimaryValue, _deltaVToken));
             this.Controls.Register(new WidgetLinearBarControl(this, "progress_meter", "变轨进度条", _meterTrack != null ? _meterTrack.gameObject : null, _meterTrack, _meterFill, _deltaVToken, 0.0, 1.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
@@ -270,193 +259,78 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
-        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context) => base.OnDataHeartBeat(in context);
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context) => base.OnUIDrawLoop(ref context);
+
+        protected override void OnRenderState()
         {
-            base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel || Config == null) return;
+            var state = _logic.CurrentState;
+            var theme = WidgetStyleManager.Instance?.CurrentTheme;
 
-            // 标题动态求值
-            _pendingTitleStr = TelemetryTokenEngine.Evaluate(_titleTemplate, telemetry);
-
-            if (!telemetry.HasManeuverNode)
+            if (_lastHasNode.Update(state.HasNode))
             {
-                _pendingHasNode = false;
-                _hasPendingHeartbeat = true;
-                return;
-            }
-
-            _pendingHasNode = true;
-            double dv = TelemetryTokenEngine.EvaluateNumeric(_deltaVToken, telemetry);
-            if (double.IsNaN(dv)) dv = telemetry.ManeuverDeltaV;
-
-            double totalDv = TelemetryTokenEngine.EvaluateNumeric(_totalDvToken, telemetry);
-            if (double.IsNaN(totalDv)) totalDv = telemetry.ManeuverTotalDeltaV;
-
-            double timeToNode = TelemetryTokenEngine.EvaluateNumeric(_tNodeToken, telemetry);
-            if (double.IsNaN(timeToNode)) timeToNode = telemetry.ManeuverTimeToNode;
-
-            double burnTime = TelemetryTokenEngine.EvaluateNumeric(_burnTimeToken, telemetry);
-            if (double.IsNaN(burnTime)) burnTime = telemetry.ManeuverBurnTime;
-
-            double timeToBurn = TelemetryTokenEngine.EvaluateNumeric(_timeToBurnToken, telemetry);
-            if (double.IsNaN(timeToBurn)) timeToBurn = telemetry.ManeuverTimeToBurn;
-
-            double deltaThreshold = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            bool dvChanged = double.IsNaN(_lastDeltaV.Value) || Math.Abs(dv - _lastDeltaV.Value) > deltaThreshold;
-            bool tNodeChanged = double.IsNaN(_lastTimeToNode.Value) || Math.Abs(timeToNode - _lastTimeToNode.Value) >= 0.5;
-            bool burnTimeChanged = double.IsNaN(_lastBurnTime.Value) || Math.Abs(burnTime - _lastBurnTime.Value) >= 0.5;
-            bool timeToBurnChanged = double.IsNaN(_lastTimeToBurn.Value) || Math.Abs(timeToBurn - _lastTimeToBurn.Value) >= 0.5;
-
-            if (dvChanged)
-            {
-                _lastDeltaV.Update(dv);
-                _pendingDeltaVStr = $"{dv:F1}";
-                float fraction = 1.0f;
-                if (totalDv > 0.1)
+                if (!state.HasNode)
                 {
-                    fraction = Mathf.Clamp01((float)(dv / totalDv));
-                }
-                _pendingMeterFraction = fraction;
-            }
-
-            if (tNodeChanged)
-            {
-                _lastTimeToNode.Update(timeToNode);
-                string prefix = timeToNode < 0 ? "T+ " : "T- ";
-                _pendingTNodeStr = prefix + FormatDuration(Math.Abs(timeToNode));
-            }
-
-            if (burnTimeChanged)
-            {
-                _lastBurnTime.Update(burnTime);
-                _pendingBurnTimeStr = FormatDuration(Math.Max(0.0, burnTime));
-            }
-
-            if (timeToBurnChanged)
-            {
-                _lastTimeToBurn.Update(timeToBurn);
-                if (timeToBurn <= 0.0)
-                {
-                    _pendingBurnInStr = I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!";
+                    _deltaVValueText.text = "---";
+                    _statusBadgeText.text = I18n.Tr("WIDGET_NAV_NO_NODE", "无节点");
+                    _tNodeValueText.text = "--:--";
+                    _burnTimeValueText.text = "--:--";
+                    _burnInText.text = I18n.Tr("WIDGET_NAV_AWAITING_PLAN", "等待机动飞行计划");
+                    if (_meterFill != null)
+                    {
+                        _meterFill.rectTransform.SetSizeDeltaSafe(new Vector2(0f, _meterFill.rectTransform.sizeDelta.y));
+                    }
+                    if (_btnWarp != null) _btnWarp.interactable = false;
+                    if (_btnDismiss != null) _btnDismiss.interactable = false;
+                    ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
+                    return;
                 }
                 else
                 {
-                    _pendingBurnInStr = I18n.Tr("WIDGET_NAV_BURN_IN", "点火") + " " + FormatDuration(timeToBurn);
+                    if (_btnWarp != null) _btnWarp.interactable = true;
+                    if (_btnDismiss != null) _btnDismiss.interactable = true;
                 }
             }
 
-            CardStyleRole targetRole = CardStyleRole.Normal;
-            string badgeText = "ARMED";
+            if (!state.HasNode) return;
 
-            if (timeToBurn <= 0.0 && dv > 0.1)
+            // 遥测读数与进度
+            if (_lastDeltaV.Update(state.DeltaV))
             {
-                targetRole = CardStyleRole.Emphasized;
-                badgeText = "BURNING";
-            }
-            else if (dv <= 0.1)
-            {
-                targetRole = CardStyleRole.Normal;
-                badgeText = "COMPLETE";
-            }
-
-            _pendingCardRole = targetRole;
-            _pendingBadgeStr = badgeText;
-            _hasPendingHeartbeat = true;
-        }
-
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
-        {
-            base.OnUIDrawLoop(ref context);
-            if (!_hasPendingHeartbeat) return;
-
-            ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
-
-            if (_lastTitleStr.Update(_pendingTitleStr))
-            {
-                if (_headerTitleText != null) _headerTitleText.text = _pendingTitleStr;
-            }
-
-            if (!_pendingHasNode)
-            {
-                ShowUnavailable(theme);
-                return;
-            }
-
-            _lastHasNode.Update(true);
-
-            if (_pendingDeltaVStr != null && _lastFormattedDeltaV.Update(_pendingDeltaVStr))
-            {
-                if (_deltaVValueText != null) _deltaVValueText.text = _pendingDeltaVStr;
-
+                _deltaVValueText.text = state.FormattedDeltaV;
+                _unitText.text = state.UnitLabel;
                 if (_meterTrack != null && _meterFill != null)
                 {
                     float maxW = _meterTrack.rectTransform.sizeDelta.x;
-                    _meterFill.rectTransform.SetSizeDeltaSafe(new Vector2(maxW * _pendingMeterFraction, _meterFill.rectTransform.sizeDelta.y));
+                    _meterFill.rectTransform.SetSizeDeltaSafe(new Vector2(maxW * state.MeterFraction, _meterFill.rectTransform.sizeDelta.y));
                 }
             }
 
-            if (_pendingTNodeStr != null && _tNodeValueText != null && _tNodeValueText.text != _pendingTNodeStr)
+            if (_lastTNodeStr.Update(state.FormattedTNode))
             {
-                _tNodeValueText.text = _pendingTNodeStr;
+                _tNodeValueText.text = state.FormattedTNode;
             }
 
-            if (_pendingBurnTimeStr != null && _burnTimeValueText != null && _burnTimeValueText.text != _pendingBurnTimeStr)
+            if (_lastBurnTimeStr.Update(state.FormattedBurnTime))
             {
-                _burnTimeValueText.text = _pendingBurnTimeStr;
+                _burnTimeValueText.text = state.FormattedBurnTime;
             }
 
-            if (_pendingBurnInStr != null && _burnInText != null && _burnInText.text != _pendingBurnInStr)
+            if (_lastBurnInStr.Update(state.FormattedBurnIn))
             {
-                _burnInText.text = _pendingBurnInStr;
+                _burnInText.text = state.FormattedBurnIn;
             }
 
-            if (_currentCardRole != _pendingCardRole)
+            if (_lastBadgeStr.Update(state.BadgeText))
             {
-                _currentCardRole = _pendingCardRole;
-                ApplyCard(_bgImage, _bgOutline, _pendingCardRole, theme);
-                ApplyText(_deltaVValueText, TextStyleRole.PrimaryValue, theme);
-                ApplyText(_statusBadgeText, _pendingCardRole == CardStyleRole.Emphasized ? TextStyleRole.PrimaryValue : TextStyleRole.SecondaryValue, theme);
+                _statusBadgeText.text = state.BadgeText;
             }
 
-            if (_lastBadgeStr.Update(_pendingBadgeStr))
+            if (_lastCardRole.Update(state.TargetCardRole))
             {
-                if (_statusBadgeText != null) _statusBadgeText.text = _pendingBadgeStr;
+                ApplyCard(_bgImage, _bgOutline, state.TargetCardRole, theme);
             }
-
-            if (_btnWarp != null && !_btnWarp.interactable) _btnWarp.interactable = true;
-            if (_btnDismiss != null && !_btnDismiss.interactable) _btnDismiss.interactable = true;
-        }
-
-        private void ShowUnavailable(ThemeConfig theme)
-        {
-            if (!_lastHasNode.Value && _lastFormattedDeltaV.Value == "---") return;
-
-            _lastHasNode.Update(false);
-            _lastDeltaV.Reset(double.NaN);
-            _lastTimeToNode.Reset(double.NaN);
-            _lastBurnTime.Reset(double.NaN);
-            _lastTimeToBurn.Reset(double.NaN);
-            _lastFormattedDeltaV.Update("---");
-
-            _deltaVValueText.text = "---";
-            _meterFill.rectTransform.SetSizeDeltaSafe(new Vector2(0f, _meterFill.rectTransform.sizeDelta.y));
-            _tNodeValueText.text = "--:--";
-            _burnTimeValueText.text = "--:--";
-            _burnInText.text = I18n.Tr("WIDGET_NAV_NO_NODE", "无节点");
-            _statusBadgeText.text = I18n.Tr("PHASE_STANDBY", "待机");
-            _lastBadgeStr.Update("STANDBY");
-
-            if (_currentCardRole != CardStyleRole.Normal)
-            {
-                _currentCardRole = CardStyleRole.Normal;
-                ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
-                ApplyText(_deltaVValueText, TextStyleRole.PrimaryValue, theme);
-                ApplyText(_statusBadgeText, TextStyleRole.SecondaryValue, theme);
-            }
-
-            if (_btnWarp != null && _btnWarp.interactable) _btnWarp.interactable = false;
-            if (_btnDismiss != null && _btnDismiss.interactable) _btnDismiss.interactable = false;
         }
 
 
