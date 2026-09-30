@@ -22,9 +22,265 @@ namespace ModularFlightPanel.UI.Widgets
     ///    集成 2D 飞船剪影、动态矢量喷流羽流 (Exhaust Plume) 与跨分级水平激光引线。
     /// 4. 严格继承 BaseFlightWidget，所有样式、数据全生命周期数据驱动，零硬编码。
     /// </summary>
+    /// <summary>
+    /// 航电多级速度条单级槽位状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct StageDeltaVRowSnapshot : IEquatable<StageDeltaVRowSnapshot>
+    {
+        public int Stage;
+        public bool IsActive;
+        public double DeltaV;
+        public double BurnTime;
+        public float Ratio;
+        public bool Visible;
+
+        public bool Equals(StageDeltaVRowSnapshot other)
+        {
+            return Stage == other.Stage &&
+                   IsActive == other.IsActive &&
+                   Math.Abs(DeltaV - other.DeltaV) < 0.1 &&
+                   Math.Abs(BurnTime - other.BurnTime) < 0.1 &&
+                   Math.Abs(Ratio - other.Ratio) < 0.005f &&
+                   Visible == other.Visible;
+        }
+
+        public override bool Equals(object obj) => obj is StageDeltaVRowSnapshot other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (IsActive ? 1 : 0);
+                hash = (hash * 397) ^ (Visible ? 1 : 0);
+                hash = (hash * 397) ^ Stage;
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 航电多级速度条与二维剪影状态快照 (0 GC 纯值类型)
+    /// </summary>
+    public struct StageDeltaVState : IEquatable<StageDeltaVState>
+    {
+        public bool HasVessel;
+        public string Source;
+        public string TotalDvText;
+        public string TotalTimeText;
+        public bool HasActive;
+        public int ActiveStage;
+        public double ActiveDeltaV;
+        public double ActiveBurnTime;
+        public bool IsFiring;
+        public float Throttle;
+        public string BayFooterStr;
+        public string FooterStatusStr;
+        public TextStyleRole FooterRole;
+        public int StageCount;
+
+        public StageDeltaVRowSnapshot Row0;
+        public StageDeltaVRowSnapshot Row1;
+        public StageDeltaVRowSnapshot Row2;
+        public StageDeltaVRowSnapshot Row3;
+        public StageDeltaVRowSnapshot Row4;
+
+        public StageDeltaVRowSnapshot GetRow(int index)
+        {
+            switch (index)
+            {
+                case 0: return Row0;
+                case 1: return Row1;
+                case 2: return Row2;
+                case 3: return Row3;
+                case 4: return Row4;
+                default: return default;
+            }
+        }
+
+        public void SetRow(int index, in StageDeltaVRowSnapshot row)
+        {
+            switch (index)
+            {
+                case 0: Row0 = row; break;
+                case 1: Row1 = row; break;
+                case 2: Row2 = row; break;
+                case 3: Row3 = row; break;
+                case 4: Row4 = row; break;
+            }
+        }
+
+        public bool Equals(StageDeltaVState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Source == other.Source &&
+                   TotalDvText == other.TotalDvText &&
+                   TotalTimeText == other.TotalTimeText &&
+                   HasActive == other.HasActive &&
+                   ActiveStage == other.ActiveStage &&
+                   Math.Abs(ActiveDeltaV - other.ActiveDeltaV) < 0.1 &&
+                   Math.Abs(ActiveBurnTime - other.ActiveBurnTime) < 0.1 &&
+                   IsFiring == other.IsFiring &&
+                   Math.Abs(Throttle - other.Throttle) < 0.01f &&
+                   BayFooterStr == other.BayFooterStr &&
+                   FooterStatusStr == other.FooterStatusStr &&
+                   FooterRole == other.FooterRole &&
+                   StageCount == other.StageCount &&
+                   Row0.Equals(other.Row0) &&
+                   Row1.Equals(other.Row1) &&
+                   Row2.Equals(other.Row2) &&
+                   Row3.Equals(other.Row3) &&
+                   Row4.Equals(other.Row4);
+        }
+
+        public override bool Equals(object obj) => obj is StageDeltaVState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = (HasVessel ? 1 : 0);
+                hash = (hash * 397) ^ (HasActive ? 1 : 0);
+                hash = (hash * 397) ^ (IsFiring ? 1 : 0);
+                hash = (hash * 397) ^ (Source != null ? Source.GetHashCode() : 0);
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 航电多级速度条与火箭分级遥测纯业务逻辑大脑 (0 GC / 100% 游戏引擎解耦)
+    /// </summary>
+    public class StageDeltaVLogic : WidgetLogic<StageDeltaVState>
+    {
+        public const int MaxDisplayedStages = 5;
+        private readonly List<StageDeltaVInfo> _reusableStageList = new List<StageDeltaVInfo>();
+
+        public string TotalDvTemplate { get; set; } = "{DV:TOTAL}";
+        public string TotalTimeTemplate { get; set; } = "Σ {DV:TOTALTIME}";
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            _reusableStageList.Clear();
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = new StageDeltaVState
+                {
+                    HasVessel = false,
+                    FooterStatusStr = I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路"),
+                    FooterRole = TextStyleRole.Warning
+                };
+                return;
+            }
+
+            string src = string.IsNullOrEmpty(telemetry.DeltaVSource) ? "SIM" : telemetry.DeltaVSource.ToUpperInvariant();
+
+            string totalDvStr = TelemetryTokenEngine.Evaluate(TotalDvTemplate, telemetry);
+            string totalTimeStr = TelemetryTokenEngine.Evaluate(TotalTimeTemplate, telemetry);
+
+            IReadOnlyList<StageDeltaVInfo> stages = telemetry.StageDeltaVList;
+            _reusableStageList.Clear();
+            if (stages == null || stages.Count == 0)
+            {
+                _reusableStageList.Add(new StageDeltaVInfo(telemetry.CurrentStage, telemetry.StageDeltaV, telemetry.StageBurnTime, telemetry.TWR, 310.0, true));
+            }
+            else
+            {
+                _reusableStageList.AddRange(stages);
+            }
+
+            int stageCount = _reusableStageList.Count;
+
+            double maxStageDv = 500.0;
+            for (int i = 0; i < stageCount; i++)
+            {
+                if (_reusableStageList[i].DeltaV > maxStageDv) maxStageDv = _reusableStageList[i].DeltaV;
+            }
+
+            StageDeltaVInfo activeStageInfo = default;
+            bool hasActive = false;
+
+            StageDeltaVState newState = default;
+            newState.HasVessel = true;
+            newState.Source = src;
+            newState.TotalDvText = totalDvStr;
+            newState.TotalTimeText = totalTimeStr;
+            newState.StageCount = stageCount;
+
+            for (int i = 0; i < MaxDisplayedStages; i++)
+            {
+                if (i < stageCount)
+                {
+                    StageDeltaVInfo info = _reusableStageList[i];
+                    if (info.IsActive)
+                    {
+                        activeStageInfo = info;
+                        hasActive = true;
+                    }
+
+                    float ratio = Mathf.Clamp01((float)(info.DeltaV / maxStageDv));
+                    newState.SetRow(i, new StageDeltaVRowSnapshot
+                    {
+                        Stage = info.Stage,
+                        IsActive = info.IsActive,
+                        DeltaV = info.DeltaV,
+                        BurnTime = info.BurnTime,
+                        Ratio = ratio,
+                        Visible = true
+                    });
+                }
+                else
+                {
+                    newState.SetRow(i, new StageDeltaVRowSnapshot { Visible = false });
+                }
+            }
+
+            newState.HasActive = hasActive;
+            if (hasActive)
+            {
+                newState.ActiveStage = activeStageInfo.Stage;
+                newState.ActiveDeltaV = activeStageInfo.DeltaV;
+                newState.ActiveBurnTime = activeStageInfo.BurnTime;
+            }
+
+            bool isFiring = hasActive && (telemetry.ActiveEngines > 0 || telemetry.Throttle > 0.01f);
+            newState.IsFiring = isFiring;
+            newState.Throttle = Mathf.Clamp((float)telemetry.Throttle, 0.25f, 1.0f);
+
+            newState.BayFooterStr = hasActive
+                ? I18n.TrFormat("WIDGET_DV_STAGE_ACTV_FORMAT", activeStageInfo.Stage)
+                : I18n.Tr("WIDGET_DV_STAGING_ARMED", "分级待发");
+
+            if (hasActive)
+            {
+                newState.FooterStatusStr = I18n.TrFormat("WIDGET_DV_FOOT_ACTIVE", "当前 S{0:D2}: {1:N0} m/s | ⏱ {2}", activeStageInfo.Stage, activeStageInfo.DeltaV, AvionicsFormatting.FormatDuration(activeStageInfo.BurnTime));
+                newState.FooterRole = TextStyleRole.Accent;
+            }
+            else if (stageCount > 0)
+            {
+                newState.FooterStatusStr = I18n.TrFormat("WIDGET_DV_FOOT_ALL_ARMED", "共 {0} 级就绪 | Σ {1:N0} m/s", stageCount, telemetry.TotalDeltaV);
+                newState.FooterRole = TextStyleRole.SecondaryValue;
+            }
+            else
+            {
+                newState.FooterStatusStr = I18n.Tr("WIDGET_DV_NO_STAGE_DATA", "无分级数据");
+                newState.FooterRole = TextStyleRole.Warning;
+            }
+
+            CurrentState = newState;
+        }
+    }
+
     [FlightWidget("stage_dv", "deltav", "stage_delta_v", Category = WidgetCategory.Systems, DisplayName = "STAGE ΔV 本级推演仪表", Description = "当前级与总计 Delta-V 动态量程柱状图、燃烧耗尽倒计时与比冲 (Isp)。", DefaultWidgetId = "custom.stage_dv", DefaultX = -440f, DefaultY = 60f, IsSingleton = true, ExactIds = new[] { "gauge.stage_dv", "custom.stage_dv", "core.stage_dv" })]
     public class StageDeltaVWidget : BaseFlightWidget
     {
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly StageDeltaVLogic _logic = new StageDeltaVLogic();
+
         private class StageRowUI
         {
             public GameObject Root;
@@ -43,6 +299,7 @@ namespace ModularFlightPanel.UI.Widgets
             public readonly Cached<int> LastStage = new Cached<int>(-1);
             public readonly CachedDouble LastDv = new CachedDouble(-1.0, tolerance: 0.5);
             public readonly CachedFloat LastBarW = new CachedFloat(-1f, tolerance: 0.5f);
+            public readonly Cached<string> LastTimeText = new Cached<string>(string.Empty);
         }
 
         private Image _panelBg;
@@ -444,168 +701,63 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<string> _dirtyFooterStatusText = new Cached<string>(string.Empty);
         private readonly Cached<string> _dirtySourceText = new Cached<string>(string.Empty);
         private readonly CachedFloat _dirtyPlumeThr = new CachedFloat(-1f, tolerance: 0.01f);
-
-        private struct DvRowSnapshot
-        {
-            public int Stage;
-            public bool IsActive;
-            public double DeltaV;
-            public double BurnTime;
-            public float Ratio;
-            public bool Visible;
-        }
-        private readonly DvRowSnapshot[] _cachedRowSnapshots = new DvRowSnapshot[16];
-        private readonly List<StageDeltaVInfo> _reusableStageList = new List<StageDeltaVInfo>();
-        private bool _cachedHasVessel;
-        private string _cachedSource;
-        private string _cachedTotalDvText;
-        private string _cachedTotalTimeText;
-        private bool _cachedHasActive;
-        private StageDeltaVInfo _cachedActiveStageInfo;
-        private bool _cachedIsFiring;
-        private float _cachedThrottle;
-        private string _cachedBayFootStr;
-        private string _cachedFootStatusStr;
-        private TextStyleRole _cachedFootRole;
-        private int _cachedStageCount;
+        private readonly Cached<bool> _dirtyIsFiring = new Cached<bool>(false);
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            _logic.TotalDvTemplate = GetTemplateChannel("TOTAL_DV_FORMAT", "{DV:TOTAL}");
+            _logic.TotalTimeTemplate = GetTemplateChannel("TOTAL_TIME_FORMAT", "Σ {DV:TOTALTIME}");
             base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
-
-            string src = string.IsNullOrEmpty(context.Telemetry.DeltaVSource) ? "SIM" : context.Telemetry.DeltaVSource.ToUpperInvariant();
-            _cachedSource = src;
-
-            string totalDvTpl = GetTemplateChannel("TOTAL_DV_FORMAT", "{DV:TOTAL}");
-            string totalTimeTpl = GetTemplateChannel("TOTAL_TIME_FORMAT", "Σ {DV:TOTALTIME}");
-            _cachedTotalDvText = TelemetryTokenEngine.Evaluate(totalDvTpl, context.Telemetry);
-            _cachedTotalTimeText = TelemetryTokenEngine.Evaluate(totalTimeTpl, context.Telemetry);
-
-            IReadOnlyList<StageDeltaVInfo> stages = context.Telemetry.StageDeltaVList;
-            _reusableStageList.Clear();
-            if (stages == null || stages.Count == 0)
-            {
-                _reusableStageList.Add(new StageDeltaVInfo(context.Telemetry.CurrentStage, context.Telemetry.StageDeltaV, context.Telemetry.StageBurnTime, context.Telemetry.TWR, 310.0, true));
-            }
-            else
-            {
-                _reusableStageList.AddRange(stages);
-            }
-
-            _cachedStageCount = _reusableStageList.Count;
-
-            double maxStageDv = 500.0;
-            for (int i = 0; i < _reusableStageList.Count; i++)
-            {
-                if (_reusableStageList[i].DeltaV > maxStageDv) maxStageDv = _reusableStageList[i].DeltaV;
-            }
-
-            StageDeltaVInfo activeStageInfo = default;
-            bool hasActive = false;
-
-            for (int i = 0; i < _stageRows.Count && i < _cachedRowSnapshots.Length; i++)
-            {
-                if (i < _reusableStageList.Count)
-                {
-                    StageDeltaVInfo info = _reusableStageList[i];
-                    if (info.IsActive)
-                    {
-                        activeStageInfo = info;
-                        hasActive = true;
-                    }
-
-                    float ratio = Mathf.Clamp01((float)(info.DeltaV / maxStageDv));
-                    _cachedRowSnapshots[i] = new DvRowSnapshot
-                    {
-                        Stage = info.Stage,
-                        IsActive = info.IsActive,
-                        DeltaV = info.DeltaV,
-                        BurnTime = info.BurnTime,
-                        Ratio = ratio,
-                        Visible = true
-                    };
-                }
-                else
-                {
-                    _cachedRowSnapshots[i] = new DvRowSnapshot { Visible = false };
-                }
-            }
-
-            _cachedHasActive = hasActive;
-            _cachedActiveStageInfo = activeStageInfo;
-
-            bool isFiring = hasActive && (context.Telemetry.ActiveEngines > 0 || context.Telemetry.Throttle > 0.01f);
-            _cachedIsFiring = isFiring;
-            _cachedThrottle = Mathf.Clamp((float)context.Telemetry.Throttle, 0.25f, 1.0f);
-
-            _cachedBayFootStr = hasActive ? I18n.TrFormat("WIDGET_DV_STAGE_ACTV_FORMAT", activeStageInfo.Stage) : I18n.Tr("WIDGET_DV_STAGING_ARMED", "分级待发");
-
-            if (hasActive)
-            {
-                _cachedFootStatusStr = I18n.TrFormat("WIDGET_DV_FOOT_ACTIVE", "当前 S{0:D2}: {1:N0} m/s | ⏱ {2}", activeStageInfo.Stage, activeStageInfo.DeltaV, FormatDuration(activeStageInfo.BurnTime));
-                _cachedFootRole = TextStyleRole.Accent;
-            }
-            else if (_reusableStageList.Count > 0)
-            {
-                _cachedFootStatusStr = I18n.TrFormat("WIDGET_DV_FOOT_ALL_ARMED", "共 {0} 级就绪 | Σ {1:N0} m/s", _reusableStageList.Count, context.Telemetry.TotalDeltaV);
-                _cachedFootRole = TextStyleRole.SecondaryValue;
-            }
-            else
-            {
-                _cachedFootStatusStr = I18n.Tr("WIDGET_DV_NO_STAGE_DATA", "无分级数据");
-                _cachedFootRole = TextStyleRole.Warning;
-            }
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme);
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_currentTheme);
             Color borderCol = borderColOrDefault(theme);
 
-            if (!_cachedHasVessel)
+            if (!state.HasVessel)
             {
-                if (_footerStatusText != null && _footerStatusText.text != I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路"))
+                if (_footerStatusText != null && _dirtyFooterStatusText.Update(state.FooterStatusStr))
                 {
-                    _footerStatusText.text = I18n.Tr("WIDGET_DV_NO_TELEMETRY", "无遥测链路");
-                    ApplyText(_footerStatusText, TextStyleRole.Warning, theme);
+                    SetTextIfChanged(_footerStatusText, state.FooterStatusStr);
+                    ApplyText(_footerStatusText, state.FooterRole, theme);
                 }
-                if (_plumeObj != null) _plumeObj.SetActive(false);
+                if (_plumeObj != null && _dirtyIsFiring.Update(false))
+                {
+                    _plumeObj.SetActive(false);
+                }
                 return;
             }
 
             // 1. 数据源标识
-            if (_sourceBadgeText != null && _dirtySourceText.Update(_cachedSource))
+            if (_sourceBadgeText != null && _dirtySourceText.Update(state.Source))
             {
-                SetTextIfChanged(_sourceBadgeText, _cachedSource);
+                SetTextIfChanged(_sourceBadgeText, state.Source);
             }
 
             // 2. 总 Δv 与总烧燃时序
-            if (_totalDvValue != null && _dirtyTotalDvText.Update(_cachedTotalDvText))
+            if (_totalDvValue != null && _dirtyTotalDvText.Update(state.TotalDvText))
             {
-                SetTextIfChanged(_totalDvValue, _cachedTotalDvText);
+                SetTextIfChanged(_totalDvValue, state.TotalDvText);
             }
 
-            if (_totalTimeValue != null && _dirtyTotalTimeText.Update(_cachedTotalTimeText))
+            if (_totalTimeValue != null && _dirtyTotalTimeText.Update(state.TotalTimeText))
             {
-                SetTextIfChanged(_totalTimeValue, _cachedTotalTimeText);
+                SetTextIfChanged(_totalTimeValue, state.TotalTimeText);
             }
 
             // 3. 逐行速度条
             float maxTrackW = TrackWidth * _cachedScale;
-            for (int i = 0; i < _stageRows.Count && i < _cachedRowSnapshots.Length; i++)
+            for (int i = 0; i < _stageRows.Count && i < MaxDisplayedStages; i++)
             {
                 StageRowUI row = _stageRows[i];
-                var snap = _cachedRowSnapshots[i];
+                var snap = state.GetRow(i);
 
                 if (snap.Visible)
                 {
@@ -650,7 +802,11 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         SetTextIfChanged(row.StageDvText, $"{snap.DeltaV:N0} m/s");
                     }
-                    SetTextIfChanged(row.StageTimeText, FormatDurationCompact(snap.BurnTime));
+                    string timeCompact = AvionicsFormatting.FormatDurationCompact(snap.BurnTime);
+                    if (row.LastTimeText.Update(timeCompact))
+                    {
+                        SetTextIfChanged(row.StageTimeText, timeCompact);
+                    }
                 }
                 else
                 {
@@ -659,18 +815,21 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 左侧 2D 剪影视窗底部状态与发动机羽流
-            if (_silhouetteBayFooter != null && _dirtyBayFooterText.Update(_cachedBayFootStr))
+            if (_silhouetteBayFooter != null && _dirtyBayFooterText.Update(state.BayFooterStr))
             {
-                SetTextIfChanged(_silhouetteBayFooter, _cachedBayFootStr);
-                ApplyText(_silhouetteBayFooter, _cachedHasActive ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
+                SetTextIfChanged(_silhouetteBayFooter, state.BayFooterStr);
+                ApplyText(_silhouetteBayFooter, state.HasActive ? TextStyleRole.Accent : TextStyleRole.SecondaryValue, theme);
             }
 
             if (_plumeObj != null)
             {
-                _plumeObj.SetActive(_cachedIsFiring);
-                if (_cachedIsFiring && _plumeRt != null)
+                if (_dirtyIsFiring.Update(state.IsFiring))
                 {
-                    float thr = _cachedThrottle;
+                    _plumeObj.SetActive(state.IsFiring);
+                }
+                if (state.IsFiring && _plumeRt != null)
+                {
+                    float thr = state.Throttle;
                     if (_dirtyPlumeThr.Update(thr))
                     {
                         _plumeRt.sizeDelta = new Vector2(9f * _cachedScale, (6f + 8f * thr) * _cachedScale);
@@ -680,10 +839,30 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 底栏摘要
-            if (_footerStatusText != null && _dirtyFooterStatusText.Update(_cachedFootStatusStr))
+            if (_footerStatusText != null && _dirtyFooterStatusText.Update(state.FooterStatusStr))
             {
-                SetTextIfChanged(_footerStatusText, _cachedFootStatusStr);
-                ApplyText(_footerStatusText, _cachedFootRole, theme);
+                SetTextIfChanged(_footerStatusText, state.FooterStatusStr);
+                ApplyText(_footerStatusText, state.FooterRole, theme);
+            }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
+            _dirtyTotalDvText.Reset(string.Empty);
+            _dirtyTotalTimeText.Reset(string.Empty);
+            _dirtyBayFooterText.Reset(string.Empty);
+            _dirtyFooterStatusText.Reset(string.Empty);
+            _dirtySourceText.Reset(string.Empty);
+            _dirtyPlumeThr.Reset(-1f);
+            _dirtyIsFiring.Reset(false);
+            for (int i = 0; i < _stageRows.Count; i++)
+            {
+                _stageRows[i].LastStage.Reset(-1);
+                _stageRows[i].LastDv.Reset(-1.0);
+                _stageRows[i].LastBarW.Reset(-1f);
+                _stageRows[i].LastTimeText.Reset(string.Empty);
             }
         }
 
