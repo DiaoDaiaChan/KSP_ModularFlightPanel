@@ -353,6 +353,9 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         private readonly ArcTapeLogic _logic = new ArcTapeLogic();
         protected override IWidgetLogic LogicCore => _logic;
 
+        private readonly Cached<string> _lastTopText = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBottomText = new Cached<string>(string.Empty);
+
         // 声明式微控件
         public TextWidget ModeTag = TextWidget.Title("SPD");
         public TextWidget CenterValue = TextWidget.Value("{SPD}");
@@ -961,8 +964,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             UpdateCenterReadout(state.DisplayVal, state.CurrentTier, state.ActiveUnitStr);
             UpdateArcTicks(state.DisplayVal, state.ActiveStep, state.CurrentTier);
 
-            if (_modeTagText != null) _modeTagText.SetTextSafe(state.TopText);
-            if (_bottomSecText != null) _bottomSecText.SetTextSafe(state.BottomText);
+            if (_lastTopText.Update(state.TopText) && _modeTagText != null) _modeTagText.SetTextSafe(state.TopText);
+            if (_lastBottomText.Update(state.BottomText) && _bottomSecText != null) _bottomSecText.SetTextSafe(state.BottomText);
 
             DrawConcentricEscortDynamics(state);
 
@@ -1203,6 +1206,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         {
             base.OnResetPrivateCache();
             _logic.Reset();
+            _lastTopText.Reset(string.Empty);
+            _lastBottomText.Reset(string.Empty);
             _trendAngle = 0f;
             _showingIntegerReadout = false;
         }
