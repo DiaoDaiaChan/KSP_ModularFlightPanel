@@ -181,6 +181,9 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CustomTokenTextLogic _logic = new CustomTokenTextLogic();
         protected override IWidgetLogic LogicCore => _logic;
 
+        private readonly Cached<string> _lastTitleStr = new Cached<string>(string.Empty);
+        private readonly Cached<string> _lastBadgeStr = new Cached<string>(string.Empty);
+
         public bool AllowNonUniformScale => true;
         public Vector2 MinBaseSize => new Vector2(160f, 50f);
         public Vector2 MaxBaseSize => new Vector2(1600f, 1000f);
@@ -389,12 +392,12 @@ namespace ModularFlightPanel.UI.Widgets
         {
             var state = _logic.CurrentState;
 
-            if (_titleText != null)
+            if (_lastTitleStr.Update(state.Title) && _titleText != null)
             {
                 _titleText.SetTextSafe(state.Title);
             }
 
-            if (_badgeText != null)
+            if (_lastBadgeStr.Update(state.Badge) && _badgeText != null)
             {
                 _badgeText.SetTextSafe(state.Badge);
             }
@@ -732,6 +735,8 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnResetPrivateCache();
             _logic.Reset();
+            _lastTitleStr.Reset(string.Empty);
+            _lastBadgeStr.Reset(string.Empty);
         }
 
         protected override void OnDestroy()
