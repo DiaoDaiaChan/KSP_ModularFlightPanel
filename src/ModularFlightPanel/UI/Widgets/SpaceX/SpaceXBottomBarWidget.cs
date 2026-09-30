@@ -3,10 +3,106 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
+    /// <summary>
+    /// SpaceX 底部控制与链路零-GC遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct SpaceXBottomBarState : IEquatable<SpaceXBottomBarState>
+    {
+        public bool HasVessel;
+        public bool IsRcsActive;
+        public bool IsSasActive;
+        public bool IsPrecisionActive;
+        public string SpeedModeName;
+        public string PointingModeDesc;
+        public bool IsSpxConnected;
+        public bool IsTdrsConnected;
+        public bool IsIssConnected;
+
+        public bool Equals(SpaceXBottomBarState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   IsRcsActive == other.IsRcsActive &&
+                   IsSasActive == other.IsSasActive &&
+                   IsPrecisionActive == other.IsPrecisionActive &&
+                   IsSpxConnected == other.IsSpxConnected &&
+                   IsTdrsConnected == other.IsTdrsConnected &&
+                   IsIssConnected == other.IsIssConnected &&
+                   string.Equals(SpeedModeName, other.SpeedModeName, StringComparison.Ordinal) &&
+                   string.Equals(PointingModeDesc, other.PointingModeDesc, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj) => obj is SpaceXBottomBarState other && Equals(other);
+        public override int GetHashCode() => (HasVessel, IsRcsActive, IsSasActive, IsPrecisionActive, IsSpxConnected).GetHashCode();
+    }
+
+    /// <summary>
+    /// SpaceX 底部控制与链路业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class SpaceXBottomBarLogic : WidgetLogic<SpaceXBottomBarState>
+    {
+        private const string DefaultOrbitMode = "ORBIT";
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            bool rcs = telemetry.IsRCSEnabled;
+            bool sas = telemetry.IsSASEnabled;
+            string mode = telemetry.SpeedModeName?.ToUpperInvariant() ?? DefaultOrbitMode;
+            bool prec = telemetry.IsPrecisionControl;
+            string pointing = GetPointingModeDescription(telemetry);
+
+            bool spx = telemetry.IsConnected;
+            bool tdrs = telemetry.IsConnected && ((telemetry.ActiveCommLinks != null && telemetry.ActiveCommLinks.Count > 1) || telemetry.AntennaCount > 1 || telemetry.SignalRx > 0.4);
+            bool iss = telemetry.HasTarget && telemetry.TargetDistance < 80000.0;
+
+            CurrentState = new SpaceXBottomBarState
+            {
+                HasVessel = true,
+                IsRcsActive = rcs,
+                IsSasActive = sas,
+                IsPrecisionActive = prec,
+                SpeedModeName = mode,
+                PointingModeDesc = pointing,
+                IsSpxConnected = spx,
+                IsTdrsConnected = tdrs,
+                IsIssConnected = iss
+            };
+        }
+
+        public static string GetPointingModeDescription(IFlightTelemetry t)
+        {
+            if (!t.IsSASEnabled) return I18n.Tr("WIDGET_SPX_POINT_FREE_MANUAL", "自由手动");
+            switch (t.CurrentSASMode)
+            {
+                case FlightSASMode.Prograde: return I18n.Tr("SAS_MODE_PROGRADE", "顺行");
+                case FlightSASMode.Retrograde: return I18n.Tr("SAS_MODE_RETROGRADE", "逆行");
+                case FlightSASMode.Normal: return I18n.Tr("SAS_MODE_NORMAL", "法向");
+                case FlightSASMode.Antinormal: return I18n.Tr("SAS_MODE_ANTINORMAL", "反法向");
+                case FlightSASMode.RadialIn: return I18n.Tr("SAS_MODE_RADIAL_IN", "径向内");
+                case FlightSASMode.RadialOut: return I18n.Tr("SAS_MODE_RADIAL_OUT", "径向外");
+                case FlightSASMode.Target: return I18n.Tr("WIDGET_SPX_POINT_TARGET_LOCK", "目标锁定");
+                case FlightSASMode.AntiTarget: return I18n.Tr("WIDGET_SPX_POINT_ANTI_TARGET", "反目标");
+                case FlightSASMode.Maneuver: return I18n.Tr("WIDGET_NAV_MANEUVER_NODE", "机动节点");
+                default: return I18n.Tr("WIDGET_SPX_POINT_STABILITY", "稳定保持");
+            }
+        }
+    }
+
     /// <summary>
     /// SpaceX 载人龙飞船底部触控控制与深空网链路状态栏 (SpaceX Bottom Control & Comm Matrix)
     /// 包含：药丸触控开关 (RCS / SAS / SPEED MODE / PREC)、
@@ -19,7 +115,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override Vector2 BaseSize => new Vector2(420f, 38f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
-
 
         private Image _bgImage;
         private Outline _outline;
@@ -53,7 +148,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private Text _commTdrs;
         private Text _commIss;
 
-        // 变动缓存
+        // 变动缓存 (MFP-SPEC-009)
         private readonly Cached<bool> _lastRcs = new Cached<bool>(false);
         private readonly Cached<bool> _lastSas = new Cached<bool>(false);
         private readonly Cached<bool> _lastPrec = new Cached<bool>(false);
@@ -62,6 +157,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private readonly Cached<bool> _lastSpxConn = new Cached<bool>(false);
         private readonly Cached<bool> _lastTdrsConn = new Cached<bool>(false);
         private readonly Cached<bool> _lastIssConn = new Cached<bool>(false);
+
+        // 业务大脑 (MFP-SPEC-012)
+        private readonly SpaceXBottomBarLogic _logic = new SpaceXBottomBarLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // CustomTemplate 自定义通道
         private string _rcsLabel = "RCS";
@@ -204,99 +303,63 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             FlightTelemetryContext.Current?.TogglePrecisionMode();
         }
 
-        private bool _dataRcs;
-        private bool _dataSas;
-        private string _dataModeName = "ORBIT";
-        private bool _dataPrec;
-        private string _dataPointing = string.Empty;
-        private bool _dataSpxConn;
-        private bool _dataTdrsConn;
-        private bool _dataIssConn;
-        private bool _dataHasVessel;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _dataHasVessel = false;
-                return;
-            }
-            _dataHasVessel = true;
-
-            // 1. RCS 按钮状态
-            _dataRcs = telemetry.IsRCSEnabled;
-
-            // 2. SAS 按钮状态
-            _dataSas = telemetry.IsSASEnabled;
-
-            // 3. 速度参考系模式 (SURF / ORBIT / TARGET)
-            _dataModeName = telemetry.SpeedModeName?.ToUpperInvariant() ?? "ORBIT";
-
-            // 4. 精细控制
-            _dataPrec = telemetry.IsPrecisionControl;
-
-            // 5. 当前指向模式
-            _dataPointing = GetPointingModeDescription(telemetry);
-
-            // 6. 通信链路独立状态 (SPX地面站、TDRS中继、ISS空间站/目标近距遥测)
-            _dataSpxConn = telemetry.IsConnected;
-            _dataTdrsConn = telemetry.IsConnected && (telemetry.ActiveCommLinks != null && telemetry.ActiveCommLinks.Count > 1 || telemetry.AntennaCount > 1 || telemetry.SignalRx > 0.4);
-            _dataIssConn = telemetry.HasTarget && telemetry.TargetDistance < 80000.0;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (!_dataHasVessel) return;
+            SpaceXBottomBarState state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
             ThemeConfig th = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
 
             // 1. RCS 按钮状态
-            if (_lastRcs.Update(_dataRcs))
+            if (_lastRcs.Update(state.IsRcsActive))
             {
-                UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, _lastRcs.Value, th);
+                UpdatePillAppearance(_rcsImg, _rcsOutline, _rcsText, state.IsRcsActive, th);
             }
 
             // 2. SAS 按钮状态
-            if (_lastSas.Update(_dataSas))
+            if (_lastSas.Update(state.IsSasActive))
             {
-                UpdatePillAppearance(_sasImg, _sasOutline, _sasText, _lastSas.Value, th);
+                UpdatePillAppearance(_sasImg, _sasOutline, _sasText, state.IsSasActive, th);
             }
 
             // 3. 速度参考系模式
-            if (_lastModeStr.Update(_dataModeName) && _modeText != null)
+            if (_lastModeStr.Update(state.SpeedModeName) && _modeText != null)
             {
-                _modeText.text = _dataModeName;
+                _modeText.SetTextSafe(state.SpeedModeName);
             }
 
             // 4. 精细控制
-            if (_lastPrec.Update(_dataPrec))
+            if (_lastPrec.Update(state.IsPrecisionActive))
             {
-                UpdatePillAppearance(_precImg, _precOutline, _precText, _lastPrec.Value, th);
+                UpdatePillAppearance(_precImg, _precOutline, _precText, state.IsPrecisionActive, th);
             }
 
             // 5. 当前指向模式
-            if (_lastPointing.Update(_dataPointing) && _pointingValue != null)
+            if (_lastPointing.Update(state.PointingModeDesc) && _pointingValue != null)
             {
-                _pointingValue.text = _dataPointing;
+                _pointingValue.SetTextSafe(state.PointingModeDesc);
             }
 
             // 6. 通信链路
-            if (_lastSpxConn.Update(_dataSpxConn))
+            if (_lastSpxConn.Update(state.IsSpxConnected))
             {
-                ApplyText(_commSpx, _dataSpxConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+                ApplyText(_commSpx, state.IsSpxConnected ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
 
-            if (_lastTdrsConn.Update(_dataTdrsConn))
+            if (_lastTdrsConn.Update(state.IsTdrsConnected))
             {
-                ApplyText(_commTdrs, _dataTdrsConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+                ApplyText(_commTdrs, state.IsTdrsConnected ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
 
-            if (_lastIssConn.Update(_dataIssConn))
+            if (_lastIssConn.Update(state.IsIssConnected))
             {
-                ApplyText(_commIss, _dataIssConn ? TextStyleRole.Accent : TextStyleRole.Muted, th);
+                ApplyText(_commIss, state.IsIssConnected ? TextStyleRole.Accent : TextStyleRole.Muted, th);
             }
         }
 
@@ -308,24 +371,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (border != null)
             {
                 border.effectColor = isActive ? theme.AccentPrimary : style.GetLineColor(LineWeight.Subtle, theme);
-            }
-        }
-
-        private static string GetPointingModeDescription(IFlightTelemetry t)
-        {
-            if (!t.IsSASEnabled) return I18n.Tr("WIDGET_SPX_POINT_FREE_MANUAL", "自由手动");
-            switch (t.CurrentSASMode)
-            {
-                case FlightSASMode.Prograde: return I18n.Tr("SAS_MODE_PROGRADE", "顺行");
-                case FlightSASMode.Retrograde: return I18n.Tr("SAS_MODE_RETROGRADE", "逆行");
-                case FlightSASMode.Normal: return I18n.Tr("SAS_MODE_NORMAL", "法向");
-                case FlightSASMode.Antinormal: return I18n.Tr("SAS_MODE_ANTINORMAL", "反法向");
-                case FlightSASMode.RadialIn: return I18n.Tr("SAS_MODE_RADIAL_IN", "径向内");
-                case FlightSASMode.RadialOut: return I18n.Tr("SAS_MODE_RADIAL_OUT", "径向外");
-                case FlightSASMode.Target: return I18n.Tr("WIDGET_SPX_POINT_TARGET_LOCK", "目标锁定");
-                case FlightSASMode.AntiTarget: return I18n.Tr("WIDGET_SPX_POINT_ANTI_TARGET", "反目标");
-                case FlightSASMode.Maneuver: return I18n.Tr("WIDGET_NAV_MANEUVER_NODE", "机动节点");
-                default: return I18n.Tr("WIDGET_SPX_POINT_STABILITY", "稳定保持");
             }
         }
 
