@@ -10,6 +10,114 @@ using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets
 {
+    public readonly struct HeadingArcState : IEquatable<HeadingArcState>
+    {
+        public readonly bool HasVessel;
+        public readonly float DisplayedHeading;
+        public readonly int BubbleDeg;
+
+        public HeadingArcState(bool hasVessel, float displayedHeading, int bubbleDeg)
+        {
+            HasVessel = hasVessel;
+            DisplayedHeading = displayedHeading;
+            BubbleDeg = bubbleDeg;
+        }
+
+        public bool Equals(HeadingArcState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Mathf.Abs(DisplayedHeading - other.DisplayedHeading) < 0.02f &&
+                   BubbleDeg == other.BubbleDeg;
+        }
+
+        public override bool Equals(object obj) => obj is HeadingArcState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ DisplayedHeading.GetHashCode();
+                hash = (hash * 397) ^ BubbleDeg.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    public class HeadingArcLogic : WidgetLogic<HeadingArcState>
+    {
+        public string ValueToken { get; set; } = "{HDG}";
+
+        private float _targetHeading = 0f;
+        private float _displayedHeading = 0f;
+        private float _headingVelocity = 0f;
+        private bool _isHeadingInitialized = false;
+
+        public override void Reset()
+        {
+            _targetHeading = 0f;
+            _displayedHeading = 0f;
+            _headingVelocity = 0f;
+            _isHeadingInitialized = false;
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = new HeadingArcState(false, 0f, 0);
+                return;
+            }
+
+            float rawHeading;
+            var hook = NavBallHookService.Provider;
+            if (hook != null && hook.HasStockNavBall)
+            {
+                rawHeading = hook.HeadingAngle;
+            }
+            else
+            {
+                double evalHdg = TelemetryTokenEngine.EvaluateNumeric(ValueToken, telemetry);
+                rawHeading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)telemetry.Heading;
+            }
+            if (float.IsNaN(rawHeading)) rawHeading = 0f;
+
+            _targetHeading = (rawHeading % 360f + 360f) % 360f;
+
+            if (!_isHeadingInitialized)
+            {
+                _displayedHeading = _targetHeading;
+                _isHeadingInitialized = true;
+            }
+
+            if (deltaTime <= 0.0001f)
+            {
+                _displayedHeading = _targetHeading;
+            }
+            else
+            {
+                float angleDiff = Mathf.DeltaAngle(_displayedHeading, _targetHeading);
+                if (Mathf.Abs(angleDiff) > 120f)
+                {
+                    _displayedHeading = _targetHeading;
+                    _headingVelocity = 0f;
+                }
+                else
+                {
+                    _displayedHeading = Mathf.SmoothDampAngle(_displayedHeading, _targetHeading, ref _headingVelocity, 0.09f, 900f, deltaTime);
+                    _displayedHeading = (_displayedHeading % 360f + 360f) % 360f;
+                }
+            }
+
+            int degInt = Mathf.RoundToInt(_displayedHeading) % 360;
+            if (degInt < 0) degInt += 360;
+
+            CurrentState = new HeadingArcState(true, _displayedHeading, degInt);
+        }
+    }
+
     /// <summary>
     /// PFD 姿态球顶部圆弧航向指示带 (Navball Heading Arc Ribbon - Set 2 / 图2)
     /// 紧密环绕姿态球上缘，具备平滑滚动的度数刻度、红南/蓝北罗盘主方位标识、
@@ -80,11 +188,10 @@ namespace ModularFlightPanel.UI.Widgets
         // 通配符通道与配置
         private string _valueToken = "{HDG}";
 
-        // 航向平滑阻尼动力学引擎 (EFIS Avionics Damping Filter)
-        private float _targetHeading = 0f;
-        private float _displayedHeading = 0f;
-        private float _headingVelocity = 0f;
-        private bool _isHeadingInitialized = false;
+        // 业务解算大脑核心
+        private readonly HeadingArcLogic _logic = new HeadingArcLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         private readonly CachedFloat _lastRenderedHeading = new CachedFloat(-999f, tolerance: 0.02f);
         private readonly Cached<int> _lastBubbleDeg = new Cached<int>(-1);
         private Color _cachedTextCol;
@@ -140,7 +247,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (lubRt != null) lubRt.anchoredPosition = new Vector2(0f, _currentRadiusY - _currentYCenterOffset);
             }
 
-            UpdateRotatingCompassRose(_displayedHeading, force: true);
+            UpdateRotatingCompassRose(_logic.CurrentState.DisplayedHeading, force: true);
         }
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -166,6 +273,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _valueToken = config.NumericToken;
             }
             _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN", "HDG" }, _valueToken);
+            _logic.ValueToken = _valueToken;
 
             // 1. 构建弧形暗色玻璃背景带
             BuildArcBand(_currentRadiusX, _currentRadiusY, _currentYCenterOffset, s, theme);
@@ -446,69 +554,23 @@ namespace ModularFlightPanel.UI.Widgets
             OnCycleHeadingModeAction?.Invoke();
         }
 
-        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context) => base.OnDataHeartBeat(in context);
+
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context) => base.OnUIDrawLoop(ref context);
+
+        protected override void OnRenderState()
         {
-            base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel) return;
+            HeadingArcState state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            float rawHeading;
-            var hook = NavBallHookService.Provider;
-            if (hook != null && hook.HasStockNavBall)
-            {
-                rawHeading = hook.HeadingAngle;
-            }
-            else
-            {
-                double evalHdg = TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
-                rawHeading = !double.IsNaN(evalHdg) ? (float)evalHdg : (float)telemetry.Heading;
-            }
-            if (float.IsNaN(rawHeading)) rawHeading = 0f;
-
-            _targetHeading = (rawHeading % 360f + 360f) % 360f;
-
-            if (!_isHeadingInitialized)
-            {
-                _displayedHeading = _targetHeading;
-                _isHeadingInitialized = true;
-            }
-
-            float dt = context.DeltaTime;
-            if (dt <= 0.0001f)
-            {
-                _displayedHeading = _targetHeading;
-            }
-            else
-            {
-                float angleDiff = Mathf.DeltaAngle(_displayedHeading, _targetHeading);
-                if (Mathf.Abs(angleDiff) > 120f)
-                {
-                    _displayedHeading = _targetHeading;
-                    _headingVelocity = 0f;
-                }
-                else
-                {
-                    _displayedHeading = Mathf.SmoothDampAngle(_displayedHeading, _targetHeading, ref _headingVelocity, 0.09f, 900f, dt);
-                    _displayedHeading = (_displayedHeading % 360f + 360f) % 360f;
-                }
-            }
+            UpdateRotatingCompassRose(state.DisplayedHeading);
+            UpdateBubbleHeadingText(state.BubbleDeg);
         }
 
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
-        {
-            base.OnUIDrawLoop(ref context);
-            if (!_isHeadingInitialized) return;
-
-            UpdateRotatingCompassRose(_displayedHeading);
-            UpdateBubbleHeadingText(_displayedHeading);
-        }
-
-        private void UpdateBubbleHeadingText(float heading)
+        private void UpdateBubbleHeadingText(int degInt)
         {
             if (_headingText != null)
             {
-                int degInt = Mathf.RoundToInt(heading) % 360;
-                if (degInt < 0) degInt += 360;
                 if (_lastBubbleDeg.Update(degInt))
                 {
                     _headingText.text = $"{degInt:D3}°";
