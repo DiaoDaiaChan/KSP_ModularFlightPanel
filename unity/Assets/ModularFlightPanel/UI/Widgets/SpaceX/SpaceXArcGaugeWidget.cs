@@ -3,56 +3,158 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
     /// <summary>
+    /// SpaceX 环形遥测仪表纯逻辑状态快照 (0-GC 纯值类型，SPEC-012)
+    /// </summary>
+    public struct SpaceXArcGaugeState : IEquatable<SpaceXArcGaugeState>
+    {
+        public bool HasValue;
+        public double Value;
+        public float Fraction;
+        public string FormattedText;
+        public CardStyleRole TargetCardRole;
+        public TextStyleRole ValueTextRole;
+        public MeterStyleRole MeterRole;
+
+        public bool Equals(SpaceXArcGaugeState other)
+        {
+            return HasValue == other.HasValue &&
+                   Math.Abs(Value - other.Value) < 0.001 &&
+                   Math.Abs(Fraction - other.Fraction) < 0.001f &&
+                   FormattedText == other.FormattedText &&
+                   TargetCardRole == other.TargetCardRole &&
+                   ValueTextRole == other.ValueTextRole &&
+                   MeterRole == other.MeterRole;
+        }
+    }
+
+    /// <summary>
+    /// SpaceX 环形仪表纯业务大脑 (100% 游戏与引擎解耦，SPEC-012)
+    /// </summary>
+    public class SpaceXArcGaugeLogic : WidgetLogic<SpaceXArcGaugeState>
+    {
+        public string TokenKey { get; set; }
+        public double MinValue { get; set; } = 0.0;
+        public double MaxValue { get; set; } = 100.0;
+        public double WarningThreshold { get; set; } = 0.0;
+        public double CautionThreshold { get; set; } = 0.0;
+        public string LimitMode { get; set; }
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            string token = !string.IsNullOrEmpty(TokenKey) ? TokenKey : "{SPD:SURF:KMH}";
+            double val = TelemetryTokenEngine.EvaluateNumeric(token, telemetry);
+
+            if (double.IsNaN(val))
+            {
+                CurrentState = default;
+                return;
+            }
+
+            string formattedText = TelemetryTokenEngine.Evaluate(token, telemetry);
+
+            double range = MaxValue - MinValue;
+            float frac = range > 0.0001 ? Math.Max(0f, Math.Min(1f, (float)((val - MinValue) / range))) : 0f;
+
+            string mode = LimitMode?.ToLowerInvariant();
+            CardStyleRole role = CardStyleRole.Normal;
+            bool hasRange = MaxValue > MinValue;
+            bool overMax = hasRange && val > MaxValue;
+
+            if (mode == "soft")
+            {
+                role = overMax ? CardStyleRole.Warning : CardStyleRole.Normal;
+            }
+            else if (mode != "none")
+            {
+                if (WarningThreshold > 0 && val >= WarningThreshold) role = CardStyleRole.Danger;
+                else if (CautionThreshold > 0 && val >= CautionThreshold) role = CardStyleRole.Warning;
+                else if (overMax) role = CardStyleRole.Danger;
+            }
+
+            TextStyleRole textRole;
+            MeterStyleRole meterRole;
+            switch (role)
+            {
+                case CardStyleRole.Danger:
+                    textRole = TextStyleRole.Danger;
+                    meterRole = MeterStyleRole.Danger;
+                    break;
+                case CardStyleRole.Warning:
+                    textRole = TextStyleRole.Warning;
+                    meterRole = MeterStyleRole.Warning;
+                    break;
+                default:
+                    textRole = TextStyleRole.PrimaryValue;
+                    meterRole = MeterStyleRole.Primary;
+                    break;
+            }
+
+            CurrentState = new SpaceXArcGaugeState
+            {
+                HasValue = true,
+                Value = val,
+                Fraction = frac,
+                FormattedText = formattedText,
+                TargetCardRole = role,
+                ValueTextRole = textRole,
+                MeterRole = meterRole
+            };
+        }
+    }
+
+    /// <summary>
     /// SpaceX 星舰发射广播风格马蹄形弧线表盘 (SpaceX Webcast Arc Gauge)
-    /// 适用于：
-    ///   - 速度 (Speed)：大号读数 + KM/H 单位 + 动态弧形进度
-    ///   - 高度 (Altitude)：大号读数 + KM 单位 + 动态弧形进度
-    ///   - 任何机载遥测数值（油门、垂直速度、动压等皆可经由 WidgetConfig 配置）
-    /// 严格遵循 MFP 架构规范：
-    ///   - 零硬编码与零颜色字面量 (MFP-SPEC-006)
-    ///   - 阶梯刷新与脏标记保护 (MFP-SPEC-002, 004)
-    ///   - 纯 UGUI 原生填充与抗锯齿矢量光栅化
+    /// 遵循 MFP-SPEC-012 (架构分层与 WidgetLogic 解耦)、MFP-SPEC-009 (托管缓存与脏检查)、
+    /// MFP-SPEC-002 (纯 GPU 矢量网格，零 CPU 软件光栅化) 规范。
     /// </summary>
     [FlightWidget("spacex_arc", "spacex_gauge", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 环形遥测仪表", Description = "SpaceX 龙飞船高精度同心圆弧表盘，带发光步进游标与动态数字标定。", DefaultWidgetId = "spacex.speed", DefaultX = -240f, DefaultY = 0f, ExactIds = new[] { "spacex.speed", "spacex.altitude" })]
     public class SpaceXArcGaugeWidget : BaseFlightWidget
     {
+        private readonly SpaceXArcGaugeLogic _logic = new SpaceXArcGaugeLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
         public override Vector2 BaseSize => new Vector2(110f, 110f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
-
 
         // UI 视图节点
         private Image _bgImage;
         private Outline _bgOutline;
 
-        private Image _arcTrackImage;
-        private Image _arcFillImage;
+        private ProceduralArcImage _arcTrackImage;
+        private ProceduralArcImage _arcFillImage;
 
         private Text _topLabelText;
         private Text _primaryValueText;
         private Text _unitLabelText;
 
-        // 静态共享抗锯齿环状图元 (避免每个实例重复烘焙 Texture)
-        private static Sprite _sharedRingSprite;
-        private static Texture2D _sharedRingTexture;
-
-        // 遥测缓存与脏标记
+        // 遥测缓存与脏标记 (SPEC-009)
         private readonly CachedDouble _lastCachedValue = new CachedDouble(double.NaN);
         private readonly Cached<string> _lastFormattedText = new Cached<string>(string.Empty);
+        private readonly CachedFloat _lastFillAmount = new CachedFloat(-1f, 0.002f);
         private CardStyleRole _currentCardRole = CardStyleRole.Normal;
 
         // CustomTemplate 自定义通道
         private string _tokenKey;
         private string _titleTemplate;
         private string _unitTemplate;
-
-        // 弧度几何常数：270° 穹顶弧，底部 90° 开口容纳单位标签
-        private const float ArcTotalFraction = 0.75f; // 270° / 360°
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -62,6 +164,17 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _tokenKey = GetTemplateChannel("TOKEN", null);
             _titleTemplate = GetTemplateChannel("TITLE", null);
             _unitTemplate = GetTemplateChannel("UNIT", null);
+
+            // 配置业务逻辑大脑
+            _logic.TokenKey = !string.IsNullOrEmpty(_tokenKey) ? _tokenKey : config?.NumericToken;
+            if (config != null)
+            {
+                _logic.MinValue = config.MinValue;
+                _logic.MaxValue = config.MaxValue > config.MinValue ? config.MaxValue : 100.0;
+                _logic.WarningThreshold = config.WarningThreshold;
+                _logic.CautionThreshold = config.CautionThreshold;
+                _logic.LimitMode = config.LimitMode;
+            }
 
             // 1. 组件包围盒 (基准 110x110 逻辑像素)
             Vector2 size = new Vector2(110f * s, 110f * s);
@@ -73,34 +186,24 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_bgOutline != null)
                 _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
-            EnsureSharedRingSprite();
-
-            // 3. 构建马蹄弧形轨道 (Track) 与填充条 (Fill)
-            // 弧度起点：左下角 225°，顺时针至右下角 315° (-45°)
-            // UGUI Radial360 Origin.Bottom = 270°，逆时针旋转 45° (z = -45) 使其起点对准 225°
+            // 3. 构建马蹄弧形轨道 (Track) 与填充条 (Fill) (纯 GPU 矢量网格，SPEC-002)
             float arcDiameter = 98f * s;
 
             // 底槽轨道
-            _arcTrackImage = CreateChild<Image>("Arc_Track", transform, new Vector2(arcDiameter, arcDiameter), new Vector2(0f, 2f * s));
-            RectTransform trackRt = _arcTrackImage.rectTransform;
-            trackRt.localEulerAngles = new Vector3(0f, 0f, -45f);
-            _arcTrackImage.sprite = _sharedRingSprite;
-            _arcTrackImage.type = Image.Type.Filled;
-            _arcTrackImage.fillMethod = Image.FillMethod.Radial360;
-            _arcTrackImage.fillOrigin = (int)Image.Origin360.Bottom;
-            _arcTrackImage.fillClockwise = true;
-            _arcTrackImage.fillAmount = ArcTotalFraction;
+            _arcTrackImage = CreateChild<ProceduralArcImage>("Arc_Track", transform, new Vector2(arcDiameter, arcDiameter), new Vector2(0f, 2f * s));
+            _arcTrackImage.InnerRadiusRatio = 0.84f;
+            _arcTrackImage.OuterRadiusRatio = 0.94f;
+            _arcTrackImage.StartAngle = 225f;
+            _arcTrackImage.SweepAngle = 270f;
+            _arcTrackImage.fillAmount = 1.0f;
             _arcTrackImage.raycastTarget = false;
 
             // 动态进度填充弧
-            _arcFillImage = CreateChild<Image>("Arc_Fill", transform, new Vector2(arcDiameter, arcDiameter), new Vector2(0f, 2f * s));
-            RectTransform fillRt = _arcFillImage.rectTransform;
-            fillRt.localEulerAngles = new Vector3(0f, 0f, -45f);
-            _arcFillImage.sprite = _sharedRingSprite;
-            _arcFillImage.type = Image.Type.Filled;
-            _arcFillImage.fillMethod = Image.FillMethod.Radial360;
-            _arcFillImage.fillOrigin = (int)Image.Origin360.Bottom;
-            _arcFillImage.fillClockwise = true;
+            _arcFillImage = CreateChild<ProceduralArcImage>("Arc_Fill", transform, new Vector2(arcDiameter, arcDiameter), new Vector2(0f, 2f * s));
+            _arcFillImage.InnerRadiusRatio = 0.84f;
+            _arcFillImage.OuterRadiusRatio = 0.94f;
+            _arcFillImage.StartAngle = 225f;
+            _arcFillImage.SweepAngle = 270f;
             _arcFillImage.fillAmount = 0f;
             _arcFillImage.raycastTarget = false;
 
@@ -163,113 +266,66 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             ApplyText(_unitLabelText, TextStyleRole.Unit, theme);
 
             // 马蹄弧形轨道与填充着色
-            ApplyMeter(_arcTrackImage, _arcFillImage, null, MeterStyleRole.Primary, theme);
+            if (_arcTrackImage != null)
+            {
+                _arcTrackImage.color = style.GetMeterColor(MeterStyleRole.Track, theme);
+            }
+            if (_arcFillImage != null)
+            {
+                _arcFillImage.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+            }
         }
-
-        private double _dataVal = double.NaN;
-        private bool _dataHasValue = false;
-        private string _dataNewStr = "---";
-        private float _dataFrac = 0f;
-        private CardStyleRole _dataTargetRole = CardStyleRole.Normal;
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel || Config == null)
-            {
-                _dataHasValue = false;
-                return;
-            }
-
-            // 1. 通过通配符引擎求值 (优先使用 _tokenKey 或 Config.NumericToken，例如 {SPD:SURF:KMH} 或 {ALT:ASL:KM})
-            string token = !string.IsNullOrEmpty(_tokenKey)
-                ? _tokenKey
-                : (!string.IsNullOrEmpty(Config.NumericToken) ? Config.NumericToken : "{SPD:SURF:KMH}");
-            double val = TelemetryTokenEngine.EvaluateNumeric(token, telemetry);
-
-            if (double.IsNaN(val))
-            {
-                _dataHasValue = false;
-                return;
-            }
-
-            _dataHasValue = true;
-            _dataVal = val;
-            _dataNewStr = TelemetryTokenEngine.Evaluate(token, telemetry);
-            _dataFrac = NormalizeToRange(val);
-            _dataTargetRole = ResolveCardRole(val);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
 
-            if (!_dataHasValue)
+            SpaceXArcGaugeState state = _logic.CurrentState;
+            if (!state.HasValue)
             {
                 ShowUnavailable();
                 return;
             }
 
             ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            // 2. 脏标记检查：变化小于阈值时不触发 UGUI 文本重排
-            double delta = Config.ValueDeltaThreshold > 0.0 ? Config.ValueDeltaThreshold : 0.05;
-            if (!double.IsNaN(_lastCachedValue.Value) && Math.Abs(_dataVal - _lastCachedValue.Value) <= delta)
+            // 1. 脏标记检查：数值或文本未变时不触发 UGUI 重绘
+            double delta = (Config != null && Config.ValueDeltaThreshold > 0.0) ? Config.ValueDeltaThreshold : 0.05;
+            if (!double.IsNaN(_lastCachedValue.Value) && Math.Abs(state.Value - _lastCachedValue.Value) <= delta)
             {
                 return;
             }
-            _lastCachedValue.Update(_dataVal);
+            _lastCachedValue.Update(state.Value);
 
-            // 3. 更新数字文本
-            if (_lastFormattedText.Update(_dataNewStr))
+            // 2. 更新数字文本
+            if (_lastFormattedText.Update(state.FormattedText))
             {
-                _primaryValueText.text = _dataNewStr;
+                _primaryValueText.SetTextSafe(state.FormattedText);
             }
 
-            // 4. 计算圆弧填充百分比 (归一化量程 [MinValue, MaxValue]，最大占 270°)
-            if (_arcFillImage != null)
+            // 3. 计算圆弧填充百分比
+            if (_arcFillImage != null && _lastFillAmount.Update(state.Fraction))
             {
-                _arcFillImage.fillAmount = _dataFrac * ArcTotalFraction;
+                _arcFillImage.fillAmount = state.Fraction;
             }
 
-            // 5. 状态机告警着色
-            if (_currentCardRole != _dataTargetRole)
+            // 4. 状态机告警着色
+            if (_currentCardRole != state.TargetCardRole)
             {
-                _currentCardRole = _dataTargetRole;
-                ApplyCard(_bgImage, _bgOutline, _dataTargetRole, theme);
-                ApplyText(_primaryValueText, GetValueTextRole(_dataTargetRole), theme);
-                MeterStyleRole meterRole = _dataTargetRole == CardStyleRole.Danger
-                    ? MeterStyleRole.Danger
-                    : (_dataTargetRole == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
-                ApplyMeter(null, _arcFillImage, null, meterRole, theme);
+                _currentCardRole = state.TargetCardRole;
+                ApplyCard(_bgImage, _bgOutline, state.TargetCardRole, theme);
+                ApplyText(_primaryValueText, state.ValueTextRole, theme);
+                if (_arcFillImage != null)
+                {
+                    _arcFillImage.color = style.GetMeterColor(state.MeterRole, theme);
+                }
             }
-        }
-
-        private float NormalizeToRange(double val)
-        {
-            double range = Config.MaxValue - Config.MinValue;
-            if (range <= 0.0001) return 0f;
-            return Mathf.Clamp01((float)((val - Config.MinValue) / range));
-        }
-
-        private CardStyleRole ResolveCardRole(double val)
-        {
-            string mode = string.IsNullOrEmpty(Config.LimitMode) ? "hard" : Config.LimitMode.ToLowerInvariant();
-            if (mode == "none") return CardStyleRole.Normal;
-
-            bool hasRange = Config.MaxValue > Config.MinValue;
-            bool overMax = hasRange && val > Config.MaxValue;
-
-            if (mode == "soft")
-            {
-                return overMax ? CardStyleRole.Warning : CardStyleRole.Normal;
-            }
-
-            if (Config.WarningThreshold > 0 && val >= Config.WarningThreshold) return CardStyleRole.Danger;
-            if (Config.CautionThreshold > 0 && val >= Config.CautionThreshold) return CardStyleRole.Warning;
-            if (overMax) return CardStyleRole.Danger;
-            return CardStyleRole.Normal;
         }
 
         private static TextStyleRole GetValueTextRole(CardStyleRole role)
@@ -287,64 +343,64 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_lastFormattedText.Value == "---") return;
             _lastCachedValue.Reset(double.NaN);
             _lastFormattedText.Update("---");
-            _primaryValueText.text = "---";
+            _primaryValueText.SetTextSafe("---");
             if (_arcFillImage != null) _arcFillImage.fillAmount = 0f;
-        }
-
-        /// <summary>
-        /// 程序化烘焙高精 256x256 矢量抗锯齿细圆环 Sprite (零颜色字面量，全走 NeutralOpaque)
-        /// </summary>
-        private static void EnsureSharedRingSprite()
-        {
-            if (_sharedRingSprite != null) return;
-
-            const int size = 256;
-            _sharedRingTexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            _sharedRingTexture.filterMode = FilterMode.Bilinear;
-            _sharedRingTexture.wrapMode = TextureWrapMode.Clamp;
-
-            Color[] cols = new Color[size * size];
-            float half = size * 0.5f;
-            float rOuter = 0.94f;
-            float rInner = 0.84f;
-            float feather = 3f / half; // 3px 次像素平滑
-
-            Color opaque = WidgetStyleManager.NeutralOpaque;
-
-            for (int y = 0; y < size; y++)
-            {
-                float dy = (y - half) / half;
-                for (int x = 0; x < size; x++)
-                {
-                    float dx = (x - half) / half;
-                    float r = Mathf.Sqrt(dx * dx + dy * dy);
-
-                    if (r > rOuter + feather || r < rInner - feather)
-                    {
-                        cols[y * size + x] = Color.clear;
-                        continue;
-                    }
-
-                    float outerAlpha = Mathf.Clamp01((rOuter - r) / feather + 0.5f);
-                    float innerAlpha = Mathf.Clamp01((r - rInner) / feather + 0.5f);
-                    float alpha = Mathf.Min(outerAlpha, innerAlpha);
-
-                    Color c = opaque;
-                    c.a = alpha;
-                    cols[y * size + x] = c;
-                }
-            }
-
-            _sharedRingTexture.SetPixels(cols);
-            _sharedRingTexture.Apply(false, true);
-
-            _sharedRingSprite = Sprite.Create(_sharedRingTexture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
         }
 
         protected override void OnDestroy()
         {
             this.Controls.UnregisterAll();
             base.OnDestroy();
+        }
+    }
+
+    /// <summary>
+    /// GPU 程序化马蹄弧形图元 (零 CPU 软件光栅化，纯代码 GPU 弧线几何网格，SPEC-002)
+    /// </summary>
+    public class ProceduralArcImage : Image
+    {
+        public float InnerRadiusRatio = 0.84f;
+        public float OuterRadiusRatio = 0.94f;
+        public float StartAngle = 225f;
+        public float SweepAngle = 270f;
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            float fill = Mathf.Clamp01(fillAmount);
+            if (fill <= 0.0001f) return;
+
+            Rect r = GetPixelAdjustedRect();
+            float radius = Mathf.Min(r.width, r.height) * 0.5f;
+            float rOuter = radius * OuterRadiusRatio;
+            float rInner = radius * InnerRadiusRatio;
+            Vector2 center = r.center;
+
+            Color c = color;
+            float totalDeg = SweepAngle * fill;
+            int segments = Mathf.Max(6, Mathf.RoundToInt(totalDeg / 6f));
+            float angleStep = totalDeg / segments;
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float deg = StartAngle - i * angleStep;
+                float rad = deg * Mathf.Deg2Rad;
+                float cos = Mathf.Cos(rad);
+                float sin = Mathf.Sin(rad);
+
+                Vector2 vIn = center + new Vector2(cos * rInner, sin * rInner);
+                Vector2 vOut = center + new Vector2(cos * rOuter, sin * rOuter);
+
+                vh.AddVert(vIn, c, Vector2.zero);
+                vh.AddVert(vOut, c, Vector2.zero);
+
+                if (i > 0)
+                {
+                    int baseIdx = (i - 1) * 2;
+                    vh.AddTriangle(baseIdx, baseIdx + 1, baseIdx + 3);
+                    vh.AddTriangle(baseIdx + 3, baseIdx + 2, baseIdx);
+                }
+            }
         }
     }
 }
