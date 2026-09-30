@@ -52,6 +52,68 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 多构型自适应矩阵：支持纵向双列、横向双行、横向单行 (Multi-Orientation Matrix Layout)
     /// 5. 极简微光折叠胶囊 (Collapsed 38x38px Pill)：随时收纳，还给驾驶舱纯净视野
     /// </summary>
+    /// <summary>
+    /// 现代工具栏收纳坞零 GC 不可变遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct ModernToolbarState : IEquatable<ModernToolbarState>
+    {
+        public bool HasVessel;
+        public bool IsCollapsed;
+        public bool DrawerExpanded;
+        public int TotalButtonCount;
+
+        public bool Equals(ModernToolbarState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   IsCollapsed == other.IsCollapsed &&
+                   DrawerExpanded == other.DrawerExpanded &&
+                   TotalButtonCount == other.TotalButtonCount;
+        }
+
+        public override bool Equals(object obj) => obj is ModernToolbarState other && Equals(other);
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = HasVessel.GetHashCode();
+                hash = (hash * 397) ^ IsCollapsed.GetHashCode();
+                hash = (hash * 397) ^ DrawerExpanded.GetHashCode();
+                hash = (hash * 397) ^ TotalButtonCount;
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 现代工具栏收纳坞纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class ModernToolbarLogic : WidgetLogic<ModernToolbarState>
+    {
+        public bool IsCollapsed = false;
+        public bool DrawerExpanded = false;
+        public int TotalButtonCount = 0;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            IsCollapsed = false;
+            DrawerExpanded = false;
+            TotalButtonCount = 0;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            bool hasVessel = telemetry != null && telemetry.HasVessel;
+            CurrentState = new ModernToolbarState
+            {
+                HasVessel = hasVessel,
+                IsCollapsed = IsCollapsed,
+                DrawerExpanded = DrawerExpanded,
+                TotalButtonCount = TotalButtonCount
+            };
+        }
+    }
+
     [FlightWidget("toolbar", "modern_toolbar", "dock", Category = WidgetCategory.Controls, DisplayName = "AVIONICS 现代折叠工具栏收纳坞", Description = "接管原版 20+ MOD 图标的超现代黑晶抽屉坞，彻底消灭屏幕长龙。", DefaultWidgetId = "core.toolbar", DefaultX = -460f, DefaultY = 0f, IsSingleton = true, ExactIds = new[] { "core.toolbar" })]
     public class ModernToolbarWidget : BaseFlightWidget
     {
@@ -61,6 +123,9 @@ namespace ModularFlightPanel.UI.Widgets
         protected override bool AutoCreateCardFrame => false;
         public override bool IsInteractive => true;
 
+        private readonly ModernToolbarLogic _logic = new ModernToolbarLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly CachedDouble _lastToolbarSync = new CachedDouble(0);
 
         private Image _panelBg;
         private Outline _panelOutline;
@@ -1407,6 +1472,9 @@ namespace ModularFlightPanel.UI.Widgets
                 MFPLogger.WarnThrottled("ModernToolbar_Heartbeat", $"Failed heartbeat KSP button states: {ex.Message}");
             }
 #endif
+            _logic.IsCollapsed = _isCollapsed;
+            _logic.DrawerExpanded = _drawerExpanded;
+            _logic.TotalButtonCount = _itemViews.Count;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -1449,6 +1517,18 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 #endif
+        }
+
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _lastToolbarSync.Reset(0);
+            _logic.Reset();
         }
 
 
