@@ -357,6 +357,11 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             base.OnDataHeartBeat(in context);
         }
 
+        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        {
+            base.OnUIDrawLoop(ref context);
+        }
+
         protected override void OnRenderState()
         {
             var state = _logic.CurrentState;
