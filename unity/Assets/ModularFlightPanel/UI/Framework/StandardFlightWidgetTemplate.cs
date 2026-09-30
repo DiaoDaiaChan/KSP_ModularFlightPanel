@@ -41,6 +41,115 @@ namespace ModularFlightPanel.UI
     // ====================================================================================================
 
     /// <summary>
+    /// 标准航电组件范式状态快照 (0 GC 纯值结构体，SPEC-012)
+    /// </summary>
+    public struct StandardTemplateState
+    {
+        public bool HasValue;
+        public double Value;
+        public string FormattedText;
+        public float Fraction;
+        public CardStyleRole TargetRole;
+        public string BadgeText;
+        public TextStyleRole TextRole;
+    }
+
+    /// <summary>
+    /// 标准航电组件范式解算大脑 (纯 C# 离线解算内核，SPEC-012)
+    /// </summary>
+    public class StandardTemplateLogic : WidgetLogic<StandardTemplateState>
+    {
+        public WidgetConfig Config { get; set; }
+
+        public override void Reset() => CurrentState = default;
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || Config == null)
+            {
+                Reset();
+                return;
+            }
+
+            string token = !string.IsNullOrEmpty(Config.NumericToken) ? Config.NumericToken : "{SPD:SURF:F1}";
+            double val = BaseFlightWidget.EvalNumeric(token, telemetry, double.NaN);
+
+            if (double.IsNaN(val))
+            {
+                Reset();
+                return;
+            }
+
+            string dataText = BaseFlightWidget.EvalToken(token, telemetry, "---");
+            float fraction = BaseFlightWidget.NormalizeValue(val, Config.MinValue, Config.MaxValue);
+            CardStyleRole role = ResolveCardRole(val);
+            string badgeText = GetBadgeText(role);
+            TextStyleRole textRole = GetValueTextRole(role);
+
+            CurrentState = new StandardTemplateState
+            {
+                HasValue = true,
+                Value = val,
+                FormattedText = dataText,
+                Fraction = fraction,
+                TargetRole = role,
+                BadgeText = badgeText,
+                TextRole = textRole
+            };
+        }
+
+        private string EffectiveLimitMode()
+        {
+            if (Config == null) return "hard";
+            if (Config.IsSoftLimit) return "soft";
+            return string.IsNullOrEmpty(Config.LimitMode) ? "hard" : Config.LimitMode.ToLowerInvariant();
+        }
+
+        private CardStyleRole ResolveCardRole(double val)
+        {
+            if (Config == null) return CardStyleRole.Normal;
+            string mode = EffectiveLimitMode();
+            if (mode == "none") return CardStyleRole.Normal;
+
+            bool hasRange = Config.MaxValue > Config.MinValue;
+            bool overMax = hasRange && val > Config.MaxValue;
+
+            if (mode == "soft")
+            {
+                return overMax ? CardStyleRole.Warning : CardStyleRole.Normal;
+            }
+
+            if (Config.WarningThreshold > 0 && val >= Config.WarningThreshold) return CardStyleRole.Danger;
+            if (Config.CautionThreshold > 0 && val >= Config.CautionThreshold) return CardStyleRole.Warning;
+            if (overMax) return CardStyleRole.Danger;
+            return CardStyleRole.Normal;
+        }
+
+        private static TextStyleRole GetValueTextRole(CardStyleRole cardRole)
+        {
+            switch (cardRole)
+            {
+                case CardStyleRole.Danger: return TextStyleRole.Danger;
+                case CardStyleRole.Warning: return TextStyleRole.Warning;
+                default: return TextStyleRole.PrimaryValue;
+            }
+        }
+
+        public string GetBadgeText(CardStyleRole cardRole)
+        {
+            switch (cardRole)
+            {
+                case CardStyleRole.Danger:
+                    return !string.IsNullOrEmpty(Config?.BadgeWarning) ? Config.BadgeWarning : "WARN";
+                case CardStyleRole.Warning:
+                    return !string.IsNullOrEmpty(Config?.BadgeCaution) ? Config.BadgeCaution : "CAUT";
+                default:
+                    return !string.IsNullOrEmpty(Config?.BadgeNormal) ? Config.BadgeNormal : "NORM";
+            }
+        }
+    }
+
+    /// <summary>
     /// 标准航电组件范式模板 (Standard Flight Widget Reference Template)
     /// </summary>
     [FlightWidget("standard_template",
@@ -69,6 +178,10 @@ namespace ModularFlightPanel.UI
         /// 开启基类全自动卡片底板与微光边框
         /// </summary>
         protected override bool AutoCreateCardFrame => true;
+
+        // 挂载纯 C# 业务解算大脑 (SPEC-012)
+        private readonly StandardTemplateLogic _logic = new StandardTemplateLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // ------------------------------------------------------------------------------------
         // [Part 2: 声明式微控件对象声明 (Object-DSL 语义泊靠范式)]
@@ -101,9 +214,10 @@ namespace ModularFlightPanel.UI
         // 微控件已由基类全自动构建，OnInitialize 仅在需要设置动态文本或特异化布局时选填重写
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
+            _logic.Config = config;
             string titleStr = !string.IsNullOrEmpty(config?.DisplayName) ? config.DisplayName.ToUpperInvariant() : I18n.Tr("WIDGET_FW_TELEMETRY", "遥测");
             HeaderTitle.Text = titleStr;
-            StatusBadge.Text = GetBadgeText(CardStyleRole.Normal);
+            StatusBadge.Text = _logic.GetBadgeText(CardStyleRole.Normal);
             UnitLabel.Text = config?.UnitLabel ?? "";
         }
 
@@ -126,143 +240,54 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        // 数据心跳与 UI 绘制双轨解耦缓存
-        private bool _dataHasValue = false;
-        private double _dataVal = double.NaN;
-        private string _dataText = "---";
-        private float _dataFraction = 0f;
-        private CardStyleRole _dataTargetRole = CardStyleRole.Normal;
-
         // ------------------------------------------------------------------------------------
-        // [Part 5: 数据心跳与 UI 绘制双轨生命周期 (OnDataHeartBeat & OnUIDrawLoop)]
+        // [Part 5: 数据心跳与 UI 绘制双轨生命周期 (SPEC-004C / SPEC-004D)]
         // ------------------------------------------------------------------------------------
 
-        /// <summary>
-        /// 【核心数据心跳】按 EffectiveHeartBeatTier 节律调用，专用于执行物理推算与遥测解算 (0 UI 绘制)。
-        /// </summary>
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || Config == null)
-            {
-                _dataHasValue = false;
-                _dataVal = double.NaN;
-                _dataText = "---";
-                _dataFraction = 0f;
-                _dataTargetRole = CardStyleRole.Normal;
-                return;
-            }
-
-            // 1. 通过父类内置 EvalNumeric 求取数值 (严格面向契约，绝不直触 KSP 核心内部类)
-            string token = !string.IsNullOrEmpty(Config.NumericToken) ? Config.NumericToken : "{SPD:SURF:F1}";
-            double val = EvalNumeric(token, telemetry, double.NaN);
-
-            if (double.IsNaN(val))
-            {
-                _dataHasValue = false;
-                _dataVal = double.NaN;
-                _dataText = "---";
-                _dataFraction = 0f;
-                _dataTargetRole = CardStyleRole.Normal;
-                return;
-            }
-
-            _dataHasValue = true;
-            _dataVal = val;
-            _dataText = EvalToken(token, telemetry, "---");
-            _dataFraction = NormalizeValue(val, Config.MinValue, Config.MaxValue);
-            _dataTargetRole = ResolveCardRole(val);
         }
 
-        /// <summary>
-        /// 【核心 UI 绘制循环】按 RefreshTier 满帧驱动，专用于 UGUI 读数更新、2D UI 着色器材质管线与视觉渲染 (0 遥测物理采样)。
-        /// </summary>
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            if (!_dataHasValue)
+        /// <summary>
+        /// 消费 LogicCore 纯状态快照进行 UI 绘制 (0 遥测物理计算，0 GC 堆分配)
+        /// </summary>
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasValue)
             {
                 ShowUnavailable();
                 return;
             }
 
             // 脏标记检查：阈值防抖，仅在显著变化时才驱动 UI 重绘
-            if (!_lastCachedValue.Update(_dataVal))
+            if (!_lastCachedValue.Update(state.Value))
             {
                 return;
             }
 
             // 更新微控件读数与填充
-            PrimaryValue.Text = _dataText;
-            MeterBar.SetFillAmount(_dataFraction, MeterBar.MeterRole);
+            PrimaryValue.Text = state.FormattedText;
+            MeterBar.SetFillAmount(state.Fraction, MeterBar.MeterRole);
 
             // 限幅模式 + 阈值告警状态机 (Normal -> Caution/Warning -> Danger)
-            if (_currentCardRole != _dataTargetRole)
+            if (_currentCardRole != state.TargetRole)
             {
-                _currentCardRole = _dataTargetRole;
-                ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
+                _currentCardRole = state.TargetRole;
+                ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme;
                 if (CardBackground != null && CardOutline != null)
                 {
-                    ApplyCard(CardBackground, CardOutline, _dataTargetRole, theme);
+                    ApplyCard(CardBackground, CardOutline, state.TargetRole, theme);
                 }
-                PrimaryValue.SetRole(GetValueTextRole(_dataTargetRole));
-                StatusBadge.SetRole(GetValueTextRole(_dataTargetRole));
-                StatusBadge.Text = GetBadgeText(_dataTargetRole);
-            }
-        }
-
-        // ------------------------------------------------------------------------------------
-        // [Part 5b: 量程 / 限幅 / 徽标 语义解析 (全部读 WidgetConfig，禁止写死)]
-        // ------------------------------------------------------------------------------------
-
-        private string EffectiveLimitMode()
-        {
-            if (Config.IsSoftLimit) return "soft";
-            return string.IsNullOrEmpty(Config.LimitMode) ? "hard" : Config.LimitMode.ToLowerInvariant();
-        }
-
-        private CardStyleRole ResolveCardRole(double val)
-        {
-            string mode = EffectiveLimitMode();
-            if (mode == "none") return CardStyleRole.Normal;
-
-            bool hasRange = Config.MaxValue > Config.MinValue;
-            bool overMax = hasRange && val > Config.MaxValue;
-
-            if (mode == "soft")
-            {
-                return overMax ? CardStyleRole.Warning : CardStyleRole.Normal;
-            }
-
-            if (Config.WarningThreshold > 0 && val >= Config.WarningThreshold) return CardStyleRole.Danger;
-            if (Config.CautionThreshold > 0 && val >= Config.CautionThreshold) return CardStyleRole.Warning;
-            if (overMax) return CardStyleRole.Danger;
-            return CardStyleRole.Normal;
-        }
-
-        private static TextStyleRole GetValueTextRole(CardStyleRole cardRole)
-        {
-            switch (cardRole)
-            {
-                case CardStyleRole.Danger: return TextStyleRole.Danger;
-                case CardStyleRole.Warning: return TextStyleRole.Warning;
-                default: return TextStyleRole.PrimaryValue;
-            }
-        }
-
-        private string GetBadgeText(CardStyleRole cardRole)
-        {
-            switch (cardRole)
-            {
-                case CardStyleRole.Danger:
-                    return !string.IsNullOrEmpty(Config?.BadgeWarning) ? Config.BadgeWarning : "WARN";
-                case CardStyleRole.Warning:
-                    return !string.IsNullOrEmpty(Config?.BadgeCaution) ? Config.BadgeCaution : "CAUT";
-                default:
-                    return !string.IsNullOrEmpty(Config?.BadgeNormal) ? Config.BadgeNormal : "NORM";
+                PrimaryValue.SetRole(state.TextRole);
+                StatusBadge.SetRole(state.TextRole);
+                StatusBadge.Text = state.BadgeText;
             }
         }
 
@@ -276,7 +301,7 @@ namespace ModularFlightPanel.UI
 
             if (_currentCardRole != CardStyleRole.Normal)
             {
-                ThemeConfig theme = WidgetStyleManager.Instance.CurrentTheme;
+                ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme;
                 _currentCardRole = CardStyleRole.Normal;
                 if (CardBackground != null && CardOutline != null)
                 {
@@ -284,7 +309,7 @@ namespace ModularFlightPanel.UI
                 }
                 PrimaryValue.SetRole(TextStyleRole.PrimaryValue);
                 StatusBadge.SetRole(TextStyleRole.SecondaryValue);
-                StatusBadge.Text = GetBadgeText(CardStyleRole.Normal);
+                StatusBadge.Text = _logic.GetBadgeText(CardStyleRole.Normal);
             }
         }
 

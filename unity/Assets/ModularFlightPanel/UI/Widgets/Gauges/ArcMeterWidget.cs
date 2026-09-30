@@ -16,6 +16,99 @@ namespace ModularFlightPanel.UI.Widgets
     }
 
     /// <summary>
+    /// 弧形计量仪表纯状态快照 (0 GC 纯值结构体，SPEC-012)
+    /// </summary>
+    public struct ArcMeterState
+    {
+        public bool HasVessel;
+        public float Fill;
+        public string ValueText;
+        public TextStyleRole ValueRole;
+    }
+
+    /// <summary>
+    /// 弧形计量仪表纯业务大脑 (纯 C# 离线解算内核，SPEC-012)
+    /// </summary>
+    public class ArcMeterLogic : WidgetLogic<ArcMeterState>
+    {
+        public ArcMeterType MeterType { get; set; } = ArcMeterType.Throttle;
+        public WidgetConfig Config { get; set; }
+
+        public override void Reset() => CurrentState = default;
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                Reset();
+                return;
+            }
+
+            float fill = 0f;
+            string valueText = "---";
+            TextStyleRole role = TextStyleRole.PrimaryValue;
+
+            string customTok = Config?.NumericToken;
+            bool isCustomBound = !string.IsNullOrEmpty(customTok) && 
+                                 customTok != "{VSI:NORM}" && 
+                                 customTok != "{PROP}" && 
+                                 customTok != "{THROTTLE}";
+
+            if (isCustomBound)
+            {
+                double val = BaseFlightWidget.EvalNumeric(customTok, telemetry);
+                valueText = BaseFlightWidget.EvalToken(customTok, telemetry, "---");
+                double min = Config != null ? Config.MinValue : 0.0;
+                double max = Config != null ? Config.MaxValue : 100.0;
+                if (max > min)
+                {
+                    fill = Mathf.Clamp01((float)((val - min) / (max - min)));
+                }
+                else
+                {
+                    fill = 0f;
+                }
+
+                if (Config != null && Config.WarningThreshold > Config.CautionThreshold)
+                {
+                    if (val >= Config.WarningThreshold) role = TextStyleRole.Danger;
+                    else if (val >= Config.CautionThreshold) role = TextStyleRole.Warning;
+                    else role = TextStyleRole.PrimaryValue;
+                }
+            }
+            else if (MeterType == ArcMeterType.VerticalSpeed || customTok == "{VSI:NORM}")
+            {
+                double vsi = telemetry.VerticalSpeed;
+                valueText = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+                fill = (float)telemetry.NormalizedVSI;
+                role = TextStyleRole.PrimaryValue;
+            }
+            else if (MeterType == ArcMeterType.StagePropellant || customTok == "{PROP}")
+            {
+                double prop = telemetry.StagePropellantFraction * 100.0;
+                valueText = $"{prop:F0}%";
+                fill = Mathf.Clamp01((float)telemetry.StagePropellantFraction);
+                role = fill < 0.15f ? TextStyleRole.Danger : (fill < 0.30f ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
+            }
+            else
+            {
+                double thr = telemetry.Throttle * 100.0;
+                valueText = $"{thr:F0}%";
+                fill = Mathf.Clamp01((float)telemetry.Throttle);
+                role = TextStyleRole.PrimaryValue;
+            }
+
+            CurrentState = new ArcMeterState
+            {
+                HasVessel = true,
+                Fill = fill,
+                ValueText = valueText,
+                ValueRole = role
+            };
+        }
+    }
+
+    /// <summary>
     /// 紧凑型精密圆弧度量仪表 (Compact Precision Arc Meter Widget)
     /// 现代航电独立单项圆弧仪表：
     /// 1. 240° 极坐标高对比度度量环 (支持程序化 RadialMeterShader 与平滑填充)；
@@ -23,7 +116,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// 3. 顶部系统/通道标签与底部两端量程微标；
     /// 4. 完美支持油门 (THR)、垂直速度 (VSI)、本级推进剂 (PROP) 与通用通配符绑定。
     /// 彻底废除旧版脱离姿态球后的硬编码漂移偏移，具备规范的独立卡片底板与微控件纳管。
-    /// 100% 遵照 SPEC-001..008 核心架构规范。
+    /// 100% 遵照 SPEC-001..012 核心架构规范。
     /// </summary>
     [FlightWidget("arc_meter", "meter_arc", "arc_gauge",
         Category = WidgetCategory.Gauges,
@@ -39,6 +132,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(104f, 104f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+
+        private readonly ArcMeterLogic _logic = new ArcMeterLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         private ArcMeterType _type = ArcMeterType.Throttle;
         private Image _meterImage;
@@ -85,11 +181,12 @@ namespace ModularFlightPanel.UI.Widgets
                 MaxScale.Text = "100";
             }
 
+            _logic.MeterType = _type;
+            _logic.Config = config;
+
             // 构建圆弧着色器 GameObject
             float ringSize = 92f * s;
             _meterImage = CreateChild<Image>("Arc_Meter_Ring", transform, new Vector2(ringSize, ringSize), new Vector2(0f, -2f * s));
-            GameObject meterObj = _meterImage.gameObject;
-            RectTransform meterRt = _meterImage.rectTransform;
             _meterImage.color = Color.clear;
             if (AssetLoader.RadialMeterShader != null)
             {
@@ -120,86 +217,36 @@ namespace ModularFlightPanel.UI.Widgets
             _meterMaterial.SetColor("_BorderColor", style.GetCardBorderColor(CardStyleRole.Normal, theme));
         }
 
-        private string _dataValueText = "---";
-        private float _dataFill = 0f;
-        private TextStyleRole _dataRole = TextStyleRole.PrimaryValue;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _dataValueText = "---";
-                _dataFill = 0f;
-                _dataRole = TextStyleRole.PrimaryValue;
-                return;
-            }
-
-            float fill = 0f;
-            string customTok = Config?.NumericToken;
-            bool isCustomBound = !string.IsNullOrEmpty(customTok) && 
-                                 customTok != "{VSI:NORM}" && 
-                                 customTok != "{PROP}" && 
-                                 customTok != "{THROTTLE}";
-
-            if (isCustomBound)
-            {
-                double val = EvalNumeric(customTok, telemetry);
-                _dataValueText = EvalToken(customTok, telemetry, "---");
-                double min = Config.MinValue;
-                double max = Config.MaxValue;
-                if (max > min)
-                {
-                    fill = Mathf.Clamp01((float)((val - min) / (max - min)));
-                }
-                else
-                {
-                    fill = 0f;
-                }
-
-                if (Config.WarningThreshold > Config.CautionThreshold)
-                {
-                    if (val >= Config.WarningThreshold) _dataRole = TextStyleRole.Danger;
-                    else if (val >= Config.CautionThreshold) _dataRole = TextStyleRole.Warning;
-                    else _dataRole = TextStyleRole.PrimaryValue;
-                }
-            }
-            else if (_type == ArcMeterType.VerticalSpeed || customTok == "{VSI:NORM}")
-            {
-                double vsi = telemetry.VerticalSpeed;
-                _dataValueText = (vsi >= 0.0 ? "+" : "") + vsi.ToString("F1");
-                fill = (float)telemetry.NormalizedVSI;
-                _dataRole = TextStyleRole.PrimaryValue;
-            }
-            else if (_type == ArcMeterType.StagePropellant || customTok == "{PROP}")
-            {
-                double prop = telemetry.StagePropellantFraction * 100.0;
-                _dataValueText = $"{prop:F0}%";
-                fill = Mathf.Clamp01(telemetry.StagePropellantFraction);
-                _dataRole = fill < 0.15f ? TextStyleRole.Danger : (fill < 0.30f ? TextStyleRole.Warning : TextStyleRole.PrimaryValue);
-            }
-            else
-            {
-                double thr = telemetry.Throttle * 100.0;
-                _dataValueText = $"{thr:F0}%";
-                fill = Mathf.Clamp01((float)telemetry.Throttle);
-                _dataRole = TextStyleRole.PrimaryValue;
-            }
-
-            _dataFill = fill;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            Value.Text = _dataValueText;
-            Value.SetRole(_dataRole);
-
-            if (_meterMaterial != null && _lastFill.Update(_dataFill))
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel)
             {
-                _meterMaterial.SetFloat("_FillAmount", _dataFill);
+                Value.Text = "---";
+                Value.SetRole(TextStyleRole.PrimaryValue);
+                if (_meterMaterial != null && _lastFill.Update(0f))
+                {
+                    _meterMaterial.SetFloat("_FillAmount", 0f);
+                }
+                return;
+            }
+
+            Value.Text = state.ValueText;
+            Value.SetRole(state.ValueRole);
+
+            if (_meterMaterial != null && _lastFill.Update(state.Fill))
+            {
+                _meterMaterial.SetFloat("_FillAmount", state.Fill);
             }
         }
 

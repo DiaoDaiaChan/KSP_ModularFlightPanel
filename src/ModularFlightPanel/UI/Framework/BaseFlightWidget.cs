@@ -932,9 +932,10 @@ namespace ModularFlightPanel.UI
         #region Avionics Evaluation & Computation Helpers
 
         /// <summary>
+        /// <summary>
         /// 便捷通配符字符串求值工具（自动空值回退与安全保护）
         /// </summary>
-        protected string EvalToken(string token, IFlightTelemetry telemetry, string fallback = "---")
+        public static string EvalToken(string token, IFlightTelemetry telemetry, string fallback = "---")
         {
             if (telemetry == null || string.IsNullOrEmpty(token)) return fallback;
             string res = TelemetryTokenEngine.Evaluate(token, telemetry);
@@ -944,7 +945,7 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 便捷数值型通配符求值工具（自动 NaN 保护与安全回退）
         /// </summary>
-        protected double EvalNumeric(string token, IFlightTelemetry telemetry, double fallback = 0.0)
+        public static double EvalNumeric(string token, IFlightTelemetry telemetry, double fallback = 0.0)
         {
             if (telemetry == null || string.IsNullOrEmpty(token)) return fallback;
             double res = TelemetryTokenEngine.EvaluateNumeric(token, telemetry);
@@ -954,7 +955,7 @@ namespace ModularFlightPanel.UI
         /// <summary>
         /// 便捷数值范围归一化工具 (0.0 ~ 1.0)
         /// </summary>
-        protected float NormalizeValue(double val, double min, double max)
+        public static float NormalizeValue(double val, double min, double max)
         {
             if (double.IsNaN(val)) return 0f;
             double range = max - min;
