@@ -99,6 +99,9 @@ namespace ModularFlightPanel.UI.Widgets
         private string _lastFrameCat = null;
         private string _cachedFrameText = string.Empty;
 
+        private string _lastRawCat = null;
+        private string _cachedCatUpper = "SURFACE";
+
         public override void Reset()
         {
             _lastHdgVal = -1;
@@ -107,6 +110,8 @@ namespace ModularFlightPanel.UI.Widgets
             _lastRawFrame = null;
             _lastFrameCat = null;
             _cachedFrameText = string.Empty;
+            _lastRawCat = null;
+            _cachedCatUpper = "SURFACE";
             CurrentState = default;
         }
 
@@ -140,7 +145,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (hook.HasStockNavBall)
                 {
                     heading = hook.HeadingAngle;
-                    attitudeRot = Quaternion.Inverse(hook.CameraRotation) * hook.BallRotation;
+                    attitudeRot = hook.ViewRotation;
                 }
                 else if (telemetry != null)
                 {
@@ -164,7 +169,12 @@ namespace ModularFlightPanel.UI.Widgets
                 if (rollAngle > 180f) rollAngle -= 360f;
             }
 
-            string catUpper = rawCat.ToUpperInvariant();
+            if (!object.ReferenceEquals(rawCat, _lastRawCat) && rawCat != _lastRawCat)
+            {
+                _lastRawCat = rawCat;
+                _cachedCatUpper = string.IsNullOrEmpty(rawCat) ? "SURFACE" : rawCat.ToUpperInvariant();
+            }
+            string catUpper = _cachedCatUpper;
 
             int iHdg = (Mathf.RoundToInt(heading) % 360 + 360) % 360;
             if (iHdg != _lastHdgVal || catUpper != _lastCatUpper)
@@ -240,13 +250,16 @@ namespace ModularFlightPanel.UI.Widgets
             float hazardAlert = 0.0f;
             if (hasVessel)
             {
-                double rAlt = telemetry.AltitudeAGL;
                 double vSpeed = telemetry.VerticalSpeed;
-                if (rAlt > 0.1 && rAlt < 800.0 && vSpeed < -18.0)
+                if (vSpeed < -18.0)
                 {
-                    float sinkHazard = Mathf.Clamp01((float)(-vSpeed - 18.0) / 45.0f);
-                    float altHazard = Mathf.Clamp01((float)(800.0 - rAlt) / 750.0f);
-                    hazardAlert = sinkHazard * altHazard;
+                    double rAlt = telemetry.AltitudeAGL;
+                    if (rAlt > 0.1 && rAlt < 800.0)
+                    {
+                        float sinkHazard = Mathf.Clamp01((float)(-vSpeed - 18.0) / 45.0f);
+                        float altHazard = Mathf.Clamp01((float)(800.0 - rAlt) / 750.0f);
+                        hazardAlert = sinkHazard * altHazard;
+                    }
                 }
             }
 
@@ -314,11 +327,15 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_displayImage != null && _displayImage.enabled) _displayImage.enabled = false;
                 if (_crosshair != null && _crosshair.activeSelf) _crosshair.SetActive(false);
                 if (_bezelRing != null && _bezelRing.activeSelf) _bezelRing.SetActive(false);
-                foreach (var kvp in _markerImages)
+                if (_markerSlots != null)
                 {
-                    if (kvp.Value != null && kvp.Value.gameObject.activeSelf)
+                    for (int i = 0; i < _markerSlots.Length; i++)
                     {
-                        kvp.Value.gameObject.SetActive(false);
+                        var slotImg = _markerSlots[i]?.Image;
+                        if (slotImg != null && slotImg.gameObject.activeSelf)
+                        {
+                            slotImg.gameObject.SetActive(false);
+                        }
                     }
                 }
                 NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
@@ -397,7 +414,6 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _frameText;
 
         // ── 2D 矢量 HUD 标记覆盖层 ──
-        private readonly Dictionary<string, Image> _markerImages = new Dictionary<string, Image>(12);
         private Transform _markerContainer;
 
         // ── 着色器属性 Uniform 缓存 ──
@@ -460,9 +476,6 @@ namespace ModularFlightPanel.UI.Widgets
 
         private float _frameBadgeAnimTimer = 999f;
         private float _rollPointerAlpha = 0f;
-        private readonly Dictionary<string, Vector2> _renderedMarkerPositions = new Dictionary<string, Vector2>(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, Vector3> _currentMarkerDirs = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, Vector3> _transitionStartMarkerDirs = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
 
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
@@ -505,7 +518,6 @@ namespace ModularFlightPanel.UI.Widgets
         private Quaternion _currentAttitudeRotation = Quaternion.identity;
 
         // ── 矢量标悬停交互与悬浮提示 ──
-        private readonly Dictionary<string, NavballMarkerClickHandler> _markerHandlers = new Dictionary<string, NavballMarkerClickHandler>(StringComparer.OrdinalIgnoreCase);
         private GameObject _markerHoverTooltipObj;
         private RectTransform _markerHoverTooltipRt;
         private Image _markerHoverTooltipBg;
@@ -546,12 +558,14 @@ namespace ModularFlightPanel.UI.Widgets
             public RectTransform RectTransform;
             public NavballMarkerClickHandler Handler;
             public Vector3 CurrentDir;
+            public Vector3 TransitionStartDir;
             public Vector2 RenderedPos;
             public MarkerRenderState LastRenderState;
+            public bool IsActive;
         }
 
         private MarkerSlot[] _markerSlots;
-        private readonly Dictionary<string, MarkerRenderState> _markerRenderStates = new Dictionary<string, MarkerRenderState>(StringComparer.OrdinalIgnoreCase);
+        private readonly MarkerSlot[] _markerSlotByType = new MarkerSlot[16];
         private readonly Vector4[] _cachedAvoidVectors = new Vector4[4];
         private Vector4 _uploadedAvoid0;
         private Vector4 _uploadedAvoid1;
@@ -617,6 +631,7 @@ namespace ModularFlightPanel.UI.Widgets
             _sphereMaterial = new Material(targetShader);
             _displayImage.material = _sphereMaterial;
             CacheMaterialProperties();
+            UpdateProceduralDetailScale();
 
             var initialMode = ThemeManager.Instance.GlobalRenderMode;
             if (initialMode == NavballRenderMode.StockDirect)
@@ -828,16 +843,11 @@ namespace ModularFlightPanel.UI.Widgets
             };
 
             float markerSize = 26f * dpiScale;
-            _markerHandlers.Clear();
-            _renderedMarkerPositions.Clear();
-            _currentMarkerDirs.Clear();
-            _transitionStartMarkerDirs.Clear();
+            Array.Clear(_markerSlotByType, 0, _markerSlotByType.Length);
             _markerSlots = new MarkerSlot[markerKeys.Length];
             for (int i = 0; i < markerKeys.Length; i++)
             {
                 string k = markerKeys[i];
-                _renderedMarkerPositions[k] = Vector2.zero;
-                _currentMarkerDirs[k] = Vector3.zero;
                 Image img = CreateChild<Image>($"Marker_{k}", _markerContainer,
                     new Vector2(markerSize, markerSize), Vector2.zero);
                 GameObject mObj = img.gameObject;
@@ -851,17 +861,26 @@ namespace ModularFlightPanel.UI.Widgets
                 clickHandler.Widget = this;
 
                 mObj.SetActive(false);
-                _markerImages[k] = img;
-                _markerHandlers[k] = clickHandler;
 
-                _markerSlots[i] = new MarkerSlot
+                NavballMarkerType mType = NavballMarkerHelper.GetMarkerType(k);
+                var slot = new MarkerSlot
                 {
                     Key = k,
-                    MarkerType = NavballMarkerHelper.GetMarkerType(k),
+                    MarkerType = mType,
                     Image = img,
                     RectTransform = img.rectTransform,
-                    Handler = clickHandler
+                    Handler = clickHandler,
+                    CurrentDir = Vector3.zero,
+                    TransitionStartDir = Vector3.zero,
+                    RenderedPos = Vector2.zero,
+                    LastRenderState = default,
+                    IsActive = false
                 };
+                _markerSlots[i] = slot;
+                if ((int)mType < _markerSlotByType.Length)
+                {
+                    _markerSlotByType[(int)mType] = slot;
+                }
             }
 
             // 1. 机动节点航向流光引导箭头容器 (Steering Director Chevron Flow)
@@ -953,7 +972,6 @@ namespace ModularFlightPanel.UI.Widgets
             SyncAttitudeAndVisuals();
             SyncMarkers();
             UpdateReticleDynamics();
-            UpdateProceduralDetailScale();
             UpdateRollPointer();
             UpdateSASAndGuidanceVisuals();
             UpdateFrameBadgeAnimation();
@@ -1023,8 +1041,7 @@ namespace ModularFlightPanel.UI.Widgets
             Quaternion rawRot;
             if (hasHook)
             {
-                Quaternion camRot = hook.CameraRotation;
-                rawRot = Quaternion.Inverse(camRot) * hook.BallRotation;
+                rawRot = hook.ViewRotation;
             }
             else
             {
@@ -1074,10 +1091,16 @@ namespace ModularFlightPanel.UI.Widgets
                 _frameBadgeAnimTimer = 0f;
 
                 // 记录所有当前可见标记物的三维起始矢量，以便进行 3D 球面 Slerp 平滑过渡
-                _transitionStartMarkerDirs.Clear();
-                foreach (var kvp in _currentMarkerDirs)
+                if (_markerSlots != null)
                 {
-                    _transitionStartMarkerDirs[kvp.Key] = kvp.Value;
+                    for (int i = 0; i < _markerSlots.Length; i++)
+                    {
+                        var slot = _markerSlots[i];
+                        if (slot != null)
+                        {
+                            slot.TransitionStartDir = slot.CurrentDir;
+                        }
+                    }
                 }
             }
 
@@ -1233,8 +1256,7 @@ namespace ModularFlightPanel.UI.Widgets
                     slot.RenderedPos = Vector2.zero;
                     slot.CurrentDir = Vector3.zero;
                     slot.LastRenderState = default;
-                    _renderedMarkerPositions[key] = Vector2.zero;
-                    _currentMarkerDirs[key] = Vector3.zero;
+                    slot.IsActive = false;
                     continue;
                 }
                 if (!hasManeuver && slot.MarkerType == NavballMarkerType.Maneuver)
@@ -1243,8 +1265,7 @@ namespace ModularFlightPanel.UI.Widgets
                     slot.RenderedPos = Vector2.zero;
                     slot.CurrentDir = Vector3.zero;
                     slot.LastRenderState = default;
-                    _renderedMarkerPositions[key] = Vector2.zero;
-                    _currentMarkerDirs[key] = Vector3.zero;
+                    slot.IsActive = false;
                     continue;
                 }
                 if (isSurfaceMode && (slot.MarkerType == NavballMarkerType.VelocityVector || slot.MarkerType == NavballMarkerType.AntiVelocityVector))
@@ -1253,8 +1274,7 @@ namespace ModularFlightPanel.UI.Widgets
                     slot.RenderedPos = Vector2.zero;
                     slot.CurrentDir = Vector3.zero;
                     slot.LastRenderState = default;
-                    _renderedMarkerPositions[key] = Vector2.zero;
-                    _currentMarkerDirs[key] = Vector3.zero;
+                    slot.IsActive = false;
                     continue;
                 }
 
@@ -1274,16 +1294,16 @@ namespace ModularFlightPanel.UI.Widgets
                 if (hasDir && (isVisible || dir.sqrMagnitude > 0.001f))
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
+                    slot.IsActive = true;
 
                     Vector3 currentDir = dir;
-                    if (_isFrameTransitioning && _transitionStartMarkerDirs.TryGetValue(key, out Vector3 startDir) && startDir.sqrMagnitude > 0.001f)
+                    if (_isFrameTransitioning && slot.TransitionStartDir.sqrMagnitude > 0.001f)
                     {
                         float transT = Mathf.Clamp01(_frameTransitionTimer / FrameTransitionDuration);
                         float eased = 1.0f - Mathf.Pow(1.0f - transT, 3.0f);
-                        currentDir = Vector3.Slerp(startDir, dir, eased).normalized;
+                        currentDir = Vector3.Slerp(slot.TransitionStartDir, dir, eased).normalized;
                     }
                     slot.CurrentDir = currentDir;
-                    _currentMarkerDirs[key] = currentDir;
 
                     Vector2 bearing = new Vector2(currentDir.x, currentDir.y);
                     float bearingMag = bearing.magnitude;
@@ -1316,7 +1336,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
 
                     // 机动节点脉冲呼吸特效
-                    if (key == "maneuver")
+                    if (slot.MarkerType == NavballMarkerType.Maneuver)
                     {
                         float pulseRaw = Mathf.Sin(Time.unscaledTime * 6f);
                         float pulse = 1.0f + 0.08f * (Mathf.Round(pulseRaw * 8f) * 0.125f);
@@ -1333,7 +1353,6 @@ namespace ModularFlightPanel.UI.Widgets
                     // 瞬时精准咬合球体表面，零滞后、零抽搐
                     Vector2 renderedPos = markerPos;
                     slot.RenderedPos = renderedPos;
-                    _renderedMarkerPositions[key] = renderedPos;
 
                     // 光标悬停交互 (Hover Scaling, Highlight & Press Feedback)
                     NavballMarkerClickHandler handler = slot.Handler;
@@ -1392,8 +1411,7 @@ namespace ModularFlightPanel.UI.Widgets
                     slot.RenderedPos = Vector2.zero;
                     slot.CurrentDir = Vector3.zero;
                     slot.LastRenderState = default;
-                    _renderedMarkerPositions[key] = Vector2.zero;
-                    _currentMarkerDirs[key] = Vector3.zero;
+                    slot.IsActive = false;
                     if (_activeHoveredMarkerKey == key)
                     {
                         _activeHoveredMarkerKey = null;
@@ -1442,27 +1460,35 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_sphereMaterial != null)
             {
-                if (_uploadedAvoid0 != _cachedAvoidVectors[0])
+                if (!FastVector4RoughEquals(_uploadedAvoid0, _cachedAvoidVectors[0]))
                 {
                     _uploadedAvoid0 = _cachedAvoidVectors[0];
                     _sphereMaterial.SetVector(_PropMarkerAvoid0, _cachedAvoidVectors[0]);
                 }
-                if (_uploadedAvoid1 != _cachedAvoidVectors[1])
+                if (!FastVector4RoughEquals(_uploadedAvoid1, _cachedAvoidVectors[1]))
                 {
                     _uploadedAvoid1 = _cachedAvoidVectors[1];
                     _sphereMaterial.SetVector(_PropMarkerAvoid1, _cachedAvoidVectors[1]);
                 }
-                if (_uploadedAvoid2 != _cachedAvoidVectors[2])
+                if (!FastVector4RoughEquals(_uploadedAvoid2, _cachedAvoidVectors[2]))
                 {
                     _uploadedAvoid2 = _cachedAvoidVectors[2];
                     _sphereMaterial.SetVector(_PropMarkerAvoid2, _cachedAvoidVectors[2]);
                 }
-                if (_uploadedAvoid3 != _cachedAvoidVectors[3])
+                if (!FastVector4RoughEquals(_uploadedAvoid3, _cachedAvoidVectors[3]))
                 {
                     _uploadedAvoid3 = _cachedAvoidVectors[3];
                     _sphereMaterial.SetVector(_PropMarkerAvoid3, _cachedAvoidVectors[3]);
                 }
             }
+        }
+
+        private static bool FastVector4RoughEquals(Vector4 a, Vector4 b, float epsilon = 0.005f)
+        {
+            return Mathf.Abs(a.x - b.x) < epsilon &&
+                   Mathf.Abs(a.y - b.y) < epsilon &&
+                   Mathf.Abs(a.z - b.z) < epsilon &&
+                   Mathf.Abs(a.w - b.w) < epsilon;
         }
 
         private void UpdateRollPointer()
@@ -1572,10 +1598,10 @@ namespace ModularFlightPanel.UI.Widgets
                     if (!_sasLockReticleRt.gameObject.activeSelf) _sasLockReticleRt.gameObject.SetActive(true);
 
                     Vector2 targetPos = Vector2.zero;
-                    string targetMarkerKey = GetMarkerKeyForSASMode(curSASMode);
-                    if (!string.IsNullOrEmpty(targetMarkerKey) && _markerImages.TryGetValue(targetMarkerKey, out Image targetImg) && targetImg != null && targetImg.gameObject.activeSelf)
+                    MarkerSlot targetSlot = GetSlotForSASMode(curSASMode);
+                    if (targetSlot != null && targetSlot.Image != null && targetSlot.Image.gameObject.activeSelf)
                     {
-                        targetPos = targetImg.rectTransform.anchoredPosition;
+                        targetPos = targetSlot.RectTransform.anchoredPosition;
                     }
 
                     if (Vector2.Distance(_sasLockReticleRt.anchoredPosition, targetPos) < 1.5f)
@@ -1616,14 +1642,15 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_maneuverGuideContainer == null) return;
 
-            bool hasManeuver = _markerImages.TryGetValue("maneuver", out Image manImg) && manImg != null && manImg.gameObject.activeSelf;
+            var manSlot = _markerSlotByType[(int)NavballMarkerType.Maneuver];
+            bool hasManeuver = manSlot != null && manSlot.Image != null && manSlot.Image.gameObject.activeSelf;
             if (!hasManeuver)
             {
                 if (_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(false);
                 return;
             }
 
-            Vector2 manPos = manImg.rectTransform.anchoredPosition;
+            Vector2 manPos = manSlot.RectTransform.anchoredPosition;
             float dist = manPos.magnitude;
 
             if (dist > 8f && dist < _visualRadius * 1.05f)
@@ -1730,6 +1757,49 @@ namespace ModularFlightPanel.UI.Widgets
             Color c = col;
             c.a = 0.95f;
             _sasRippleImage.color = c;
+        }
+
+        private static NavballMarkerType GetMarkerTypeForSASMode(FlightSASMode mode)
+        {
+            switch (mode)
+            {
+                case FlightSASMode.Prograde: return NavballMarkerType.Prograde;
+                case FlightSASMode.Retrograde: return NavballMarkerType.Retrograde;
+                case FlightSASMode.Normal: return NavballMarkerType.Normal;
+                case FlightSASMode.Antinormal: return NavballMarkerType.AntiNormal;
+                case FlightSASMode.RadialIn: return NavballMarkerType.RadialIn;
+                case FlightSASMode.RadialOut: return NavballMarkerType.RadialOut;
+                case FlightSASMode.Target: return NavballMarkerType.Target;
+                case FlightSASMode.AntiTarget: return NavballMarkerType.AntiTarget;
+                case FlightSASMode.Maneuver: return NavballMarkerType.Maneuver;
+                case FlightSASMode.StabilityAssist:
+                default:
+                    return NavballMarkerType.Unknown;
+            }
+        }
+
+        private MarkerSlot GetSlotForSASMode(FlightSASMode mode)
+        {
+            var mType = GetMarkerTypeForSASMode(mode);
+            if (mType == NavballMarkerType.Unknown) return null;
+            var slot = _markerSlotByType[(int)mType];
+            if (slot != null && slot.Image != null && slot.Image.gameObject.activeSelf)
+            {
+                return slot;
+            }
+            if (mType == NavballMarkerType.Prograde)
+            {
+                var velSlot = _markerSlotByType[(int)NavballMarkerType.VelocityVector];
+                if (velSlot != null && velSlot.Image != null && velSlot.Image.gameObject.activeSelf)
+                    return velSlot;
+            }
+            else if (mType == NavballMarkerType.Retrograde)
+            {
+                var antiVelSlot = _markerSlotByType[(int)NavballMarkerType.AntiVelocityVector];
+                if (antiVelSlot != null && antiVelSlot.Image != null && antiVelSlot.Image.gameObject.activeSelf)
+                    return antiVelSlot;
+            }
+            return slot;
         }
 
         private static string GetMarkerKeyForSASMode(FlightSASMode mode)
@@ -2061,9 +2131,13 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_displayImage != null) _displayImage.enabled = false;
                 if (_crosshair != null) _crosshair.SetActive(false);
                 if (_bezelRing != null) _bezelRing.SetActive(false);
-                foreach (var kvp in _markerImages)
+                if (_markerSlots != null)
                 {
-                    if (kvp.Value != null) kvp.Value.gameObject.SetActive(false);
+                    for (int i = 0; i < _markerSlots.Length; i++)
+                    {
+                        var slotImg = _markerSlots[i]?.Image;
+                        if (slotImg != null) slotImg.gameObject.SetActive(false);
+                    }
                 }
             }
             else
@@ -2171,14 +2245,15 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             NavballMarkerFactory.ClearCache();
-            if (_markerImages != null)
+            if (_markerSlots != null)
             {
-                foreach (var kvp in _markerImages)
+                for (int i = 0; i < _markerSlots.Length; i++)
                 {
-                    if (kvp.Value != null)
+                    var slot = _markerSlots[i];
+                    if (slot?.Image != null)
                     {
-                        kvp.Value.sprite = NavballMarkerFactory.GetMarkerSprite(kvp.Key);
-                        if (uiMat != null) kvp.Value.material = uiMat;
+                        slot.Image.sprite = NavballMarkerFactory.GetMarkerSprite(slot.Key);
+                        if (uiMat != null) slot.Image.material = uiMat;
                     }
                 }
             }
@@ -2266,7 +2341,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void HandleResolutionChanged(int newRes)
         {
-            // 现代屏幕空间数学解析光线投射管线直接由片元着色器亚像素直出，无需离屏相机与 RenderTexture 分辨率调节
+            _detailScaleDirty = true;
+            UpdateProceduralDetailScale();
         }
 
         protected override void HandleRenderSettingChanged()
@@ -2276,12 +2352,15 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnDestroy()
         {
             this.Controls.UnregisterAll();
-            _markerImages.Clear();
-            _markerHandlers.Clear();
-            _renderedMarkerPositions.Clear();
-            _currentMarkerDirs.Clear();
-            _transitionStartMarkerDirs.Clear();
-            _markerRenderStates.Clear();
+            if (_markerSlots != null)
+            {
+                for (int i = 0; i < _markerSlots.Length; i++)
+                {
+                    _markerSlots[i] = null;
+                }
+                _markerSlots = null;
+            }
+            Array.Clear(_markerSlotByType, 0, _markerSlotByType.Length);
             _lastRollPointerAngle.Reset(-9999f);
             _lastBankTicksAlpha.Reset(-1f);
             _uploadedHazardAlert = -999f;

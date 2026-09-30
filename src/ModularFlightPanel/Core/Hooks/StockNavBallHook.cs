@@ -89,14 +89,28 @@ namespace ModularFlightPanel.Core
         private static Vector2 _cachedTextureOffset = Vector2.zero;
         private static int _cachedTextureFrame = -1;
 
+        public struct NavballAttitudeSnapshot
+        {
+            public int Frame;
+            public Quaternion CamRot;
+            public Quaternion BallRot;
+            public Quaternion ViewRot;
+            public Quaternion InvViewRot;
+            public float HeadingAngle;
+            public bool HasAttitude;
+        }
+
+        private static NavballAttitudeSnapshot _cachedAttitudeSnapshot;
         private static int _cachedContinuousHeadingFrame = -1;
         private static float _cachedContinuousHeadingValue = 0f;
         private static bool _cachedContinuousHeadingSuccess = false;
+        private static Canvas _cachedStockCanvas;
 
         public static void InvalidateCaches()
         {
             _cachedNavBallCamera = null;
-            _cachedNavBallCameraFrame = -1;
+            _cachedStockCanvas = null;
+            _cachedAttitudeSnapshot = default;
             _cachedReferenceFrameNameFrame = -1;
             _cachedReferenceFrameCategoryFrame = -1;
             _cachedNavballSpeedFrame = -1;
@@ -304,16 +318,140 @@ namespace ModularFlightPanel.Core
         }
 
         /// <summary>
+        /// 获取官方/Principia 姿态四元数与权威航向角同帧单源快照 (0 重复计算，全组件共享)
+        /// </summary>
+        public static NavballAttitudeSnapshot GetAttitudeSnapshot()
+        {
+            int frame = Time.frameCount;
+            if (_cachedAttitudeSnapshot.Frame == frame && frame != 0)
+            {
+                return _cachedAttitudeSnapshot;
+            }
+
+            PulseAttitudeConsumerHeartbeat();
+
+            Quaternion camRot = Quaternion.identity;
+            Camera cam = GetNavBallCamera();
+            if (cam != null) camRot = cam.transform.rotation;
+
+            Quaternion ballRot = Quaternion.identity;
+            if (HasStockNavBall && StockInstance.navBall != null)
+            {
+                ballRot = StockInstance.navBall.rotation;
+            }
+            else if (StockInstance != null)
+            {
+                ballRot = StockInstance.relativeGymbal;
+            }
+            else if (TelemetryHub.Instance != null)
+            {
+                ballRot = TelemetryHub.Instance.AttitudeRotation;
+            }
+
+            Quaternion viewRot = (camRot != Quaternion.identity)
+                ? (Quaternion.Inverse(camRot) * ballRot)
+                : ballRot;
+            Quaternion invRot = Quaternion.Inverse(viewRot);
+
+            float calcHdg = 0f;
+            bool hasSuccess = false;
+
+            if (HasStockNavBall)
+            {
+                try
+                {
+                    // 在姿态球参考系内解算机头前向矢量与天顶矢量 (彻底规避 Unity eulerAngles 万向节死锁 180° 翻转与微颤)
+                    Vector3 fwdInBall = invRot * Vector3.forward;
+                    Vector3 upInBall = invRot * Vector3.up;
+
+                    float horizSqr = fwdInBall.x * fwdInBall.x + fwdInBall.z * fwdInBall.z;
+                    if (horizSqr > 0.0001f)
+                    {
+                        calcHdg = Mathf.Atan2(fwdInBall.x, fwdInBall.z) * Mathf.Rad2Deg;
+                    }
+                    else
+                    {
+                        calcHdg = (fwdInBall.y >= 0f)
+                            ? Mathf.Atan2(upInBall.x, upInBall.z) * Mathf.Rad2Deg
+                            : Mathf.Atan2(-upInBall.x, -upInBall.z) * Mathf.Rad2Deg;
+                    }
+
+                    calcHdg = (calcHdg % 360f + 360f) % 360f;
+
+                    // 地表预发射与静止态抗噪死区锁存
+                    Vessel v = FlightGlobals.ActiveVessel;
+                    if (v != null && (v.situation == Vessel.Situations.PRELAUNCH || (v.LandedOrSplashed && v.srfSpeed < 0.2)))
+                    {
+                        FlightCtrlState ctrl = v.ctrlState;
+                        bool hasControlInput = ctrl != null && (Mathf.Abs(ctrl.pitch) > 0.05f || Mathf.Abs(ctrl.yaw) > 0.05f || Mathf.Abs(ctrl.roll) > 0.05f);
+                        if (!_hasLatchedHeading)
+                        {
+                            _latchedHeading = calcHdg;
+                            _hasLatchedHeading = true;
+                        }
+                        else if (!hasControlInput && Mathf.Abs(Mathf.DeltaAngle(calcHdg, _latchedHeading)) < 2.0f)
+                        {
+                            calcHdg = _latchedHeading;
+                        }
+                        else
+                        {
+                            _latchedHeading = calcHdg;
+                        }
+                    }
+                    else
+                    {
+                        _hasLatchedHeading = false;
+                    }
+                    hasSuccess = true;
+                }
+                catch { }
+            }
+            else if (TelemetryHub.Instance != null)
+            {
+                calcHdg = (float)TelemetryHub.Instance.Heading;
+                hasSuccess = true;
+            }
+
+            _cachedContinuousHeadingFrame = frame;
+            _cachedContinuousHeadingValue = calcHdg;
+            _cachedContinuousHeadingSuccess = hasSuccess;
+
+            _cachedAttitudeSnapshot = new NavballAttitudeSnapshot
+            {
+                Frame = frame,
+                CamRot = camRot,
+                BallRot = ballRot,
+                ViewRot = viewRot,
+                InvViewRot = invRot,
+                HeadingAngle = calcHdg,
+                HasAttitude = hasSuccess
+            };
+
+            return _cachedAttitudeSnapshot;
+        }
+
+        /// <summary>
         /// 获取经由官方/Principia 权威解算的姿态四元数（0计算量，采用世界坐标旋转）
         /// </summary>
         public static Quaternion GetRotation()
         {
-            PulseAttitudeConsumerHeartbeat();
-            if (HasStockNavBall && StockInstance.navBall != null)
-            {
-                return StockInstance.navBall.rotation;
-            }
-            return TelemetryHub.Instance != null ? TelemetryHub.Instance.AttitudeRotation : Quaternion.identity;
+            return GetAttitudeSnapshot().BallRot;
+        }
+
+        /// <summary>
+        /// 获取官方/Principia 姿态球视口相机旋转（同帧单源快照）
+        /// </summary>
+        public static Quaternion GetCameraRotation()
+        {
+            return GetAttitudeSnapshot().CamRot;
+        }
+
+        /// <summary>
+        /// 获取转换至 NavBall 摄像机视口空间的权威姿态四元数 Inverse(CamRot) * BallRot（同帧单源快照，0重复计算）
+        /// </summary>
+        public static Quaternion GetViewRotation()
+        {
+            return GetAttitudeSnapshot().ViewRot;
         }
 
         public static Renderer GetNavBallRenderer()
@@ -396,6 +534,10 @@ namespace ModularFlightPanel.Core
             int frame = Time.frameCount;
             if (_cachedTextureFrame != frame)
             {
+                if (_cachedNavBallTexture != null && (frame - _cachedTextureFrame) < 30)
+                {
+                    return _cachedNavBallTexture;
+                }
                 UpdateTextureCaches(frame);
             }
             return _cachedNavBallTexture;
@@ -406,6 +548,10 @@ namespace ModularFlightPanel.Core
             int frame = Time.frameCount;
             if (_cachedTextureFrame != frame)
             {
+                if (_cachedNavBallTexture != null && (frame - _cachedTextureFrame) < 30)
+                {
+                    return _cachedTextureScale;
+                }
                 UpdateTextureCaches(frame);
             }
             return _cachedTextureScale;
@@ -416,32 +562,36 @@ namespace ModularFlightPanel.Core
             int frame = Time.frameCount;
             if (_cachedTextureFrame != frame)
             {
+                if (_cachedNavBallTexture != null && (frame - _cachedTextureFrame) < 30)
+                {
+                    return _cachedTextureOffset;
+                }
                 UpdateTextureCaches(frame);
             }
             return _cachedTextureOffset;
         }
 
         private static Camera _cachedNavBallCamera;
-        private static int _cachedNavBallCameraFrame = -1;
 
         /// <summary>
-        /// 获取渲染官方 NavBall 的权威 UI 摄像机
+        /// 获取渲染官方 NavBall 的权威 UI 摄像机 (持久单例缓存，杜绝每帧遍历 Hierarchy)
         /// </summary>
         public static Camera GetNavBallCamera()
         {
-            int frame = Time.frameCount;
-            if (_cachedNavBallCameraFrame == frame && _cachedNavBallCamera != null)
+            if (_cachedNavBallCamera != null)
             {
                 return _cachedNavBallCamera;
             }
-            _cachedNavBallCameraFrame = frame;
 
             if (HasStockNavBall)
             {
-                Canvas canvas = StockInstance.GetComponentInParent<Canvas>();
-                if (canvas != null && canvas.worldCamera != null)
+                if (_cachedStockCanvas == null)
                 {
-                    _cachedNavBallCamera = canvas.worldCamera;
+                    _cachedStockCanvas = StockInstance.GetComponentInParent<Canvas>();
+                }
+                if (_cachedStockCanvas != null && _cachedStockCanvas.worldCamera != null)
+                {
+                    _cachedNavBallCamera = _cachedStockCanvas.worldCamera;
                     return _cachedNavBallCamera;
                 }
             }
@@ -450,7 +600,6 @@ namespace ModularFlightPanel.Core
                 _cachedNavBallCamera = UIMasterController.Instance.uiCamera;
                 return _cachedNavBallCamera;
             }
-            _cachedNavBallCamera = null;
             return null;
         }
 
@@ -841,85 +990,9 @@ namespace ModularFlightPanel.Core
 
         public static bool GetContinuousHeading(out float heading)
         {
-            int frame = Time.frameCount;
-            if (_cachedContinuousHeadingFrame == frame && frame != 0)
-            {
-                heading = _cachedContinuousHeadingValue;
-                return _cachedContinuousHeadingSuccess;
-            }
-            _cachedContinuousHeadingFrame = frame;
-            _cachedContinuousHeadingSuccess = false;
-
-            if (HasStockNavBall)
-            {
-                try
-                {
-                    // 1. 优先获取权威 NavBall 真实 3D 旋转 (100% 原生适配 Principia 多参考系切换与原生 KSP)
-                    Quaternion ballRot = (StockInstance.navBall != null)
-                        ? StockInstance.navBall.rotation
-                        : StockInstance.relativeGymbal;
-
-                    // 2. 转换至 NavBall 摄像机视口空间
-                    Camera cam = GetNavBallCamera();
-                    Quaternion camRot = (cam != null) ? cam.transform.rotation : Quaternion.identity;
-                    Quaternion viewRot = Quaternion.Inverse(camRot) * ballRot;
-                    Quaternion invRot = Quaternion.Inverse(viewRot);
-
-                    // 3. 在姿态球参考系内解算机头前向矢量与天顶矢量 (彻底规避 Unity eulerAngles 万向节死锁 180° 翻转与微颤)
-                    Vector3 fwdInBall = invRot * Vector3.forward;
-                    Vector3 upInBall = invRot * Vector3.up;
-
-                    float horizSqr = fwdInBall.x * fwdInBall.x + fwdInBall.z * fwdInBall.z;
-                    float calcHdg;
-                    if (horizSqr > 0.0001f)
-                    {
-                        // 正常俯仰区间 (-88° ~ +88°)：前向矢量在参考系水平面 (X-Z) 投影的极坐标方位角
-                        calcHdg = Mathf.Atan2(fwdInBall.x, fwdInBall.z) * Mathf.Rad2Deg;
-                    }
-                    else
-                    {
-                        // 极点天顶/天底俯仰区间 (|Pitch| > 88°，如发射台垂直待发)：利用视口天顶轴平滑解析方位
-                        calcHdg = (fwdInBall.y >= 0f)
-                            ? Mathf.Atan2(upInBall.x, upInBall.z) * Mathf.Rad2Deg
-                            : Mathf.Atan2(-upInBall.x, -upInBall.z) * Mathf.Rad2Deg;
-                    }
-
-                    calcHdg = (calcHdg % 360f + 360f) % 360f;
-
-                    // 4. 地表预发射与静止态抗噪死区锁存 (杜绝地面发射台弹簧夹具与微抖动导致的大范围跳动)
-                    Vessel v = FlightGlobals.ActiveVessel;
-                    if (v != null && (v.situation == Vessel.Situations.PRELAUNCH || (v.LandedOrSplashed && v.srfSpeed < 0.2)))
-                    {
-                        FlightCtrlState ctrl = v.ctrlState;
-                        bool hasControlInput = ctrl != null && (Mathf.Abs(ctrl.pitch) > 0.05f || Mathf.Abs(ctrl.yaw) > 0.05f || Mathf.Abs(ctrl.roll) > 0.05f);
-                        if (!_hasLatchedHeading)
-                        {
-                            _latchedHeading = calcHdg;
-                            _hasLatchedHeading = true;
-                        }
-                        else if (!hasControlInput && Mathf.Abs(Mathf.DeltaAngle(calcHdg, _latchedHeading)) < 2.0f)
-                        {
-                            calcHdg = _latchedHeading;
-                        }
-                        else
-                        {
-                            _latchedHeading = calcHdg;
-                        }
-                    }
-                    else
-                    {
-                        _hasLatchedHeading = false;
-                    }
-
-                    _cachedContinuousHeadingValue = calcHdg;
-                    _cachedContinuousHeadingSuccess = true;
-                    heading = calcHdg;
-                    return true;
-                }
-                catch { }
-            }
-            heading = 0f;
-            return false;
+            var snapshot = GetAttitudeSnapshot();
+            heading = snapshot.HeadingAngle;
+            return snapshot.HasAttitude;
         }
 
         public static void HideStockAltimeter(bool hide)
@@ -1062,16 +1135,11 @@ namespace ModularFlightPanel.Core
 
         public Vector2 TextureOffset => StockNavBallHook.GetTextureOffset();
 
-        public Quaternion CameraRotation
-        {
-            get
-            {
-                Camera cam = StockNavBallHook.GetNavBallCamera();
-                return cam != null ? cam.transform.rotation : Quaternion.identity;
-            }
-        }
+        public Quaternion CameraRotation => StockNavBallHook.GetAttitudeSnapshot().CamRot;
 
-        public Quaternion BallRotation => StockNavBallHook.GetRotation();
+        public Quaternion BallRotation => StockNavBallHook.GetAttitudeSnapshot().BallRot;
+
+        public Quaternion ViewRotation => StockNavBallHook.GetAttitudeSnapshot().ViewRot;
 
         public Texture BallTexture => StockNavBallHook.GetTexture();
 
@@ -1080,14 +1148,7 @@ namespace ModularFlightPanel.Core
         public string FrameName => StockNavBallHook.GetReferenceFrameName();
         public string ReferenceFrameCategory => StockNavBallHook.GetReferenceFrameCategory();
         public bool TryGetNavballSpeed(out double speed) => StockNavBallHook.TryGetNavballSpeed(out speed);
-        public float HeadingAngle
-        {
-            get
-            {
-                if (StockNavBallHook.GetContinuousHeading(out float hdg)) return hdg;
-                return FlightTelemetryContext.Current?.Heading ?? 0f;
-            }
-        }
+        public float HeadingAngle => StockNavBallHook.GetAttitudeSnapshot().HeadingAngle;
 
         public bool GetMarkerDirection(string markerType, out Vector3 dir, out bool isVisible)
         {

@@ -15,6 +15,7 @@ namespace ModularFlightPanel.Core
         Vector2 TextureOffset { get; }
         Quaternion CameraRotation { get; }
         Quaternion BallRotation { get; }
+        Quaternion ViewRotation { get; }
         Texture BallTexture { get; }
         string HeadingText { get; }
         string FrameName { get; }
