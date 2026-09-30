@@ -3,20 +3,96 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
     /// <summary>
+    /// SpaceX 姿态指示器零-GC遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct SpaceXAttitudeState : IEquatable<SpaceXAttitudeState>
+    {
+        public bool HasVessel;
+        public float Pitch;
+        public float Roll;
+        public float Heading;
+        public string AttitudeText;
+
+        public bool Equals(SpaceXAttitudeState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Math.Abs(Pitch - other.Pitch) < 0.05f &&
+                   Math.Abs(Roll - other.Roll) < 0.05f &&
+                   Math.Abs(Heading - other.Heading) < 0.05f &&
+                   string.Equals(AttitudeText, other.AttitudeText, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj) => obj is SpaceXAttitudeState other && Equals(other);
+        public override int GetHashCode() => (Pitch, Roll, Heading, HasVessel).GetHashCode();
+    }
+
+    /// <summary>
+    /// SpaceX 姿态指示器业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class SpaceXAttitudeLogic : WidgetLogic<SpaceXAttitudeState>
+    {
+        public string AttitudeFormat { get; set; }
+        private float _lastFormattedPitch = float.NaN;
+        private float _lastFormattedRoll = float.NaN;
+        private string _cachedAttitudeText = string.Empty;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            _lastFormattedPitch = float.NaN;
+            _lastFormattedRoll = float.NaN;
+            _cachedAttitudeText = string.Empty;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            float pitch = telemetry.Pitch;
+            float roll = telemetry.Roll;
+            float heading = telemetry.Heading;
+
+            if (float.IsNaN(_lastFormattedPitch) || Math.Abs(pitch - _lastFormattedPitch) >= 0.1f ||
+                float.IsNaN(_lastFormattedRoll) || Math.Abs(roll - _lastFormattedRoll) >= 0.1f)
+            {
+                string fmt = !string.IsNullOrEmpty(AttitudeFormat) ? AttitudeFormat : "P {0:+0;-0;0}° R {1:+0;-0;0}°";
+                _cachedAttitudeText = string.Format(fmt, pitch, roll);
+                _lastFormattedPitch = pitch;
+                _lastFormattedRoll = roll;
+            }
+
+            CurrentState = new SpaceXAttitudeState
+            {
+                HasVessel = true,
+                Pitch = pitch,
+                Roll = roll,
+                Heading = heading,
+                AttitudeText = _cachedAttitudeText
+            };
+        }
+    }
+
+    /// <summary>
     /// SpaceX 星舰飞船姿态指示器 (SpaceX Webcast Attitude & Orientation Dial)
     /// 包含：
     ///   1. 纯圆形暗色航电表盘与真北 "N" 导航罗盘标
-    ///   2. 3D 透视机动参考平环 (Gimbal Reference Ring)，随飞船 Pitch / Roll 动态透视倾斜
-    ///   3. 轴测 3D 星舰飞船剪影 (带前缘鼻锥舵翼、不锈钢筒身、尾部大舵翼与中心脊线)，随飞船姿态旋转
+    ///   2. 3D 透视机动参考平环 (Gimbal Reference Ring)，随飞船 Pitch / Roll 动态透视倾斜 (GPU 矢量网格，SPEC-002)
+    ///   3. 轴测 3D 星舰飞船矢量剪影 (纯 GPU 矢量网格，零 CPU 光栅化，SPEC-002)
     ///   4. 实时姿态数字角读数 (PITCH / ROLL)
     /// 严格遵循 MFP 架构规范：
     ///   - RefreshTier 为 Critical 60Hz 保证姿态响应极致平滑
     ///   - 零硬编码与零颜色字面量 (MFP-SPEC-006)
+    ///   - 纯业务大脑解耦 (MFP-SPEC-012)
     /// </summary>
     [FlightWidget("spacex_attitude", "dragon_attitude", Category = WidgetCategory.SpaceX, DisplayName = "SpaceX 载人龙飞船姿态指示器", Description = "SpaceX 极简黑白双轴陀螺姿态仪，显示俯仰、滚转与偏航微步。", DefaultWidgetId = "spacex.attitude", DefaultX = -360f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "spacex.attitude" })]
     public class SpaceXAttitudeWidget : BaseFlightWidget
@@ -25,31 +101,30 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
 
-
         // UI 视图节点
         private Image _bgImage;
         private Outline _bgOutline;
-        private RawImage _dialBackdropRawImage;
+        private ProceduralAttitudeBezelImage _dialBezel;
         private Text _northIndicatorText;
 
         // 3D 姿态参考环与星舰剪影
         private RectTransform _gimbalRingRt;
-        private RawImage _gimbalRingRawImage;
-        private RectTransform _shipSilhouetteRt;
+        private ProceduralAttitudeRingImage _gimbalRing;
+        private RectTransform _shipSilhouetteContainerRt;
         private RawImage _shipSilhouetteRawImage;
+        private ProceduralStarshipImage _proceduralStarship;
 
         private Text _attitudeLabelText;
 
-        // 静态共享程序化纹理
-        private static Texture2D _sharedDialBezelTexture;
-        private static Texture2D _sharedGimbalRingTexture;
-        private static Texture2D _sharedStarshipTexture;
-
-        // 姿态缓存与脏标记
+        // 姿态缓存与脏标记 (MFP-SPEC-009)
         private readonly CachedFloat _lastPitch = new CachedFloat(float.NaN, 0.1f);
         private readonly CachedFloat _lastRoll = new CachedFloat(float.NaN, 0.1f);
         private readonly CachedFloat _lastHeading = new CachedFloat(float.NaN, 0.1f);
         private readonly Cached<string> _lastAttitudeStr = new Cached<string>(string.Empty);
+
+        // 业务大脑 (MFP-SPEC-012)
+        private readonly SpaceXAttitudeLogic _logic = new SpaceXAttitudeLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // CustomTemplate 自定义通道
         private string _northLabel = "N";
@@ -63,6 +138,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _northLabel = GetTemplateChannel("NORTH", "N");
             _attitudeFormat = GetTemplateChannel("FORMAT", I18n.Tr("WIDGET_SPX_ATTITUDE_FORMAT", "俯仰 {0:+0;-0;0}° 滚转 {1:+0;-0;0}°"));
 
+            _logic.AttitudeFormat = _attitudeFormat;
+
             // 1. 组件包围盒 (基准 96x96 逻辑像素圆形表盘)
             float diameter = 96f * s;
             RectTransform.sizeDelta = new Vector2(diameter, diameter);
@@ -72,16 +149,11 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_bgOutline != null)
                 _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
-            EnsureSharedTextures();
+            // 2. 外部圆形深色底盘 (Bezel，GPU 矢量网格)
+            _dialBezel = CreateChild<ProceduralAttitudeBezelImage>("Attitude_Bezel", transform, new Vector2(diameter, diameter), Vector2.zero);
+            _dialBezel.raycastTarget = false;
 
-            // 2. 外部圆形深色底盘 (Bezel)
-            _dialBackdropRawImage = CreateChild<RawImage>("Attitude_Bezel", transform, new Vector2(diameter, diameter), Vector2.zero);
-            GameObject bezelGo = _dialBackdropRawImage.gameObject;
-            RectTransform bezelRt = _dialBackdropRawImage.rectTransform;
-            _dialBackdropRawImage.texture = _sharedDialBezelTexture;
-            _dialBackdropRawImage.raycastTarget = false;
-
-            // 3. 顶部真北标 (支持自定义)
+            // 3. 顶部真北标
             _northIndicatorText = UIFactory.CreateText(transform, "North_Mark", _northLabel, Mathf.RoundToInt(9f * s), TextAnchor.UpperCenter,
                 style.GetTextColor(TextStyleRole.Cardinal, theme));
             _northIndicatorText.fontStyle = FontStyle.Bold;
@@ -89,25 +161,22 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             nRt.sizeDelta = new Vector2(20f * s, 16f * s);
             nRt.anchoredPosition = new Vector2(0f, (diameter * 0.5f) - 4f * s);
 
-            // 4. 3D 姿态透视环 (Gimbal Reference Horizon Ring)
-            _gimbalRingRawImage = CreateChild<RawImage>("Gimbal_Ring", transform, new Vector2(76f * s, 42f * s), Vector2.zero);
-            _gimbalRingRt = _gimbalRingRawImage.rectTransform;
-            GameObject ringGo = _gimbalRingRawImage.gameObject;
-            _gimbalRingRawImage.texture = _sharedGimbalRingTexture;
-            _gimbalRingRawImage.raycastTarget = false;
+            // 4. 3D 姿态透视环 (Gimbal Reference Horizon Ring，GPU 矢量网格)
+            _gimbalRing = CreateChild<ProceduralAttitudeRingImage>("Gimbal_Ring", transform, new Vector2(76f * s, 42f * s), Vector2.zero);
+            _gimbalRingRt = _gimbalRing.rectTransform;
+            _gimbalRing.raycastTarget = false;
 
-            // 5. 中央高精飞船 2D 剪影 (优先联动 VesselSilhouetteBaker 真实剪影，保底使用程序化星舰矢量)
-            _shipSilhouetteRawImage = CreateChild<RawImage>("Ship_Silhouette", transform, new Vector2(56f * s, 56f * s), Vector2.zero);
-            _shipSilhouetteRt = _shipSilhouetteRawImage.rectTransform;
-            GameObject shipGo = _shipSilhouetteRawImage.gameObject;
+            // 5. 中央飞船剪影容器：支持 VesselSilhouetteBaker 真实剪影与 ProceduralStarshipImage GPU 矢量双模
+            var shipContainer = CreateChild<RectTransform>("Ship_Silhouette_Container", transform, new Vector2(56f * s, 56f * s), Vector2.zero);
+            _shipSilhouetteContainerRt = shipContainer;
+
+            _shipSilhouetteRawImage = CreateChild<RawImage>("Vessel_Baker_Silhouette", _shipSilhouetteContainerRt, new Vector2(56f * s, 56f * s), Vector2.zero);
             _shipSilhouetteRawImage.raycastTarget = false;
 
-            Texture shipTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
-            if (shipTex == null)
-            {
-                shipTex = _sharedStarshipTexture;
-            }
-            _shipSilhouetteRawImage.texture = shipTex;
+            _proceduralStarship = CreateChild<ProceduralStarshipImage>("Procedural_Starship", _shipSilhouetteContainerRt, new Vector2(56f * s, 56f * s), Vector2.zero);
+            _proceduralStarship.raycastTarget = false;
+
+            UpdateSilhouetteTexture(VesselSilhouetteService.Provider?.SilhouetteTexture);
 
             if (VesselSilhouetteService.Provider != null)
             {
@@ -124,18 +193,18 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Attitude Dial Background", _bgImage.gameObject, "SpaceX姿态球表盘底板", t => ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, t)));
-            if (_dialBackdropRawImage != null)
+            if (_dialBezel != null)
             {
-                this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBackdropRawImage.gameObject, "姿态圆形深色底盘", t => { if (_dialBackdropRawImage != null) _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "bezel", "Dial Bezel", _dialBezel.gameObject, "姿态圆形深色底盘", t => { if (_dialBezel != null) _dialBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep); }));
             }
             this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "north_mark", "North Mark", _northIndicatorText != null ? _northIndicatorText.gameObject : null));
-            if (_gimbalRingRawImage != null)
+            if (_gimbalRing != null)
             {
-                this.Controls.Register(new WidgetGraphicViewportControl(_gimbalRingRawImage, "Gimbal Ring", "3D空间姿态地平参考环"));
+                this.Controls.Register(new WidgetGraphicViewportControl("gimbal_ring", "Gimbal Ring", _gimbalRing.gameObject));
             }
-            if (_shipSilhouetteRawImage != null)
+            if (_shipSilhouetteContainerRt != null)
             {
-                this.Controls.Register(new WidgetGraphicViewportControl(_shipSilhouetteRawImage, "Ship Silhouette", "中央飞船剪影视窗"));
+                this.Controls.Register(new WidgetGraphicViewportControl("ship_silhouette", "Ship Silhouette", _shipSilhouetteContainerRt.gameObject, _shipSilhouetteRawImage));
             }
             this.Controls.Register(new WidgetReadoutControl("attitude_readout", "底部俯仰滚转角读数", _attitudeLabelText != null ? _attitudeLabelText.gameObject : null, _attitudeLabelText, null, TextStyleRole.SecondaryValue, "{PITCH}"));
             this.Controls.BindConfigToControls(config);
@@ -146,9 +215,33 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         private void OnSilhouetteUpdated(Texture tex)
         {
-            if (_shipSilhouetteRawImage != null && tex != null)
+            UpdateSilhouetteTexture(tex);
+        }
+
+        private void UpdateSilhouetteTexture(Texture tex)
+        {
+            if (tex != null)
             {
-                _shipSilhouetteRawImage.texture = tex;
+                if (_shipSilhouetteRawImage != null)
+                {
+                    _shipSilhouetteRawImage.texture = tex;
+                    if (!_shipSilhouetteRawImage.gameObject.activeSelf) _shipSilhouetteRawImage.gameObject.SetActive(true);
+                }
+                if (_proceduralStarship != null && _proceduralStarship.gameObject.activeSelf)
+                {
+                    _proceduralStarship.gameObject.SetActive(false);
+                }
+            }
+            else
+            {
+                if (_shipSilhouetteRawImage != null && _shipSilhouetteRawImage.gameObject.activeSelf)
+                {
+                    _shipSilhouetteRawImage.gameObject.SetActive(false);
+                }
+                if (_proceduralStarship != null && !_proceduralStarship.gameObject.activeSelf)
+                {
+                    _proceduralStarship.gameObject.SetActive(true);
+                }
             }
         }
 
@@ -162,14 +255,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
             ApplyCard(_bgImage, _bgOutline, CardStyleRole.Normal, theme);
 
-            if (_dialBackdropRawImage != null)
+            if (_dialBezel != null)
             {
-                _dialBackdropRawImage.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep);
+                _dialBezel.color = WidgetStyleManager.Surface(SurfaceStyleRole.PanelDeep);
             }
 
-            if (_gimbalRingRawImage != null)
+            if (_gimbalRing != null)
             {
-                _gimbalRingRawImage.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Strong);
+                _gimbalRing.color = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Strong);
             }
 
             if (_shipSilhouetteRawImage != null)
@@ -177,50 +270,36 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
                 _shipSilhouetteRawImage.color = WidgetStyleManager.NeutralOpaque;
             }
 
+            if (_proceduralStarship != null)
+            {
+                _proceduralStarship.color = WidgetStyleManager.NeutralOpaque;
+            }
+
             ApplyText(_northIndicatorText, TextStyleRole.Cardinal, theme);
             ApplyText(_attitudeLabelText, TextStyleRole.SecondaryValue, theme);
         }
 
-        private float _dataPitch;
-        private float _dataRoll;
-        private float _dataHeading;
-        private bool _dataHasVessel;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _dataHasVessel = false;
-                return;
-            }
-            _dataHasVessel = true;
-
-            _dataPitch = telemetry.Pitch;
-            _dataRoll = telemetry.Roll;
-            _dataHeading = telemetry.Heading;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (!_dataHasVessel) return;
-
-            // 纹理保底与热插拔自愈检查
-            if (_shipSilhouetteRawImage != null && _shipSilhouetteRawImage.texture == null)
+            SpaceXAttitudeState state = _logic.CurrentState;
+            if (!state.HasVessel)
             {
-                Texture tex = VesselSilhouetteService.Provider?.SilhouetteTexture;
-                if (tex == null)
+                if (_lastAttitudeStr.Update(string.Empty))
                 {
-                    tex = _sharedStarshipTexture;
+                    _attitudeLabelText?.SetTextSafe(string.Empty);
                 }
-                _shipSilhouetteRawImage.texture = tex;
+                return;
             }
 
-            float pitch = _dataPitch;
-            float roll = _dataRoll;
-            float heading = _dataHeading;
+            float pitch = state.Pitch;
+            float roll = state.Roll;
+            float heading = state.Heading;
 
             // 姿态变动脏标记检查 (0.1 度分辨率)
             bool pDirty = _lastPitch.Update(pitch);
@@ -244,11 +323,11 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             // 2. 飞船剪影姿态联动：中心剪影随纵滚俯仰透视平移
-            if (_shipSilhouetteRt != null)
+            if (_shipSilhouetteContainerRt != null)
             {
-                _shipSilhouetteRt.localEulerAngles = new Vector3(0f, 0f, -roll);
+                _shipSilhouetteContainerRt.localEulerAngles = new Vector3(0f, 0f, -roll);
                 float pitchFactor = Mathf.Clamp(pitch / 90f, -1f, 1f);
-                _shipSilhouetteRt.anchoredPosition = new Vector2(0f, pitchFactor * 5f * s);
+                _shipSilhouetteContainerRt.anchoredPosition = new Vector2(0f, pitchFactor * 5f * s);
             }
 
             // 3. 罗盘真北微标：沿外圆周动态环绕旋转指向真实北方
@@ -260,184 +339,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             // 4. 底部文字简报 (支持自定义格式与脏缓存)
-            if (_attitudeLabelText != null)
+            if (_attitudeLabelText != null && _lastAttitudeStr.Update(state.AttitudeText))
             {
-                string attStr = string.Format(_attitudeFormat, pitch, roll);
-                if (_lastAttitudeStr.Update(attStr))
-                {
-                    _attitudeLabelText.text = attStr;
-                }
+                _attitudeLabelText.SetTextSafe(state.AttitudeText);
             }
-        }
-
-        private static void EnsureSharedTextures()
-        {
-            if (_sharedDialBezelTexture != null) return;
-
-            // 1. 圆形底盘 (256x256)
-            const int size = 256;
-            _sharedDialBezelTexture = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            _sharedDialBezelTexture.filterMode = FilterMode.Bilinear;
-            _sharedDialBezelTexture.wrapMode = TextureWrapMode.Clamp;
-
-            Color[] bezelCols = new Color[size * size];
-            float half = size * 0.5f;
-            Color opaque = WidgetStyleManager.NeutralOpaque;
-
-            for (int y = 0; y < size; y++)
-            {
-                float dy = (y - half) / half;
-                for (int x = 0; x < size; x++)
-                {
-                    float dx = (x - half) / half;
-                    float r = Mathf.Sqrt(dx * dx + dy * dy);
-
-                    if (r > 1.0f)
-                    {
-                        bezelCols[y * size + x] = Color.clear;
-                        continue;
-                    }
-
-                    // 圆盘本体深色 + 边缘抗锯齿 + 0.94 外环金属高光
-                    float edgeAlpha = Mathf.Clamp01((1.0f - r) / (2f / half));
-                    float ringAlpha = Mathf.Clamp01((0.03f - Mathf.Abs(r - 0.93f)) / (1.5f / half));
-
-                    Color c = opaque;
-                    c.a = Mathf.Max(0.25f, ringAlpha * 0.85f) * edgeAlpha;
-                    bezelCols[y * size + x] = c;
-                }
-            }
-            _sharedDialBezelTexture.SetPixels(bezelCols);
-            _sharedDialBezelTexture.Apply(false, true);
-
-            // 2. 3D 空间姿态参考环 (256x128)
-            const int rw = 256;
-            const int rh = 128;
-            _sharedGimbalRingTexture = new Texture2D(rw, rh, TextureFormat.RGBA32, false);
-            _sharedGimbalRingTexture.filterMode = FilterMode.Bilinear;
-            _sharedGimbalRingTexture.wrapMode = TextureWrapMode.Clamp;
-
-            Color[] ringCols = new Color[rw * rh];
-            float rHalfX = rw * 0.5f;
-            float rHalfY = rh * 0.5f;
-
-            for (int y = 0; y < rh; y++)
-            {
-                float dy = (y - rHalfY) / rHalfY;
-                for (int x = 0; x < rw; x++)
-                {
-                    float dx = (x - rHalfX) / rHalfX;
-                    float ell = dx * dx + dy * dy;
-
-                    // 椭圆细线 (0.88 .. 0.96)
-                    float dist = Mathf.Abs(Mathf.Sqrt(ell) - 0.92f);
-                    float feather = 3f / rHalfY;
-
-                    if (dist > 0.05f + feather)
-                    {
-                        ringCols[y * rw + x] = Color.clear;
-                        continue;
-                    }
-
-                    float a = Mathf.Clamp01((0.05f + feather - dist) / feather);
-                    Color c = opaque;
-                    c.a = a * 0.75f;
-                    ringCols[y * rw + x] = c;
-                }
-            }
-            _sharedGimbalRingTexture.SetPixels(ringCols);
-            _sharedGimbalRingTexture.Apply(false, true);
-
-            // 3. 星舰 3D 轴测矢量剪影 (256x128 俯仰横向轴测)
-            _sharedStarshipTexture = CreateProceduralStarshipTexture();
-        }
-
-        private static Texture2D CreateProceduralStarshipTexture()
-        {
-            const int size = 256;
-            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            tex.filterMode = FilterMode.Bilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-
-            Color[] cols = new Color[size * size];
-            float half = size * 0.5f;
-            Color opaque = WidgetStyleManager.NeutralOpaque;
-
-            for (int y = 0; y < size; y++)
-            {
-                float ny = (y - half) / half; // -1..1 (从尾部 -0.75 到鼻锥 +0.75)
-                for (int x = 0; x < size; x++)
-                {
-                    float nx = (x - half) / half; // -1..1 (横向翼展)
-                    bool inside = false;
-                    bool isHeatshield = (nx > 0f); // 腹部隔热瓦侧 (顺时针旋转90度后朝向地球侧)
-                    bool isRidge = false;
-
-                    // 星舰几何：竖直放置，顶部为鼻锥 (ny: -0.75 到 +0.75)
-                    if (ny >= -0.75f && ny <= 0.75f)
-                    {
-                        float bodyHalfW = 0.14f;
-
-                        // 1. 鼻锥收窄 (ny: 0.45 .. 0.75)
-                        if (ny > 0.45f)
-                        {
-                            float t = (ny - 0.45f) / 0.30f;
-                            float curW = Mathf.Lerp(bodyHalfW, 0.015f, Mathf.Pow(t, 0.8f));
-                            if (Mathf.Abs(nx) <= curW) inside = true;
-                        }
-                        else
-                        {
-                            if (Mathf.Abs(nx) <= bodyHalfW) inside = true;
-                        }
-
-                        // 2. 前端空气舵翼 (Forward Flaps) (ny: 0.40 .. 0.55, 展至 nx: 0.26)
-                        if (ny >= 0.40f && ny <= 0.55f)
-                        {
-                            if (Mathf.Abs(nx) <= 0.26f) inside = true;
-                        }
-
-                        // 3. 尾部大空气舵翼 (Aft Aero Flaps) (ny: -0.72 .. -0.45, 展至 nx: 0.32)
-                        if (ny >= -0.72f && ny <= -0.45f)
-                        {
-                            float flapT = (ny - (-0.72f)) / 0.27f;
-                            float flapW = Mathf.Lerp(0.32f, 0.15f, flapT);
-                            if (Mathf.Abs(nx) <= flapW) inside = true;
-                        }
-
-                        // 4. 中心背脊线刻纹
-                        if (inside && Mathf.Abs(nx) < 0.02f)
-                        {
-                            isRidge = true;
-                        }
-                    }
-
-                    if (!inside)
-                    {
-                        cols[y * size + x] = Color.clear;
-                        continue;
-                    }
-
-                    Color pixel = opaque;
-                    if (isHeatshield)
-                    {
-                        pixel.a = 0.65f; // 隔热瓦深色面
-                    }
-                    else if (isRidge)
-                    {
-                        pixel.a = 0.95f; // 中心高光脊线
-                    }
-                    else
-                    {
-                        pixel.a = 0.85f; // 不锈钢亮面
-                    }
-
-                    cols[y * size + x] = pixel;
-                }
-            }
-
-            tex.SetPixels(cols);
-            tex.Apply(false, true);
-            return tex;
         }
 
         protected override void OnDestroy()
@@ -448,6 +353,218 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
             this.Controls.UnregisterAll();
             base.OnDestroy();
+        }
+    }
+
+    /// <summary>
+    /// GPU 程序化圆形航电外圈底盘与金属光晕边缘 (零 CPU 软件光栅化，SPEC-002)
+    /// </summary>
+    public class ProceduralAttitudeBezelImage : MaskableGraphic
+    {
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect r = GetPixelAdjustedRect();
+            float radius = Mathf.Min(r.width, r.height) * 0.5f;
+            if (radius <= 0.001f) return;
+            Vector2 center = r.center;
+            const int segments = 48;
+
+            Color cDisc = color;
+            Color cRing = WidgetStyleManager.Lighten(cDisc, 0.35f);
+
+            // 内部深色底盘
+            float rInner = radius * 0.92f;
+            int centerIdx = vh.currentVertCount;
+            vh.AddVert(center, cDisc, Vector2.zero);
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float deg = i * (360f / segments);
+                float rad = deg * Mathf.Deg2Rad;
+                Vector2 pos = center + new Vector2(Mathf.Cos(rad) * rInner, Mathf.Sin(rad) * rInner);
+                vh.AddVert(pos, cDisc, Vector2.zero);
+                if (i > 0)
+                {
+                    vh.AddTriangle(centerIdx, centerIdx + i, centerIdx + i + 1);
+                }
+            }
+
+            // 外部高光边缘环
+            for (int i = 0; i <= segments; i++)
+            {
+                float deg = i * (360f / segments);
+                float rad = deg * Mathf.Deg2Rad;
+                float cos = Mathf.Cos(rad);
+                float sin = Mathf.Sin(rad);
+
+                Vector2 vIn = center + new Vector2(cos * rInner, sin * rInner);
+                Vector2 vOut = center + new Vector2(cos * radius, sin * radius);
+
+                vh.AddVert(vIn, cDisc, Vector2.zero);
+                vh.AddVert(vOut, cRing, Vector2.zero);
+
+                if (i > 0)
+                {
+                    int baseIdx = centerIdx + 1 + (segments + 1) + (i - 1) * 2;
+                    vh.AddTriangle(baseIdx, baseIdx + 1, baseIdx + 3);
+                    vh.AddTriangle(baseIdx + 3, baseIdx + 2, baseIdx);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// GPU 程序化 3D 姿态地平仪参考平环 (零 CPU 软件光栅化，SPEC-002)
+    /// </summary>
+    public class ProceduralAttitudeRingImage : MaskableGraphic
+    {
+        public float InnerRadiusRatio = 0.88f;
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect r = GetPixelAdjustedRect();
+            float rx = r.width * 0.5f;
+            float ry = r.height * 0.5f;
+            if (rx <= 0.001f || ry <= 0.001f) return;
+            Vector2 center = r.center;
+            const int segments = 48;
+            Color c = color;
+
+            for (int i = 0; i <= segments; i++)
+            {
+                float deg = i * (360f / segments);
+                float rad = deg * Mathf.Deg2Rad;
+                float cos = Mathf.Cos(rad);
+                float sin = Mathf.Sin(rad);
+
+                Vector2 vIn = center + new Vector2(cos * rx * InnerRadiusRatio, sin * ry * InnerRadiusRatio);
+                Vector2 vOut = center + new Vector2(cos * rx, sin * ry);
+
+                vh.AddVert(vIn, c, Vector2.zero);
+                vh.AddVert(vOut, c, Vector2.zero);
+
+                if (i > 0)
+                {
+                    int baseIdx = (i - 1) * 2;
+                    vh.AddTriangle(baseIdx, baseIdx + 1, baseIdx + 3);
+                    vh.AddTriangle(baseIdx + 3, baseIdx + 2, baseIdx);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// GPU 程序化星舰 3D 轴测矢量剪影 (纯 GPU 顶点网格，零 CPU 光栅化，SPEC-002)
+    /// </summary>
+    public class ProceduralStarshipImage : MaskableGraphic
+    {
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            Rect r = GetPixelAdjustedRect();
+            float hw = r.width * 0.5f;
+            float hh = r.height * 0.5f;
+            Vector2 c = r.center;
+
+            Color baseCol = color;
+            Color heatshieldCol = WidgetStyleManager.WithAlpha(baseCol, baseCol.a * 0.70f);
+            Color ridgeCol = WidgetStyleManager.Lighten(baseCol, 0.25f);
+            Color stainlessCol = baseCol;
+
+            float bodyHalfW = hw * 0.28f;
+            float noseTopY = hh * 0.75f;
+            float noseBaseY = hh * 0.45f;
+            float fwdFlapTopY = hh * 0.55f;
+            float fwdFlapBaseY = hh * 0.40f;
+            float fwdFlapSpan = hw * 0.52f;
+            float aftFlapTopY = -hh * 0.45f;
+            float aftFlapBaseY = -hh * 0.72f;
+            float aftFlapSpanTop = hw * 0.30f;
+            float aftFlapSpanBase = hw * 0.64f;
+            float hullBaseY = -hh * 0.75f;
+
+            void AddQuad(Vector2 bl, Vector2 tl, Vector2 tr, Vector2 br, Color col)
+            {
+                int idx = vh.currentVertCount;
+                vh.AddVert(bl, col, Vector2.zero);
+                vh.AddVert(tl, col, Vector2.zero);
+                vh.AddVert(tr, col, Vector2.zero);
+                vh.AddVert(br, col, Vector2.zero);
+                vh.AddTriangle(idx, idx + 1, idx + 2);
+                vh.AddTriangle(idx, idx + 2, idx + 3);
+            }
+
+            void AddTri(Vector2 v0, Vector2 v1, Vector2 v2, Color col)
+            {
+                int idx = vh.currentVertCount;
+                vh.AddVert(v0, col, Vector2.zero);
+                vh.AddVert(v1, col, Vector2.zero);
+                vh.AddVert(v2, col, Vector2.zero);
+                vh.AddTriangle(idx, idx + 1, idx + 2);
+            }
+
+            // 1. Nose Cone
+            Vector2 noseTipL = c + new Vector2(-hw * 0.03f, noseTopY);
+            Vector2 noseTipR = c + new Vector2(hw * 0.03f, noseTopY);
+            Vector2 noseMidL = c + new Vector2(0f, noseTopY);
+            Vector2 noseBaseL = c + new Vector2(-bodyHalfW, noseBaseY);
+            Vector2 noseBaseMid = c + new Vector2(0f, noseBaseY);
+            Vector2 noseBaseR = c + new Vector2(bodyHalfW, noseBaseY);
+
+            AddTri(noseBaseL, noseTipL, noseBaseMid, heatshieldCol);
+            AddTri(noseBaseMid, noseTipR, noseBaseR, stainlessCol);
+
+            // 2. Main Hull Body
+            Vector2 hullMidL = c + new Vector2(-bodyHalfW, aftFlapTopY);
+            Vector2 hullMidC = c + new Vector2(0f, aftFlapTopY);
+            Vector2 hullMidR = c + new Vector2(bodyHalfW, aftFlapTopY);
+
+            AddQuad(hullMidL, noseBaseL, noseBaseMid, hullMidC, heatshieldCol);
+            AddQuad(hullMidC, noseBaseMid, noseBaseR, hullMidR, stainlessCol);
+
+            // 3. Aft Body
+            Vector2 hullBotL = c + new Vector2(-bodyHalfW, hullBaseY);
+            Vector2 hullBotC = c + new Vector2(0f, hullBaseY);
+            Vector2 hullBotR = c + new Vector2(bodyHalfW, hullBaseY);
+
+            AddQuad(hullBotL, hullMidL, hullMidC, hullBotC, heatshieldCol);
+            AddQuad(hullBotC, hullMidC, hullMidR, hullBotR, stainlessCol);
+
+            // 4. Forward Flaps
+            Vector2 fwdLT = c + new Vector2(-fwdFlapSpan, fwdFlapTopY);
+            Vector2 fwdLB = c + new Vector2(-fwdFlapSpan, fwdFlapBaseY);
+            Vector2 fwdRT = c + new Vector2(fwdFlapSpan, fwdFlapTopY);
+            Vector2 fwdRB = c + new Vector2(fwdFlapSpan, fwdFlapBaseY);
+            Vector2 fwdBodyLT = c + new Vector2(-bodyHalfW, fwdFlapTopY);
+            Vector2 fwdBodyLB = c + new Vector2(-bodyHalfW, fwdFlapBaseY);
+            Vector2 fwdBodyRT = c + new Vector2(bodyHalfW, fwdFlapTopY);
+            Vector2 fwdBodyRB = c + new Vector2(bodyHalfW, fwdFlapBaseY);
+
+            AddQuad(fwdLB, fwdLT, fwdBodyLT, fwdBodyLB, heatshieldCol);
+            AddQuad(fwdBodyRB, fwdBodyRT, fwdRT, fwdRB, stainlessCol);
+
+            // 5. Aft Flaps
+            Vector2 aftLT = c + new Vector2(-aftFlapSpanTop, aftFlapTopY);
+            Vector2 aftLB = c + new Vector2(-aftFlapSpanBase, aftFlapBaseY);
+            Vector2 aftRT = c + new Vector2(aftFlapSpanTop, aftFlapTopY);
+            Vector2 aftRB = c + new Vector2(aftFlapSpanBase, aftFlapBaseY);
+            Vector2 aftBodyLT = c + new Vector2(-bodyHalfW, aftFlapTopY);
+            Vector2 aftBodyLB = c + new Vector2(-bodyHalfW, aftFlapBaseY);
+            Vector2 aftBodyRT = c + new Vector2(bodyHalfW, aftFlapTopY);
+            Vector2 aftBodyRB = c + new Vector2(bodyHalfW, aftFlapBaseY);
+
+            AddQuad(aftLB, aftLT, aftBodyLT, aftBodyLB, heatshieldCol);
+            AddQuad(aftBodyRB, aftBodyRT, aftRT, aftRB, stainlessCol);
+
+            // 6. Center Ridge Line
+            float ridgeHalfW = hw * 0.02f;
+            Vector2 rBotL = c + new Vector2(-ridgeHalfW, hullBaseY);
+            Vector2 rTopL = c + new Vector2(-ridgeHalfW, noseTopY - hh * 0.05f);
+            Vector2 rTopR = c + new Vector2(ridgeHalfW, noseTopY - hh * 0.05f);
+            Vector2 rBotR = c + new Vector2(ridgeHalfW, hullBaseY);
+            AddQuad(rBotL, rTopL, rTopR, rBotR, ridgeCol);
         }
     }
 }
