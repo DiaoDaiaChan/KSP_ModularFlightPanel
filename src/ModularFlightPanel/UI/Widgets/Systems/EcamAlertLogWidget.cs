@@ -915,10 +915,14 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 视觉缓存防抖
         private readonly Cached<string> _lastPhaseText = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastWarnCount = new Cached<int>(-1);
         private readonly Cached<string> _lastWarnText = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastCautCount = new Cached<int>(-1);
         private readonly Cached<string> _lastCautText = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastMemoCount = new Cached<int>(-1);
         private readonly Cached<string> _lastMemoText = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastStatusText = new Cached<string>(string.Empty);
+        private readonly Cached<int> _lastLogCount = new Cached<int>(-1);
         private readonly Cached<string> _lastBufferCountText = new Cached<string>(string.Empty);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -1300,6 +1304,12 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
+            _logic.Evaluate(context.Telemetry, context.DeltaTime);
+        }
+
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
@@ -1314,10 +1324,14 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnResetPrivateCache()
         {
             _lastPhaseText.Reset();
+            _lastWarnCount.Reset();
             _lastWarnText.Reset();
+            _lastCautCount.Reset();
             _lastCautText.Reset();
+            _lastMemoCount.Reset();
             _lastMemoText.Reset();
             _lastStatusText.Reset();
+            _lastLogCount.Reset();
             _lastBufferCountText.Reset();
             _logic.Reset();
         }
@@ -1338,8 +1352,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 顶栏光字牌更新 (Master Annunciator Tiles)
-            string warnStr = $"! {state.WarnCount}";
-            if (_lastWarnText.Update(warnStr)) SetTextIfChanged(_badgeWarnText, warnStr);
+            if (_lastWarnCount.Update(state.WarnCount))
+            {
+                string warnStr = $"! {state.WarnCount}";
+                _lastWarnText.Update(warnStr);
+                SetTextIfChanged(_badgeWarnText, warnStr);
+            }
             if (state.WarnCount > 0)
             {
                 Color warnCol = blinkOn ? theme.DangerColor : WidgetStyleManager.WithAlpha(theme.DangerColor, 0.60f);
@@ -1356,8 +1374,12 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_badgeWarnText != null) _badgeWarnText.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f);
             }
 
-            string cautStr = $"▲ {state.CautCount}";
-            if (_lastCautText.Update(cautStr)) SetTextIfChanged(_badgeCautText, cautStr);
+            if (_lastCautCount.Update(state.CautCount))
+            {
+                string cautStr = $"▲ {state.CautCount}";
+                _lastCautText.Update(cautStr);
+                SetTextIfChanged(_badgeCautText, cautStr);
+            }
             if (state.CautCount > 0)
             {
                 if (_cautBoxBg != null) _cautBoxBg.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.25f);
@@ -1373,8 +1395,12 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_badgeCautText != null) _badgeCautText.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f);
             }
 
-            string memoStr = $"● {state.MemoCount}";
-            if (_lastMemoText.Update(memoStr)) SetTextIfChanged(_badgeMemoText, memoStr);
+            if (_lastMemoCount.Update(state.MemoCount))
+            {
+                string memoStr = $"● {state.MemoCount}";
+                _lastMemoText.Update(memoStr);
+                SetTextIfChanged(_badgeMemoText, memoStr);
+            }
             if (state.MemoCount > 0)
             {
                 if (_memoBoxBg != null) _memoBoxBg.color = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.18f);
@@ -1423,8 +1449,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 4. 缓冲日志计数
-            string bufStr = $"LOG {state.LogCount}/40";
-            if (_lastBufferCountText.Update(bufStr)) SetTextIfChanged(_bufferCountText, bufStr);
+            if (_lastLogCount.Update(state.LogCount))
+            {
+                string bufStr = $"LOG {state.LogCount}/40";
+                _lastBufferCountText.Update(bufStr);
+                SetTextIfChanged(_bufferCountText, bufStr);
+            }
 
             // 5. 渲染 5 槽位
             for (int slotIdx = 0; slotIdx < MAX_DISPLAY_ROWS; slotIdx++)
