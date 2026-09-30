@@ -3,10 +3,149 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
+    /// <summary>
+    /// SpaceX 综合工况与 ECLSS 零-GC遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct SpaceXOverviewState : IEquatable<SpaceXOverviewState>
+    {
+        public bool HasVessel;
+        public float Press;
+        public float O2;
+        public float Temp;
+        public float Ec;
+        public double Volt;
+        public float Prop;
+        public bool HasWarn;
+
+        public string PressStr;
+        public string O2Str;
+        public string TempStr;
+        public string PwrStr;
+        public string PropStr;
+        public string AirlockStr;
+        public string ThermalStr;
+        public string DockStr;
+        public string StatusBadge;
+
+        public bool Equals(SpaceXOverviewState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   HasWarn == other.HasWarn &&
+                   Math.Abs(Press - other.Press) < 0.1f &&
+                   Math.Abs(O2 - other.O2) < 0.5f &&
+                   Math.Abs(Temp - other.Temp) < 0.2f &&
+                   Math.Abs(Ec - other.Ec) < 0.5f &&
+                   Math.Abs(Prop - other.Prop) < 0.5f &&
+                   string.Equals(StatusBadge, other.StatusBadge, StringComparison.Ordinal) &&
+                   string.Equals(AirlockStr, other.AirlockStr, StringComparison.Ordinal) &&
+                   string.Equals(ThermalStr, other.ThermalStr, StringComparison.Ordinal) &&
+                   string.Equals(DockStr, other.DockStr, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj) => obj is SpaceXOverviewState other && Equals(other);
+        public override int GetHashCode() => (HasVessel, HasWarn, Press, O2, Temp, Ec).GetHashCode();
+    }
+
+    /// <summary>
+    /// SpaceX 综合工况与 ECLSS 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class SpaceXOverviewLogic : WidgetLogic<SpaceXOverviewState>
+    {
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            // 1. 客舱气压 (Cabin Press)
+            float press = (float)telemetry.CabinPressure;
+            if (press <= 0.01f)
+            {
+                if (telemetry.AtmosphericPressure > 0.01)
+                    press = (float)(telemetry.AtmosphericPressure * 101.325);
+                else
+                    press = 101.3f;
+            }
+
+            // 2. 氧气百分比 (O2)
+            float o2 = telemetry.OxygenPercent;
+
+            // 3. 客舱温度 (Cabin Temp)
+            float temp = (float)telemetry.CabinTemp;
+
+            // 4. 电力与总线电压 (Net Power)
+            float ec = (float)telemetry.EcPercent;
+            double volt = telemetry.BusVoltage;
+
+            // 5. 推进剂储备
+            float prop = telemetry.MonoPercent > 0.001f ? telemetry.MonoPercent : (telemetry.StagePropellantFraction * 100f);
+
+            // 6. 四大子系统遥测状态动态解算
+            string airlockState = telemetry.CrewCapacity == 0
+                ? "UNCREWED"
+                : (telemetry.AtmosphericPressure < 0.01 ? "SEALED / 1 ATM" : "EQUALIZED");
+
+            string thermalState;
+            if (telemetry.DynamicPressure > 20.0 || telemetry.VerticalSpeed < -100.0)
+                thermalState = "REENTRY / HIGH AERO";
+            else if (telemetry.CabinTemp > 35.0)
+                thermalState = "ACTIVE COOLING HI";
+            else if (telemetry.CabinTemp < 5.0)
+                thermalState = "HEATERS ENGAGED";
+            else
+                thermalState = "LOOP NOMINAL [21°C]";
+
+            string dockState;
+            if (telemetry.IsDockingMode)
+            {
+                if (telemetry.HasTarget && telemetry.TargetDistance < 15.0) dockState = "CAPTURE / NEAR";
+                else if (telemetry.HasTarget) dockState = "APPROACH / ARMED";
+                else dockState = "DOCKING MODE";
+            }
+            else
+            {
+                dockState = "STANDBY / LATCHED";
+            }
+
+            // 7. 总体警告判定
+            bool hasWarn = (telemetry.CrewCapacity > 0 && o2 < 20f) || ec < 15f || (telemetry.CrewCapacity > 0 && press < 30f);
+            string badge = hasWarn ? "WARN" : "NOMINAL";
+
+            CurrentState = new SpaceXOverviewState
+            {
+                HasVessel = true,
+                Press = press,
+                O2 = o2,
+                Temp = temp,
+                Ec = ec,
+                Volt = volt,
+                Prop = prop,
+                HasWarn = hasWarn,
+                PressStr = $"{press:F1} kPa",
+                O2Str = $"{o2:F0}%",
+                TempStr = $"{temp:F1}°C",
+                PwrStr = $"{volt:F1}V / {ec:F0}%",
+                PropStr = $"{prop:F0}%",
+                AirlockStr = airlockState,
+                ThermalStr = thermalState,
+                DockStr = dockState,
+                StatusBadge = badge
+            };
+        }
+    }
+
     /// <summary>
     /// SpaceX 载人龙飞船综合工况与 ECLSS 环控维生监控面板 (SpaceX Vehicle Overview & ECLSS Panel)
     /// 包含：客舱气压 (Cabin Press)、氧分压 (O2 Level)、客舱温度 (Cabin Temp)、电网总线 (Net Power)，
@@ -53,7 +192,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private Text _subsysThermal;
         private Text _subsysDock;
 
-        // 脏数据变动缓存
+        // 脏数据变动缓存 (MFP-SPEC-009)
         private readonly CachedFloat _lastPress = new CachedFloat(-1f);
         private readonly CachedFloat _lastO2 = new CachedFloat(-1f);
         private readonly CachedFloat _lastTemp = new CachedFloat(-1f);
@@ -68,6 +207,10 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private readonly Cached<string> _lastAirlockStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastThermalStr = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastDockStr = new Cached<string>(string.Empty);
+
+        // 业务大脑 (MFP-SPEC-012)
+        private readonly SpaceXOverviewLogic _logic = new SpaceXOverviewLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // CustomTemplate 自定义通道
         private string _titleCustom = "VEHICLE OVERVIEW / ECLSS";
@@ -104,280 +247,209 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             if (_outline != null)
                 _outline.effectDistance = new Vector2(1f * s, 1f * s);
 
-            // 1. 顶部标题栏 (240 x 24)
-            _titleText = UIFactory.CreateText(transform, "Title", _titleCustom, Mathf.RoundToInt(9f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
-            _titleText.rectTransform.anchoredPosition = new Vector2(-12f * s, panelSize.y * 0.5f - 14f * s);
-            _titleText.rectTransform.sizeDelta = new Vector2(140f * s, 16f * s);
+            // 1. 顶部标题与工况微标
+            _titleText = UIFactory.CreateText(transform, "Title", _titleCustom, Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft,
+                style.GetTextColor(TextStyleRole.Label, theme));
+            _titleText.fontStyle = FontStyle.Bold;
+            _titleText.rectTransform.anchoredPosition = new Vector2(-panelSize.x * 0.5f + 14f * s + 75f * s, panelSize.y * 0.5f - 14f * s);
+            _titleText.rectTransform.sizeDelta = new Vector2(150f * s, 14f * s);
 
-            _statusBadge = UIFactory.CreateText(transform, "StatusBadge", I18n.Tr("WIDGET_SPX_NOMINAL", "正常"), Mathf.RoundToInt(8f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.Accent, theme));
-            _statusBadge.rectTransform.anchoredPosition = new Vector2(panelSize.x * 0.5f - 40f * s, panelSize.y * 0.5f - 14f * s);
-            _statusBadge.rectTransform.sizeDelta = new Vector2(70f * s, 16f * s);
+            _statusBadge = UIFactory.CreateText(transform, "StatusBadge", "NOMINAL", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleRight,
+                style.GetTextColor(TextStyleRole.Accent, theme));
+            _statusBadge.fontStyle = FontStyle.Bold;
+            _statusBadge.rectTransform.anchoredPosition = new Vector2(panelSize.x * 0.5f - 14f * s - 30f * s, panelSize.y * 0.5f - 14f * s);
+            _statusBadge.rectTransform.sizeDelta = new Vector2(60f * s, 14f * s);
 
-            // 分割细线
-            UIFactory.CreatePanel(transform, "HeaderSep", new Vector2(panelSize.x - 16f * s, 1f * s), new Vector2(0f, panelSize.y * 0.5f - 24f * s), style.GetLineColor(LineWeight.Faint, theme));
+            // 2. 四组 ECLSS 监控卡槽 (横向 2x2 网格，每格配微型进度条)
+            float row1Y = panelSize.y * 0.5f - 36f * s;
+            float row2Y = row1Y - 32f * s;
+            float col1X = -panelSize.x * 0.5f + 14f * s;
+            float col2X = 8f * s;
 
-            // 2. 2x2 环控仪表矩阵
-            float col1X = -58f * s;
-            float col2X = 58f * s;
-            float row1Y = 32f * s;
-            float row2Y = -12f * s;
-            float itemW = 100f * s;
+            CreateEclssSlot("Slot_Press", col1X, row1Y, s, theme, _pressLabelStr, out _pressLabel, out _pressValue, out _pressTrack, out _pressFill);
+            CreateEclssSlot("Slot_O2", col2X, row1Y, s, theme, _o2LabelStr, out _o2Label, out _o2Value, out _o2Track, out _o2Fill);
+            CreateEclssSlot("Slot_Temp", col1X, row2Y, s, theme, _tempLabelStr, out _tempLabel, out _tempValue, out _tempTrack, out _tempFill);
+            CreateEclssSlot("Slot_Power", col2X, row2Y, s, theme, _pwrLabelStr, out _pwrLabel, out _pwrValue, out _pwrTrack, out _pwrFill);
 
-            // (1) CABIN PRESS
-            BuildMeterSlot("Press", col1X, row1Y, itemW, s, theme, _pressLabelStr, "101.3 kPa", out _pressLabel, out _pressValue, out _pressTrack, out _pressFill);
+            // 水平分隔线
+            float sepY = row2Y - 20f * s;
+            UIFactory.CreatePanel(transform, "MidSep", new Vector2(panelSize.x - 28f * s, 1f * s), new Vector2(0f, sepY), style.GetLineColor(LineWeight.Faint, theme));
 
-            // (2) O2 LEVEL
-            BuildMeterSlot("O2", col2X, row1Y, itemW, s, theme, _o2LabelStr, "100%", out _o2Label, out _o2Value, out _o2Track, out _o2Fill);
+            // 3. 底部四大子系统状态矩阵 (4 行紧凑状态标签)
+            float subY = sepY - 14f * s;
+            float lineH = 13f * s;
 
-            // (3) CABIN TEMP
-            BuildMeterSlot("Temp", col1X, row2Y, itemW, s, theme, _tempLabelStr, "21.0°C", out _tempLabel, out _tempValue, out _tempTrack, out _tempFill);
-
-            // (4) NET POWER
-            BuildMeterSlot("Power", col2X, row2Y, itemW, s, theme, _pwrLabelStr, "28.2V / 100%", out _pwrLabel, out _pwrValue, out _pwrTrack, out _pwrFill);
-
-            // 分割细线
-            UIFactory.CreatePanel(transform, "MidSep", new Vector2(panelSize.x - 16f * s, 1f * s), new Vector2(0f, -34f * s), style.GetLineColor(LineWeight.Faint, theme));
-
-            // 3. 底部 4 行子系统状态微标
-            float btmY = -48f * s;
-            float rowH = 12f * s;
-
-            _subsysAirlock = CreateStatusRow("Airlock", -panelSize.x * 0.5f + 14f * s, btmY, panelSize.x - 28f * s, s, theme, _airlockLabelStr, "SECURED");
-            _subsysProp = CreateStatusRow("Prop", -panelSize.x * 0.5f + 14f * s, btmY - rowH, panelSize.x - 28f * s, s, theme, _propLabelStr, "100%");
-            _subsysThermal = CreateStatusRow("Thermal", -panelSize.x * 0.5f + 14f * s, btmY - rowH * 2, panelSize.x - 28f * s, s, theme, _thermalLabelStr, "AUTO");
-            _subsysDock = CreateStatusRow("Dock", -panelSize.x * 0.5f + 14f * s, btmY - rowH * 3, panelSize.x - 28f * s, s, theme, _dockLabelStr, "READY");
+            _subsysAirlock = CreateSubsystemRow("Subsys_Airlock", subY, s, theme, _airlockLabelStr, "SEALED / 1 ATM");
+            subY -= lineH;
+            _subsysProp = CreateSubsystemRow("Subsys_Prop", subY, s, theme, _propLabelStr, "100%");
+            subY -= lineH;
+            _subsysThermal = CreateSubsystemRow("Subsys_Thermal", subY, s, theme, _thermalLabelStr, "LOOP NOMINAL [21°C]");
+            subY -= lineH;
+            _subsysDock = CreateSubsystemRow("Subsys_Dock", subY, s, theme, _dockLabelStr, "STANDBY / LATCHED");
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Overview Panel", _bgImage.gameObject, "SpaceX综合环控面板底盘", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
-            this.Controls.Register(new WidgetHeaderControl(_titleText, _statusBadge, "Header", "综合环控标题与状态微标"));
-            this.Controls.Register(new WidgetLinearBarControl(this, "cabin_pressure", "座舱气压仪表", _pressFill != null ? _pressFill.gameObject : null, _pressTrack, _pressFill, "{PRESSURE}", 0.0, 105.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
-            this.Controls.Register(new WidgetLinearBarControl(this, "oxygen_level", "氧气浓度仪表", _o2Fill != null ? _o2Fill.gameObject : null, _o2Track, _o2Fill, "{O2}", 0.0, 100.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
-            this.Controls.Register(new WidgetLinearBarControl(this, "cabin_temperature", "座舱温度仪表", _tempFill != null ? _tempFill.gameObject : null, _tempTrack, _tempFill, "{TEMP}", 0.0, 40.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
-            this.Controls.Register(new WidgetLinearBarControl(this, "net_power", "母线净功率仪表", _pwrFill != null ? _pwrFill.gameObject : null, _pwrTrack, _pwrFill, "{EC}", 0.0, 100.0, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
-            this.Controls.Register(new WidgetReadoutControl("airlock_status", "气闸舱状态", _subsysAirlock != null ? _subsysAirlock.gameObject : null, _subsysAirlock, null, TextStyleRole.Accent, "{ATM}"));
-            this.Controls.Register(new WidgetReadoutControl("rcs_propellant", "姿控推进剂余量", _subsysProp != null ? _subsysProp.gameObject : null, _subsysProp, null, TextStyleRole.SecondaryValue, "{MONO}"));
-            this.Controls.Register(new WidgetReadoutControl("thermal_status", "热控循环状态", _subsysThermal != null ? _subsysThermal.gameObject : null, _subsysThermal, null, TextStyleRole.Accent, "{TEMP}"));
-            this.Controls.Register(new WidgetReadoutControl("docking_mechanism", "对接机构状态", _subsysDock != null ? _subsysDock.gameObject : null, _subsysDock, null, TextStyleRole.Accent, "{PRESSURE}"));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "Overview Background", _bgImage.gameObject, "SpaceX综合工况卡片底板", t => ApplyCard(_bgImage, _outline, CardStyleRole.Normal, t)));
+            this.Controls.Register(ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "title", "Title", _titleText != null ? _titleText.gameObject : null));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "status_badge", "健康状态徽标", _statusBadge != null ? _statusBadge.gameObject : null));
+
+            this.Controls.Register(new WidgetReadoutControl("cabin_press", "客舱压力读数", _pressValue != null ? _pressValue.gameObject : null, _pressValue, _pressLabel, TextStyleRole.PrimaryValue, "{CABIN:PRESS}"));
+            this.Controls.Register(new WidgetReadoutControl("o2_level", "氧分压读数", _o2Value != null ? _o2Value.gameObject : null, _o2Value, _o2Label, TextStyleRole.PrimaryValue, "{CABIN:O2}"));
+            this.Controls.Register(new WidgetReadoutControl("cabin_temp", "客舱温度读数", _tempValue != null ? _tempValue.gameObject : null, _tempValue, _tempLabel, TextStyleRole.PrimaryValue, "{CABIN:TEMP}"));
+            this.Controls.Register(new WidgetReadoutControl("net_power", "电网功率读数", _pwrValue != null ? _pwrValue.gameObject : null, _pwrValue, _pwrLabel, TextStyleRole.PrimaryValue, "{ELEC}"));
+
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "subsys_airlock", "气闸舱门状态", _subsysAirlock != null ? _subsysAirlock.gameObject : null));
+            this.Controls.Register(new WidgetReadoutControl("subsys_prop", "推进剂状态", _subsysProp != null ? _subsysProp.gameObject : null, _subsysProp, null, TextStyleRole.SecondaryValue, "{MONO}"));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "subsys_thermal", "热控回路状态", _subsysThermal != null ? _subsysThermal.gameObject : null));
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "subsys_dock", "对接机构状态", _subsysDock != null ? _subsysDock.gameObject : null));
+
             this.Controls.BindConfigToControls(config);
             this.Controls.ApplyThemeToControls(theme);
 
             ApplyTheme(theme);
         }
 
-        private void BuildMeterSlot(string id, float x, float y, float width, float s, ThemeConfig theme, string labelStr, string defaultVal,
-            out Text lbl, out Text val, out Image track, out Image fill)
+        private Text CreateSubsystemRow(string name, float y, float s, ThemeConfig theme, string label, string defaultVal)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
+            float w = 240f * s - 28f * s;
+            float startX = -w * 0.5f;
 
-            lbl = UIFactory.CreateText(transform, $"{id}_Lbl", labelStr, Mathf.RoundToInt(7.5f * s), TextAnchor.UpperLeft, style.GetTextColor(TextStyleRole.Label, theme));
-            lbl.rectTransform.anchoredPosition = new Vector2(x, y + 10f * s);
-            lbl.rectTransform.sizeDelta = new Vector2(width, 12f * s);
+            Text l = UIFactory.CreateText(transform, $"{name}_Label", label, Mathf.RoundToInt(6.5f * s), TextAnchor.MiddleLeft,
+                style.GetTextColor(TextStyleRole.Muted, theme));
+            l.rectTransform.anchoredPosition = new Vector2(startX + 60f * s, y);
+            l.rectTransform.sizeDelta = new Vector2(120f * s, 12f * s);
 
-            val = UIFactory.CreateText(transform, $"{id}_Val", defaultVal, Mathf.RoundToInt(10.5f * s), TextAnchor.UpperRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-            val.rectTransform.anchoredPosition = new Vector2(x, y + 10f * s);
-            val.rectTransform.sizeDelta = new Vector2(width, 14f * s);
+            Text v = UIFactory.CreateText(transform, $"{name}_Val", defaultVal, Mathf.RoundToInt(6.5f * s), TextAnchor.MiddleRight,
+                style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            v.fontStyle = FontStyle.Bold;
+            v.rectTransform.anchoredPosition = new Vector2(startX + w - 45f * s, y);
+            v.rectTransform.sizeDelta = new Vector2(90f * s, 12f * s);
 
-            GameObject trkGo = UIFactory.CreatePanel(transform, $"{id}_Track", new Vector2(width, 3f * s), new Vector2(x, y - 6f * s), style.GetMeterColor(MeterStyleRole.Track, theme));
-            track = trkGo.GetComponent<Image>();
-
-            GameObject fillGo = UIFactory.CreatePanel(trkGo.transform, $"{id}_Fill", new Vector2(width, 3f * s), Vector2.zero, theme.AccentPrimary);
-            fill = fillGo.GetComponent<Image>();
-            RectTransform fillRt = fillGo.GetComponent<RectTransform>();
-            fillRt.anchorMin = new Vector2(0f, 0f);
-            fillRt.anchorMax = new Vector2(0f, 1f);
-            fillRt.pivot = new Vector2(0f, 0.5f);
-            fillRt.anchoredPosition = Vector2.zero;
+            return v;
         }
 
-        private Text CreateStatusRow(string id, float startX, float y, float width, float s, ThemeConfig theme, string name, string status)
+        private void CreateEclssSlot(string name, float startX, float startY, float s, ThemeConfig theme, string labelStr,
+            out Text label, out Text val, out Image track, out Image fill)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            float halfW = width * 0.5f;
+            float slotW = 100f * s;
 
-            Text rowName = UIFactory.CreateText(transform, $"{id}_Name", name, Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Muted, theme));
-            rowName.rectTransform.anchoredPosition = new Vector2(startX + halfW, y);
-            rowName.rectTransform.sizeDelta = new Vector2(width, 12f * s);
+            label = UIFactory.CreateText(transform, $"{name}_Label", labelStr, Mathf.RoundToInt(6.5f * s), TextAnchor.UpperLeft,
+                style.GetTextColor(TextStyleRole.Muted, theme));
+            label.rectTransform.anchoredPosition = new Vector2(startX + slotW * 0.5f, startY);
+            label.rectTransform.sizeDelta = new Vector2(slotW, 10f * s);
 
-            Text rowVal = UIFactory.CreateText(transform, $"{id}_Val", status, Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-            rowVal.rectTransform.anchoredPosition = new Vector2(startX + halfW, y);
-            rowVal.rectTransform.sizeDelta = new Vector2(width, 12f * s);
+            val = UIFactory.CreateText(transform, $"{name}_Val", "---", Mathf.RoundToInt(10.5f * s), TextAnchor.LowerLeft,
+                style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            val.fontStyle = FontStyle.Bold;
+            val.rectTransform.anchoredPosition = new Vector2(startX + slotW * 0.5f, startY - 11f * s);
+            val.rectTransform.sizeDelta = new Vector2(slotW, 14f * s);
 
-            return rowVal;
+            GameObject trkObj = UIFactory.CreatePanel(transform, $"{name}_Track", new Vector2(slotW, 3f * s),
+                new Vector2(startX + slotW * 0.5f, startY - 22f * s), style.GetMeterColor(MeterStyleRole.Track, theme));
+            track = trkObj.GetComponent<Image>();
+
+            GameObject fillObj = UIFactory.CreatePanel(trkObj.transform, $"{name}_Fill", new Vector2(slotW * 0.5f, 3f * s),
+                new Vector2(0f, 0f), style.GetMeterColor(MeterStyleRole.Primary, theme));
+            fill = fillObj.GetComponent<Image>();
+            fill.rectTransform.pivot = new Vector2(0f, 0.5f);
+            fill.rectTransform.anchoredPosition = new Vector2(-slotW * 0.5f, 0f);
         }
-
-        private float _dataPress;
-        private float _dataO2;
-        private float _dataTemp;
-        private float _dataEc;
-        private float _dataVolt;
-        private float _dataProp;
-        private string _dataAirlockState = "SEALED / 1 ATM";
-        private string _dataThermalState = "LOOP NOMINAL [21°C]";
-        private string _dataDockState = "STANDBY / LATCHED";
-        private bool _dataHasWarn;
-        private bool _dataHasVessel;
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _dataHasVessel = false;
-                return;
-            }
-            _dataHasVessel = true;
-
-            // 1. 舱压 (Cabin Pressure)
-            float press;
-            if (telemetry.CrewCapacity == 0)
-            {
-                press = 0f;
-            }
-            else
-            {
-                press = (float)telemetry.CabinPressure;
-                if (press <= 0.01f && telemetry.AtmosphericPressure > 0.01)
-                    press = (float)(telemetry.AtmosphericPressure * 101.325);
-                else if (press <= 0.01f)
-                    press = 101.3f;
-            }
-            _dataPress = press;
-
-            // 2. 氧气百分比 (O2)
-            _dataO2 = telemetry.OxygenPercent;
-
-            // 3. 客舱温度 (Cabin Temp)
-            _dataTemp = (float)telemetry.CabinTemp;
-
-            // 4. 电力与总线电压 (Net Power)
-            _dataEc = (float)telemetry.EcPercent;
-            _dataVolt = telemetry.BusVoltage;
-
-            // 5. 推进剂储备
-            _dataProp = telemetry.MonoPercent > 0.001f ? telemetry.MonoPercent : (telemetry.StagePropellantFraction * 100f);
-
-            // 6. 四大子系统遥测状态动态解算
-            _dataAirlockState = telemetry.CrewCapacity == 0
-                ? "UNCREWED"
-                : (telemetry.AtmosphericPressure < 0.01 ? "SEALED / 1 ATM" : "EQUALIZED");
-
-            if (telemetry.DynamicPressure > 20.0 || telemetry.VerticalSpeed < -100.0)
-                _dataThermalState = "REENTRY / HIGH AERO";
-            else if (telemetry.CabinTemp > 35.0)
-                _dataThermalState = "ACTIVE COOLING HI";
-            else if (telemetry.CabinTemp < 5.0)
-                _dataThermalState = "HEATERS ENGAGED";
-            else
-                _dataThermalState = "LOOP NOMINAL [21°C]";
-
-            if (telemetry.IsDockingMode)
-            {
-                if (telemetry.HasTarget && telemetry.TargetDistance < 15.0) _dataDockState = "CAPTURE / NEAR";
-                else if (telemetry.HasTarget) _dataDockState = "APPROACH / ARMED";
-                else _dataDockState = "DOCKING MODE";
-            }
-            else
-            {
-                _dataDockState = "STANDBY / LATCHED";
-            }
-
-            // 7. 总体警告判定
-            _dataHasWarn = (telemetry.CrewCapacity > 0 && _dataO2 < 20f) || _dataEc < 15f || (telemetry.CrewCapacity > 0 && press < 30f);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (!_dataHasVessel) return;
+            SpaceXOverviewState state = _logic.CurrentState;
+            if (!state.HasVessel) return;
+
+            float s = CurrentDpiScale;
 
             // 1. 舱压
-            if (Mathf.Abs(_dataPress - _lastPress.Value) > 0.1f)
+            if (Mathf.Abs(state.Press - _lastPress.Value) > 0.1f)
             {
-                _lastPress.Update(_dataPress);
-                string pStr = $"{_dataPress:F1} kPa";
-                if (_lastPressStr.Update(pStr) && _pressValue != null)
+                _lastPress.Update(state.Press);
+                if (_lastPressStr.Update(state.PressStr) && _pressValue != null)
                 {
-                    _pressValue.text = pStr;
+                    _pressValue.SetTextSafe(state.PressStr);
                 }
                 if (_pressFill != null)
                 {
-                    float ratio = Mathf.Clamp01(_dataPress / 105f);
-                    _pressFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
+                    float ratio = Mathf.Clamp01(state.Press / 105f);
+                    _pressFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * s * ratio, 3f * s));
                 }
             }
 
             // 2. 氧气百分比
-            if (Mathf.Abs(_dataO2 - _lastO2.Value) > 0.5f)
+            if (Mathf.Abs(state.O2 - _lastO2.Value) > 0.5f)
             {
-                _lastO2.Update(_dataO2);
-                string oStr = $"{_dataO2:F0}%";
-                if (_lastO2Str.Update(oStr) && _o2Value != null)
+                _lastO2.Update(state.O2);
+                if (_lastO2Str.Update(state.O2Str) && _o2Value != null)
                 {
-                    _o2Value.text = oStr;
+                    _o2Value.SetTextSafe(state.O2Str);
                 }
                 if (_o2Fill != null)
                 {
-                    float ratio = Mathf.Clamp01(_dataO2 * 0.01f);
-                    _o2Fill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
+                    float ratio = Mathf.Clamp01(state.O2 * 0.01f);
+                    _o2Fill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * s * ratio, 3f * s));
                 }
             }
 
             // 3. 客舱温度
-            if (Mathf.Abs(_dataTemp - _lastTemp.Value) > 0.2f)
+            if (Mathf.Abs(state.Temp - _lastTemp.Value) > 0.2f)
             {
-                _lastTemp.Update(_dataTemp);
-                string tStr = $"{_dataTemp:F1}°C";
-                if (_lastTempStr.Update(tStr) && _tempValue != null)
+                _lastTemp.Update(state.Temp);
+                if (_lastTempStr.Update(state.TempStr) && _tempValue != null)
                 {
-                    _tempValue.text = tStr;
+                    _tempValue.SetTextSafe(state.TempStr);
                 }
                 if (_tempFill != null)
                 {
-                    float ratio = Mathf.Clamp01(_dataTemp / 40f);
-                    _tempFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
+                    float ratio = Mathf.Clamp01(state.Temp / 40f);
+                    _tempFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * s * ratio, 3f * s));
                 }
             }
 
             // 4. 电力与总线电压
-            if (Mathf.Abs(_dataEc - _lastEc.Value) > 0.5f)
+            if (Mathf.Abs(state.Ec - _lastEc.Value) > 0.5f)
             {
-                _lastEc.Update(_dataEc);
-                string pwrStr = $"{_dataVolt:F1}V / {_dataEc:F0}%";
-                if (_lastPwrStr.Update(pwrStr) && _pwrValue != null)
+                _lastEc.Update(state.Ec);
+                if (_lastPwrStr.Update(state.PwrStr) && _pwrValue != null)
                 {
-                    _pwrValue.text = pwrStr;
+                    _pwrValue.SetTextSafe(state.PwrStr);
                 }
                 if (_pwrFill != null)
                 {
-                    float ratio = Mathf.Clamp01(_dataEc * 0.01f);
-                    _pwrFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * CurrentDpiScale * ratio, 3f * CurrentDpiScale));
+                    float ratio = Mathf.Clamp01(state.Ec * 0.01f);
+                    _pwrFill.rectTransform.SetSizeDeltaSafe(new Vector2(100f * s * ratio, 3f * s));
                 }
             }
 
             // 5. 推进剂储备
-            if (Mathf.Abs(_dataProp - _lastProp.Value) > 0.5f)
+            if (Mathf.Abs(state.Prop - _lastProp.Value) > 0.5f)
             {
-                _lastProp.Update(_dataProp);
-                string propStr = $"{_dataProp:F0}%";
-                if (_lastPropStr.Update(propStr) && _subsysProp != null)
+                _lastProp.Update(state.Prop);
+                if (_lastPropStr.Update(state.PropStr) && _subsysProp != null)
                 {
-                    _subsysProp.text = propStr;
+                    _subsysProp.SetTextSafe(state.PropStr);
                 }
             }
 
             // 6. 四大子系统
-            if (_subsysAirlock != null && _lastAirlockStr.Update(_dataAirlockState)) _subsysAirlock.text = _dataAirlockState;
-            if (_subsysThermal != null && _lastThermalStr.Update(_dataThermalState)) _subsysThermal.text = _dataThermalState;
-            if (_subsysDock != null && _lastDockStr.Update(_dataDockState)) _subsysDock.text = _dataDockState;
+            if (_subsysAirlock != null && _lastAirlockStr.Update(state.AirlockStr)) _subsysAirlock.SetTextSafe(state.AirlockStr);
+            if (_subsysThermal != null && _lastThermalStr.Update(state.ThermalStr)) _subsysThermal.SetTextSafe(state.ThermalStr);
+            if (_subsysDock != null && _lastDockStr.Update(state.DockStr)) _subsysDock.SetTextSafe(state.DockStr);
 
             // 7. 总体警告判定
-            string badge = _dataHasWarn ? "WARN" : "NOMINAL";
-            if (_lastStatusBadge.Update(badge) && _statusBadge != null)
+            if (_lastStatusBadge.Update(state.StatusBadge) && _statusBadge != null)
             {
-                _statusBadge.text = badge;
+                _statusBadge.SetTextSafe(state.StatusBadge);
                 ThemeConfig th = context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme;
-                ApplyText(_statusBadge, badge == "NOMINAL" ? TextStyleRole.Accent : TextStyleRole.Warning, th);
+                ApplyText(_statusBadge, state.StatusBadge == "NOMINAL" ? TextStyleRole.Accent : TextStyleRole.Warning, th);
             }
         }
 
@@ -385,34 +457,39 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         {
             if (theme == null) return;
             base.ApplyTheme(theme);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
 
             this.Controls.ApplyThemeToControls(theme);
 
             ApplyCard(_bgImage, _outline, CardStyleRole.Normal, theme);
 
-            if (_titleText != null) ApplyText(_titleText, TextStyleRole.Label, theme);
-            if (_statusBadge != null) ApplyText(_statusBadge, _lastStatusBadge.Value == "WARN" ? TextStyleRole.Warning : TextStyleRole.Accent, theme);
+            ApplyText(_titleText, TextStyleRole.Label, theme);
+            ApplyText(_statusBadge, _lastStatusBadge.Value == "WARN" ? TextStyleRole.Warning : TextStyleRole.Accent, theme);
 
-            if (_pressLabel != null) ApplyText(_pressLabel, TextStyleRole.Label, theme);
-            if (_pressValue != null) ApplyText(_pressValue, TextStyleRole.PrimaryValue, theme);
-            ApplyMeter(_pressTrack, _pressFill, null, MeterStyleRole.Primary, theme);
+            ApplyText(_pressLabel, TextStyleRole.Muted, theme);
+            ApplyText(_pressValue, TextStyleRole.PrimaryValue, theme);
+            if (_pressTrack != null) _pressTrack.color = style.GetMeterColor(MeterStyleRole.Track, theme);
+            if (_pressFill != null) _pressFill.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
 
-            if (_o2Label != null) ApplyText(_o2Label, TextStyleRole.Label, theme);
-            if (_o2Value != null) ApplyText(_o2Value, TextStyleRole.PrimaryValue, theme);
-            ApplyMeter(_o2Track, _o2Fill, null, MeterStyleRole.Primary, theme);
+            ApplyText(_o2Label, TextStyleRole.Muted, theme);
+            ApplyText(_o2Value, TextStyleRole.PrimaryValue, theme);
+            if (_o2Track != null) _o2Track.color = style.GetMeterColor(MeterStyleRole.Track, theme);
+            if (_o2Fill != null) _o2Fill.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
 
-            if (_tempLabel != null) ApplyText(_tempLabel, TextStyleRole.Label, theme);
-            if (_tempValue != null) ApplyText(_tempValue, TextStyleRole.PrimaryValue, theme);
-            ApplyMeter(_tempTrack, _tempFill, null, MeterStyleRole.Primary, theme);
+            ApplyText(_tempLabel, TextStyleRole.Muted, theme);
+            ApplyText(_tempValue, TextStyleRole.PrimaryValue, theme);
+            if (_tempTrack != null) _tempTrack.color = style.GetMeterColor(MeterStyleRole.Track, theme);
+            if (_tempFill != null) _tempFill.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
 
-            if (_pwrLabel != null) ApplyText(_pwrLabel, TextStyleRole.Label, theme);
-            if (_pwrValue != null) ApplyText(_pwrValue, TextStyleRole.PrimaryValue, theme);
-            ApplyMeter(_pwrTrack, _pwrFill, null, MeterStyleRole.Primary, theme);
+            ApplyText(_pwrLabel, TextStyleRole.Muted, theme);
+            ApplyText(_pwrValue, TextStyleRole.PrimaryValue, theme);
+            if (_pwrTrack != null) _pwrTrack.color = style.GetMeterColor(MeterStyleRole.Track, theme);
+            if (_pwrFill != null) _pwrFill.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
 
-            if (_subsysAirlock != null) ApplyText(_subsysAirlock, TextStyleRole.Accent, theme);
-            if (_subsysProp != null) ApplyText(_subsysProp, TextStyleRole.SecondaryValue, theme);
-            if (_subsysThermal != null) ApplyText(_subsysThermal, TextStyleRole.Accent, theme);
-            if (_subsysDock != null) ApplyText(_subsysDock, TextStyleRole.Accent, theme);
+            ApplyText(_subsysAirlock, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_subsysProp, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_subsysThermal, TextStyleRole.SecondaryValue, theme);
+            ApplyText(_subsysDock, TextStyleRole.SecondaryValue, theme);
         }
 
         protected override void OnDestroy()
