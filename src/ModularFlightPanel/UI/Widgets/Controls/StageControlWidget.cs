@@ -21,6 +21,127 @@ namespace ModularFlightPanel.UI.Widgets
     /// 6. 动态长宽比自适应 (IAdaptiveSizeWidget)：支持非等比缩放，自动重排并自适应拉伸三轴标尺与遥测卡片；
     /// 7. 严格落实 0 颜色字面量 (MFP-SPEC-006)、零场景查询 (MFP-SPEC-007) 与 Critical (60Hz) 阶梯高保真刷新。
     /// </summary>
+    /// <summary>
+    /// 分级与操纵台零 GC 不可变遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct StageControlState : IEquatable<StageControlState>
+    {
+        public bool HasVessel;
+        public bool IsLocked;
+        public int CurrentStage;
+        public double StageDeltaV;
+        public double StageBurnTime;
+        public float Twr;
+        public int ActiveEngines;
+        public float PitchInput;
+        public float PitchTrim;
+        public float RollInput;
+        public float RollTrim;
+        public float YawInput;
+        public float YawTrim;
+        public float StagePropellantFraction;
+        public string PropName;
+        public bool IsPrecisionControl;
+        public bool IsDockingMode;
+
+        public bool Equals(StageControlState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   IsLocked == other.IsLocked &&
+                   CurrentStage == other.CurrentStage &&
+                   Math.Abs(StageDeltaV - other.StageDeltaV) < 0.01 &&
+                   Math.Abs(StageBurnTime - other.StageBurnTime) < 0.01 &&
+                   Math.Abs(Twr - other.Twr) < 0.01f &&
+                   ActiveEngines == other.ActiveEngines &&
+                   Math.Abs(PitchInput - other.PitchInput) < 0.005f &&
+                   Math.Abs(PitchTrim - other.PitchTrim) < 0.005f &&
+                   Math.Abs(RollInput - other.RollInput) < 0.005f &&
+                   Math.Abs(RollTrim - other.RollTrim) < 0.005f &&
+                   Math.Abs(YawInput - other.YawInput) < 0.005f &&
+                   Math.Abs(YawTrim - other.YawTrim) < 0.005f &&
+                   Math.Abs(StagePropellantFraction - other.StagePropellantFraction) < 0.002f &&
+                   string.Equals(PropName, other.PropName, StringComparison.Ordinal) &&
+                   IsPrecisionControl == other.IsPrecisionControl &&
+                   IsDockingMode == other.IsDockingMode;
+        }
+
+        public override bool Equals(object obj) => obj is StageControlState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = HasVessel.GetHashCode();
+                hash = (hash * 397) ^ IsLocked.GetHashCode();
+                hash = (hash * 397) ^ CurrentStage;
+                hash = (hash * 397) ^ StageDeltaV.GetHashCode();
+                hash = (hash * 397) ^ StageBurnTime.GetHashCode();
+                hash = (hash * 397) ^ Twr.GetHashCode();
+                hash = (hash * 397) ^ ActiveEngines;
+                hash = (hash * 397) ^ PitchInput.GetHashCode();
+                hash = (hash * 397) ^ RollInput.GetHashCode();
+                hash = (hash * 397) ^ YawInput.GetHashCode();
+                hash = (hash * 397) ^ StagePropellantFraction.GetHashCode();
+                hash = (hash * 397) ^ (PropName != null ? PropName.GetHashCode() : 0);
+                hash = (hash * 397) ^ IsPrecisionControl.GetHashCode();
+                hash = (hash * 397) ^ IsDockingMode.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 分级与操纵台纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class StageControlLogic : WidgetLogic<StageControlState>
+    {
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                if (CurrentState.HasVessel)
+                {
+                    Reset();
+                }
+                return;
+            }
+
+            string rawName = telemetry.StagePropellantName;
+            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
+            if (rawName.StartsWith("PROP:", StringComparison.OrdinalIgnoreCase))
+                rawName = rawName.Substring(5).Trim();
+            else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
+                rawName = rawName.Substring(4).Trim();
+            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
+
+            CurrentState = new StageControlState
+            {
+                HasVessel = true,
+                IsLocked = telemetry.IsStageLocked || StockStageActionService.IsStagingLocked,
+                CurrentStage = telemetry.CurrentStage,
+                StageDeltaV = telemetry.StageDeltaV,
+                StageBurnTime = telemetry.StageBurnTime,
+                Twr = (float)telemetry.TWR,
+                ActiveEngines = telemetry.ActiveEngines,
+                PitchInput = telemetry.PitchInput,
+                PitchTrim = telemetry.PitchTrim,
+                RollInput = telemetry.RollInput,
+                RollTrim = telemetry.RollTrim,
+                YawInput = telemetry.YawInput,
+                YawTrim = telemetry.YawTrim,
+                StagePropellantFraction = Mathf.Clamp01((float)telemetry.StagePropellantFraction),
+                PropName = rawName.ToUpperInvariant(),
+                IsPrecisionControl = telemetry.IsPrecisionControl,
+                IsDockingMode = telemetry.IsDockingMode
+            };
+        }
+    }
+
     [FlightWidget("stage_control", "staging_ctrl", Category = WidgetCategory.Controls, DisplayName = "操纵量指示与分级锁控制台", Description = "Pitch/Roll/Yaw 实时舵量标尺与分级安全锁定 (Alt+L) 防误触操作台。", DefaultWidgetId = "core.stage_control", DefaultX = -360f, DefaultY = -180f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.stage_control" })]
     public class StageControlWidget : BaseFlightWidget, IAdaptiveSizeWidget
     {
@@ -141,29 +262,8 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedFloat _fireBtnRecoilTimer = new CachedFloat(0f, tolerance: 0.001f);
         private readonly CachedFloat _currentPropFrac = new CachedFloat(1f, tolerance: 0.001f);
 
-        // 统一私有遥测快照 (零 GC 结构体，解耦遥测心跳与 UI 渲染)
-        private struct StageSnapshot
-        {
-            public bool HasVessel;
-            public bool IsLocked;
-            public int CurrentStage;
-            public double StageDeltaV;
-            public double StageBurnTime;
-            public float Twr;
-            public int ActiveEngines;
-            public float PitchInput;
-            public float PitchTrim;
-            public float RollInput;
-            public float RollTrim;
-            public float YawInput;
-            public float YawTrim;
-            public float StagePropellantFraction;
-            public string PropName;
-            public bool IsPrecisionControl;
-            public bool IsDockingMode;
-        }
-
-        private StageSnapshot _snap;
+        private readonly StageControlLogic _logic = new StageControlLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // 统一全自动纳管私有状态 (切船/重置时 BaseFlightWidget 全自动复位，无需手写 OnResetPrivateCache！)
         private ThemeConfig _cachedTheme;
@@ -765,56 +865,33 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
-        {
-            base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _snap.HasVessel = false;
-                return;
-            }
-
-            _snap.HasVessel = true;
-            IFlightTelemetry telem = context.Telemetry;
-
-            _snap.IsLocked = telem.IsStageLocked || StockStageActionService.IsStagingLocked;
-            _snap.CurrentStage = telem.CurrentStage;
-            _snap.StageDeltaV = telem.StageDeltaV;
-            _snap.StageBurnTime = telem.StageBurnTime;
-            _snap.Twr = (float)telem.TWR;
-            _snap.ActiveEngines = telem.ActiveEngines;
-            _snap.PitchInput = telem.PitchInput;
-            _snap.PitchTrim = telem.PitchTrim;
-            _snap.RollInput = telem.RollInput;
-            _snap.RollTrim = telem.RollTrim;
-            _snap.YawInput = telem.YawInput;
-            _snap.YawTrim = telem.YawTrim;
-            _snap.StagePropellantFraction = Mathf.Clamp01((float)telem.StagePropellantFraction);
-
-            string rawName = telem.StagePropellantName;
-            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
-            if (rawName.StartsWith("PROP:", StringComparison.OrdinalIgnoreCase))
-                rawName = rawName.Substring(5).Trim();
-            else if (rawName.StartsWith("PROP", StringComparison.OrdinalIgnoreCase))
-                rawName = rawName.Substring(4).Trim();
-            if (string.IsNullOrEmpty(rawName)) rawName = "PROPELLANT";
-            _snap.PropName = rawName.ToUpperInvariant();
-
-            _snap.IsPrecisionControl = telem.IsPrecisionControl;
-            _snap.IsDockingMode = telem.IsDockingMode;
-        }
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context) => base.OnDataHeartBeat(in context);
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
 
-            if (!_snap.HasVessel) return;
+            // 按键微回弹动效
+            float dt = context.DeltaTime;
+            if (_fireBtnRecoilTimer.Value > 0f)
+            {
+                _fireBtnRecoilTimer.Value -= dt;
+                float recoilScale = 1f - Mathf.Clamp01(_fireBtnRecoilTimer.Value * 0.4f);
+                if (_fireBtn != null) _fireBtn.transform.localScale = new Vector3(recoilScale, recoilScale, 1f);
+            }
+            else if (_fireBtn != null && _fireBtn.transform.localScale.x < 0.999f)
+            {
+                _fireBtn.transform.localScale = Vector3.one;
+            }
+        }
+
+        protected override void OnRenderState()
+        {
+            StageControlState snap = _logic.CurrentState;
+            if (!snap.HasVessel) return;
 
             float s = CurrentDpiScale;
-            float dt = context.DeltaTime;
-
-            ThemeConfig theme = context.Theme ?? WidgetStyleManager.ResolveTheme(_cachedTheme);
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 自适应排版重算 (增加尺寸脏检查，杜绝每帧重复 ApplyLayout)
@@ -827,7 +904,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 分级安全锁与就绪联动 (DirtyField 守卫)
-            if (_dirtyLocked.Update(_snap.IsLocked))
+            if (_dirtyLocked.Update(snap.IsLocked))
             {
                 bool isLocked = _dirtyLocked.Value;
                 string lockLabel = isLocked
@@ -861,35 +938,23 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            // 按键微回弹动效
-            if (_fireBtnRecoilTimer.Value > 0f)
-            {
-                _fireBtnRecoilTimer.Value -= dt;
-                float recoilScale = 1f - Mathf.Clamp01(_fireBtnRecoilTimer.Value * 0.4f);
-                if (_fireBtn != null) _fireBtn.transform.localScale = new Vector3(recoilScale, recoilScale, 1f);
-            }
-            else if (_fireBtn != null && _fireBtn.transform.localScale.x < 0.999f)
-            {
-                _fireBtn.transform.localScale = Vector3.one;
-            }
-
             // 3. 分级数字读数与性能参数 (DirtyField 守卫)
-            if (_dirtyStageNum.Update(_snap.CurrentStage))
+            if (_dirtyStageNum.Update(snap.CurrentStage))
             {
-                SetTextIfChanged(_stageNumText, _snap.CurrentStage.ToString("D2"));
+                SetTextIfChanged(_stageNumText, snap.CurrentStage.ToString("D2"));
             }
 
-            if (_dirtyStageDv.Update(_snap.StageDeltaV))
+            if (_dirtyStageDv.Update(snap.StageDeltaV))
             {
                 double dv = _dirtyStageDv.Value;
                 string dvStr = dv > 0.1 ? $"{dv:N0} m/s" : "0 m/s";
                 SetTextIfChanged(_stageDvText, dvStr);
             }
 
-            int burnSec = Mathf.Max(0, (int)_snap.StageBurnTime);
+            int burnSec = Mathf.Max(0, (int)snap.StageBurnTime);
             bool burnDirty = _dirtyBurnSec.Update(burnSec);
-            bool twrDirty = _dirtyTwr.Update(_snap.Twr);
-            bool engDirty = _dirtyActiveEngines.Update(_snap.ActiveEngines);
+            bool twrDirty = _dirtyTwr.Update(snap.Twr);
+            bool engDirty = _dirtyActiveEngines.Update(snap.ActiveEngines);
             if (burnDirty || twrDirty || engDirty)
             {
                 int m = burnSec / 60;
@@ -909,16 +974,16 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 4. 三轴舵面偏转与配平
             float curTrackW = _cachedTrackWidth.Value * s;
-            UpdateAxisVisuals(_pitchMeter, _snap.PitchInput, _snap.PitchTrim, curTrackW, s, theme, _lastPitchPct);
-            UpdateAxisVisuals(_rollMeter, _snap.RollInput, _snap.RollTrim, curTrackW, s, theme, _lastRollPct);
-            UpdateAxisVisuals(_yawMeter, _snap.YawInput, _snap.YawTrim, curTrackW, s, theme, _lastYawPct);
+            UpdateAxisVisuals(_pitchMeter, snap.PitchInput, snap.PitchTrim, curTrackW, s, theme, _lastPitchPct);
+            UpdateAxisVisuals(_rollMeter, snap.RollInput, snap.RollTrim, curTrackW, s, theme, _lastRollPct);
+            UpdateAxisVisuals(_yawMeter, snap.YawInput, snap.YawTrim, curTrackW, s, theme, _lastYawPct);
 
             // 5. 分级推进剂指示条 (100% 语义驱动)
-            float targetPropFrac = _snap.StagePropellantFraction;
+            float targetPropFrac = snap.StagePropellantFraction;
             float nextProp = Mathf.Lerp(_currentPropFrac.Value < 0f ? targetPropFrac : _currentPropFrac.Value, targetPropFrac, 0.25f);
             _currentPropFrac.Update(nextProp);
 
-            if (_dirtyPropName.Update(_snap.PropName))
+            if (_dirtyPropName.Update(snap.PropName))
             {
                 SetTextIfChanged(_propNameText, _dirtyPropName.Value);
             }
@@ -950,7 +1015,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 6. 底部模式按键
-            if (_dirtyPrec.Update(_snap.IsPrecisionControl))
+            if (_dirtyPrec.Update(snap.IsPrecisionControl))
             {
                 bool isPrec = _dirtyPrec.Value;
                 string pStr = isPrec ? "● PREC" : "NORM";
@@ -960,7 +1025,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_precOutline != null) _precOutline.effectColor = isPrec ? WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Ghost) : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
             }
 
-            if (_dirtyDock.Update(_snap.IsDockingMode))
+            if (_dirtyDock.Update(snap.IsDockingMode))
             {
                 bool isDock = _dirtyDock.Value;
                 string mStr = isDock ? "● DCK" : "STG";
