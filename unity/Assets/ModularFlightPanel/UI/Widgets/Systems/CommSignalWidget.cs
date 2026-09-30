@@ -17,19 +17,240 @@ namespace ModularFlightPanel.UI.Widgets
     /// 3. 抽屉式折叠扩展信道矩阵 (对端站点名称、链路带宽、相对信号强度、中继/直连标识)
     /// 4. 原版 CommNet 信号栏非破坏性安全隐显切换 (STOCK TOGGLE)
     /// </summary>
+    /// <summary>
+    /// 外部通信对端信道快照 (0 GC 纯值结构体)
+    /// </summary>
+    public struct PeerRowSnapshot : IEquatable<PeerRowSnapshot>
+    {
+        public string PeerName;
+        public bool IsDirectHome;
+        public string FormattedDataRate;
+        public int PeerBars;
+
+        public bool Equals(PeerRowSnapshot other)
+        {
+            return PeerName == other.PeerName &&
+                   IsDirectHome == other.IsDirectHome &&
+                   FormattedDataRate == other.FormattedDataRate &&
+                   PeerBars == other.PeerBars;
+        }
+
+        public override bool Equals(object obj) => obj is PeerRowSnapshot other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                if (PeerName != null) hash = (hash * 397) ^ PeerName.GetHashCode();
+                hash = (hash * 397) ^ IsDirectHome.GetHashCode();
+                if (FormattedDataRate != null) hash = (hash * 397) ^ FormattedDataRate.GetHashCode();
+                hash = (hash * 397) ^ PeerBars.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 航电通信网络与天线状态快照 (0 GC 纯值结构体)
+    /// </summary>
+    public struct CommSignalCapsuleState : IEquatable<CommSignalCapsuleState>
+    {
+        public bool HasVessel;
+        public double Sig;
+        public int LitBars;
+        public int CtrlState;
+        public string TargetName;
+        public string RateSummary;
+        public string MatrixSummary;
+        public string MatrixFooter;
+        public int LinkCount;
+        public PeerRowSnapshot Peer0;
+        public PeerRowSnapshot Peer1;
+        public PeerRowSnapshot Peer2;
+        public PeerRowSnapshot Peer3;
+        public PeerRowSnapshot Peer4;
+
+        public PeerRowSnapshot GetPeer(int index)
+        {
+            switch (index)
+            {
+                case 0: return Peer0;
+                case 1: return Peer1;
+                case 2: return Peer2;
+                case 3: return Peer3;
+                case 4: return Peer4;
+                default: return default;
+            }
+        }
+
+        public bool Equals(CommSignalCapsuleState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Math.Abs(Sig - other.Sig) < 0.001 &&
+                   LitBars == other.LitBars &&
+                   CtrlState == other.CtrlState &&
+                   TargetName == other.TargetName &&
+                   RateSummary == other.RateSummary &&
+                   MatrixSummary == other.MatrixSummary &&
+                   MatrixFooter == other.MatrixFooter &&
+                   LinkCount == other.LinkCount &&
+                   Peer0.Equals(other.Peer0) &&
+                   Peer1.Equals(other.Peer1) &&
+                   Peer2.Equals(other.Peer2) &&
+                   Peer3.Equals(other.Peer3) &&
+                   Peer4.Equals(other.Peer4);
+        }
+
+        public override bool Equals(object obj) => obj is CommSignalCapsuleState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ LitBars.GetHashCode();
+                hash = (hash * 397) ^ CtrlState.GetHashCode();
+                if (TargetName != null) hash = (hash * 397) ^ TargetName.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 航电通信网络与天线探针纯 C# 业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class CommSignalCapsuleLogic : WidgetLogic<CommSignalCapsuleState>
+    {
+        public bool IsDropdownOpen { get; set; }
+
+        private float _rateUpdateTimer = 999f;
+        private float _matrixUpdateTimer = 999f;
+        private int _cachedLitBars = -1;
+        private string _rateTemplate;
+        private string _summaryTemplate;
+        private string _targetFallback;
+        private string _cachedRateSummary;
+        private string _cachedMatrixSummary;
+        private string _cachedMatrixFooter;
+        private int _cachedLinkCount;
+        private readonly PeerRowSnapshot[] _cachedPeerSnapshots = new PeerRowSnapshot[CommSignalWidget.MaxPeerRows];
+
+        public override void Reset()
+        {
+            _rateUpdateTimer = 999f;
+            _matrixUpdateTimer = 999f;
+            _cachedLitBars = -1;
+            _cachedRateSummary = null;
+            _cachedMatrixSummary = null;
+            _cachedMatrixFooter = null;
+            _cachedLinkCount = 0;
+            for (int i = 0; i < CommSignalWidget.MaxPeerRows; i++) _cachedPeerSnapshots[i] = default;
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            double sig = Mathf.Clamp01((float)telemetry.CommSignal);
+            int litBars = Mathf.RoundToInt((float)sig * CommSignalWidget.MainBarCount);
+            bool sigStateChanged = litBars != _cachedLitBars;
+            _cachedLitBars = litBars;
+
+            int ctrlState = (!telemetry.IsConnected && sig <= 0.001) ? 0 : ((sig < 0.2) ? 1 : 2);
+
+            string tgt = telemetry.DirectLinkTarget;
+            string targetName = string.IsNullOrEmpty(tgt)
+                ? (_targetFallback ?? (_targetFallback = I18n.Tr("WIDGET_SIG_COMMNET", "通信网络")))
+                : tgt;
+
+            _rateUpdateTimer += deltaTime;
+            if (_rateUpdateTimer >= 0.25f || sigStateChanged || _cachedRateSummary == null)
+            {
+                _rateUpdateTimer = 0f;
+                if (_rateTemplate == null) _rateTemplate = "{COMM} | {COMM:RATE}";
+                _cachedRateSummary = TelemetryTokenEngine.Evaluate(_rateTemplate, telemetry);
+            }
+
+            if (IsDropdownOpen)
+            {
+                _matrixUpdateTimer += deltaTime;
+                if (_matrixUpdateTimer >= 0.25f || sigStateChanged || _cachedMatrixSummary == null)
+                {
+                    _matrixUpdateTimer = 0f;
+                    if (_summaryTemplate == null) _summaryTemplate = I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}");
+                    _cachedMatrixSummary = TelemetryTokenEngine.Evaluate(_summaryTemplate, telemetry);
+
+                    var links = telemetry.ActiveCommLinks;
+                    int linkCount = (links != null) ? links.Count : 0;
+                    _cachedLinkCount = linkCount;
+
+                    for (int r = 0; r < CommSignalWidget.MaxPeerRows; r++)
+                    {
+                        if (r < linkCount)
+                        {
+                            var info = links[r];
+                            _cachedPeerSnapshots[r] = new PeerRowSnapshot
+                            {
+                                PeerName = info.PeerName,
+                                IsDirectHome = info.IsDirectHome,
+                                FormattedDataRate = info.FormattedDataRate,
+                                PeerBars = Mathf.RoundToInt((float)info.SignalStrength * 5f)
+                            };
+                        }
+                        else
+                        {
+                            _cachedPeerSnapshots[r] = default;
+                        }
+                    }
+
+                    _cachedMatrixFooter = I18n.TrFormat("WIDGET_SIGNAL_FOOTER", linkCount);
+                }
+            }
+
+            CurrentState = new CommSignalCapsuleState
+            {
+                HasVessel = true,
+                Sig = sig,
+                LitBars = litBars,
+                CtrlState = ctrlState,
+                TargetName = targetName,
+                RateSummary = _cachedRateSummary,
+                MatrixSummary = _cachedMatrixSummary,
+                MatrixFooter = _cachedMatrixFooter,
+                LinkCount = _cachedLinkCount,
+                Peer0 = _cachedPeerSnapshots[0],
+                Peer1 = _cachedPeerSnapshots[1],
+                Peer2 = _cachedPeerSnapshots[2],
+                Peer3 = _cachedPeerSnapshots[3],
+                Peer4 = _cachedPeerSnapshots[4]
+            };
+        }
+    }
+
     [FlightWidget("comm_signal", "commsignal", Category = WidgetCategory.Systems, DisplayName = "COMM 天线通信信号条", Description = "紧凑型通信天线连接质量与中继跳数状态条。", DefaultWidgetId = "core.comm_signal", DefaultX = 300f, DefaultY = 200f, IsSingleton = true, ExactIds = new[] { "core.comm_signal", "core.commsignal" })]
     public class CommSignalWidget : BaseFlightWidget
     {
+        public const int MainBarCount = 5;
+        public const int MaxPeerRows = 5;
+
         public override Vector2 BaseSize => new Vector2(264f, 26f);
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
+        private readonly CommSignalCapsuleLogic _logic = new CommSignalCapsuleLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         private Image _panelBg;
         private Outline _panelOutline;
 
         // 胶囊顶栏 UI 元素
         private GameObject _capsuleBar;
-        private const int MainBarCount = 5;
         private readonly Image[] _mainSignalBars = new Image[MainBarCount];
         private Text _ctrlBadgeText;
         private Image _ctrlBadgeBg;
@@ -45,7 +266,6 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _matrixTitleText;
         private Text _matrixSummaryText;
 
-        private const int MaxPeerRows = 5;
         private struct PeerRowUI
         {
             public GameObject RowObj;
@@ -257,115 +477,29 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<int> _lastLitBars = new Cached<int>(-1);
         private readonly Cached<int> _lastCtrlState = new Cached<int>(-1);
 
-        private string _targetFallback;
-        private string _rateTemplate;
-        private string _summaryTemplate;
-        private float _rateUpdateTimer = 1f;
-        private float _matrixUpdateTimer = 1f;
 
-        private void RefreshTemplateChannels()
-        {
-            _targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"));
-            _rateTemplate = GetTemplateChannel("RATE_TEMPLATE", "{COMM} | {COMM:RATE}");
-            _summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
-        }
-
-        private struct PeerRowSnapshot
-        {
-            public string PeerName;
-            public bool IsDirectHome;
-            public string FormattedDataRate;
-            public int PeerBars;
-        }
-        private readonly PeerRowSnapshot[] _cachedPeerSnapshots = new PeerRowSnapshot[MaxPeerRows];
-        private int _cachedLinkCount;
-        private string _cachedMatrixSummary;
-        private string _cachedMatrixFooter;
-        private bool _cachedHasVessel;
-        private double _cachedSig;
-        private int _cachedLitBars;
-        private int _cachedCtrlState;
-        private string _cachedTargetName;
-        private string _cachedRateSummary;
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
-            {
-                _cachedHasVessel = false;
-                return;
-            }
-
-            _cachedHasVessel = true;
-
-            double sig = Mathf.Clamp01((float)context.Telemetry.CommSignal);
-            _cachedSig = sig;
-            int litBars = Mathf.RoundToInt((float)sig * MainBarCount);
-            bool sigStateChanged = litBars != _cachedLitBars;
-            _cachedLitBars = litBars;
-
-            _cachedCtrlState = (!context.Telemetry.IsConnected && sig <= 0.001) ? 0 : ((sig < 0.2) ? 1 : 2);
-
-            string tgt = context.Telemetry.DirectLinkTarget;
-            _cachedTargetName = string.IsNullOrEmpty(tgt)
-                ? (_targetFallback ?? (_targetFallback = GetTemplateChannel("TARGET_FALLBACK", I18n.Tr("WIDGET_SIG_COMMNET", "通信网络"))))
-                : tgt;
-
-            _rateUpdateTimer += context.DeltaTime;
-            if (_rateUpdateTimer >= 0.25f || sigStateChanged)
-            {
-                _rateUpdateTimer = 0f;
-                if (_rateTemplate == null) _rateTemplate = GetTemplateChannel("RATE_TEMPLATE", "{COMM} | {COMM:RATE}");
-                _cachedRateSummary = TelemetryTokenEngine.Evaluate(_rateTemplate, context.Telemetry);
-            }
-
-            if (_dropdownPanel != null && _dropdownPanel.activeSelf)
-            {
-                _matrixUpdateTimer += context.DeltaTime;
-                if (_matrixUpdateTimer >= 0.25f || sigStateChanged)
-                {
-                    _matrixUpdateTimer = 0f;
-                    if (_summaryTemplate == null) _summaryTemplate = GetTemplateChannel("SUMMARY_TEMPLATE", I18n.Tr("WIDGET_SIG_SUMMARY_TEMPLATE", "发射/接收: {COMM:TX}/{COMM:RX}  {COMM:RATE}"));
-                    _cachedMatrixSummary = TelemetryTokenEngine.Evaluate(_summaryTemplate, context.Telemetry);
-
-                    var links = context.Telemetry.ActiveCommLinks;
-                    int linkCount = (links != null) ? links.Count : 0;
-                    _cachedLinkCount = linkCount;
-
-                    for (int r = 0; r < MaxPeerRows; r++)
-                    {
-                        if (r < linkCount)
-                        {
-                            var info = links[r];
-                            _cachedPeerSnapshots[r] = new PeerRowSnapshot
-                            {
-                                PeerName = info.PeerName,
-                                IsDirectHome = info.IsDirectHome,
-                                FormattedDataRate = info.FormattedDataRate,
-                                PeerBars = Mathf.RoundToInt((float)info.SignalStrength * 5f)
-                            };
-                        }
-                    }
-
-                    _cachedMatrixFooter = I18n.TrFormat("WIDGET_SIGNAL_FOOTER", linkCount);
-                }
-            }
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+        }
 
-            if (!_cachedHasVessel) return;
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            ThemeConfig theme = WidgetStyleManager.ResolveTheme(context.Theme ?? _currentTheme);
+            ThemeConfig theme = WidgetStyleManager.ResolveTheme(_currentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 主信号条点亮与色彩驱动
-            int litBars = _cachedLitBars;
-            double sig = _cachedSig;
+            int litBars = state.LitBars;
+            double sig = state.Sig;
             MeterStyleRole barRole = (sig > 0.4)
                 ? MeterStyleRole.Primary
                 : ((sig > 0.1) ? MeterStyleRole.Warning : MeterStyleRole.Danger);
@@ -388,7 +522,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 控制权徽章 (FULL / PART / NONE)
-            int ctrlState = _cachedCtrlState;
+            int ctrlState = state.CtrlState;
             if (_lastCtrlState.Update(ctrlState) && _ctrlBadgeText != null && _ctrlBadgeBg != null)
             {
                 if (ctrlState == 0)
@@ -412,31 +546,31 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 主站点名称与综合速率
-            if (_targetNameText != null && _lastTargetName.Update(_cachedTargetName))
+            if (_targetNameText != null && _lastTargetName.Update(state.TargetName))
             {
-                _targetNameText.text = _cachedTargetName;
+                _targetNameText.text = state.TargetName;
             }
 
-            if (_rateSummaryText != null && _cachedRateSummary != null && _lastRateSummary.Update(_cachedRateSummary))
+            if (_rateSummaryText != null && state.RateSummary != null && _lastRateSummary.Update(state.RateSummary))
             {
-                _rateSummaryText.text = _cachedRateSummary;
+                _rateSummaryText.text = state.RateSummary;
             }
 
             // 4. 抽屉矩阵更新
             if (_dropdownPanel != null && _dropdownPanel.activeSelf)
             {
-                if (_matrixSummaryText != null && _cachedMatrixSummary != null && _lastMatrixSummary.Update(_cachedMatrixSummary))
+                if (_matrixSummaryText != null && state.MatrixSummary != null && _lastMatrixSummary.Update(state.MatrixSummary))
                 {
-                    _matrixSummaryText.text = _cachedMatrixSummary;
+                    _matrixSummaryText.text = state.MatrixSummary;
                 }
 
-                int linkCount = _cachedLinkCount;
+                int linkCount = state.LinkCount;
 
                 for (int r = 0; r < MaxPeerRows; r++)
                 {
                     if (r < linkCount)
                     {
-                        var info = _cachedPeerSnapshots[r];
+                        var info = state.GetPeer(r);
                         _peerRows[r].RowObj.SetActive(true);
                         _peerRows[r].NameText.text = info.PeerName;
                         _peerRows[r].TagText.text = info.IsDirectHome ? I18n.Tr("WIDGET_SIGNAL_DSN", "DSN") : I18n.Tr("WIDGET_SIGNAL_RELAY", "RELAY");
@@ -459,9 +593,9 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
 
-                if (_matrixFooterText != null && _cachedMatrixFooter != null && _lastMatrixFooter.Update(_cachedMatrixFooter))
+                if (_matrixFooterText != null && state.MatrixFooter != null && _lastMatrixFooter.Update(state.MatrixFooter))
                 {
-                    _matrixFooterText.text = _cachedMatrixFooter;
+                    _matrixFooterText.text = state.MatrixFooter;
                 }
             }
 
@@ -477,10 +611,22 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
+            _lastTargetName.Reset(string.Empty);
+            _lastRateSummary.Reset(string.Empty);
+            _lastMatrixSummary.Reset(string.Empty);
+            _lastMatrixFooter.Reset(string.Empty);
+            _lastStockBtnText.Reset(string.Empty);
+            _lastLitBars.Reset(-1);
+            _lastCtrlState.Reset(-1);
+        }
+
         public override void ApplyTheme(ThemeConfig theme)
         {
             _currentTheme = theme;
-            RefreshTemplateChannels();
             if (theme == null) return;
             theme = WidgetStyleManager.ResolveTheme(theme);
 
@@ -509,9 +655,8 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnLanguageChanged()
         {
             base.OnLanguageChanged();
-            RefreshTemplateChannels();
             _lastCtrlState.Reset(-1);
-            _lastMatrixFooter.Reset(null);
+            _lastMatrixFooter.Reset(string.Empty);
             if (_matrixTitleText != null)
             {
                 _matrixTitleText.text = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_SIGNAL_TITLE", "REALANTENNAS / COMMNET"));
@@ -521,6 +666,7 @@ namespace ModularFlightPanel.UI.Widgets
         private void OnToggleExpand()
         {
             _isExpanded = !_isExpanded;
+            _logic.IsDropdownOpen = _isExpanded;
             UpdateExpansionLayout();
         }
 
