@@ -76,6 +76,62 @@ namespace ModularFlightPanel.UI.Widgets
     /// 4. 实时双向同步：状态 LED 微光灯、按钮激活状态、贴图热更新与主工具栏保持毫秒级一致；
     /// 5. 0 颜色字面量与 100% 纯 C# 解耦架构，符合 MFP-SPEC-001..007 全量航电标准。
     /// </summary>
+    /// <summary>
+    /// 常用快捷坞零 GC 不可变遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct FavoriteToolbarState : IEquatable<FavoriteToolbarState>
+    {
+        public bool HasVessel;
+        public bool IsCollapsed;
+        public int FavoriteCount;
+
+        public bool Equals(FavoriteToolbarState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   IsCollapsed == other.IsCollapsed &&
+                   FavoriteCount == other.FavoriteCount;
+        }
+
+        public override bool Equals(object obj) => obj is FavoriteToolbarState other && Equals(other);
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = HasVessel.GetHashCode();
+                hash = (hash * 397) ^ IsCollapsed.GetHashCode();
+                hash = (hash * 397) ^ FavoriteCount;
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 常用快捷坞纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class FavoriteToolbarLogic : WidgetLogic<FavoriteToolbarState>
+    {
+        public bool IsCollapsed = false;
+        public int FavoriteCount = 0;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            IsCollapsed = false;
+            FavoriteCount = 0;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            bool hasVessel = telemetry != null && telemetry.HasVessel;
+            CurrentState = new FavoriteToolbarState
+            {
+                HasVessel = hasVessel,
+                IsCollapsed = IsCollapsed,
+                FavoriteCount = FavoriteCount
+            };
+        }
+    }
+
     [FlightWidget("dock_favorites", "toolbar_favorites", "favorite_dock", "quick_dock", Category = WidgetCategory.Controls, DisplayName = "常用 MOD 独立快捷坞", Description = "将最常用 Mod (如 MechJeb, KER, Trajectories) 图标独立置顶的极简流线型快捷航电坞。", DefaultWidgetId = "core.dock_favorites", DefaultX = 0f, DefaultY = -260f, IsSingleton = true, ExactIds = new[] { "core.dock_favorites", "toolbar.favorites" })]
     public class FavoriteToolbarWidget : BaseFlightWidget
     {
@@ -86,6 +142,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override bool IsInteractive => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.UltraLow;
 
+        private readonly FavoriteToolbarLogic _logic = new FavoriteToolbarLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly CachedDouble _lastToolbarSync = new CachedDouble(0);
 
         private Image _panelBg;
         private Outline _panelOutline;
@@ -806,6 +865,8 @@ namespace ModularFlightPanel.UI.Widgets
                 MFPLogger.WarnThrottled("FavToolbar_Heartbeat", $"Failed heartbeat KSP button states: {ex.Message}");
             }
 #endif
+            _logic.IsCollapsed = _isCollapsed;
+            _logic.FavoriteCount = GetFavoriteButtonsCount();
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -848,6 +909,18 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 #endif
+        }
+
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _lastToolbarSync.Reset(0);
+            _logic.Reset();
         }
 
         public override void ApplyTheme(ThemeConfig theme)
