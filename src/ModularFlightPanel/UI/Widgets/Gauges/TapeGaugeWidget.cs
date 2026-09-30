@@ -19,6 +19,262 @@ namespace ModularFlightPanel.UI.Widgets
     /// 6. 太空全场景动态无极工程量纲引擎 (带 15% 滞后死区平滑防抖)
     /// 7. 严格遵照 MFP-SPEC-001..007 标准化铁律，0 颜色字面量，100% 通配符双驱动，零 GC
     /// </summary>
+    public struct TapeGaugeState : IEquatable<TapeGaugeState>
+    {
+        public bool HasVessel;
+        public double RawVal;
+        public double DisplayVal;
+        public TapeGaugeWidget.DynamicUnitTier CurrentTier;
+        public double TierScale;
+        public string ActiveUnitStr;
+        public float ActiveStep;
+        public string TopText;
+        public string BottomText;
+        public double GForce;
+        public double AccelMps2;
+        public double Vs;
+        public double Agl;
+
+        public bool Equals(TapeGaugeState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Math.Abs(RawVal - other.RawVal) < 0.02 &&
+                   Math.Abs(DisplayVal - other.DisplayVal) < 0.02 &&
+                   CurrentTier == other.CurrentTier &&
+                   TopText == other.TopText &&
+                   BottomText == other.BottomText &&
+                   Math.Abs(GForce - other.GForce) < 0.03 &&
+                   Math.Abs(AccelMps2 - other.AccelMps2) < 0.05 &&
+                   Math.Abs(Vs - other.Vs) < 0.05 &&
+                   Math.Abs(Agl - other.Agl) < 0.2;
+        }
+
+        public override bool Equals(object obj) => obj is TapeGaugeState other && Equals(other);
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = RawVal.GetHashCode();
+                hash = (hash * 397) ^ DisplayVal.GetHashCode();
+                hash = (hash * 397) ^ (int)CurrentTier;
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// PFD 标尺带纯 C# 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class TapeGaugeLogic : WidgetLogic<TapeGaugeState>
+    {
+        public bool IsSpeedTape = false;
+        public string ValueToken = "{SPD}";
+        public string TopModeTemplate = "SPD";
+        public string BottomSecTemplate = "{MACH}";
+        public string TrendToken = "{GFORCE}";
+        public string TerrainToken = "{ALT:AGL}";
+        public float TrendMaxScale = 8.0f;
+        public bool AutoUnitEnabled = true;
+        public float BaseStep = 10f;
+
+        private TapeGaugeWidget.DynamicUnitTier _currentTier = TapeGaugeWidget.DynamicUnitTier.Base;
+        private double _tierScale = 1.0;
+        private string _activeUnitStr = "m";
+        public string ActiveUnitStr => _activeUnitStr;
+        private float _activeStep = 100f;
+        private double _sampleSpeed = double.NaN;
+        private double _calculatedAccelMps2 = 0.0;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+            _currentTier = TapeGaugeWidget.DynamicUnitTier.Base;
+            _tierScale = 1.0;
+            _sampleSpeed = double.NaN;
+            _calculatedAccelMps2 = 0.0;
+            ApplyTierParameters();
+        }
+
+        public void InitializeUnitTier()
+        {
+            _currentTier = TapeGaugeWidget.DynamicUnitTier.Base;
+            ApplyTierParameters();
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                if (CurrentState.HasVessel)
+                {
+                    Reset();
+                }
+                return;
+            }
+
+            double rawVal = BaseFlightWidget.EvalNumeric(ValueToken, telemetry);
+            if (double.IsNaN(rawVal)) rawVal = 0.0;
+
+            UpdateDynamicUnitTier(rawVal);
+            double displayVal = rawVal / _tierScale;
+
+            string topText = TopModeTemplate.IndexOf('{') >= 0 ? BaseFlightWidget.EvalToken(TopModeTemplate, telemetry) : TopModeTemplate;
+            string bottomText = BottomSecTemplate.IndexOf('{') >= 0 ? BaseFlightWidget.EvalToken(BottomSecTemplate, telemetry) : BottomSecTemplate;
+
+            double gForce = double.NaN;
+            double accelMps2 = 0.0;
+            double vs = double.NaN;
+            double agl = double.NaN;
+
+            if (IsSpeedTape)
+            {
+                gForce = BaseFlightWidget.EvalNumeric(TrendToken, telemetry);
+                if (double.IsNaN(gForce)) gForce = 0.0;
+
+                float dt = deltaTime > 0.0001f ? deltaTime : 0.02f;
+                if (!double.IsNaN(_sampleSpeed))
+                {
+                    double instantaneousAccel = (rawVal - _sampleSpeed) / dt;
+                    _calculatedAccelMps2 = Mathf.Lerp((float)_calculatedAccelMps2, (float)instantaneousAccel, 0.35f);
+                    _sampleSpeed = rawVal;
+                }
+                else
+                {
+                    _sampleSpeed = rawVal;
+                    _calculatedAccelMps2 = 0.0;
+                }
+                accelMps2 = _calculatedAccelMps2;
+            }
+            else
+            {
+                vs = BaseFlightWidget.EvalNumeric(TrendToken, telemetry);
+                if (double.IsNaN(vs)) vs = 0.0;
+
+                agl = BaseFlightWidget.EvalNumeric(TerrainToken, telemetry);
+                if (double.IsNaN(agl)) agl = rawVal;
+            }
+
+            CurrentState = new TapeGaugeState
+            {
+                HasVessel = true,
+                RawVal = rawVal,
+                DisplayVal = displayVal,
+                CurrentTier = _currentTier,
+                TierScale = _tierScale,
+                ActiveUnitStr = _activeUnitStr,
+                ActiveStep = _activeStep,
+                TopText = topText,
+                BottomText = bottomText,
+                GForce = gForce,
+                AccelMps2 = accelMps2,
+                Vs = vs,
+                Agl = agl
+            };
+        }
+
+        private void UpdateDynamicUnitTier(double rawVal)
+        {
+            if (!AutoUnitEnabled) return;
+
+            double abs = Math.Abs(rawVal);
+            TapeGaugeWidget.DynamicUnitTier nextTier = _currentTier;
+
+            if (IsSpeedTape)
+            {
+                switch (_currentTier)
+                {
+                    case TapeGaugeWidget.DynamicUnitTier.Base:
+                        if (abs >= 10000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Kilo;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Kilo:
+                        if (abs >= 3000000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Mega;
+                        else if (abs < 8500.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Base;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Mega:
+                        if (abs < 2500000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Kilo;
+                        break;
+                }
+            }
+            else
+            {
+                switch (_currentTier)
+                {
+                    case TapeGaugeWidget.DynamicUnitTier.Base:
+                        if (abs >= 10000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Kilo;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Kilo:
+                        if (abs >= 10000000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Mega;
+                        else if (abs < 8500.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Base;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Mega:
+                        if (abs >= 10000000000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Giga;
+                        else if (abs < 8500000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Kilo;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Giga:
+                        if (abs < 8500000000.0) nextTier = TapeGaugeWidget.DynamicUnitTier.Mega;
+                        break;
+                }
+            }
+
+            if (nextTier != _currentTier)
+            {
+                _currentTier = nextTier;
+                ApplyTierParameters();
+            }
+        }
+
+        public void ApplyTierParameters()
+        {
+            if (IsSpeedTape)
+            {
+                switch (_currentTier)
+                {
+                    case TapeGaugeWidget.DynamicUnitTier.Base:
+                        _tierScale = 1.0;
+                        _activeUnitStr = "m/s";
+                        _activeStep = BaseStep > 0f ? BaseStep : 10f;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Kilo:
+                        _tierScale = 1000.0;
+                        _activeUnitStr = "km/s";
+                        _activeStep = 1.0f;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Mega:
+                        _tierScale = 299792458.0;
+                        _activeUnitStr = "c";
+                        _activeStep = 0.01f;
+                        break;
+                }
+            }
+            else
+            {
+                switch (_currentTier)
+                {
+                    case TapeGaugeWidget.DynamicUnitTier.Base:
+                        _tierScale = 1.0;
+                        _activeUnitStr = "m";
+                        _activeStep = BaseStep > 0f ? BaseStep : 100f;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Kilo:
+                        _tierScale = 1000.0;
+                        _activeUnitStr = "km";
+                        _activeStep = 1.0f;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Mega:
+                        _tierScale = 1000000.0;
+                        _activeUnitStr = "Mm";
+                        _activeStep = 0.5f;
+                        break;
+                    case TapeGaugeWidget.DynamicUnitTier.Giga:
+                        _tierScale = 1000000000.0;
+                        _activeUnitStr = "Gm";
+                        _activeStep = 0.1f;
+                        break;
+                }
+            }
+        }
+    }
+
     [FlightWidget("tape", "tape_gauge", "speed_tape", "altitude_tape", Category = WidgetCategory.Gauges, DisplayName = "PFD 垂直动态标尺带", Description = "PFD 风格平滑滚动动态标尺带，支持任意物理数据与步长。", DefaultWidgetId = "tape.speed", DefaultX = -235f, DefaultY = 0f, HighFrequency = true)]
     public class TapeGaugeWidget : BaseFlightWidget, IAdaptiveSizeWidget
     {
@@ -169,53 +425,17 @@ namespace ModularFlightPanel.UI.Widgets
         private string _terrainToken = "{ALT:AGL}";
         private float _trendMaxScale = 8.0f;
         private bool _isSpeedTape = false;
-
-        // JIT 强类型编译委托旁路 (零查表、零装箱直读)
-        private TelemetryTokenEngine.TelemetryNumericGetter _valueGetter;
-        private TelemetryTokenEngine.TelemetryNumericGetter _trendGetter;
-
-        // 太空全场景动态无极工程量纲引擎 (Dynamic Multi-Scale Engine)
         private bool _autoUnitEnabled = true;
-        private DynamicUnitTier _currentTier = DynamicUnitTier.Base;
-        private double _tierScale = 1.0;
-        private string _activeUnitStr = "m";
-        private float _activeStep = 100f;
 
-        // 速度变化率高精度微分采样 (Velocity Rate of Change: dV/dt)
-        private double _sampleSpeed = double.NaN;
-        private double _calculatedAccelMps2 = 0.0;
+        private readonly TapeGaugeLogic _logic = new TapeGaugeLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+        private readonly CachedDouble _lastDisplayVal = new CachedDouble(double.NaN, tolerance: 0.01);
 
-        // 脏检查与状态缓存
-        private readonly CachedDouble _lastRawVal = new CachedDouble(double.NaN, tolerance: 0.02);
-        private readonly CachedDouble _lastTrendVal = new CachedDouble(double.NaN, tolerance: 0.05);
-        private readonly CachedDouble _lastTerrainVal = new CachedDouble(double.NaN, tolerance: 0.2);
-        private readonly Cached<string> _lastCenterText = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastUnitText = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastTopText = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastBottomText = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastTrendRateText = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastAccText = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastRateText = new Cached<string>(string.Empty);
-        private readonly Cached<bool> _lastTrendPositive = new Cached<bool>(true);
-        private readonly Cached<int> _lastAccAlertLevel = new Cached<int>(-1);
-        private readonly CachedDouble _lastGForce = new CachedDouble(double.NaN, tolerance: 0.03);
-        private readonly CachedDouble _lastRenderedAccel = new CachedDouble(double.NaN, tolerance: 0.05);
         private bool _showingIntegerReadout = false;
         private float _currentHalfTrackH = 58f;
         private Color _cachedMajorCol;
         private Color _cachedHalfCol;
         private bool _hasCachedTapeColors = false;
-
-        // 双轨状态快照
-        private double _pendingRawVal = double.NaN;
-        private double _pendingDisplayVal = double.NaN;
-        private string _pendingTopText = string.Empty;
-        private string _pendingBottomText = string.Empty;
-        private double _pendingGForce = double.NaN;
-        private double _pendingAccelMps2 = 0.0;
-        private double _pendingVs = double.NaN;
-        private double _pendingAgl = double.NaN;
-        private bool _hasPendingTapeHeartbeat = false;
 
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
@@ -284,11 +504,16 @@ namespace ModularFlightPanel.UI.Widgets
                 else if (unitMode.Equals("AUTO", StringComparison.OrdinalIgnoreCase)) _autoUnitEnabled = true;
             }
 
-            InitializeUnitTier();
-
-            // 编译强类型遥测委托
-            _valueGetter = TelemetryTokenEngine.CompileNumeric(_valueToken);
-            _trendGetter = TelemetryTokenEngine.CompileNumeric(_trendToken);
+            _logic.IsSpeedTape = _isSpeedTape;
+            _logic.ValueToken = _valueToken;
+            _logic.TopModeTemplate = _topModeTemplate;
+            _logic.BottomSecTemplate = _bottomSecTemplate;
+            _logic.TrendToken = _trendToken;
+            _logic.TerrainToken = _terrainToken;
+            _logic.TrendMaxScale = _trendMaxScale;
+            _logic.AutoUnitEnabled = _autoUnitEnabled;
+            _logic.BaseStep = config != null && config.StepInterval > 0f ? config.StepInterval : (_isSpeedTape ? 10f : 100f);
+            _logic.InitializeUnitTier();
 
             // 1. 半透明防炫底板与外框
             _bgImage = gameObject.AddComponent<Image>();
@@ -372,9 +597,10 @@ namespace ModularFlightPanel.UI.Widgets
         public void OnAdaptiveResize(Vector2 pixelSize)
         {
             ApplyLayoutDimensions(pixelSize.x, pixelSize.y);
-            if (!double.IsNaN(_lastRawVal.Value))
+            if (_logic != null && _logic.CurrentState.HasVessel)
             {
-                UpdateRollingTape(_lastRawVal.Value / _tierScale);
+                TapeGaugeState s = _logic.CurrentState;
+                UpdateRollingTape(s.DisplayVal, s.ActiveStep, s.CurrentTier);
             }
         }
 
@@ -500,13 +726,7 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
 
-        private void InitializeUnitTier()
-        {
-            _currentTier = DynamicUnitTier.Base;
-            _tierScale = 1.0;
-            _activeUnitStr = _isSpeedTape ? "m/s" : "m";
-            _activeStep = Config != null && Config.StepInterval > 0f ? Config.StepInterval : (_isSpeedTape ? 10f : 100f);
-        }
+
 
         private void BuildGroundRibbon(ThemeConfig theme)
         {
@@ -686,7 +906,7 @@ namespace ModularFlightPanel.UI.Widgets
                 valRt.sizeDelta = new Vector2(36f * s, boxH);
                 valRt.anchoredPosition = new Vector2(4f * s, 0f);
 
-                _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
+                _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _logic.ActiveUnitStr, unitFontSize,
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
                 _centerUnitText.fontStyle = FontStyle.Bold;
                 _centerUnitText.alignByGeometry = false;
@@ -707,7 +927,7 @@ namespace ModularFlightPanel.UI.Widgets
                 valRt.sizeDelta = new Vector2(36f * s, boxH);
                 valRt.anchoredPosition = new Vector2(6f * s, 0f);
 
-                _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _activeUnitStr, unitFontSize,
+                _centerUnitText = UIFactory.CreateText(boxObj.transform, "Readout_Unit", _logic.ActiveUnitStr, unitFontSize,
                     TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Unit, theme));
                 _centerUnitText.fontStyle = FontStyle.Bold;
                 _centerUnitText.alignByGeometry = false;
@@ -1046,193 +1266,43 @@ namespace ModularFlightPanel.UI.Widgets
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel) return;
-
-            // 采样主驱动数值 (JIT 强类型零装箱编译委托直读，1.5ns 极致微秒性能)
-            double rawVal = _valueGetter != null ? _valueGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_valueToken, telemetry);
-            if (double.IsNaN(rawVal)) rawVal = 0.0;
-
-            // 1. 运行太空全场景动态无极工程量纲自愈引擎 (带 15% 滞后死区)
-            UpdateDynamicUnitTier(rawVal);
-            _pendingRawVal = rawVal;
-            _pendingDisplayVal = rawVal / _tierScale;
-
-            // 2. 模式与次级航电标签
-            _pendingTopText = _topModeTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_topModeTemplate, telemetry) : _topModeTemplate;
-            _pendingBottomText = _bottomSecTemplate.IndexOf('{') >= 0 ? TelemetryTokenEngine.Evaluate(_bottomSecTemplate, telemetry) : _bottomSecTemplate;
-
-            if (_isSpeedTape)
-            {
-                double gForce = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
-                if (double.IsNaN(gForce)) gForce = 0.0;
-                _pendingGForce = gForce;
-
-                float dt = context.DeltaTime > 0.0001f ? context.DeltaTime : 0.02f;
-                if (!double.IsNaN(_sampleSpeed))
-                {
-                    double instantaneousAccel = (rawVal - _sampleSpeed) / dt;
-                    _calculatedAccelMps2 = Mathf.Lerp((float)_calculatedAccelMps2, (float)instantaneousAccel, 0.35f);
-                    _sampleSpeed = rawVal;
-                }
-                else
-                {
-                    _sampleSpeed = rawVal;
-                    _calculatedAccelMps2 = 0.0;
-                }
-                _pendingAccelMps2 = _calculatedAccelMps2;
-            }
-            else
-            {
-                double vs = _trendGetter != null ? _trendGetter(telemetry) : TelemetryTokenEngine.EvaluateNumeric(_trendToken, telemetry);
-                if (double.IsNaN(vs)) vs = 0.0;
-                _pendingVs = vs;
-
-                double agl = TelemetryTokenEngine.EvaluateNumeric(_terrainToken, telemetry);
-                if (double.IsNaN(agl)) agl = rawVal;
-                _pendingAgl = agl;
-            }
-
-            _hasPendingTapeHeartbeat = true;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (!_hasPendingTapeHeartbeat) return;
+        }
 
-            if (_lastRawVal.Update(_pendingRawVal))
-            {
-                UpdateCenterReadout(_pendingDisplayVal);
-                UpdateRollingTape(_pendingDisplayVal);
-            }
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            if (_lastTopText.Update(_pendingTopText))
-            {
-                if (_topModeText != null) _topModeText.text = _pendingTopText;
-            }
+            UpdateCenterReadout(state.DisplayVal, state.CurrentTier, state.ActiveUnitStr);
+            UpdateRollingTape(state.DisplayVal, state.ActiveStep, state.CurrentTier);
 
-            if (_lastBottomText.Update(_pendingBottomText))
-            {
-                if (_bottomSecText != null) _bottomSecText.text = _pendingBottomText;
-            }
+            if (_topModeText != null) _topModeText.SetTextSafe(state.TopText);
+            if (_bottomSecText != null) _bottomSecText.SetTextSafe(state.BottomText);
 
-            DrawDynamicTrendIndicator();
+            DrawDynamicTrendIndicator(in state);
 
             if (!_isSpeedTape)
             {
-                DrawTerrainRibbon();
+                DrawTerrainRibbon(in state);
             }
         }
 
-        private void UpdateDynamicUnitTier(double rawVal)
+        protected override void OnResetPrivateCache()
         {
-            if (!_autoUnitEnabled) return;
-
-            double abs = Math.Abs(rawVal);
-            DynamicUnitTier nextTier = _currentTier;
-
-            if (_isSpeedTape)
-            {
-                // 速度量纲阶梯: m/s (Base) -> km/s (Kilo) -> c (Mega)
-                switch (_currentTier)
-                {
-                    case DynamicUnitTier.Base:
-                        if (abs >= 10000.0) nextTier = DynamicUnitTier.Kilo;
-                        break;
-                    case DynamicUnitTier.Kilo:
-                        if (abs >= 3000000.0) nextTier = DynamicUnitTier.Mega;
-                        else if (abs < 8500.0) nextTier = DynamicUnitTier.Base;
-                        break;
-                    case DynamicUnitTier.Mega:
-                        if (abs < 2500000.0) nextTier = DynamicUnitTier.Kilo;
-                        break;
-                }
-            }
-            else
-            {
-                // 距离/高度量纲阶梯: m (Base) -> km (Kilo) -> Mm (Mega) -> Gm (Giga)
-                switch (_currentTier)
-                {
-                    case DynamicUnitTier.Base:
-                        if (abs >= 10000.0) nextTier = DynamicUnitTier.Kilo;
-                        break;
-                    case DynamicUnitTier.Kilo:
-                        if (abs >= 10000000.0) nextTier = DynamicUnitTier.Mega;
-                        else if (abs < 8500.0) nextTier = DynamicUnitTier.Base;
-                        break;
-                    case DynamicUnitTier.Mega:
-                        if (abs >= 10000000000.0) nextTier = DynamicUnitTier.Giga;
-                        else if (abs < 8500000.0) nextTier = DynamicUnitTier.Kilo;
-                        break;
-                    case DynamicUnitTier.Giga:
-                        if (abs < 8500000000.0) nextTier = DynamicUnitTier.Mega;
-                        break;
-                }
-            }
-
-            if (nextTier != _currentTier)
-            {
-                _currentTier = nextTier;
-                ApplyTierParameters();
-            }
+            base.OnResetPrivateCache();
+            _lastDisplayVal.Reset(double.NaN);
+            _logic.Reset();
         }
 
-        private void ApplyTierParameters()
-        {
-            if (_isSpeedTape)
-            {
-                switch (_currentTier)
-                {
-                    case DynamicUnitTier.Base:
-                        _tierScale = 1.0;
-                        _activeUnitStr = "m/s";
-                        _activeStep = Config != null && Config.StepInterval > 0f ? Config.StepInterval : 10f;
-                        break;
-                    case DynamicUnitTier.Kilo:
-                        _tierScale = 1000.0;
-                        _activeUnitStr = "km/s";
-                        _activeStep = 1.0f;
-                        break;
-                    case DynamicUnitTier.Mega:
-                        _tierScale = 299792458.0;
-                        _activeUnitStr = "c";
-                        _activeStep = 0.01f;
-                        break;
-                }
-            }
-            else
-            {
-                switch (_currentTier)
-                {
-                    case DynamicUnitTier.Base:
-                        _tierScale = 1.0;
-                        _activeUnitStr = "m";
-                        _activeStep = Config != null && Config.StepInterval > 0f ? Config.StepInterval : 100f;
-                        break;
-                    case DynamicUnitTier.Kilo:
-                        _tierScale = 1000.0;
-                        _activeUnitStr = "km";
-                        _activeStep = 1.0f;
-                        break;
-                    case DynamicUnitTier.Mega:
-                        _tierScale = 1000000.0;
-                        _activeUnitStr = "Mm";
-                        _activeStep = 0.5f;
-                        break;
-                    case DynamicUnitTier.Giga:
-                        _tierScale = 1000000000.0;
-                        _activeUnitStr = "Gm";
-                        _activeStep = 0.1f;
-                        break;
-                }
-            }
-        }
-
-        private void UpdateCenterReadout(double displayVal)
+        private void UpdateCenterReadout(double displayVal, DynamicUnitTier currentTier, string activeUnitStr)
         {
             string formatted;
-            if (_currentTier == DynamicUnitTier.Mega && _isSpeedTape)
+            if (currentTier == DynamicUnitTier.Mega && _isSpeedTape)
             {
                 formatted = $"{displayVal:F2}";
             }
@@ -1254,21 +1324,13 @@ namespace ModularFlightPanel.UI.Widgets
 
             formatted = UIFactory.FormatTabular(formatted);
 
-            if (_lastCenterText.Update(formatted))
-            {
-                if (_centerValueText != null) _centerValueText.text = formatted;
-            }
-
-            if (_lastUnitText.Update(_activeUnitStr))
-            {
-                if (_centerUnitText != null) _centerUnitText.text = _activeUnitStr;
-            }
+            if (_centerValueText != null) _centerValueText.SetTextSafe(formatted);
+            if (_centerUnitText != null) _centerUnitText.SetTextSafe(activeUnitStr);
         }
 
-
-        private void UpdateRollingTape(double currentDisplayVal)
+        private void UpdateRollingTape(double currentDisplayVal, float activeStep, DynamicUnitTier currentTier)
         {
-            float step = _activeStep > 0f ? _activeStep : 100f;
+            float step = activeStep > 0f ? activeStep : 100f;
             // 航空级极简双层刻度步长：仅保留主刻度与半步长中刻度 (subStep = step * 0.5f)，彻底消除密集梳子齿
             float subStep = step * 0.5f;
             float pixelsPerUnit = (28f * CurrentDpiScale) / step;
@@ -1372,7 +1434,7 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         item.LastTickVal = tickVal;
                         string labelStr;
-                        if (_currentTier == DynamicUnitTier.Mega && _isSpeedTape)
+                        if (currentTier == DynamicUnitTier.Mega && _isSpeedTape)
                         {
                             labelStr = $"{tickVal:F2}";
                         }
@@ -1395,7 +1457,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void DrawDynamicTrendIndicator()
+        private void DrawDynamicTrendIndicator(in TapeGaugeState state)
         {
             float s = CurrentDpiScale;
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
@@ -1403,7 +1465,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isSpeedTape)
             {
                 // ==================== 1. ACC (G 载荷) 解算与警告/危险变色关照 (──► 指针式) ====================
-                double gForce = _pendingGForce;
+                double gForce = state.GForce;
                 if (double.IsNaN(gForce)) gForce = 0.0;
 
                 // 航天生理与结构载荷警戒判定 (对齐用户规范：4G 黄色，8G 红色)：
@@ -1411,139 +1473,124 @@ namespace ModularFlightPanel.UI.Widgets
                 if (gForce >= 8.0 || gForce <= -3.0) alertLevel = 2;
                 else if (gForce >= 4.0 || gForce <= -1.5) alertLevel = 1;
 
-                if (_lastAccAlertLevel.Update(alertLevel))
+                TextStyleRole valTextRole = alertLevel == 2 ? TextStyleRole.Danger :
+                                            alertLevel == 1 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue;
+                TextStyleRole tagTextRole = alertLevel == 2 ? TextStyleRole.Danger :
+                                            alertLevel == 1 ? TextStyleRole.Warning : TextStyleRole.Cardinal;
+                MeterStyleRole meterRole = alertLevel == 2 ? MeterStyleRole.Danger :
+                                          alertLevel == 1 ? MeterStyleRole.Warning : MeterStyleRole.Primary;
+
+                if (_accValText != null) ApplyText(_accValText, valTextRole, theme);
+                if (_accTagText != null) ApplyText(_accTagText, tagTextRole, theme);
+
+                Color pointerCol = WidgetStyleManager.Meter(meterRole, theme);
+                _accPointerHead?.SetColor(pointerCol);
+                _accPointerStem?.SetColor(pointerCol);
+                if (_accTraceImg != null)
                 {
-                    TextStyleRole valTextRole = alertLevel == 2 ? TextStyleRole.Danger :
-                                                alertLevel == 1 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue;
-                    TextStyleRole tagTextRole = alertLevel == 2 ? TextStyleRole.Danger :
-                                                alertLevel == 1 ? TextStyleRole.Warning : TextStyleRole.Cardinal;
-                    MeterStyleRole meterRole = alertLevel == 2 ? MeterStyleRole.Danger :
-                                              alertLevel == 1 ? MeterStyleRole.Warning : MeterStyleRole.Primary;
-
-                    if (_accValText != null) ApplyText(_accValText, valTextRole, theme);
-                    if (_accTagText != null) ApplyText(_accTagText, tagTextRole, theme);
-
-                    Color pointerCol = WidgetStyleManager.Meter(meterRole, theme);
-                    SetColorIfChanged(_accPointerHead, pointerCol);
-                    SetColorIfChanged(_accPointerStem, pointerCol);
-                    if (_accTraceImg != null)
-                    {
-                        float traceAlpha = alertLevel == 2 ? 0.60f : alertLevel == 1 ? 0.50f : 0.40f;
-                        SetColorIfChanged(_accTraceImg, WidgetStyleManager.WithAlpha(pointerCol, traceAlpha));
-                    }
-                    if (_accTagOutline != null)
-                    {
-                        Color outlineCol = alertLevel == 2 ? WidgetStyleManager.Meter(MeterStyleRole.Danger, theme) :
-                                           alertLevel == 1 ? WidgetStyleManager.Meter(MeterStyleRole.Warning, theme) :
-                                           theme.FrameBorderColor.ToColor();
-                        SetOutlineColorIfChanged(_accTagOutline, outlineCol);
-                    }
-                    if (_accTagBg != null)
-                    {
-                        Color baseBg = theme.FrameBgColor;
-                        Color targetBg = alertLevel == 2 ? Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Danger, theme), 0.22f) :
-                                         alertLevel == 1 ? Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Warning, theme), 0.16f) : baseBg;
-                        SetColorIfChanged(_accTagBg, targetBg);
-                    }
+                    float traceAlpha = alertLevel == 2 ? 0.60f : alertLevel == 1 ? 0.50f : 0.40f;
+                    _accTraceImg.SetColor(WidgetStyleManager.WithAlpha(pointerCol, traceAlpha));
+                }
+                if (_accTagOutline != null)
+                {
+                    Color outlineCol = alertLevel == 2 ? WidgetStyleManager.Meter(MeterStyleRole.Danger, theme) :
+                                       alertLevel == 1 ? WidgetStyleManager.Meter(MeterStyleRole.Warning, theme) :
+                                       theme.FrameBorderColor.ToColor();
+                    SetOutlineColorIfChanged(_accTagOutline, outlineCol);
+                }
+                if (_accTagBg != null)
+                {
+                    Color baseBg = theme.FrameBgColor;
+                    Color targetBg = alertLevel == 2 ? Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Danger, theme), 0.22f) :
+                                     alertLevel == 1 ? Color.Lerp(baseBg, WidgetStyleManager.Meter(MeterStyleRole.Warning, theme), 0.16f) : baseBg;
+                    _accTagBg.SetColor(targetBg);
                 }
 
                 // ACC 纵向滑动 ──► 指针与微痕发丝 (0~8G 线性标尺，-_currentHalfTrackH 至 +_currentHalfTrackH)
-                if (_lastGForce.Update(gForce))
-                {
-                    string accStr = UIFactory.FormatTabular($"{gForce:F1}G");
-                    if (_lastAccText.Update(accStr))
-                    {
-                        if (_accValText != null) _accValText.text = accStr;
-                    }
+                string accStr = UIFactory.FormatTabular($"{gForce:F1}G");
+                if (_accValText != null) _accValText.SetTextSafe(accStr);
 
-                    float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
-                    float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
-                    _accPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, pointerY));
-                    if (_accTraceRt != null)
-                    {
-                        float traceLen = pointerY - (-_currentHalfTrackH);
-                        _accTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, traceLen)));
-                    }
+                float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
+                float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
+                _accPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, pointerY));
+                if (_accTraceRt != null)
+                {
+                    float traceLen = pointerY - (-_currentHalfTrackH);
+                    _accTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, traceLen)));
                 }
 
                 // ==================== 2. dV/dt (速度变化率) 指针式指示 ====================
                 const double RATE_DEADBAND = 0.08;
-                bool isRateDeadband = Math.Abs(_pendingAccelMps2) < RATE_DEADBAND;
+                bool isRateDeadband = Math.Abs(state.AccelMps2) < RATE_DEADBAND;
 
-                if (_lastRenderedAccel.Update(_pendingAccelMps2))
+                string rateStr;
+                if (isRateDeadband)
                 {
-                    string rateStr;
+                    rateStr = "0.0";
+                }
+                else
+                {
+                    rateStr = state.AccelMps2 > 0 ? $"+{state.AccelMps2:F1}" : $"{state.AccelMps2:F1}";
+                }
+
+                rateStr = UIFactory.FormatTabular(rateStr);
+
+                if (_rateValText != null)
+                {
+                    _rateValText.SetTextSafe(rateStr);
+                    TextStyleRole rateRole = isRateDeadband || state.AccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
+                    ApplyText(_rateValText, rateRole, theme);
+                }
+
+                float maxScale = 20.0f;
+                float rateFraction;
+                bool isRatePositive;
+                MeterStyleRole rateMeterRole;
+
+                if (isRateDeadband)
+                {
+                    rateFraction = 0f;
+                    isRatePositive = true;
+                    rateMeterRole = MeterStyleRole.Primary;
+                }
+                else
+                {
+                    rateFraction = Mathf.Clamp((float)(state.AccelMps2 / maxScale), -1f, 1f);
+                    isRatePositive = rateFraction >= 0f;
+                    rateMeterRole = isRatePositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
+                }
+
+                Color rateCol = WidgetStyleManager.Meter(rateMeterRole, theme);
+                _ratePointerHead?.SetColor(rateCol);
+                _ratePointerStem?.SetColor(rateCol);
+                _rateTraceImg?.SetColor(WidgetStyleManager.WithAlpha(rateCol, 0.40f));
+
+                float ratePointerY = rateFraction * _currentHalfTrackH;
+                _ratePointerRt?.SetAnchoredPositionSafe(new Vector2(0f, ratePointerY));
+                if (_rateTraceRt != null)
+                {
                     if (isRateDeadband)
                     {
-                        rateStr = "0.0";
+                        _rateTraceRt.SetSizeDeltaSafe(Vector2.zero);
+                    }
+                    else if (isRatePositive)
+                    {
+                        if (_rateTraceRt.pivot.y != 0f) _rateTraceRt.pivot = new Vector2(0.5f, 0f);
+                        _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, ratePointerY)));
                     }
                     else
                     {
-                        rateStr = _pendingAccelMps2 > 0 ? $"+{_pendingAccelMps2:F1}" : $"{_pendingAccelMps2:F1}";
-                    }
-
-                    rateStr = UIFactory.FormatTabular(rateStr);
-
-                    if (_lastRateText.Update(rateStr))
-                    {
-                        if (_rateValText != null)
-                        {
-                            _rateValText.text = rateStr;
-                            TextStyleRole rateRole = isRateDeadband || _pendingAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning;
-                            ApplyText(_rateValText, rateRole, theme);
-                        }
-                    }
-
-                    float maxScale = 20.0f;
-                    float rateFraction;
-                    bool isRatePositive;
-                    MeterStyleRole rateMeterRole;
-
-                    if (isRateDeadband)
-                    {
-                        rateFraction = 0f;
-                        isRatePositive = true;
-                        rateMeterRole = MeterStyleRole.Primary;
-                    }
-                    else
-                    {
-                        rateFraction = Mathf.Clamp((float)(_pendingAccelMps2 / maxScale), -1f, 1f);
-                        isRatePositive = rateFraction >= 0f;
-                        rateMeterRole = isRatePositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
-                    }
-
-                    Color rateCol = WidgetStyleManager.Meter(rateMeterRole, theme);
-                    _ratePointerHead?.SetColor(rateCol);
-                    _ratePointerStem?.SetColor(rateCol);
-                    _rateTraceImg?.SetColor(WidgetStyleManager.WithAlpha(rateCol, 0.40f));
-
-                    float ratePointerY = rateFraction * _currentHalfTrackH;
-                    _ratePointerRt?.SetAnchoredPositionSafe(new Vector2(0f, ratePointerY));
-                    if (_rateTraceRt != null)
-                    {
-                        if (isRateDeadband)
-                        {
-                            _rateTraceRt.SetSizeDeltaSafe(Vector2.zero);
-                        }
-                        else if (isRatePositive)
-                        {
-                            if (_rateTraceRt.pivot.y != 0f) _rateTraceRt.pivot = new Vector2(0.5f, 0f);
-                            _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                            _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, ratePointerY)));
-                        }
-                        else
-                        {
-                            if (_rateTraceRt.pivot.y != 1f) _rateTraceRt.pivot = new Vector2(0.5f, 1f);
-                            _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                            _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -ratePointerY)));
-                        }
+                        if (_rateTraceRt.pivot.y != 1f) _rateTraceRt.pivot = new Vector2(0.5f, 1f);
+                        _rateTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _rateTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -ratePointerY)));
                     }
                 }
             }
             else
             {
                 // ==================== 高度带 VSI：零位水平严格对齐中央 (y = 0，◄── 指针式) ====================
-                double vs = _pendingVs;
+                double vs = state.Vs;
                 if (double.IsNaN(vs)) vs = 0.0;
 
                 const double VSI_DEADBAND = 0.08;
@@ -1567,85 +1614,74 @@ namespace ModularFlightPanel.UI.Widgets
                     meterRole = isPositive ? MeterStyleRole.Primary : MeterStyleRole.Warning;
                 }
 
-                bool trendValDirty = _lastTrendVal.Update(vs);
-                bool trendPosDirty = _lastTrendPositive.Update(isPositive);
-                if (trendValDirty || trendPosDirty)
+                Color vsiCol = WidgetStyleManager.Meter(meterRole, theme);
+                _vsiPointerHead?.SetColor(vsiCol);
+                _vsiPointerStem?.SetColor(vsiCol);
+                if (_vsiTraceImg != null) _vsiTraceImg.SetColor(WidgetStyleManager.WithAlpha(vsiCol, 0.40f));
+
+                TextStyleRole textRole = isVsiDeadband || isPositive ? TextStyleRole.Accent : TextStyleRole.Warning;
+                ApplyText(_vsiRateText, textRole, theme);
+
+                string formattedRate;
+                if (isVsiDeadband)
+                    formattedRate = "0.0";
+                else if (vs > 0.0)
+                    formattedRate = vs >= 1000.0 ? $"+{vs / 1000.0:F1}k" : $"+{vs:F1}";
+                else
                 {
-                    Color vsiCol = WidgetStyleManager.Meter(meterRole, theme);
-                    SetColorIfChanged(_vsiPointerHead, vsiCol);
-                    SetColorIfChanged(_vsiPointerStem, vsiCol);
-                    if (_vsiTraceImg != null) SetColorIfChanged(_vsiTraceImg, WidgetStyleManager.WithAlpha(vsiCol, 0.40f));
+                    double absVal = Math.Abs(vs);
+                    formattedRate = absVal >= 1000.0 ? $"-{absVal / 1000.0:F1}k" : $"-{absVal:F1}";
+                }
 
-                    TextStyleRole textRole = isVsiDeadband || isPositive ? TextStyleRole.Accent : TextStyleRole.Warning;
-                    ApplyText(_vsiRateText, textRole, theme);
+                formattedRate = UIFactory.FormatTabular(formattedRate);
+                if (_vsiRateText != null) _vsiRateText.SetTextSafe(formattedRate);
 
-                    string formattedRate;
+                float vsiPointerY = rateFraction * _currentHalfTrackH;
+                _vsiPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, vsiPointerY));
+                if (_vsiTraceRt != null)
+                {
                     if (isVsiDeadband)
-                        formattedRate = "0.0";
-                    else if (vs > 0.0)
-                        formattedRate = vs >= 1000.0 ? $"+{vs / 1000.0:F1}k" : $"+{vs:F1}";
+                    {
+                        _vsiTraceRt.SetSizeDeltaSafe(Vector2.zero);
+                    }
+                    else if (isPositive)
+                    {
+                        if (_vsiTraceRt.pivot.y != 0f) _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
+                        _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, vsiPointerY)));
+                    }
                     else
                     {
-                        double absVal = Math.Abs(vs);
-                        formattedRate = absVal >= 1000.0 ? $"-{absVal / 1000.0:F1}k" : $"-{absVal:F1}";
-                    }
-
-                    formattedRate = UIFactory.FormatTabular(formattedRate);
-
-                    if (_lastTrendRateText.Update(formattedRate))
-                    {
-                        if (_vsiRateText != null) _vsiRateText.text = formattedRate;
-                    }
-
-                    float vsiPointerY = rateFraction * _currentHalfTrackH;
-                    _vsiPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, vsiPointerY));
-                    if (_vsiTraceRt != null)
-                    {
-                        if (isVsiDeadband)
-                        {
-                            _vsiTraceRt.SetSizeDeltaSafe(Vector2.zero);
-                        }
-                        else if (isPositive)
-                        {
-                            if (_vsiTraceRt.pivot.y != 0f) _vsiTraceRt.pivot = new Vector2(0.5f, 0f);
-                            _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                            _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, vsiPointerY)));
-                        }
-                        else
-                        {
-                            if (_vsiTraceRt.pivot.y != 1f) _vsiTraceRt.pivot = new Vector2(0.5f, 1f);
-                            _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
-                            _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -vsiPointerY)));
-                        }
+                        if (_vsiTraceRt.pivot.y != 1f) _vsiTraceRt.pivot = new Vector2(0.5f, 1f);
+                        _vsiTraceRt.SetAnchoredPositionSafe(Vector2.zero);
+                        _vsiTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, -vsiPointerY)));
                     }
                 }
             }
         }
 
-        private void DrawTerrainRibbon()
+        private void DrawTerrainRibbon(in TapeGaugeState state)
         {
-            if (_groundRibbonObj == null || _isSpeedTape || double.IsNaN(_pendingAgl)) return;
+            if (_groundRibbonObj == null || _isSpeedTape || double.IsNaN(state.Agl)) return;
 
             // 高于 10km (包括入轨阶段) 地形警戒条必然不显示
-            if (_pendingRawVal > 10000.0)
+            if (state.RawVal > 10000.0)
             {
                 if (_groundRibbonObj.activeSelf) _groundRibbonObj.SetActiveSafe(false);
                 return;
             }
 
-            double agl = _pendingAgl;
+            double agl = state.Agl;
 
             if (agl < 500.0 && agl >= -10.0)
             {
-                if (!_lastTerrainVal.Update(agl) && _groundRibbonObj.activeSelf) return;
-
                 _groundRibbonObj.SetActiveSafe(true);
 
                 float s = CurrentDpiScale;
-                float step = _activeStep > 0f ? _activeStep : 100f;
+                float step = state.ActiveStep > 0f ? state.ActiveStep : 100f;
                 float pixelsPerUnit = (28f * s) / step;
 
-                float groundY = -(float)(agl / _tierScale) * pixelsPerUnit;
+                float groundY = -(float)(agl / state.TierScale) * pixelsPerUnit;
                 float ribbonHeight = Mathf.Clamp(groundY + (_viewportRt.sizeDelta.y * 0.5f), 0f, _viewportRt.sizeDelta.y);
 
                 _groundRibbonRt?.SetSizeDeltaSafe(new Vector2(_viewportRt.sizeDelta.x - 4f * s, ribbonHeight));
@@ -1741,41 +1777,27 @@ namespace ModularFlightPanel.UI.Widgets
             if (_isSpeedTape)
             {
                 if (_accTagBg != null) ApplyCard(_accTagBg, _accTagOutline, CardStyleRole.Normal, theme);
-                if (_accTagText != null)
-                {
-                    TextStyleRole tagRole = _lastAccAlertLevel == 2 ? TextStyleRole.Danger :
-                                            _lastAccAlertLevel == 1 ? TextStyleRole.Warning : TextStyleRole.Cardinal;
-                    ApplyText(_accTagText, tagRole, theme);
-                }
-                if (_accValText != null)
-                {
-                    TextStyleRole accRole = _lastAccAlertLevel == 2 ? TextStyleRole.Danger :
-                                            _lastAccAlertLevel == 1 ? TextStyleRole.Warning : TextStyleRole.PrimaryValue;
-                    ApplyText(_accValText, accRole, theme);
-                }
+                if (_accTagText != null) ApplyText(_accTagText, TextStyleRole.Cardinal, theme);
+                if (_accValText != null) ApplyText(_accValText, TextStyleRole.PrimaryValue, theme);
                 if (_accTrackBg != null) ApplyCard(_accTrackBg, _accTrackOutline, CardStyleRole.SubtleSlot, theme);
                 if (_accTrack != null) _accTrack.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
 
-                MeterStyleRole accMeterRole = _lastAccAlertLevel == 2 ? MeterStyleRole.Danger :
-                                             _lastAccAlertLevel == 1 ? MeterStyleRole.Warning : MeterStyleRole.Primary;
-                Color accCol = WidgetStyleManager.Meter(accMeterRole, theme);
+                Color accCol = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                 if (_accPointerHead != null) _accPointerHead.color = accCol;
                 if (_accPointerStem != null) _accPointerStem.color = accCol;
                 if (_accTraceImg != null)
                 {
-                    float traceAlpha = _lastAccAlertLevel == 2 ? 0.60f : _lastAccAlertLevel == 1 ? 0.50f : 0.40f;
-                    _accTraceImg.color = WidgetStyleManager.WithAlpha(accCol, traceAlpha);
+                    _accTraceImg.color = WidgetStyleManager.WithAlpha(accCol, 0.40f);
                 }
 
                 if (_rateTagBg != null) ApplyCard(_rateTagBg, _rateTagOutline, CardStyleRole.Normal, theme);
                 if (_rateTagText != null) ApplyText(_rateTagText, TextStyleRole.Unit, theme);
-                if (_rateValText != null) ApplyText(_rateValText, _calculatedAccelMps2 >= 0 ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
+                if (_rateValText != null) ApplyText(_rateValText, TextStyleRole.Accent, theme);
                 if (_rateTrackBg != null) ApplyCard(_rateTrackBg, _rateTrackOutline, CardStyleRole.SubtleSlot, theme);
                 if (_rateTrack != null) _rateTrack.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
                 if (_rateZeroAnchor != null) _rateZeroAnchor.color = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.60f);
 
-                MeterStyleRole rateRole = _calculatedAccelMps2 >= 0 ? MeterStyleRole.Primary : MeterStyleRole.Warning;
-                Color rateCol = WidgetStyleManager.Meter(rateRole, theme);
+                Color rateCol = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                 if (_ratePointerHead != null) _ratePointerHead.color = rateCol;
                 if (_ratePointerStem != null) _ratePointerStem.color = rateCol;
                 if (_rateTraceImg != null) _rateTraceImg.color = WidgetStyleManager.WithAlpha(rateCol, 0.40f);
@@ -1784,13 +1806,12 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (_vsiTagBox != null) ApplyCard(_vsiTagBg, _vsiTagOutline, CardStyleRole.Normal, theme);
                 if (_vsiTagText != null) ApplyText(_vsiTagText, TextStyleRole.Cardinal, theme);
-                if (_vsiRateText != null) ApplyText(_vsiRateText, _lastTrendPositive.Value ? TextStyleRole.Accent : TextStyleRole.Warning, theme);
+                if (_vsiRateText != null) ApplyText(_vsiRateText, TextStyleRole.Accent, theme);
                 if (_vsiTrackBg != null) ApplyCard(_vsiTrackBg, _vsiTrackOutline, CardStyleRole.SubtleSlot, theme);
                 if (_vsiTrack != null) _vsiTrack.color = WidgetStyleManager.Meter(MeterStyleRole.Track, theme);
                 if (_vsiZeroAnchor != null) _vsiZeroAnchor.color = WidgetStyleManager.WithAlpha(theme.FrameBorderColor.ToColor(), 0.60f);
 
-                MeterStyleRole vsiRole = _lastTrendPositive.Value ? MeterStyleRole.Primary : MeterStyleRole.Warning;
-                Color vsiCol = WidgetStyleManager.Meter(vsiRole, theme);
+                Color vsiCol = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                 if (_vsiPointerHead != null) _vsiPointerHead.color = vsiCol;
                 if (_vsiPointerStem != null) _vsiPointerStem.color = vsiCol;
                 if (_vsiTraceImg != null) _vsiTraceImg.color = WidgetStyleManager.WithAlpha(vsiCol, 0.40f);

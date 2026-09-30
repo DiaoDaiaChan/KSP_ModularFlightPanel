@@ -496,8 +496,15 @@ namespace ModularFlightPanel.UI.Auditing
         public static bool IsColorOrColor32(ITypeSymbol typeSymbol)
         {
             if (typeSymbol == null) return false;
-            string name = typeSymbol.ToDisplayString();
-            return name == "UnityEngine.Color" || name == "UnityEngine.Color32";
+            try
+            {
+                string name = typeSymbol.ToDisplayString();
+                return name == "UnityEngine.Color" || name == "UnityEngine.Color32";
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
