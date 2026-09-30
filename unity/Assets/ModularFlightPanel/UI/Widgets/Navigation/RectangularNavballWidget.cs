@@ -25,6 +25,104 @@ namespace ModularFlightPanel.UI.Widgets
     /// 8. 坡度角刻度与滚转/天顶指引指针 (Bank Angle Roll Scale & Sky Pointer)；
     /// 9. 智能自适应物理尺寸契约 (IAdaptiveSizeWidget)，可在编辑模式 GUI 中随意拖拽手柄拉伸长宽比。
     /// </summary>
+    /// <summary>
+    /// 矩形姿态仪状态快照 (0 GC 值类型)
+    /// </summary>
+    public struct RectangularNavballState : IEquatable<RectangularNavballState>
+    {
+        public bool HasVessel;
+        public NavballRenderMode RenderMode;
+        public Texture StockTex;
+        public Vector2 TexScale;
+        public Vector2 TexOffset;
+        public string RefCategory;
+        public string RefCategoryUpper;
+        public string FrameName;
+        public float Heading;
+
+        public bool Equals(RectangularNavballState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   RenderMode == other.RenderMode &&
+                   ReferenceEquals(StockTex, other.StockTex) &&
+                   TexScale == other.TexScale &&
+                   TexOffset == other.TexOffset &&
+                   RefCategory == other.RefCategory &&
+                   RefCategoryUpper == other.RefCategoryUpper &&
+                   FrameName == other.FrameName &&
+                   Mathf.Abs(Heading - other.Heading) < 0.05f;
+        }
+
+        public override bool Equals(object obj) => obj is RectangularNavballState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ (int)RenderMode;
+                hash = (hash * 397) ^ Heading.GetHashCode();
+                if (RefCategoryUpper != null) hash = (hash * 397) ^ RefCategoryUpper.GetHashCode();
+                if (FrameName != null) hash = (hash * 397) ^ FrameName.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 矩形姿态仪业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class RectangularNavballLogic : WidgetLogic<RectangularNavballState>
+    {
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            NavballRenderMode renderMode = ThemeManager.Instance?.GlobalRenderMode ?? NavballRenderMode.ProceduralVector;
+            if (renderMode == NavballRenderMode.ProceduralBake) renderMode = NavballRenderMode.ProceduralVector;
+
+            Texture stockTex = null;
+            Vector2 texScale = Vector2.one;
+            Vector2 texOffset = Vector2.zero;
+            string rawCat = "SURFACE";
+            string frameName = null;
+
+            var hook = NavBallHookService.Provider;
+            if (hook != null)
+            {
+                if (renderMode == NavballRenderMode.StockTexture)
+                {
+                    stockTex = hook.BallTexture;
+                    texScale = hook.TextureScale;
+                    texOffset = hook.TextureOffset;
+                }
+
+                rawCat = hook.ReferenceFrameCategory;
+                if (string.IsNullOrEmpty(rawCat)) rawCat = "SURFACE";
+                frameName = hook.FrameName;
+            }
+
+            float heading = (hook != null && hook.HasStockNavBall) ? hook.HeadingAngle : ((telemetry != null) ? (float)telemetry.Heading : 0f);
+
+            CurrentState = new RectangularNavballState
+            {
+                HasVessel = telemetry != null && telemetry.HasVessel,
+                RenderMode = renderMode,
+                StockTex = stockTex,
+                TexScale = texScale,
+                TexOffset = texOffset,
+                RefCategory = rawCat,
+                RefCategoryUpper = rawCat.ToUpperInvariant(),
+                FrameName = frameName,
+                Heading = heading
+            };
+        }
+    }
+
     [DefaultExecutionOrder(10000)]
     [AlwaysFullPower]
     [FlightWidget("rect_navball", "rectangular_navball", Category = WidgetCategory.Navigation, DisplayName = "矩形姿态球", Description = "现代矩形姿态仪 / 导航球，集成超清矢量/贴图渲染、全量导航标线，支持在编辑GUI中任意非等比调节长宽比。", DefaultWidgetId = "nav.rect_navball", DefaultX = 0f, DefaultY = 0f, HighFrequency = true, AlwaysFullPower = true, ExactIds = new[] { "nav.rect_navball", "nav.rectangular_navball", "core.rect_navball" })]
@@ -34,6 +132,9 @@ namespace ModularFlightPanel.UI.Widgets
         public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Critical;
         public override Vector2 BaseSize => new Vector2(240f, 160f);
         protected override bool AutoCreateCardFrame => false;
+
+        private readonly RectangularNavballLogic _logic = new RectangularNavballLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // ── IAdaptiveSizeWidget 自适应尺寸契约 ──
         public bool AllowNonUniformScale => true;
@@ -50,15 +151,6 @@ namespace ModularFlightPanel.UI.Widgets
         private float _aspectRatio = 1.5f;
 
         // ── 遥测与参考系缓存 ──
-        private NavballRenderMode _cachedRenderMode;
-        private Texture _cachedStockTex;
-        private Vector2 _cachedTexScale = Vector2.one;
-        private Vector2 _cachedTexOffset = Vector2.zero;
-        private string _cachedRefCategory = "SURFACE";
-        private string _cachedRefCategoryUpper = "SURFACE";
-        private float _cachedHeading;
-        private string _cachedFrameName;
-        private readonly Cached<string> _lastRawCategory = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastRawFrameName = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastAppliedCategoryForFrame = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastAppliedFrameText = new Cached<string>(string.Empty);
@@ -683,52 +775,19 @@ namespace ModularFlightPanel.UI.Widgets
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-
-            _cachedRenderMode = ThemeManager.Instance?.GlobalRenderMode ?? NavballRenderMode.ProceduralVector;
-            if (_cachedRenderMode == NavballRenderMode.ProceduralBake) _cachedRenderMode = NavballRenderMode.ProceduralVector;
-
-            var hook = NavBallHookService.Provider;
-            if (hook != null)
-            {
-                if (_cachedRenderMode == NavballRenderMode.StockTexture)
-                {
-                    _cachedStockTex = hook.BallTexture;
-                    _cachedTexScale = hook.TextureScale;
-                    _cachedTexOffset = hook.TextureOffset;
-                }
-                else
-                {
-                    _cachedStockTex = null;
-                }
-
-                string rawCat = hook.ReferenceFrameCategory;
-                if (string.IsNullOrEmpty(rawCat)) rawCat = "SURFACE";
-                _cachedRefCategory = rawCat;
-                if (_lastRawCategory.Update(rawCat))
-                {
-                    _cachedRefCategoryUpper = rawCat.ToUpperInvariant();
-                }
-                _cachedFrameName = hook.FrameName;
-            }
-            else
-            {
-                _cachedStockTex = null;
-                _cachedTexScale = Vector2.one;
-                _cachedTexOffset = Vector2.zero;
-                _cachedRefCategory = "SURFACE";
-                _cachedRefCategoryUpper = "SURFACE";
-                _cachedFrameName = null;
-            }
-
-            _cachedHeading = (hook != null && hook.HasStockNavBall) ? hook.HeadingAngle : ((context.Telemetry != null) ? context.Telemetry.Heading : 0f);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (_displayImage == null || !_displayImage.gameObject.activeInHierarchy) return;
+        }
 
-            var mode = _cachedRenderMode;
+        protected override void OnRenderState()
+        {
+            if (_displayImage == null || !_displayImage.gameObject.activeInHierarchy) return;
+            var state = _logic.CurrentState;
+
+            var mode = state.RenderMode;
             float targetRenderMode = (mode == NavballRenderMode.StockTexture) ? 0f : 1f;
             if (_sphereMaterial != null && _uploadedRenderMode != targetRenderMode)
             {
@@ -738,21 +797,21 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (mode == NavballRenderMode.StockTexture)
             {
-                Texture stockTex = _cachedStockTex;
+                Texture stockTex = state.StockTex;
                 if (stockTex != null && _displayImage != null && _displayImage.texture != stockTex)
                 {
                     _displayImage.texture = stockTex;
                     _sphereMaterial.mainTexture = stockTex;
-                    _sphereMaterial.SetTextureScale("_MainTex", _cachedTexScale);
-                    _sphereMaterial.SetTextureOffset("_MainTex", _cachedTexOffset);
+                    _sphereMaterial.SetTextureScale("_MainTex", state.TexScale);
+                    _sphereMaterial.SetTextureOffset("_MainTex", state.TexOffset);
                 }
             }
 
             // 更新航向读数盒与参考系模式显示
-            string catUpper = _cachedRefCategoryUpper;
+            string catUpper = state.RefCategoryUpper ?? "SURFACE";
             if (_headingText != null)
             {
-                float hdg = _cachedHeading;
+                float hdg = state.Heading;
                 int iHdg = (Mathf.RoundToInt(hdg) % 360 + 360) % 360;
 
                 bool hdgDirty = _lastHeadingValue.Update(iHdg);
@@ -790,11 +849,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_frameText != null)
             {
-                bool rawFrameDirty = _lastRawFrameName.Update(_cachedFrameName);
+                bool rawFrameDirty = _lastRawFrameName.Update(state.FrameName);
                 bool appliedCatDirty = _lastAppliedCategoryForFrame.Update(catUpper);
                 if (rawFrameDirty || appliedCatDirty)
                 {
-                    string frame = _cachedFrameName;
+                    string frame = state.FrameName;
                     if (string.IsNullOrEmpty(frame))
                     {
                         switch (catUpper)
@@ -827,7 +886,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (_frameBadgeAnimTimer >= 0.40f)
                 {
-                    ThemeConfig curTheme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
+                    ThemeConfig curTheme = WidgetStyleManager.Instance?.CurrentTheme ?? ThemeManager.Instance?.CurrentTheme;
                     Color accentCol = GetFrameAccentColor(catUpper, curTheme);
                     if (_lastAppliedFrameColor.Update(accentCol))
                     {
@@ -835,6 +894,12 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
             }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
         }
 
         protected virtual void LateUpdate()
