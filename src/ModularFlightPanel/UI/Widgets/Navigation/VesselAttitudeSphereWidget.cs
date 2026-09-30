@@ -35,83 +35,139 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
     ///    - 左键点击中央飞船切换显示模型（程序化 3D 穿梭机 / 载具 3D 模型 / 2D 剪影）。
     ///    - 右键点击中央飞船切换观察视角（追尾 3D / 俯视 3D）。
     /// 7. 严格落实 MFP-SPEC-001..011 铁律（0 颜色字面量、0 场景查询、分频阶梯 Critical 60Hz、2D UI Shader 材质管线接入）。
+    /// <summary>
+    /// 3D 飞船球形姿态仪状态快照 (0 GC 值类型)
     /// </summary>
-    [AlwaysFullPower]
-    [FlightWidget("vessel_navball", "vessel_attitude_sphere", "attitude_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 飞船球形姿态仪", Description = "全新球形姿态仪：以真实 3D 飞船为中心，外层环绕 3D 姿态球体、人工地平标尺、SAS 目标飞行指引仪与全量导航矢量。", DefaultWidgetId = "nav.vessel_navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, AlwaysFullPower = true, ExactIds = new[] { "nav.vessel_navball", "nav.vessel_attitude_sphere", "core.vessel_navball", "core.vessel_attitude_sphere", "nav.attitude_sphere_3d" })]
-    public class VesselAttitudeSphereWidget : BaseNavballSphereWidget, IPointerClickHandler
+    public struct VesselAttitudeSphereState : IEquatable<VesselAttitudeSphereState>
     {
-        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+        public bool HasVessel;
+        public float Pitch;
+        public float Roll;
+        public float Heading;
+        public Texture Tex3D;
+        public string TopFormatted;
+        public string BottomFormatted;
+        public bool DirectorActive;
+        public bool DirectorLocked;
+        public float DeflX;
+        public float DeflY;
 
-        public enum CenterShipVisualMode
+        public bool Equals(VesselAttitudeSphereState other)
         {
-            Procedural3D = 0,
-            RealVessel3D = 1,
-            TopDownSilhouette = 2
+            return HasVessel == other.HasVessel &&
+                   Mathf.Abs(Pitch - other.Pitch) < 0.05f &&
+                   Mathf.Abs(Roll - other.Roll) < 0.05f &&
+                   Mathf.Abs(Heading - other.Heading) < 0.05f &&
+                   ReferenceEquals(Tex3D, other.Tex3D) &&
+                   TopFormatted == other.TopFormatted &&
+                   BottomFormatted == other.BottomFormatted &&
+                   DirectorActive == other.DirectorActive &&
+                   DirectorLocked == other.DirectorLocked &&
+                   Mathf.Abs(DeflX - other.DeflX) < 0.01f &&
+                   Mathf.Abs(DeflY - other.DeflY) < 0.01f;
         }
 
-        private bool _cachedHasVessel;
-        private float _cachedPitch;
-        private float _cachedRoll;
-        private float _cachedHeading;
-        private Texture _cachedTex3D;
-        private string _cachedTopFormatted;
-        private string _cachedBtmFormatted;
-        private bool _cachedDirectorActive;
-        private bool _cachedDirectorLocked;
-        private float _cachedDeflX;
-        private float _cachedDeflY;
+        public override bool Equals(object obj) => obj is VesselAttitudeSphereState other && Equals(other);
 
-        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        public override int GetHashCode()
         {
-            base.OnDataHeartBeat(in context);
-
-            if (context.Telemetry == null || !context.Telemetry.HasVessel)
+            unchecked
             {
-                _cachedHasVessel = false;
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                hash = (hash * 397) ^ Pitch.GetHashCode();
+                hash = (hash * 397) ^ Roll.GetHashCode();
+                hash = (hash * 397) ^ Heading.GetHashCode();
+                if (TopFormatted != null) hash = (hash * 397) ^ TopFormatted.GetHashCode();
+                if (BottomFormatted != null) hash = (hash * 397) ^ BottomFormatted.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 3D 飞船球形姿态仪业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class VesselAttitudeSphereLogic : WidgetLogic<VesselAttitudeSphereState>
+    {
+        public string HeadingToken { get; set; } = "{HDG}";
+        public string PitchToken { get; set; } = "{PITCH}";
+        public string RollToken { get; set; } = "{ROLL}";
+        public string SasToken { get; set; } = "{SAS:MODE}";
+        public VesselAttitudeSphereWidget.CenterShipVisualMode ShipVisualMode { get; set; } = VesselAttitudeSphereWidget.CenterShipVisualMode.Procedural3D;
+
+        private int _lastHdgInt = -1;
+        private string _lastTopFrameCat = null;
+        private int _lastPitchInt = -9999;
+        private int _lastRollInt = -9999;
+        private FlightSASMode _lastSASMode = (FlightSASMode)(-1);
+        private bool _lastDirectorLocked = false;
+        private bool _isDirectorLocked = false;
+
+        private string _cachedTopFormatted = string.Empty;
+        private string _cachedBtmFormatted = string.Empty;
+
+        public override void Reset()
+        {
+            _lastHdgInt = -1;
+            _lastTopFrameCat = null;
+            _lastPitchInt = -9999;
+            _lastRollInt = -9999;
+            _lastSASMode = (FlightSASMode)(-1);
+            _lastDirectorLocked = false;
+            _isDirectorLocked = false;
+            _cachedTopFormatted = string.Empty;
+            _cachedBtmFormatted = string.Empty;
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
                 return;
             }
 
-            _cachedHasVessel = true;
-            _cachedPitch = (float)context.Telemetry.Pitch;
-            _cachedRoll = (float)context.Telemetry.Roll;
-            _cachedHeading = (float)context.Telemetry.Heading;
+            float pitch = (float)telemetry.Pitch;
+            float roll = (float)telemetry.Roll;
+            float heading = (float)telemetry.Heading;
 
-            // 当选择 RealVessel3D 时，自动将烘焙器视图配置为 TailChase
-            if (_shipVisualMode == CenterShipVisualMode.RealVessel3D && Vessel3DService.Provider != null)
+            Texture tex3D = null;
+            if (ShipVisualMode == VesselAttitudeSphereWidget.CenterShipVisualMode.RealVessel3D && Vessel3DService.Provider != null)
             {
                 if (Vessel3DService.Provider.ViewMode != Vessel3DViewMode.TailChase)
                 {
                     Vessel3DService.Provider.ViewMode = Vessel3DViewMode.TailChase;
                 }
-                _cachedTex3D = Vessel3DService.Provider.Texture3D;
-            }
-            else
-            {
-                _cachedTex3D = null;
+                tex3D = Vessel3DService.Provider.Texture3D;
             }
 
-            int hInt = Mathf.RoundToInt(_cachedHeading) % 360;
+            int hInt = Mathf.RoundToInt(heading) % 360;
             if (hInt < 0) hInt += 360;
             var hook = NavBallHookService.Provider;
             string frameCat = hook?.ReferenceFrameCategory ?? "SURFACE";
-            bool hdgDirty = _lastHdgInt.Update(hInt);
-            bool catDirty = _lastTopFrameCat.Update(frameCat);
-            if (hdgDirty || catDirty)
+            if (hInt != _lastHdgInt || frameCat != _lastTopFrameCat)
             {
-                string hdgPart = (_headingToken == "{HDG}") ? CacheManager.FastHdg(hInt) : $"HDG {TelemetryTokenEngine.Evaluate(_headingToken, context.Telemetry)}";
+                _lastHdgInt = hInt;
+                _lastTopFrameCat = frameCat;
+                string hdgPart = (HeadingToken == "{HDG}") ? CacheManager.FastHdg(hInt) : $"HDG {TelemetryTokenEngine.Evaluate(HeadingToken, telemetry)}";
                 _cachedTopFormatted = $"{hdgPart} | {frameCat}";
             }
 
-            FlightSASMode curSASMode = context.Telemetry.CurrentSASMode;
-            bool sasActive = context.Telemetry.IsSASEnabled;
+            FlightSASMode curSASMode = telemetry.CurrentSASMode;
+            bool sasActive = telemetry.IsSASEnabled;
+            bool directorActive = false;
+            float deflX = 0f;
+            float deflY = 0f;
+
             if (!sasActive)
             {
-                _cachedDirectorActive = false;
                 _isDirectorLocked = false;
             }
             else
             {
-                string sasModeKey = GetSASModeKey(curSASMode);
+                string sasModeKey = VesselAttitudeSphereWidget.GetSASModeKey(curSASMode);
                 Vector3 targetDir = Vector3.forward;
                 bool isVis = false;
                 bool hasDir = false;
@@ -127,53 +183,80 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
                 if (!hasDir || !isVis)
                 {
-                    _cachedDirectorActive = false;
                     _isDirectorLocked = false;
                 }
                 else
                 {
-                    _cachedDirectorActive = true;
-                    float deflX = Mathf.Clamp(targetDir.x, -1f, 1f);
-                    float deflY = Mathf.Clamp(targetDir.y, -1f, 1f);
+                    directorActive = true;
+                    deflX = Mathf.Clamp(targetDir.x, -1f, 1f);
+                    deflY = Mathf.Clamp(targetDir.y, -1f, 1f);
                     float angError = Mathf.Atan2(Mathf.Sqrt(targetDir.x * targetDir.x + targetDir.y * targetDir.y), Mathf.Max(0.001f, targetDir.z)) * Mathf.Rad2Deg;
 
-                    bool targetLocked = _isDirectorLocked ? (angError <= 1.8f) : (angError <= 1.3f);
-                    _isDirectorLocked = targetLocked;
-                    _cachedDirectorLocked = targetLocked;
-                    _cachedDeflX = deflX;
-                    _cachedDeflY = deflY;
+                    _isDirectorLocked = _isDirectorLocked ? (angError <= 1.8f) : (angError <= 1.3f);
                 }
             }
 
-            int pInt = Mathf.RoundToInt(_cachedPitch);
-            int rInt = Mathf.RoundToInt(_cachedRoll);
-            bool pDirty = _lastPitchInt.Update(pInt);
-            bool rDirty = _lastRollInt.Update(rInt);
-            bool sasDirty = _lastSASMode.Update(curSASMode);
-            bool dirDirty = _lastDirectorLocked.Update(_isDirectorLocked);
-            if (pDirty || rDirty || sasDirty || dirDirty)
+            int pInt = Mathf.RoundToInt(pitch);
+            int rInt = Mathf.RoundToInt(roll);
+            if (pInt != _lastPitchInt || rInt != _lastRollInt || curSASMode != _lastSASMode || _isDirectorLocked != _lastDirectorLocked)
             {
-                string pStr = (_pitchToken == "{PITCH}") ? CacheManager.FastInt(pInt) : TelemetryTokenEngine.Evaluate(_pitchToken, context.Telemetry);
+                _lastPitchInt = pInt;
+                _lastRollInt = rInt;
+                _lastSASMode = curSASMode;
+                _lastDirectorLocked = _isDirectorLocked;
+
+                string pStr = (PitchToken == "{PITCH}") ? CacheManager.FastInt(pInt) : TelemetryTokenEngine.Evaluate(PitchToken, telemetry);
                 if (pStr.EndsWith("°")) pStr = pStr.Substring(0, pStr.Length - 1).Trim();
 
-                string rStr = (_rollToken == "{ROLL}") ? CacheManager.FastInt(rInt) : TelemetryTokenEngine.Evaluate(_rollToken, context.Telemetry);
+                string rStr = (RollToken == "{ROLL}") ? CacheManager.FastInt(rInt) : TelemetryTokenEngine.Evaluate(RollToken, telemetry);
                 if (rStr.EndsWith("°")) rStr = rStr.Substring(0, rStr.Length - 1).Trim();
 
-                string sasMode = (_sasToken == "{SAS:MODE}") ? GetSASModeDisplayText(curSASMode) : TelemetryTokenEngine.Evaluate(_sasToken, context.Telemetry);
+                string sasMode = (SasToken == "{SAS:MODE}") ? VesselAttitudeSphereWidget.GetSASModeDisplayText(curSASMode) : TelemetryTokenEngine.Evaluate(SasToken, telemetry);
 
                 string lockTag = _isDirectorLocked ? " [LOCK]" : "";
                 _cachedBtmFormatted = $"P {pStr}° R {rStr}° | {sasMode}{lockTag}";
             }
 
-            _lastPitch.Update(context.Telemetry.Pitch);
-            _lastRoll.Update(context.Telemetry.Roll);
-            _lastHeading.Update(context.Telemetry.Heading);
+            CurrentState = new VesselAttitudeSphereState
+            {
+                HasVessel = true,
+                Pitch = pitch,
+                Roll = roll,
+                Heading = heading,
+                Tex3D = tex3D,
+                TopFormatted = _cachedTopFormatted,
+                BottomFormatted = _cachedBtmFormatted,
+                DirectorActive = directorActive,
+                DirectorLocked = _isDirectorLocked,
+                DeflX = deflX,
+                DeflY = deflY
+            };
+        }
+    }
+
+    [AlwaysFullPower]
+    [FlightWidget("vessel_navball", "vessel_attitude_sphere", "attitude_sphere", Category = WidgetCategory.Navigation, DisplayName = "3D 飞船球形姿态仪", Description = "全新球形姿态仪：以真实 3D 飞船为中心，外层环绕 3D 姿态球体、人工地平标尺、SAS 目标飞行指引仪与全量导航矢量。", DefaultWidgetId = "nav.vessel_navball", DefaultX = 0f, DefaultY = 0f, IsSingleton = true, HighFrequency = true, AlwaysFullPower = true, ExactIds = new[] { "nav.vessel_navball", "nav.vessel_attitude_sphere", "core.vessel_navball", "core.vessel_attitude_sphere", "nav.attitude_sphere_3d" })]
+    public class VesselAttitudeSphereWidget : BaseNavballSphereWidget, IPointerClickHandler
+    {
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+
+        private readonly VesselAttitudeSphereLogic _logic = new VesselAttitudeSphereLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+
+        public enum CenterShipVisualMode
+        {
+            Procedural3D = 0,
+            RealVessel3D = 1,
+            TopDownSilhouette = 2
+        }
+
+        public override void OnDataHeartBeat(in FlightHeartbeatContext context)
+        {
+            base.OnDataHeartBeat(in context);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
-            base.OnUIDrawLoop(ref context);
-
             // 驱动 3D 姿态仪离屏相机渲染与脏标记复位 (仅在网格渲染管线下工作)
             if (!_isUsingRaymarch && _ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
@@ -194,17 +277,23 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 }
             }
 
-            if (!_cachedHasVessel) return;
+            base.OnUIDrawLoop(ref context);
+        }
 
-            ThemeConfig theme = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
+        protected override void OnRenderState()
+        {
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
+
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme;
 
             // 1. 中央飞船贴图与视图选择
             if (_shipRawImage != null)
             {
                 Texture targetTex = _shared3DSpacecraftTexture;
-                if (_shipVisualMode == CenterShipVisualMode.RealVessel3D && _cachedTex3D != null)
+                if (_shipVisualMode == CenterShipVisualMode.RealVessel3D && state.Tex3D != null)
                 {
-                    targetTex = _cachedTex3D;
+                    targetTex = state.Tex3D;
                 }
                 else if (_shipVisualMode == CenterShipVisualMode.TopDownSilhouette)
                 {
@@ -223,7 +312,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             {
                 if (_isChasePerspective)
                 {
-                    float pitchRad = _cachedPitch * Mathf.Deg2Rad;
+                    float pitchRad = state.Pitch * Mathf.Deg2Rad;
                     float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.5f), 0.72f, 1.0f);
                     if (_lastShipScaleY.Update(foreshortenY))
                     {
@@ -237,14 +326,14 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     {
                         _centerShipRoot.localScale = Vector3.one;
                     }
-                    _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, -_cachedRoll);
+                    _centerShipRoot.localRotation = Quaternion.Euler(0f, 0f, -state.Roll);
                 }
             }
 
             // 3. 飞行指引仪 Target Flight Director
             if (_flightDirectorRoot != null)
             {
-                if (!_cachedDirectorActive)
+                if (!state.DirectorActive)
                 {
                     if (_flightDirectorRoot.gameObject.activeSelf) _flightDirectorRoot.gameObject.SetActive(false);
                 }
@@ -254,17 +343,17 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
                     float s = CurrentDpiScale;
                     float maxDeflection = 22f * s;
-                    Vector2 targetPos = _cachedDirectorLocked
+                    Vector2 targetPos = state.DirectorLocked
                         ? new Vector2(0f, 14f * s)
-                        : new Vector2(_cachedDeflX * maxDeflection, 14f * s + _cachedDeflY * maxDeflection);
+                        : new Vector2(state.DeflX * maxDeflection, 14f * s + state.DeflY * maxDeflection);
 
-                    float dt = context.DeltaTime;
+                    float dt = Time.unscaledDeltaTime;
                     float lerpT = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 14.0f);
                     _flightDirectorRoot.anchoredPosition = Vector2.Lerp(_flightDirectorRoot.anchoredPosition, targetPos, lerpT);
 
-                    if (_flightDirectorRawImage != null)
+                    if (_flightDirectorRawImage != null && theme != null)
                     {
-                        Color targetCol = _cachedDirectorLocked
+                        Color targetCol = state.DirectorLocked
                             ? WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f)
                             : WidgetStyleManager.WithAlpha(theme.AccentWarning, 0.90f);
                         if (_flightDirectorRawImage.color != targetCol)
@@ -274,16 +363,22 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
 
             // 4. 顶部航向与参考系标牌更新
-            if (_lastTopText.Update(_cachedTopFormatted))
+            if (_lastTopText.Update(state.TopFormatted))
             {
-                SetTextIfChanged(_topBadgeText, _cachedTopFormatted);
+                SetTextIfChanged(_topBadgeText, state.TopFormatted);
             }
 
             // 5. 底部俯仰/滚转与 SAS 状态更新
-            if (_lastBottomText.Update(_cachedBtmFormatted))
+            if (_lastBottomText.Update(state.BottomFormatted))
             {
-                SetTextIfChanged(_bottomBadgeText, _cachedBtmFormatted);
+                SetTextIfChanged(_bottomBadgeText, state.BottomFormatted);
             }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
         }
 
         // UI 视图节点
@@ -440,6 +535,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     _shipVisualMode = CenterShipVisualMode.Procedural3D;
                 }
             }
+
+            _logic.HeadingToken = _headingToken;
+            _logic.PitchToken = _pitchToken;
+            _logic.RollToken = _rollToken;
+            _logic.SasToken = _sasToken;
+            _logic.ShipVisualMode = _shipVisualMode;
 
             EnsureSharedTextures();
 
@@ -1013,6 +1114,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     // 点击飞船轮播视觉样式: Procedural3D -> RealVessel3D -> TopDownSilhouette
                     _shipVisualMode = (CenterShipVisualMode)(((int)_shipVisualMode + 1) % 3);
+                    _logic.ShipVisualMode = _shipVisualMode;
                 }
                 else
                 {
@@ -1064,7 +1166,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
         }
 
-        private static string GetSASModeKey(FlightSASMode mode)
+        internal static string GetSASModeKey(FlightSASMode mode)
         {
             switch (mode)
             {
@@ -1082,7 +1184,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
         }
 
-        private static string GetSASModeDisplayText(FlightSASMode mode)
+        internal static string GetSASModeDisplayText(FlightSASMode mode)
         {
             switch (mode)
             {
