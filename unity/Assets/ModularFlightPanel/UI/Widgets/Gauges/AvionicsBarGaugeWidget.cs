@@ -218,6 +218,9 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly AvionicsBarGaugeLogic _logic = new AvionicsBarGaugeLogic();
         protected override IWidgetLogic LogicCore => _logic;
 
+        private readonly Cached<string> _lastValStr = new Cached<string>(string.Empty);
+        private readonly CachedFloat _lastFillHeight = new CachedFloat(-9999f, 0.05f);
+
         private BarGaugeKind _kind;
 
         // 核心轨道与背景 (Track)
@@ -649,10 +652,13 @@ namespace ModularFlightPanel.UI.Widgets
             float actY = (-usableH * 0.5f) + (usableH * state.FillFraction);
             float fillHeight = usableH * state.FillFraction;
             if (_actPointerRt != null) _actPointerRt.SetAnchoredPositionSafe(new Vector2(pointerX, actY));
-            if (_fillBarRt != null) _fillBarRt.sizeDelta = new Vector2(-4f * s, fillHeight);
-            if (_traceRt != null) _traceRt.sizeDelta = new Vector2(1.2f * s, fillHeight);
+            if (_lastFillHeight.Update(fillHeight))
+            {
+                if (_fillBarRt != null) _fillBarRt.sizeDelta = new Vector2(-4f * s, fillHeight);
+                if (_traceRt != null) _traceRt.sizeDelta = new Vector2(1.2f * s, fillHeight);
+            }
 
-            if (_topTagValue != null)
+            if (_lastValStr.Update(state.ValueStr) && _topTagValue != null)
             {
                 _topTagValue.SetTextSafe(state.ValueStr);
             }
@@ -764,6 +770,8 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnResetPrivateCache();
             _logic.Reset();
+            _lastValStr.Reset(string.Empty);
+            _lastFillHeight.Reset(-9999f);
         }
 
         protected override void OnDestroy()
