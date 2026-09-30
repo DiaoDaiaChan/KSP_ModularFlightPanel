@@ -54,6 +54,7 @@ namespace ModularFlightPanel.UI
         public bool DeclaresHighFrequency;        // [FlightWidget(..., HighFrequency = true)]
         public PropertyDeclarationSyntax TierProperty;
         public PropertyDeclarationSyntax HeartBeatTierProperty;
+        public PropertyDeclarationSyntax LogicCoreProperty;
         public MethodDeclarationSyntax ThemeMethod;
         public MethodDeclarationSyntax TelemetryMethod;
         public MethodDeclarationSyntax DataHeartBeatMethod;
@@ -209,6 +210,7 @@ namespace ModularFlightPanel.UI
 
                     node.TierProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.TierProperty);
                     node.HeartBeatTierProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.HeartBeatTierProperty);
+                    node.LogicCoreProperty = RoslynAstHelper.GetProperty(cd, WidgetSpecRules.LogicCoreProperty);
                     node.ThemeMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.ThemeMethod);
                     node.TelemetryMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.TelemetryMethod);
                     node.DataHeartBeatMethod = RoslynAstHelper.GetMethod(cd, WidgetSpecRules.DataHeartBeatMethod);
@@ -1090,6 +1092,9 @@ namespace ModularFlightPanel.UI
 
             // ── SPEC-010 高频生命周期禁止无守卫堆分配、字符串插值与 UGUI 几何写入 ──
             ScanHotLoopUnguardedOperation(node, report);
+
+            // ── SPEC-012 业务解耦大脑契约（必须显式重写 LogicCore 属性并接入 WidgetLogic<TState>）──
+            ScanWidgetLogicContract(node, graph, report);
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -1899,6 +1904,98 @@ namespace ModularFlightPanel.UI
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════════
+        // SPEC-012 业务解耦大脑契约：所有具体组件必须将物理/算法推算收拢至 WidgetLogic<TState>
+        // ══════════════════════════════════════════════════════════════════════════════════════════
+
+        private static void ScanWidgetLogicContract(WidgetClassNode node, WidgetClassGraph graph, WidgetSourceAuditReport report)
+        {
+            // 抽象类与契约根不参与具体组件大脑要求
+            if (node.IsAbstract || node.IsContractRoot) return;
+
+            // 1. 查找 LogicCore 声明者（必须由本类或继承链上的组件类提供）
+            var declarer = WidgetClassGraph.FindDeclarer(node, n => n.LogicCoreProperty != null);
+            if (declarer == null)
+            {
+                Add(report, node.FileName, WidgetSpecRules.WidgetLogicContract, "ERROR", RoslynAstHelper.GetLine(node.Decl),
+                    "未声明或重写 " + WidgetSpecRules.LogicCoreProperty + " 业务解耦大脑属性（根据 SPEC-012 航电规范，组件自身仅作为 UI 容器，所有遥测计算与物理业务必须收拢至 "
+                    + WidgetSpecRules.WidgetLogicBaseType + "<TState> 纯业务大脑）");
+                return;
+            }
+
+            // 2. 校验 LogicCore 属性修饰符（必须显式包含 override）
+            if (node.LogicCoreProperty != null)
+            {
+                int line = RoslynAstHelper.GetLine(node.LogicCoreProperty);
+                if (!RoslynAstHelper.HasModifier(node.LogicCoreProperty, SyntaxKind.OverrideKeyword))
+                {
+                    Add(report, node.FileName, WidgetSpecRules.WidgetLogicContract, "ERROR", line,
+                        WidgetSpecRules.LogicCoreProperty + " 属性必须显式使用 override 修饰符，禁止隐藏基类属性");
+                }
+
+                // 3. 校验状态快照 TState 是否为 0 GC 纯值结构体 struct
+                ValidateLogicStateStruct(node, line, report);
+            }
+        }
+
+        private static void ValidateLogicStateStruct(WidgetClassNode node, int line, WidgetSourceAuditReport report)
+        {
+            // 优先通过语义模型解析
+            if (node.SemanticModel != null && node.LogicCoreProperty != null)
+            {
+                var expr = node.LogicCoreProperty.ExpressionBody?.Expression;
+                if (expr != null)
+                {
+                    var typeInfo = node.SemanticModel.GetTypeInfo(expr);
+                    if (typeInfo.Type is INamedTypeSymbol namedSymbol)
+                    {
+                        for (var current = namedSymbol; current != null; current = current.BaseType)
+                        {
+                            if (string.Equals(current.Name, WidgetSpecRules.WidgetLogicBaseType, StringComparison.Ordinal) && current.TypeArguments.Length > 0)
+                            {
+                                var stateType = current.TypeArguments[0];
+                                if (!stateType.IsValueType && stateType.TypeKind == TypeKind.Class)
+                                {
+                                    Add(report, node.FileName, WidgetSpecRules.WidgetLogicContract, "ERROR", line,
+                                        "WidgetLogic 状态快照 " + stateType.Name + " 必须为 0 GC 纯值结构体 struct，严禁使用 class 作为状态实参");
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 语法 fallback 检查：在语法树中寻找继承 WidgetLogic<TState> 的类声明
+            if (node.Decl?.SyntaxTree != null)
+            {
+                var logicClasses = node.Decl.SyntaxTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>()
+                    .Where(c => c.BaseList != null && c.BaseList.Types.Any(t => t.ToString().Contains(WidgetSpecRules.WidgetLogicBaseType)));
+
+                foreach (var logicClass in logicClasses)
+                {
+                    var baseTypeSyntax = logicClass.BaseList.Types.FirstOrDefault(t => t.ToString().Contains(WidgetSpecRules.WidgetLogicBaseType));
+                    if (baseTypeSyntax == null) continue;
+
+                    string typeStr = baseTypeSyntax.Type.ToString();
+                    int start = typeStr.IndexOf('<');
+                    int end = typeStr.LastIndexOf('>');
+                    if (start > 0 && end > start)
+                    {
+                        string stateName = typeStr.Substring(start + 1, end - start - 1).Trim();
+                        // 检查语法树中是否定义了该名字的 class
+                        var classDecl = node.Decl.SyntaxTree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>()
+                            .FirstOrDefault(c => c.Identifier.Text == stateName);
+                        if (classDecl != null)
+                        {
+                            Add(report, node.FileName, WidgetSpecRules.WidgetLogicContract, "ERROR", line,
+                                "WidgetLogic 状态快照 " + stateName + " 必须为 0 GC 纯值结构体 struct，严禁使用 class 作为状态实参");
+                        }
+                    }
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════════════════════
         // 文件级规则：SPEC-006 颜色字面量 / SPEC-007 场景查询
         // ══════════════════════════════════════════════════════════════════════════════════════════
 
@@ -2185,6 +2282,18 @@ namespace ModularFlightPanel.UI
             var dhbTimeDeltaReport = Scan(new[] { MakeFile("DhbTimeDelta.cs", dhbTimeDeltaSrc) });
             check(dhbTimeDeltaReport.CountByRule(WidgetSpecRules.DataHeartBeatContract) == 1, "SPEC-004C OnDataHeartBeat 直接使用 Time.deltaTime 未拦下");
 
+            // ── 5c. SPEC-012 WidgetLogic 业务解耦大脑契约测试 ──
+            string noLogicSrc = compliant.Replace("        protected override IWidgetLogic LogicCore => _logic;\n", string.Empty);
+            var noLogicReport = Scan(new[] { MakeFile("NoLogic.cs", noLogicSrc) });
+            check(noLogicReport.CountByRule(WidgetSpecRules.WidgetLogicContract) == 1, "SPEC-012 缺失 LogicCore 未拦下");
+
+            string noOverrideLogicSrc = compliant.Replace("protected override IWidgetLogic LogicCore", "protected IWidgetLogic LogicCore");
+            var noOverrideReport = Scan(new[] { MakeFile("NoOverrideLogic.cs", noOverrideLogicSrc) });
+            check(noOverrideReport.CountByRule(WidgetSpecRules.WidgetLogicContract) == 1, "SPEC-012 LogicCore 缺少 override 未拦下");
+
+            string classStateSrc = compliant.Replace("public struct FakeState", "public class FakeState");
+            var classStateReport = Scan(new[] { MakeFile("ClassState.cs", classStateSrc) });
+            check(classStateReport.CountByRule(WidgetSpecRules.WidgetLogicContract) == 1, "SPEC-012 TState 为 class 未拦下");
 
             // ── 6. SPEC-002 阶梯：缺失 / 强转 / 注释伪造 / 块状 get / 字段回填 / 满帧声明 ──
             var tierMissing = Scan(new[] { MakeFile("TierMissing.cs", compliant.Replace("        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n", string.Empty)) });
@@ -2629,9 +2738,17 @@ namespace ModularFlightPanel.UI
                  + "namespace N\n"
                  + "{\n"
                  + SyntheticTierEnumLine
+                 + "    public struct FakeState { public float Value; }\n"
+                 + "    public class FakeLogic : WidgetLogic<FakeState>\n"
+                 + "    {\n"
+                 + "        public override void Reset() { CurrentState = default; }\n"
+                 + "        public override void Evaluate(IFlightTelemetry t, float dt) { }\n"
+                 + "    }\n"
                  + "    [FlightWidget(\"fake_widget\")]\n"
                  + "    public class FakeWidget : BaseFlightWidget\n"
                  + "    {\n"
+                 + "        private readonly FakeLogic _logic = new FakeLogic();\n"
+                 + "        protected override IWidgetLogic LogicCore => _logic;\n"
                  + "        private readonly Cached<float> _cachedTest = new Cached<float>(0f);\n"
                  + "        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;\n"
                  + "        public override void ApplyTheme(ThemeConfig theme) { }\n"

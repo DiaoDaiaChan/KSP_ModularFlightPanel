@@ -43,6 +43,7 @@ namespace ModularFlightPanel.UI.Auditing
         public bool HasAutoCardFrame { get; set; }
         public bool UsesMicroControlsDsl { get; set; }
         public bool UsesImperativeUiFactory { get; set; }
+        public bool HasWidgetLogicCore { get; set; }
         public List<string> MissingModernFeatures { get; } = new List<string>();
 
         // ── 航电代码质量与反模式治理指标 (Code Reuse & Anti-Pattern Metrics) ──
@@ -101,6 +102,7 @@ namespace ModularFlightPanel.UI.Auditing
         public int TotalReachableHotMethodsScanned => Items.Sum(i => i.ReachableHotMethodCount);
         public int ZeroRawGameObjectCount => Items.Count(i => i.RawGameObjectAllocs == 0);
         public int TotalRawGameObjectCount => Items.Sum(i => i.RawGameObjectAllocs);
+        public int WidgetLogicAdoptionCount => Items.Count(i => i.HasWidgetLogicCore);
 
         public List<WidgetModernizationItem> Items { get; } = new List<WidgetModernizationItem>();
 
@@ -226,6 +228,7 @@ namespace ModularFlightPanel.UI.Auditing
             // 3. 将单遍收集的结果赋值到明细项
             item.HasBaseSize = walker.HasBaseSize;
             item.HasAutoCardFrame = walker.HasAutoCardFrame;
+            item.HasWidgetLogicCore = walker.HasWidgetLogicCore;
             item.UsesMicroControlsDsl = walker.MicroControlDeclarationCount > 0 || walker.MicroControlInvocationCount > 0;
             item.UsesImperativeUiFactory = walker.ImperativeUiFactoryCalls > 0;
             item.UsesStandardizedChannels = walker.StandardizedChannelCalls > 0;
@@ -243,6 +246,11 @@ namespace ModularFlightPanel.UI.Auditing
             foreach (var mName in walker.RedundantFormattingMethodNames)
             {
                 item.StandardizationSuggestions.Add($"Contains private {mName} (migrate to AvionicsFormatting / BaseFlightWidget)");
+            }
+
+            if (!item.HasWidgetLogicCore)
+            {
+                item.StandardizationSuggestions.Add($"未接入 WidgetLogic 业务解耦架构 (未重写 protected override IWidgetLogic LogicCore; 违反 {WidgetSpecRules.WidgetLogicContract})");
             }
 
             if (item.HasBannedDockSyncCall)
@@ -304,6 +312,7 @@ namespace ModularFlightPanel.UI.Auditing
                 if (item.UsesImperativeUiFactory) item.MissingModernFeatures.Add("Uses imperative UIFactory layout");
                 if (!item.UsesMicroControlsDsl) item.MissingModernFeatures.Add("Missing micro-controls DSL");
                 if (!item.HasAutoCardFrame) item.MissingModernFeatures.Add("Missing AutoCreateCardFrame");
+                if (!item.HasWidgetLogicCore) item.MissingModernFeatures.Add("Missing LogicCore override");
             }
 
             // 6. 符号级高频调用图闭包求值：直接基于 Walker 收集的符号有向边与指标字典进行 O(V+E) BFS 闭包求解
@@ -376,6 +385,7 @@ namespace ModularFlightPanel.UI.Auditing
             // 类级特征指标
             public bool HasBaseSize { get; private set; }
             public bool HasAutoCardFrame { get; private set; }
+            public bool HasWidgetLogicCore { get; private set; }
             public int MicroControlDeclarationCount { get; private set; }
             public int MicroControlInvocationCount { get; private set; }
             public int ImperativeUiFactoryCalls { get; private set; }
@@ -429,7 +439,7 @@ namespace ModularFlightPanel.UI.Auditing
 
             public override void VisitPropertyDeclaration(PropertyDeclarationSyntax node)
             {
-                // 1. 契约属性检测 (BaseSize override / AutoCreateCardFrame)
+                // 1. 契约属性检测 (BaseSize override / AutoCreateCardFrame / LogicCore override)
                 if (node.Identifier.Text == WidgetSpecRules.BaseSizeProperty && RoslynAstHelper.HasModifier(node, SyntaxKind.OverrideKeyword))
                 {
                     HasBaseSize = true;
@@ -437,6 +447,10 @@ namespace ModularFlightPanel.UI.Auditing
                 if (node.Identifier.Text == WidgetSpecRules.AutoCardFrameProperty)
                 {
                     HasAutoCardFrame = true;
+                }
+                if (node.Identifier.Text == WidgetSpecRules.LogicCoreProperty && RoslynAstHelper.HasModifier(node, SyntaxKind.OverrideKeyword))
+                {
+                    HasWidgetLogicCore = true;
                 }
 
                 // 2. 微控件属性声明
@@ -1211,6 +1225,7 @@ namespace ModularFlightPanel.UI.Auditing
             sb.AppendLine("-----------------------------------------------------------------------");
             sb.AppendLine("    航电代码精简与标准化治理质量雷达 (Cleanliness & Anti-Pattern Radar)");
             sb.AppendLine("-----------------------------------------------------------------------");
+            sb.AppendLine($"WidgetLogic 业务解耦采纳率:   {report.WidgetLogicAdoptionCount}/{report.TotalCount} 个组件已接入 LogicCore 解耦大脑");
             sb.AppendLine($"标准通道提取率:               {report.StandardizedChannelAdoptionCount}/{report.TotalCount} 个组件已接入 GetTemplateChannel 系列");
             sb.AppendLine($"零私有模板解析达成率:         {(report.TotalCount - report.RedundantTemplateParserCount)}/{report.TotalCount} 个组件已消除私有 ParseCustomTemplate");
             sb.AppendLine($"统一格式化套件复用率:         {(report.TotalCount - report.RedundantFormattingMethodCount)}/{report.TotalCount} 个组件已接入 AvionicsFormatting / AvionicsFastFormat");
@@ -1477,6 +1492,36 @@ namespace N {
             var customCtrlGraph = WidgetClassGraph.Build(customCtrlFiles, customCtrlCtx);
             var customCtrlReport = Scan(new WidgetDiscoveryResult { Status = WidgetDiscoveryStatus.Ok, Graph = customCtrlGraph, SemanticContext = customCtrlCtx });
             check(customCtrlReport.Items.Count == 1 && customCtrlReport.Items[0].UsesMicroControlsDsl, "微控件 ITelemetryBindableControl 语义接口继承识别失败");
+
+            // 9. WidgetLogic 契约重写穿透识别测试
+            string logicWidgetSrc = @"
+using System;
+using UnityEngine;
+namespace ModularFlightPanel.UI.Framework {
+    public interface IWidgetLogic {}
+}
+namespace N {
+    using ModularFlightPanel.UI.Framework;
+    public class FakeLogic : IWidgetLogic {}
+    enum WidgetRefreshTier { Standard }
+    [FlightWidget(""logic_widget"")]
+    public class LogicWidget : BaseFlightWidget {
+        public override Vector2 BaseSize => new Vector2(100, 100);
+        public override bool AutoCreateCardFrame => true;
+        public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Standard;
+        private readonly FakeLogic _logic = new FakeLogic();
+        protected override IWidgetLogic LogicCore => _logic;
+        public override void ApplyTheme(ThemeConfig theme) {}
+        public override void OnUpdateTelemetry(IFlightTelemetry t) {}
+        protected override void OnDestroy() { base.OnDestroy(); }
+    }
+}";
+            var logicFiles = new List<WidgetSourceFile> { new WidgetSourceFile { Name = "LogicWidget.cs", Path = "LogicWidget.cs", Text = logicWidgetSrc } };
+            var logicCtx = SemanticCompilationProvider.BuildCompilation(logicFiles);
+            var logicGraph = WidgetClassGraph.Build(logicFiles, logicCtx);
+            var logicReport = Scan(new WidgetDiscoveryResult { Status = WidgetDiscoveryStatus.Ok, Graph = logicGraph, SemanticContext = logicCtx });
+            check(logicReport.Items.Count == 1 && logicReport.Items[0].HasWidgetLogicCore, "WidgetLogic 契约 LogicCore override 漏检");
+            check(logicReport.WidgetLogicAdoptionCount == 1, "WidgetLogic 采纳数统计不符");
 
             LastSelfTestCaseCount = cases;
             return failures;

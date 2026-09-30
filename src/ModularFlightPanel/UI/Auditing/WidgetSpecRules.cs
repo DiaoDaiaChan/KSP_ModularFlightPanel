@@ -28,9 +28,10 @@ namespace ModularFlightPanel.UI
         public const string WidgetPrivateCacheContract = "MFP-SPEC-009"; // 必须声明或使用智能私有缓存与死区脏检查 (Cached<T> / CachedFloat / CachedDouble 等)
         public const string HotLoopUnguardedOperation = "MFP-SPEC-010";   // 高频生命周期禁止无守卫堆分配、字符串插值与 UGUI 几何写入
         public const string InternalControlOverlap = "MFP-SPEC-011"; // 禁止组件内部微控件与图元几何重叠冲突 (Internal Control Spatial Collision & Overlap)
+        public const string WidgetLogicContract = "MFP-SPEC-012"; // 必须声明并重写 LogicCore 业务解耦大脑 (WidgetLogic<TState>)
         public const string TelemetryAssemblyWarning = "MFP-WARN-TELEM-ASSEMBLY"; // 微控件未支持标准化遥测装配警告
 
-        public const int RuleCount = 14;
+        public const int RuleCount = 15;
 
         /// <summary>审计内核自身问题（发现层失效 / 判定依据缺失）的统一报告名</summary>
         public const string KernelReportName = "AuditKernel";
@@ -90,6 +91,15 @@ namespace ModularFlightPanel.UI
 
         /// <summary>生命周期方法名（override 且必须回链 base）</summary>
         public const string LifecycleMethod = "OnDestroy";
+
+        /// <summary>业务解耦大脑属性名 (SPEC-012)</summary>
+        public const string LogicCoreProperty = "LogicCore";
+
+        /// <summary>业务解耦大脑接口类型名 (SPEC-012)</summary>
+        public const string WidgetLogicInterfaceType = "IWidgetLogic";
+
+        /// <summary>业务解耦大脑泛型基类类型名 (SPEC-012)</summary>
+        public const string WidgetLogicBaseType = "WidgetLogic";
 
         /// <summary>
         /// SPEC-009 智能私有缓存与死区脏检查合法类型清单（声明为字段或显式实例化调用）：
