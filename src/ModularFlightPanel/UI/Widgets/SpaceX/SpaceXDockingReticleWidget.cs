@@ -4,10 +4,155 @@ using UnityEngine;
 using UnityEngine.UI;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI.Widgets.SpaceX
 {
+    /// <summary>
+    /// SpaceX 空间站对接光标 HUD 零-GC遥测快照 (MFP-SPEC-012)
+    /// </summary>
+    public struct SpaceXDockingReticleState : IEquatable<SpaceXDockingReticleState>
+    {
+        public bool HasVessel;
+        public string RollText;
+        public string PitchText;
+        public string YawText;
+        public string RangeText;
+        public string RateText;
+        public string XyzText;
+        public Vector2 CrossPos;
+        public int ThrusterState;
+
+        public bool Equals(SpaceXDockingReticleState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   ThrusterState == other.ThrusterState &&
+                   CrossPos == other.CrossPos &&
+                   string.Equals(RollText, other.RollText, StringComparison.Ordinal) &&
+                   string.Equals(PitchText, other.PitchText, StringComparison.Ordinal) &&
+                   string.Equals(YawText, other.YawText, StringComparison.Ordinal) &&
+                   string.Equals(RangeText, other.RangeText, StringComparison.Ordinal) &&
+                   string.Equals(RateText, other.RateText, StringComparison.Ordinal) &&
+                   string.Equals(XyzText, other.XyzText, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj) => obj is SpaceXDockingReticleState other && Equals(other);
+        public override int GetHashCode() => (HasVessel, ThrusterState, CrossPos).GetHashCode();
+    }
+
+    /// <summary>
+    /// SpaceX 空间站对接光标 HUD 业务解耦大脑 (MFP-SPEC-012)
+    /// </summary>
+    public class SpaceXDockingReticleLogic : WidgetLogic<SpaceXDockingReticleState>
+    {
+        public string RangeToken { get; set; } = "{ALT:AGL:DIST}";
+        public string RateToken { get; set; }
+        public string XyzTemplate { get; set; } = "X {0:F1}m\nY {1:F1}m\nZ {2:F1}m";
+        public float DpiScale { get; set; } = 1f;
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            float s = DpiScale > 0.001f ? DpiScale : 1f;
+            string roll;
+            string pitch;
+            string yaw;
+            string range;
+            string rate;
+            string xyz;
+            Vector2 crossPos;
+
+            // 1. 三轴姿态读数 (锁定目标时优先指示对齐偏差，未锁定时指示载具姿态)
+            if (telemetry.HasTarget)
+            {
+                roll = $"{telemetry.TargetRollAlignment:+0.0;-0.0;0.0}°";
+                pitch = $"{telemetry.TargetPitchAlignment:+0.0;-0.0;0.0}°";
+                yaw = $"{telemetry.TargetYawAlignment:+0.0;-0.0;0.0}°";
+
+                double dist = telemetry.TargetDistance;
+                range = dist >= 1000.0 ? $"{(dist * 0.001):F2} km" : $"{dist:F1} m";
+
+                float closeRate = telemetry.TargetClosingSpeed;
+                string sign = closeRate > 0.001f ? "+" : "";
+                rate = $"{sign}{closeRate:F2} m/s";
+
+                float xOff = telemetry.TargetDeviationX;
+                float yOff = telemetry.TargetDeviationY;
+                float zOff = telemetry.TargetDeviationZ;
+                string tmpl = !string.IsNullOrEmpty(XyzTemplate) ? XyzTemplate : "X {0:F1}m\nY {1:F1}m\nZ {2:F1}m";
+                xyz = string.Format(tmpl, xOff, yOff, zOff);
+
+                float maxR = 38f * s;
+                float ox = Mathf.Clamp(xOff * 2.5f * s, -maxR, maxR);
+                float oy = Mathf.Clamp(yOff * 2.5f * s, -maxR, maxR);
+                crossPos = new Vector2(ox, oy);
+            }
+            else
+            {
+                roll = $"{telemetry.Roll:F1}°";
+                pitch = $"{telemetry.Pitch:F1}°";
+                yaw = $"{telemetry.Heading:F1}°";
+
+                if (!string.IsNullOrEmpty(RangeToken))
+                {
+                    range = TelemetryTokenEngine.Evaluate(RangeToken, telemetry);
+                }
+                else
+                {
+                    double alt = telemetry.AltitudeAGL;
+                    range = alt >= 1000.0 ? $"{(alt * 0.001):F2} km" : $"{alt:F0} m";
+                }
+
+                if (!string.IsNullOrEmpty(RateToken))
+                {
+                    rate = TelemetryTokenEngine.Evaluate(RateToken, telemetry);
+                }
+                else
+                {
+                    double vsi = telemetry.VerticalSpeed;
+                    rate = Math.Abs(vsi) >= 100.0 ? $"{(vsi * 0.001):F2} km/s" : $"{vsi:F2} m/s";
+                }
+
+                xyz = "NO TARGET\nLOCKED";
+                crossPos = Vector2.zero;
+            }
+
+            // 2. RCS 喷管脉冲指示器 (融合姿态回转与 X/Y 平移操纵)
+            int tState = 0;
+            if (telemetry.IsRCSEnabled)
+            {
+                if (telemetry.PitchInput > 0.05f || telemetry.YInput > 0.05f) tState |= 1;
+                if (telemetry.PitchInput < -0.05f || telemetry.YInput < -0.05f) tState |= 2;
+                if (telemetry.YawInput < -0.05f || telemetry.RollInput < -0.05f || telemetry.XInput < -0.05f) tState |= 4;
+                if (telemetry.YawInput > 0.05f || telemetry.RollInput > 0.05f || telemetry.XInput > 0.05f) tState |= 8;
+            }
+
+            CurrentState = new SpaceXDockingReticleState
+            {
+                HasVessel = true,
+                RollText = roll,
+                PitchText = pitch,
+                YawText = yaw,
+                RangeText = range,
+                RateText = rate,
+                XyzText = xyz,
+                CrossPos = crossPos,
+                ThrusterState = tState
+            };
+        }
+    }
+
     /// <summary>
     /// SpaceX 载人龙飞船 ISS 空间站对接光标 HUD (SpaceX Docking Reticle & Attitude Alignment HUD)
     /// 包含：极简同心双环准星、十字对准线、3轴姿态角与偏差率 (ROLL / PITCH / YAW)、
@@ -55,7 +200,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private Image _thrusterLeft;
         private Image _thrusterRight;
 
-        // 脏数据缓存与双轨快照
+        // 脏数据缓存与双轨快照 (MFP-SPEC-009)
         private readonly Cached<string> _lastRoll = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastPitch = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastYaw = new Cached<string>(string.Empty);
@@ -64,14 +209,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private readonly Cached<string> _lastXyz = new Cached<string>(string.Empty);
         private readonly Cached<int> _lastThrusterState = new Cached<int>(-1);
 
-        private string _pendingRoll = string.Empty;
-        private string _pendingPitch = string.Empty;
-        private string _pendingYaw = string.Empty;
-        private string _pendingRange = string.Empty;
-        private string _pendingRate = string.Empty;
-        private string _pendingXyz = string.Empty;
-        private Vector2 _pendingCrossPos = Vector2.zero;
-        private int _pendingThrusterState = 0;
+        // 业务大脑 (MFP-SPEC-012)
+        private readonly SpaceXDockingReticleLogic _logic = new SpaceXDockingReticleLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // CustomTemplate 自定义通道
         private string _rollLabelText = "ROLL";
@@ -97,6 +237,11 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _rangeToken = GetTemplateChannel("RANGE_TOKEN", "{ALT:AGL:DIST}");
             _rateToken = GetTemplateChannel("RATE_TOKEN", null);
             _xyzTemplate = GetTemplateChannel("XYZ_TEMPLATE", "X {0:F1}m\nY {1:F1}m\nZ {2:F1}m").Replace("\\n", "\n");
+
+            _logic.RangeToken = _rangeToken;
+            _logic.RateToken = _rateToken;
+            _logic.XyzTemplate = _xyzTemplate;
+            _logic.DpiScale = s;
 
             Vector2 panelSize = new Vector2(220f * s, 220f * s);
             RectTransform.sizeDelta = panelSize;
@@ -193,7 +338,6 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             _centerCrossV = v.GetComponent<Image>();
 
             // 中心瞄准小微标圆
-            // 中心瞄准小微标圆
             GameObject dot = UIFactory.CreatePanel(crossRoot.transform, "CenterDot", new Vector2(6f * s, 6f * s), Vector2.zero, style.GetMeterColor(MeterStyleRole.Primary, theme));
             _centerReticleRing = dot.GetComponent<Image>();
         }
@@ -283,120 +427,54 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel) return;
-            float s = CurrentDpiScale;
-
-            // 1. 三轴姿态读数 (锁定目标时优先指示对齐偏差，未锁定时指示载具姿态)
-            if (telemetry.HasTarget)
-            {
-                _pendingRoll = $"{telemetry.TargetRollAlignment:+0.0;-0.0;0.0}°";
-                _pendingPitch = $"{telemetry.TargetPitchAlignment:+0.0;-0.0;0.0}°";
-                _pendingYaw = $"{telemetry.TargetYawAlignment:+0.0;-0.0;0.0}°";
-
-                double dist = telemetry.TargetDistance;
-                _pendingRange = dist >= 1000.0 ? $"{(dist * 0.001):F2} km" : $"{dist:F1} m";
-
-                float rate = telemetry.TargetClosingSpeed;
-                string sign = rate > 0.001f ? "+" : "";
-                _pendingRate = $"{sign}{rate:F2} m/s";
-
-                float xOff = telemetry.TargetDeviationX;
-                float yOff = telemetry.TargetDeviationY;
-                float zOff = telemetry.TargetDeviationZ;
-                _pendingXyz = string.Format(_xyzTemplate, xOff, yOff, zOff);
-
-                float maxR = 38f * s;
-                float ox = Mathf.Clamp(xOff * 2.5f * s, -maxR, maxR);
-                float oy = Mathf.Clamp(yOff * 2.5f * s, -maxR, maxR);
-                _pendingCrossPos = new Vector2(ox, oy);
-            }
-            else
-            {
-                _pendingRoll = $"{telemetry.Roll:F1}°";
-                _pendingPitch = $"{telemetry.Pitch:F1}°";
-                _pendingYaw = $"{telemetry.Heading:F1}°";
-
-                if (!string.IsNullOrEmpty(_rangeToken))
-                {
-                    _pendingRange = TelemetryTokenEngine.Evaluate(_rangeToken, telemetry);
-                }
-                else
-                {
-                    double alt = telemetry.AltitudeAGL;
-                    _pendingRange = alt >= 1000.0 ? $"{(alt * 0.001):F2} km" : $"{alt:F0} m";
-                }
-
-                if (!string.IsNullOrEmpty(_rateToken))
-                {
-                    _pendingRate = TelemetryTokenEngine.Evaluate(_rateToken, telemetry);
-                }
-                else
-                {
-                    double vsi = telemetry.VerticalSpeed;
-                    _pendingRate = Math.Abs(vsi) >= 100.0 ? $"{(vsi * 0.001):F2} km/s" : $"{vsi:F2} m/s";
-                }
-
-                _pendingXyz = "NO TARGET\nLOCKED";
-                _pendingCrossPos = Vector2.zero;
-            }
-
-            // RCS 喷管脉冲指示器 (融合姿态回转与 X/Y 平移操纵)
-            int tState = 0;
-            if (telemetry.IsRCSEnabled)
-            {
-                if (telemetry.PitchInput > 0.05f || telemetry.YInput > 0.05f) tState |= 1;
-                if (telemetry.PitchInput < -0.05f || telemetry.YInput < -0.05f) tState |= 2;
-                if (telemetry.YawInput < -0.05f || telemetry.RollInput < -0.05f || telemetry.XInput < -0.05f) tState |= 4;
-                if (telemetry.YawInput > 0.05f || telemetry.RollInput > 0.05f || telemetry.XInput > 0.05f) tState |= 8;
-            }
-            _pendingThrusterState = tState;
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
+            SpaceXDockingReticleState state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            if (_rollValue != null && _lastRoll.Update(_pendingRoll))
+            if (_rollValue != null && _lastRoll.Update(state.RollText))
             {
-                _rollValue.text = _pendingRoll;
+                _rollValue.SetTextSafe(state.RollText);
             }
-            if (_pitchValue != null && _lastPitch.Update(_pendingPitch))
+            if (_pitchValue != null && _lastPitch.Update(state.PitchText))
             {
-                _pitchValue.text = _pendingPitch;
+                _pitchValue.SetTextSafe(state.PitchText);
             }
-            if (_yawValue != null && _lastYaw.Update(_pendingYaw))
+            if (_yawValue != null && _lastYaw.Update(state.YawText))
             {
-                _yawValue.text = _pendingYaw;
+                _yawValue.SetTextSafe(state.YawText);
             }
-            if (_rangeValue != null && _lastRange.Update(_pendingRange))
+            if (_rangeValue != null && _lastRange.Update(state.RangeText))
             {
-                _rangeValue.text = _pendingRange;
+                _rangeValue.SetTextSafe(state.RangeText);
             }
-            if (_rateValue != null && _lastRate.Update(_pendingRate))
+            if (_rateValue != null && _lastRate.Update(state.RateText))
             {
-                _rateValue.text = _pendingRate;
+                _rateValue.SetTextSafe(state.RateText);
             }
-            if (_xyzOffsets != null && _lastXyz.Update(_pendingXyz))
+            if (_xyzOffsets != null && _lastXyz.Update(state.XyzText))
             {
-                _xyzOffsets.text = _pendingXyz;
+                _xyzOffsets.SetTextSafe(state.XyzText);
             }
             if (_crossRootRt != null)
             {
-                _crossRootRt.SetAnchoredPositionSafe(_pendingCrossPos);
+                _crossRootRt.SetAnchoredPositionSafe(state.CrossPos);
             }
 
-            if (_lastThrusterState.Update(_pendingThrusterState))
+            if (_lastThrusterState.Update(state.ThrusterState))
             {
                 ThemeConfig th = context.Theme ?? WidgetStyleManager.Instance.CurrentTheme;
                 WidgetStyleManager st = WidgetStyleManager.Instance;
                 Color activeCol = st.GetMeterColor(MeterStyleRole.Primary, th);
                 Color idleCol = st.GetLineColor(LineWeight.Ghost, th);
 
-                if (_thrusterUp != null) _thrusterUp.color = (_pendingThrusterState & 1) != 0 ? activeCol : idleCol;
-                if (_thrusterDown != null) _thrusterDown.color = (_pendingThrusterState & 2) != 0 ? activeCol : idleCol;
-                if (_thrusterLeft != null) _thrusterLeft.color = (_pendingThrusterState & 4) != 0 ? activeCol : idleCol;
-                if (_thrusterRight != null) _thrusterRight.color = (_pendingThrusterState & 8) != 0 ? activeCol : idleCol;
+                if (_thrusterUp != null) _thrusterUp.color = (state.ThrusterState & 1) != 0 ? activeCol : idleCol;
+                if (_thrusterDown != null) _thrusterDown.color = (state.ThrusterState & 2) != 0 ? activeCol : idleCol;
+                if (_thrusterLeft != null) _thrusterLeft.color = (state.ThrusterState & 4) != 0 ? activeCol : idleCol;
+                if (_thrusterRight != null) _thrusterRight.color = (state.ThrusterState & 8) != 0 ? activeCol : idleCol;
             }
         }
 
