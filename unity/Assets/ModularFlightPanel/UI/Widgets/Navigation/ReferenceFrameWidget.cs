@@ -11,6 +11,93 @@ using ModularFlightPanel.UI.Framework;
 namespace ModularFlightPanel.UI.Widgets.Navigation
 {
     /// <summary>
+    /// 导航参考系状态快照 (0 GC 值类型)
+    /// </summary>
+    public struct ReferenceFrameState : IEquatable<ReferenceFrameState>
+    {
+        public bool HasVessel;
+        public string Category;
+        public string Title;
+
+        public bool Equals(ReferenceFrameState other)
+        {
+            return HasVessel == other.HasVessel &&
+                   Category == other.Category &&
+                   Title == other.Title;
+        }
+
+        public override bool Equals(object obj) => obj is ReferenceFrameState other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 397) ^ HasVessel.GetHashCode();
+                if (Category != null) hash = (hash * 397) ^ Category.GetHashCode();
+                if (Title != null) hash = (hash * 397) ^ Title.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 导航参考系业务解耦大脑 (Headless Widget Logic)
+    /// </summary>
+    public class ReferenceFrameLogic : WidgetLogic<ReferenceFrameState>
+    {
+        public string FrameToken { get; set; } = "{FRAME}";
+        public string TypeToken { get; set; } = "{FRAME:TYPE}";
+
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel)
+            {
+                CurrentState = default;
+                return;
+            }
+
+            string category = TelemetryTokenEngine.Evaluate(TypeToken, telemetry);
+            if (string.IsNullOrEmpty(category) || category == "---")
+            {
+                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.ReferenceFrameCategory))
+                {
+                    category = NavBallHookService.Provider.ReferenceFrameCategory;
+                }
+                else
+                {
+                    category = !string.IsNullOrEmpty(telemetry.SpeedModeName) ? telemetry.SpeedModeName.ToUpperInvariant() : "ORBIT";
+                }
+            }
+
+            string title = TelemetryTokenEngine.Evaluate(FrameToken, telemetry);
+            if (string.IsNullOrEmpty(title) || title == "---")
+            {
+                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.FrameName))
+                {
+                    title = NavBallHookService.Provider.FrameName;
+                }
+                else
+                {
+                    title = telemetry.SpeedModeName ?? category;
+                }
+            }
+
+            CurrentState = new ReferenceFrameState
+            {
+                HasVessel = true,
+                Category = category,
+                Title = title
+            };
+        }
+    }
+
+    /// <summary>
     /// 权威导航参考系与坐标系高反差航电小组件 (Navigation Reference Frame Indicator Widget - Streamlined)
     /// 极简纯粹航电卡片设计：仅保留专属矢量图标与权威参考系全称，去除繁杂药丸与底行信息。
     /// 支持单击循环切换参考系与右键唤起 Principia 原生参考系窗口。
@@ -22,6 +109,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         public override Vector2 BaseSize => new Vector2(100f, 32f);
         protected override bool AutoCreateCardFrame => true;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
+
+        private readonly ReferenceFrameLogic _logic = new ReferenceFrameLogic();
+        protected override IWidgetLogic LogicCore => _logic;
 
         // 声明式微控件
         public TextWidget FrameTitle = TextWidget.Title(I18n.Tr("WIDGET_NAV_FRAME_SURFACE", "表面"));
@@ -76,6 +166,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _bgOutline = CardOutline;
             _frameToken = GetTemplateChannel(new[] { "FRAME", "NAME", "TITLE" }, _frameToken);
             _typeToken = GetTemplateChannel(new[] { "TYPE", "CATEGORY" }, _typeToken);
+            _logic.FrameToken = _frameToken;
+            _logic.TypeToken = _typeToken;
 
             // 3. 左侧图标插槽徽章 (左对齐，垂直居中)
             _iconBox = UIFactory.CreatePanel(transform, "Frame_Icon_Box",
@@ -260,69 +352,34 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
         }
 
-        private string _dataCategory;
-        private string _dataTitle;
-        private bool _dataHasVessel;
-
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            IFlightTelemetry telemetry = context.Telemetry;
-            if (telemetry == null || !telemetry.HasVessel)
-            {
-                _dataHasVessel = false;
-                return;
-            }
-            _dataHasVessel = true;
-
-            // 1. 动态评估当前参考系类型类别 (INERTIAL / SURFACE / ORBIT / LAGRANGE / TARGET)
-            string category = TelemetryTokenEngine.Evaluate(_typeToken, telemetry);
-            if (string.IsNullOrEmpty(category) || category == "---")
-            {
-                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.ReferenceFrameCategory))
-                {
-                    category = NavBallHookService.Provider.ReferenceFrameCategory;
-                }
-                else
-                {
-                    category = !string.IsNullOrEmpty(telemetry.SpeedModeName) ? telemetry.SpeedModeName.ToUpperInvariant() : "ORBIT";
-                }
-            }
-            _dataCategory = category;
-
-            // 2. 动态评估参考系全称标题 (如 "HELIOCENTRIC INERTIAL", "KERBIN SURFACE", "ORBIT")
-            string title = TelemetryTokenEngine.Evaluate(_frameToken, telemetry);
-            if (string.IsNullOrEmpty(title) || title == "---")
-            {
-                if (NavBallHookService.Provider != null && !string.IsNullOrEmpty(NavBallHookService.Provider.FrameName))
-                {
-                    title = NavBallHookService.Provider.FrameName;
-                }
-                else
-                {
-                    title = telemetry.SpeedModeName ?? category;
-                }
-            }
-            _dataTitle = title;
         }
 
-        public override void OnUIDrawLoop(ref FlightUIDrawContext context)
+        protected override void OnRenderState()
         {
-            base.OnUIDrawLoop(ref context);
-            if (!_dataHasVessel) return;
+            var state = _logic.CurrentState;
+            if (!state.HasVessel) return;
 
-            ThemeConfig theme = context.Theme ?? ThemeManager.Instance?.CurrentTheme;
+            ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? ThemeManager.Instance?.CurrentTheme;
 
-            if (_lastCategory.Update(_dataCategory))
+            if (_lastCategory.Update(state.Category))
             {
-                UpdateCategoryVisuals(_dataCategory, theme);
+                UpdateCategoryVisuals(state.Category, theme);
             }
 
-            if (_lastTitle.Update(_dataTitle))
+            if (_lastTitle.Update(state.Title))
             {
-                SetTextIfChanged(_frameTitleText, _dataTitle);
-                AdjustCardWidth(_dataTitle);
+                SetTextIfChanged(_frameTitleText, state.Title);
+                AdjustCardWidth(state.Title);
             }
+        }
+
+        protected override void OnResetPrivateCache()
+        {
+            base.OnResetPrivateCache();
+            _logic.Reset();
         }
 
         protected override void OnDestroy()
