@@ -190,6 +190,36 @@ namespace ModularFlightPanel.UI.Framework
             catList.Add(proto);
         }
 
+        public static string ExtractCleanTitle(string rawName)
+        {
+            if (string.IsNullOrEmpty(rawName)) return "VALUE";
+            string s = rawName;
+            string[] suffixes = new string[] { "Control", "Widget", "Text", "Image", "Button", "Btn", "Label", "Value", "Bar", "Meter", "Toggle", "Indicator", "Item", "Box" };
+            for (int i = 0; i < suffixes.Length; i++)
+            {
+                string suf = suffixes[i];
+                if (s.EndsWith(suf, StringComparison.OrdinalIgnoreCase) && s.Length > suf.Length)
+                {
+                    s = s.Substring(0, s.Length - suf.Length);
+                    break;
+                }
+            }
+            if (s.StartsWith("_")) s = s.TrimStart('_');
+            if (s.StartsWith("m_")) s = s.Substring(2);
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < s.Length; i++)
+            {
+                if (i > 0 && char.IsUpper(s[i]) && !char.IsUpper(s[i - 1]))
+                {
+                    sb.Append(' ');
+                }
+                sb.Append(char.ToUpperInvariant(s[i]));
+            }
+            string res = sb.ToString().Trim();
+            return string.IsNullOrEmpty(res) ? "VALUE" : res;
+        }
+
         private static void TraverseWidgetType(WidgetDescriptor desc)
         {
             Type t = desc.WidgetType;
@@ -278,6 +308,7 @@ namespace ModularFlightPanel.UI.Framework
                         ControlType = f.FieldType,
                         DefaultSize = defSize,
                         DefaultToken = defToken,
+                        DefaultTitle = ExtractCleanTitle(f.Name),
                         DefaultUnitDimension = defUnitDim,
                         IsToggle = isToggle,
                         DefaultAction = defAction
@@ -310,6 +341,7 @@ namespace ModularFlightPanel.UI.Framework
                             ControlType = f.FieldType,
                             DefaultSize = sz,
                             DefaultToken = attr.Token ?? "",
+                            DefaultTitle = !string.IsNullOrEmpty(attr.DisplayName) ? attr.DisplayName.ToUpperInvariant() : ExtractCleanTitle(attr.Id),
                             TextRole = attr.TextRole,
                             MeterRole = attr.MeterRole
                         });
@@ -354,6 +386,7 @@ namespace ModularFlightPanel.UI.Framework
                     ControlType = ctrl.GetType(),
                     DefaultSize = sz,
                     DefaultToken = token,
+                    DefaultTitle = !string.IsNullOrEmpty(ctrl.DisplayName) ? ctrl.DisplayName.ToUpperInvariant() : ExtractCleanTitle(ctrl.Id),
                     DefaultUnitDimension = unitDim
                 });
             }
@@ -561,6 +594,138 @@ namespace ModularFlightPanel.UI.Framework
                 Category = WidgetControlCategory.Misc,
                 DefaultSize = new Vector2(180f, 2f),
                 DefaultOpacity = 0.6f
+            });
+
+            // 14. 速度参考系状态胶囊
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.mode_capsule",
+                DisplayName = I18n.Tr("COMP_PROTO_MODE_CAPSULE", "速度参考系状态胶囊"),
+                Description = "切换航速基准模式 (轨道 ORBIT / 航向地面 SURF / 目标 TGT)，带发光微圆角胶囊药丸",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.ModeCapsule,
+                DefaultSize = new Vector2(85f, 26f),
+                DefaultToken = "{SPEED_MODE}",
+                DefaultTitle = "ORBIT",
+                DefaultAction = "CYCLE_FRAME"
+            });
+
+            // 15. 远拱点高度读数盒
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.apoapsis",
+                DisplayName = I18n.Tr("COMP_PROTO_APOAPSIS", "远拱点高度读数盒"),
+                Description = "轨道最高顶点海拔高度 (Ap)，支持自适应单位量纲转换 (m/km/Mm)",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.Readout,
+                DefaultSize = new Vector2(120f, 42f),
+                DefaultToken = "{AP}",
+                DefaultTitle = "APOAPSIS",
+                DefaultUnit = "km",
+                DefaultUnitDimension = "Altitude"
+            });
+
+            // 16. 近拱点高度读数盒
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.periapsis",
+                DisplayName = I18n.Tr("COMP_PROTO_PERIAPSIS", "近拱点高度读数盒"),
+                Description = "轨道最低过点海拔高度 (Pe)，支持自适应单位量纲转换 (m/km/Mm)",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.Readout,
+                DefaultSize = new Vector2(120f, 42f),
+                DefaultToken = "{PE}",
+                DefaultTitle = "PERIAPSIS",
+                DefaultUnit = "km",
+                DefaultUnitDimension = "Altitude"
+            });
+
+            // 17. 垂直升降速度表
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.vsi",
+                DisplayName = I18n.Tr("COMP_PROTO_VSI", "垂直升降速度表"),
+                Description = "垂直升降速率 (VSI)，实时监测着陆下降速度或爬升率",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.Readout,
+                DefaultSize = new Vector2(120f, 42f),
+                DefaultToken = "{VSI}",
+                DefaultTitle = "VERT SPEED",
+                DefaultUnit = "m/s",
+                DefaultUnitDimension = "Speed"
+            });
+
+            // 18. 推重比计量条
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.twr",
+                DisplayName = I18n.Tr("COMP_PROTO_TWR", "推重比计量条"),
+                Description = "当前发动机推重比 (TWR) 线性条，红线警示不足 1.0 临界工况",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.LinearGauge,
+                DefaultSize = new Vector2(140f, 26f),
+                DefaultToken = "{TWR}",
+                DefaultTitle = "TWR",
+                DefaultMinValue = 0,
+                DefaultMaxValue = 5,
+                DefaultCaution = 1.0,
+                DefaultWarning = 0.95
+            });
+
+            // 19. 主母线电量状态条
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.battery",
+                DisplayName = I18n.Tr("COMP_PROTO_BATTERY", "主母线电量状态条"),
+                Description = "舰载电力百分比动态指示条，跌破警戒线黄色/红色预警",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.LinearGauge,
+                DefaultSize = new Vector2(130f, 24f),
+                DefaultToken = "{ELEC:PCT}",
+                DefaultTitle = "BATTERY",
+                DefaultMinValue = 0,
+                DefaultMaxValue = 100,
+                DefaultCaution = 25,
+                DefaultWarning = 10
+            });
+
+            // 20. 姿控单推燃料状态条
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.monoprop",
+                DisplayName = I18n.Tr("COMP_PROTO_MONOPROP", "姿控单推燃料状态条"),
+                Description = "单组元推进剂 (RCS Monopropellant) 存量计量条",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.LinearGauge,
+                DefaultSize = new Vector2(130f, 24f),
+                DefaultToken = "{MONO:PCT}",
+                DefaultTitle = "MONOPROP",
+                DefaultMinValue = 0,
+                DefaultMaxValue = 100,
+                DefaultCaution = 20,
+                DefaultWarning = 10
+            });
+
+            // 21. 飞行马赫数读数盒
+            AddPrototype(new ControlPrototypeDescriptor
+            {
+                PrototypeId = "native.mach",
+                DisplayName = I18n.Tr("COMP_PROTO_MACH", "飞行马赫数读数盒"),
+                Description = "音速比马赫数 (Mach Number) 读数卡",
+                SourceWidgetTypeName = nativeSrc,
+                SourceWidgetDisplayName = nativeSrcName,
+                Category = WidgetControlCategory.Readout,
+                DefaultSize = new Vector2(110f, 42f),
+                DefaultToken = "{MACH}",
+                DefaultTitle = "MACH",
+                DefaultUnit = "M"
             });
         }
     }

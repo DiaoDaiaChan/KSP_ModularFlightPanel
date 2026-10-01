@@ -1219,12 +1219,14 @@ namespace ModularFlightPanel.UI.Widgets
                         alpha = 1.0f;
                         targetScale = Mathf.Lerp(0.85f, 1.0f, Mathf.Clamp01(currentDir.z + 0.2f));
 
-                        // 现代航空航天 PFD 透视投影 (垂直视场角 55°，tan(27.5°) 黄金视场)
+                        // 现代航空航天 PFD 严密线性等角投影 (垂直视场角 55°，纵向显示 ±27.5° 黄金跨度)
+                        // 与着色器 PFD 度规 100% 严格一致，各向同性像素比例，长宽比自由伸缩无畸变
                         float fovMul = 1.0f;
-                        float tanHalfFov = Mathf.Tan(27.5f * fovMul * Mathf.Deg2Rad);
-                        float projFactor = halfH / (currentDir.z * tanHalfFov);
-                        float rawX = currentDir.x * projFactor;
-                        float rawY = currentDir.y * projFactor;
+                        float degPerUnit = 27.5f * fovMul;
+                        float pitchAngle = Mathf.Asin(Mathf.Clamp(currentDir.y, -1f, 1f)) * Mathf.Rad2Deg;
+                        float yawAngle = Mathf.Atan2(currentDir.x, Mathf.Max(0.001f, currentDir.z)) * Mathf.Rad2Deg;
+                        float rawY = (pitchAngle / degPerUnit) * halfH;
+                        float rawX = (yawAngle / degPerUnit) * halfH;
 
                         if (Mathf.Abs(rawX) <= boundX && Mathf.Abs(rawY) <= boundY)
                         {

@@ -440,7 +440,18 @@ namespace ModularFlightPanel.UI
             RectTransform.pivot = new Vector2(0.5f, 0.5f);
 
             // 应用保存的绝对/相对坐标、缩放与旋转 (以原生 1:1 坐标系建立)
-            RectTransform.anchoredPosition = new Vector2(config.PositionX, config.PositionY);
+            float posX = config.PositionX;
+            float posY = config.PositionY;
+            float halfScreenW = (Screen.width / Mathf.Max(0.1f, scale)) * 0.5f;
+            float halfScreenH = (Screen.height / Mathf.Max(0.1f, scale)) * 0.5f;
+            if (halfScreenW > 100f && (Mathf.Abs(posX) > halfScreenW + 200f || Mathf.Abs(posY) > halfScreenH + 200f))
+            {
+                posX = Mathf.Clamp(posX, -halfScreenW + 100f, halfScreenW - 100f);
+                posY = Mathf.Clamp(posY, -halfScreenH + 100f, halfScreenH - 100f);
+                config.PositionX = posX;
+                config.PositionY = posY;
+            }
+            RectTransform.anchoredPosition = new Vector2(posX, posY);
             float effX = config.EffectiveScaleX;
             float effY = config.EffectiveScaleY;
 
@@ -1743,7 +1754,25 @@ namespace ModularFlightPanel.UI
             {
                 if (x.HasValue || y.HasValue)
                 {
-                    SetAnchoredPositionIfChanged(RectTransform, new Vector2(Config?.PositionX ?? RectTransform.anchoredPosition.x, Config?.PositionY ?? RectTransform.anchoredPosition.y));
+                    float curX = x ?? Config?.PositionX ?? RectTransform.anchoredPosition.x;
+                    float curY = y ?? Config?.PositionY ?? RectTransform.anchoredPosition.y;
+
+                    var rm = WidgetRenderManager.Instance;
+                    float canvasScale = rm != null ? rm.GetCanvasScaleFactor() : 1.0f;
+                    if (canvasScale < 0.01f) canvasScale = 1.0f;
+                    float halfScreenW = (Screen.width / canvasScale) * 0.5f;
+                    float halfScreenH = (Screen.height / canvasScale) * 0.5f;
+                    float clampRangeX = Mathf.Max(400f, halfScreenW + 100f);
+                    float clampRangeY = Mathf.Max(300f, halfScreenH + 100f);
+                    curX = Mathf.Clamp(curX, -clampRangeX, clampRangeX);
+                    curY = Mathf.Clamp(curY, -clampRangeY, clampRangeY);
+
+                    if (Config != null)
+                    {
+                        Config.PositionX = curX;
+                        Config.PositionY = curY;
+                    }
+                    SetAnchoredPositionIfChanged(RectTransform, new Vector2(curX, curY));
                 }
                 if (scale.HasValue || scaleX.HasValue || scaleY.HasValue)
                 {
@@ -1758,6 +1787,12 @@ namespace ModularFlightPanel.UI
                             float factorX = CommittedScale > 0.001f ? (effX / CommittedScale) : 1.0f;
                             float factorY = CommittedScale > 0.001f ? (effY / CommittedScale) : 1.0f;
                             Vector2 newSize = new Vector2(BaseSize.x * CurrentDpiScale * factorX, BaseSize.y * CurrentDpiScale * factorY);
+                            float minW = adaptive.MinBaseSize.x * CurrentDpiScale;
+                            float minH = adaptive.MinBaseSize.y * CurrentDpiScale;
+                            float maxW = Mathf.Max(minW, adaptive.MaxBaseSize.x * CurrentDpiScale * 4f);
+                            float maxH = Mathf.Max(minH, adaptive.MaxBaseSize.y * CurrentDpiScale * 4f);
+                            newSize.x = Mathf.Clamp(newSize.x, minW, maxW);
+                            newSize.y = Mathf.Clamp(newSize.y, minH, maxH);
                             RectTransform.sizeDelta = newSize;
                             adaptive.OnAdaptiveResize(newSize);
                         }

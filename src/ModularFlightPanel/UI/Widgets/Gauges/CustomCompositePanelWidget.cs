@@ -56,18 +56,57 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             public Text ValueText;
             public Text TitleText;
             public Text UnitText;
+            public Text BadgeText;
             public Image BarFillImage;
             public Image LampImage;
             public Image ButtonLed;
             public Button ActionBtn;
+            public Material ArcMaterial;
             public IWidgetControl BoundControl;
 
             // 防抖脏检缓存 (SPEC-009)
             public readonly Cached<string> CachedStr = new Cached<string>(string.Empty);
             public readonly Cached<float> CachedFloat = new Cached<float>(-1f);
+            public readonly Cached<float> CachedArcFill = new Cached<float>(-1f);
             public readonly Cached<Color> CachedColor = new Cached<Color>(Color.clear);
             public readonly Cached<bool> CachedActive = new Cached<bool>(false);
         }
+
+        private static readonly FlightSASMode[] MiniSasModes = new FlightSASMode[]
+        {
+            FlightSASMode.StabilityAssist,
+            FlightSASMode.Prograde,
+            FlightSASMode.Retrograde,
+            FlightSASMode.Normal,
+            FlightSASMode.Antinormal,
+            FlightSASMode.RadialIn,
+            FlightSASMode.RadialOut,
+            FlightSASMode.Target
+        };
+
+        private static readonly string[] MiniSasKeys = new string[]
+        {
+            "SAS_STAB",
+            "SAS_PRO",
+            "SAS_RET",
+            "SAS_NRM",
+            "SAS_ANT",
+            "SAS_RIN",
+            "SAS_ROUT",
+            "SAS_TGT"
+        };
+
+        private static readonly string[] MiniSasFallbacks = new string[]
+        {
+            "STAB",
+            "PRO",
+            "RET",
+            "NRM",
+            "ANT",
+            "R-IN",
+            "R-OUT",
+            "TGT"
+        };
 
         private readonly List<RuntimeLayerItem> _runtimeLayers = new List<RuntimeLayerItem>();
 
@@ -122,9 +161,18 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             // 清理旧图层与控件
             for (int i = 0; i < _runtimeLayers.Count; i++)
             {
-                if (_runtimeLayers[i]?.RootGo != null)
+                var layer = _runtimeLayers[i];
+                if (layer != null)
                 {
-                    Destroy(_runtimeLayers[i].RootGo);
+                    if (layer.ArcMaterial != null)
+                    {
+                        Destroy(layer.ArcMaterial);
+                        layer.ArcMaterial = null;
+                    }
+                    if (layer.RootGo != null)
+                    {
+                        Destroy(layer.RootGo);
+                    }
                 }
             }
             _runtimeLayers.Clear();
@@ -178,57 +226,165 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
         private void BuildElementContent(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
         {
-            string proto = (elem.PrototypeId ?? "").ToLowerInvariant();
-
-            // 1. 读数盒 (Readout)
-            if (proto.Contains("readout") || proto.Contains("speed") || proto.Contains("alt") || proto.Contains("digit"))
+            var cat = elem.ResolveCategory();
+            switch (cat)
             {
-                // 背景槽
-                GameObject bgGo = UIFactory.CreatePanel(item.RootGo.transform, "SlotBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
-                var outline = bgGo.AddComponent<Outline>();
-                outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
-                RectTransform bgRt = bgGo.GetComponent<RectTransform>();
-                bgRt.anchorMin = Vector2.zero; bgRt.anchorMax = Vector2.one;
-                bgRt.offsetMin = Vector2.zero; bgRt.offsetMax = Vector2.zero;
-
-                // 标题标签 (TopLeft)
-                string titleStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
-                item.TitleText = UIFactory.CreateText(bgGo.transform, "Title", titleStr, Mathf.RoundToInt(8.5f * s), TextAnchor.UpperLeft, style.GetTextColor(TextStyleRole.Label, theme));
-                RectTransform tRt = item.TitleText.rectTransform;
-                tRt.anchorMin = new Vector2(0f, 0.5f); tRt.anchorMax = new Vector2(1f, 1f);
-                tRt.offsetMin = new Vector2(6f * s, 0f); tRt.offsetMax = new Vector2(-6f * s, -4f * s);
-
-                // 主读数大字 (BottomLeft/Center)
-                item.ValueText = UIFactory.CreateText(bgGo.transform, "Value", "---", Mathf.RoundToInt(15f * s), TextAnchor.LowerLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-                item.ValueText.fontStyle = FontStyle.Bold;
-                RectTransform vRt = item.ValueText.rectTransform;
-                vRt.anchorMin = new Vector2(0f, 0f); vRt.anchorMax = new Vector2(0.7f, 0.65f);
-                vRt.offsetMin = new Vector2(6f * s, 4f * s); vRt.offsetMax = Vector2.zero;
-
-                // 单位角标 (BottomRight)
-                string unitStr = elem.Unit ?? "";
-                item.UnitText = UIFactory.CreateText(bgGo.transform, "Unit", unitStr, Mathf.RoundToInt(8f * s), TextAnchor.LowerRight, style.GetTextColor(TextStyleRole.Unit, theme));
-                RectTransform uRt = item.UnitText.rectTransform;
-                uRt.anchorMin = new Vector2(0.7f, 0f); uRt.anchorMax = new Vector2(1f, 0.65f);
-                uRt.offsetMin = Vector2.zero; uRt.offsetMax = new Vector2(-6f * s, 4f * s);
-
-                var ctrl = new WidgetReadoutControl(this, elem.LayerId, elem.Name, item.RootGo, bgGo.GetComponent<Image>(), outline, item.TitleText, item.ValueText, item.UnitText, elem.Token, elem.Title, elem.Unit);
-                item.BoundControl = ctrl;
-                this.Controls.Register(ctrl);
+                case WidgetControlCategory.Header:
+                    BuildHeaderElement(item, elem, theme, s, style);
+                    break;
+                case WidgetControlCategory.Readout:
+                    BuildReadoutElement(item, elem, theme, s, style);
+                    break;
+                case WidgetControlCategory.LinearGauge:
+                    BuildLinearGaugeElement(item, elem, theme, s, style);
+                    break;
+                case WidgetControlCategory.ArcGauge:
+                    BuildArcGaugeElement(item, elem, theme, s, style);
+                    break;
+                case WidgetControlCategory.Annunciator:
+                    BuildAnnunciatorElement(item, elem, theme, s, style);
+                    break;
+                case WidgetControlCategory.ActionButton:
+                    BuildActionButtonElement(item, elem, theme, s, style);
+                    break;
+                case WidgetControlCategory.ModeCapsule:
+                    BuildModeCapsuleElement(item, elem, theme, s, style);
+                    break;
+                case WidgetControlCategory.Misc:
+                case WidgetControlCategory.GenericElement:
+                default:
+                    BuildStructuralElement(item, elem, theme, s, style);
+                    break;
             }
-            // 2. 线性计量槽 (Linear Bar)
-            else if (proto.Contains("bar") || proto.Contains("linear") || proto.Contains("gauge") || proto.Contains("thr"))
-            {
-                // 底槽
-                GameObject trackGo = UIFactory.CreatePanel(item.RootGo.transform, "Track", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Slot, theme));
-                var outline = trackGo.AddComponent<Outline>();
-                outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
-                RectTransform tRt = trackGo.GetComponent<RectTransform>();
-                tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
-                tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
+        }
 
-                // 填充条
-                GameObject fillGo = UIFactory.CreatePanel(trackGo.transform, "Fill", Vector2.zero, Vector2.zero, style.GetMeterColor(MeterStyleRole.Primary, theme));
+        private void BuildHeaderElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            // 背景卡片 (半透明暗晶)
+            GameObject cardGo = UIFactory.CreatePanel(item.RootGo.transform, "HeaderCard", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.PanelDeep, theme));
+            RectTransform cardRt = cardGo.GetComponent<RectTransform>();
+            cardRt.anchorMin = Vector2.zero; cardRt.anchorMax = Vector2.one;
+            cardRt.offsetMin = Vector2.zero; cardRt.offsetMax = Vector2.zero;
+
+            // 左侧青蓝重点指示色条 (Accent Pill)
+            GameObject pillGo = UIFactory.CreatePanel(cardGo.transform, "AccentPill", new Vector2(3.5f * s, 0f), Vector2.zero, theme.AccentPrimary);
+            RectTransform pillRt = pillGo.GetComponent<RectTransform>();
+            pillRt.anchorMin = new Vector2(0f, 0.18f); pillRt.anchorMax = new Vector2(0f, 0.82f);
+            pillRt.pivot = new Vector2(0f, 0.5f);
+            pillRt.sizeDelta = new Vector2(3.5f * s, 0f);
+            pillRt.anchoredPosition = new Vector2(4f * s, 0f);
+
+            // 主标题 (大写粗体)
+            string titleStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : (!string.IsNullOrEmpty(elem.Name) ? elem.Name : I18n.Tr("COMP_ARTBOARD_DEFAULT_NAME", "自由航电仪表板"));
+            item.TitleText = UIFactory.CreateText(cardGo.transform, "Title", titleStr, Mathf.RoundToInt(10.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            item.TitleText.fontStyle = FontStyle.Bold;
+            RectTransform tRt = item.TitleText.rectTransform;
+            tRt.anchorMin = new Vector2(0f, 0f); tRt.anchorMax = new Vector2(0.72f, 1f);
+            tRt.offsetMin = new Vector2(12f * s, 2f * s); tRt.offsetMax = Vector2.zero;
+
+            // 右侧状态胶囊徽标 (Status Badge)
+            string badgeStr = !string.IsNullOrEmpty(elem.Token) && elem.Token != "{SPD}" ? elem.Token : I18n.Tr("WIDGET_ALERT_NORM", "NORM");
+            item.BadgeText = UIFactory.CreateText(cardGo.transform, "Badge", badgeStr, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.Accent, theme));
+            item.BadgeText.fontStyle = FontStyle.Bold;
+            RectTransform bRt = item.BadgeText.rectTransform;
+            bRt.anchorMin = new Vector2(0.7f, 0f); bRt.anchorMax = new Vector2(1f, 1f);
+            bRt.offsetMin = Vector2.zero; bRt.offsetMax = new Vector2(-6f * s, 2f * s);
+
+            // 底部分割发丝线
+            GameObject lineGo = UIFactory.CreatePanel(cardGo.transform, "Divider", new Vector2(0f, 1f * s), Vector2.zero, style.GetLineColor(LineWeight.Faint, theme));
+            RectTransform lRt = lineGo.GetComponent<RectTransform>();
+            lRt.anchorMin = new Vector2(0f, 0f); lRt.anchorMax = new Vector2(1f, 0f);
+            lRt.pivot = new Vector2(0.5f, 0f);
+            lRt.sizeDelta = new Vector2(0f, 1f * s);
+            lRt.anchoredPosition = Vector2.zero;
+
+            var ctrl = new WidgetHeaderControl(this, elem.LayerId, elem.Name, item.RootGo, item.TitleText, null, item.BadgeText, lineGo.GetComponent<Image>(), titleStr, "", badgeStr);
+            item.BoundControl = ctrl;
+            this.Controls.Register(ctrl);
+        }
+
+        private void BuildReadoutElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            // 背景槽 (Inset)
+            GameObject bgGo = UIFactory.CreatePanel(item.RootGo.transform, "SlotBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+            var outline = bgGo.AddComponent<Outline>();
+            outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+            RectTransform bgRt = bgGo.GetComponent<RectTransform>();
+            bgRt.anchorMin = Vector2.zero; bgRt.anchorMax = Vector2.one;
+            bgRt.offsetMin = Vector2.zero; bgRt.offsetMax = Vector2.zero;
+
+            // 标题标签 (TopLeft)
+            string titleStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
+            item.TitleText = UIFactory.CreateText(bgGo.transform, "Title", titleStr, Mathf.RoundToInt(8.5f * s), TextAnchor.UpperLeft, style.GetTextColor(TextStyleRole.Label, theme));
+            RectTransform tRt = item.TitleText.rectTransform;
+            tRt.anchorMin = new Vector2(0f, 0.5f); tRt.anchorMax = new Vector2(1f, 1f);
+            tRt.offsetMin = new Vector2(6f * s, 0f); tRt.offsetMax = new Vector2(-6f * s, -3f * s);
+
+            // 主读数大字 (BottomLeft/Center)
+            item.ValueText = UIFactory.CreateText(bgGo.transform, "Value", "---", Mathf.RoundToInt(15f * s), TextAnchor.LowerLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            item.ValueText.fontStyle = FontStyle.Bold;
+            RectTransform vRt = item.ValueText.rectTransform;
+            vRt.anchorMin = new Vector2(0f, 0f); vRt.anchorMax = new Vector2(0.72f, 0.68f);
+            vRt.offsetMin = new Vector2(6f * s, 3f * s); vRt.offsetMax = Vector2.zero;
+
+            // 单位角标 (BottomRight)
+            string unitStr = elem.Unit ?? "";
+            item.UnitText = UIFactory.CreateText(bgGo.transform, "Unit", unitStr, Mathf.RoundToInt(8f * s), TextAnchor.LowerRight, style.GetTextColor(TextStyleRole.Unit, theme));
+            RectTransform uRt = item.UnitText.rectTransform;
+            uRt.anchorMin = new Vector2(0.7f, 0f); uRt.anchorMax = new Vector2(1f, 0.65f);
+            uRt.offsetMin = Vector2.zero; uRt.offsetMax = new Vector2(-6f * s, 4f * s);
+
+            var ctrl = new WidgetReadoutControl(this, elem.LayerId, elem.Name, item.RootGo, bgGo.GetComponent<Image>(), outline, item.TitleText, item.ValueText, item.UnitText, elem.Token, elem.Title, elem.Unit);
+            item.BoundControl = ctrl;
+            this.Controls.Register(ctrl);
+        }
+
+        private void BuildLinearGaugeElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            bool isVertical = elem.Height > elem.Width * 1.2f;
+
+            // 1. 底槽卡片 (Slot)
+            GameObject trackGo = UIFactory.CreatePanel(item.RootGo.transform, "Track", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Slot, theme));
+            var outline = trackGo.AddComponent<Outline>();
+            outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+            RectTransform tRt = trackGo.GetComponent<RectTransform>();
+            tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
+            tRt.offsetMin = Vector2.zero; tRt.offsetMax = Vector2.zero;
+
+            if (!isVertical)
+            {
+                // 水平排版: 上半部标题与百分比，下半部带留白的内嵌滑轨
+                float labelHeight = Mathf.Min(16f * s, elem.Height * 0.45f);
+
+                // 标题 (TopLeft)
+                string titleStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
+                item.TitleText = UIFactory.CreateText(trackGo.transform, "Title", titleStr, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
+                RectTransform lblRt = item.TitleText.rectTransform;
+                lblRt.anchorMin = new Vector2(0f, 1f); lblRt.anchorMax = new Vector2(0.7f, 1f);
+                lblRt.pivot = new Vector2(0f, 1f);
+                lblRt.sizeDelta = new Vector2(0f, labelHeight);
+                lblRt.anchoredPosition = new Vector2(6f * s, -1f * s);
+
+                // 读数或百分比 (TopRight)
+                item.ValueText = UIFactory.CreateText(trackGo.transform, "Value", "---", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                item.ValueText.fontStyle = FontStyle.Bold;
+                RectTransform valRt = item.ValueText.rectTransform;
+                valRt.anchorMin = new Vector2(0.7f, 1f); valRt.anchorMax = new Vector2(1f, 1f);
+                valRt.pivot = new Vector2(1f, 1f);
+                valRt.sizeDelta = new Vector2(0f, labelHeight);
+                valRt.anchoredPosition = new Vector2(-6f * s, -1f * s);
+
+                // 下部内衬导轨槽 (Rail)
+                GameObject railGo = UIFactory.CreatePanel(trackGo.transform, "Rail", Vector2.zero, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+                RectTransform railRt = railGo.GetComponent<RectTransform>();
+                railRt.anchorMin = new Vector2(0f, 0f); railRt.anchorMax = new Vector2(1f, 0f);
+                railRt.pivot = new Vector2(0.5f, 0f);
+                float railH = Mathf.Max(6f * s, elem.Height * 0.4f);
+                railRt.sizeDelta = new Vector2(-12f * s, railH);
+                railRt.anchoredPosition = new Vector2(0f, 4f * s);
+
+                // 填充条 (2px 内嵌于导轨中，绝不顶格撑满)
+                GameObject fillGo = UIFactory.CreatePanel(railGo.transform, "Fill", Vector2.zero, Vector2.zero, style.GetMeterColor(MeterStyleRole.Primary, theme));
                 item.BarFillImage = fillGo.GetComponent<Image>();
                 item.BarFillImage.type = Image.Type.Filled;
                 item.BarFillImage.fillMethod = Image.FillMethod.Horizontal;
@@ -236,102 +392,342 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
                 RectTransform fRt = fillGo.GetComponent<RectTransform>();
                 fRt.anchorMin = Vector2.zero; fRt.anchorMax = Vector2.one;
-                fRt.offsetMin = Vector2.zero; fRt.offsetMax = Vector2.zero;
-
-                // 标题标签
+                fRt.offsetMin = new Vector2(1f * s, 1f * s);
+                fRt.offsetMax = new Vector2(-1f * s, -1f * s);
+            }
+            else
+            {
+                // 垂直柱条排版: 顶部小标，下部纵向导轨
                 string titleStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
-                item.TitleText = UIFactory.CreateText(trackGo.transform, "Title", titleStr, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                item.TitleText = UIFactory.CreateText(trackGo.transform, "Title", titleStr, Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
                 RectTransform lblRt = item.TitleText.rectTransform;
-                lblRt.anchorMin = Vector2.zero; lblRt.anchorMax = Vector2.one;
-                lblRt.offsetMin = new Vector2(6f * s, 0f); lblRt.offsetMax = new Vector2(-6f * s, 0f);
+                lblRt.anchorMin = new Vector2(0f, 1f); lblRt.anchorMax = new Vector2(1f, 1f);
+                lblRt.pivot = new Vector2(0.5f, 1f);
+                lblRt.sizeDelta = new Vector2(0f, 16f * s);
+                lblRt.anchoredPosition = new Vector2(0f, -2f * s);
 
-                var ctrl = new WidgetLinearBarControl(this, elem.LayerId, elem.Name, item.RootGo, trackGo.GetComponent<Image>(), fillGo.GetComponent<Image>(), elem.Token, elem.MinValue, elem.MaxValue, item.Rt.sizeDelta.x, false)
-                {
-                    CautionThreshold = elem.CautionThreshold,
-                    WarningThreshold = elem.WarningThreshold,
-                    MeterRole = MeterStyleRole.Primary
-                };
+                // 垂直内衬导轨
+                GameObject railGo = UIFactory.CreatePanel(trackGo.transform, "Rail", Vector2.zero, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+                RectTransform railRt = railGo.GetComponent<RectTransform>();
+                railRt.anchorMin = new Vector2(0.5f, 0f); railRt.anchorMax = new Vector2(0.5f, 1f);
+                railRt.pivot = new Vector2(0.5f, 0.5f);
+                railRt.sizeDelta = new Vector2(item.Rt.sizeDelta.x - 8f * s, -(22f * s));
+                railRt.anchoredPosition = new Vector2(0f, -8f * s);
+
+                // 填充条
+                GameObject fillGo = UIFactory.CreatePanel(railGo.transform, "Fill", Vector2.zero, Vector2.zero, style.GetMeterColor(MeterStyleRole.Primary, theme));
+                item.BarFillImage = fillGo.GetComponent<Image>();
+                item.BarFillImage.type = Image.Type.Filled;
+                item.BarFillImage.fillMethod = Image.FillMethod.Vertical;
+                item.BarFillImage.fillAmount = 0.5f;
+
+                RectTransform fRt = fillGo.GetComponent<RectTransform>();
+                fRt.anchorMin = Vector2.zero; fRt.anchorMax = Vector2.one;
+                fRt.offsetMin = new Vector2(1f * s, 1f * s);
+                fRt.offsetMax = new Vector2(-1f * s, -1f * s);
+            }
+
+            var ctrl = new WidgetLinearBarControl(this, elem.LayerId, elem.Name, item.RootGo, trackGo.GetComponent<Image>(), item.BarFillImage, elem.Token, elem.MinValue, elem.MaxValue, item.Rt.sizeDelta.x, isVertical)
+            {
+                CautionThreshold = elem.CautionThreshold,
+                WarningThreshold = elem.WarningThreshold,
+                MeterRole = MeterStyleRole.Primary
+            };
+            item.BoundControl = ctrl;
+            this.Controls.Register(ctrl);
+        }
+
+        private void BuildArcGaugeElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            // 背景卡片 (半透明暗晶圆角槽)
+            GameObject bgGo = UIFactory.CreatePanel(item.RootGo.transform, "ArcBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.PanelDeep, theme));
+            var outline = bgGo.AddComponent<Outline>();
+            outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+            RectTransform bgRt = bgGo.GetComponent<RectTransform>();
+            bgRt.anchorMin = Vector2.zero; bgRt.anchorMax = Vector2.one;
+            bgRt.offsetMin = Vector2.zero; bgRt.offsetMax = Vector2.zero;
+
+            // 标题标签 (Top)
+            string titleStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
+            item.TitleText = UIFactory.CreateText(bgGo.transform, "Title", titleStr, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
+            RectTransform tRt = item.TitleText.rectTransform;
+            tRt.anchorMin = new Vector2(0f, 1f); tRt.anchorMax = new Vector2(1f, 1f);
+            tRt.pivot = new Vector2(0.5f, 1f);
+            tRt.sizeDelta = new Vector2(0f, 14f * s);
+            tRt.anchoredPosition = new Vector2(0f, -3f * s);
+
+            // 中心大字数值
+            item.ValueText = UIFactory.CreateText(bgGo.transform, "Value", "---", Mathf.RoundToInt(14f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            item.ValueText.fontStyle = FontStyle.Bold;
+            RectTransform vRt = item.ValueText.rectTransform;
+            vRt.anchorMin = new Vector2(0.2f, 0.28f); vRt.anchorMax = new Vector2(0.8f, 0.72f);
+            vRt.offsetMin = Vector2.zero; vRt.offsetMax = Vector2.zero;
+
+            // 底部单位 (Bottom)
+            string unitStr = elem.Unit ?? "";
+            item.UnitText = UIFactory.CreateText(bgGo.transform, "Unit", unitStr, Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Unit, theme));
+            RectTransform uRt = item.UnitText.rectTransform;
+            uRt.anchorMin = new Vector2(0f, 0f); uRt.anchorMax = new Vector2(1f, 0f);
+            uRt.pivot = new Vector2(0.5f, 0f);
+            uRt.sizeDelta = new Vector2(0f, 12f * s);
+            uRt.anchoredPosition = new Vector2(0f, 4f * s);
+
+            // 圆弧度量环 GameObject
+            float ringDim = Mathf.Min(item.Rt.sizeDelta.x, item.Rt.sizeDelta.y) * 0.88f;
+            GameObject ringGo = UIFactory.CreatePanel(bgGo.transform, "ArcRing", new Vector2(ringDim, ringDim), Vector2.zero, WidgetStyleManager.NeutralTransparent);
+            Image ringImg = ringGo.GetComponent<Image>();
+            ringImg.raycastTarget = false;
+
+            if (AssetLoader.RadialMeterShader != null)
+            {
+                var mat = new Material(AssetLoader.RadialMeterShader);
+                mat.SetFloat("_Clockwise", 1.0f);
+                mat.SetFloat("_StartAngle", 210.0f);
+                mat.SetFloat("_EndAngle", 330.0f);
+                mat.SetFloat("_InnerRadius", 0.76f);
+                mat.SetFloat("_OuterRadius", 0.92f);
+                mat.SetFloat("_SegmentCount", 16.0f);
+                mat.SetFloat("_SegmentGap", 0.06f);
+                mat.SetColor("_ActiveColor", style.GetMeterColor(MeterStyleRole.Primary, theme));
+                mat.SetColor("_InactiveColor", style.GetMeterColor(MeterStyleRole.Track, theme));
+                mat.SetColor("_BorderColor", style.GetCardBorderColor(CardStyleRole.Normal, theme));
+                mat.SetFloat("_FillAmount", 0.5f);
+
+                ringImg.material = mat;
+                item.ArcMaterial = mat;
+
+                var ctrl = new WidgetArcMeterControl(this, elem.LayerId, elem.Name, item.RootGo, ringImg, mat, elem.Token, elem.MinValue, elem.MaxValue);
                 item.BoundControl = ctrl;
                 this.Controls.Register(ctrl);
             }
-            // 3. 状态光字牌 (Annunciator)
-            else if (proto.Contains("annunciator") || proto.Contains("lamp") || proto.Contains("gear") || proto.Contains("brake"))
+            else
             {
-                GameObject lampGo = UIFactory.CreatePanel(item.RootGo.transform, "LampBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
-                item.LampImage = lampGo.GetComponent<Image>();
-                var outline = lampGo.AddComponent<Outline>();
-                outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+                // Shader 不可用时的回退实现
+                ringImg.color = style.GetMeterColor(MeterStyleRole.Primary, theme);
+                ringImg.type = Image.Type.Filled;
+                ringImg.fillMethod = Image.FillMethod.Radial360;
+                ringImg.fillOrigin = (int)Image.Origin360.Top;
+                ringImg.fillAmount = 0.5f;
+                item.BarFillImage = ringImg;
 
-                RectTransform lRt = lampGo.GetComponent<RectTransform>();
+                var ctrl = new WidgetArcMeterControl(this, elem.LayerId, elem.Name, item.RootGo, ringImg, null, elem.Token, elem.MinValue, elem.MaxValue);
+                item.BoundControl = ctrl;
+                this.Controls.Register(ctrl);
+            }
+        }
+
+        private void BuildAnnunciatorElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            // 驾驶舱倒角双层外框
+            GameObject lampGo = UIFactory.CreatePanel(item.RootGo.transform, "LampBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+            item.LampImage = lampGo.GetComponent<Image>();
+            var outline = lampGo.AddComponent<Outline>();
+            outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+
+            RectTransform lRt = lampGo.GetComponent<RectTransform>();
+            lRt.anchorMin = Vector2.zero; lRt.anchorMax = Vector2.one;
+            lRt.offsetMin = Vector2.zero; lRt.offsetMax = Vector2.zero;
+
+            // 内衬高反差背光发光小窗
+            GameObject innerGo = UIFactory.CreatePanel(lampGo.transform, "InnerBezel", new Vector2(item.Rt.sizeDelta.x - 4f * s, item.Rt.sizeDelta.y - 4f * s), Vector2.zero, WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.12f));
+            RectTransform inRt = innerGo.GetComponent<RectTransform>();
+            inRt.anchorMin = Vector2.zero; inRt.anchorMax = Vector2.one;
+            inRt.offsetMin = new Vector2(2f * s, 2f * s); inRt.offsetMax = new Vector2(-2f * s, -2f * s);
+
+            // 居中大写告警标牌文字
+            string labelStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
+            item.TitleText = UIFactory.CreateText(innerGo.transform, "Label", labelStr, Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            item.TitleText.fontStyle = FontStyle.Bold;
+            RectTransform txtRt = item.TitleText.rectTransform;
+            txtRt.anchorMin = Vector2.zero; txtRt.anchorMax = Vector2.one;
+            txtRt.offsetMin = Vector2.zero; txtRt.offsetMax = Vector2.zero;
+
+            var ctrl = new WidgetAnnunciatorControl(this, elem.LayerId, elem.Name, item.RootGo, item.LampImage, outline, item.TitleText, labelStr);
+            item.BoundControl = ctrl;
+            this.Controls.Register(ctrl);
+        }
+
+        private void BuildActionButtonElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            string proto = (elem.PrototypeId ?? "").ToLowerInvariant();
+
+            // A. 微型 SAS 朝向阵列 (Mini SAS Pad)
+            if (proto.Contains("mini_sas") || elem.ActionType == "SAS_PAD")
+            {
+                var padCtrl = new MiniSasPadControl(this, elem.LayerId, elem.Name, item.RootGo);
+                int modeCount = MiniSasModes.Length;
+                float btnW = item.Rt.sizeDelta.x / modeCount;
+                for (int m = 0; m < modeCount; m++)
+                {
+                    GameObject btnGo = UIFactory.CreatePanel(item.RootGo.transform, "Sas_" + m, new Vector2(btnW - 2f * s, item.Rt.sizeDelta.y - 2f * s), Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+                    RectTransform bRt = btnGo.GetComponent<RectTransform>();
+                    bRt.anchorMin = new Vector2((float)m / modeCount, 0f);
+                    bRt.anchorMax = new Vector2((float)(m + 1) / modeCount, 1f);
+                    bRt.offsetMin = new Vector2(1f * s, 1f * s);
+                    bRt.offsetMax = new Vector2(-1f * s, -1f * s);
+
+                    Button btn = btnGo.AddComponent<Button>();
+                    Text lbl = UIFactory.CreateText(btnGo.transform, "Text", I18n.Tr(MiniSasKeys[m], MiniSasFallbacks[m]), Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+                    lbl.fontStyle = FontStyle.Bold;
+                    RectTransform lRt = lbl.rectTransform;
+                    lRt.anchorMin = Vector2.zero; lRt.anchorMax = Vector2.one;
+                    lRt.offsetMin = Vector2.zero; lRt.offsetMax = Vector2.zero;
+
+                    padCtrl.AddSasButton(MiniSasModes[m], btn, btnGo.GetComponent<Image>(), lbl);
+                }
+                item.BoundControl = padCtrl;
+                this.Controls.Register(padCtrl);
+                return;
+            }
+
+            // B. 双重防误触安全分级器 (Arm & Stage)
+            if (proto.Contains("safety_stage") || elem.ActionType == "STAGE")
+            {
+                // 左侧 ARM 保险键 (38% 宽度)
+                GameObject armGo = UIFactory.CreatePanel(item.RootGo.transform, "ArmBtn", Vector2.zero, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+                RectTransform armRt = armGo.GetComponent<RectTransform>();
+                armRt.anchorMin = new Vector2(0f, 0f); armRt.anchorMax = new Vector2(0.38f, 1f);
+                armRt.offsetMin = Vector2.zero; armRt.offsetMax = new Vector2(-2f * s, 0f);
+                Button armBtn = armGo.AddComponent<Button>();
+                Text armLbl = UIFactory.CreateText(armGo.transform, "ArmText", I18n.Tr("WIDGET_ALERT_ARMED", "ARM"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+                armLbl.fontStyle = FontStyle.Bold;
+                RectTransform alRt = armLbl.rectTransform;
+                alRt.anchorMin = Vector2.zero; alRt.anchorMax = Vector2.one;
+                alRt.offsetMin = Vector2.zero; alRt.offsetMax = Vector2.zero;
+
+                // ARM LED 指示灯条
+                GameObject armLedGo = UIFactory.CreatePanel(armGo.transform, "ArmLed", new Vector2(0f, 2.5f * s), Vector2.zero, style.GetTextColor(TextStyleRole.Muted, theme));
+                RectTransform aledRt = armLedGo.GetComponent<RectTransform>();
+                aledRt.anchorMin = new Vector2(0.15f, 0f); aledRt.anchorMax = new Vector2(0.85f, 0f);
+                aledRt.pivot = new Vector2(0.5f, 0f);
+                aledRt.sizeDelta = new Vector2(0f, 2.5f * s);
+                aledRt.anchoredPosition = new Vector2(0f, 2f * s);
+
+                // 右侧 STAGE 分级大键 (60% 宽度)
+                GameObject stageGo = UIFactory.CreatePanel(item.RootGo.transform, "StageBtn", Vector2.zero, Vector2.zero, WidgetStyleManager.WithAlpha(theme.DangerColor, 0.25f));
+                RectTransform stRt = stageGo.GetComponent<RectTransform>();
+                stRt.anchorMin = new Vector2(0.40f, 0f); stRt.anchorMax = new Vector2(1f, 1f);
+                stRt.offsetMin = new Vector2(2f * s, 0f); stRt.offsetMax = Vector2.zero;
+                Button stageBtn = stageGo.AddComponent<Button>();
+                stageBtn.interactable = false;
+                Text stageLbl = UIFactory.CreateText(stageGo.transform, "StageText", I18n.Tr("WIDGET_CTRL_STAGE_LABEL", "STAGE"), Mathf.RoundToInt(10f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                stageLbl.fontStyle = FontStyle.Bold;
+                RectTransform slRt = stageLbl.rectTransform;
+                slRt.anchorMin = Vector2.zero; slRt.anchorMax = Vector2.one;
+                slRt.offsetMin = Vector2.zero; slRt.offsetMax = Vector2.zero;
+
+                var safetyCtrl = new SafetyArmStageControl(this, elem.LayerId, elem.Name, item.RootGo,
+                    stageBtn, stageGo.GetComponent<Image>(), stageLbl,
+                    armBtn, armGo.GetComponent<Image>(), armLbl, armLedGo.GetComponent<Image>());
+                item.BoundControl = safetyCtrl;
+                this.Controls.Register(safetyCtrl);
+                return;
+            }
+
+            // C. 官方高频标准动作按键 (Tactile Button with status LED)
+            GameObject defBtnGo = UIFactory.CreatePanel(item.RootGo.transform, "BtnBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+            Button actBtn = defBtnGo.AddComponent<Button>();
+            item.ActionBtn = actBtn;
+            var defOutline = defBtnGo.AddComponent<Outline>();
+            defOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+
+            RectTransform dbRt = defBtnGo.GetComponent<RectTransform>();
+            dbRt.anchorMin = Vector2.zero; dbRt.anchorMax = Vector2.one;
+            dbRt.offsetMin = Vector2.zero; dbRt.offsetMax = Vector2.zero;
+
+            // 左侧状态 LED 指示小条 (3px wide)
+            GameObject ledGo = UIFactory.CreatePanel(defBtnGo.transform, "Led", new Vector2(3f * s, 0f), Vector2.zero, style.GetTextColor(TextStyleRole.Muted, theme));
+            item.ButtonLed = ledGo.GetComponent<Image>();
+            RectTransform ledRt = ledGo.GetComponent<RectTransform>();
+            ledRt.anchorMin = new Vector2(0f, 0.15f); ledRt.anchorMax = new Vector2(0f, 0.85f);
+            ledRt.pivot = new Vector2(0f, 0.5f);
+            ledRt.sizeDelta = new Vector2(3f * s, 0f);
+            ledRt.anchoredPosition = new Vector2(3.5f * s, 0f);
+
+            // 按钮文案
+            string labelStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
+            item.TitleText = UIFactory.CreateText(defBtnGo.transform, "Label", labelStr, Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            item.TitleText.fontStyle = FontStyle.Bold;
+            RectTransform btxtRt = item.TitleText.rectTransform;
+            btxtRt.anchorMin = Vector2.zero; btxtRt.anchorMax = Vector2.one;
+            btxtRt.offsetMin = new Vector2(7f * s, 0f); btxtRt.offsetMax = Vector2.zero;
+
+            var sysCtrl = new AvionicsSystemSwitchControl(this, elem.LayerId, elem.Name, item.RootGo, actBtn, defBtnGo.GetComponent<Image>(), defOutline, item.TitleText, item.ButtonLed, elem.ActionType);
+            item.BoundControl = sysCtrl;
+            this.Controls.Register(sysCtrl);
+        }
+
+        private void BuildModeCapsuleElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            // 圆角胶囊背景
+            GameObject capGo = UIFactory.CreatePanel(item.RootGo.transform, "CapsuleBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+            var outline = capGo.AddComponent<Outline>();
+            outline.effectColor = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Normal, theme);
+
+            RectTransform cRt = capGo.GetComponent<RectTransform>();
+            cRt.anchorMin = Vector2.zero; cRt.anchorMax = Vector2.one;
+            cRt.offsetMin = Vector2.zero; cRt.offsetMax = Vector2.zero;
+
+            // 左侧微型小圆点 (Mode Dot)
+            GameObject dotGo = UIFactory.CreatePanel(capGo.transform, "Dot", new Vector2(5f * s, 5f * s), Vector2.zero, theme.AccentPrimary);
+            RectTransform dotRt = dotGo.GetComponent<RectTransform>();
+            dotRt.anchorMin = new Vector2(0f, 0.5f); dotRt.anchorMax = new Vector2(0f, 0.5f);
+            dotRt.pivot = new Vector2(0f, 0.5f);
+            dotRt.anchoredPosition = new Vector2(5f * s, 0f);
+
+            // 模式文本
+            string labelStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : (!string.IsNullOrEmpty(elem.Name) ? elem.Name : I18n.Tr("COMPOSITE_MODE", "MODE"));
+            item.TitleText = UIFactory.CreateText(capGo.transform, "ModeText", labelStr, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
+            item.TitleText.fontStyle = FontStyle.Bold;
+            RectTransform tRt = item.TitleText.rectTransform;
+            tRt.anchorMin = Vector2.zero; tRt.anchorMax = Vector2.one;
+            tRt.offsetMin = new Vector2(10f * s, 0f); tRt.offsetMax = Vector2.zero;
+
+            Button btn = capGo.AddComponent<Button>();
+            item.ActionBtn = btn;
+
+            var ctrl = new AvionicsSystemSwitchControl(this, elem.LayerId, elem.Name, item.RootGo, btn, capGo.GetComponent<Image>(), outline, item.TitleText, dotGo.GetComponent<Image>(), elem.ActionType ?? "CYCLE_FRAME");
+            item.BoundControl = ctrl;
+            this.Controls.Register(ctrl);
+        }
+
+        private void BuildStructuralElement(RuntimeLayerItem item, CompositeElementConfig elem, ThemeConfig theme, float s, WidgetStyleManager style)
+        {
+            bool isHairline = elem.Height <= 4f || elem.Width <= 4f;
+
+            if (isHairline)
+            {
+                // 纯净发丝级分割线 (无边框内凹，避免方框误解)
+                GameObject lineGo = UIFactory.CreatePanel(item.RootGo.transform, "DividerLine", item.Rt.sizeDelta, Vector2.zero, style.GetLineColor(LineWeight.Faint, theme));
+                RectTransform lRt = lineGo.GetComponent<RectTransform>();
                 lRt.anchorMin = Vector2.zero; lRt.anchorMax = Vector2.one;
                 lRt.offsetMin = Vector2.zero; lRt.offsetMax = Vector2.zero;
 
-                string labelStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
-                item.TitleText = UIFactory.CreateText(lampGo.transform, "Label", labelStr, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-                item.TitleText.fontStyle = FontStyle.Bold;
-                RectTransform txtRt = item.TitleText.rectTransform;
-                txtRt.anchorMin = Vector2.zero; txtRt.anchorMax = Vector2.one;
-                txtRt.offsetMin = Vector2.zero; txtRt.offsetMax = Vector2.zero;
-
-                var ctrl = new WidgetAnnunciatorControl(this, elem.LayerId, elem.Name, item.RootGo, item.LampImage, outline, item.TitleText, labelStr);
+                var ctrl = new StructuralShapeControl(this, elem.LayerId, elem.Name, item.RootGo, lineGo.GetComponent<Image>(), null, null);
                 item.BoundControl = ctrl;
                 this.Controls.Register(ctrl);
             }
-            // 4. 机载系统动作开关 (System Switch / Action Button)
-            else if (proto.Contains("action") || proto.Contains("switch") || proto.Contains("btn") || proto.Contains("rcs") || proto.Contains("sas"))
-            {
-                GameObject btnGo = UIFactory.CreatePanel(item.RootGo.transform, "BtnBg", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
-                Button btn = btnGo.AddComponent<Button>();
-                item.ActionBtn = btn;
-                var outline = btnGo.AddComponent<Outline>();
-                outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
-
-                RectTransform bRt = btnGo.GetComponent<RectTransform>();
-                bRt.anchorMin = Vector2.zero; bRt.anchorMax = Vector2.one;
-                bRt.offsetMin = Vector2.zero; bRt.offsetMax = Vector2.zero;
-
-                // 左侧状态 LED 指示小条
-                GameObject ledGo = UIFactory.CreatePanel(btnGo.transform, "Led", new Vector2(3f * s, 0f), Vector2.zero, style.GetTextColor(TextStyleRole.Muted, theme));
-                item.ButtonLed = ledGo.GetComponent<Image>();
-                RectTransform ledRt = ledGo.GetComponent<RectTransform>();
-                ledRt.anchorMin = new Vector2(0f, 0.15f); ledRt.anchorMax = new Vector2(0f, 0.85f);
-                ledRt.pivot = new Vector2(0f, 0.5f);
-                ledRt.sizeDelta = new Vector2(3f * s, 0f);
-                ledRt.anchoredPosition = new Vector2(3f * s, 0f);
-
-                // 按钮文案
-                string labelStr = !string.IsNullOrEmpty(elem.Title) ? elem.Title : elem.Name;
-                item.TitleText = UIFactory.CreateText(btnGo.transform, "Label", labelStr, Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
-                item.TitleText.fontStyle = FontStyle.Bold;
-                RectTransform txtRt = item.TitleText.rectTransform;
-                txtRt.anchorMin = Vector2.zero; txtRt.anchorMax = Vector2.one;
-                txtRt.offsetMin = new Vector2(6f * s, 0f); txtRt.offsetMax = Vector2.zero;
-
-                var ctrl = new AvionicsSystemSwitchControl(this, elem.LayerId, elem.Name, item.RootGo, btn, btnGo.GetComponent<Image>(), outline, item.TitleText, item.ButtonLed, elem.ActionType);
-                item.BoundControl = ctrl;
-                this.Controls.Register(ctrl);
-            }
-            // 5. 结构修饰件与通用容器
             else
             {
-                GameObject shapeGo = UIFactory.CreatePanel(item.RootGo.transform, "Shape", item.Rt.sizeDelta, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
-                var outline = shapeGo.AddComponent<Outline>();
+                // 半透明暗晶分区衬垫卡片 (Subtle Dark Glass Panel)
+                GameObject cardGo = UIFactory.CreatePanel(item.RootGo.transform, "SectionCard", item.Rt.sizeDelta, Vector2.zero, WidgetStyleManager.WithAlpha(style.GetSurfaceColor(SurfaceStyleRole.PanelDeep, theme), 0.45f));
+                var outline = cardGo.AddComponent<Outline>();
                 outline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
 
-                RectTransform sRt = shapeGo.GetComponent<RectTransform>();
-                sRt.anchorMin = Vector2.zero; sRt.anchorMax = Vector2.one;
-                sRt.offsetMin = Vector2.zero; sRt.offsetMax = Vector2.zero;
+                RectTransform cRt = cardGo.GetComponent<RectTransform>();
+                cRt.anchorMin = Vector2.zero; cRt.anchorMax = Vector2.one;
+                cRt.offsetMin = Vector2.zero; cRt.offsetMax = Vector2.zero;
 
                 Text txt = null;
                 if (!string.IsNullOrEmpty(elem.Title))
                 {
-                    txt = UIFactory.CreateText(shapeGo.transform, "StaticText", elem.Title, Mathf.RoundToInt(9f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
+                    txt = UIFactory.CreateText(cardGo.transform, "SectionTitle", elem.Title, Mathf.RoundToInt(8.5f * s), TextAnchor.UpperLeft, style.GetTextColor(TextStyleRole.Label, theme));
                     RectTransform txtRt = txt.rectTransform;
-                    txtRt.anchorMin = Vector2.zero; txtRt.anchorMax = Vector2.one;
-                    txtRt.offsetMin = Vector2.zero; txtRt.offsetMax = Vector2.zero;
+                    txtRt.anchorMin = new Vector2(0f, 0.7f); txtRt.anchorMax = new Vector2(1f, 1f);
+                    txtRt.offsetMin = new Vector2(6f * s, 0f); txtRt.offsetMax = new Vector2(-6f * s, -4f * s);
                 }
 
-                var ctrl = new StructuralShapeControl(this, elem.LayerId, elem.Name, item.RootGo, shapeGo.GetComponent<Image>(), outline, txt);
+                var ctrl = new StructuralShapeControl(this, elem.LayerId, elem.Name, item.RootGo, cardGo.GetComponent<Image>(), outline, txt);
                 item.BoundControl = ctrl;
                 this.Controls.Register(ctrl);
             }
@@ -398,7 +794,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                     }
                 }
 
-                // 2. 计量槽填充更新
+                // 2. 线性计量槽填充更新
                 if (layer.BarFillImage != null)
                 {
                     if (layer.CachedFloat.Update(elemState.NormalizedFraction))
@@ -407,7 +803,16 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                     }
                 }
 
-                // 3. 告警光字牌更新
+                // 3. 弧形度量环着色器更新
+                if (layer.ArcMaterial != null)
+                {
+                    if (layer.CachedArcFill.Update(elemState.NormalizedFraction))
+                    {
+                        layer.ArcMaterial.SetFloat("_FillAmount", elemState.NormalizedFraction);
+                    }
+                }
+
+                // 4. 告警光字牌更新
                 if (layer.LampImage != null)
                 {
                     Color lampCol;
@@ -422,14 +827,14 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                     }
                 }
 
-                // 4. 按钮状态 LED 更新
+                // 5. 按钮状态 LED 更新
                 if (layer.ButtonLed != null)
                 {
                     if (layer.CachedActive.Update(elemState.IsActive))
                     {
                         Color ledCol = elemState.IsActive
                             ? style.GetTextColor(TextStyleRole.Accent, theme)
-                            : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Faint);
+                            : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Faint, theme);
                         layer.ButtonLed.SetColor(ledCol);
                     }
                 }
@@ -517,6 +922,14 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
         protected override void OnDestroy()
         {
+            for (int i = 0; i < _runtimeLayers.Count; i++)
+            {
+                if (_runtimeLayers[i]?.ArcMaterial != null)
+                {
+                    Destroy(_runtimeLayers[i].ArcMaterial);
+                    _runtimeLayers[i].ArcMaterial = null;
+                }
+            }
             base.OnDestroy();
         }
     }

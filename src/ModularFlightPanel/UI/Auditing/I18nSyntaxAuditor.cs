@@ -87,21 +87,21 @@ namespace ModularFlightPanel.HeadlessValidator
         private static readonly HashSet<string> AuthoritativeAbbreviations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             // 飞行控制与航电系统代号
-            "SAS", "RCS", "HUD", "AP", "PREC", "DCK", "DOCK", "TGT", "ECAM", "EICAS", "ND", "SC", "GPWS", "ECLSS",
+            "SAS", "RCS", "HUD", "AP", "PREC", "DCK", "DOCK", "TGT", "ECAM", "EICAS", "ND", "SC", "GPWS", "ECLSS", "STAB",
             // 飞行参数与动力装置读数
             "SPD", "ALT", "VSI", "VERTSPD", "HDG", "THR", "TWR", "MACH", "G", "Q", "MAX-Q", "PE", "EC", "COMM", "STG", "IGN",
             "ECC", "INC", "PER", "PRO", "RET", "NRM", "RAD", "ANT", "SOI", "TRAJ", "AN", "DN",
             "N1", "N2", "EPR", "EGT", "FF", "RPM", "ENG", "VIB", "REV", "MECO", "TO", "GA", "JETT", "ACC",
             "TAS", "IAS", "GS", "RA", "WT", "QTY", "PRESS", "TEMP", "SAT", "TAT", "CAB", "LDG", "RDR", "MON", "CH",
             // 时间 / 机构 / 项目 / 外部模组代号
-            "UT", "MET", "MFP", "KSP", "SPX", "TDRS", "ISS", "DSN", "AFT", "FWD", "LO", "HI", "T", "RF", "FAR", "TF", "MJ",
+            "UT", "MET", "MFP", "KSP", "SPX", "TDRS", "ISS", "DSN", "AFT", "FWD", "LO", "HI", "T", "RF", "FAR", "TF", "MJ", "WARP", "PHYS",
             // 标准告警与状态代号
             "NORM", "CAUT", "WARN", "OK", "ERR", "ON", "OFF",
             // 单位与量纲符号 (含长距离天文单位与角度)
             "M", "KM", "MM", "GM", "TM", "AU", "LY", "DEG", "RAD", "S", "SEC", "MIN", "H", "D", "Y", "KN", "KPA", "ATM", "MS", "HZ", "FPS", "PX",
             "KB", "MB", "GB", "V", "A", "W", "k", "KG", "KGS", "C", "F", "PSI", "BPS", "KBPS", "MBPS", "DV",
             // 坐标 / 罗盘 / 通道 / 界面缩写 / 航电通用缩写 / 项目标识
-            "X", "Y", "Z", "R", "B", "N", "E", "UI", "GUI", "ID", "OBT", "LAG", "ORBIT", "LOG", "PARTS", "LAYOUT", "CREW", "MODULAR", "FLIGHT", "PANEL", "HEX"
+            "X", "Y", "Z", "R", "B", "N", "E", "EQ", "UI", "GUI", "ID", "OBT", "LAG", "ORBIT", "LOG", "PARTS", "LAYOUT", "CREW", "MODULAR", "FLIGHT", "PANEL", "HEX"
         };
 
         /// <summary>数字+短单位后缀的读数记号（"0G" / "8K" / "00x" / "3D" / "+15c"），不是可汉化文案</summary>
@@ -228,6 +228,7 @@ namespace ModularFlightPanel.HeadlessValidator
             { "B747LowerEicasWidget.cs", 2 },
             { "B787EicasWidget.cs", 2 },
             { "BaseFlightWidget.cs", 1 },
+            { "CustomCompositePanelWidget.cs", 6 },
             { "CustomTokenTextWidget.cs", 3 },
             { "EcamAlertLogWidget.cs", 25 },
             { "ElectricalSystemWidget.cs", 2 },
@@ -266,6 +267,7 @@ namespace ModularFlightPanel.HeadlessValidator
             { "B747LowerEicasWidget.cs", 2 },
             { "B787EicasWidget.cs", 2 },
             { "BaseFlightWidget.cs", 1 },
+            { "CustomCompositePanelWidget.cs", 6 },
             { "CustomTokenTextWidget.cs", 3 },
             { "EcamAlertLogWidget.cs", 25 },
             { "ElectricalSystemWidget.cs", 2 },
@@ -387,9 +389,9 @@ namespace ModularFlightPanel.HeadlessValidator
             { "MFPSafetyFallback.cs", 2 },
             { "StageDeltaVWidget.cs", 2 },
             { "TabAssembler.cs", 5 },
-            { "TabStudio.cs", 104 },
+            { "TabStudio.cs", 133 },
             { "TelemetryMatrixData.cs", 22 },
-            { "WidgetControlCatalog.cs", 16 },
+            { "WidgetControlCatalog.cs", 24 },
             { "WidgetRenderManager.cs", 1 },
         };
 
@@ -403,9 +405,9 @@ namespace ModularFlightPanel.HeadlessValidator
             { "MFPSafetyFallback.cs", 2 },
             { "StageDeltaVWidget.cs", 2 },
             { "TabAssembler.cs", 5 },
-            { "TabStudio.cs", 104 },
+            { "TabStudio.cs", 133 },
             { "TelemetryMatrixData.cs", 22 },
-            { "WidgetControlCatalog.cs", 16 },
+            { "WidgetControlCatalog.cs", 24 },
             { "WidgetRenderManager.cs", 1 },
         };
 

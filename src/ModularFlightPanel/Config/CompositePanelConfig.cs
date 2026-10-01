@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text;
 using UnityEngine;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.Config
 {
@@ -18,6 +19,7 @@ namespace ModularFlightPanel.Config
         public string Name = "新图层";
         public string PrototypeId = "native.readout";
         public string SourceWidgetTypeName = "native";
+        public WidgetControlCategory Category = WidgetControlCategory.GenericElement;
 
         // 几何变换与图层属性 (Photoshop-grade Transforms)
         public float X = 0f;
@@ -50,6 +52,7 @@ namespace ModularFlightPanel.Config
         public CompositeElementConfig Clone()
         {
             var clone = (CompositeElementConfig)this.MemberwiseClone();
+            clone.Category = this.Category;
             clone.CustomParams = new Dictionary<string, string>(this.CustomParams, StringComparer.OrdinalIgnoreCase);
             return clone;
         }
@@ -61,6 +64,7 @@ namespace ModularFlightPanel.Config
             obj.Add("Name", Name ?? "");
             obj.Add("PrototypeId", PrototypeId ?? "");
             obj.Add("SourceWidgetTypeName", SourceWidgetTypeName ?? "");
+            obj.Add("Category", Category.ToString());
             obj.Add("X", X);
             obj.Add("Y", Y);
             obj.Add("Width", Width);
@@ -128,6 +132,16 @@ namespace ModularFlightPanel.Config
                 IsToggle = obj.GetBool("IsToggle", false)
             };
 
+            string catStr = obj.GetString("Category", "");
+            if (!string.IsNullOrEmpty(catStr) && Enum.TryParse<WidgetControlCategory>(catStr, true, out var parsedCat))
+            {
+                elem.Category = parsedCat;
+            }
+            else
+            {
+                elem.Category = elem.ResolveCategory();
+            }
+
             var paramsObj = obj.GetObject("CustomParams");
             if (paramsObj != null)
             {
@@ -138,6 +152,69 @@ namespace ModularFlightPanel.Config
             }
 
             return elem;
+        }
+
+        /// <summary>
+        /// 智能分类决议通道 (Heuristic & Catalog Category Resolution)
+        /// 根绝所有图层被降级为单一方框的根本原因：
+        /// 1. 优先采用已明确持久化的 Category；
+        /// 2. 查验构件目录 WidgetControlCatalog 元数据原型分类；
+        /// 3. 启发式依据 PrototypeId、Name、Title 及长宽比进行高精度航电类型分流。
+        /// </summary>
+        public WidgetControlCategory ResolveCategory()
+        {
+            if (Category != WidgetControlCategory.GenericElement && Category != WidgetControlCategory.Misc)
+            {
+                return Category;
+            }
+
+            var proto = WidgetControlCatalog.FindPrototype(PrototypeId);
+            if (proto != null && proto.Category != WidgetControlCategory.GenericElement && proto.Category != WidgetControlCategory.Misc)
+            {
+                return proto.Category;
+            }
+
+            string p = (PrototypeId ?? "").ToLowerInvariant();
+            string n = (Name ?? "").ToLowerInvariant();
+            string t = (Title ?? "").ToLowerInvariant();
+
+            // 1. 标题与卡片顶栏
+            if (p.Contains("header") || n.Contains("title") || n.Contains("header") || t.Contains("header"))
+                return WidgetControlCategory.Header;
+
+            // 2. 弧形度量表盘
+            if (p.Contains("arc") || p.Contains("radial") || p.Contains("dial") || p.Contains("gforce") || n.Contains("arc") || n.Contains("dial"))
+                return WidgetControlCategory.ArcGauge;
+
+            // 3. 状态告警光字牌
+            if (p.Contains("annunciator") || p.Contains("lamp") || p.Contains("warn") || p.Contains("caution") || n.Contains("light") || n.Contains("lamp"))
+                return WidgetControlCategory.Annunciator;
+
+            // 4. 模式胶囊
+            if (p.Contains("capsule") || p.Contains("badge") || p.Contains("mode") || p.Contains("frame") || n.Contains("badge") || n.Contains("mode"))
+                return WidgetControlCategory.ModeCapsule;
+
+            // 5. 线性柱条与进度条
+            if (p.Contains("bar") || p.Contains("gauge") || p.Contains("slider") || p.Contains("progress") || p.Contains("thr") || n.Contains("bar") || n.Contains("gauge"))
+                return WidgetControlCategory.LinearGauge;
+
+            // 6. 交互按键与系统开关
+            if (p.Contains("switch") || p.Contains("button") || p.Contains("btn") || p.Contains("action") || p.Contains("stage") || p.Contains("toggle") || p.Contains("warp"))
+                return WidgetControlCategory.ActionButton;
+
+            // 7. 纯数值数显
+            if (p.Contains("readout") || p.Contains("digit") || p.Contains("val") || p.Contains("speed") || p.Contains("alt") || !string.IsNullOrEmpty(Token))
+                return WidgetControlCategory.Readout;
+
+            // 8. 几何长宽比兜底
+            if (Height > 0f)
+            {
+                float ratio = Width / Height;
+                if (ratio > 5.0f && Height <= 4f) return WidgetControlCategory.Misc;
+                if (ratio >= 4.0f && Height <= 32f) return WidgetControlCategory.Header;
+            }
+
+            return WidgetControlCategory.Readout;
         }
     }
 

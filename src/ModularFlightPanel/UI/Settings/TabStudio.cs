@@ -8,6 +8,7 @@ using ModularFlightPanel.UI;
 using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.Widgets;
 using ModularFlightPanel.UI.Widgets.Controls;
+using ModularFlightPanel.UI.HUD;
 using AnnunciatorState = ModularFlightPanel.UI.Framework.AnnunciatorState;
 
 namespace ModularFlightPanel.UI.Settings
@@ -2092,7 +2093,7 @@ namespace ModularFlightPanel.UI.Settings
                     }
 
                     // 类型标牌
-                    string protoTag = GetPrototypeCategoryTag(elem.PrototypeId);
+                    string protoTag = GetPrototypeCategoryTag(elem);
                     GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>[{protoTag}]</size></color>", GUILayout.Width(55f));
 
                     // 不透明度
@@ -2141,6 +2142,11 @@ namespace ModularFlightPanel.UI.Settings
             GUILayout.BeginHorizontal();
             GUILayout.Label("原型标识:", GUILayout.Width(75f));
             GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=10>{curElem.PrototypeId} (来源: {curElem.SourceWidgetTypeName})</size></color>", GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("构件品类:", GUILayout.Width(75f));
+            GUILayout.Label($"<b><color=#{MFPGuiSkin.HexAccentCyan}>{GetPrototypeCategoryTag(curElem)}</color></b> <color=#{MFPGuiSkin.HexTextSecondary}><size=9>({curElem.Category})</size></color>", GUILayout.ExpandWidth(true));
             GUILayout.EndHorizontal();
             MFPGuiSkin.EndInset();
 
@@ -2466,7 +2472,20 @@ namespace ModularFlightPanel.UI.Settings
                 GUILayout.BeginHorizontal();
 
                 // 构件名称与分类徽章
-                GUILayout.Label($"<b>{proto.DisplayName}</b>", GUILayout.ExpandWidth(true));
+                string catBadge = HUDEditModeToolbar.GetCategoryShortTag(proto.Category);
+                string catColor = MFPGuiSkin.HexTextSecondary;
+                switch (proto.Category)
+                {
+                    case WidgetControlCategory.Header: catColor = "BB86FC"; break;
+                    case WidgetControlCategory.Readout: catColor = MFPGuiSkin.HexAccentCyan; break;
+                    case WidgetControlCategory.LinearGauge: catColor = MFPGuiSkin.HexAccentGreen; break;
+                    case WidgetControlCategory.ArcGauge: catColor = "03DAC6"; break;
+                    case WidgetControlCategory.Annunciator: catColor = MFPGuiSkin.HexAccentAmber; break;
+                    case WidgetControlCategory.ActionButton: catColor = "FFB74D"; break;
+                    case WidgetControlCategory.ModeCapsule: catColor = "BA68C8"; break;
+                }
+
+                GUILayout.Label($"<color=#{catColor}><b>[{catBadge}]</b></color> <b>{proto.DisplayName}</b>", GUILayout.ExpandWidth(true));
                 GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=10>[{proto.DefaultSize.x:0}×{proto.DefaultSize.y:0}]</size></color>", GUILayout.Width(65f));
 
                 if (GUILayout.Button(I18n.Tr("COMP_BTN_PLACE", "+ 置入画板"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(78f), GUILayout.Height(20f)))
@@ -2514,10 +2533,11 @@ namespace ModularFlightPanel.UI.Settings
                 Name = proto.DisplayName,
                 PrototypeId = proto.PrototypeId,
                 SourceWidgetTypeName = proto.SourceWidgetTypeName,
+                Category = proto.Category,
                 Width = proto.DefaultSize.x,
                 Height = proto.DefaultSize.y,
                 Token = proto.DefaultToken,
-                Title = proto.DefaultTitle,
+                Title = !string.IsNullOrEmpty(proto.DefaultTitle) ? proto.DefaultTitle : WidgetControlCatalog.ExtractCleanTitle(proto.DisplayName),
                 Unit = proto.DefaultUnit,
                 UnitDimension = proto.DefaultUnitDimension,
                 MinValue = proto.DefaultMinValue,
@@ -2540,7 +2560,7 @@ namespace ModularFlightPanel.UI.Settings
             _selectedLayerId = newElem.LayerId;
             _studioSubTab = 0; // 自动切回图层精调页
             SyncCompositeConfig(w, panelCfg);
-            ShowToast(string.Format("已置入控件: {0}", proto.DisplayName));
+            ShowToast(string.Format(I18n.Tr("STUDIO_TOAST_ELEMENT_PLACED", "已置入控件: {0}"), proto.DisplayName));
         }
 
         private void DrawCompositeCanvasAndPresets(WidgetConfig w, CompositePanelConfig panelCfg)
@@ -2771,18 +2791,23 @@ namespace ModularFlightPanel.UI.Settings
             }
         }
 
+        private static string GetPrototypeCategoryTag(CompositeElementConfig elem)
+        {
+            if (elem == null) return HUDEditModeToolbar.GetCategoryShortTag(WidgetControlCategory.GenericElement);
+            return HUDEditModeToolbar.GetCategoryShortTag(elem.ResolveCategory());
+        }
+
         private static string GetPrototypeCategoryTag(string protoId)
         {
-            if (string.IsNullOrEmpty(protoId)) return "通用";
-            string p = protoId.ToLowerInvariant();
-            if (p.Contains("readout") || p.Contains("speed") || p.Contains("alt")) return "读数盒";
-            if (p.Contains("bar") || p.Contains("linear") || p.Contains("gauge") || p.Contains("thr")) return "线性槽";
-            if (p.Contains("arc")) return "弧表";
-            if (p.Contains("annunciator") || p.Contains("lamp")) return "光字牌";
-            if (p.Contains("btn") || p.Contains("button") || p.Contains("switch")) return "开关";
-            if (p.Contains("sas")) return "姿控";
-            if (p.Contains("header") || p.Contains("box") || p.Contains("separator")) return "结构";
-            return "构件";
+            if (!string.IsNullOrEmpty(protoId))
+            {
+                var proto = WidgetControlCatalog.FindPrototype(protoId);
+                if (proto != null)
+                {
+                    return HUDEditModeToolbar.GetCategoryShortTag(proto.Category);
+                }
+            }
+            return HUDEditModeToolbar.GetCategoryShortTag(WidgetControlCategory.GenericElement);
         }
 
         private static bool MatchesToolboxCategory(ControlPrototypeDescriptor proto, int catFilter)

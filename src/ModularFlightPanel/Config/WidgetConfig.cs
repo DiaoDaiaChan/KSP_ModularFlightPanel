@@ -19,8 +19,8 @@ namespace ModularFlightPanel.Config
         public string ThemeOverride = ""; // 单组件独立配色主题覆盖 (空为跟随全局, 或指定主题 ID)
         public string CustomTemplate = "";
 
-        public float EffectiveScaleX => ScaleX > 0.01f ? ScaleX : (Scale > 0.01f ? Scale : 1.0f);
-        public float EffectiveScaleY => ScaleY > 0.01f ? ScaleY : (Scale > 0.01f ? Scale : 1.0f);
+        public float EffectiveScaleX => Math.Max(0.2f, Math.Min(4.0f, ScaleX > 0.01f ? ScaleX : (Scale > 0.01f ? Scale : 1.0f)));
+        public float EffectiveScaleY => Math.Max(0.2f, Math.Min(4.0f, ScaleY > 0.01f ? ScaleY : (Scale > 0.01f ? Scale : 1.0f)));
         public float EffectiveOpacity => Opacity > 0.01f ? (Opacity < 0.05f ? 0.05f : (Opacity > 1.0f ? 1.0f : Opacity)) : 1.0f;
 
         // 航电套件元数据 (Kit Metadata)

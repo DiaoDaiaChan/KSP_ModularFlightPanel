@@ -759,9 +759,10 @@ namespace ModularFlightPanel.UI
             };
         }
 
-        private static readonly Color StandardSkyZenith = new Color(0.04f, 0.35f, 0.80f, 1.0f);
-        private static readonly Color StandardGroundHorizon = new Color(0.76f, 0.38f, 0.08f, 1.0f);
-        private static readonly Color StandardLadderWhite = new Color(0.95f, 0.98f, 1.0f, 0.85f);
+        private static readonly Color StandardSkyZenith = new Color(0.03f, 0.18f, 0.52f, 1.0f);
+        private static readonly Color StandardSkyHorizon = new Color(0.06f, 0.40f, 0.78f, 1.0f);
+        private static readonly Color StandardGroundHorizon = new Color(0.60f, 0.30f, 0.08f, 1.0f);
+        private static readonly Color StandardLadderWhite = new Color(0.98f, 0.99f, 1.0f, 1.0f);
 
         /// <summary>
         /// 获取地表系 / 体固系 (SURFACE / BODY_FIXED / BODY_SURFACE) 权威航电调色板。
@@ -771,12 +772,12 @@ namespace ModularFlightPanel.UI
         {
             theme = ResolveTheme(theme);
             Color rawGnd = (theme != null) ? (Color)theme.GroundColor : StandardGroundHorizon;
-            Color gndH = (rawGnd.r > 0.45f && rawGnd.g > 0.18f) ? rawGnd : StandardGroundHorizon;
+            Color gndH = (rawGnd.r > 0.40f && rawGnd.g > 0.15f) ? rawGnd : StandardGroundHorizon;
             Color gndN = Darken(gndH, 0.55f);
 
-            Color rawSky = (theme != null) ? (Color)theme.SkyColor : StandardSkyZenith;
-            Color skyZ = (rawSky.b > 0.40f) ? rawSky : StandardSkyZenith;
-            Color skyH = Lighten(skyZ, 0.22f);
+            Color rawSky = (theme != null) ? (Color)theme.SkyColor : StandardSkyHorizon;
+            Color skyH = (rawSky.b > 0.35f) ? rawSky : StandardSkyHorizon;
+            Color skyZ = Darken(skyH, 0.32f);
 
             return new NavballFramePalette
             {

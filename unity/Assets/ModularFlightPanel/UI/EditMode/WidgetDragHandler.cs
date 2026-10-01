@@ -484,18 +484,33 @@ namespace ModularFlightPanel.UI
                 if (EnableMagneticSnap && WidgetSmartGuides.Instance != null)
                 {
                     var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, rawPos, 8f);
-                    _rectTransform.anchoredPosition = snap.SnappedPosition;
+                    _rectTransform.anchoredPosition = ClampToScreen(snap.SnappedPosition);
                 }
                 else
                 {
                     // 基础 5px 网格吸附
                     float snapX = Mathf.Round(rawPos.x / 5f) * 5f;
                     float snapY = Mathf.Round(rawPos.y / 5f) * 5f;
-                    _rectTransform.anchoredPosition = new Vector2(snapX, snapY);
+                    _rectTransform.anchoredPosition = ClampToScreen(new Vector2(snapX, snapY));
                 }
             }
 
             WidgetTransformGizmo.Instance?.UpdateGizmoPosition();
+        }
+
+        private Vector2 ClampToScreen(Vector2 pos)
+        {
+            float canvasScale = _canvas != null && _canvas.scaleFactor > 0.01f ? _canvas.scaleFactor : 1.0f;
+            float halfScreenW = (Screen.width / canvasScale) * 0.5f;
+            float halfScreenH = (Screen.height / canvasScale) * 0.5f;
+            float wHalf = _rectTransform != null ? Mathf.Max(20f, _rectTransform.rect.width * 0.5f) : 40f;
+            float hHalf = _rectTransform != null ? Mathf.Max(20f, _rectTransform.rect.height * 0.5f) : 40f;
+            float margin = 10f;
+            float minX = -halfScreenW + Mathf.Min(wHalf, 40f) + margin;
+            float maxX = halfScreenW - Mathf.Min(wHalf, 40f) - margin;
+            float minY = -halfScreenH + Mathf.Min(hHalf, 40f) + margin;
+            float maxY = halfScreenH - Mathf.Min(hHalf, 40f) - margin;
+            return new Vector2(Mathf.Clamp(pos.x, minX, maxX), Mathf.Clamp(pos.y, minY, maxY));
         }
 
         public void OnEndDrag(PointerEventData eventData)
@@ -533,8 +548,10 @@ namespace ModularFlightPanel.UI
             {
                 if (_ownerWidget?.Config != null && _rectTransform != null)
                 {
-                    _ownerWidget.Config.PositionX = _rectTransform.anchoredPosition.x;
-                    _ownerWidget.Config.PositionY = _rectTransform.anchoredPosition.y;
+                    Vector2 clamped = ClampToScreen(_rectTransform.anchoredPosition);
+                    _rectTransform.anchoredPosition = clamped;
+                    _ownerWidget.Config.PositionX = clamped.x;
+                    _ownerWidget.Config.PositionY = clamped.y;
                 }
             }
 

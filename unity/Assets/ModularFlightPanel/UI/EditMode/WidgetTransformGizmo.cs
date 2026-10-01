@@ -315,6 +315,10 @@ namespace ModularFlightPanel.UI
                 if (target is ModularFlightPanel.UI.Framework.IAdaptiveSizeWidget adaptive)
                 {
                     allowEdge = !isLocked && adaptive.AllowNonUniformScale;
+                    if (target is Widgets.Controls.StagingSequenceWidget staging && staging.DisplayMode == Widgets.Controls.StagingDisplayMode.Concise)
+                    {
+                        allowEdge = false; // 极简模式高度由分级数自适应，仅开放 4 角等比缩放
+                    }
                 }
                 else if (target.GetType().Name.Contains("Sphere") || target.GetType().Name.Contains("Navball"))
                 {
@@ -421,8 +425,8 @@ namespace ModularFlightPanel.UI
                 float angleForProj = (WidgetSelectionManager.Count == 1) ? _initialAngle : 0f;
                 Vector2 localDelta = Quaternion.Euler(0, 0, -angleForProj) * mouseDelta;
                 float distY = (_currentDragMode == DragGizmoMode.ScaleT) ? localDelta.y : -localDelta.y;
-                float baseH = Mathf.Max(20f, _initialGroupBounds.height);
-                float factorY = Mathf.Max(0.1f, 1.0f + (distY / (baseH * 0.5f)));
+                float baseH = Mathf.Max(60f, _initialGroupBounds.height);
+                float factorY = Mathf.Clamp(1.0f + (distY / (baseH * 0.5f)), 0.2f, 4.0f);
 
                 if (shift)
                 {
@@ -446,8 +450,8 @@ namespace ModularFlightPanel.UI
                 float angleForProj = (WidgetSelectionManager.Count == 1) ? _initialAngle : 0f;
                 Vector2 localDelta = Quaternion.Euler(0, 0, -angleForProj) * mouseDelta;
                 float distX = (_currentDragMode == DragGizmoMode.ScaleR) ? localDelta.x : -localDelta.x;
-                float baseW = Mathf.Max(20f, _initialGroupBounds.width);
-                float factorX = Mathf.Max(0.1f, 1.0f + (distX / (baseW * 0.5f)));
+                float baseW = Mathf.Max(60f, _initialGroupBounds.width);
+                float factorX = Mathf.Clamp(1.0f + (distX / (baseW * 0.5f)), 0.2f, 4.0f);
 
                 if (shift)
                 {
@@ -470,10 +474,10 @@ namespace ModularFlightPanel.UI
                 // 角手柄等比例缩放 (按对角线比例缩放，彻底消除多选比例坍塌)
                 float angleForProj = (WidgetSelectionManager.Count == 1) ? _initialAngle : 0f;
                 Vector2 localDelta = Quaternion.Euler(0, 0, -angleForProj) * mouseDelta;
-                float baseDiag = Mathf.Max(30f, Mathf.Sqrt(_initialGroupBounds.width * _initialGroupBounds.width + _initialGroupBounds.height * _initialGroupBounds.height));
-                float dist = Vector2.Dot(localDelta.normalized, GetHandleDirection(_currentDragMode)) * localDelta.magnitude;
+                float baseDiag = Mathf.Max(120f, Mathf.Sqrt(_initialGroupBounds.width * _initialGroupBounds.width + _initialGroupBounds.height * _initialGroupBounds.height));
+                float dist = Vector2.Dot(localDelta, GetHandleDirection(_currentDragMode));
 
-                float scaleFactor = Mathf.Max(0.1f, 1.0f + (dist / (baseDiag * 0.5f)));
+                float scaleFactor = Mathf.Clamp(1.0f + (dist / (baseDiag * 0.5f)), 0.2f, 4.0f);
 
                 // Shift 键吸附至 0.05x 步进
                 if (shift)
@@ -481,14 +485,18 @@ namespace ModularFlightPanel.UI
                     scaleFactor = Mathf.Round(scaleFactor * 20f) / 20f;
                 }
 
-                if (_initialWidgetScales.Count > 1)
+                if (_initialWidgetScalesXY.Count > 1)
                 {
-                    WidgetSelectionManager.BatchScaleRelative(_initialWidgetScales, scaleFactor, commit: false);
+                    WidgetSelectionManager.BatchScaleRelativeXY(_initialWidgetScalesXY, scaleFactor, scaleFactor, commit: false);
                 }
-                else
+                else if (WidgetSelectionManager.Count == 1)
                 {
+                    float newScaleX = Mathf.Clamp(_initialScaleX * scaleFactor, 0.2f, 4.0f);
+                    float newScaleY = Mathf.Clamp(_initialScaleY * scaleFactor, 0.2f, 4.0f);
                     float newScale = Mathf.Clamp(_initialScale * scaleFactor, 0.2f, 4.0f);
-                    WidgetSelectionManager.BatchSetScale(newScale, commit: false);
+                    var first = WidgetSelectionManager.SelectedWidgets.FirstOrDefault();
+                    if (first?.Config != null) first.Config.Scale = newScale;
+                    WidgetSelectionManager.BatchSetScaleXY(newScaleX, newScaleY, commit: false);
                 }
                 UpdateGizmoPosition();
             }

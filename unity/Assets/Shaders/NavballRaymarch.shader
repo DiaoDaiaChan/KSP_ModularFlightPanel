@@ -204,130 +204,156 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 return length(pa - ba * h);
             }
 
-            // 现代航电高精度微雕刻矢量字模 (DIN 1451 / ICAO 倒角航电规范)
+            // 现代航电高精度微雕刻矢量字模 (DIN 1451 / ICAO 高清晰航电规范)
+            // 拓扑开口大、字怀开阔、无混淆异构，极低分辨率下依然 100% 锐利可辨
             float DigitDistance(float2 p, float digitF)
             {
                 int digit = (int)round(digitF);
                 float d = 100.0;
-                float r = 0.34; // 优雅笔画微半径 (全宽 0.68)
+                float r = 0.32; // 纯正航电笔画微半径 (全宽 0.64)
 
-                // 核心骨架控制点
-                float2 tL = float2(-0.80, 1.95), tR = float2(0.80, 1.95);   // 顶横
-                float2 mL = float2(-0.75, 0.00), mR = float2(0.75, 0.00);   // 中横
-                float2 bL = float2(-0.80, -1.95), bR = float2(0.80, -1.95); // 底横
+                // 核心控制尺寸与拓扑骨架 (开阔易辨)
+                float w = 1.05;
+                float h = 2.25;
 
                 if (digit == 0)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, bL, bR));
-                    d = min(d, SegmentSDF(p, float2(-0.95, -1.75), float2(-0.95, 1.75)));
-                    d = min(d, SegmentSDF(p, float2(0.95, -1.75), float2(0.95, 1.75)));
+                    // 0: 饱满开阔椭圆，上下端平直收敛
+                    d = min(d, SegmentSDF(p, float2(-w + 0.35, h), float2(w - 0.35, h)));
+                    d = min(d, SegmentSDF(p, float2(-w + 0.35, -h), float2(w - 0.35, -h)));
+                    d = min(d, SegmentSDF(p, float2(-w, -h + 0.40), float2(-w, h - 0.40)));
+                    d = min(d, SegmentSDF(p, float2(w, -h + 0.40), float2(w, h - 0.40)));
+                    d = min(d, SegmentSDF(p, float2(-w, h - 0.40), float2(-w + 0.35, h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.35, h), float2(w, h - 0.40)));
+                    d = min(d, SegmentSDF(p, float2(-w, -h + 0.40), float2(-w + 0.35, -h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.35, -h), float2(w, -h + 0.40)));
                 }
                 else if (digit == 1)
                 {
-                    // 居中立柱 + 精致顶尖翼标
-                    d = min(d, SegmentSDF(p, float2(0.0, -1.95), float2(0.0, 1.95)));
-                    d = min(d, SegmentSDF(p, float2(-0.55, 1.35), float2(0.0, 1.95)));
+                    // 1: 航电标准立柱 + 锐利顶尖翼标 + 稳固底座
+                    d = min(d, SegmentSDF(p, float2(0.20, -h), float2(0.20, h)));
+                    d = min(d, SegmentSDF(p, float2(-0.75, h - 0.85), float2(0.20, h)));
+                    d = min(d, SegmentSDF(p, float2(-0.65, -h), float2(0.85, -h)));
                 }
                 else if (digit == 2)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, tR, float2(0.85, 0.45)));
-                    d = min(d, SegmentSDF(p, float2(0.85, 0.45), float2(-0.85, -1.95)));
-                    d = min(d, SegmentSDF(p, bL, bR));
+                    // 2: 拱顶圆滑过渡 + 坚实对角斜撑 + 稳健底横
+                    d = min(d, SegmentSDF(p, float2(-w + 0.20, h), float2(w - 0.20, h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.20, h), float2(w, h - 0.45)));
+                    d = min(d, SegmentSDF(p, float2(w, h - 0.45), float2(w, 0.45)));
+                    d = min(d, SegmentSDF(p, float2(w, 0.45), float2(-w, -h)));
+                    d = min(d, SegmentSDF(p, float2(-w, -h), float2(w, -h)));
                 }
                 else if (digit == 3)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, tR, float2(0.85, 0.25)));
-                    d = min(d, SegmentSDF(p, float2(0.85, 0.25), float2(0.15, 0.00)));
-                    d = min(d, SegmentSDF(p, float2(0.15, 0.00), float2(0.85, -0.25)));
-                    d = min(d, SegmentSDF(p, float2(0.85, -0.25), bR));
-                    d = min(d, SegmentSDF(p, bL, bR));
+                    // 3: 上下双弧环，中梁右缩，左侧完全通畅开放
+                    d = min(d, SegmentSDF(p, float2(-w + 0.15, h), float2(w - 0.20, h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.20, h), float2(w, 0.35)));
+                    d = min(d, SegmentSDF(p, float2(w, 0.35), float2(0.05, 0.0)));
+                    d = min(d, SegmentSDF(p, float2(0.05, 0.0), float2(w, -0.35)));
+                    d = min(d, SegmentSDF(p, float2(w, -0.35), float2(w, -h + 0.35)));
+                    d = min(d, SegmentSDF(p, float2(w, -h + 0.35), float2(w - 0.30, -h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.30, -h), float2(-w + 0.15, -h)));
                 }
                 else if (digit == 4)
                 {
-                    d = min(d, SegmentSDF(p, float2(0.55, -1.95), float2(0.55, 1.95)));
-                    d = min(d, SegmentSDF(p, float2(-0.85, 1.95), float2(-0.85, -0.25)));
-                    d = min(d, SegmentSDF(p, float2(-0.85, -0.25), float2(0.85, -0.25)));
+                    // 4: 开放式航空 4，右立柱贯穿，横梁开阔
+                    d = min(d, SegmentSDF(p, float2(0.50, -h), float2(0.50, h)));
+                    d = min(d, SegmentSDF(p, float2(0.50, h), float2(-w, -0.25)));
+                    d = min(d, SegmentSDF(p, float2(-w, -0.25), float2(w, -0.25)));
                 }
                 else if (digit == 5)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, tL, float2(-0.85, 0.15)));
-                    d = min(d, SegmentSDF(p, float2(-0.85, 0.15), float2(0.65, 0.15)));
-                    d = min(d, SegmentSDF(p, float2(0.85, -0.10), float2(0.85, -1.75)));
-                    d = min(d, SegmentSDF(p, bL, bR));
+                    // 5: 顶部直横 + 锐利左立折 + 下半饱满弧
+                    d = min(d, SegmentSDF(p, float2(-w, h), float2(w, h)));
+                    d = min(d, SegmentSDF(p, float2(-w, h), float2(-w, 0.15)));
+                    d = min(d, SegmentSDF(p, float2(-w, 0.15), float2(w - 0.20, 0.15)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.20, 0.15), float2(w, -0.15)));
+                    d = min(d, SegmentSDF(p, float2(w, -0.15), float2(w, -h + 0.35)));
+                    d = min(d, SegmentSDF(p, float2(w, -h + 0.35), float2(w - 0.30, -h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.30, -h), float2(-w + 0.15, -h)));
                 }
                 else if (digit == 6)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, float2(-0.95, -1.75), float2(-0.95, 1.75)));
-                    d = min(d, SegmentSDF(p, mL, mR));
-                    d = min(d, SegmentSDF(p, float2(0.95, -1.75), float2(0.95, 0.00)));
-                    d = min(d, SegmentSDF(p, bL, bR));
+                    // 6: 严谨航空 6，右上角彻底敞开 (绝无顶横挡板)，杜绝与 8 混淆！
+                    d = min(d, SegmentSDF(p, float2(0.40, h), float2(-w + 0.40, h)));
+                    d = min(d, SegmentSDF(p, float2(-w + 0.40, h), float2(-w, h - 0.45)));
+                    d = min(d, SegmentSDF(p, float2(-w, h - 0.45), float2(-w, -h + 0.40)));
+                    d = min(d, SegmentSDF(p, float2(-w, -h + 0.40), float2(-w + 0.40, -h)));
+                    d = min(d, SegmentSDF(p, float2(-w + 0.40, -h), float2(w - 0.40, -h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.40, -h), float2(w, -h + 0.40)));
+                    d = min(d, SegmentSDF(p, float2(w, -h + 0.40), float2(w, 0.0)));
+                    d = min(d, SegmentSDF(p, float2(w, 0.0), float2(-w, 0.0)));
                 }
                 else if (digit == 7)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, tR, float2(-0.25, -1.95)));
+                    // 7: 顶部直横 + 优雅斜撑
+                    d = min(d, SegmentSDF(p, float2(-w, h), float2(w, h)));
+                    d = min(d, SegmentSDF(p, float2(w, h), float2(-0.25, -h)));
                 }
                 else if (digit == 8)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, mL, mR));
-                    d = min(d, SegmentSDF(p, bL, bR));
-                    d = min(d, SegmentSDF(p, float2(-0.90, 0.20), float2(-0.90, 1.75)));
-                    d = min(d, SegmentSDF(p, float2(0.90, 0.20), float2(0.90, 1.75)));
-                    d = min(d, SegmentSDF(p, float2(-0.90, -1.75), float2(-0.90, -0.20)));
-                    d = min(d, SegmentSDF(p, float2(0.90, -1.75), float2(0.90, -0.20)));
+                    // 8: 经典双环结构，腰部收窄 (0.65*w)，与 6 / 9 / 0 形成鲜明反差
+                    d = min(d, SegmentSDF(p, float2(-w + 0.35, h), float2(w - 0.35, h)));
+                    d = min(d, SegmentSDF(p, float2(-w + 0.35, -h), float2(w - 0.35, -h)));
+                    d = min(d, SegmentSDF(p, float2(-0.65, 0.0), float2(0.65, 0.0)));
+                    // 上环两侧
+                    d = min(d, SegmentSDF(p, float2(-w, 0.30), float2(-w, h - 0.35)));
+                    d = min(d, SegmentSDF(p, float2(w, 0.30), float2(w, h - 0.35)));
+                    // 下环两侧
+                    d = min(d, SegmentSDF(p, float2(-w, -h + 0.35), float2(-w, -0.30)));
+                    d = min(d, SegmentSDF(p, float2(w, -h + 0.35), float2(w, -0.30)));
                 }
                 else if (digit == 9)
                 {
-                    d = min(d, SegmentSDF(p, tL, tR));
-                    d = min(d, SegmentSDF(p, float2(-0.95, 0.00), float2(-0.95, 1.75)));
-                    d = min(d, SegmentSDF(p, mL, mR));
-                    d = min(d, SegmentSDF(p, float2(0.95, -1.75), float2(0.95, 1.75)));
-                    d = min(d, SegmentSDF(p, bL, bR));
+                    // 9: 严谨航空 9，左下角彻底敞开 (绝无底横)，上环饱满闭合，杜绝与 8 混淆！
+                    d = min(d, SegmentSDF(p, float2(-w + 0.40, h), float2(w - 0.40, h)));
+                    d = min(d, SegmentSDF(p, float2(-w, h - 0.40), float2(-w + 0.40, h)));
+                    d = min(d, SegmentSDF(p, float2(-w, 0.0), float2(-w, h - 0.40)));
+                    d = min(d, SegmentSDF(p, float2(-w, 0.0), float2(w, 0.0)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.40, h), float2(w, h - 0.40)));
+                    d = min(d, SegmentSDF(p, float2(w, h - 0.40), float2(w, -h + 0.45)));
+                    d = min(d, SegmentSDF(p, float2(w, -h + 0.45), float2(w - 0.40, -h)));
+                    d = min(d, SegmentSDF(p, float2(w - 0.40, -h), float2(-0.40, -h)));
                 }
                 else if (digit == 10)
                 {
                     // 航电小写字母 'h' (用于赤经 24h 时角标识)
-                    d = min(d, SegmentSDF(p, float2(-0.80, -1.95), float2(-0.80, 1.95)));
-                    d = min(d, SegmentSDF(p, float2(-0.80, 0.35), float2(0.35, 0.35)));
-                    d = min(d, SegmentSDF(p, float2(0.35, 0.35), float2(0.75, -0.10)));
-                    d = min(d, SegmentSDF(p, float2(0.75, -0.10), float2(0.75, -1.95)));
+                    d = min(d, SegmentSDF(p, float2(-w + 0.25, -h), float2(-w + 0.25, h)));
+                    d = min(d, SegmentSDF(p, float2(-w + 0.25, 0.40), float2(0.40, 0.40)));
+                    d = min(d, SegmentSDF(p, float2(0.40, 0.40), float2(w, -0.10)));
+                    d = min(d, SegmentSDF(p, float2(w, -0.10), float2(w, -h)));
                 }
                 else if (digit == 11)
                 {
                     // 航电大写字母 'N' (正北基准方位标)
-                    d = min(d, SegmentSDF(p, float2(-0.85, -1.95), float2(-0.85, 1.95)));
-                    d = min(d, SegmentSDF(p, float2(-0.85, 1.95), float2(0.85, -1.95)));
-                    d = min(d, SegmentSDF(p, float2(0.85, -1.95), float2(0.85, 1.95)));
+                    d = min(d, SegmentSDF(p, float2(-w, -h), float2(-w, h)));
+                    d = min(d, SegmentSDF(p, float2(-w, h), float2(w, -h)));
+                    d = min(d, SegmentSDF(p, float2(w, -h), float2(w, h)));
                 }
                 else if (digit == 12)
                 {
                     // 罗马数字 'I' (主天体靶盘 Primary Body)
-                    d = min(d, SegmentSDF(p, float2(0.0, -1.85), float2(0.0, 1.85)));
-                    d = min(d, SegmentSDF(p, float2(-0.65, 1.85), float2(0.65, 1.85)));
-                    d = min(d, SegmentSDF(p, float2(-0.65, -1.85), float2(0.65, -1.85)));
+                    d = min(d, SegmentSDF(p, float2(0.0, -h + 0.15), float2(0.0, h - 0.15)));
+                    d = min(d, SegmentSDF(p, float2(-0.65, h - 0.15), float2(0.65, h - 0.15)));
+                    d = min(d, SegmentSDF(p, float2(-0.65, -h + 0.15), float2(0.65, -h + 0.15)));
                 }
                 else if (digit == 13)
                 {
                     // 罗马数字 'II' (次天体靶盘 Secondary Body)
-                    d = min(d, SegmentSDF(p, float2(-0.55, -1.85), float2(-0.55, 1.85)));
-                    d = min(d, SegmentSDF(p, float2(0.55, -1.85), float2(0.55, 1.85)));
-                    d = min(d, SegmentSDF(p, float2(-0.95, 1.85), float2(0.95, 1.85)));
-                    d = min(d, SegmentSDF(p, float2(-0.95, -1.85), float2(0.95, -1.85)));
+                    d = min(d, SegmentSDF(p, float2(-0.55, -h + 0.15), float2(-0.55, h - 0.15)));
+                    d = min(d, SegmentSDF(p, float2(0.55, -h + 0.15), float2(0.55, h - 0.15)));
+                    d = min(d, SegmentSDF(p, float2(-0.95, h - 0.15), float2(0.95, h - 0.15)));
+                    d = min(d, SegmentSDF(p, float2(-0.95, -h + 0.15), float2(0.95, -h + 0.15)));
                 }
                 else if (digit == 14)
                 {
                     // 天球春分点黄金符号 ♈ (Vernal Equinox Aries Sign)
-                    d = min(d, SegmentSDF(p, float2(0.0, -1.95), float2(0.0, 0.45)));
-                    d = min(d, SegmentSDF(p, float2(0.0, 0.45), float2(-0.75, 1.85)));
-                    d = min(d, SegmentSDF(p, float2(-0.75, 1.85), float2(-1.15, 1.35)));
-                    d = min(d, SegmentSDF(p, float2(0.0, 0.45), float2(0.75, 1.85)));
-                    d = min(d, SegmentSDF(p, float2(0.75, 1.85), float2(1.15, 1.35)));
+                    d = min(d, SegmentSDF(p, float2(0.0, -h), float2(0.0, 0.45)));
+                    d = min(d, SegmentSDF(p, float2(0.0, 0.45), float2(-0.75, h - 0.35)));
+                    d = min(d, SegmentSDF(p, float2(-0.75, h - 0.35), float2(-1.15, h - 0.85)));
+                    d = min(d, SegmentSDF(p, float2(0.0, 0.45), float2(0.75, h - 0.35)));
+                    d = min(d, SegmentSDF(p, float2(0.75, h - 0.35), float2(1.15, h - 0.85)));
                 }
 
                 return d - r;
@@ -389,44 +415,41 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 }
             }
 
-            // ── 方案 1: 解析线宽物理保底与能量守恒抗闪烁 (Screen-Space Minimum Width Clamping & Alpha Conservation) ──
-            // 彻底解决亚像素欠采样导致的断线与跳动频闪，同时平滑过滤过渡带消除锯齿
+            // ── 高保真物理保底线宽与亚像素边缘抗锯齿 (Resolution-Invariant Sharp Line Filter) ──
+            // 保持线条在任意缩放/小尺寸下的实体感 (零发虚半透，坚挺不透明底限 0.90)，紧凑锐利抗锯齿
             float EvalConservativeLine(float dist, float nominalHalfWidth, float pixelDeriv)
             {
                 float pixelRadius = max(pixelDeriv * 0.5, 0.0001);
-                // 物理保底：有效线宽在屏幕上不低于 1.15 个像素半径（整宽永不低于 1.15 像素）
-                float minHalfWidth = pixelRadius * 1.15;
+                // 物理保底：屏幕上单边半宽永不低于 0.85 像素 (整宽约 1.7 像素)，杜绝断线与走样
+                float minHalfWidth = pixelRadius * 0.85;
                 float effectiveHalfWidth = max(nominalHalfWidth, minHalfWidth);
-                // 感知能量守恒：使用非线性平滑衰减保持视网膜对比度，防止极端角度或小尺寸下断线发虚
-                float widthRatio = nominalHalfWidth / effectiveHalfWidth;
-                float energyAlpha = min(1.0, pow(max(widthRatio, 0.001), 0.62));
-                // 1.25 像素半宽 Nyquist 滤波过渡带，平滑覆盖亚像素移动，彻底消除时间性闪烁
-                float aa = pixelRadius * 1.25;
+
+                // 紧凑锐利抗锯齿羽化带 (0.60 像素)，杜绝宽羽化带来的灰暗发软
+                float aa = pixelRadius * 0.60;
                 float edge = 1.0 - smoothstep(effectiveHalfWidth - aa, effectiveHalfWidth + aa, dist);
-                return edge * energyAlpha;
+
+                // 实体不透明度保底：线条即使在极端低分辨率/小尺寸下，也坚挺保持可读性 (底限 0.92)
+                float widthRatio = saturate(nominalHalfWidth / effectiveHalfWidth);
+                float alphaFloor = lerp(0.92, 1.0, widthRatio);
+                return edge * alphaFloor;
             }
 
-            // SDF 字符笔画物理保底与超锐利边缘 (带描边与能量守恒)
+            // SDF 字符笔画高反差超锐利边缘 (实心高亮纯白 + 独立深黑描边，零半透衰减)
             void EvalConservativeSDF(float dist, float outlineThick, float pixelDeriv, out float fill, out float outline)
             {
                 float pixelRadius = max(pixelDeriv * 0.5, 0.0001);
-                float nominalRadius = 0.34;
-                float minRadius = pixelRadius * 1.15;
-                float effectiveRadius = max(nominalRadius, minRadius);
-                float widthRatio = nominalRadius / effectiveRadius;
-                float energyAlpha = min(1.0, pow(max(widthRatio, 0.001), 0.62));
+                // 紧凑锐利边缘羽化 (0.55 像素)
+                float aa = max(pixelRadius * 0.55, 0.0001);
 
-                // 补偿笔画微径扩展，保证极小尺寸下笔画不消失
-                float radiusExpand = effectiveRadius - nominalRadius;
-                float adjustedDist = dist - radiusExpand;
+                // 实心高亮纯白字芯 (100% 不透明实心，彻底移除 energyAlpha 灰暗衰减)
+                fill = 1.0 - smoothstep(-aa, aa, dist);
 
-                float aa = pixelRadius * 1.25;
-                fill = (1.0 - smoothstep(-aa, aa, adjustedDist)) * energyAlpha;
-                outline = (1.0 - smoothstep(-aa, aa, adjustedDist - outlineThick)) * energyAlpha;
+                // 独立高反差外扩描边
+                outline = 1.0 - smoothstep(-aa, aa, dist - outlineThick);
             }
 
             // 核心程序化曲面求值函数 (共享于实时备用通道与离屏烘焙通道)
-            fixed4 EvaluateNavballSurface(float3 p, float pitchDeg, float headDeg, float absPitch, float absY, float NdotV, float markerClearance, float signH)
+            fixed4 EvaluateNavballSurface(float3 p, float pitchDeg, float headDeg, float absPitch, float absY, float NdotV, float markerClearance, float signH, float lateralDeg)
             {
                 // 1. 天空与地面平滑梯度 (Aero Horizon Gradient)
                 fixed4 col;
@@ -625,44 +648,59 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float baseLuma = dot(col.rgb, float3(0.299, 0.587, 0.114));
                 col.rgb = lerp(float3(baseLuma, baseLuma, baseLuma), col.rgb, 0.84);
 
-                // 2. 复合赤道腰带系统 (Equatorial Belt System: pitch in [-4.8°, +4.8°])
+                // 2. 复合赤道地平线系统 (Equatorial Horizon System)
                 float eqAA = clamp(fwidth(p.y) * 0.75, 0.0003, 0.06);
-                float beltPitchAA = clamp(fwidth(absPitch) * 0.75, 0.005, 2.5);
-                float beltHalfWidth = 4.8;
-                float inBelt = 1.0 - smoothstep(beltHalfWidth - beltPitchAA, beltHalfWidth + beltPitchAA, absPitch);
 
-                if (inBelt > 0.001)
+                if (_FramePattern < 0.5)
                 {
-                    fixed4 beltCol;
-                    if (_FrameTransitionProgress < 0.999)
-                    {
-                        fixed4 colOld = GetBeltColorForPattern(_FramePatternOld);
-                        fixed4 colNew = GetBeltColorForPattern(_FramePattern);
-                        beltCol = lerp(colOld, colNew, _FrameTransitionProgress);
-                    }
-                    else
-                    {
-                        beltCol = GetBeltColorForPattern(_FramePattern);
-                    }
-
-                    // 腰带上下边界高反差嵌边白线 (Belt Edge Rims at ±4.8°)
-                    float edgeDist = abs(absPitch - beltHalfWidth);
-                    float isBeltRim = EvalConservativeLine(edgeDist, 0.24, beltPitchAA);
-
-                    // 中心赤道基准白线 (Core Equator Line at 0°)
-                    float isCoreEquator = EvalConservativeLine(absY, _EquatorWidth * 0.80, eqAA);
-                    float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.2 - eqAA, _EquatorWidth * 2.2 + eqAA, absY)) * 0.35;
-                    float combinedEquator = max(isCoreEquator, isHaloEquator);
-
-                    col.rgb = lerp(col.rgb, beltCol.rgb, inBelt * beltCol.a);
-                    col = lerp(col, _EquatorColor, saturate(max(combinedEquator, isBeltRim * 0.75) * _EquatorColor.a));
+                    // ── Mode 0: SURFACE (地表飞行系) ──
+                    // 经典航空地平仪规范：天地一刀分明，零泥泞杂带阻隔，直观判断平飞姿态
+                    // 极细锐利纯白地平线 (带微暗反差衬底，在天穹与地表中线均具最高锐度与可读性)
+                    float isCoreEquator = EvalConservativeLine(absY, _EquatorWidth * 1.15, eqAA);
+                    float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.5 - eqAA, _EquatorWidth * 2.5 + eqAA, absY)) * 0.45;
+                    col.rgb = lerp(col.rgb, fixed3(0.01, 0.02, 0.03), isHaloEquator);
+                    col = lerp(col, _EquatorColor, saturate(isCoreEquator * _EquatorColor.a));
                 }
                 else
                 {
-                    // 赤道线外晕微弱扩展
-                    float isCoreEquator = EvalConservativeLine(absY, _EquatorWidth * 0.80, eqAA);
-                    float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.2 - eqAA, _EquatorWidth * 2.2 + eqAA, absY)) * 0.35;
-                    col = lerp(col, _EquatorColor, saturate(max(isCoreEquator, isHaloEquator) * _EquatorColor.a));
+                    // ── 太空多参考系腰带系统 (ORBIT, INERTIAL, LAGRANGE, etc.) ──
+                    float beltPitchAA = clamp(fwidth(absPitch) * 0.75, 0.005, 2.5);
+                    float beltHalfWidth = 4.8;
+                    float inBelt = 1.0 - smoothstep(beltHalfWidth - beltPitchAA, beltHalfWidth + beltPitchAA, absPitch);
+
+                    if (inBelt > 0.001)
+                    {
+                        fixed4 beltCol;
+                        if (_FrameTransitionProgress < 0.999)
+                        {
+                            fixed4 colOld = GetBeltColorForPattern(_FramePatternOld);
+                            fixed4 colNew = GetBeltColorForPattern(_FramePattern);
+                            beltCol = lerp(colOld, colNew, _FrameTransitionProgress);
+                        }
+                        else
+                        {
+                            beltCol = GetBeltColorForPattern(_FramePattern);
+                        }
+
+                        // 腰带上下边界高反差嵌边微线 (Belt Edge Rims at ±4.8°)
+                        float edgeDist = abs(absPitch - beltHalfWidth);
+                        float isBeltRim = EvalConservativeLine(edgeDist, 0.20, beltPitchAA) * 0.60;
+
+                        // 中心赤道基准白线 (Core Equator Line at 0°)
+                        float isCoreEquator = EvalConservativeLine(absY, _EquatorWidth * 1.10, eqAA);
+                        float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.5 - eqAA, _EquatorWidth * 2.5 + eqAA, absY)) * 0.35;
+                        float combinedEquator = max(isCoreEquator, isHaloEquator);
+
+                        col.rgb = lerp(col.rgb, beltCol.rgb, inBelt * beltCol.a);
+                        col = lerp(col, _EquatorColor, saturate(max(combinedEquator, isBeltRim) * _EquatorColor.a));
+                    }
+                    else
+                    {
+                        // 赤道线外晕微弱扩展
+                        float isCoreEquator = EvalConservativeLine(absY, _EquatorWidth * 1.10, eqAA);
+                        float isHaloEquator = (1.0 - smoothstep(_EquatorWidth * 2.5 - eqAA, _EquatorWidth * 2.5 + eqAA, absY)) * 0.35;
+                        col = lerp(col, _EquatorColor, saturate(max(isCoreEquator, isHaloEquator) * _EquatorColor.a));
+                    }
                 }
 
                 // 坐标系切变光学微光扫描波 (Coordinate Frame Alignment Sweep Ripple)
@@ -679,81 +717,251 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 75° 梯级中心位于 75.0°，渐隐区调整至 78.0°~83.0°，确保 75° 梯级 100% 清晰呈现，且在 85° 极标前干净隐退
                 float polarLadderFade = 1.0 - smoothstep(78.0, 83.0, absPitch);
 
-                // 3. 几何坐标与度规系统 (45° 八向主经线骨架 + 22.5° 交错俯仰通道: 对标 Principia 规范)
-                // 3.1 主经线系统 (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
-                float mainHeadCenter = floor(headDeg / 45.0 + 0.5) * 45.0;
-                float mainHeadOffset = headDeg - mainHeadCenter;
-                if (mainHeadOffset > 180.0) mainHeadOffset -= 360.0;
-                if (mainHeadOffset < -180.0) mainHeadOffset += 360.0;
-                float normMainH = fmod(mainHeadCenter + 360.0, 360.0);
-
-                float cosP = max(cos(radians(absPitch)), 0.06);
-                float mainHeadArc = mainHeadOffset * cosP;
-                float absMainArc = abs(mainHeadArc);
-
-                // 3.2 俯仰数字交错通道 (22.5°, 67.5°, 112.5°, 157.5°, 202.5°, 247.5°, 292.5°, 337.5°)
-                float pitchColCenter = floor((headDeg - 22.5) / 45.0 + 0.5) * 45.0 + 22.5;
-                float pitchColOffset = headDeg - pitchColCenter;
-                if (pitchColOffset > 180.0) pitchColOffset -= 360.0;
-                if (pitchColOffset < -180.0) pitchColOffset += 360.0;
-                float normColCenter = fmod(pitchColCenter + 360.0, 360.0);
-
-                float pitchLabelLevel = round(absPitch / 15.0) * 15.0;
-                float pitchLabelCenter = (pitchDeg < 0.0 ? -pitchLabelLevel : pitchLabelLevel);
-                float pitchLabelOffset = pitchDeg - pitchLabelCenter;
-                float absLabelOffset = abs(pitchLabelOffset);
-
-                float cosPitchLevel = max(cos(radians(pitchLabelLevel)), 0.08);
-                float pitchColArc = pitchColOffset * cosPitchLevel;
-                float absColArc = abs(pitchColArc);
-
-                // 动态字形滚转正向对齐与切向反畸变展开
-                float tangentAspect = lerp(1.0, clamp(1.0 / max(NdotV, 0.58), 1.0, 1.28), _NumeralTangentComp);
-                float numRoll = -_NumeralRollAngle * _NumeralUprightMode;
-                float cosNR = cos(numRoll);
-                float sinNR = sin(numRoll);
-
-                // 高纬扇区自适应疏化：75° 极区仅在 4 个开阔扇区 (22.5°, 112.5°, 202.5°, 292.5°) 居中显示，彻底解决极区重叠
-                bool isPitchColActive = (pitchLabelLevel <= 65.0) || (fmod(round((normColCenter - 22.5) / 45.0), 2.0) < 0.5);
-
-                // 4. 俯仰数字排版求值 (在 22.5° 交错通道)
                 float pitchGlyphDistance = 100.0;
                 float pitchGlyphEnabled = 0.0;
                 float pitchLabelGap = 0.0;
+                float headingGlyphDistance = 100.0;
+                float headingTextEnabled = 0.0;
+                float headingGap = 0.0;
+                float headingGlyphAA = 0.45;
+                float combinedRulerAndLadder = 0.0;
 
-                if (absPitch >= 12.0 && absPitch <= 82.0 && isPitchColActive)
+                float pAA = clamp(fwidth(pitchDeg) * 0.75, 0.005, 2.5);
+                float cosP = (_ApertureShape >= 0.5) ? 1.0 : max(cos(radians(absPitch)), 0.06);
+
+                // 动态自适应屏幕分辨率与字模缩放 (低分辨率下等比放大字形并扩充包络，确保小尺寸/远视距下清晰易读)
+                float degPerPix = max(fwidth(pitchDeg), 0.0004);
+                float fontScale = clamp(0.95 + smoothstep(0.28, 1.10, degPerPix) * 0.55, 0.95, 1.50);
+
+                if (_ApertureShape >= 0.5)
                 {
-                    pitchGlyphEnabled = polarLadderFade * smoothstep(0.12, 0.42, NdotV) * smoothstep(0.08, 0.34, _DetailScale) * markerClearance;
+                    // ══════════════════════════════════════════════════════════════════════════
+                    // 现代矩形平直 PFD / ADI 航电度规系统 (True Aviation PFD Orthonormal Grid)
+                    // 俯仰阶梯恒定居中、水平平直横杠、严格线性等距；横向航向沿地平线滑动、零边缘透视拉伸
+                    // ══════════════════════════════════════════════════════════════════════════
+                    float absLat = abs(lateralDeg);
+                    float latAA = clamp(fwidth(absLat) * 0.75, 0.005, 2.5);
 
-                    if (absColArc < 5.2 && absLabelOffset < 3.8)
+                    // 1. 居中俯仰阶梯系统 (Centered Pitch Ladder)
+                    float pLevel10 = round(absPitch / 10.0) * 10.0;
+                    float pCenter10 = (pitchDeg < 0.0 ? -pLevel10 : pLevel10);
+                    float pOffset10 = pitchDeg - pCenter10;
+                    float absOffset10 = abs(pOffset10);
+
+                    // 10° 主阶梯横杠 (半宽 ±7.2°，中心留有 ±3.2° 准星瞄准窗口)
+                    float rungHalfW = 7.2;
+                    float isMajorRung = 0.0;
+                    float isTip = 0.0;
+
+                    if (pLevel10 >= 8.0 && pLevel10 <= 82.0 && absOffset10 < 2.5)
                     {
-                        float pitchTens = floor(pitchLabelLevel / 10.0);
-                        float pitchOnes = fmod(pitchLabelLevel, 10.0);
+                        isMajorRung = EvalConservativeLine(absOffset10, 0.28, pAA) *
+                                      (1.0 - smoothstep(rungHalfW - latAA, rungHalfW + latAA, absLat)) *
+                                      smoothstep(3.0 - latAA, 3.6 + latAA, absLat);
 
-                        float2 pitchCenterOffset = float2(pitchColArc * signH * tangentAspect, pitchLabelOffset);
-                        float2 rotPitchOffset = float2(
-                            pitchCenterOffset.x * cosNR - pitchCenterOffset.y * sinNR,
-                            pitchCenterOffset.x * sinNR + pitchCenterOffset.y * cosNR
-                        );
-
-                        float pitchRadialSq = pitchColArc * pitchColArc + pitchLabelOffset * pitchLabelOffset;
-                        pitchLabelGap = (pitchRadialSq < 24.0) ? pitchGlyphEnabled : 0.0;
-
-                        pitchGlyphDistance = min(
-                            DigitDistance(rotPitchOffset + float2(1.95, 0.0), pitchTens),
-                            DigitDistance(rotPitchOffset - float2(1.95, 0.0), pitchOnes));
-
-                        // 地表系负半球添加航空负号
-                        if (_FramePattern < 0.5 && pitchDeg < 0.0)
+                        // 阶梯端部垂标小折角 (向下折角指向地平线；负半球向上折角指向地平线)
+                        if (absLat >= (rungHalfW - 0.9) && absLat < (rungHalfW + 0.1))
                         {
-                            float pitchSignDistance = SegmentDistance(rotPitchOffset, float2(-4.45, 0.0), float2(0.58, 0.10));
-                            pitchGlyphDistance = min(pitchGlyphDistance, pitchSignDistance);
+                            float tipHMask = smoothstep(rungHalfW - 0.9 - latAA, rungHalfW - 0.9 + latAA, absLat) *
+                                             (1.0 - smoothstep(rungHalfW - latAA, rungHalfW + latAA, absLat));
+                            if (pitchDeg > 0.0)
+                            {
+                                float tipVMask = (1.0 - smoothstep(0.0 - pAA, 0.0 + pAA, pOffset10)) *
+                                                 smoothstep(-1.5 - pAA, -1.5 + pAA, pOffset10);
+                                isTip = tipHMask * tipVMask;
+                            }
+                            else
+                            {
+                                float tipVMask = smoothstep(0.0 - pAA, 0.0 + pAA, pOffset10) *
+                                                 (1.0 - smoothstep(1.5 - pAA, 1.5 + pAA, pOffset10));
+                                isTip = tipHMask * tipVMask;
+                            }
+                        }
+
+                        // 负半球地平俯仰梯级采用标准航空虚线
+                        if (pitchDeg < 0.0)
+                        {
+                            float dashVal = fmod(absLat - 3.2, 1.8);
+                            float dashAA = clamp(fwidth(dashVal) * 0.75, 0.001, 0.50);
+                            isMajorRung *= (1.0 - smoothstep(0.95 - dashAA, 0.95 + dashAA, dashVal));
+                        }
+                    }
+
+                    // 5° 细分短杠 (半宽 ±3.5°，更短更细，无折角)
+                    float isMinor5 = 0.0;
+                    float pLevel5 = round(absPitch / 5.0) * 5.0;
+                    bool isPure5 = (fmod(pLevel5, 10.0) > 2.0);
+                    if (isPure5 && absPitch >= 3.0 && absPitch <= 82.0)
+                    {
+                        float pMod5 = abs(pitchDeg - (pitchDeg < 0.0 ? -pLevel5 : pLevel5));
+                        if (pMod5 < 1.5)
+                        {
+                            isMinor5 = EvalConservativeLine(pMod5, 0.20, pAA) *
+                                       (1.0 - smoothstep(3.2 - latAA, 3.8 + latAA, absLat)) *
+                                       smoothstep(1.4 - latAA, 2.0 + latAA, absLat) * 0.75;
+                        }
+                    }
+
+                    combinedRulerAndLadder = max(max(isMajorRung, isTip), isMinor5);
+
+                    // 2. 俯仰梯级数字 (在阶梯左右两侧 absLat ~ 9.8° 呈现，字体大小恒定且自适应分辨率)
+                    if (pLevel10 >= 8.0 && pLevel10 <= 82.0)
+                    {
+                        float latNumOffset = absLat - (9.5 + (fontScale - 1.0) * 1.5);
+                        if (abs(latNumOffset) < (4.6 * fontScale) && absOffset10 < (4.0 * fontScale))
+                        {
+                            float tens = floor(pLevel10 / 10.0);
+                            float ones = fmod(pLevel10, 10.0);
+                            float2 numPos = float2(latNumOffset, pOffset10) / fontScale;
+
+                            float dDigit = min(
+                                DigitDistance(numPos + float2(1.70, 0.0), tens),
+                                DigitDistance(numPos - float2(1.70, 0.0), ones));
+
+                            if (pitchDeg < 0.0)
+                            {
+                                float signDist = SegmentDistance(numPos, float2(-3.65, 0.0), float2(0.55, 0.12));
+                                dDigit = min(dDigit, signDist);
+                            }
+
+                            pitchGlyphDistance = dDigit * fontScale;
+                            pitchGlyphEnabled = polarLadderFade * markerClearance;
+                            pitchLabelGap = (dDigit < 2.5) ? pitchGlyphEnabled : 0.0;
+                        }
+                    }
+
+                    // 3. 地平线航向刻度带 (Heading Scale along Horizon: absPitch < 6.5°)
+                    if (absPitch < 6.5)
+                    {
+                        float hAA = clamp(fwidth(headDeg) * 0.75, 0.005, 2.5);
+
+                        // 10° 航向中刻度
+                        float hMod10 = abs(headDeg - round(headDeg / 10.0) * 10.0);
+                        float isHTick10 = EvalConservativeLine(hMod10, 0.26, hAA) *
+                                          (1.0 - smoothstep(2.0 - pAA, 2.6 + pAA, absPitch)) * 0.85;
+
+                        // 5° 航向微刻度
+                        float hMod5 = abs(headDeg - round(headDeg / 5.0) * 5.0);
+                        float isHTick5 = EvalConservativeLine(hMod5, 0.18, hAA) *
+                                         (1.0 - smoothstep(1.0 - pAA, 1.4 + pAA, absPitch)) * 0.55;
+
+                        combinedRulerAndLadder = max(combinedRulerAndLadder, max(isHTick10, isHTick5));
+
+                        // 45° 航向数字与方位字符 (N, 045, 090, 135, 180, 225, 270, 315) at pitch ~ 3.6°
+                        float hCenter45 = round(headDeg / 45.0) * 45.0;
+                        float hOffset45 = headDeg - hCenter45;
+                        if (hOffset45 > 180.0) hOffset45 -= 360.0;
+                        if (hOffset45 < -180.0) hOffset45 += 360.0;
+                        float normH45 = fmod(hCenter45 + 720.0, 360.0);
+
+                        float hYOffset = pitchDeg - 3.6;
+                        if (abs(hOffset45) < (7.5 * fontScale) && abs(hYOffset) < (3.5 * fontScale))
+                        {
+                            float2 hPos = float2(hOffset45, hYOffset) / fontScale;
+                            headingTextEnabled = (1.0 - smoothstep(4.5, 6.0, absPitch)) * markerClearance;
+
+                            if (normH45 < 1.0)
+                            {
+                                headingGlyphDistance = DigitDistance(hPos, 11.0); // N
+                            }
+                            else if (normH45 < 95.0)
+                            {
+                                float hTens = floor(normH45 / 10.0);
+                                float hOnes = fmod(normH45, 10.0);
+                                headingGlyphDistance = min(
+                                    DigitDistance(hPos + float2(1.85, 0.0), hTens),
+                                    DigitDistance(hPos - float2(1.85, 0.0), hOnes));
+                            }
+                            else
+                            {
+                                float hHundreds = floor(normH45 / 100.0);
+                                float hTens = floor(fmod(normH45, 100.0) / 10.0);
+                                float hOnes = fmod(normH45, 10.0);
+                                headingGlyphDistance = min(
+                                    DigitDistance(hPos + float2(3.5, 0.0), hHundreds),
+                                    min(DigitDistance(hPos, hTens),
+                                        DigitDistance(hPos - float2(3.5, 0.0), hOnes)));
+                            }
+                            headingGap = (headingGlyphDistance < 2.5) ? headingTextEnabled : 0.0;
+                            headingGlyphDistance *= fontScale;
+                            headingGlyphAA = clamp(max(fwidth(hOffset45), fwidth(hYOffset)) * 0.75, 0.005, 2.5);
                         }
                     }
                 }
+                else
+                {
+                    // ══════════════════════════════════════════════════════════════════════════
+                    // 经典圆形 3D 导航球骨架与经纬网 (Classic Circular Navball System)
+                    // ══════════════════════════════════════════════════════════════════════════
+                    // 3. 几何坐标与度规系统 (45° 八向主经线骨架 + 22.5° 交错俯仰通道: 对标 Principia 规范)
+                    // 3.1 主经线系统 (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
+                    float mainHeadCenter = floor(headDeg / 45.0 + 0.5) * 45.0;
+                    float mainHeadOffset = headDeg - mainHeadCenter;
+                    if (mainHeadOffset > 180.0) mainHeadOffset -= 360.0;
+                    if (mainHeadOffset < -180.0) mainHeadOffset += 360.0;
+                    float normMainH = fmod(mainHeadCenter + 360.0, 360.0);
+
+                    float mainHeadArc = mainHeadOffset * cosP;
+                    float absMainArc = abs(mainHeadArc);
+
+                    // 3.2 俯仰数字交错通道 (22.5°, 67.5°, 112.5°, 157.5°, 202.5°, 247.5°, 292.5°, 337.5°)
+                    float pitchColCenter = floor((headDeg - 22.5) / 45.0 + 0.5) * 45.0 + 22.5;
+                    float pitchColOffset = headDeg - pitchColCenter;
+                    if (pitchColOffset > 180.0) pitchColOffset -= 360.0;
+                    if (pitchColOffset < -180.0) pitchColOffset += 360.0;
+                    float normColCenter = fmod(pitchColCenter + 360.0, 360.0);
+
+                    float pitchLabelLevel = round(absPitch / 15.0) * 15.0;
+                    float pitchLabelCenter = (pitchDeg < 0.0 ? -pitchLabelLevel : pitchLabelLevel);
+                    float pitchLabelOffset = pitchDeg - pitchLabelCenter;
+                    float absLabelOffset = abs(pitchLabelOffset);
+
+                    float cosPitchLevel = max(cos(radians(pitchLabelLevel)), 0.08);
+                    float pitchColArc = pitchColOffset * cosPitchLevel;
+                    float absColArc = abs(pitchColArc);
+
+                    // 动态字形滚转正向对齐与切向反畸变展开
+                    float tangentAspect = lerp(1.0, clamp(1.0 / max(NdotV, 0.58), 1.0, 1.28), _NumeralTangentComp);
+                    float numRoll = -_NumeralRollAngle * _NumeralUprightMode;
+                    float cosNR = cos(numRoll);
+                    float sinNR = sin(numRoll);
+
+                    // 高纬扇区自适应疏化：75° 极区仅在 4 个开阔扇区 (22.5°, 112.5°, 202.5°, 292.5°) 居中显示，彻底解决极区重叠
+                    bool isPitchColActive = (pitchLabelLevel <= 65.0) || (fmod(round((normColCenter - 22.5) / 45.0), 2.0) < 0.5);
+
+                    // 4. 俯仰数字排版求值 (在 22.5° 交错通道)
+                    if (absPitch >= 12.0 && absPitch <= 82.0 && isPitchColActive)
+                    {
+                        pitchGlyphEnabled = polarLadderFade * smoothstep(0.10, 0.36, NdotV) * markerClearance;
+
+                        if (absColArc < (5.8 * fontScale) && absLabelOffset < (4.2 * fontScale))
+                        {
+                            float pitchTens = floor(pitchLabelLevel / 10.0);
+                            float pitchOnes = fmod(pitchLabelLevel, 10.0);
+
+                            float2 pitchCenterOffset = float2(pitchColArc * signH * tangentAspect, pitchLabelOffset);
+                            float2 rotPitchOffset = float2(
+                                pitchCenterOffset.x * cosNR - pitchCenterOffset.y * sinNR,
+                                pitchCenterOffset.x * sinNR + pitchCenterOffset.y * cosNR
+                            ) / fontScale;
+
+                            float pitchRadialSq = (pitchColArc * pitchColArc + pitchLabelOffset * pitchLabelOffset) / (fontScale * fontScale);
+                            pitchLabelGap = (pitchRadialSq < 26.0) ? pitchGlyphEnabled : 0.0;
+
+                            pitchGlyphDistance = min(
+                                DigitDistance(rotPitchOffset + float2(1.85, 0.0), pitchTens),
+                                DigitDistance(rotPitchOffset - float2(1.85, 0.0), pitchOnes)) * fontScale;
+
+                            // 地表系负半球添加航空负号
+                            if (_FramePattern < 0.5 && pitchDeg < 0.0)
+                            {
+                                float pitchSignDistance = SegmentDistance(rotPitchOffset, float2(-3.90, 0.0), float2(0.55, 0.12)) * fontScale;
+                                pitchGlyphDistance = min(pitchGlyphDistance, pitchSignDistance);
+                            }
+                        }
+                    }
 
                 // 5. 标尺骨架与纬线圈 (Continuous Ruler Backbone & Latitude Parallels)
-                float pAA = clamp(fwidth(pitchDeg) * 0.75, 0.005, 2.5);
                 float mAA = clamp(fwidth(absMainArc) * 0.75, 0.005, 2.5);
 
                 // 5.1 主经线连续标尺骨架 (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
@@ -886,11 +1094,11 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float headingGlyphAA = 0.45;
 
                 // 6.1 赤道航向/时角检测 (pitch ~ 3.8°)
-                bool isEqHeadingZone = (absPitch < 8.5 && abs(pitchDeg - 3.8) < 4.2 && absMainArc < 9.0);
+                bool isEqHeadingZone = (absPitch < 8.5 && abs(pitchDeg - 3.8) < (4.5 * fontScale) && absMainArc < (10.0 * fontScale));
                 // 6.2 ±45° 纬线航向/时角复现检测 (pitch ~ +45° 或 -45°)
                 float h45PitchCenter = (pitchDeg > 0.0 ? 45.0 : -45.0);
                 float h45PitchOffset = pitchDeg - h45PitchCenter;
-                bool is45HeadingZone = (abs(h45PitchOffset) < 3.8 && absMainArc < 9.0);
+                bool is45HeadingZone = (abs(h45PitchOffset) < (4.5 * fontScale) && absMainArc < (10.0 * fontScale));
 
                 if (isEqHeadingZone || is45HeadingZone)
                 {
@@ -899,15 +1107,15 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     float2 rotHeadOffset = float2(
                         headCenterOffset.x * cosNR - headCenterOffset.y * sinNR,
                         headCenterOffset.x * sinNR + headCenterOffset.y * cosNR
-                    );
+                    ) / fontScale;
 
-                    float hRadialSq = mainHeadArc * mainHeadArc + hYOffset * hYOffset;
+                    float hRadialSq = (mainHeadArc * mainHeadArc + hYOffset * hYOffset) / (fontScale * fontScale);
                     float hFade = isEqHeadingZone ? 
-                        ((1.0 - smoothstep(5.5, 7.5, absPitch)) * smoothstep(0.12, 0.42, NdotV) * markerClearance) :
-                        (polarLadderFade * smoothstep(0.12, 0.42, NdotV) * markerClearance);
+                        ((1.0 - smoothstep(5.5, 7.8, absPitch)) * smoothstep(0.10, 0.38, NdotV) * markerClearance) :
+                        (polarLadderFade * smoothstep(0.10, 0.38, NdotV) * markerClearance);
 
                     headingTextEnabled = hFade;
-                    headingGap = (hRadialSq < 28.0) ? hFade : 0.0;
+                    headingGap = (hRadialSq < 30.0) ? hFade : 0.0;
 
                     if (headingTextEnabled > 0.001)
                     {
@@ -965,12 +1173,14 @@ Shader "ModularFlightPanel/NavballRaymarch"
                             float hTens = floor(fmod(normMainH, 100.0) / 10.0);
                             float hOnes = fmod(normMainH, 10.0);
                             headingGlyphDistance = min(
-                                DigitDistance(rotHeadOffset + float2(3.6, 0.0), hHundreds),
+                                DigitDistance(rotHeadOffset + float2(3.5, 0.0), hHundreds),
                                 min(DigitDistance(rotHeadOffset, hTens),
-                                    DigitDistance(rotHeadOffset - float2(3.6, 0.0), hOnes)));
+                                    DigitDistance(rotHeadOffset - float2(3.5, 0.0), hOnes)));
                         }
+                        headingGlyphDistance *= fontScale;
                     }
                     headingGlyphAA = clamp(max(fwidth(mainHeadArc * tangentAspect), fwidth(pitchDeg)) * 0.75, 0.005, 2.5);
+                }
                 }
 
                 // 数字区域清空标尺线条，保持高反差整洁性
@@ -986,19 +1196,19 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float primeAngle = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
                 float antiAngle  = abs(headDeg - 180.0);
 
-                if (primeAngle < 3.5 || antiAngle < 3.5)
+                if (primeAngle < 3.0 || antiAngle < 3.0)
                 {
                     float primeArc = primeAngle * cosP;
                     float antiArc  = antiAngle * cosP;
 
                     float splitAA = clamp(fwidth(primeArc) * 0.75, 0.005, 2.0);
-                    float isPrimeCore = EvalConservativeLine(primeArc, 0.65, splitAA);
-                    float isPrimeHalo = (1.0 - smoothstep(1.50 - splitAA, 1.50 + splitAA, primeArc)) * 0.40;
-                    float isPrime = max(isPrimeCore, isPrimeHalo);
+                    // 锐利精致的 0.22° 半宽基准线，移除 1.5° 弥散粗晕，保持航电仪表清晰度
+                    float isPrime = EvalConservativeLine(primeArc, 0.22, splitAA);
+                    float isAnti  = EvalConservativeLine(antiArc, 0.22, splitAA);
 
-                    float isAntiCore  = EvalConservativeLine(antiArc, 0.65, splitAA);
-                    float isAntiHalo  = (1.0 - smoothstep(1.50 - splitAA, 1.50 + splitAA, antiArc)) * 0.40;
-                    float isAnti = max(isAntiCore, isAntiHalo);
+                    // 中心视场准星净空保护 (Facing reticle clearance: 当航向为 000° 且俯仰靠近地平时，清空中心 2.8° 视场，防止红线直切瞄准十字准星)
+                    float reticleClearance = smoothstep(1.2, 2.8, length(float2(primeArc, absPitch)));
+                    isPrime *= reticleClearance;
 
                     float dividerFade = 1.0 - smoothstep(84.0, 87.5, absPitch);
 
@@ -1052,23 +1262,23 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 // 9. 字符描边与填充合成 (俯仰数字 + 航向数字，应用 SDF 笔画物理保底与超锐利边缘)
                 float glyphAA = clamp(max(fwidth(pitchColArc * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.005, 2.5);
                 float pitchTextFill, pitchTextOutline;
-                EvalConservativeSDF(pitchGlyphDistance, 0.45, glyphAA, pitchTextFill, pitchTextOutline);
+                EvalConservativeSDF(pitchGlyphDistance, 0.42 * fontScale, glyphAA, pitchTextFill, pitchTextOutline);
                 pitchTextOutline *= pitchGlyphEnabled;
                 pitchTextFill *= pitchGlyphEnabled;
 
                 float headingTextFill, headingTextOutline;
-                EvalConservativeSDF(headingGlyphDistance, 0.45, headingGlyphAA, headingTextFill, headingTextOutline);
+                EvalConservativeSDF(headingGlyphDistance, 0.42 * fontScale, headingGlyphAA, headingTextFill, headingTextOutline);
                 headingTextOutline *= headingTextEnabled;
                 headingTextFill *= headingTextEnabled;
 
                 float textOutline = max(pitchTextOutline, headingTextOutline);
                 float textFill = max(pitchTextFill, headingTextFill);
-                fixed4 labelCol = (_LabelColor.a > 0.01) ? _LabelColor : fixed4(0.96, 0.98, 1.0, 1.0);
+                fixed4 labelCol = (_LabelColor.a > 0.01) ? _LabelColor : fixed4(0.98, 0.99, 1.0, 1.0);
                 if (_FramePattern > 0.5 && _FramePattern < 1.5 && isEqHeadingZone && (headDeg < 2.5 || headDeg > 357.5) && headingTextFill > 0.01)
                 {
                     labelCol.rgb = fixed3(1.0, 0.86, 0.30); // 0h 春分点黄金符号
                 }
-                fixed4 outlineCol = (_LabelOutlineColor.a > 0.01) ? _LabelOutlineColor : fixed4(0.02, 0.03, 0.05, 0.92);
+                fixed4 outlineCol = (_LabelOutlineColor.a > 0.01) ? _LabelOutlineColor : fixed4(0.01, 0.015, 0.025, 0.95);
                 col.rgb = lerp(col.rgb, outlineCol.rgb, saturate(textOutline * outlineCol.a));
                 col.rgb = lerp(col.rgb, labelCol.rgb, saturate(textFill * labelCol.a));
 
@@ -1113,53 +1323,92 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
             fixed4 SampleProceduralNavball(float2 subCoord)
             {
-                float3 subViewRay;
-                float subNdotV = 1.0;
                 if (_ApertureShape < 0.5)
                 {
                     float subR2 = dot(subCoord, subCoord);
                     float subZ = sqrt(max(0.0, 1.0 - subR2));
-                    subViewRay = float3(subCoord.x, subCoord.y, subZ);
-                    subNdotV = subZ;
+                    float3 subViewRay = float3(subCoord.x, subCoord.y, subZ);
+                    float3 subP = RotateByQuaternion(subViewRay, _SphereInvRotation);
+                    subP = normalize(subP);
+
+                    float3 procP = subP;
+                    float signH = 1.0;
+
+                    // Mode 1: INERTIAL (Principia 地心惯性参考系)
+                    if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                    {
+                        procP.x = -procP.x;
+                        signH = -1.0;
+                    }
+
+                    float pitchDeg = asin(clamp(procP.y, -1.0, 1.0)) * 57.2957795;
+                    float headDeg = atan2(procP.x, procP.z) * 57.2957795;
+                    if (headDeg < 0.0) headDeg += 360.0;
+                    float absY = abs(procP.y);
+                    float absPitch = abs(pitchDeg);
+                    float markerClearance = 1.0;
+                    if (_MarkerAvoid0.w > 0.01 || _MarkerAvoid1.w > 0.01 || _MarkerAvoid2.w > 0.01 || _MarkerAvoid3.w > 0.01)
+                    {
+                        float2 screenPoint = subCoord;
+                        markerClearance = min(MarkerClearance(screenPoint, _MarkerAvoid0), MarkerClearance(screenPoint, _MarkerAvoid1));
+                        markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
+                    }
+
+                    return EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, subZ, markerClearance, signH, 0.0);
                 }
                 else
                 {
                     float ar = max(_AspectRatio, 0.1);
-                    // 现代航空航天 PFD 透视投影 (垂直视场角 ~55°，纵向显示 ±27.5° 黄金跨度)
-                    // _FovScale = 1.0 对应 55° VFOV；各向同性像素比例，长宽比自由伸缩无畸变
                     float fovMul = clamp(_FovScale, 0.3, 2.5);
-                    float tanHalfFov = tan(radians(27.5 * fovMul));
-                    float3 rayDir = float3(subCoord.x * ar * tanHalfFov, subCoord.y * tanHalfFov, 1.0);
-                    subViewRay = normalize(rayDir);
-                    subNdotV = subViewRay.z;
+                    float degPerUnit = 27.5 * fovMul;
+
+                    float3 fwdRef = RotateByQuaternion(float3(0.0, 0.0, 1.0), _SphereInvRotation);
+                    float3 upRef  = RotateByQuaternion(float3(0.0, 1.0, 0.0), _SphereInvRotation);
+                    float3 rgtRef = RotateByQuaternion(float3(1.0, 0.0, 0.0), _SphereInvRotation);
+
+                    float signH = 1.0;
+                    if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                    {
+                        fwdRef.x = -fwdRef.x;
+                        upRef.x  = -upRef.x;
+                        rgtRef.x = -rgtRef.x;
+                        signH = -1.0;
+                    }
+
+                    float pitch0 = asin(clamp(fwdRef.y, -1.0, 1.0)) * 57.2957795;
+                    float head0  = atan2(fwdRef.x, fwdRef.z) * 57.2957795;
+                    if (head0 < 0.0) head0 += 360.0;
+
+                    float2 vSky = float2(rgtRef.y, upRef.y);
+                    float lenSky = length(vSky);
+                    float2 nSky = (lenSky > 0.001) ? (vSky / lenSky) : float2(0.0, 1.0);
+                    float2 nHrz = float2(nSky.y, -nSky.x);
+
+                    float2 pos = float2(subCoord.x * ar, subCoord.y);
+                    float pAxis = dot(pos, nSky);
+                    float lAxis = dot(pos, nHrz);
+
+                    float pitchDeg = clamp(pitch0 + pAxis * degPerUnit, -89.99, 89.99);
+                    float lateralDeg = lAxis * degPerUnit;
+                    float headDeg = fmod(head0 + lateralDeg + 720.0, 360.0);
+
+                    float radP = radians(pitchDeg);
+                    float radH = radians(headDeg);
+                    float cp = cos(radP);
+                    float3 procP = float3(cp * sin(radH), sin(radP), cp * cos(radH));
+
+                    float absY = abs(procP.y);
+                    float absPitch = abs(pitchDeg);
+                    float markerClearance = 1.0;
+                    if (_MarkerAvoid0.w > 0.01 || _MarkerAvoid1.w > 0.01 || _MarkerAvoid2.w > 0.01 || _MarkerAvoid3.w > 0.01)
+                    {
+                        float2 screenPoint = subCoord;
+                        markerClearance = min(MarkerClearance(screenPoint, _MarkerAvoid0), MarkerClearance(screenPoint, _MarkerAvoid1));
+                        markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
+                    }
+
+                    return EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, 1.0, markerClearance, signH, lateralDeg);
                 }
-                float3 subP = RotateByQuaternion(subViewRay, _SphereInvRotation);
-                subP = normalize(subP);
-
-                float3 procP = subP;
-                float signH = 1.0;
-
-                // Mode 1: INERTIAL (Principia 地心惯性参考系)
-                if (_FramePattern > 0.5 && _FramePattern < 1.5)
-                {
-                    procP.x = -procP.x;
-                    signH = -1.0;
-                }
-
-                float pitchDeg = asin(clamp(procP.y, -1.0, 1.0)) * 57.2957795;
-                float headDeg = atan2(procP.x, procP.z) * 57.2957795;
-                if (headDeg < 0.0) headDeg += 360.0;
-                float absY = abs(procP.y);
-                float absPitch = abs(pitchDeg);
-                float markerClearance = 1.0;
-                if (_MarkerAvoid0.w > 0.01 || _MarkerAvoid1.w > 0.01 || _MarkerAvoid2.w > 0.01 || _MarkerAvoid3.w > 0.01)
-                {
-                    float2 screenPoint = subCoord;
-                    markerClearance = min(MarkerClearance(screenPoint, _MarkerAvoid0), MarkerClearance(screenPoint, _MarkerAvoid1));
-                    markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
-                }
-
-                return EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, subNdotV, markerClearance, signH);
             }
 
             fixed4 frag(v2f i) : SV_Target
@@ -1173,6 +1422,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float3 viewRay;
                 float NdotV = 1.0;
 
+                float3 p;
                 if (_ApertureShape < 0.5)
                 {
                     // 2. 经典圆形导航球 (Classic Circular Navball)
@@ -1188,6 +1438,9 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     // 视线空间正面单位球面向量：X 右 (+x)，Y 上 (+y)，面向观察者的正面半球满足 Z = +z (前向沿 +Z)
                     viewRay = float3(coord.x, coord.y, z);
                     NdotV = z;
+
+                    p = RotateByQuaternion(viewRay, _SphereInvRotation);
+                    p = normalize(p);
                 }
                 else
                 {
@@ -1202,16 +1455,37 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     float ar = max(_AspectRatio, 0.1);
                     float fovMul = clamp(_FovScale, 0.3, 2.5);
-                    float tanHalfFov = tan(radians(27.5 * fovMul));
-                    float3 rayDir = float3(coord.x * ar * tanHalfFov, coord.y * tanHalfFov, 1.0);
-                    viewRay = normalize(rayDir);
-                    z = viewRay.z;
-                    NdotV = z;
-                }
+                    float degPerUnit = 27.5 * fovMul;
 
-                // 4. 将视线空间坐标通过姿态逆旋转四元数变换，求得球体模型本地三维坐标 p！
-                float3 p = RotateByQuaternion(viewRay, _SphereInvRotation);
-                p = normalize(p);
+                    float3 fwdRef = RotateByQuaternion(float3(0.0, 0.0, 1.0), _SphereInvRotation);
+                    float3 upRef  = RotateByQuaternion(float3(0.0, 1.0, 0.0), _SphereInvRotation);
+                    float3 rgtRef = RotateByQuaternion(float3(1.0, 0.0, 0.0), _SphereInvRotation);
+
+                    float pitch0 = asin(clamp(fwdRef.y, -1.0, 1.0)) * 57.2957795;
+                    float head0  = atan2(fwdRef.x, fwdRef.z) * 57.2957795;
+                    if (head0 < 0.0) head0 += 360.0;
+
+                    float2 vSky = float2(rgtRef.y, upRef.y);
+                    float lenSky = length(vSky);
+                    float2 nSky = (lenSky > 0.001) ? (vSky / lenSky) : float2(0.0, 1.0);
+                    float2 nHrz = float2(nSky.y, -nSky.x);
+
+                    float2 pos = float2(coord.x * ar, coord.y);
+                    float pAxis = dot(pos, nSky);
+                    float lAxis = dot(pos, nHrz);
+
+                    float pitchDeg = clamp(pitch0 + pAxis * degPerUnit, -89.99, 89.99);
+                    float lateralDeg = lAxis * degPerUnit;
+                    float headDeg = fmod(head0 + lateralDeg + 720.0, 360.0);
+
+                    float radP = radians(pitchDeg);
+                    float radH = radians(headDeg);
+                    float cp = cos(radP);
+                    p = float3(cp * sin(radH), sin(radP), cp * cos(radH));
+                    viewRay = float3(0.0, 0.0, 1.0);
+                    z = 1.0;
+                    NdotV = 1.0;
+                }
 
                 fixed4 col;
 
@@ -1252,12 +1526,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 else
                 {
                     // ProceduralVector: 纯数学解析矢量求值 (极致锐利、任意分辨率无损)
-                    // 方案 2: 对角 2-Tap 亚像素采样积分平均 (Diagonal Subpixel AA)
-                    // 沿对角方向偏移 +/-0.25 像素 (dx, dy)，完美覆盖水平/垂直/斜向高频信息，压制混叠
-                    float2 pixOffset = float2(abs(ddx(coord.x)), abs(ddy(coord.y))) * 0.25;
-                    fixed4 colA = SampleProceduralNavball(coord - pixOffset);
-                    fixed4 colB = SampleProceduralNavball(coord + pixOffset);
-                    col = (colA + colB) * 0.5;
+                    // 内部各图元采用屏幕空间一阶导数 (fwidth) 精确解析 SDF 保底抗锯齿，直接单次求值呈现 100% 刀锋锐利度与高对比度
+                    col = SampleProceduralNavball(coord);
 
                     // 姿态运动趋势全向 3D 前瞻预测引导系统 (Full 3-DOF Flight Path Trend Lead System)
                     // 完美覆盖俯仰 (Pitch / Y 轴位移)、偏航 (Yaw / X 轴横移) 与滚转 (Roll / 姿态倾角)

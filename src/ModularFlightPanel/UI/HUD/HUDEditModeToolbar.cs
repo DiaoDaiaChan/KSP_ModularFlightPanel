@@ -600,7 +600,7 @@ namespace ModularFlightPanel.UI.HUD
             FlightHUDManager.Instance?.RebuildHUD();
         }
 
-        private static string GetCategoryShortTag(WidgetControlCategory cat)
+        public static string GetCategoryShortTag(WidgetControlCategory cat)
         {
             switch (cat)
             {

@@ -235,13 +235,13 @@ namespace ModularFlightPanel.UI.Widgets.Controls
     {
         // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget)
         public bool AllowNonUniformScale => true;
-        public Vector2 MinBaseSize => new Vector2(100f, 50f);
-        public Vector2 MaxBaseSize => new Vector2(600f, 1200f);
+        public Vector2 MinBaseSize => new Vector2(100f, 48f);
+        public Vector2 MaxBaseSize => new Vector2(400f, 1200f);
 
-        // 三种模式独立记忆的长宽比与基准尺寸
-        private Vector2 _savedConciseSize = new Vector2(150f, 240f);
-        private Vector2 _savedStandardSize = new Vector2(160f, 260f);
-        private Vector2 _savedSilhouetteSize = new Vector2(240f, 260f);
+        // 三种模式标准物理基准设计尺寸 (Standard Canonical Reference Sizes)
+        public static readonly Vector2 BaseConciseSize = new Vector2(150f, 240f);
+        public static readonly Vector2 BaseStandardSize = new Vector2(160f, 260f);
+        public static readonly Vector2 BaseSilhouetteSize = new Vector2(240f, 260f);
 
         // 极简模式底部基准线锁定 (Bottom-Baseline Anchor，向上生长杜绝向上下两端扩张漂移)
         private float _conciseBaselineY = float.NaN;
@@ -255,9 +255,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             {
                 switch (_displayMode)
                 {
-                    case StagingDisplayMode.Concise: return _savedConciseSize;
-                    case StagingDisplayMode.Silhouette2D: return _savedSilhouetteSize;
-                    default: return _savedStandardSize;
+                    case StagingDisplayMode.Concise: return BaseConciseSize;
+                    case StagingDisplayMode.Silhouette2D: return BaseSilhouetteSize;
+                    default: return BaseStandardSize;
                 }
             }
         }
@@ -543,14 +543,16 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _logic.StageDvToken = _stageDvToken;
             _logic.StageOrder = _stageOrder;
 
-            // 1. 组件包围盒 (基准 160x260 逻辑像素，Diagram 模式支持宽屏自适应)
-            if (_displayMode == StagingDisplayMode.Concise && config != null && config.ScaleY > 0.05f)
+            // 1. 组件包围盒 (基准逻辑像素，根据模式与缩放系数进行初始几何布局)
+            if (config != null)
             {
-                float initH = config.ScaleY * DefaultHeight;
-                float initW = config.ScaleX > 0.05f ? config.ScaleX * DefaultWidth : 145f;
-                _savedConciseSize = new Vector2(initW, initH);
+                // 自动修复旧会话可能残留的异常畸变缩放
+                if (config.ScaleX > 3.0f || config.ScaleX < 0.2f) config.ScaleX = 1.0f;
+                if (config.ScaleY > 3.0f || config.ScaleY < 0.2f) config.ScaleY = 1.0f;
             }
-            Vector2 size = BaseSize * s;
+            float factorX = (config != null && config.ScaleX > 0.05f) ? config.ScaleX : 1.0f;
+            float factorY = (config != null && config.ScaleY > 0.05f) ? config.ScaleY : 1.0f;
+            Vector2 size = new Vector2(BaseSize.x * s * factorX, BaseSize.y * s * factorY);
             RectTransform.sizeDelta = size;
             if (_displayMode == StagingDisplayMode.Concise)
             {
@@ -559,18 +561,20 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             // 2. 底板卡片 (现代化暗晶毛玻璃背板 0.75 Alpha；极简模式全透明无框)
             _bgImage = CardBackground;
+            bool enableFrame = _frameMode != "NONE" && _displayMode != StagingDisplayMode.Concise;
             if (_bgImage != null)
             {
-                _bgImage.color = (_frameMode == "NONE" || _displayMode == StagingDisplayMode.Concise)
-                    ? Color.clear
-                    : WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
-                _bgImage.raycastTarget = true;
+                _bgImage.enabled = enableFrame;
+                _bgImage.color = enableFrame
+                    ? WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f)
+                    : Color.clear;
+                _bgImage.raycastTarget = enableFrame;
             }
             _bgOutline = CardOutline;
             if (_bgOutline != null)
             {
                 _bgOutline.effectDistance = new Vector2(1f * s, 1f * s);
-                _bgOutline.enabled = (_frameMode != "NONE" && _displayMode != StagingDisplayMode.Concise);
+                _bgOutline.enabled = enableFrame;
                 _bgOutline.effectColor = WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
             }
 
@@ -1065,20 +1069,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         // ==========================================
         public void OnAdaptiveResize(Vector2 pixelSize)
         {
-            float s = CurrentDpiScale > 0.01f ? CurrentDpiScale : 1f;
-            Vector2 unscaled = new Vector2(pixelSize.x / s, pixelSize.y / s);
-            switch (_displayMode)
+            if (_displayMode == StagingDisplayMode.Concise)
             {
-                case StagingDisplayMode.Concise:
-                    _savedConciseSize = unscaled;
-                    _conciseBaselineY = float.NaN;
-                    break;
-                case StagingDisplayMode.Silhouette2D:
-                    _savedSilhouetteSize = unscaled;
-                    break;
-                default:
-                    _savedStandardSize = unscaled;
-                    break;
+                _conciseBaselineY = float.NaN;
             }
 
             if (_scrollViewportRt != null)
@@ -1602,17 +1595,25 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 外框模式着色 (现代化暗晶毛玻璃背板 0.75 Alpha；极简模式完全去框)
-            if (_frameMode == "NONE" || _displayMode == StagingDisplayMode.Concise)
+            bool enableFrame = _frameMode != "NONE" && _displayMode != StagingDisplayMode.Concise;
+            if (_bgImage != null)
+            {
+                _bgImage.enabled = enableFrame;
+                _bgImage.raycastTarget = enableFrame;
+            }
+            if (_bgOutline != null)
+            {
+                _bgOutline.enabled = enableFrame;
+            }
+            if (!enableFrame)
             {
                 if (_bgImage != null) _bgImage.color = Color.clear;
-                if (_bgOutline != null) _bgOutline.enabled = false;
             }
             else if (_frameMode == "FAINT")
             {
                 if (_bgImage != null) _bgImage.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
                 if (_bgOutline != null)
                 {
-                    _bgOutline.enabled = true;
                     _bgOutline.effectColor = _currentCardRole == CardStyleRole.Emphasized
                         ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
                         : WidgetStyleManager.Weighted(theme.FrameBorderColor, LineWeight.Ghost);
@@ -1744,9 +1745,13 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
+            bool isConcise = _displayMode == StagingDisplayMode.Concise;
 
             // 1. 读取当前物理尺寸并自适应布局 (仅在尺寸变化时才调用 ApplyLayout)
-            float currentW = RectTransform.rect.width > 10f ? RectTransform.rect.width : DefaultWidth * s;
+            float effScaleX = (Config != null && Config.ScaleX > 0.05f) ? Config.ScaleX : 1.0f;
+            float factorX = CommittedScale > 0.001f ? (effScaleX / CommittedScale) : 1.0f;
+            float targetW = BaseSize.x * s * factorX;
+            float currentW = isConcise ? targetW : ((RectTransform.rect.width > 10f) ? RectTransform.rect.width : targetW);
             float currentH = RectTransform.rect.height > 10f ? RectTransform.rect.height : DefaultHeight * s;
             if (Mathf.Abs(currentW - _lastLayoutW.Value) > 0.5f || Mathf.Abs(currentH - _lastLayoutH.Value) > 0.5f)
             {
@@ -1815,7 +1820,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _stageTriggerBtn.interactable = !isLocked && curStage >= 0;
 
             // 单级行尺寸与视口排版 (精简 24px / 展开自适应多行网格仓)
-            bool isConcise = _displayMode == StagingDisplayMode.Concise;
             float rowMargin = 2f;
             float totalItemsHeight = 0f;
             float scrollW = _scrollViewportRt != null && _scrollViewportRt.rect.width > 10f 
@@ -1905,14 +1909,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             // 自动伸展物理高度以容纳纵向分级栈，锁定紧凑宽度 (145px)，并以底部基准线为锚点严格向上生长，杜绝向两端扩张漂移
             if (isConcise && displayCount > 0)
             {
-                float autoW = Mathf.Clamp(currentW, 140f * s, 360f * s);
                 bool sizeChanged = false;
-
-                if (currentW < 135f * s)
-                {
-                    currentW = 145f * s;
-                    sizeChanged = true;
-                }
 
                 // 基准线同步守卫 (Bottom-Baseline Anchor Guard):
                 // 仅当基准线未初设，或检测到外部位移 (如用户在编辑模式拖拽了组件) 时，校准基准线
@@ -1939,12 +1936,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     if (Config != null)
                     {
                         Config.PositionY = newPosY;
-                        Config.ScaleY = (currentH / s) / DefaultHeight;
-                        Config.ScaleX = (currentW / s) / DefaultWidth;
                     }
 
                     RectTransform.sizeDelta = new Vector2(currentW, currentH);
-                    _savedConciseSize = new Vector2(currentW / s, currentH / s);
 
                     _lastLayoutW.Update(currentW);
                     _lastLayoutH.Update(currentH);
@@ -3071,59 +3065,25 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             float s = CurrentDpiScale > 0.01f ? CurrentDpiScale : 1f;
 
-            // 1. 记忆当前模态尺寸
-            Vector2 currentUnscaled = new Vector2(RectTransform.rect.width / s, RectTransform.rect.height / s);
-            if (currentUnscaled.x > 10f && currentUnscaled.y > 10f)
-            {
-                switch (_displayMode)
-                {
-                    case StagingDisplayMode.Concise:
-                        _savedConciseSize = currentUnscaled;
-                        break;
-                    case StagingDisplayMode.Silhouette2D:
-                        _savedSilhouetteSize = currentUnscaled;
-                        break;
-                    default:
-                        _savedStandardSize = currentUnscaled;
-                        break;
-                }
-            }
-
-            // 2. 切换模式
+            // 1. 切换模式
             _displayMode = mode;
             _conciseBaselineY = float.NaN;
 
-            // 3. 提取目标模态保存的物理基准尺寸
-            Vector2 targetBaseSize;
-            switch (_displayMode)
-            {
-                case StagingDisplayMode.Concise:
-                    targetBaseSize = _savedConciseSize;
-                    if (targetBaseSize.y < 160f) targetBaseSize = new Vector2(Mathf.Max(150f, targetBaseSize.x), 240f);
-                    break;
-                case StagingDisplayMode.Silhouette2D:
-                    targetBaseSize = _savedSilhouetteSize;
-                    if (targetBaseSize.x < 240f) targetBaseSize = new Vector2(260f, Mathf.Max(260f, targetBaseSize.y));
-                    break;
+            // 2. 提取目标模态物理基准尺寸
+            Vector2 targetBaseSize = BaseSize;
+            float effX = Config != null ? Config.EffectiveScaleX : 1f;
+            float effY = Config != null ? Config.EffectiveScaleY : 1f;
+            float factorX = CommittedScale > 0.001f ? (effX / CommittedScale) : 1.0f;
+            float factorY = CommittedScale > 0.001f ? (effY / CommittedScale) : 1.0f;
 
-                default:
-                    targetBaseSize = _savedStandardSize;
-                    break;
-            }
-
-            // 4. 应用新尺寸与 ScaleX/ScaleY
-            Vector2 newPixelSize = targetBaseSize * s;
+            // 3. 应用新尺寸
+            Vector2 newPixelSize = new Vector2(targetBaseSize.x * s * factorX, targetBaseSize.y * s * factorY);
             RectTransform.sizeDelta = newPixelSize;
-            if (Config != null)
-            {
-                Config.ScaleX = targetBaseSize.x / DefaultWidth;
-                Config.ScaleY = targetBaseSize.y / DefaultHeight;
-            }
 
-            // 5. 持久化模态配置
+            // 4. 持久化模态配置
             UpdateCustomTemplateMode();
 
-            // 6. 执行全量 UI 刷新与自适应排版
+            // 5. 执行全量 UI 刷新与自适应排版
             UpdateModeUI();
         }
 
@@ -3205,7 +3165,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _lastLayoutW.Update(-1f);
             _lastLayoutH.Update(-1f);
 
-            ApplyTheme(_cachedTheme);
+            ApplyTheme(_cachedTheme ?? WidgetTheme);
 
             float curW = RectTransform.rect.width > 10f ? RectTransform.rect.width : BaseSize.x * s;
             float curH = RectTransform.rect.height > 10f ? RectTransform.rect.height : BaseSize.y * s;

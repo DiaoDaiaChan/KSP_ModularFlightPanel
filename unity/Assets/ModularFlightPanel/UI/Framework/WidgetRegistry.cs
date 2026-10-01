@@ -509,6 +509,12 @@ namespace ModularFlightPanel.UI
             RegisterExactId<TimeWarpWidget>("core.time_warp");
             RegisterExactId<TimeWarpWidget>("core.timewarp");
 
+            RegisterExactId<TimeCommHubWidget>("core.time_comm_hub");
+            RegisterExactId<TimeCommHubWidget>("core.timecommhub");
+            RegisterExactId<TimeCommHubWidget>("custom.time_comm_hub");
+            RegisterExactId<TimeCommHubWidget>("time_comm_hub");
+            RegisterExactId<TimeCommHubWidget>("timecomm");
+
             RegisterExactId<CommSignalWidget>("core.comm_signal");
             RegisterExactId<CommSignalWidget>("core.commsignal");
 
