@@ -309,13 +309,17 @@ namespace ModularFlightPanel.UI.Framework
         public float Width { get; set; }
         public float Height { get; set; }
         public float FontSize { get; set; } = 8f;
-        public ButtonVisualRole VisualRole { get; set; } = ButtonVisualRole.ActiveToggle;
+        public ButtonVisualRole VisualRole { get; set; } = ButtonVisualRole.Normal;
         public string DefaultLabel { get; set; }
 
         public Button ButtonComponent { get; private set; }
         public Text LabelComponent { get; private set; }
         public Outline OutlineComponent { get; private set; }
         public Image BackgroundComponent { get; private set; }
+        public Image LedBarComponent { get; private set; }
+        public bool ShowLedBar { get; set; } = true;
+        public Color? CustomActiveColor { get; set; } = null;
+        public Color? CustomInactiveColor { get; set; } = null;
 
         public Action OnClick { get; set; }
 
@@ -369,7 +373,7 @@ namespace ModularFlightPanel.UI.Framework
 
         public ToggleButtonWidget(string label = "",
             float x = 0f, float y = 0f, float w = 38f, float h = 18f,
-            float font = 8f, ButtonVisualRole role = ButtonVisualRole.ActiveToggle, Action onClick = null)
+            float font = 8f, ButtonVisualRole role = ButtonVisualRole.Normal, Action onClick = null)
             : base("toggle_ctrl", "Toggle Button", WidgetControlCategory.ActionButton, null)
         {
             DefaultLabel = label;
@@ -398,11 +402,38 @@ namespace ModularFlightPanel.UI.Framework
             BackgroundComponent = ButtonComponent.GetComponent<Image>();
             OutlineComponent = ButtonComponent.GetComponent<Outline>();
 
+            // 顶部航电状态指示灯条 (Avionics Annunciator Strip)
+            if (ShowLedBar)
+            {
+                GameObject ledGo = new GameObject("LedStrip", typeof(RectTransform), typeof(Image));
+                ledGo.transform.SetParent(ButtonComponent.transform, false);
+                RectTransform ledRt = ledGo.GetComponent<RectTransform>();
+                ledRt.anchorMin = new Vector2(0.12f, 1f);
+                ledRt.anchorMax = new Vector2(0.88f, 1f);
+                ledRt.pivot = new Vector2(0.5f, 1f);
+                ledRt.anchoredPosition = new Vector2(0f, -1.5f * dpiScale);
+                ledRt.sizeDelta = new Vector2(0f, Mathf.Max(1.5f, 2f * dpiScale));
+                LedBarComponent = ledGo.GetComponent<Image>();
+                LedBarComponent.raycastTarget = false;
+            }
+
             int fontSz = Mathf.Max(6, Mathf.RoundToInt(FontSize * dpiScale));
             string initialLabel = !string.IsNullOrEmpty(_text) ? _text : (DefaultLabel ?? "");
             LabelComponent = UIFactory.CreateText(ButtonComponent.transform, "Text", initialLabel, fontSz, TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             LabelComponent.fontStyle = FontStyle.Bold;
-            LabelComponent.rectTransform.sizeDelta = sz;
+            LabelComponent.rectTransform.sizeDelta = new Vector2(sz.x, (Height - (ShowLedBar ? 3f : 0f)) * dpiScale);
+            if (ShowLedBar)
+            {
+                LabelComponent.rectTransform.anchoredPosition = new Vector2(0f, -1f * dpiScale);
+            }
+
+            var fb = ButtonComponent.GetComponent<AvionicsButtonFeedback>();
+            if (fb == null) fb = ButtonComponent.gameObject.AddComponent<AvionicsButtonFeedback>();
+            fb.VisualRole = VisualRole;
+            fb.IsToggleMode = true;
+            fb.CustomActiveColor = CustomActiveColor;
+            fb.CustomInactiveColor = CustomInactiveColor;
+            fb.Initialize(ButtonComponent, BackgroundComponent, OutlineComponent, LabelComponent, theme, LedBarComponent);
 
             if (_hasSetState && ButtonComponent != null)
             {
@@ -421,7 +452,25 @@ namespace ModularFlightPanel.UI.Framework
             var style = WidgetStyleManager.Instance;
             if (ButtonComponent != null)
             {
-                style.ApplyButtonStyle(ButtonComponent, BackgroundComponent, LabelComponent, VisualRole, false, theme);
+                Font activeFont = UIFactory.GetActiveFont(theme);
+                if (LabelComponent != null && activeFont != null && LabelComponent.font != activeFont)
+                {
+                    LabelComponent.font = activeFont;
+                }
+
+                var fb = ButtonComponent.GetComponent<AvionicsButtonFeedback>();
+                if (fb != null)
+                {
+                    fb.VisualRole = VisualRole;
+                    fb.CustomActiveColor = CustomActiveColor;
+                    fb.CustomInactiveColor = CustomInactiveColor;
+                    fb.ApplyTheme(theme);
+                }
+                else
+                {
+                    style.ApplyButtonStyle(ButtonComponent, BackgroundComponent, LabelComponent, VisualRole, false, theme);
+                }
+
                 if (_hasSetState)
                 {
                     ButtonComponent.SetToggleActive(_isActive);

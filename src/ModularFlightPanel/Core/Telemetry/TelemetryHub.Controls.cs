@@ -337,6 +337,10 @@ namespace ModularFlightPanel.Core
             if (KSP.UI.Screens.StageManager.Instance != null)
             {
                 KSP.UI.Screens.StageManager.ActivateNextStage();
+                if (ModularFlightPanel.Config.ThemeManager.IsStockBottomLeftHidden)
+                {
+                    StockUIHider.HideStockBottomLeft(true);
+                }
             }
         }
 

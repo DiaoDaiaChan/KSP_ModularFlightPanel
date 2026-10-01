@@ -74,6 +74,7 @@ namespace ModularFlightPanel.UI.Framework
         Vector2 CurrentOffset { get; }
         void ApplyOffset(Vector2 offset);
         void ResetOffset();
+        void RecaptureDefaultPosition();
         void ApplyTheme(ThemeConfig theme);
         void UpdateTelemetry(IFlightTelemetry telemetry);
         void BindConfig(WidgetConfig config);
@@ -135,6 +136,15 @@ namespace ModularFlightPanel.UI.Framework
             if (!_defaultPosCaptured && RectTransform != null)
             {
                 _defaultAnchoredPosition = RectTransform.anchoredPosition;
+                _defaultPosCaptured = true;
+            }
+        }
+
+        public virtual void RecaptureDefaultPosition()
+        {
+            if (RectTransform != null)
+            {
+                _defaultAnchoredPosition = RectTransform.anchoredPosition - _currentOffset;
                 _defaultPosCaptured = true;
             }
         }

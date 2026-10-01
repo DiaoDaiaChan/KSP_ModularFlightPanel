@@ -113,41 +113,64 @@ namespace ModularFlightPanel.Core
             {
                 if (KSP.UI.Screens.ApplicationLauncher.Instance != null)
                 {
-                    GameObject go = KSP.UI.Screens.ApplicationLauncher.Instance.gameObject;
+                    var launcher = KSP.UI.Screens.ApplicationLauncher.Instance;
+                    GameObject go = launcher.gameObject;
                     if (go != null)
                     {
-                        // 1. 彻底销毁历史可能附着的 Sub-Canvas，恢复原生画布继承，彻底杜绝摄像机丢失引发的逐帧闪烁与黑洞
-                        Canvas subCanvas = go.GetComponent<Canvas>();
-                        if (subCanvas != null)
+
+                        // 2. 关键防御：根节点 go 绝对禁止置 alpha = 0！
+                        // 根节点同时管辖 launcherSpace（按钮条）与 appSpace（原生应用窗口，如 ResourceDisplay、Delta-V、热力等）。
+                        // 若根节点透明或屏蔽射线，全部原生二级弹窗将彻底隐形且无法点击！
+                        var rootCg = go.GetComponent<CanvasGroup>();
+                        if (rootCg != null)
                         {
-                            UnityEngine.Object.Destroy(subCanvas);
+                            rootCg.alpha = 1f;
+                            rootCg.blocksRaycasts = true;
+                            rootCg.interactable = true;
                         }
 
-                        // 2. 纯净 CanvasGroup 隐蔽与显隐：零开销、零摄像机绑定风险、零剔除冲突
-                        var cg = go.GetComponent<CanvasGroup>();
-                        if (hide)
+                        // 3. 将 CanvasGroup 精确作用于 launcherSpace（官方工具栏按钮条容器）
+                        if (launcher.launcherSpace != null)
                         {
-                            if (cg == null) cg = go.AddComponent<CanvasGroup>();
-                            cg.alpha = 0f;
-                            cg.blocksRaycasts = false;
-                            cg.interactable = false;
-                        }
-                        else
-                        {
-                            if (cg != null)
+                            GameObject targetGo = launcher.launcherSpace.gameObject;
+                            var cg = targetGo.GetComponent<CanvasGroup>();
+                            if (hide)
                             {
-                                int curMode = ThemeManager.Instance != null ? ThemeManager.Instance.ToolbarStyleMode : 0;
-                                if (curMode == 0)
+                                if (cg == null) cg = targetGo.AddComponent<CanvasGroup>();
+                                cg.alpha = 0f;
+                                cg.blocksRaycasts = false;
+                                // 关键：保留 interactable = true，使内部 UIRadioButton 保持可交互状态，杜绝点击事件被 Unity UI 底层丢弃
+                                cg.interactable = true;
+                            }
+                            else
+                            {
+                                if (cg != null)
                                 {
-                                    // 模式 0 下彻底移除 CanvasGroup，完全恢复官方原始运行环境
-                                    UnityEngine.Object.Destroy(cg);
+                                    int curMode = ThemeManager.Instance != null ? ThemeManager.Instance.ToolbarStyleMode : 0;
+                                    if (curMode == 0)
+                                    {
+                                        // 模式 0 下彻底移除 CanvasGroup，完全恢复官方原始运行环境
+                                        UnityEngine.Object.Destroy(cg);
+                                    }
+                                    else
+                                    {
+                                        cg.alpha = 1f;
+                                        cg.blocksRaycasts = true;
+                                        cg.interactable = true;
+                                    }
                                 }
-                                else
-                                {
-                                    cg.alpha = 1f;
-                                    cg.blocksRaycasts = true;
-                                    cg.interactable = true;
-                                }
+                            }
+                        }
+
+                        // 4. 确保 appSpace 始终处于可见且可交互状态
+                        if (launcher.appSpace != null)
+                        {
+                            var appCg = launcher.appSpace.GetComponent<CanvasGroup>();
+                            if (appCg != null)
+                            {
+                                appCg.alpha = 1f;
+                                appCg.blocksRaycasts = true;
+                                appCg.interactable = true;
                             }
                         }
                     }
@@ -441,7 +464,9 @@ namespace ModularFlightPanel.Core
     /// <summary>
     /// 全局常驻工具栏生命周期与场景状态中枢 (Global Stock Toolbar Lifecycle & Scene Dispatcher)
     /// </summary>
+#if KSP_RUNTIME
     [KSPAddon(KSPAddon.Startup.MainMenu, true)]
+#endif
     public class StockToolbarLifecycle : MonoBehaviour
     {
         private static StockToolbarLifecycle _instance;

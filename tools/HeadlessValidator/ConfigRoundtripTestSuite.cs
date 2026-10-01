@@ -437,6 +437,13 @@ namespace ModularFlightPanel.HeadlessValidator
                 SettingsWindowWidth = 1120f,
                 SettingsWindowHeight = 800f,
                 SettingsWindowMaximized = false,
+                GlobalRefreshProfile = 2,
+                RefreshControlMode = 1,
+                GlobalStandardHz = 60f,
+                GlobalSlowHz = 30f,
+                GlobalRelaxedHz = 15f,
+                GlobalUltraLowHz = 5f,
+                GlobalDataHeartbeatHz = 20f,
                 DockRules = new List<DockButtonRule>
                 {
                     new DockButtonRule { Key = "MOCK_RES", DefaultName = "RES", CustomLabel = "资源监控", IsVisible = true, IsFavorite = true },
@@ -458,7 +465,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 errors += synDiffs;
                 if (synDiffs == 0)
                 {
-                    Console.WriteLine($"  ├─ ✔ 合成高级主题配置双向往返 100% 字段保真 (全 27 个字段与收纳坞子规则)");
+                    Console.WriteLine($"  ├─ ✔ 合成高级主题配置双向往返 100% 字段保真 (全 34 个字段与收纳坞子规则)");
                 }
             }
 
@@ -680,6 +687,8 @@ namespace ModularFlightPanel.HeadlessValidator
                 if (wA.IsolateCanvas != wB.IsolateCanvas) { PrintError($"{prefix} IsolateCanvas: {wA.IsolateCanvas} vs {wB.IsolateCanvas}"); diffs++; }
                 if (Math.Abs(wA.UpdateInterval - wB.UpdateInterval) > FloatEpsilon) { PrintError($"{prefix} UpdateInterval: {wA.UpdateInterval} vs {wB.UpdateInterval}"); diffs++; }
                 if (Math.Abs(wA.CustomHz - wB.CustomHz) > FloatEpsilon) { PrintError($"{prefix} CustomHz: {wA.CustomHz} vs {wB.CustomHz}"); diffs++; }
+                if (Math.Abs(wA.HeartBeatInterval - wB.HeartBeatInterval) > FloatEpsilon) { PrintError($"{prefix} HeartBeatInterval: {wA.HeartBeatInterval} vs {wB.HeartBeatInterval}"); diffs++; }
+                if (Math.Abs(wA.HeartBeatHz - wB.HeartBeatHz) > FloatEpsilon) { PrintError($"{prefix} HeartBeatHz: {wA.HeartBeatHz} vs {wB.HeartBeatHz}"); diffs++; }
                 if (Math.Abs(wA.RenderScale - wB.RenderScale) > FloatEpsilon) { PrintError($"{prefix} RenderScale: {wA.RenderScale} vs {wB.RenderScale}"); diffs++; }
                 if (wA.DrawOrder != wB.DrawOrder) { PrintError($"{prefix} DrawOrder: {wA.DrawOrder} vs {wB.DrawOrder}"); diffs++; }
                 if (wA.IsLocked != wB.IsLocked) { PrintError($"{prefix} IsLocked: {wA.IsLocked} vs {wB.IsLocked}"); diffs++; }
@@ -731,6 +740,13 @@ namespace ModularFlightPanel.HeadlessValidator
             if (Math.Abs(a.SettingsWindowWidth - b.SettingsWindowWidth) > FloatEpsilon) { PrintError($"[{context}] SettingsWindowWidth: {a.SettingsWindowWidth} vs {b.SettingsWindowWidth}"); diffs++; }
             if (Math.Abs(a.SettingsWindowHeight - b.SettingsWindowHeight) > FloatEpsilon) { PrintError($"[{context}] SettingsWindowHeight: {a.SettingsWindowHeight} vs {b.SettingsWindowHeight}"); diffs++; }
             if (a.SettingsWindowMaximized != b.SettingsWindowMaximized) { PrintError($"[{context}] SettingsWindowMaximized: {a.SettingsWindowMaximized} vs {b.SettingsWindowMaximized}"); diffs++; }
+            if (a.GlobalRefreshProfile != b.GlobalRefreshProfile) { PrintError($"[{context}] GlobalRefreshProfile: {a.GlobalRefreshProfile} vs {b.GlobalRefreshProfile}"); diffs++; }
+            if (a.RefreshControlMode != b.RefreshControlMode) { PrintError($"[{context}] RefreshControlMode: {a.RefreshControlMode} vs {b.RefreshControlMode}"); diffs++; }
+            if (Math.Abs(a.GlobalStandardHz - b.GlobalStandardHz) > FloatEpsilon) { PrintError($"[{context}] GlobalStandardHz: {a.GlobalStandardHz} vs {b.GlobalStandardHz}"); diffs++; }
+            if (Math.Abs(a.GlobalSlowHz - b.GlobalSlowHz) > FloatEpsilon) { PrintError($"[{context}] GlobalSlowHz: {a.GlobalSlowHz} vs {b.GlobalSlowHz}"); diffs++; }
+            if (Math.Abs(a.GlobalRelaxedHz - b.GlobalRelaxedHz) > FloatEpsilon) { PrintError($"[{context}] GlobalRelaxedHz: {a.GlobalRelaxedHz} vs {b.GlobalRelaxedHz}"); diffs++; }
+            if (Math.Abs(a.GlobalUltraLowHz - b.GlobalUltraLowHz) > FloatEpsilon) { PrintError($"[{context}] GlobalUltraLowHz: {a.GlobalUltraLowHz} vs {b.GlobalUltraLowHz}"); diffs++; }
+            if (Math.Abs(a.GlobalDataHeartbeatHz - b.GlobalDataHeartbeatHz) > FloatEpsilon) { PrintError($"[{context}] GlobalDataHeartbeatHz: {a.GlobalDataHeartbeatHz} vs {b.GlobalDataHeartbeatHz}"); diffs++; }
 
             int rulesA = a.DockRules?.Count ?? 0;
             int rulesB = b.DockRules?.Count ?? 0;

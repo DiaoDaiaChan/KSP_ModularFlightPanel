@@ -162,7 +162,7 @@ namespace ModularFlightPanel.HeadlessValidator
             "WARP", "TIMEWARP", "MET", "MISSIONTIME", "UT", "UNIVERSALTIME",
             "PERF", "PROFILER",
             "GPWS", "TAWS", "RF", "REALFUELS", "TF", "TESTFLIGHT", "DBS", "DYNAMICBATTERYSTORAGE",
-            "SH", "SYSTEMHEAT", "AA", "ATMOSPHEREAUTOPILOT", "KERBALISM", "KLSM", "RP1", "RA", "TRAJ", "DOCK"
+            "SH", "SYSTEMHEAT", "AA", "ATMOSPHEREAUTOPILOT", "KERBALISM", "KLSM", "RP1", "RA", "TRAJ", "DOCK", "RTG", "FUELCELL"
         };
 
         public static int Main(string[] args)

@@ -481,8 +481,28 @@ namespace ModularFlightPanel.UI.Widgets
                     List<KSP.UI.Screens.ApplicationLauncherButton> allButtons = new List<KSP.UI.Screens.ApplicationLauncherButton>();
                     var stockBtns = StockToolbarHook.GetStockButtons(launcher);
                     var modBtns = StockToolbarHook.GetModButtons(launcher);
-                    if (stockBtns != null) allButtons.AddRange(stockBtns);
-                    if (modBtns != null) allButtons.AddRange(modBtns);
+                    if (stockBtns != null)
+                    {
+                        for (int i = 0; i < stockBtns.Count; i++)
+                        {
+                            var b = stockBtns[i];
+                            if (b != null && b.gameObject != null && b.gameObject.activeSelf && launcher.ShouldBeVisible(b))
+                            {
+                                allButtons.Add(b);
+                            }
+                        }
+                    }
+                    if (modBtns != null)
+                    {
+                        for (int i = 0; i < modBtns.Count; i++)
+                        {
+                            var b = modBtns[i];
+                            if (b != null && b.gameObject != null && b.gameObject.activeSelf && launcher.ShouldBeVisible(b))
+                            {
+                                allButtons.Add(b);
+                            }
+                        }
+                    }
 
                     _cachedButtonCount.Update(allButtons.Count);
                     if (allButtons.Count > 0)
@@ -863,6 +883,7 @@ namespace ModularFlightPanel.UI.Widgets
             try
             {
 #if KSP_RUNTIME
+                DockAnchorTracker.NotifyInteraction(kspBtn);
                 DockAnchorTracker.SyncButtonNow(kspBtn);
 #endif
                 if (kspBtn.toggleButton != null)
@@ -878,43 +899,89 @@ namespace ModularFlightPanel.UI.Widgets
                     };
                 }
 
-                bool handled = false;
-                if (kspBtn.toggleButton != null && pe != null)
+                if (isRightClick)
                 {
+                    // 1. 直接触发原版 ApplicationLauncher 注册的右键委托 (ToolbarControl / CTB / 独立设置窗口核心通道)
                     try
                     {
-                        ((IPointerClickHandler)kspBtn.toggleButton).OnPointerClick(pe);
-                        handled = true;
+                        kspBtn.onRightClick?.Invoke();
                     }
                     catch (Exception ex)
                     {
-                        MFPLogger.WarnThrottled("ModernToolbar_ClickProxy", $"Failed invoking toggleButton OnPointerClick: {ex.Message}");
+                        MFPLogger.WarnThrottled("ModernToolbar_RightClickDelegate", $"Failed invoking onRightClick: {ex.Message}");
                     }
-                }
 
-                if (!isRightClick)
-                {
-                    if (!handled)
+                    // 2. 若按钮自身声明支持 UIRadioButton 右键点击类型，则同步传递事件
+                    if (kspBtn.toggleButton != null && kspBtn.toggleButton.rightClick != KSP.UI.UIRadioButton.ClickType.None && pe != null)
                     {
-                        if (kspBtn.toggleButton != null)
+                        try
                         {
-                            if (kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True)
-                                kspBtn.SetFalse(true);
-                            else
-                                kspBtn.SetTrue(true);
+                            (kspBtn.toggleButton as IPointerClickHandler)?.OnPointerClick(pe);
                         }
-                        kspBtn.onLeftClick?.Invoke();
-                        if (kspBtn.toggleButton != null)
+                        catch (Exception ex)
                         {
-                            kspBtn.onLeftClickBtn?.Invoke(kspBtn.toggleButton);
+                            MFPLogger.WarnThrottled("ModernToolbar_RightClickProxy", $"Failed invoking right-click: {ex.Message}");
                         }
                     }
                 }
                 else
                 {
-                    if (!handled)
+                    // 左键逻辑:
+                    // 1. 若具有 UIRadioButton 开关状态，使用 ApplicationLauncherButton 规范的原生接口切换
+                    // 彻底避开 User 模式下 unselectable = false 拒绝置 False 导致的死锁
+                    if (kspBtn.toggleButton != null)
                     {
-                        kspBtn.onRightClick?.Invoke();
+                        try
+                        {
+                            if (kspBtn.toggleButton.CurrentState == KSP.UI.UIRadioButton.State.True)
+                            {
+                                kspBtn.SetFalse(true);
+                            }
+                            else
+                            {
+                                kspBtn.SetTrue(true);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MFPLogger.WarnThrottled("ModernToolbar_ToggleState", $"Failed setting toggle state: {ex.Message}");
+                        }
+                    }
+
+                    // 2. 保证单次触发动作与回调绝对不漏触发 (部分 Mod 注册了 onLeftClick 或 onLeftClickBtn 而非 onTrue/onFalse)
+                    try
+                    {
+                        kspBtn.onLeftClick?.Invoke();
+                    }
+                    catch (Exception ex)
+                    {
+                        MFPLogger.WarnThrottled("ModernToolbar_LeftClick", $"Failed invoking onLeftClick: {ex.Message}");
+                    }
+
+                    if (kspBtn.toggleButton != null)
+                    {
+                        try
+                        {
+                            kspBtn.onLeftClickBtn?.Invoke(kspBtn.toggleButton);
+                        }
+                        catch (Exception ex)
+                        {
+                            MFPLogger.WarnThrottled("ModernToolbar_LeftClickBtn", $"Failed invoking onLeftClickBtn: {ex.Message}");
+                        }
+
+                        // 3. 针对直接挂钩 UnityEngine.UI.Button 的第三方 Mod 进行容错触发
+                        try
+                        {
+                            var uBtn = kspBtn.toggleButton.GetComponent<UnityEngine.UI.Button>();
+                            if (uBtn != null && uBtn.onClick != null)
+                            {
+                                uBtn.onClick.Invoke();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MFPLogger.WarnThrottled("ModernToolbar_UIButtonClick", $"Failed invoking UI.Button onClick: {ex.Message}");
+                        }
                     }
                 }
 
@@ -934,22 +1001,46 @@ namespace ModularFlightPanel.UI.Widgets
             try
             {
 #if KSP_RUNTIME
+                if (isEnter)
+                {
+                    DockAnchorTracker.NotifyInteraction(kspBtn);
+                }
                 DockAnchorTracker.SyncButtonNow(kspBtn);
 #endif
                 if (isEnter)
                 {
-                    if (pe != null && kspBtn.toggleButton != null)
+                    if (pe != null)
                     {
-                        try { ((IPointerEnterHandler)kspBtn.toggleButton).OnPointerEnter(pe); }
+                        try
+                        {
+                            if (kspBtn.hoverController != null)
+                            {
+                                kspBtn.hoverController.OnPointerEnter(pe);
+                            }
+                            else
+                            {
+                                (kspBtn.toggleButton as IPointerEnterHandler)?.OnPointerEnter(pe);
+                            }
+                        }
                         catch (Exception ex) { MFPLogger.WarnThrottled("ModernToolbar_HoverEnter", $"Failed hover enter: {ex.Message}"); }
                     }
                     kspBtn.onHover?.Invoke();
                 }
                 else
                 {
-                    if (pe != null && kspBtn.toggleButton != null)
+                    if (pe != null)
                     {
-                        try { ((IPointerExitHandler)kspBtn.toggleButton).OnPointerExit(pe); }
+                        try
+                        {
+                            if (kspBtn.hoverController != null)
+                            {
+                                kspBtn.hoverController.OnPointerExit(pe);
+                            }
+                            else
+                            {
+                                (kspBtn.toggleButton as IPointerExitHandler)?.OnPointerExit(pe);
+                            }
+                        }
                         catch (Exception ex) { MFPLogger.WarnThrottled("ModernToolbar_HoverExit", $"Failed hover exit: {ex.Message}"); }
                     }
                     kspBtn.onHoverOut?.Invoke();
@@ -1431,7 +1522,23 @@ namespace ModularFlightPanel.UI.Widgets
                     var launcher = KSP.UI.Screens.ApplicationLauncher.Instance;
                     var stockBtns = StockToolbarHook.GetStockButtons(launcher);
                     var modBtns = StockToolbarHook.GetModButtons(launcher);
-                    int currentCount = (stockBtns != null ? stockBtns.Count : 0) + (modBtns != null ? modBtns.Count : 0);
+                    int currentCount = 0;
+                    if (stockBtns != null)
+                    {
+                        for (int i = 0; i < stockBtns.Count; i++)
+                        {
+                            var b = stockBtns[i];
+                            if (b != null && b.gameObject != null && b.gameObject.activeSelf && launcher.ShouldBeVisible(b)) currentCount++;
+                        }
+                    }
+                    if (modBtns != null)
+                    {
+                        for (int i = 0; i < modBtns.Count; i++)
+                        {
+                            var b = modBtns[i];
+                            if (b != null && b.gameObject != null && b.gameObject.activeSelf && launcher.ShouldBeVisible(b)) currentCount++;
+                        }
+                    }
 
                     // 1. 动态自动适配：如果模组数量发生变化，标记自适应重构
                     if (currentCount != _cachedButtonCount.Value)

@@ -84,6 +84,11 @@ namespace ModularFlightPanel.Core
         // 几何包围盒数据
         public float NormalizedNoseTipY { get; private set; } = 1.0f;
         public float NormalizedEngineBottomY { get; private set; } = -1.0f;
+        public float PhysicalSpanX { get; private set; } = 5.0f;
+        public float PhysicalSpanY { get; private set; } = 30.0f;
+        public float PhysicalSpanZ { get; private set; } = 5.0f;
+        public float PhysicalAspect => PhysicalSpanY / Mathf.Max(0.1f, Mathf.Max(PhysicalSpanX, PhysicalSpanZ));
+
 
         private void Awake()
         {
@@ -465,6 +470,10 @@ namespace ModularFlightPanel.Core
             float viewExtent = maxSpan * 1.15f * 0.5f;
             NormalizedNoseTipY = Mathf.Clamp((maxY - centerY) / viewExtent, -1.0f, 1.0f);
             NormalizedEngineBottomY = Mathf.Clamp((minY - centerY) / viewExtent, -1.0f, 1.0f);
+            PhysicalSpanX = spanX;
+            PhysicalSpanY = spanY;
+            PhysicalSpanZ = spanZ;
+
 
             // 4. 定位与校准离屏摄像机 (平滑视口过渡，消除分离瞬间镜头突然弹跳缩放)
             Vector3 targetCenter = origin + right * centerX + forward * centerY + dorsal * centerZ;

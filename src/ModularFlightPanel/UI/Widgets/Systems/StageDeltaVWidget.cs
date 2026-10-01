@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.UI.Framework;
+using ModularFlightPanel.UI.Widgets.Controls;
 
 namespace ModularFlightPanel.UI.Widgets
 {
@@ -490,16 +491,19 @@ namespace ModularFlightPanel.UI.Widgets
             titleRt.anchoredPosition = new Vector2(0f, bayH * 0.5f - 8f * s);
             titleRt.sizeDelta = new Vector2(bayW - 4f * s, 12f * s);
 
-            // 2D 飞船剪影图元 (RawImage 显示 VesselSilhouetteBaker 或本地 GPU 矢量保底)
+            // 2D 飞船剪影图元 (RawImage 显示 VesselSilhouetteBaker 或本地 GPU 矢量保底，保持 1:1 等比防拉伸)
+            float silDim = Mathf.Min(bayW - 12f * s, bayH - 32f * s);
             _silhouetteRawImage = CreateChild<RawImage>("VesselSilhouette_RawImage", _silhouetteBayObj.transform,
-                new Vector2(46f * s, 102f * s), new Vector2(0f, -2f * s));
+                new Vector2(silDim, silDim), new Vector2(0f, -2f * s));
             _silhouetteRawImage.raycastTarget = false;
             _silhouetteRawImage.color = secondaryAccent;
 
             _proceduralSilhouetteGraphic = CreateChild<ProceduralRocketSilhouetteGraphic>("ProceduralSilhouette", _silhouetteBayObj.transform,
-                new Vector2(46f * s, 102f * s), new Vector2(0f, -2f * s));
+                new Vector2(silDim, silDim), new Vector2(0f, -2f * s));
             _proceduralSilhouetteGraphic.raycastTarget = false;
             _proceduralSilhouetteGraphic.color = secondaryAccent;
+            _proceduralSilhouetteGraphic.RocketAspect = 6.0f;
+
 
             Texture tex = VesselSilhouetteService.Provider?.SilhouetteTexture;
             bool hasBakerTex = tex != null;

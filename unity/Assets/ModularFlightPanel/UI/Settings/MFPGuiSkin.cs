@@ -503,6 +503,37 @@ namespace ModularFlightPanel.UI.Settings
             return value;
         }
 
+        /// <summary>
+        /// 缓冲式字符串输入控件：失焦时同步外部值，聚焦编辑时锁定输入缓冲区，防止每帧重绘导致光标跳动
+        /// </summary>
+        public static string DrawBufferedStringField(string controlId, string value, float width = 0f)
+        {
+            EnsureInitialized();
+            GUI.SetNextControlName(controlId);
+
+            bool isFocused = (GUI.GetNameOfFocusedControl() == controlId);
+            if (!_inputBufferMap.TryGetValue(controlId, out string text))
+            {
+                text = value ?? "";
+                _inputBufferMap[controlId] = text;
+            }
+
+            if (!isFocused)
+            {
+                text = value ?? "";
+                _inputBufferMap[controlId] = text;
+            }
+
+            var options = width > 0f ? new GUILayoutOption[] { GUILayout.Width(width) } : new GUILayoutOption[] { GUILayout.ExpandWidth(true) };
+            string newText = GUILayout.TextField(text, SearchFieldStyle, options);
+            if (newText != text)
+            {
+                _inputBufferMap[controlId] = newText;
+            }
+
+            return newText;
+        }
+
         private static string _globalToastMsg = string.Empty;
         private static float _globalToastTimer = 0f;
 

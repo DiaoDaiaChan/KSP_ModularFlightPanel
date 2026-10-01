@@ -9,12 +9,13 @@ using ModularFlightPanel.UI.Widgets.Controls;
 namespace ModularFlightPanel.UI
 {
     /// <summary>
-    /// 全新模块化航电暗晶工程工作台 (Modular Avionics Cyber-Dark Workbench - Alt+N)
+    /// 全新模块化航电暗晶工程工作台 2.0 (Modular Avionics Cyber-Dark Workbench - Alt+N)
     /// 核心特性：
-    /// 1. 双重输入穿透防护 (MFPInputLock)：悬浮阻断背景 3D 相机旋转与误点零件，输入时独占键盘阻断热键泄露。
-    /// 2. 屏幕自适应居中与拖拽边界吸附 (Adaptive Resolution & Bounds Clamp)。
-    /// 3. ESC / Alt+N 优雅关闭、暂存防抖提交与即时落盘。
-    /// 4. 完美联动现代暗晶航电设计系统 2.0 (MFPGuiSkin)。
+    /// 1. 4 大核心功能中枢架构：[🛠️ 航电设计工坊]、[🎨 视觉风格与主题]、[💾 档案与预设中枢]、[🚀 诊断与遥测沙盒]。
+    /// 2. 解耦画布排版模式 (Canvas Layout Mode)：一键收拢为极简悬浮药丸 Dock，彻底消除视口遮挡与编辑手柄互相打架。
+    /// 3. 精确动态响应式视口系统：彻底废除硬编码高度魔法减法，支持自由拉伸与多分辨率完美自适应。
+    /// 4. 双重输入穿透防护 (MFPInputLock)：悬浮阻断背景 3D 相机旋转与误点零件，输入时独占键盘阻断热键泄露。
+    /// 5. ESC / Alt+N 优雅呼出与关闭、脏标记防抖提交与即时落盘。
     /// </summary>
     public class SettingsGUI : MonoBehaviour
     {
@@ -25,37 +26,44 @@ namespace ModularFlightPanel.UI
         private bool _isOpen = false;
         public bool IsOpen => _isOpen;
 
-        public const float DefaultWindowWidth = 1040f;
-        public const float DefaultWindowHeight = 650f;
-        public const float MinWindowWidth = 840f;
-        public const float MinWindowHeight = 440f;
+        // 画布自由排版模式解耦状态机
+        private bool _isCanvasLayoutMode = false;
+        public bool IsCanvasLayoutMode => _isCanvasLayoutMode;
+
+        public const float DefaultWindowWidth = 1060f;
+        public const float DefaultWindowHeight = 670f;
+        public const float MinWindowWidth = 860f;
+        public const float MinWindowHeight = 460f;
         public const float WindowWidth = DefaultWindowWidth;
         public const float WindowHeight = DefaultWindowHeight;
 
         public static float ContentHeight => Instance != null ? Instance.CurrentContentHeight : 480f;
-        public float CurrentContentHeight => Mathf.Max(240f, _windowRect.height - 170f);
+        public float CurrentContentHeight
+        {
+            get
+            {
+                // 窗口内边距 (30f) + 顶部卡片 (46f) + 标签栏 (36f) + 底部栏 (48f) + 间距 (30f) = 190f
+                float usedH = 190f + (MFPSafetyFallback.IsFaulted ? 48f : 0f);
+                return Mathf.Max(240f, _windowRect.height - usedH);
+            }
+        }
 
         private Rect _windowRect = new Rect(100f, 60f, DefaultWindowWidth, DefaultWindowHeight);
+        public Rect WindowRect => _windowRect;
+        public bool IsMouseOverWindow => _isOpen && !_isCanvasLayoutMode && _windowRect.Contains(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
         private int _windowId = 849204;
         private bool _rectInitialized = false;
 
-        // 自由拉伸与全自适应视口状态机
+        // 自由拉伸交互状态机
         private bool _isResizing = false;
         private Vector2 _resizeStartMousePos;
         private Vector2 _resizeStartWindowSize;
         private bool _isMaximized = false;
         private Rect _preMaximizeRect = new Rect(100f, 60f, DefaultWindowWidth, DefaultWindowHeight);
 
-        private int _currentTab = 1; // 默认打开遥测装配台
-        private readonly string[] TabTitles = new string[]
-        {
-            I18n.Tr("UI_TAB_LIBRARY", "📦 航电库"),
-            I18n.Tr("UI_TAB_ASSEMBLER", "🛠️ 遥测装配台"),
-            I18n.Tr("UI_TAB_MANAGER", "📋 挂载清单"),
-            I18n.Tr("UI_TAB_THEMES", "🎨 视觉风格"),
-            I18n.Tr("UI_TAB_PROFILES", "💾 档案与配置"),
-            I18n.Tr("UI_TAB_SANDBOX", "🚀 仿真沙盒")
-        };
+        private ISettingsTab[] _tabs;
+        private int _currentTab = 0; // 默认打开 0: 航电设计工坊 (TabStudio)
+        public ISettingsTab CurrentTabInstance => (_tabs != null && _currentTab >= 0 && _currentTab < _tabs.Length) ? _tabs[_currentTab] : null;
 
         private SettingsGUIDrawer _drawer;
 
@@ -66,59 +74,94 @@ namespace ModularFlightPanel.UI
             _drawer.Owner = this;
             _drawer.enabled = false;
 
+            // 实例化 4 大功能中枢
+            _tabs = new ISettingsTab[]
+            {
+                new TabStudio(),
+                new TabThemeSettings(),
+                new TabProfilesConfig(),
+                new TabDiagnostics()
+            };
+
             UIWidget.OnRequestOpenWorkbench = ToggleWindow;
             MFPToastBridge.OnShowToast = (msg) => Settings.MFPGuiSkin.ShowToast(msg);
             I18nManager.OnLanguageChanged += HandleLanguageChanged;
-            UpdateTabTitles();
-        }
-
-        private void UpdateTabTitles()
-        {
-            TabTitles[0] = I18n.Tr("UI_TAB_LIBRARY", "📦 航电库");
-            TabTitles[1] = I18n.Tr("UI_TAB_ASSEMBLER", "🛠️ 遥测装配台");
-            TabTitles[2] = I18n.Tr("UI_TAB_MANAGER", "📋 挂载清单");
-            TabTitles[3] = I18n.Tr("UI_TAB_THEMES", "🎨 视觉风格");
-            TabTitles[4] = I18n.Tr("UI_TAB_PROFILES", "💾 档案与配置");
-            TabTitles[5] = I18n.Tr("UI_TAB_SANDBOX", "🚀 仿真沙盒");
         }
 
         private void HandleLanguageChanged(string newLang)
         {
-            UpdateTabTitles();
+            // 语言变更时自动触发重绘与文本刷新
         }
 
         private void Update()
         {
-            // Alt + N 快捷键呼出/关闭 (仅在按键按下时才做 F2 隐藏判断，彻底消灭每帧单例查找)
+            // Alt + N 快捷键呼出/关闭
             if ((Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt)) && Input.GetKeyDown(KeyCode.N))
             {
                 if (KSP.UI.UIMasterController.Instance == null || KSP.UI.UIMasterController.Instance.IsUIShowing)
                 {
-                    ToggleWindow();
+                    if (_isCanvasLayoutMode)
+                    {
+                        ExitCanvasLayoutMode();
+                    }
+                    else
+                    {
+                        ToggleWindow();
+                    }
                 }
             }
             else if (_isOpen && Input.GetKeyDown(KeyCode.Escape))
             {
-                ToggleWindow();
+                if (_isCanvasLayoutMode)
+                {
+                    ExitCanvasLayoutMode();
+                }
+                else
+                {
+                    ToggleWindow();
+                }
             }
         }
 
         public void SwitchTab(int tabIndex)
         {
-            if (_currentTab == 1) TabAssembler.CommitPendingSaves();
-            _currentTab = Mathf.Clamp(tabIndex, 0, TabTitles.Length - 1);
+            if (_tabs == null || _tabs.Length == 0) return;
+            int target = Mathf.Clamp(tabIndex, 0, _tabs.Length - 1);
+            if (_currentTab != target)
+            {
+                _tabs[_currentTab]?.OnExit();
+                _currentTab = target;
+                _tabs[_currentTab]?.OnEnter();
+            }
         }
 
+        /// <summary>
+        /// 兼容旧版调用并自动重定向到对应的新 4 级标签页
+        /// </summary>
         public void OpenToTab(int tabIndex)
         {
             _isOpen = true;
+            _isCanvasLayoutMode = false;
+            WidgetDragHandler.IsEditModeActive = false;
+
             if (_drawer != null && !_drawer.enabled)
             {
                 _drawer.enabled = true;
             }
             EnsureWindowRect();
-            WidgetDragHandler.IsEditModeActive = true;
-            SwitchTab(tabIndex);
+
+            // 向下兼容映射:
+            // 0 (Library), 1 (Assembler), 2 (Manager) => 0 (Studio)
+            // 3 (Themes) => 1 (Themes)
+            // 4 (Profiles) => 2 (Profiles)
+            // 5 (Simulation) => 3 (Diagnostics)
+            int mapped = tabIndex;
+            if (tabIndex <= 2) mapped = 0;
+            else if (tabIndex == 3) mapped = 1;
+            else if (tabIndex == 4) mapped = 2;
+            else if (tabIndex >= 5) mapped = 3;
+
+            SwitchTab(mapped);
             OnWindowStateChanged?.Invoke(_isOpen);
         }
 
@@ -134,7 +177,8 @@ namespace ModularFlightPanel.UI
 
                 if (!_isOpen)
                 {
-                    // 关闭窗口时退出拖拽编辑模式、释放输入锁、提交暂存并持久化几何布局
+                    // 关闭工作台时彻底退出排版模式、释放输入锁并提交保存
+                    _isCanvasLayoutMode = false;
                     _isResizing = false;
                     try
                     {
@@ -148,7 +192,10 @@ namespace ModularFlightPanel.UI
 
                     try
                     {
-                        TabAssembler.CommitPendingSaves();
+                        if (_tabs != null && _currentTab >= 0 && _currentTab < _tabs.Length)
+                        {
+                            _tabs[_currentTab]?.OnExit();
+                        }
                         WidgetLayoutManager.Instance.SaveLayout();
                         SaveWindowSettings();
                     }
@@ -159,15 +206,12 @@ namespace ModularFlightPanel.UI
                 }
                 else
                 {
+                    _isCanvasLayoutMode = false;
+                    WidgetDragHandler.IsEditModeActive = false;
                     EnsureWindowRect();
-                    // 进入工作台时默认开启自由拖拽编辑模式
-                    try
+                    if (_tabs != null && _currentTab >= 0 && _currentTab < _tabs.Length)
                     {
-                        WidgetDragHandler.IsEditModeActive = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        MFPLogger.Warn(MFPLogger.CatUI, $"Error activating edit mode: {ex.Message}");
+                        _tabs[_currentTab]?.OnEnter();
                     }
                 }
 
@@ -193,6 +237,61 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        #region Canvas Layout Mode (解耦画布自由排版)
+
+        public void EnterCanvasLayoutMode()
+        {
+            _isCanvasLayoutMode = true;
+            WidgetDragHandler.IsEditModeActive = true;
+            MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_ENTER_CANVAS", "📐 已进入画布自由排版模式 (点击药丸栏返回工作台)"));
+        }
+
+        public void ExitCanvasLayoutMode()
+        {
+            _isCanvasLayoutMode = false;
+            WidgetDragHandler.IsEditModeActive = false;
+            WidgetSelectionManager.ClearSelection();
+            WidgetLayoutManager.Instance.SaveLayout();
+            MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_EXIT_CANVAS", "✔ 已返回航电工程工作台"));
+        }
+
+        private void DrawCanvasModeFloatingDock()
+        {
+            float dockW = 460f;
+            float dockH = 40f;
+            float dockX = (Screen.width - dockW) * 0.5f;
+            float dockY = Screen.height - 54f; // 牢牢锚定在屏幕最底端，零遮挡
+            Rect dockRect = new Rect(dockX, dockY, dockW, dockH);
+
+            bool isMouseOver = dockRect.Contains(Event.current.mousePosition);
+            if (isMouseOver) FlightHUDManager.IsMouseOverFloatingToolbar = true;
+            MFPInputLock.SetWindowHoverLock(isMouseOver);
+
+            GUILayout.BeginArea(dockRect, MFPGuiSkin.CardStyle);
+            GUILayout.BeginHorizontal();
+
+            GUILayout.Label($"📐 <color=#{MFPGuiSkin.HexAccentCyan}><b>{I18n.Tr("UI_CANVAS_DOCK_TITLE", "画布自由排版")}</b></color>", GUILayout.Width(115f));
+
+            int selCount = WidgetSelectionManager.Count;
+            string selInfo = selCount > 0 ? string.Format(I18n.Tr("UI_CANVAS_SEL_COUNT", "已选 {0} 项"), selCount) : I18n.Tr("UI_CANVAS_DRAG_HINT", "拖拽/旋转调整中");
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentAmber}><size=11>{selInfo}</size></color>", GUILayout.ExpandWidth(true));
+
+            if (GUILayout.Button(I18n.Tr("UI_CANVAS_RETURN_WORKBENCH", "✔ 返回工坊 (Alt+N)"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
+            {
+                ExitCanvasLayoutMode();
+            }
+
+            if (GUILayout.Button("✕", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
+            {
+                ToggleWindow();
+            }
+
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+        }
+
+        #endregion
+
         private void EnsureWindowRect()
         {
             if (!_rectInitialized)
@@ -202,7 +301,6 @@ namespace ModularFlightPanel.UI
                 float savedH = tm != null && tm.SettingsWindowHeight > 0f ? tm.SettingsWindowHeight : DefaultWindowHeight;
                 bool savedMax = tm != null && tm.SettingsWindowMaximized;
 
-                // 防御性校验：如果持久化的高度几乎占满屏幕且并非最大化，自动重置为标准默认高度
                 if (!savedMax && (savedH >= Screen.height - 30f || savedH < MinWindowHeight))
                 {
                     savedH = Mathf.Min(DefaultWindowHeight, Mathf.Max(MinWindowHeight, Screen.height - 80f));
@@ -215,7 +313,6 @@ namespace ModularFlightPanel.UI
                 float savedX = tm != null && tm.SettingsWindowX >= 0f ? tm.SettingsWindowX : Mathf.Max(15f, (Screen.width - savedW) * 0.5f);
                 float savedY = tm != null && tm.SettingsWindowY >= 0f ? tm.SettingsWindowY : Mathf.Max(15f, (Screen.height - savedH) * 0.5f);
 
-                // 防御越界：如果窗口跑出屏幕可视区，拉回中央
                 if (savedX > Screen.width - 80f || savedY > Screen.height - 80f || savedY < 5f)
                 {
                     savedX = Mathf.Max(15f, (Screen.width - savedW) * 0.5f);
@@ -234,13 +331,13 @@ namespace ModularFlightPanel.UI
         {
             float maxAllowedW = Mathf.Max(MinWindowWidth, Screen.width - 20f);
             float maxAllowedH = Mathf.Max(MinWindowHeight, Screen.height - 20f);
-            _windowRect.width = Mathf.Clamp(_windowRect.width, MinWindowWidth, maxAllowedW);
-            _windowRect.height = Mathf.Clamp(_windowRect.height, MinWindowHeight, maxAllowedH);
+            _windowRect.width = Mathf.Round(Mathf.Clamp(_windowRect.width, MinWindowWidth, maxAllowedW));
+            _windowRect.height = Mathf.Round(Mathf.Clamp(_windowRect.height, MinWindowHeight, maxAllowedH));
 
             float maxX = Mathf.Max(0f, Screen.width - _windowRect.width);
             float maxY = Mathf.Max(0f, Screen.height - _windowRect.height);
-            _windowRect.x = Mathf.Clamp(_windowRect.x, 0f, maxX);
-            _windowRect.y = Mathf.Clamp(_windowRect.y, 0f, maxY);
+            _windowRect.x = Mathf.Round(Mathf.Clamp(_windowRect.x, 0f, maxX));
+            _windowRect.y = Mathf.Round(Mathf.Clamp(_windowRect.y, 0f, maxY));
         }
 
         private void SaveWindowSettings()
@@ -265,7 +362,7 @@ namespace ModularFlightPanel.UI
             _windowRect.y = Mathf.Max(15f, (Screen.height - defaultH) * 0.5f);
             ClampWindowToScreen();
             SaveWindowSettings();
-            MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_RESET_WINDOW", "✔ 已还原标准窗口尺寸 (1040x650)"));
+            MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_RESET_WINDOW", "✔ 已还原标准窗口尺寸 (1060×670)"));
         }
 
         public void ToggleMaximize()
@@ -273,7 +370,7 @@ namespace ModularFlightPanel.UI
             if (!_isMaximized)
             {
                 _preMaximizeRect = _windowRect;
-                float maxW = Mathf.Max(MinWindowWidth, Screen.width * 0.94f);
+                float maxW = Mathf.Max(MinWindowWidth, Screen.width * 0.95f);
                 float maxH = Mathf.Max(MinWindowHeight, Screen.height * 0.92f);
                 float posX = Mathf.Max(0f, (Screen.width - maxW) * 0.5f);
                 float posY = Mathf.Max(0f, (Screen.height - maxH) * 0.5f);
@@ -320,10 +417,16 @@ namespace ModularFlightPanel.UI
             MFPGuiSkin.EnsureInitialized();
             GUI.skin = HighLogic.Skin;
 
-            // 保持窗口在屏幕安全可视范围内
+            // 若处于画布自由排版模式，只绘制极简浮动 Dock
+            if (_isCanvasLayoutMode)
+            {
+                DrawCanvasModeFloatingDock();
+                return;
+            }
+
             ClampWindowToScreen();
 
-            // 自由拉伸交互状态机 (安全兜底：如果外部抬起鼠标，确保释放拉伸状态)
+            // 自由拉伸交互状态机安全兜底
             if (_isResizing && (Event.current.rawType == EventType.MouseUp || Event.current.type == EventType.MouseUp))
             {
                 GUIUtility.hotControl = 0;
@@ -338,7 +441,6 @@ namespace ModularFlightPanel.UI
             bool isTextFocused = !string.IsNullOrEmpty(GUI.GetNameOfFocusedControl());
             MFPInputLock.SetKeyboardFocusLock(isTextFocused);
 
-            // 严格保护用户指定或拖拽的窗口尺寸，严禁 GUILayout 内部弹性内容在帧间滚雪球无限撑大
             float targetW = _windowRect.width;
             float targetH = _windowRect.height;
 
@@ -352,11 +454,8 @@ namespace ModularFlightPanel.UI
                 GUILayout.Height(targetH)
             );
 
-            // 恢复物理尺寸锁定，消解 GUILayout 内部弹性内容导致的尺寸漂移
             _windowRect.width = targetW;
             _windowRect.height = targetH;
-
-            // 绘制后再次约束在安全屏幕视口内
             ClampWindowToScreen();
         }
 
@@ -375,13 +474,13 @@ namespace ModularFlightPanel.UI
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
 
-            // 标题徽章 (色标联动主题配色)
+            // 标题徽章
             string subTitle = I18n.Tr("UI_WORKBENCH_SUBTITLE", "航电工程工作台");
-            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><b>MODULAR FLIGHT PANEL</b></color> <color=#{MFPGuiSkin.HexTextSecondary}><size=11>| {subTitle}</size></color>", GUILayout.Width(270f));
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><b>MODULAR FLIGHT PANEL</b></color> <color=#{MFPGuiSkin.HexTextSecondary}><size=11>| {subTitle}</size></color>", GUILayout.Width(260f));
 
             GUILayout.FlexibleSpace();
 
-            // 载具状态摘要 (状态色动态派生自主题)
+            // 载具状态摘要
             string vesselName = FlightTelemetryContext.Current?.VesselName ?? "---";
             string frameName = TelemetryTokenEngine.Evaluate("{FRAME}", FlightTelemetryContext.Current);
             double mfpMs = MFPProfiler.AvgTotalMs;
@@ -394,76 +493,19 @@ namespace ModularFlightPanel.UI
 
             GUILayout.FlexibleSpace();
 
-            // 自由拖拽编辑模式开关
-            bool isEdit = WidgetDragHandler.IsEditModeActive;
-            GUIStyle dragBtnStyle = isEdit ? MFPGuiSkin.SuccessButtonStyle : MFPGuiSkin.SecondaryButtonStyle;
-            string dragBtn = isEdit ? I18n.Tr("UI_DRAG_MODE_ACTIVE", "🎯 [拖拽模式中] 点击锁定") : I18n.Tr("UI_DRAG_MODE_IDLE", "🎯 [开启自由拖拽]");
-            if (GUILayout.Button(dragBtn, dragBtnStyle, GUILayout.Height(24f), GUILayout.Width(150f)))
+            // 画布自由排版模式入口 (点击后折叠工作台为屏幕底部药丸栏，留出全屏无遮挡自由拖拽与排版)
+            if (GUILayout.Button(I18n.Tr("UI_BTN_CANVAS_MODE", "📐 画布自由排版"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(24f), GUILayout.Width(130f)))
             {
-                WidgetDragHandler.IsEditModeActive = !WidgetDragHandler.IsEditModeActive;
-                if (!WidgetDragHandler.IsEditModeActive)
-                {
-                    WidgetSelectionManager.ClearSelection();
-                    WidgetLayoutManager.Instance.SaveLayout();
-                }
+                EnterCanvasLayoutMode();
             }
 
             GUILayout.Space(6f);
 
-            // 姿态球快速显隐开关
-            var navCfg = WidgetLayoutManager.Instance.GetConfig("core.navball");
-            bool isBallOn = navCfg == null || navCfg.IsEnabled;
-            GUIStyle ballBtnStyle = isBallOn ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.WarningButtonStyle;
-            string ballBtn = isBallOn ? I18n.Tr("UI_NAVBALL_ON", "🌐 姿态球: 开") : I18n.Tr("UI_NAVBALL_OFF", "🌐 姿态球: 关");
-            if (GUILayout.Button(ballBtn, ballBtnStyle, GUILayout.Height(24f), GUILayout.Width(105f)))
-            {
-                if (navCfg != null)
-                {
-                    navCfg.IsEnabled = !navCfg.IsEnabled;
-                }
-                else
-                {
-                    navCfg = new WidgetConfig("core.navball", I18n.GetWidgetName("core.navball", "3D 姿态球"), 0f, 0f) { IsEnabled = false };
-                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(navCfg);
-                }
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-
-            GUILayout.Space(6f);
-
-            // 全局 Master Bypass / 故障原版旁路模式切换
-            bool bypassed = MFPProfiler.IsMasterBypassed || MFPSafetyFallback.IsFaulted;
-            string bypassText = MFPSafetyFallback.IsFaulted
-                ? I18n.Tr("UI_BYPASS_FAULT", "⚠ 熔断接管")
-                : (bypassed ? I18n.Tr("UI_BYPASS_ON", "🛑 原版模式") : I18n.Tr("UI_BYPASS_OFF", "🚀 航电模式"));
-            GUIStyle bypassStyle = MFPSafetyFallback.IsFaulted
-                ? MFPGuiSkin.DangerButtonStyle
-                : (bypassed ? MFPGuiSkin.WarningButtonStyle : MFPGuiSkin.SecondaryButtonStyle);
-            string bypassTooltip = bypassed
-                ? I18n.Tr("UI_BYPASS_TIP_ON", "当前处于原版 UI 旁路接管状态。点击尝试恢复 MFP 航电界面 (F11)")
-                : I18n.Tr("UI_BYPASS_TIP_OFF", "点击切断 MFP 渲染并 100% 切换至原版原生 UI (F11)");
-            if (GUILayout.Button(new GUIContent(bypassText, bypassTooltip), bypassStyle, GUILayout.Height(24f), GUILayout.Width(100f)))
-            {
-                if (MFPSafetyFallback.IsFaulted)
-                {
-                    bool ok = MFPSafetyFallback.TryRecoverFromFault();
-                    MFPGuiSkin.ShowToast(ok ? I18n.Tr("UI_TOAST_FAULT_RECOVERED", "✔ 已尝试恢复 MFP 航电系统") : I18n.Tr("UI_TOAST_FAULT_RETRY_FAIL", "✖ 恢复失败，系统保持原版降级模式"));
-                }
-                else
-                {
-                    MFPProfiler.ToggleMasterBypass();
-                }
-            }
-
-            GUILayout.Space(6f);
-
-            // 全局语言快速切换按钮 (顶栏常驻)
+            // 语言切换按钮
             string curLang = I18nManager.Instance.CurrentLanguage;
             bool isZh = curLang.Equals("zh-CN", StringComparison.OrdinalIgnoreCase);
             string langBtnLabel = isZh ? I18n.Tr("UI_LANG_ZH", "🇨🇳 中文") : I18n.Tr("UI_LANG_EN", "🇺🇸 EN");
-            string langTooltip = isZh ? I18n.Tr("UI_LANG_TIP_TO_EN", "点击切换至英文") : I18n.Tr("UI_LANG_TIP_TO_ZH", "点击切换至中文");
-            if (GUILayout.Button(new GUIContent(langBtnLabel, langTooltip), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.Width(76f)))
+            if (GUILayout.Button(langBtnLabel, MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(24f), GUILayout.Width(72f)))
             {
                 string nextLang = isZh ? "en-US" : "zh-CN";
                 I18nManager.Instance.SetLanguage(nextLang);
@@ -473,26 +515,8 @@ namespace ModularFlightPanel.UI
 
             GUILayout.Space(6f);
 
-            // 一键重置基线尺寸 (1040x650)
-            if (GUILayout.Button(new GUIContent("⟲", I18n.Tr("UI_WINDOW_RESET", "重置窗口尺寸 (1040×650)")), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
-            {
-                ResetToDefault();
-            }
-
-            GUILayout.Space(4f);
-
-            // 一键最大化 / 还原尺寸
-            string maxIcon = _isMaximized ? "⧉" : "⛶";
-            string maxTip = _isMaximized ? I18n.Tr("UI_WINDOW_RESTORE", "还原窗口大小") : I18n.Tr("UI_WINDOW_MAXIMIZE", "最大化窗口 (适应屏幕)");
-            if (GUILayout.Button(new GUIContent(maxIcon, maxTip), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
-            {
-                ToggleMaximize();
-            }
-
-            GUILayout.Space(4f);
-
             // 顶栏关闭按钮
-            if (GUILayout.Button("✕", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f), GUILayout.Height(24f)))
+            if (GUILayout.Button("✕", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(28f), GUILayout.Height(24f)))
             {
                 ToggleWindow();
             }
@@ -505,18 +529,18 @@ namespace ModularFlightPanel.UI
             // =========================================================================
             if (MFPSafetyFallback.IsFaulted)
             {
-                GUILayout.Space(4f);
+                GUILayout.Space(3f);
                 MFPGuiSkin.BeginInset();
                 GUILayout.BeginHorizontal();
                 GUILayout.BeginVertical();
                 GUILayout.Label(I18n.Tr("UI_FAULT_TITLE", "<color=#FF4444><b>⚠ 航电安全熔断已激活 (Avionics Circuit Breaker Active)</b></color>"), GUI.skin.label);
-                GUILayout.Label(string.Format(I18n.Tr("UI_FAULT_DESC", "原因: {0}\n当前已完全切断 MFP 渲染并 100% 恢复原生原版界面。"), MFPSafetyFallback.FaultReason), GUI.skin.label);
+                GUILayout.Label(string.Format(I18n.Tr("UI_FAULT_DESC", "原因: {0}\n当前已切断 MFP 渲染并 100% 恢复原生原版界面。"), MFPSafetyFallback.FaultReason), GUI.skin.label);
                 GUILayout.EndVertical();
                 GUILayout.FlexibleSpace();
-                if (GUILayout.Button(I18n.Tr("UI_FAULT_BTN_RETRY", "🔄 尝试恢复 MFP"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(32f), GUILayout.Width(130f)))
+                if (GUILayout.Button(I18n.Tr("UI_FAULT_BTN_RETRY", "🔄 尝试恢复 MFP"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(30f), GUILayout.Width(130f)))
                 {
                     bool ok = MFPSafetyFallback.TryRecoverFromFault();
-                    MFPGuiSkin.ShowToast(ok ? I18n.Tr("UI_TOAST_FAULT_RECOVERED", "✔ 航电系统已尝试恢复装配") : I18n.Tr("UI_TOAST_FAULT_RETRY_FAIL", "✖ 恢复失败，系统保持原版降级模式"));
+                    MFPGuiSkin.ShowToast(ok ? I18n.Tr("UI_TOAST_FAULT_RECOVERED", "✔ 航电系统已尝试恢复装配") : I18n.Tr("UI_TOAST_FAULT_RETRY_FAIL", "✖ 恢复失败"));
                 }
                 GUILayout.EndHorizontal();
                 MFPGuiSkin.EndInset();
@@ -525,58 +549,40 @@ namespace ModularFlightPanel.UI
             GUILayout.Space(4f);
 
             // =========================================================================
-            // 2. 标签导航栏 (Aero Tab Bar)
+            // 2. 4 大核心功能标签导航栏 (Aero Tab Bar)
             // =========================================================================
             GUILayout.BeginHorizontal();
-            for (int i = 0; i < TabTitles.Length; i++)
+            if (_tabs != null)
             {
-                bool isSel = _currentTab == i;
-                GUIStyle tabStyle = isSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
-                if (GUILayout.Button(TabTitles[i], tabStyle, GUILayout.Height(28f)))
+                for (int i = 0; i < _tabs.Length; i++)
                 {
-                    SwitchTab(i);
+                    bool isSel = _currentTab == i;
+                    GUIStyle tabStyle = isSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                    if (GUILayout.Button(_tabs[i].DisplayTitle, tabStyle, GUILayout.Height(28f)))
+                    {
+                        SwitchTab(i);
+                    }
                 }
             }
             GUILayout.EndHorizontal();
 
-            GUILayout.Space(6f);
+            GUILayout.Space(5f);
 
             // =========================================================================
-            // 3. 标签主体渲染 (Tab Content Area - 动态响应式 CurrentContentHeight 自适应铺满)
+            // 3. 动态响应式标签主体渲染 (精确计算的视口净高度)
             // =========================================================================
-            GUILayout.BeginVertical(GUILayout.Height(CurrentContentHeight), GUILayout.MaxHeight(CurrentContentHeight));
-            switch (_currentTab)
+            float availH = CurrentContentHeight;
+            GUILayout.BeginVertical(GUILayout.Height(availH), GUILayout.MaxHeight(availH));
+            if (_tabs != null && _currentTab >= 0 && _currentTab < _tabs.Length)
             {
-                case 0:
-                    TabLibrary.Draw();
-                    break;
-                case 1:
-                    TabAssembler.Draw();
-                    break;
-                case 2:
-                    TabWidgetManager.Draw(jumpId =>
-                    {
-                        SwitchTab(1);
-                        TabAssembler.SetSelectedWidget(jumpId);
-                    });
-                    break;
-                case 3:
-                    TabThemeSettings.Draw();
-                    break;
-                case 4:
-                    TabProfilesConfig.Draw();
-                    break;
-                case 5:
-                    TabSimulation.Draw();
-                    break;
+                _tabs[_currentTab].Draw(availH);
             }
             GUILayout.EndVertical();
 
-            // 弹性填充空间，确保底栏始终牢固锚定在窗口最底部，零像素跳变
             GUILayout.FlexibleSpace();
 
             // =========================================================================
-            // 4. 底栏状态与快捷指令 (Footer Status Bar - 绝对恒定锚定)
+            // 4. 底栏状态与快捷指令 (Footer Status Bar - 恒定底边锚定)
             // =========================================================================
             MFPGuiSkin.BeginCard();
             GUILayout.BeginHorizontal();
@@ -590,14 +596,15 @@ namespace ModularFlightPanel.UI
                 ToggleWindow();
             }
 
-            GUILayout.Space(18f); // 预留给右下角拉伸手柄的空隙
-
+            GUILayout.Space(18f); // 预留给右下角拉伸手柄
             GUILayout.EndHorizontal();
             MFPGuiSkin.EndCard();
 
             GUILayout.EndVertical();
 
-            // 右下角折角拉伸放大交互手柄 (独立 ControlID，获得独占 HotControl，支持平滑缩放)
+            // =========================================================================
+            // 5. 右下角折角拉伸放大手柄
+            // =========================================================================
             int resizeControlId = GUIUtility.GetControlID("MFPSettingsResizeHandle".GetHashCode(), FocusType.Passive);
             Rect gripRect = new Rect(_windowRect.width - 24f, _windowRect.height - 24f, 24f, 24f);
             GUI.Label(gripRect, new GUIContent("◢", I18n.Tr("UI_RESIZE_GRIP_TIP", "按住并拖拽以自由调整窗口大小")), MFPGuiSkin.ResizeGripStyle);
@@ -640,20 +647,13 @@ namespace ModularFlightPanel.UI
                     break;
             }
 
-            // 双区域平滑自由拖拽 (仅在未处于拉伸调整状态时响应)：
+            // 自由拖拽窗口移动 (仅顶栏单次调用，杜绝双 DragWindow 引起的事件冲突与画面闪烁)
             if (GUIUtility.hotControl != resizeControlId && !_isResizing)
             {
-                // 1. 顶栏拖动区域 (避开右侧控制按钮群约 470px)
-                GUI.DragWindow(new Rect(0f, 0f, Mathf.Max(80f, _windowRect.width - 470f), 44f));
-                // 2. 底栏拖动区域 (避开右侧保存按钮与拉伸手柄约 260px)
-                GUI.DragWindow(new Rect(0f, _windowRect.height - 36f, Mathf.Max(80f, _windowRect.width - 260f), 36f));
+                GUI.DragWindow(new Rect(0f, 0f, Mathf.Max(80f, _windowRect.width - 260f), 42f));
             }
         }
 
-        /// <summary>
-        /// 独立 IMGUI 绘制派发器：仅在 SettingsGUI 打开时激活 (enabled = true)，
-        /// 在正常飞行与窗口关闭期间严格休眠 (enabled = false)，彻底消除 Unity C++ 引擎对 OnGUI() 的每帧 P/Invoke 轮询开销！
-        /// </summary>
         private class SettingsGUIDrawer : MonoBehaviour
         {
             public SettingsGUI Owner;
@@ -670,112 +670,6 @@ namespace ModularFlightPanel.UI
                     SafeGUIGateway.ExecuteRoot(() => Owner.RenderGUI(), "SettingsGUI");
                 }
             }
-        }
-    }
-}
-
-namespace ModularFlightPanel.UI.Settings
-{
-    /// <summary>
-    /// KSP 游戏输入穿透阻断与控制锁中枢 (Input Lock Shielding Manager)
-    /// 彻底解决 IMGUI 面板下点击穿透（相机乱转、误点零件、误分级）以及打字时热键泄露（如按 M 进地图、按 X 熄火、按空格分级）的经典顽疾。
-    /// </summary>
-    public static class MFPInputLock
-    {
-        private const string WindowLockId = "MFP_WORKBENCH_WINDOW_LOCK";
-        private const string KeyboardLockId = "MFP_WORKBENCH_KEYBOARD_LOCK";
-
-        private static bool _isWindowLockActive = false;
-        private static bool _isKeyboardLockActive = false;
-
-        /// <summary>
-        /// 当鼠标光标进入设置工作台或屏幕悬浮编辑工具栏时，锁定可能引发误触的飞行控制与相机控制
-        /// </summary>
-        public static void SetWindowHoverLock(bool shouldLock)
-        {
-#if KSP_RUNTIME
-            try
-            {
-                if (shouldLock && !_isWindowLockActive)
-                {
-                    ControlTypes mask = ControlTypes.CAMERACONTROLS 
-                                      | ControlTypes.THROTTLE 
-                                      | ControlTypes.STAGING 
-                                      | ControlTypes.CUSTOM_ACTION_GROUPS 
-                                      | ControlTypes.ALL_SHIP_CONTROLS 
-                                      | ControlTypes.GROUPS_ALL
-                                      | ControlTypes.QUICKSAVE;
-
-                    InputLockManager.SetControlLock(mask, WindowLockId);
-                    _isWindowLockActive = true;
-                }
-                else if (!shouldLock && _isWindowLockActive)
-                {
-                    InputLockManager.RemoveControlLock(WindowLockId);
-                    _isWindowLockActive = false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[ModularFlightPanel] SetWindowHoverLock error: {ex.Message}");
-            }
-#else
-            _isWindowLockActive = shouldLock;
-#endif
-        }
-
-        /// <summary>
-        /// 当用户聚焦文本框（如搜索遥测、修改组件名称、编辑卡片模板）时，锁定全键盘输入以防止误触 KSP 全局热键
-        /// </summary>
-        public static void SetKeyboardFocusLock(bool shouldLock)
-        {
-#if KSP_RUNTIME
-            try
-            {
-                if (shouldLock && !_isKeyboardLockActive)
-                {
-                    InputLockManager.SetControlLock(ControlTypes.KEYBOARDINPUT, KeyboardLockId);
-                    _isKeyboardLockActive = true;
-                }
-                else if (!shouldLock && _isKeyboardLockActive)
-                {
-                    InputLockManager.RemoveControlLock(KeyboardLockId);
-                    _isKeyboardLockActive = false;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[ModularFlightPanel] SetKeyboardFocusLock error: {ex.Message}");
-            }
-#else
-            _isKeyboardLockActive = shouldLock;
-#endif
-        }
-
-        /// <summary>
-        /// 彻底释放所有 MFP 占用的控制锁（在窗口关闭、场景切换或异常时调用）
-        /// </summary>
-        public static void ReleaseAllLocks()
-        {
-#if KSP_RUNTIME
-            try
-            {
-                InputLockManager.RemoveControlLock(WindowLockId);
-                InputLockManager.RemoveControlLock(KeyboardLockId);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[ModularFlightPanel] ReleaseAllLocks error: {ex.Message}");
-            }
-            finally
-            {
-                _isWindowLockActive = false;
-                _isKeyboardLockActive = false;
-            }
-#else
-            _isWindowLockActive = false;
-            _isKeyboardLockActive = false;
-#endif
         }
     }
 }

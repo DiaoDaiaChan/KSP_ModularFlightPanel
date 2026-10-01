@@ -456,6 +456,15 @@ namespace ModularFlightPanel.UI.Framework
             }
         }
 
+        public void RecaptureDefaultPositions()
+        {
+            var list = All;
+            for (int i = 0; i < list.Count; i++)
+            {
+                list[i].RecaptureDefaultPosition();
+            }
+        }
+
         public WidgetGenericSubElementControl Wrap(string id, string displayName, GameObject rootGo, Action<ThemeConfig> onApplyTheme = null, Action<IFlightTelemetry> onUpdateTelemetry = null)
             => WidgetControlManager.WrapElement(_owner, id, displayName, rootGo, onApplyTheme, onUpdateTelemetry);
 

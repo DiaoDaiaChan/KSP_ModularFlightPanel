@@ -4,6 +4,7 @@ using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
+using ModularFlightPanel.UI.Widgets;
 using ModularFlightPanel.UI.Widgets.Controls;
 using ModularFlightPanel.UI.Widgets.SpaceX;
 using ModularFlightPanel.UI.Settings;
@@ -21,6 +22,8 @@ namespace ModularFlightPanel.UI.HUD
     public class HUDEditModeToolbar : MonoBehaviour
     {
         private FlightHUDManager _hudManager;
+        private static bool _isFavoriteModDockOpen = false;
+        private Vector2 _modDockScroll = Vector2.zero;
 
         public void Initialize(FlightHUDManager hudManager)
         {
@@ -32,6 +35,13 @@ namespace ModularFlightPanel.UI.HUD
         private void OnGUI()
         {
             if (!WidgetDragHandler.IsEditModeActive || MFPProfiler.IsMasterBypassed) return;
+
+            // 当全屏航电工坊工作台打开且未处于画布排版模式时，静默挂起 HUD 现场悬浮编辑栏与抽屉，
+            // 彻底防止与 TabStudio 的全功能 Inspector 发生视口遮挡与冲突打架！
+            if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
+            {
+                return;
+            }
 
             SafeGUIGateway.ExecuteRoot(DrawFloatingToolbarContent, "HUDEditModeToolbar");
         }
@@ -59,13 +69,13 @@ namespace ModularFlightPanel.UI.HUD
             // 第一行：标题 + 撤销/重做 + 全套对齐工具 + 快速分享/导入
             GUILayout.BeginHorizontal();
             int selCount = WidgetSelectionManager.Count;
-            string selInfo = selCount > 0 ? $"<color=#FFE000><b>已选 {selCount} 项</b></color>" : "<color=#AAAAAA>未选中 (拉框多选)</color>";
-            GUILayout.Label($"🛠️ <b>MFP 设计工坊</b> | {selInfo}", GUILayout.Width(170f));
+            string selInfo = selCount > 0 ? string.Format(I18n.Tr("HUD_SEL_ITEMS", "<color=#FFE000><b>已选 {0} 项</b></color>"), selCount) : I18n.Tr("HUD_SEL_NONE", "<color=#AAAAAA>未选中 (拉框多选)</color>");
+            GUILayout.Label(string.Format(I18n.Tr("HUD_STUDIO_HEADER", "🛠️ <b>MFP 设计工坊</b> | {0}"), selInfo), GUILayout.Width(170f));
 
             GUI.enabled = WidgetEditHistory.CanUndo;
-            if (GUILayout.Button("↶ 撤销", GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Undo();
+            if (GUILayout.Button(I18n.Tr("HUD_UNDO", "↶ 撤销"), GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Undo();
             GUI.enabled = WidgetEditHistory.CanRedo;
-            if (GUILayout.Button("↷ 重做", GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Redo();
+            if (GUILayout.Button(I18n.Tr("HUD_REDO", "↷ 重做"), GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Redo();
             GUI.enabled = true;
 
             GUILayout.Space(6f);
@@ -137,6 +147,22 @@ namespace ModularFlightPanel.UI.HUD
             }
             GUI.color = textCol;
 
+            int favCount = GetFavoriteButtonCount();
+            bool modDockOpen = _isFavoriteModDockOpen;
+            GUI.color = modDockOpen ? accentCol : textCol;
+            string modDockLabel = modDockOpen 
+                ? string.Format(I18n.Tr("HUD_FAV_MOD_OPEN", "★ 常用模组 ({0}): [开]"), favCount) 
+                : string.Format(I18n.Tr("HUD_FAV_MOD", "★ 常用模组 ({0})"), favCount);
+            if (GUILayout.Button(modDockLabel, GUILayout.Width(116f), GUILayout.Height(22f)))
+            {
+                _isFavoriteModDockOpen = !_isFavoriteModDockOpen;
+                if (_isFavoriteModDockOpen)
+                {
+                    TabStudio.EnsureDockRulesPopulated();
+                }
+            }
+            GUI.color = textCol;
+
             if (selCount > 0)
             {
                 // 图层层级
@@ -179,10 +205,20 @@ namespace ModularFlightPanel.UI.HUD
                 WidgetDragHandler.IsEditModeActive = false;
                 WidgetSelectionManager.ClearSelection();
                 WidgetLayoutManager.Instance.SaveLayout();
+                if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && SettingsGUI.Instance.IsCanvasLayoutMode)
+                {
+                    SettingsGUI.Instance.ToggleWindow();
+                }
             }
             GUILayout.EndHorizontal();
 
             GUILayout.EndArea();
+
+            // 绘制常用 MOD 顶部快捷启动折叠坞 (Favorite MOD Quick Dock)
+            if (_isFavoriteModDockOpen)
+            {
+                DrawFavoriteModQuickDock(x, y + toolbarH + 4f, toolbarW);
+            }
 
             // 绘制直接吸附在组件旁边的即时悬浮缩放/旋转操作盒 (点击一下即可!)
             DrawOnWidgetFloatingToolbar(selCount);
@@ -249,8 +285,8 @@ namespace ModularFlightPanel.UI.HUD
             float guiMinY = Screen.height - maxY_screen;
             float guiMaxY = Screen.height - minY_screen;
 
-            float badgeW = 345f;
-            float badgeH = selCount == 1 ? 134f : 108f;
+            float badgeW = 352f;
+            float badgeH = selCount == 1 ? 218f : 188f;
 
             // 优先置于组件右侧，留出 10px 空隙
             float bx = maxX + 10f;
@@ -290,36 +326,63 @@ namespace ModularFlightPanel.UI.HUD
             GUILayout.Label($"<color=#00E5FF><b>{curScale:F2}x</b></color> | <color=#FFE000><b>{curRot:F0}°</b></color>", GUILayout.Width(95f));
             GUILayout.EndHorizontal();
 
-            // 2. 缩放控制行 (点击一下即可!)
+            // 2. 缩放控制行
             GUILayout.BeginHorizontal();
             GUILayout.Label("<color=#00E5FF><b>缩放:</b></color>", GUILayout.Width(35f));
-            if (GUILayout.Button("－", GUILayout.Width(25f), GUILayout.Height(20f)))
+            if (GUILayout.Button("－", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchScale(-0.1f);
+            if (GUILayout.Button("＋", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchScale(+0.1f);
+            if (GUILayout.Button("0.8x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(0.8f);
+            if (GUILayout.Button("1.0x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(1.0f);
+            if (GUILayout.Button("1.2x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(1.2f);
+            if (GUILayout.Button("1.5x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(1.5f);
+            GUILayout.EndHorizontal();
+
+            // 3. 形变 / 长宽比控制行
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("<color=#A78BFA><b>形变:</b></color>", GUILayout.Width(35f));
+            if (GUILayout.Button("宽－", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(-0.1f, 0f);
+            if (GUILayout.Button("宽＋", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(+0.1f, 0f);
+            if (GUILayout.Button("高－", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(0f, -0.1f);
+            if (GUILayout.Button("高＋", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(0f, +0.1f);
+            if (GUILayout.Button("1:1", GUILayout.Width(30f), GUILayout.Height(20f))) WidgetSelectionManager.BatchResetAspectRatio();
+            if (GUILayout.Button("4:3", GUILayout.Width(30f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetAspectRatio(4f / 3f);
+            if (GUILayout.Button("16:9", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetAspectRatio(16f / 9f);
+            if (GUILayout.Button("2:1", GUILayout.Width(30f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetAspectRatio(2f);
+            GUILayout.EndHorizontal();
+
+            // 4. 透明度控制行
+            GUILayout.BeginHorizontal();
+            float curOp = primary.Opacity;
+            int curOpPct = Mathf.RoundToInt(curOp * 100f);
+            GUILayout.Label(I18n.Tr("HUD_BATCH_OPACITY", "<color=#38BDF8><b>透明:</b></color>"), GUILayout.Width(35f));
+            if (GUILayout.Button("－", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustOpacity(-0.1f);
+            if (GUILayout.Button("＋", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustOpacity(+0.1f);
+            if (GUILayout.Button("40%", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(0.40f);
+            if (GUILayout.Button("60%", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(0.60f);
+            if (GUILayout.Button("80%", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(0.80f);
+            if (GUILayout.Button("100%", GUILayout.Width(44f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(1.0f);
+            GUILayout.Label($"<color=#38BDF8>{curOpPct}%</color>", GUILayout.Width(38f));
+            GUILayout.EndHorizontal();
+
+            // 5. 配色风格控制行
+            GUILayout.BeginHorizontal();
+            string curThemeOvr = primary.Config?.ThemeOverride;
+            GUILayout.Label(I18n.Tr("HUD_BATCH_THEME", "<color=#34D399><b>配色:</b></color>"), GUILayout.Width(35f));
+            if (GUILayout.Button(string.IsNullOrEmpty(curThemeOvr) ? I18n.Tr("HUD_BATCH_DEFAULT_BRACKET", "[默认]") : I18n.Tr("HUD_BATCH_DEFAULT", "默认"), GUILayout.Width(44f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("");
+            if (GUILayout.Button(I18n.Tr("THEME_787_NAME", "787晶蓝"), GUILayout.Width(50f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("boeing_787");
+            if (GUILayout.Button(I18n.Tr("THEME_SPACEX", "SpaceX"), GUILayout.Width(50f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("spacex_dragon");
+            if (GUILayout.Button(I18n.Tr("THEME_CYBER_NAME", "赛博霓虹"), GUILayout.Width(54f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("cyber_neon");
+            if (GUILayout.Button(I18n.Tr("THEME_VINTAGE_NAME", "复古琥珀"), GUILayout.Width(54f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("vintage_amber");
+            if (GUILayout.Button("↺", GUILayout.Width(22f), GUILayout.Height(20f)))
             {
-                WidgetSelectionManager.BatchScale(-0.1f);
-            }
-            if (GUILayout.Button("＋", GUILayout.Width(25f), GUILayout.Height(20f)))
-            {
-                WidgetSelectionManager.BatchScale(+0.1f);
-            }
-            if (GUILayout.Button("0.8x", GUILayout.Width(40f), GUILayout.Height(20f)))
-            {
-                WidgetSelectionManager.BatchSetScale(0.8f);
-            }
-            if (GUILayout.Button("1.0x", GUILayout.Width(40f), GUILayout.Height(20f)))
-            {
-                WidgetSelectionManager.BatchSetScale(1.0f);
-            }
-            if (GUILayout.Button("1.2x", GUILayout.Width(40f), GUILayout.Height(20f)))
-            {
-                WidgetSelectionManager.BatchSetScale(1.2f);
-            }
-            if (GUILayout.Button("1.5x", GUILayout.Width(40f), GUILayout.Height(20f)))
-            {
-                WidgetSelectionManager.BatchSetScale(1.5f);
+                string[] cycleThemes = new[] { "", "boeing_787", "spacex_dragon", "cyber_neon", "diffractive_hud", "vintage_amber", "starship_mars", "sr71_blackbird" };
+                int idx = Array.IndexOf(cycleThemes, curThemeOvr ?? "");
+                string nextTheme = cycleThemes[(idx + 1) % cycleThemes.Length];
+                WidgetSelectionManager.BatchSetThemeOverride(nextTheme);
             }
             GUILayout.EndHorizontal();
 
-            // 3. 旋转控制行 (点击一下即可!)
+            // 6. 旋转控制行 (点击一下即可!)
             GUILayout.BeginHorizontal();
             GUILayout.Label("<color=#FFE000><b>旋转:</b></color>", GUILayout.Width(35f));
             if (GUILayout.Button("↺ 15°", GUILayout.Width(46f), GUILayout.Height(20f)))
@@ -1196,6 +1259,124 @@ namespace ModularFlightPanel.UI.HUD
             }
 
             GUILayout.EndScrollView();
+        }
+
+        private int GetFavoriteButtonCount()
+        {
+            var rules = ThemeManager.Instance?.DockRules;
+            if (rules == null) return 0;
+            int count = 0;
+            for (int i = 0; i < rules.Count; i++)
+            {
+                if (rules[i].IsFavorite) count++;
+            }
+            return count;
+        }
+
+        private void DrawFavoriteModQuickDock(float x, float y, float toolbarW)
+        {
+            float dockH = 44f;
+            Rect dockRect = new Rect(x, y, toolbarW, dockH);
+
+            if (dockRect.Contains(Event.current.mousePosition))
+            {
+                FlightHUDManager.IsMouseOverFloatingToolbar = true;
+            }
+
+            GUILayout.BeginArea(dockRect, MFPGuiSkin.CardStyle);
+            GUILayout.BeginHorizontal();
+
+            GUILayout.Label(I18n.Tr("HUD_FAV_MOD_HEADER", "<color=#FFE000><b>★ 常用模组:</b></color>"), GUILayout.Width(88f), GUILayout.Height(22f));
+
+            var rules = ThemeManager.Instance?.DockRules;
+            var favList = new List<DockButtonRule>();
+            if (rules != null)
+            {
+                for (int i = 0; i < rules.Count; i++)
+                {
+                    if (rules[i].IsFavorite) favList.Add(rules[i]);
+                }
+            }
+
+            if (favList.Count == 0)
+            {
+                GUILayout.Label(I18n.Tr("HUD_FAV_MOD_EMPTY", "<color=#94A3B8><size=11>未收藏常用模组，点击右侧「⚙️ 管理」或「★ 推荐」添加到快捷坞</size></color>"), GUILayout.ExpandWidth(true), GUILayout.Height(22f));
+                if (GUILayout.Button(I18n.Tr("HUD_FAV_MOD_AUTO", "★ 一键推荐"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(82f), GUILayout.Height(22f)))
+                {
+                    ThemeManager.Instance?.AutoRecommendFavorites();
+                    TabStudio.EnsureDockRulesPopulated();
+                }
+            }
+            else
+            {
+                _modDockScroll = GUILayout.BeginScrollView(_modDockScroll, false, false, GUILayout.ExpandWidth(true), GUILayout.Height(26f));
+                GUILayout.BeginHorizontal();
+
+                for (int i = 0; i < favList.Count; i++)
+                {
+                    var rule = favList[i];
+                    string label = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
+                    if (string.IsNullOrEmpty(label)) label = rule.Key;
+
+                    if (GUILayout.Button(label, MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f), GUILayout.MinWidth(55f)))
+                    {
+                        TriggerFavoriteModClick(rule, Event.current != null && Event.current.button == 1);
+                    }
+                }
+
+                GUILayout.EndHorizontal();
+                GUILayout.EndScrollView();
+            }
+
+            if (GUILayout.Button(I18n.Tr("HUD_FAV_MOD_MGR", "⚙️ 管理"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(58f), GUILayout.Height(22f)))
+            {
+                TabStudio.OpenToModToolbar();
+            }
+
+            if (GUILayout.Button("✕", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(22f), GUILayout.Height(22f)))
+            {
+                _isFavoriteModDockOpen = false;
+            }
+
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+        }
+
+        private void TriggerFavoriteModClick(DockButtonRule rule, bool isRightClick)
+        {
+            if (rule == null) return;
+#if KSP_RUNTIME
+            try
+            {
+                var launcher = KSP.UI.Screens.ApplicationLauncher.Instance;
+                if (launcher != null)
+                {
+                    var stockBtns = StockToolbarHook.GetStockButtons(launcher);
+                    var modBtns = StockToolbarHook.GetModButtons(launcher);
+                    var all = new List<KSP.UI.Screens.ApplicationLauncherButton>();
+                    if (stockBtns != null) all.AddRange(stockBtns);
+                    if (modBtns != null) all.AddRange(modBtns);
+
+                    for (int i = 0; i < all.Count; i++)
+                    {
+                        var btn = all[i];
+                        if (btn == null) continue;
+                        ModernToolbarWidget.GetButtonIdentity(btn, i, out string k, out string _);
+                        if (k.Equals(rule.Key, StringComparison.OrdinalIgnoreCase))
+                        {
+                            ModernToolbarWidget.TriggerKspButtonClick(btn, null, isRightClick);
+                            MFPToastBridge.Show(string.Format(I18n.Tr("UI_TOAST_MOD_TRIGGERED", "✔ 已触发 [{0}]"), rule.DisplayName));
+                            return;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.WarnThrottled("HUDEdit_TriggerMod", $"Failed triggering mod button: {ex.Message}");
+            }
+#endif
+            MFPToastBridge.Show(string.Format(I18n.Tr("UI_TOAST_MOD_TRIGGERED_SIM", "✔ 已触发 [{0}] (模拟)"), rule.DisplayName));
         }
 #else
         public static bool IsSubControlCustomizerOpen => false;

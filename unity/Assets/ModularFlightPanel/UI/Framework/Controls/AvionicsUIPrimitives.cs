@@ -508,8 +508,12 @@ namespace ModularFlightPanel.UI
         public Image BackgroundImage;
         public Outline BorderOutline;
         public Text LabelText;
+        public Image LedIndicator;
         public Button Button;
         public ButtonVisualRole VisualRole = ButtonVisualRole.Normal;
+        public bool IsToggleMode = false;
+        public Color? CustomActiveColor = null;
+        public Color? CustomInactiveColor = null;
 
         private bool _isToggleActive = false;
         public bool IsToggleActive
@@ -544,6 +548,9 @@ namespace ModularFlightPanel.UI
         private Color _pressedText;
         private Color _activeText;
 
+        private Color _normalLed;
+        private Color _activeLed;
+
         private bool _isColorsInitialized = false;
 
         private void Awake()
@@ -560,12 +567,13 @@ namespace ModularFlightPanel.UI
             }
         }
 
-        public void Initialize(Button btn, Image bg, Outline outline, Text label, ThemeConfig theme)
+        public void Initialize(Button btn, Image bg, Outline outline, Text label, ThemeConfig theme, Image led = null)
         {
             Button = btn;
             BackgroundImage = bg;
             BorderOutline = outline;
             LabelText = label;
+            LedIndicator = led;
 
             if (Button != null)
             {
@@ -577,6 +585,11 @@ namespace ModularFlightPanel.UI
 
         public void SetToggleActive(bool active)
         {
+            if (!IsToggleMode)
+            {
+                IsToggleMode = true;
+                _isColorsInitialized = false;
+            }
             IsToggleActive = active;
         }
 
@@ -598,26 +611,34 @@ namespace ModularFlightPanel.UI
             if (style == null) return;
 
             Color baseBg = style.GetButtonBackgroundColor(VisualRole, false, theme);
-            Color pri = theme.AccentPrimary;
+            Color pri = CustomActiveColor ?? theme.AccentPrimary;
             Color sec = theme.AccentSecondary;
 
-            // 1. 背景色分阶：静置态、悬停高光（提亮25%并融入主强调色）、按压微凹（加深变暗）、激活亮灯
-            _normalBg = baseBg;
+            // 1. 背景色分阶：
+            // 静置态：如果是 Toggle 控件，使用沉浸暗槽底色 (Inset)，避免原版浅底与开启态混淆
+            _normalBg = IsToggleMode ? WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme) : baseBg;
             _hoverBg = WidgetStyleManager.Tint(baseBg, pri, 0.28f, 0f, Mathf.Min(1.0f, baseBg.a + 0.22f));
             _pressedBg = WidgetStyleManager.Dim(baseBg, 0.35f, Mathf.Min(1.0f, baseBg.a + 0.30f));
-            _activeBg = style.GetButtonBackgroundColor(ButtonVisualRole.ActiveToggle, false, theme);
+            // 激活态：向高亮强调色 Tint 混色并赋予背光透明度，形成鲜明清晰的发光航电按键
+            _activeBg = WidgetStyleManager.Tint(baseBg, pri, 0.40f, 0f, Mathf.Min(1.0f, baseBg.a + 0.25f));
 
             // 2. 边框发光分阶：静置幽灵微线、悬停科技蓝发光边线 (88% Alpha)、按压高亮、激活强光
             _normalOutline = WidgetStyleManager.Weighted(sec, LineWeight.Ghost);
             _hoverOutline = WidgetStyleManager.WithAlpha(pri, 0.88f);
             _pressedOutline = WidgetStyleManager.WithAlpha(pri, 1.0f);
-            _activeOutline = WidgetStyleManager.WithAlpha(pri, 0.95f);
+            _activeOutline = WidgetStyleManager.WithAlpha(pri, 0.98f);
 
             // 3. 文字色彩分阶：
-            _normalText = style.GetButtonTextColor(VisualRole, false, theme);
+            // Toggle 关闭态：使用中度消光灰白 (0.50f alpha)，清晰易读但明确处于未点亮/待机状态，消除原版高亮纯白造成的“已激活”误解
+            Color inactiveText = CustomInactiveColor ?? WidgetStyleManager.WithAlpha(theme.TextPrimaryColor, 0.50f);
+            _normalText = IsToggleMode ? inactiveText : style.GetButtonTextColor(VisualRole, false, theme);
             _hoverText = theme.TextPrimaryColor;
             _pressedText = theme.TextPrimaryColor;
-            _activeText = style.GetButtonTextColor(ButtonVisualRole.ActiveToggle, false, theme);
+            _activeText = pri;
+
+            // 4. LED 状态指示条色彩：
+            _normalLed = WidgetStyleManager.Surface(SurfaceStyleRole.LedOff, theme);
+            _activeLed = pri;
 
             _isColorsInitialized = true;
             RefreshVisualState();
@@ -666,36 +687,62 @@ namespace ModularFlightPanel.UI
             Color targetBg;
             Color targetOutline;
             Color targetText;
+            Color targetLed;
 
             if (isDisabled)
             {
                 targetBg = WidgetStyleManager.WithAlpha(_normalBg, _normalBg.a * 0.40f);
                 targetOutline = WidgetStyleManager.WithAlpha(_normalOutline, _normalOutline.a * 0.30f);
                 targetText = WidgetStyleManager.WithAlpha(_normalText, _normalText.a * 0.40f);
+                targetLed = WidgetStyleManager.WithAlpha(_normalLed, 0.20f);
             }
             else if (_isPressed)
             {
-                targetBg = _pressedBg;
-                targetOutline = _pressedOutline;
-                targetText = _pressedText;
+                if (_isToggleActive)
+                {
+                    targetBg = WidgetStyleManager.Dim(_activeBg, 0.80f, _activeBg.a);
+                    targetOutline = _pressedOutline;
+                    targetText = _activeText;
+                    targetLed = _activeLed;
+                }
+                else
+                {
+                    targetBg = _pressedBg;
+                    targetOutline = _pressedOutline;
+                    targetText = _pressedText;
+                    targetLed = _activeLed;
+                }
             }
             else if (_isHovered)
             {
-                targetBg = _hoverBg;
-                targetOutline = _hoverOutline;
-                targetText = _hoverText;
+                if (_isToggleActive)
+                {
+                    targetBg = WidgetStyleManager.Tint(_activeBg, Color.white, 0.15f);
+                    targetOutline = _pressedOutline;
+                    targetText = WidgetStyleManager.Lighten(_activeText, 0.15f);
+                    targetLed = _activeLed;
+                }
+                else
+                {
+                    targetBg = _hoverBg;
+                    targetOutline = _hoverOutline;
+                    targetText = _hoverText;
+                    targetLed = WidgetStyleManager.Lighten(_normalLed, 0.25f);
+                }
             }
             else if (_isToggleActive)
             {
                 targetBg = _activeBg;
                 targetOutline = _activeOutline;
                 targetText = _activeText;
+                targetLed = _activeLed;
             }
             else
             {
                 targetBg = _normalBg;
                 targetOutline = _normalOutline;
                 targetText = _normalText;
+                targetLed = _normalLed;
             }
 
             // 应用颜色
@@ -713,6 +760,11 @@ namespace ModularFlightPanel.UI
             if (LabelText != null)
             {
                 LabelText.color = targetText;
+            }
+
+            if (LedIndicator != null)
+            {
+                LedIndicator.color = targetLed;
             }
         }
     }

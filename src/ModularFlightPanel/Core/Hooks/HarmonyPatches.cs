@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
+using KSP.UI.Screens;
 using KSP.UI.Screens.Flight;
 using ModularFlightPanel.Config;
 
@@ -44,6 +45,9 @@ namespace ModularFlightPanel.Core
             {
                 _harmony = new Harmony("com.antigravity.modularflightpanel");
                 _harmony.PatchAll(Assembly.GetExecutingAssembly());
+#if KSP_RUNTIME
+                DockAnchorTracker.ApplyDynamicHarmonyPatches(_harmony);
+#endif
                 Debug.Log("[ModularFlightPanel] Harmony patches applied successfully.");
             }
             catch (Exception ex)
@@ -243,6 +247,100 @@ namespace ModularFlightPanel.Core
             }
 
             return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(StageManager), "ActivateStage", new Type[] { typeof(int) })]
+    public static class Patch_StageManager_ActivateStage
+    {
+        [HarmonyPrefix]
+        public static void Prefix()
+        {
+            if (MFPProfiler.IsMasterBypassed) return;
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            if (MFPProfiler.IsMasterBypassed) return;
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(StageManager), "ActivateNextStage")]
+    public static class Patch_StageManager_ActivateNextStage
+    {
+        [HarmonyPrefix]
+        public static void Prefix()
+        {
+            if (MFPProfiler.IsMasterBypassed) return;
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            if (MFPProfiler.IsMasterBypassed) return;
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(StageManager), "SortIcons", new Type[] { typeof(bool), typeof(Part), typeof(bool), typeof(bool) })]
+    public static class Patch_StageManager_SortIcons
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            if (MFPProfiler.IsMasterBypassed) return;
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(StageManager), "AddNewStageGroupsIfNeeded", new Type[] { typeof(Part) })]
+    public static class Patch_StageManager_AddNewStageGroupsIfNeeded
+    {
+        [HarmonyPostfix]
+        public static void Postfix()
+        {
+            if (MFPProfiler.IsMasterBypassed) return;
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(StageManager), "OnGUIStageSequenceModified")]
+    public static class Patch_StageManager_OnGUIStageSequenceModified
+    {
+        [HarmonyPostfix]
+        public static void Postfix(StageManager __instance)
+        {
+            if (__instance == null || MFPProfiler.IsMasterBypassed) return;
+            if (HarmonyPatches.IsStockBottomLeftHidden)
+            {
+                if (__instance.deltaVTotalSection != null && __instance.deltaVTotalSection.gameObject.activeSelf)
+                {
+                    __instance.deltaVTotalSection.gameObject.SetActive(false);
+                }
+                StockUIHider.HideStockBottomLeft(true);
+            }
         }
     }
 }

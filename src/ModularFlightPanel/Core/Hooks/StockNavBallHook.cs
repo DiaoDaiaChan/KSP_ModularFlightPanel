@@ -252,11 +252,17 @@ namespace ModularFlightPanel.Core
             _setAttitudeGymbalDelegate?.Invoke(instance, attitudeGymbal);
             _setRelativeGymbalDelegate?.Invoke(instance, relativeGymbal);
 
-            // 原生无 Principia 环境下直接更新 3D 姿态球 Transform 旋转；
-            // 若 Principia 存在，其 LateUpdate 会基于 attitudeGymbal 与 NavballOrientation 写入最终多参考系旋转
-            if (!PrincipiaProbe.IsAvailable && instance.navBall != null)
+            // 无论原生还是 Principia 环境，当处于地表/体固系 (或未安装 Principia) 时，
+            // 姿态球底层 Transform 必须权威对齐本地行星地表万向节 relativeGymbal (天顶朝上、真北居中、东向在右)，
+            // 确保原版姿态球隐藏态与显示态下的数学计算与几何朝向 100% 绝对一致，杜绝分歧；
+            // 若 Principia 处于非体表多参考系（如惯性系/拉格朗日系/轨道系），其 LateUpdate 会基于 NavballOrientation 写入对应天球旋转。
+            if (instance.navBall != null)
             {
-                instance.navBall.rotation = relativeGymbal;
+                bool isSurface = !PrincipiaProbe.IsAvailable || PrincipiaProbe.IsSurfaceFrameSelected || GetReferenceFrameCategory() == "BODY_FIXED" || GetReferenceFrameCategory() == "SURFACE";
+                if (isSurface)
+                {
+                    instance.navBall.rotation = relativeGymbal;
+                }
             }
 
             // 原版姿态球隐藏时，同步轻量驱动原生 Marker Transform (纯数学矢量，跳过官方 8 次 MeshRenderer.materials 堆分配与 UGUI 循环)
@@ -337,7 +343,18 @@ namespace ModularFlightPanel.Core
             Quaternion ballRot = Quaternion.identity;
             if (HasStockNavBall && StockInstance.navBall != null)
             {
-                ballRot = StockInstance.navBall.rotation;
+                // 当处于地表/体固系 (BODY_SURFACE/BODY_FIXED) 时，
+                // Principia 内部 NavballOrientation 带有配合其自带 navball_surface.png 贴图的 180° 翻转。
+                // 航电系统统一采信真实的本地行星地表万向节 relativeGymbal，确保显示/隐藏态姿态绝对精准无翻转。
+                bool isSurface = !PrincipiaProbe.IsAvailable || PrincipiaProbe.IsSurfaceFrameSelected || GetReferenceFrameCategory() == "BODY_FIXED" || GetReferenceFrameCategory() == "SURFACE";
+                if (isSurface)
+                {
+                    ballRot = StockInstance.relativeGymbal;
+                }
+                else
+                {
+                    ballRot = StockInstance.navBall.rotation;
+                }
             }
             else if (StockInstance != null)
             {
@@ -841,27 +858,33 @@ namespace ModularFlightPanel.Core
 
         private static string ComputeReferenceFrameCategory()
         {
+            if (PrincipiaProbe.IsAvailable && PrincipiaProbe.IsTargetFrameSelected)
+            {
+                return "TARGET";
+            }
+
+            // 1. 优先根据权威参考系名称进行语义匹配 (覆盖 Principia 官方与汉化名称，如 "地心地固" / "Body-Centred Body-Fixed")
+            string frameName = GetReferenceFrameName();
+            if (!string.IsNullOrEmpty(frameName))
+            {
+                string fn = frameName.ToLowerInvariant();
+                if (fn.Contains("body_fixed") || fn.Contains("body_surface") || fn.Contains("rotating") || fn.Contains("fixed") || fn.Contains("体固") || fn.Contains("地固"))
+                    return "BODY_FIXED";
+                if (fn.Contains("barycentric") || fn.Contains("lagrange") || fn.Contains("pulsating") || fn.Contains("l1") || fn.Contains("l2") || fn.Contains("l点") || fn.Contains("拉格朗日"))
+                    return "LAGRANGE";
+                if (fn.Contains("orbit") || fn.Contains("body_direction") || fn.Contains("parent_direction") || fn.Contains("轨道") || fn.Contains("黄道") || fn.Contains("ecliptic"))
+                    return "ORBIT";
+                if (fn.Contains("target") || fn.Contains("dock") || fn.Contains("目标"))
+                    return "TARGET";
+                if (fn.Contains("surface") || fn.Contains("ground") || fn.Contains("地表"))
+                    return "BODY_FIXED";
+                if (fn.Contains("inertial") || fn.Contains("non_rotating") || fn.Contains("惯性") || fn.Contains("不旋转"))
+                    return "INERTIAL";
+            }
+
+            // 2. 若参考系名称未包含特征，根据 Principia 探针反射获取的底层类型判定
             if (PrincipiaProbe.IsAvailable)
             {
-                if (PrincipiaProbe.IsTargetFrameSelected)
-                {
-                    return "TARGET";
-                }
-
-                switch (PrincipiaProbe.CurrentFrameCategory)
-                {
-                    case PrincipiaProbe.ReferenceFrameCategory.Target:
-                        return "TARGET";
-                    case PrincipiaProbe.ReferenceFrameCategory.Inertial:
-                        return "INERTIAL";
-                    case PrincipiaProbe.ReferenceFrameCategory.Lagrange:
-                        return "LAGRANGE";
-                    case PrincipiaProbe.ReferenceFrameCategory.Orbital:
-                        return "ORBIT";
-                    case PrincipiaProbe.ReferenceFrameCategory.Surface:
-                        return "BODY_FIXED";
-                }
-
                 string pType = PrincipiaProbe.FrameTypeString;
                 if (!string.IsNullOrEmpty(pType))
                 {
@@ -882,6 +905,20 @@ namespace ModularFlightPanel.Core
                         pType.IndexOf("ECLIPTIC", StringComparison.OrdinalIgnoreCase) >= 0)
                         return "ORBIT";
                 }
+
+                switch (PrincipiaProbe.CurrentFrameCategory)
+                {
+                    case PrincipiaProbe.ReferenceFrameCategory.Target:
+                        return "TARGET";
+                    case PrincipiaProbe.ReferenceFrameCategory.Surface:
+                        return "BODY_FIXED";
+                    case PrincipiaProbe.ReferenceFrameCategory.Lagrange:
+                        return "LAGRANGE";
+                    case PrincipiaProbe.ReferenceFrameCategory.Orbital:
+                        return "ORBIT";
+                    case PrincipiaProbe.ReferenceFrameCategory.Inertial:
+                        return "INERTIAL";
+                }
             }
 
             if (!PrincipiaProbe.IsAvailable)
@@ -893,24 +930,6 @@ namespace ModularFlightPanel.Core
                     case FlightGlobals.SpeedDisplayModes.Surface: return "SURFACE";
                     default: return "ORBIT";
                 }
-            }
-
-            string frameName = GetReferenceFrameName();
-            if (!string.IsNullOrEmpty(frameName))
-            {
-                string fn = frameName.ToLowerInvariant();
-                if (fn.Contains("barycentric") || fn.Contains("lagrange") || fn.Contains("pulsating") || fn.Contains("l1") || fn.Contains("l2") || fn.Contains("l点") || fn.Contains("拉格朗日"))
-                    return "LAGRANGE";
-                if (fn.Contains("inertial") || fn.Contains("non_rotating") || fn.Contains("惯性") || fn.Contains("不旋转"))
-                    return "INERTIAL";
-                if (fn.Contains("orbit") || fn.Contains("body_direction") || fn.Contains("parent_direction") || fn.Contains("轨道") || fn.Contains("黄道") || fn.Contains("ecliptic"))
-                    return "ORBIT";
-                if (fn.Contains("target") || fn.Contains("dock") || fn.Contains("目标"))
-                    return "TARGET";
-                if (fn.Contains("body_fixed") || fn.Contains("body_surface") || fn.Contains("rotating") || fn.Contains("fixed") || fn.Contains("体固") || fn.Contains("地固"))
-                    return "BODY_FIXED";
-                if (fn.Contains("surface") || fn.Contains("ground") || fn.Contains("地表"))
-                    return "SURFACE";
             }
 
             Texture tex = GetTexture();

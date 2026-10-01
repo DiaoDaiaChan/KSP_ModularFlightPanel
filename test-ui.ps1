@@ -64,6 +64,10 @@ if ($Render) {
     }
 
     $projectPath = Join-Path $PSScriptRoot "unity"
+    $lockFile = Join-Path $projectPath "Temp\UnityLockfile"
+    if (Test-Path $lockFile) {
+        Remove-Item $lockFile -Force -ErrorAction SilentlyContinue
+    }
     $logPath = Join-Path $PSScriptRoot "unity_render.log"
 
     $argList = @("-batchmode", "-quit", "-projectPath", $projectPath, "-executeMethod", "ModularFlightPanel.Editor.HeadlessUIRenderer.RenderHeadlessPreview", "-screen", $Screen, "-logFile", $logPath)

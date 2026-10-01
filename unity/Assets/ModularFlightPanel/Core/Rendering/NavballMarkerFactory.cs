@@ -20,6 +20,7 @@ namespace ModularFlightPanel.Core
         private static Sprite _sasLockReticleSprite;
         private static Sprite _guidanceChevronSprite;
         private static Sprite _shockwaveSprite;
+        private static Sprite _tickLineSprite;
 
         public static void ClearCache()
         {
@@ -31,6 +32,41 @@ namespace ModularFlightPanel.Core
             _sasLockReticleSprite = null;
             _guidanceChevronSprite = null;
             _shockwaveSprite = null;
+            _tickLineSprite = null;
+        }
+
+        public static Sprite GetTickLineSprite()
+        {
+            if (_tickLineSprite != null) return _tickLineSprite;
+
+            const int w = 16;
+            const int h = 32;
+            Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            Color[] pixels = new Color[w * h];
+            float cx = (w - 1) * 0.5f;
+
+            for (int y = 0; y < h; y++)
+            {
+                float yEdge = 1.0f;
+                if (y == 0 || y == h - 1) yEdge = 0.5f;
+
+                for (int x = 0; x < w; x++)
+                {
+                    float dist = Mathf.Abs(x - cx);
+                    float a = Mathf.Clamp01((6.5f - dist) / 4.5f) * yEdge;
+                    pixels[y * w + x] = new Color(1f, 1f, 1f, a);
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _tickLineSprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(3, 4, 3, 4));
+            return _tickLineSprite;
         }
 
         public static Sprite GetReticleSprite()

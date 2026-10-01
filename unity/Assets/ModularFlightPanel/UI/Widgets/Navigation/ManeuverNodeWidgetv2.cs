@@ -20,12 +20,20 @@ namespace ModularFlightPanel.UI.Widgets
         public double BurnTime;
         public double TimeToBurn;
         public string FormattedDeltaV;
+        public string FormattedTotalDeltaV;
         public string UnitLabel;
         public string FormattedTNode;
         public string FormattedBurnTime;
+        public string FormattedTimeToBurn;
         public string FormattedBurnIn;
         public string BadgeText;
         public CardStyleRole TargetCardRole;
+        public bool IsBurning;
+        public bool IsUrgent;
+        public bool IsPreIgnition;
+        public bool IsBurnComplete;
+        public string FormattedPercent;
+        public string VectorTag;
     }
 
     /// <summary>
@@ -49,6 +57,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             double dv = telemetry.ManeuverDeltaV;
             double totalDv = telemetry.ManeuverTotalDeltaV;
+            if (totalDv < dv) totalDv = dv;
             double timeToNode = telemetry.ManeuverTimeToNode;
             double burnTime = telemetry.ManeuverBurnTime;
             double timeToBurn = telemetry.ManeuverTimeToBurn;
@@ -60,6 +69,33 @@ namespace ModularFlightPanel.UI.Widgets
                 fraction = (float)Math.Max(0.0, Math.Min(1.0, ratio));
             }
 
+            bool isBurning = timeToBurn <= 0.0 && dv > 0.1;
+            bool isBurnComplete = dv <= 0.1;
+            bool isUrgent = timeToBurn > 0.0 && timeToBurn <= 15.0;
+            bool isPreIgnition = timeToBurn > 0.0 && timeToBurn <= 60.0;
+            string percentStr = AvionicsFastFormat.FastPercent(fraction);
+
+            double proDv = telemetry.ManeuverDeltaVPrograde;
+            double normDv = telemetry.ManeuverDeltaVNormal;
+            double radDv = telemetry.ManeuverDeltaVRadial;
+            string vectorTag;
+            if (double.IsNaN(proDv) || (Math.Abs(proDv) < 0.1 && Math.Abs(normDv) < 0.1 && Math.Abs(radDv) < 0.1))
+            {
+                vectorTag = percentStr;
+            }
+            else if (Math.Abs(proDv) >= Math.Abs(normDv) && Math.Abs(proDv) >= Math.Abs(radDv))
+            {
+                vectorTag = (proDv >= 0 ? "PRO " : "RET ") + percentStr;
+            }
+            else if (Math.Abs(normDv) >= Math.Abs(radDv))
+            {
+                vectorTag = (normDv >= 0 ? "NORM " : "ANT ") + percentStr;
+            }
+            else
+            {
+                vectorTag = (radDv >= 0 ? "RAD " : "A-RAD ") + percentStr;
+            }
+
             // 统一航电量纲制式换算 (公制/英制/航海制自动自适应)
             double convertedDv = AvionicsUnitSystem.Convert(
                 dv,
@@ -69,25 +105,32 @@ namespace ModularFlightPanel.UI.Widgets
 
             string formattedDv = convertedDv.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
 
+            double convertedTotalDv = AvionicsUnitSystem.Convert(
+                totalDv,
+                UnitDimension.Velocity,
+                AvionicsUnitSystem.GlobalMode,
+                out _);
+            string formattedTotalDv = convertedTotalDv.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
             CardStyleRole targetRole = CardStyleRole.Normal;
             string badgeText = I18n.Tr("WIDGET_ALERT_ARMED", "待命");
 
-            if (timeToBurn <= 0.0 && dv > 0.1)
+            if (isBurning)
             {
                 targetRole = CardStyleRole.Emphasized;
                 badgeText = I18n.Tr("WIDGET_NAV_BURNING", "燃烧中");
             }
-            else if (dv <= 0.1)
+            else if (isBurnComplete)
             {
                 targetRole = CardStyleRole.Normal;
                 badgeText = I18n.Tr("WIDGET_NAV_BURN_COMPLETE", "已完成");
             }
-            else if (timeToBurn <= 15.0)
+            else if (isUrgent)
             {
                 targetRole = CardStyleRole.Emphasized;
-                badgeText = I18n.Tr("WIDGET_NAV_BURN_IN", "点火");
+                badgeText = I18n.Tr("WIDGET_NAV_BURN_IN", "点火准备");
             }
-            else if (timeToBurn <= 60.0)
+            else if (isPreIgnition)
             {
                 targetRole = CardStyleRole.Warning;
                 badgeText = I18n.Tr("WIDGET_NAV_COUNTDOWN", "倒计时");
@@ -96,6 +139,9 @@ namespace ModularFlightPanel.UI.Widgets
             string prefix = timeToNode < 0 ? "T+ " : "T- ";
             string formattedTNode = prefix + BaseFlightWidget.FormatDuration(Math.Abs(timeToNode));
             string formattedBurnTime = BaseFlightWidget.FormatDuration(Math.Max(0.0, burnTime));
+            string formattedTimeToBurn = timeToBurn <= 0.0
+                ? (I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!")
+                : BaseFlightWidget.FormatDuration(timeToBurn);
             string burnIn = timeToBurn <= 0.0
                 ? (I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!")
                 : (I18n.Tr("WIDGET_NAV_BURN_IN", "点火") + " " + BaseFlightWidget.FormatDuration(timeToBurn));
@@ -110,12 +156,20 @@ namespace ModularFlightPanel.UI.Widgets
                 BurnTime = burnTime,
                 TimeToBurn = timeToBurn,
                 FormattedDeltaV = formattedDv,
+                FormattedTotalDeltaV = formattedTotalDv,
                 UnitLabel = unitSymbol,
                 FormattedTNode = formattedTNode,
                 FormattedBurnTime = formattedBurnTime,
+                FormattedTimeToBurn = formattedTimeToBurn,
                 FormattedBurnIn = burnIn,
                 BadgeText = badgeText,
-                TargetCardRole = targetRole
+                TargetCardRole = targetRole,
+                IsBurning = isBurning,
+                IsUrgent = isUrgent,
+                IsPreIgnition = isPreIgnition,
+                IsBurnComplete = isBurnComplete,
+                FormattedPercent = percentStr,
+                VectorTag = vectorTag
             };
         }
     }

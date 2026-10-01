@@ -5,9 +5,9 @@ Shader "ModularFlightPanel/DotMatrixUI"
         [PerRendererData] _MainTex ("Sprite / Font Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1,1,1,1)
 
-        _DotSpacing ("Dot Spacing (Canvas Units)", Float) = 1.3
-        _DotRadius ("Dot Fill Radius (0.1 - 0.5)", Range(0.1, 0.5)) = 0.44
-        _DotSmoothness ("Dot Edge Softness", Range(0.01, 0.3)) = 0.10
+        _DotSpacing ("Dot Spacing (Screen Pixels)", Float) = 2.0
+        _DotRadius ("Dot Fill Radius (0.1 - 0.5)", Range(0.1, 0.5)) = 0.42
+        _DotSmoothness ("Dot Edge Softness", Range(0.01, 0.3)) = 0.12
         _UnlitDotColor ("Unlit Ghost Dot Color", Color) = (0.03, 0.07, 0.04, 0.08)
         _LitDotColor ("Lit Dot Base Tint", Color) = (1.0, 1.0, 1.0, 1.0)
         _GlowStrength ("Phosphor Glow Halo", Range(0.0, 1.0)) = 0.35
@@ -77,6 +77,7 @@ Shader "ModularFlightPanel/DotMatrixUI"
                 fixed4 color         : COLOR;
                 float2 texcoord      : TEXCOORD0;
                 float4 worldPosition : TEXCOORD1;
+                float4 screenPos     : TEXCOORD2;
             };
 
             sampler2D _MainTex;
@@ -97,6 +98,7 @@ Shader "ModularFlightPanel/DotMatrixUI"
                 v2f OUT;
                 OUT.worldPosition = v.vertex;
                 OUT.vertex = UnityObjectToClipPos(OUT.worldPosition);
+                OUT.screenPos = ComputeScreenPos(OUT.vertex);
                 OUT.texcoord = v.texcoord;
                 OUT.color = v.color * _Color;
                 return OUT;
@@ -104,43 +106,50 @@ Shader "ModularFlightPanel/DotMatrixUI"
 
             fixed4 frag(v2f IN) : SV_Target
             {
-                // 1. 采样 UGUI 动态字体 Atlas 或精灵 Alpha
-                half4 texCol = (tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd);
-                float sourceAlpha = texCol.a;
+                // 1. 高保真原样字模采样 (严格避免 4 向扩张造成 6-10px 微型字模与中文字孔隙闭合粘连)
+                half4 texCol = tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd;
+                float strokeAlpha = texCol.a;
 
-                if (sourceAlpha < 0.005)
+                if (strokeAlpha < 0.01)
                 {
                     discard;
                 }
 
-                // 2. 本地 Canvas 坐标系解算点阵格栅 (Micro-LED Aperture Grille)
-                float spacing = max(_DotSpacing, 0.75);
-                float2 dotCoord = IN.worldPosition.xy / spacing;
+                // 2. 物理屏幕像素坐标解算与整数像素锁频 (Integer Pixel Grid Snapping)
+                // 彻底根除因非整数点距在屏幕离散像素上引发的高频漂移、割裂断画与摩尔波纹 (Moiré)
+                float2 screenPixel = (IN.screenPos.xy / max(IN.screenPos.w, 0.00001)) * _ScreenParams.xy;
+                float spacing = max(round(_DotSpacing), 2.0);
+                float2 dotCoord = screenPixel / spacing;
                 float2 cellFrac = frac(dotCoord);
                 float distToCenter = length(cellFrac - 0.5);
 
-                // 3. Micro-LED 圆孔形态与透镜高光 (SDF Calculation)
+                // 3. 物理圆孔透镜透光率 (Micro-Lens Aperture) 与光学弥散晕 (Diffusion Halo)
                 float dotShape = 1.0 - smoothstep(_DotRadius - _DotSmoothness, _DotRadius, distToCenter);
-                float glowHalo = exp(-distToCenter * 4.0) * _GlowStrength;
+                float halo = exp(-distToCenter * 3.5) * _GlowStrength;
 
-                // 4. 航电级高清晰度保真调制 (Avionics Legibility Guarantee):
-                // 基础笔画保留至少 80% 亮度底衬，点孔中心激发到 125% 激发态，
-                // 绝不斩断细小笔画与中文复杂字形，同时呈现鲜明物理 Micro-LED 点阵质感！
-                float ledFactor = lerp(0.80, 1.25, dotShape) + glowHalo * 0.20;
+                // 4. 高动态发光调制比 (High Contrast Optical Modulation: 3:1):
+                // 保持孔内核 125% 激发，孔间导光基质维持 38% 连接底衬，
+                // 彻底根除因点阵挖孔造成的细小笔画断裂与小字杂碎斑驳，同时完美呈现物理 LED 圆点微雕质感！
+                float dotMod = (0.38 + 0.87 * dotShape) + halo * 0.25;
 
-                // 5. 与点阵行对齐的微弱光栅纹理
-                float scan = 1.0 - (sin(cellFrac.y * 3.14159) * 0.5) * min(_ScanlineStrength, 0.08);
+                // 5. 中心白炽微二极管发光核 (White-Hot Diode Core)
+                // 仅在字模致密核心区激发，呈现真实物理 LED 晶体芯片高能亮点
+                float diodeCore = dotShape * saturate(1.0 - distToCenter / 0.25) * saturate((strokeAlpha - 0.25) * 1.5) * 0.45;
 
-                // 6. 纯正语义色彩还原：以 IN.color 为基准，避免字体纹理 RGB 污染
-                fixed3 textRgb = IN.color.rgb * _LitDotColor.rgb;
-                // 点阵中心白炽过载核 (仅在字模致密区微泛白)
-                float hotCore = dotShape * saturate((sourceAlpha - 0.4) * 2.0) * 0.25;
-                fixed3 finalRgb = lerp(textRgb, fixed3(1.0, 1.0, 1.0), hotCore) * ledFactor * scan;
+                // 6. 语义色彩智能门控 (Semantic Color Preservation):
+                // 若顶点颜色饱和度高 (如警示黄、危险红、正向绿、青色读数)，100% 忠实保留原始语义色！
+                float maxC = max(max(IN.color.r, IN.color.g), IN.color.b);
+                float minC = min(min(IN.color.r, IN.color.g), IN.color.b);
+                float saturation = maxC - minC;
+                fixed3 baseColor = (saturation > 0.15) ? IN.color.rgb : (IN.color.rgb * _LitDotColor.rgb);
 
-                float finalAlpha = sourceAlpha * IN.color.a;
-                fixed4 finalCol = fixed4(finalRgb, finalAlpha);
+                fixed3 litRgb = (baseColor * dotMod + fixed3(0.85, 1.0, 0.90) * diodeCore) * strokeAlpha;
 
-                // 7. UGUI 视口裁切支持
+                // 7. 伽马抗蚀刻强化与最终合成
+                float finalAlpha = saturate(pow(strokeAlpha, 0.85) * (1.0 + _GlowStrength * 0.20)) * IN.color.a;
+                fixed4 finalCol = fixed4(litRgb, finalAlpha);
+
+                // 8. UGUI 视口裁切支持
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

@@ -57,7 +57,7 @@ namespace ModularFlightPanel.UI.Framework
             _bgImage = GetComponent<Image>();
             _outline = GetComponent<Outline>();
 
-            _rectTransform.sizeDelta = new Vector2(180f, 250f);
+            _rectTransform.sizeDelta = new Vector2(190f, 340f);
             _rectTransform.pivot = new Vector2(0f, 1f);
 
             var theme = WidgetStyleManager.Instance?.CurrentTheme ?? ThemeConfig.CreateBoeing787();
@@ -177,7 +177,64 @@ namespace ModularFlightPanel.UI.Framework
                 Close();
             });
 
-            // 3. 紧凑模式切换
+            // 3. 不透明度调节
+            int curOpPct = Mathf.RoundToInt(_targetWidget.Opacity * 100f);
+            CreateMenuItem(I18n.TrFormat("CTX_OPACITY_CYCLE", curOpPct), () =>
+            {
+                if (_targetWidget != null)
+                {
+                    float[] opSteps = new[] { 1.0f, 0.85f, 0.70f, 0.50f, 0.35f };
+                    int curIdx = 0;
+                    float cur = _targetWidget.Opacity;
+                    for (int i = 0; i < opSteps.Length; i++)
+                    {
+                        if (Math.Abs(cur - opSteps[i]) < 0.06f) { curIdx = i; break; }
+                    }
+                    float nextOp = opSteps[(curIdx + 1) % opSteps.Length];
+                    _targetWidget.SetOpacity(nextOp);
+                    MFPToastBridge.Show(I18n.TrFormat("TOAST_OPACITY_CHANGED", Mathf.RoundToInt(nextOp * 100f)));
+                }
+                Close();
+            });
+
+            // 4. 配色主题切换
+            string curThemeOvr = _targetWidget.Config?.ThemeOverride;
+            string themeDisplay = string.IsNullOrEmpty(curThemeOvr) ? I18n.Tr("CTX_THEME_DEFAULT", "全局跟随") : (_targetWidget.WidgetTheme?.DisplayName ?? curThemeOvr);
+            CreateMenuItem(I18n.TrFormat("CTX_THEME_CYCLE", themeDisplay), () =>
+            {
+                if (_targetWidget != null)
+                {
+                    string[] cycleThemes = new[] { "", "boeing_787", "spacex_dragon", "cyber_neon", "diffractive_hud", "vintage_amber", "starship_mars", "sr71_blackbird" };
+                    int idx = Array.IndexOf(cycleThemes, curThemeOvr ?? "");
+                    string nextTheme = cycleThemes[(idx + 1) % cycleThemes.Length];
+                    _targetWidget.SetThemeOverride(nextTheme);
+                    string newName = string.IsNullOrEmpty(nextTheme) ? I18n.Tr("CTX_THEME_DEFAULT", "全局跟随") : (_targetWidget.WidgetTheme?.DisplayName ?? nextTheme);
+                    MFPToastBridge.Show(I18n.TrFormat("TOAST_THEME_CHANGED", newName));
+                }
+                Close();
+            });
+
+            // 5. 长宽比快速切换
+            CreateMenuItem(I18n.Tr("CTX_ASPECT_RATIO_CYCLE", "📐 切换长宽比"), () =>
+            {
+                if (_targetWidget != null && _targetWidget.Config != null)
+                {
+                    float ar = _targetWidget.Config.EffectiveScaleX / _targetWidget.Config.EffectiveScaleY;
+                    float[] ratios = new[] { 1.0f, 4f / 3f, 16f / 9f, 2.0f, 3.0f };
+                    string[] names = new[] { "1:1", "4:3", "16:9", "2:1", "3:1" };
+                    int curIdx = 0;
+                    for (int i = 0; i < ratios.Length; i++)
+                    {
+                        if (Math.Abs(ar - ratios[i]) < 0.15f) { curIdx = i; break; }
+                    }
+                    int nextIdx = (curIdx + 1) % ratios.Length;
+                    _targetWidget.SetAspectRatio(ratios[nextIdx]);
+                    MFPToastBridge.Show(I18n.TrFormat("TOAST_ASPECT_CHANGED", names[nextIdx]));
+                }
+                Close();
+            });
+
+            // 6. 紧凑模式切换
             CreateMenuItem(I18n.Tr("CTX_COMPACT_MODE", "⛶ 紧凑模式"), () =>
             {
                 if (_targetWidget != null && _targetWidget.Config != null)
@@ -189,13 +246,23 @@ namespace ModularFlightPanel.UI.Framework
                 Close();
             });
 
-            // 4. 切换单位制式
+            // 7. 切换单位制式
             CreateMenuItem(I18n.Tr("CTX_UNIT_CYCLE", "📏 切换单位"), () =>
             {
                 int nextMode = ((int)AvionicsUnitSystem.GlobalMode + 1) % 4;
                 AvionicsUnitSystem.GlobalMode = (UnitSystemMode)nextMode;
                 MFPToastBridge.Show(I18n.TrFormat("CTX_UNIT_CHANGED_FMT", AvionicsUnitSystem.GlobalMode));
                 Close();
+            });
+
+            // 组件专属自定义扩展菜单项 (如分级序列仪模式切换)
+            _targetWidget.PopulateContextMenu((label, act) =>
+            {
+                CreateMenuItem(label, () =>
+                {
+                    act?.Invoke();
+                    Close();
+                });
             });
 
             // 5. 遥测检视

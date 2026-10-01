@@ -193,9 +193,15 @@ namespace ModularFlightPanel.UI.Widgets
         private bool _isCustomResized = false;
 
         private GameObject _headerObj;
+        private Text _statusDotText;
+        private Text _busTagText;
         private Text _titleText;
+        private GameObject _badgeContainer;
         private Text _badgeText;
+        private Image _badgeBg;
+        private Outline _badgeOutline;
         private Image _headerDivider;
+        private Image _headerAccentGlow;
 
         private GameObject _gridContainerObj;
         private RectTransform _gridContainerRt;
@@ -209,9 +215,15 @@ namespace ModularFlightPanel.UI.Widgets
 
             public GameObject CellObj;
             public RectTransform CellRt;
+            public Image TileBg;
+            public Outline TileOutline;
+            public Image StatusPip;
             public Text LabelText;
             public Text ValText;
-            public Image ColDivider;
+
+            public readonly Cached<string> LastVal = new Cached<string>(string.Empty);
+            public readonly Cached<Color> LastColor = new Cached<Color>(Color.clear);
+            public readonly Cached<Color> LastBgColor = new Cached<Color>(Color.clear);
         }
 
         private class RowRuntimeUI
@@ -240,8 +252,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
-            theme = WidgetStyleManager.ResolveTheme(theme);
+            theme = ResolveEffectiveTheme(theme);
             float s = CurrentDpiScale;
+            WidgetStyleManager style = WidgetStyleManager.Instance;
 
             RectTransform hRt = CreateContainer("HeaderRow", transform);
             _headerObj = hRt.gameObject;
@@ -249,23 +262,56 @@ namespace ModularFlightPanel.UI.Widgets
             hRt.anchorMax = new Vector2(1f, 1f);
             hRt.pivot = new Vector2(0.5f, 1f);
             hRt.anchoredPosition = Vector2.zero;
-            hRt.sizeDelta = new Vector2(0f, 26f * s);
+            hRt.sizeDelta = new Vector2(0f, 28f * s);
 
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            _titleText = UIFactory.CreateText(_headerObj.transform, "Title", DisplayName, Mathf.RoundToInt(10f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
+            // 1. 状态信标指示灯 (Live Telemetry Bus Indicator)
+            _statusDotText = UIFactory.CreateText(_headerObj.transform, "StatusDot", "●", Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Accent, theme));
+            RectTransform dotRt = _statusDotText.rectTransform;
+            dotRt.anchorMin = new Vector2(0f, 0.5f);
+            dotRt.anchorMax = new Vector2(0f, 0.5f);
+            dotRt.pivot = new Vector2(0f, 0.5f);
+            dotRt.anchoredPosition = new Vector2(10f * s, 0f);
+            dotRt.sizeDelta = new Vector2(12f * s, 18f * s);
+
+            // 2. 总线微标签与主标题 (Bus Micro Tag & Title)
+            _busTagText = UIFactory.CreateText(_headerObj.transform, "BusTag", "TLM // MATRIX", Mathf.RoundToInt(7.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            RectTransform bTagRt = _busTagText.rectTransform;
+            bTagRt.anchorMin = new Vector2(0f, 1f);
+            bTagRt.anchorMax = new Vector2(0.6f, 1f);
+            bTagRt.pivot = new Vector2(0f, 1f);
+            bTagRt.anchoredPosition = new Vector2(24f * s, -4f * s);
+            bTagRt.sizeDelta = new Vector2(120f * s, 10f * s);
+
+            _titleText = UIFactory.CreateText(_headerObj.transform, "Title", DisplayName, Mathf.RoundToInt(10.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            _titleText.fontStyle = FontStyle.Bold;
             RectTransform tRt = _titleText.rectTransform;
             tRt.anchorMin = new Vector2(0f, 0f);
-            tRt.anchorMax = new Vector2(0.7f, 1f);
-            tRt.offsetMin = new Vector2(10f * s, 0f);
-            tRt.offsetMax = Vector2.zero;
+            tRt.anchorMax = new Vector2(0.65f, 1f);
+            tRt.offsetMin = new Vector2(24f * s, -4f * s);
+            tRt.offsetMax = new Vector2(0f, -4f * s);
 
-            _badgeText = UIFactory.CreateText(_headerObj.transform, "Badge", I18n.Tr("WIDGET_MJ_MATRIX_BADGE", "MJ 矩阵"), Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            // 3. 右侧胶囊高精徽标 (Pill Badge Capsule)
+            GameObject badgePill = UIFactory.CreatePanel(_headerObj.transform, "BadgePill", new Vector2(76f * s, 16f * s), Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+            _badgeContainer = badgePill;
+            _badgeBg = badgePill.GetComponent<Image>();
+            _badgeOutline = badgePill.AddComponent<Outline>();
+            _badgeOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Faint, theme);
+            _badgeOutline.effectDistance = new Vector2(1f * s, 1f * s);
+
+            RectTransform bpRt = badgePill.GetComponent<RectTransform>();
+            bpRt.anchorMin = new Vector2(1f, 0.5f);
+            bpRt.anchorMax = new Vector2(1f, 0.5f);
+            bpRt.pivot = new Vector2(1f, 0.5f);
+            bpRt.anchoredPosition = new Vector2(-10f * s, 0f);
+
+            _badgeText = UIFactory.CreateText(badgePill.transform, "Badge", I18n.Tr("WIDGET_MJ_MATRIX_BADGE", "3x2 MJ"), Mathf.RoundToInt(8f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.SecondaryValue, theme));
             RectTransform bRt = _badgeText.rectTransform;
-            bRt.anchorMin = new Vector2(0.65f, 0f);
-            bRt.anchorMax = new Vector2(1f, 1f);
-            bRt.offsetMin = Vector2.zero;
-            bRt.offsetMax = new Vector2(-10f * s, 0f);
+            bRt.anchorMin = Vector2.zero;
+            bRt.anchorMax = Vector2.one;
+            bRt.offsetMin = new Vector2(2f * s, 0f);
+            bRt.offsetMax = new Vector2(-2f * s, 0f);
 
+            // 4. 发丝级分隔线与主强调发光槽 (Crisp Divider & Accent Glow)
             GameObject divObj = UIFactory.CreatePanel(_headerObj.transform, "HeaderDivider", new Vector2(0f, 1f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
             _headerDivider = divObj.GetComponent<Image>();
             RectTransform divRt = _headerDivider.rectTransform;
@@ -273,14 +319,22 @@ namespace ModularFlightPanel.UI.Widgets
             divRt.anchorMax = new Vector2(1f, 0f);
             divRt.pivot = new Vector2(0.5f, 0f);
             divRt.sizeDelta = new Vector2(-16f * s, 1f * s);
-            divRt.anchoredPosition = new Vector2(0f, 1f * s);
+            divRt.anchoredPosition = new Vector2(0f, 0f);
+
+            GameObject glowObj = UIFactory.CreatePanel(_headerObj.transform, "AccentGlow", new Vector2(36f * s, 1.5f * s), Vector2.zero, theme.AccentPrimary);
+            _headerAccentGlow = glowObj.GetComponent<Image>();
+            RectTransform glowRt = _headerAccentGlow.rectTransform;
+            glowRt.anchorMin = new Vector2(0f, 0f);
+            glowRt.anchorMax = new Vector2(0f, 0f);
+            glowRt.pivot = new Vector2(0f, 0f);
+            glowRt.anchoredPosition = new Vector2(10f * s, -0.5f * s);
 
             _gridContainerRt = CreateContainer("GridContainer", transform);
             _gridContainerObj = _gridContainerRt.gameObject;
             _gridContainerRt.anchorMin = new Vector2(0f, 0f);
             _gridContainerRt.anchorMax = new Vector2(1f, 1f);
             _gridContainerRt.offsetMin = new Vector2(6f * s, 6f * s);
-            _gridContainerRt.offsetMax = new Vector2(-6f * s, -28f * s);
+            _gridContainerRt.offsetMax = new Vector2(-6f * s, -30f * s);
 
             _cachedTemplate = Config?.CustomTemplate;
             _activeData = TelemetryMatrixData.FromTemplate(_cachedTemplate);
@@ -295,15 +349,15 @@ namespace ModularFlightPanel.UI.Widgets
             var data = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
             if (data.Mode == MatrixDisplayMode.Table)
             {
-                float w = Mathf.Max(260f, data.Columns * 64f + 20f);
-                float h = 28f + 20f + data.Rows * 18f + 10f;
+                float w = Mathf.Max(260f, data.Columns * 68f + 20f);
+                float h = 32f + 20f + data.Rows * 20f + 12f;
                 return new Vector2(w, h);
             }
             else
             {
-                float colW = data.Columns == 1 ? 240f : 140f;
-                float w = Mathf.Max(200f, data.Columns * colW + 16f);
-                float h = 28f + data.Rows * 20f + 10f;
+                float colW = data.Columns == 1 ? 240f : 148f;
+                float w = Mathf.Max(220f, data.Columns * colW + 16f);
+                float h = 32f + data.Rows * 25f + 12f;
                 return new Vector2(w, h);
             }
         }
@@ -320,15 +374,20 @@ namespace ModularFlightPanel.UI.Widgets
         public override void ApplyTheme(ThemeConfig theme)
         {
             base.ApplyTheme(theme);
+            theme = ResolveEffectiveTheme(theme);
             if (theme == null) return;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            if (_titleText != null) _titleText.SetColor(style.GetTextColor(TextStyleRole.Label, theme));
+            if (_titleText != null) _titleText.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+            if (_busTagText != null) _busTagText.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            if (_statusDotText != null) _statusDotText.SetColor(style.GetTextColor(TextStyleRole.Accent, theme));
             if (_badgeText != null) _badgeText.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
+            if (_badgeBg != null) _badgeBg.SetColor(style.GetSurfaceColor(SurfaceStyleRole.Inset, theme));
+            if (_badgeOutline != null) _badgeOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Faint, theme);
             if (_headerDivider != null) _headerDivider.SetColor(style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
+            if (_headerAccentGlow != null) _headerAccentGlow.SetColor(theme.AccentPrimary);
 
             Color rowTintEven = style.GetSurfaceColor(SurfaceStyleRole.SlotActive, theme);
-            rowTintEven.a = 0.08f;
             Color rowTintOdd = Color.clear;
 
             if (_tableHeaderUI != null)
@@ -354,9 +413,13 @@ namespace ModularFlightPanel.UI.Widgets
                 for (int c = 0; c < row.Cells.Count; c++)
                 {
                     var cell = row.Cells[c];
+                    if (cell.TileBg != null) cell.TileBg.SetColor(style.GetSurfaceColor(SurfaceStyleRole.Slot, theme));
+                    if (cell.TileOutline != null) cell.TileOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+                    if (cell.StatusPip != null) cell.StatusPip.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Normal, theme));
                     if (cell.LabelText != null) cell.LabelText.SetColor(style.GetTextColor(TextStyleRole.Label, theme));
                     if (cell.ValText != null) cell.ValText.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
-                    if (cell.ColDivider != null) cell.ColDivider.SetColor(style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
+                    cell.LastColor.Reset(Color.clear);
+                    cell.LastBgColor.Reset(Color.clear);
                 }
             }
         }
@@ -402,15 +465,90 @@ namespace ModularFlightPanel.UI.Widgets
                 _badgeText.SetTextSafe(state.Badge);
             }
 
+            var theme = ResolveEffectiveTheme(null);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
+
             if (!state.HasVessel)
             {
+                if (_statusDotText != null) _statusDotText.SetColor(style.GetTextColor(TextStyleRole.Muted, theme));
                 SetAllCellsFallback("---", TextStyleRole.PrimaryValue);
                 return;
             }
 
-            var theme = WidgetStyleManager.Instance.CurrentTheme;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
+            bool hasWarning = false;
+            bool hasDanger = false;
 
+            for (int r = 0; r < _runtimeRows.Count; r++)
+            {
+                var row = _runtimeRows[r];
+                for (int c = 0; c < row.Cells.Count; c++)
+                {
+                    var cell = row.Cells[c];
+                    var snap = _logic.GetCell(r, c);
+                    string valStr = snap.Value ?? "---";
+
+                    if (snap.Role == TextStyleRole.Danger) hasDanger = true;
+                    else if (snap.Role == TextStyleRole.Warning) hasWarning = true;
+
+                    if (cell.ValText != null)
+                    {
+                        if (cell.LastVal.Update(valStr))
+                        {
+                            cell.ValText.SetTextSafe(valStr);
+                        }
+                        Color roleCol = style.GetTextColor(snap.Role, theme);
+                        if (cell.LastColor.Update(roleCol))
+                        {
+                            cell.ValText.SetColor(roleCol);
+                        }
+                    }
+
+                    if (cell.TileBg != null && cell.StatusPip != null)
+                    {
+                        Color pipCol;
+                        Color tileBgCol;
+                        Color outlineCol;
+
+                        if (snap.Role == TextStyleRole.Danger)
+                        {
+                            pipCol = theme.DangerColor;
+                            tileBgCol = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.18f);
+                            outlineCol = WidgetStyleManager.Weighted(theme.DangerColor, LineWeight.Subtle, theme);
+                        }
+                        else if (snap.Role == TextStyleRole.Warning)
+                        {
+                            pipCol = theme.WarningColor;
+                            tileBgCol = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.14f);
+                            outlineCol = WidgetStyleManager.Weighted(theme.WarningColor, LineWeight.Subtle, theme);
+                        }
+                        else
+                        {
+                            pipCol = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Normal, theme);
+                            tileBgCol = style.GetSurfaceColor(SurfaceStyleRole.Slot, theme);
+                            outlineCol = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+                        }
+
+                        if (cell.LastBgColor.Update(tileBgCol))
+                        {
+                            cell.TileBg.SetColor(tileBgCol);
+                            cell.StatusPip.SetColor(pipCol);
+                            if (cell.TileOutline != null) cell.TileOutline.effectColor = outlineCol;
+                        }
+                    }
+                }
+            }
+
+            if (_statusDotText != null)
+            {
+                Color dotCol = hasDanger ? theme.DangerColor : (hasWarning ? theme.WarningColor : style.GetTextColor(TextStyleRole.Accent, theme));
+                _statusDotText.SetColor(dotCol);
+            }
+        }
+
+        private void SetAllCellsFallback(string fallback, TextStyleRole role)
+        {
+            var theme = ResolveEffectiveTheme(null);
+            WidgetStyleManager style = WidgetStyleManager.Instance;
             for (int r = 0; r < _runtimeRows.Count; r++)
             {
                 var row = _runtimeRows[r];
@@ -419,27 +557,19 @@ namespace ModularFlightPanel.UI.Widgets
                     var cell = row.Cells[c];
                     if (cell.ValText != null)
                     {
-                        var snap = _logic.GetCell(r, c);
-                        cell.ValText.SetTextSafe(snap.Value ?? "---");
-                        cell.ValText.SetColor(style.GetTextColor(snap.Role, theme));
+                        if (cell.LastVal.Update(fallback)) cell.ValText.SetTextSafe(fallback);
+                        Color col = style.GetTextColor(role, theme);
+                        if (cell.LastColor.Update(col)) cell.ValText.SetColor(col);
                     }
-                }
-            }
-        }
-
-        private void SetAllCellsFallback(string fallback, TextStyleRole role)
-        {
-            var theme = WidgetStyleManager.Instance.CurrentTheme;
-            WidgetStyleManager style = WidgetStyleManager.Instance;
-            for (int r = 0; r < _runtimeRows.Count; r++)
-            {
-                var row = _runtimeRows[r];
-                for (int c = 0; c < row.Cells.Count; c++)
-                {
-                    if (row.Cells[c].ValText != null)
+                    if (cell.TileBg != null)
                     {
-                        row.Cells[c].ValText.SetTextSafe(fallback);
-                        row.Cells[c].ValText.SetColor(style.GetTextColor(role, theme));
+                        Color bgCol = style.GetSurfaceColor(SurfaceStyleRole.Slot, theme);
+                        if (cell.LastBgColor.Update(bgCol))
+                        {
+                            cell.TileBg.SetColor(bgCol);
+                            if (cell.StatusPip != null) cell.StatusPip.SetColor(WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Normal, theme));
+                            if (cell.TileOutline != null) cell.TileOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+                        }
                     }
                 }
             }
@@ -510,7 +640,7 @@ namespace ModularFlightPanel.UI.Widgets
             for (int r = 0; r < _activeData.Rows; r++)
             {
                 var rowUi = new RowRuntimeUI { RowIndex = r };
-                GameObject rGo = UIFactory.CreatePanel(_gridContainerRt, $"Row_{r}", new Vector2(0f, 20f * s), Vector2.zero, Color.clear);
+                GameObject rGo = UIFactory.CreatePanel(_gridContainerRt, $"Row_{r}", new Vector2(0f, 24f * s), Vector2.zero, Color.clear);
                 rowUi.RowObj = rGo;
                 rowUi.RowRt = rGo.GetComponent<RectTransform>();
                 rowUi.RowBg = rGo.GetComponent<Image>();
@@ -545,31 +675,45 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     else
                     {
-                        cellUi.LabelText = UIFactory.CreateText(cellUi.CellObj.transform, "Lbl", cellUi.Label, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
+                        // 1. 独立现代卡片凹槽瓦片 (Glass Slot Tile)
+                        GameObject tileGo = UIFactory.CreatePanel(cellRt, "TileBg", Vector2.zero, Vector2.zero, style.GetSurfaceColor(SurfaceStyleRole.Slot, theme));
+                        cellUi.TileBg = tileGo.GetComponent<Image>();
+                        RectTransform tRt = tileGo.GetComponent<RectTransform>();
+                        tRt.anchorMin = Vector2.zero;
+                        tRt.anchorMax = Vector2.one;
+                        tRt.offsetMin = new Vector2(2f * s, 2f * s);
+                        tRt.offsetMax = new Vector2(-2f * s, -2f * s);
+
+                        cellUi.TileOutline = tileGo.AddComponent<Outline>();
+                        cellUi.TileOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost, theme);
+                        cellUi.TileOutline.effectDistance = new Vector2(1f * s, 1f * s);
+
+                        // 2. 瓦片左侧状态竖条指示灯 (Status Pip)
+                        GameObject pipGo = UIFactory.CreatePanel(tileGo.transform, "StatusPip", new Vector2(2.5f * s, 0f), Vector2.zero, WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Normal, theme));
+                        cellUi.StatusPip = pipGo.GetComponent<Image>();
+                        RectTransform pipRt = pipGo.GetComponent<RectTransform>();
+                        pipRt.anchorMin = new Vector2(0f, 0.18f);
+                        pipRt.anchorMax = new Vector2(0f, 0.82f);
+                        pipRt.pivot = new Vector2(0f, 0.5f);
+                        pipRt.sizeDelta = new Vector2(2.5f * s, 0f);
+                        pipRt.anchoredPosition = new Vector2(3f * s, 0f);
+
+                        // 3. 标签文案
+                        cellUi.LabelText = UIFactory.CreateText(tileGo.transform, "Lbl", cellUi.Label, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleLeft, style.GetTextColor(TextStyleRole.Label, theme));
                         RectTransform lRt = cellUi.LabelText.rectTransform;
                         lRt.anchorMin = new Vector2(0f, 0f);
-                        lRt.anchorMax = new Vector2(0.48f, 1f);
-                        lRt.offsetMin = new Vector2(6f * s, 0f);
+                        lRt.anchorMax = new Vector2(0.42f, 1f);
+                        lRt.offsetMin = new Vector2(9f * s, 0f);
                         lRt.offsetMax = Vector2.zero;
 
-                        cellUi.ValText = UIFactory.CreateText(cellUi.CellObj.transform, "Val", "---", Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        // 4. 读数大字
+                        cellUi.ValText = UIFactory.CreateText(tileGo.transform, "Val", "---", Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleRight, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
+                        cellUi.ValText.fontStyle = FontStyle.Bold;
                         RectTransform vRt = cellUi.ValText.rectTransform;
-                        vRt.anchorMin = new Vector2(0.48f, 0f);
+                        vRt.anchorMin = new Vector2(0.38f, 0f);
                         vRt.anchorMax = new Vector2(1f, 1f);
                         vRt.offsetMin = Vector2.zero;
                         vRt.offsetMax = new Vector2(-6f * s, 0f);
-
-                        if (c > 0)
-                        {
-                            GameObject sep = UIFactory.CreatePanel(cellUi.CellObj.transform, "VSep", new Vector2(1f * s, 14f * s), Vector2.zero, style.GetLineColor(theme.FrameBgColor, LineWeight.Faint, theme));
-                            cellUi.ColDivider = sep.GetComponent<Image>();
-                            RectTransform sepRt = cellUi.ColDivider.rectTransform;
-                            sepRt.anchorMin = new Vector2(0f, 0.5f);
-                            sepRt.anchorMax = new Vector2(0f, 0.5f);
-                            sepRt.pivot = new Vector2(0.5f, 0.5f);
-                            sepRt.anchoredPosition = Vector2.zero;
-                            sepRt.sizeDelta = new Vector2(1f * s, 14f * s);
-                        }
                     }
 
                     rowUi.Cells.Add(cellUi);
@@ -591,9 +735,9 @@ namespace ModularFlightPanel.UI.Widgets
             int rows = Mathf.Max(1, _activeData.Rows);
 
             float headerH = isTable ? 20f * s : 0f;
-            float totalContentH = _currentHeight * s - 36f * s;
+            float totalContentH = _currentHeight * s - 38f * s;
             float availRowsH = Mathf.Max(20f * s, totalContentH - headerH);
-            float rowH = Mathf.Max(16f * s, availRowsH / rows);
+            float rowH = Mathf.Max(18f * s, availRowsH / rows);
 
             if (_tableHeaderUI != null && isTable)
             {

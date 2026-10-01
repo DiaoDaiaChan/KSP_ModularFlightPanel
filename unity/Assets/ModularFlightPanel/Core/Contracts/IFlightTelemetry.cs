@@ -162,6 +162,20 @@ namespace ModularFlightPanel.Core
         double NetEcRate { get; }
         float BusVoltage { get; }
         double SolarPower { get; }
+        int SolarPanelsTotal { get; }
+        int SolarPanelsActive { get; }
+        double RtgPower { get; }
+        int RtgCount { get; }
+        double FuelCellPower { get; }
+        int FuelCellCount { get; }
+        int FuelCellActiveCount { get; }
+        double AlternatorPower { get; }
+        int AlternatorCount { get; }
+        double TotalPowerGeneration { get; }
+        double TotalPowerConsumption { get; }
+        double TimeToDepletionSeconds { get; }
+        double TimeToFullSeconds { get; }
+        IReadOnlyList<BatteryTelemetryInfo> Batteries { get; }
 
         // 通信网络与 RealAntennas 遥测
         double CommSignal { get; }
@@ -393,6 +407,29 @@ namespace ModularFlightPanel.Core
     }
 
     /// <summary>
+    /// 单个机载蓄电池组遥测快照 (Pure C# Contract)
+    /// </summary>
+    public struct BatteryTelemetryInfo
+    {
+        public string PartTitle;
+        public double Amount;
+        public double MaxAmount;
+        public bool IsFlowEnabled;
+        public bool IsDedicated;
+
+        public BatteryTelemetryInfo(string partTitle, double amount, double maxAmount, bool isFlowEnabled, bool isDedicated)
+        {
+            PartTitle = partTitle ?? string.Empty;
+            Amount = amount;
+            MaxAmount = maxAmount;
+            IsFlowEnabled = isFlowEnabled;
+            IsDedicated = isDedicated;
+        }
+
+        public double Percent => MaxAmount > 0.001 ? (Amount / MaxAmount * 100.0) : 100.0;
+    }
+
+    /// <summary>
     /// 单级部件图标与推进剂状态数据模型 (Pure Unity / C# Contract)
     /// 解耦原版 KSP StageIcon、ProtoStageIcon 与 DefaultIcons 枚举
     /// </summary>
@@ -407,8 +444,10 @@ namespace ModularFlightPanel.Core
         public Rect StockUvRect;          // 原版 StageIcon 贴图图集 UV 矩形
         public bool HasStockUv;           // 是否包含原版有效 UV 坐标
         public uint PartFlightId;         // 部件全局唯一 ID (flightID / craftID)，用于场景高亮与跨级移动
+        public bool IsGroupLeader;        // 是否为对称组领头图标
+        public bool IsExpanded;           // 是否处于展开状态
 
-        public StagePartIconData(string iconType, int iconTypeIndex, int count, string partTitle = "", string propName = null, float propFrac = -1f, Rect stockUv = default, bool hasStockUv = false, uint partFlightId = 0)
+        public StagePartIconData(string iconType, int iconTypeIndex, int count, string partTitle = "", string propName = null, float propFrac = -1f, Rect stockUv = default, bool hasStockUv = false, uint partFlightId = 0, bool isGroupLeader = false, bool isExpanded = false)
         {
             IconType = iconType;
             IconTypeIndex = iconTypeIndex;
@@ -419,6 +458,8 @@ namespace ModularFlightPanel.Core
             StockUvRect = stockUv;
             HasStockUv = hasStockUv;
             PartFlightId = partFlightId;
+            IsGroupLeader = isGroupLeader;
+            IsExpanded = isExpanded;
         }
     }
 

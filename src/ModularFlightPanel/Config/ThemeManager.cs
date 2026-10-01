@@ -25,7 +25,7 @@ namespace ModularFlightPanel.Config
         public bool DockShowHiddenDrawer { get; set; } = false;
         public int DockOrientation { get; set; } = 0;
 
-        public bool DockEnableFavoritePanel { get; set; } = true;
+        public bool DockEnableFavoritePanel { get; set; } = false;
         public int DockFavoriteOrientation { get; set; } = 1;
         public bool DockKeepFavoritesInMain { get; set; } = false;
         public float DockFavoritePosX { get; set; } = 0f;
@@ -165,6 +165,13 @@ namespace ModularFlightPanel.Config
                     EnableGpu2DUIAcceleration = EnableGpu2DUIAcceleration,
                     AutoAdaptResolution = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.AutoAdaptResolution : true,
                     GlobalRenderScaleMultiplier = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalRenderScaleMultiplier : 1.0f,
+                    GlobalRefreshProfile = WidgetRenderManager.Instance != null ? (int)WidgetRenderManager.Instance.CurrentProfile : 1,
+                    RefreshControlMode = WidgetRenderManager.Instance != null ? (int)WidgetRenderManager.Instance.ControlMode : 0,
+                    GlobalStandardHz = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.StandardHz : 60.0f,
+                    GlobalSlowHz = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.SlowHz : 30.0f,
+                    GlobalRelaxedHz = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.RelaxedHz : 10.0f,
+                    GlobalUltraLowHz = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.UltraLowHz : 2.0f,
+                    GlobalDataHeartbeatHz = WidgetRenderManager.Instance != null ? WidgetRenderManager.Instance.GlobalDataHeartbeatHz : 0f,
                     DockRules = DockRules != null ? new List<DockButtonRule>(DockRules) : new List<DockButtonRule>(),
                     DockShowHiddenDrawer = DockShowHiddenDrawer,
                     DockOrientation = DockOrientation,
@@ -242,6 +249,13 @@ namespace ModularFlightPanel.Config
                     {
                         WidgetRenderManager.Instance.AutoAdaptResolution = data.AutoAdaptResolution;
                         WidgetRenderManager.Instance.GlobalRenderScaleMultiplier = data.GlobalRenderScaleMultiplier > 0.05f ? data.GlobalRenderScaleMultiplier : 1.0f;
+                        WidgetRenderManager.Instance.CurrentProfile = (GlobalRefreshProfile)Mathf.Clamp(data.GlobalRefreshProfile, 0, 2);
+                        WidgetRenderManager.Instance.ControlMode = (RefreshControlMode)Mathf.Clamp(data.RefreshControlMode, 0, 1);
+                        WidgetRenderManager.Instance.StandardHz = data.GlobalStandardHz > 0.1f ? data.GlobalStandardHz : 60.0f;
+                        WidgetRenderManager.Instance.SlowHz = data.GlobalSlowHz > 0.1f ? data.GlobalSlowHz : 30.0f;
+                        WidgetRenderManager.Instance.RelaxedHz = data.GlobalRelaxedHz > 0.1f ? data.GlobalRelaxedHz : 10.0f;
+                        WidgetRenderManager.Instance.UltraLowHz = data.GlobalUltraLowHz > 0.1f ? data.GlobalUltraLowHz : 2.0f;
+                        WidgetRenderManager.Instance.GlobalDataHeartbeatHz = Mathf.Max(0f, data.GlobalDataHeartbeatHz);
                     }
                 }
             }
@@ -302,7 +316,7 @@ namespace ModularFlightPanel.Config
             {
                 CurrentTheme = target;
                 SaveSettings();
-                OnThemeChanged?.Invoke(CurrentTheme);
+                NotifyThemeChanged();
                 MFPLogger.Info(MFPLogger.CatTheme, $"Switched theme to: {CurrentTheme.DisplayName}");
             }
             else
@@ -317,7 +331,7 @@ namespace ModularFlightPanel.Config
             {
                 CurrentTheme = theme;
                 SaveSettings();
-                OnThemeChanged?.Invoke(CurrentTheme);
+                NotifyThemeChanged();
             }
         }
 
@@ -371,6 +385,41 @@ namespace ModularFlightPanel.Config
                 MFPLogger.Exception(MFPLogger.CatTheme, ex, "Failed to delete custom theme");
                 return false;
             }
+        }
+
+        public bool ResetBuiltinTheme(string themeId)
+        {
+            if (string.IsNullOrEmpty(themeId)) return false;
+            try
+            {
+                if (Directory.Exists(ThemesDirectory))
+                {
+                    string path = Path.Combine(ThemesDirectory, $"{themeId}.json");
+                    if (File.Exists(path)) File.Delete(path);
+                }
+
+                var builtins = ThemeConfig.GetAllBuiltinThemes();
+                var original = builtins.Find(b => b.ThemeId.Equals(themeId, StringComparison.OrdinalIgnoreCase));
+                if (original != null)
+                {
+                    int idx = AvailableThemes.FindIndex(t => t.ThemeId.Equals(themeId, StringComparison.OrdinalIgnoreCase));
+                    if (idx >= 0) AvailableThemes[idx] = original;
+                    if (CurrentTheme?.ThemeId == themeId)
+                    {
+                        CurrentTheme = original;
+                    }
+                    SaveSettings();
+                    WidgetStyleManager.Instance?.ClearMaterialCache();
+                    NotifyThemeChanged();
+                    MFPLogger.Info(MFPLogger.CatTheme, $"Theme reset to default: {themeId}");
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Exception(MFPLogger.CatTheme, ex, $"Failed to reset theme '{themeId}'");
+            }
+            return false;
         }
 
         public ThemeConfig CloneTheme(ThemeConfig source, string newThemeId, string newDisplayName)

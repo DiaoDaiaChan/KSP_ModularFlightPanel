@@ -224,6 +224,11 @@ namespace ModularFlightPanel.Core
         private readonly Dictionary<int, List<StagePartIconData>> _cachedStagePartIcons = new Dictionary<int, List<StagePartIconData>>();
         private float _lastStageIconScanTime = -10f;
         private static System.Reflection.FieldInfo _stageIconImageField;
+        private static System.Reflection.FieldInfo _stageIconProtoIconField;
+        private static System.Reflection.FieldInfo _protoIconInfoBoxesField;
+        private static System.Reflection.FieldInfo _stageGroupStageField;
+        private static System.Reflection.FieldInfo _stageGroupUiStageIndexField;
+        private static System.Reflection.FieldInfo _moduleEnginesPropellantGaugesField;
 
         private void EnsurePropulsionUpdated()
         {
@@ -287,6 +292,9 @@ namespace ModularFlightPanel.Core
                             _vesselTopologyDirty = false;
                         }
 
+                        float nativeGaugeSum = 0f;
+                        int nativeGaugeCount = 0;
+
                         if (_cachedEngines != null)
                         {
                             for (int i = 0; i < _cachedEngines.Count; i++)
@@ -318,46 +326,105 @@ namespace ModularFlightPanel.Core
                                     };
                                     _engineInfos.Add(info);
 
+                                    // 1. Tier 1: Hook 原版及 Mod 推进剂进度条仪表 (ProtoStageIconInfo / PropellantGauges)
+                                    bool hasNativeGauge = false;
+                                    if (_moduleEnginesPropellantGaugesField == null)
+                                    {
+                                        _moduleEnginesPropellantGaugesField = typeof(ModuleEngines).GetField("PropellantGauges", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                                    }
+                                    var gauges = _moduleEnginesPropellantGaugesField?.GetValue(eng) as Dictionary<Propellant, KSP.UI.Screens.ProtoStageIconInfo>;
+                                    if (gauges != null && gauges.Count > 0)
+                                    {
+                                        foreach (var kvp in gauges)
+                                        {
+                                            var gBox = kvp.Value;
+                                            if (gBox != null && gBox.pBarValue >= 0f)
+                                            {
+                                                nativeGaugeSum += Mathf.Clamp01(gBox.pBarValue);
+                                                nativeGaugeCount++;
+                                                hasNativeGauge = true;
+                                                if (string.IsNullOrEmpty(detectedProp) || detectedProp == "PROP")
+                                                {
+                                                    detectedProp = !string.IsNullOrEmpty(gBox.pBarCaption) ? gBox.pBarCaption : (kvp.Key?.displayName ?? kvp.Key?.name);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (!hasNativeGauge && eng.part != null && eng.part.stackIcon != null)
+                                    {
+                                        if (_protoIconInfoBoxesField == null)
+                                        {
+                                            _protoIconInfoBoxesField = typeof(KSP.UI.Screens.ProtoStageIcon).GetField("infoBoxes", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                                        }
+                                        var boxes = _protoIconInfoBoxesField?.GetValue(eng.part.stackIcon) as List<KSP.UI.Screens.ProtoStageIconInfo>;
+                                        if (boxes != null && boxes.Count > 0)
+                                        {
+                                            for (int b = 0; b < boxes.Count; b++)
+                                            {
+                                                var box = boxes[b];
+                                                if (box != null && box.pBarValue >= 0f)
+                                                {
+                                                    nativeGaugeSum += Mathf.Clamp01(box.pBarValue);
+                                                    nativeGaugeCount++;
+                                                    hasNativeGauge = true;
+                                                    if (string.IsNullOrEmpty(detectedProp) || detectedProp == "PROP")
+                                                    {
+                                                        detectedProp = !string.IsNullOrEmpty(box.pBarCaption) ? box.pBarCaption : box.msg;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // 2. Tier 2: 动态直连储箱拓扑换算 (强制 cache=false 穿透 B9PartSwitch/CryoTanks 动态缓存)
                                     if (eng.propellants != null && eng.propellants.Count > 0)
                                     {
                                         for (int pr = 0; pr < eng.propellants.Count; pr++)
                                         {
                                             var pDef = eng.propellants[pr];
-                                            if (pDef != null && pDef.totalResourceCapacity > 0.001)
-                                            {
-                                                string pName = pDef.name;
-                                                if (pName == "IntakeAir" || pName == "ElectricCharge") continue;
+                                            if (pDef == null || pDef.name == "IntakeAir" || pDef.name == "ElectricCharge") continue;
 
-                                                currentResource += pDef.totalResourceAvailable;
-                                                maxResource += pDef.totalResourceCapacity;
+                                            double pAvail = 0, pCap = 0;
+                                            if (eng.part != null)
+                                            {
+                                                eng.part.GetConnectedResourceTotals(pDef.id, pDef.GetFlowMode(), out pAvail, out pCap, false);
+                                            }
+                                            if (pCap <= 0.001)
+                                            {
+                                                pAvail = pDef.totalResourceAvailable;
+                                                pCap = pDef.totalResourceCapacity;
+                                            }
+
+                                            if (pCap > 0.001)
+                                            {
+                                                currentResource += pAvail;
+                                                maxResource += pCap;
                                                 if (string.IsNullOrEmpty(detectedProp) || detectedProp == "PROP")
                                                     detectedProp = pDef.displayName ?? pDef.name;
                                             }
                                         }
                                     }
-                                    else
+                                    else if (eng.part != null && eng.part.Resources != null)
                                     {
                                         Part p = eng.part;
-                                        if (p != null && p.Resources != null)
+                                        for (int r = 0; r < p.Resources.Count; r++)
                                         {
-                                            for (int r = 0; r < p.Resources.Count; r++)
+                                            PartResource res = p.Resources[r];
+                                            if (res != null && res.info != null && res.maxAmount > 0.001)
                                             {
-                                                PartResource res = p.Resources[r];
-                                                if (res != null && res.info != null && res.maxAmount > 0.001)
+                                                string rName = res.info.name;
+                                                if (rName == "LiquidFuel" || rName == "SolidFuel" || rName == "Propellant" ||
+                                                    rName.IndexOf("Hydrogen", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                    rName.IndexOf("Methane", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                    rName == "Oxidizer" || rName == "XenonGas")
                                                 {
-                                                    string rName = res.info.name;
-                                                    if (rName == "LiquidFuel" || rName == "SolidFuel" || rName == "Propellant" ||
-                                                        rName.IndexOf("Hydrogen", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                        rName.IndexOf("Methane", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                        rName == "Oxidizer" || rName == "XenonGas")
-                                                    {
-                                                        currentResource += res.amount;
-                                                        maxResource += res.maxAmount;
-                                                        if (!string.IsNullOrEmpty(res.info.displayName))
-                                                            detectedProp = res.info.displayName;
-                                                        else
-                                                            detectedProp = rName;
-                                                    }
+                                                    currentResource += res.amount;
+                                                    maxResource += res.maxAmount;
+                                                    if (!string.IsNullOrEmpty(res.info.displayName))
+                                                        detectedProp = res.info.displayName;
+                                                    else
+                                                        detectedProp = rName;
                                                 }
                                             }
                                         }
@@ -366,8 +433,8 @@ namespace ModularFlightPanel.Core
                             }
                         }
 
-                        // 储箱联通余量核验
-                        if ((maxResource <= 0.001 || (currentResource <= 0.001 && maxResource > 0.001)) && ActiveVessel != null)
+                        // 储箱联通余量核验 (整船兜底)
+                        if (nativeGaugeCount == 0 && (maxResource <= 0.001 || (currentResource <= 0.001 && maxResource > 0.001)) && ActiveVessel != null)
                         {
                             double curLf = 0.0, maxLf = 0.0;
                             double curOx = 0.0, maxOx = 0.0;
@@ -400,12 +467,6 @@ namespace ModularFlightPanel.Core
                                 maxResource = maxMp;
                                 detectedProp = "MONO";
                             }
-                            else if (maxResource <= 0.001 && maxLf + maxOx > 0.001)
-                            {
-                                currentResource = curLf + curOx;
-                                maxResource = maxLf + maxOx;
-                                detectedProp = "LF / OX";
-                            }
                         }
 
                         if (_lastActiveEngines == 0 && engineCount > 0 && _throttle > 0.01f)
@@ -433,7 +494,18 @@ namespace ModularFlightPanel.Core
 
                         _activeEngines = engineCount;
                         _totalStageEngines = stageTotalEngines > 0 ? stageTotalEngines : (engineCount > 0 ? engineCount : 1);
-                        _stagePropellantFraction = maxResource > 0.001 ? Mathf.Clamp01((float)(currentResource / maxResource)) : 1.0f;
+                        if (nativeGaugeCount > 0)
+                        {
+                            _stagePropellantFraction = Mathf.Clamp01(nativeGaugeSum / nativeGaugeCount);
+                        }
+                        else if (maxResource > 0.0001)
+                        {
+                            _stagePropellantFraction = Mathf.Clamp01((float)(currentResource / maxResource));
+                        }
+                        else
+                        {
+                            _stagePropellantFraction = -1.0f;
+                        }
                         _stagePropellantName = detectedProp;
                         _cachedTotalThrust = thrust;
                     }
@@ -467,8 +539,25 @@ namespace ModularFlightPanel.Core
                             {
                                 var grp = mgrStages[i];
                                 if (grp == null) continue;
-                                int stgNum = (grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
-                                var partIcons = GetStagePartIcons(stgNum);
+
+                                int stgNum = -1;
+                                if (_stageGroupUiStageIndexField == null)
+                                {
+                                    _stageGroupUiStageIndexField = typeof(KSP.UI.Screens.StageGroup).GetField("uiStageIndex", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                                }
+                                var uiTmp = _stageGroupUiStageIndexField?.GetValue(grp) as TMPro.TextMeshProUGUI;
+                                if (uiTmp != null && int.TryParse(uiTmp.text, out int parsedNum))
+                                {
+                                    stgNum = parsedNum;
+                                }
+                                else
+                                {
+                                    stgNum = (grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
+                                }
+
+                                var partIcons = ExtractIconsFromStageGroup(grp);
+                                _cachedStagePartIcons[stgNum] = partIcons;
+                                bool hasIcons = partIcons != null && partIcons.Count > 0;
 
                                 double dv = 0.0;
                                 double time = 0.0;
@@ -476,26 +565,35 @@ namespace ModularFlightPanel.Core
                                 double isp = 0.0;
                                 bool hasDv = false;
 
-                                if (mjStageMap != null && mjStageMap.TryGetValue(stgNum, out var mjStat))
+                                // Tier 1: Check StageGroup.stage (Stock DeltaVStageInfo)
+                                if (_stageGroupStageField == null)
+                                {
+                                    _stageGroupStageField = typeof(KSP.UI.Screens.StageGroup).GetField("stage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                                }
+                                DeltaVStageInfo stgInfo = _stageGroupStageField?.GetValue(grp) as DeltaVStageInfo;
+                                if (stgInfo == null && vdv != null)
+                                {
+                                    stgInfo = vdv.GetStage(stgNum);
+                                }
+
+                                if (stgInfo != null)
+                                {
+                                    dv = stgInfo.deltaVActual;
+                                    time = stgInfo.stageBurnTime;
+                                    twrVal = stgInfo.TWRActual;
+                                    isp = stgInfo.ispActual;
+                                    hasDv = (dv > 0.01 || time > 0.01);
+                                }
+
+                                // Tier 2: MechJeb fallback ONLY if stock has no dv AND stage has icons!
+                                // Empty stages (hasIcons == false) must NEVER receive MechJeb ΔV!
+                                if (!hasDv && hasIcons && mjStageMap != null && mjStageMap.TryGetValue(stgNum, out var mjStat))
                                 {
                                     dv = mjStat.DeltaV;
                                     time = mjStat.BurnTime;
                                     twrVal = mjStat.TWR;
                                     isp = mjStat.Isp;
                                     hasDv = (dv > 0.01 || time > 0.01);
-                                }
-
-                                if (!hasDv)
-                                {
-                                    DeltaVStageInfo stgInfo = vdv != null ? vdv.GetStage(stgNum) : null;
-                                    if (stgInfo != null)
-                                    {
-                                        dv = stgInfo.deltaVActual;
-                                        time = stgInfo.stageBurnTime;
-                                        twrVal = stgInfo.TWRActual;
-                                        isp = stgInfo.ispActual;
-                                        hasDv = (dv > 0.01 || time > 0.01);
-                                    }
                                 }
 
                                 bool isActive = (stgNum == curStg);
@@ -621,6 +719,12 @@ namespace ModularFlightPanel.Core
             catch (Exception) { }
         }
 
+        public void InvalidateStagePartIcons()
+        {
+            _lastStageIconScanTime = -999f;
+            _cachedStagePartIcons.Clear();
+        }
+
         private IReadOnlyList<StagePartIconData> GetStagePartIcons(int stageNum)
         {
             float now = Time.unscaledTime;
@@ -649,110 +753,201 @@ namespace ModularFlightPanel.Core
                         var grp = mgrStages[i];
                         if (grp == null) continue;
                         int stg = (grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
-                        if (!_cachedStagePartIcons.TryGetValue(stg, out var iconList))
-                        {
-                            iconList = new List<StagePartIconData>();
-                            _cachedStagePartIcons[stg] = iconList;
-                        }
-
-                        var grpIcons = grp.Icons;
-                        if (grpIcons == null || grpIcons.Count == 0) continue;
-
-                        for (int j = 0; j < grpIcons.Count; j++)
-                        {
-                            var icon = grpIcons[j];
-                            if (icon == null) continue;
-
-                            string typeStr = icon.iconType.ToString();
-                            int typeIdx = (int)icon.iconType;
-                            int count = (icon.grouped && icon.groupedIcons != null && icon.groupedIcons.Count > 0) ? icon.groupedIcons.Count + 1 : 1;
-                            if (icon.Part != null && icon.Part.symmetryCounterparts != null && icon.Part.symmetryCounterparts.Count + 1 > count)
-                            {
-                                count = icon.Part.symmetryCounterparts.Count + 1;
-                            }
-
-                            string partTitle = string.Empty;
-                            string propName = null;
-                            float propFrac = -1f;
-                            uint flightId = 0;
-
-                            if (icon.Part != null)
-                            {
-                                flightId = icon.Part.flightID;
-                                if (flightId == 0) flightId = icon.Part.craftID;
-                                if (flightId == 0) flightId = (uint)icon.Part.persistentId;
-                                partTitle = icon.Part.partInfo != null ? icon.Part.partInfo.title : icon.Part.name;
-                                if (icon.Part.Resources != null)
-                                {
-                                    var res = icon.Part.Resources;
-                                    for (int r = 0; r < res.Count; r++)
-                                    {
-                                        var resItem = res[r];
-                                        if (resItem != null && resItem.maxAmount > 0)
-                                        {
-                                            string rName = resItem.resourceName;
-                                            if (rName.IndexOf("Solid", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            {
-                                                propName = "Solid Fuel";
-                                                propFrac = (float)(resItem.amount / resItem.maxAmount);
-                                                break;
-                                            }
-                                            else if (rName.IndexOf("Liquid", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            {
-                                                propName = "Liquid Fuel";
-                                                propFrac = (float)(resItem.amount / resItem.maxAmount);
-                                                break;
-                                            }
-                                            else if (rName.IndexOf("Propellant", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            {
-                                                propName = "Mono";
-                                                propFrac = (float)(resItem.amount / resItem.maxAmount);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Rect uv = default;
-                            bool hasUv = false;
-                            if (_stageIconImageField == null)
-                            {
-                                _stageIconImageField = typeof(KSP.UI.Screens.StageIcon).GetField("iconImage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
-                            }
-                            var rawImg = _stageIconImageField?.GetValue(icon) as UnityEngine.UI.RawImage;
-                            if (rawImg != null)
-                            {
-                                Rect rUv = rawImg.uvRect;
-                                if (rUv.width > 0.01f && rUv.width < 0.5f && rUv.height > 0.01f && rUv.height < 0.5f)
-                                {
-                                    uv = rUv;
-                                    hasUv = true;
-                                }
-                            }
-
-                            int existingIdx = iconList.FindIndex(p => p.IconType == typeStr && p.PartTitle == partTitle);
-                            if (existingIdx >= 0)
-                            {
-                                var exist = iconList[existingIdx];
-                                exist.Count += count;
-                                if (propFrac >= 0 && exist.PropellantFraction < 0)
-                                {
-                                    exist.PropellantName = propName;
-                                    exist.PropellantFraction = propFrac;
-                                }
-                                iconList[existingIdx] = exist;
-                            }
-                            else
-                            {
-                                iconList.Add(new StagePartIconData(typeStr, typeIdx, count, partTitle, propName, propFrac, uv, hasUv, flightId));
-                            }
-                        }
+                        _cachedStagePartIcons[stg] = ExtractIconsFromStageGroup(grp);
                     }
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[ModularFlightPanel] RefreshStagePartIcons warning: {ex.Message}");
+            }
+        }
+
+        private List<StagePartIconData> ExtractIconsFromStageGroup(KSP.UI.Screens.StageGroup grp)
+        {
+            if (grp == null || grp.Icons == null || grp.Icons.Count == 0)
+            {
+                return new List<StagePartIconData>(0);
+            }
+
+            var iconList = new List<StagePartIconData>(grp.Icons.Count);
+            for (int j = 0; j < grp.Icons.Count; j++)
+            {
+                var icon = grp.Icons[j];
+                if (icon == null) continue;
+                AppendSingleIcon(iconList, icon);
+            }
+            return iconList;
+        }
+
+        private void AppendSingleIcon(List<StagePartIconData> iconList, KSP.UI.Screens.StageIcon icon)
+        {
+            if (icon == null) return;
+            string typeStr = icon.iconType.ToString();
+            int typeIdx = (int)icon.iconType;
+            int count = (icon.grouped && icon.groupedIcons != null && icon.groupedIcons.Count > 0) ? icon.groupedIcons.Count + 1 : 1;
+            if (icon.Part != null && icon.Part.symmetryCounterparts != null && icon.Part.symmetryCounterparts.Count + 1 > count)
+            {
+                count = icon.Part.symmetryCounterparts.Count + 1;
+            }
+
+            string partTitle = string.Empty;
+            string propName = null;
+            float propFrac = -1f;
+            uint flightId = 0;
+
+            if (icon.Part != null)
+            {
+                flightId = icon.Part.flightID;
+                if (flightId == 0) flightId = icon.Part.craftID;
+                if (flightId == 0) flightId = (uint)icon.Part.persistentId;
+                partTitle = icon.Part.partInfo != null ? icon.Part.partInfo.title : icon.Part.name;
+            }
+
+            // 1. Hook ProtoStageIcon / ProtoStageIconInfo (原版及 Mod 逐部件实时仪表)
+            if (_stageIconProtoIconField == null)
+            {
+                _stageIconProtoIconField = typeof(KSP.UI.Screens.StageIcon).GetField("protoIcon", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            }
+            KSP.UI.Screens.ProtoStageIcon proto = icon.ProtoIcon ?? (_stageIconProtoIconField?.GetValue(icon) as KSP.UI.Screens.ProtoStageIcon);
+            if (proto == null && icon.Part != null)
+            {
+                proto = icon.Part.stackIcon;
+            }
+
+            if (proto != null)
+            {
+                if (_protoIconInfoBoxesField == null)
+                {
+                    _protoIconInfoBoxesField = typeof(KSP.UI.Screens.ProtoStageIcon).GetField("infoBoxes", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                }
+                var boxes = _protoIconInfoBoxesField?.GetValue(proto) as List<KSP.UI.Screens.ProtoStageIconInfo>;
+                if (boxes != null && boxes.Count > 0)
+                {
+                    for (int b = 0; b < boxes.Count; b++)
+                    {
+                        var box = boxes[b];
+                        if (box != null && box.pBarValue >= 0f)
+                        {
+                            propFrac = Mathf.Clamp01(box.pBarValue);
+                            propName = !string.IsNullOrEmpty(box.pBarCaption) ? box.pBarCaption : box.msg;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 2. 检查部件上的 ModuleEngines 与 PropellantGauges
+            if (propFrac < 0f && icon.Part != null)
+            {
+                var engines = icon.Part.FindModulesImplementing<ModuleEngines>();
+                if (engines != null && engines.Count > 0)
+                {
+                    if (_moduleEnginesPropellantGaugesField == null)
+                    {
+                        _moduleEnginesPropellantGaugesField = typeof(ModuleEngines).GetField("PropellantGauges", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                    }
+                    for (int e = 0; e < engines.Count && propFrac < 0f; e++)
+                    {
+                        var eng = engines[e];
+                        if (eng == null) continue;
+                        var gauges = _moduleEnginesPropellantGaugesField?.GetValue(eng) as Dictionary<Propellant, KSP.UI.Screens.ProtoStageIconInfo>;
+                        if (gauges != null && gauges.Count > 0)
+                        {
+                            foreach (var kvp in gauges)
+                            {
+                                var gauge = kvp.Value;
+                                if (gauge != null && gauge.pBarValue >= 0f)
+                                {
+                                    propFrac = Mathf.Clamp01(gauge.pBarValue);
+                                    propName = !string.IsNullOrEmpty(gauge.pBarCaption) ? gauge.pBarCaption : (kvp.Key?.displayName ?? kvp.Key?.name);
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 若仪表未初始化，强制 un-cached (cache=false) 换算联通储箱余量
+                        if (propFrac < 0f && eng.propellants != null && eng.propellants.Count > 0)
+                        {
+                            double eCur = 0, eMax = 0;
+                            for (int pIdx = 0; pIdx < eng.propellants.Count; pIdx++)
+                            {
+                                var pDef = eng.propellants[pIdx];
+                                if (pDef == null || pDef.name == "ElectricCharge" || pDef.name == "IntakeAir") continue;
+                                double pAvail = 0, pCap = 0;
+                                icon.Part.GetConnectedResourceTotals(pDef.id, pDef.GetFlowMode(), out pAvail, out pCap, false);
+                                if (pCap > 0.0001)
+                                {
+                                    eCur += pAvail;
+                                    eMax += pCap;
+                                    if (string.IsNullOrEmpty(propName)) propName = pDef.displayName ?? pDef.name;
+                                }
+                            }
+                            if (eMax > 0.0001)
+                            {
+                                propFrac = Mathf.Clamp01((float)(eCur / eMax));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. 部件直属资源兜底
+            if (propFrac < 0f && icon.Part != null && icon.Part.Resources != null)
+            {
+                var res = icon.Part.Resources;
+                for (int r = 0; r < res.Count; r++)
+                {
+                    var resItem = res[r];
+                    if (resItem != null && resItem.maxAmount > 0.0001)
+                    {
+                        string rName = resItem.resourceName;
+                        if (rName.IndexOf("Solid", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            rName.IndexOf("Liquid", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            rName.IndexOf("Hydrogen", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            rName.IndexOf("Methane", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            rName.IndexOf("Propellant", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            propName = resItem.info?.displayName ?? rName;
+                            propFrac = Mathf.Clamp01((float)(resItem.amount / resItem.maxAmount));
+                            break;
+                        }
+                    }
+                }
+            }
+
+            Rect uv = default;
+            bool hasUv = false;
+            if (_stageIconImageField == null)
+            {
+                _stageIconImageField = typeof(KSP.UI.Screens.StageIcon).GetField("iconImage", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            }
+            var rawImg = _stageIconImageField?.GetValue(icon) as UnityEngine.UI.RawImage;
+            if (rawImg != null)
+            {
+                Rect rUv = rawImg.uvRect;
+                if (rUv.width > 0.01f && rUv.width < 0.5f && rUv.height > 0.01f && rUv.height < 0.5f)
+                {
+                    uv = rUv;
+                    hasUv = true;
+                }
+            }
+
+            int existingIdx = iconList.FindIndex(p => p.IconType == typeStr && p.PartTitle == partTitle);
+            if (existingIdx >= 0)
+            {
+                var exist = iconList[existingIdx];
+                exist.Count += count;
+                if (propFrac >= 0 && exist.PropellantFraction < 0)
+                {
+                    exist.PropellantName = propName;
+                    exist.PropellantFraction = propFrac;
+                }
+                iconList[existingIdx] = exist;
+            }
+            else
+            {
+                iconList.Add(new StagePartIconData(typeStr, typeIdx, count, partTitle, propName, propFrac, uv, hasUv, flightId));
             }
         }
     }

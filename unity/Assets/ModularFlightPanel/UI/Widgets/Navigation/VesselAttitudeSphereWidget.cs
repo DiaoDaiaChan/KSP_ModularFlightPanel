@@ -785,6 +785,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         public override void ApplyTheme(ThemeConfig theme)
         {
+            base.ApplyTheme(theme);
             if (theme == null) return;
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
@@ -843,6 +844,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
 
             this.Controls.ApplyThemeToControls(theme);
+            MarkRenderDirty();
         }
 
         protected override void LateUpdate()
@@ -979,46 +981,9 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
                 case "BODY_SURFACE":
                 case "BODY_FIXED":
-                {
-                    // Principia 地固参考系 (Body-Centred Body-Fixed / ECEF):
-                    // 严格与 Principia 官方 navball_surface 保持一致：北半球 (+lat / +Y) 对应大地棕色，南半球 (-lat / -Y) 对应海洋与天蓝色
-                    Color bGndH = WidgetStyleManager.WithAlpha(theme.GroundColor, 0.55f);
-                    Color bGndN = WidgetStyleManager.WithAlpha(WidgetStyleManager.Darken(theme.GroundColor, 0.55f), 0.40f);
-                    Color bSkyH = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.55f);
-                    Color bSkyZ = WidgetStyleManager.WithAlpha(theme.SkyColor, 0.40f);
-                    return new NavballFramePalette
-                    {
-                        SkyZenith = bGndN,
-                        SkyHorizon = bGndH,
-                        GroundHorizon = bSkyH,
-                        GroundNadir = bSkyZ,
-                        Equator = WidgetStyleManager.WithAlpha(theme.HorizonLineColor, 0.85f),
-                        PitchLadder = WidgetStyleManager.WithAlpha(theme.GridColor, 0.65f),
-                        HeadingLine = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.45f),
-                        Rim = WidgetStyleManager.WithAlpha(theme.RimGlowColor, 0.70f)
-                    };
-                }
                 case "SURFACE":
                 default:
-                    Color skyZ = WidgetStyleManager.WithAlpha(theme.SkyColor, 0.40f);
-                    Color skyH = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.55f);
-                    Color gndH = WidgetStyleManager.WithAlpha(theme.GroundColor, 0.55f);
-                    Color gndN = WidgetStyleManager.WithAlpha(WidgetStyleManager.Darken(gndH, 0.55f), 0.40f);
-                    Color eq = theme.HorizonLineColor;
-                    Color pitch = WidgetStyleManager.WithAlpha(theme.GridColor, 0.65f);
-                    Color hdg = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.45f);
-                    Color rim = WidgetStyleManager.WithAlpha(theme.RimGlowColor, 0.70f);
-                    return new NavballFramePalette
-                    {
-                        SkyZenith = skyZ,
-                        SkyHorizon = skyH,
-                        GroundHorizon = gndH,
-                        GroundNadir = gndN,
-                        Equator = eq,
-                        PitchLadder = pitch,
-                        HeadingLine = hdg,
-                        Rim = rim
-                    };
+                    return WidgetStyleManager.Instance.GetAttitudeSurfacePalette(theme);
             }
         }
 

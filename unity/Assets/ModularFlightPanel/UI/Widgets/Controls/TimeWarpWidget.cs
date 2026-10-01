@@ -429,6 +429,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void ApplyTheme(ThemeConfig theme)
         {
+            base.ApplyTheme(theme);
             _currentTheme = theme;
             theme = WidgetStyleManager.ResolveTheme(theme);
 

@@ -515,7 +515,7 @@ namespace ModularFlightPanel.UI
 
             _buttonBgNormalTable[(int)ButtonVisualRole.Normal] = Tint(baseBg, Color.white, p.CardInteractiveLighten, 0f, p.ButtonBgAlpha);
             _buttonBgNormalTable[(int)ButtonVisualRole.Primary] = Tint(baseBg, Color.white, p.CardInteractiveLighten, 0f, p.ButtonBgAlpha);
-            _buttonBgNormalTable[(int)ButtonVisualRole.ActiveToggle] = Dim(pri, p.ButtonActiveDim, p.ButtonBgAlpha);
+            _buttonBgNormalTable[(int)ButtonVisualRole.ActiveToggle] = Tint(baseBg, pri, 0.40f, 0f, p.ButtonBgAlpha);
             _buttonBgNormalTable[(int)ButtonVisualRole.Warning] = Tint(baseBg, warn, p.ButtonWarningTint, 0f, p.ButtonBgAlpha);
             _buttonBgNormalTable[(int)ButtonVisualRole.Danger] = Tint(baseBg, dang, p.ButtonDangerTint, 0f, p.ButtonBgAlpha);
 
@@ -756,6 +756,58 @@ namespace ModularFlightPanel.UI
                 PitchLadder = GetLineColor(Lighten(identityColor, p.FramePitchLighten), LineWeight.Heavy, theme),
                 HeadingLine = GetLineColor(identityColor, LineWeight.Strong, theme),
                 Rim = identityColor
+            };
+        }
+
+        private static readonly Color StandardSkyZenith = new Color(0.04f, 0.35f, 0.80f, 1.0f);
+        private static readonly Color StandardGroundHorizon = new Color(0.76f, 0.38f, 0.08f, 1.0f);
+        private static readonly Color StandardLadderWhite = new Color(0.95f, 0.98f, 1.0f, 0.85f);
+
+        /// <summary>
+        /// 获取地表系 / 体固系 (SURFACE / BODY_FIXED / BODY_SURFACE) 权威航电调色板。
+        /// 上半球湛蓝天穹，下半球经典航空暖橙大地，彻底杜绝组件内部硬编码字面量。
+        /// </summary>
+        public NavballFramePalette GetNavballSurfacePalette(ThemeConfig theme = null)
+        {
+            theme = ResolveTheme(theme);
+            Color rawGnd = (theme != null) ? (Color)theme.GroundColor : StandardGroundHorizon;
+            Color gndH = (rawGnd.r > 0.45f && rawGnd.g > 0.18f) ? rawGnd : StandardGroundHorizon;
+            Color gndN = Darken(gndH, 0.55f);
+
+            Color rawSky = (theme != null) ? (Color)theme.SkyColor : StandardSkyZenith;
+            Color skyZ = (rawSky.b > 0.40f) ? rawSky : StandardSkyZenith;
+            Color skyH = Lighten(skyZ, 0.22f);
+
+            return new NavballFramePalette
+            {
+                SkyZenith = skyZ,
+                SkyHorizon = skyH,
+                GroundHorizon = gndH,
+                GroundNadir = gndN,
+                Equator = theme != null ? (Color)theme.HorizonLineColor : Color.white,
+                PitchLadder = StandardLadderWhite,
+                HeadingLine = theme != null ? (Color)theme.AccentPrimary : Color.green,
+                Rim = theme != null ? (Color)theme.RimGlowColor : Color.cyan
+            };
+        }
+
+        /// <summary>
+        /// 获取半透明姿态球组件 (VesselAttitudeSphereWidget) 在地表系 / 体固系下的调色板。
+        /// </summary>
+        public NavballFramePalette GetAttitudeSurfacePalette(ThemeConfig theme = null)
+        {
+            theme = ResolveTheme(theme);
+            NavballFramePalette p = GetNavballSurfacePalette(theme);
+            return new NavballFramePalette
+            {
+                SkyZenith = WithAlpha(p.SkyZenith, 0.40f),
+                SkyHorizon = WithAlpha(p.SkyHorizon, 0.55f),
+                GroundHorizon = WithAlpha(p.GroundHorizon, 0.55f),
+                GroundNadir = WithAlpha(p.GroundNadir, 0.40f),
+                Equator = WithAlpha(p.Equator, 0.85f),
+                PitchLadder = WithAlpha(p.PitchLadder, 0.85f),
+                HeadingLine = WithAlpha(p.HeadingLine, 0.45f),
+                Rim = WithAlpha(p.Rim, 0.70f)
             };
         }
 

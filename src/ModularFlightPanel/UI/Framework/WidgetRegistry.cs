@@ -493,10 +493,10 @@ namespace ModularFlightPanel.UI
             RegisterExactId<ElectricalSystemWidget>("custom.elec");
             RegisterExactId<ElectricalSystemWidget>("core.electrical");
 
-            RegisterExactId<Rocket2DWidget>("custom.rocket");
-            RegisterExactId<Rocket2DWidget>("custom.stage");
-            RegisterExactId<Rocket2DWidget>("custom.staging");
-            RegisterExactId<Rocket2DWidget>("core.rocket2d");
+            RegisterExactId<StagingSequenceWidget>("custom.rocket");
+            RegisterExactId<StagingSequenceWidget>("custom.stage");
+            RegisterExactId<StagingSequenceWidget>("custom.staging");
+            RegisterExactId<StagingSequenceWidget>("core.rocket2d");
 
             RegisterExactId<LifeSupportWidget>("custom.life");
             RegisterExactId<LifeSupportWidget>("custom.life_support");

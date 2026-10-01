@@ -289,6 +289,13 @@ namespace ModularFlightPanel.Core
             BuiltinZhCN["UI_REF_FRAME"] = "参考系";
             BuiltinZhCN["UI_DRAG_MODE_ACTIVE"] = "🎯 [拖拽模式中] 点击锁定";
             BuiltinZhCN["UI_DRAG_MODE_IDLE"] = "🎯 [开启自由拖拽]";
+            BuiltinZhCN["UI_BTN_CANVAS_MODE"] = "📐 画布自由排版";
+            BuiltinZhCN["UI_TOAST_ENTER_CANVAS"] = "📐 已进入画布自由排版模式 (点击药丸栏返回工作台)";
+            BuiltinZhCN["UI_TOAST_EXIT_CANVAS"] = "✔ 已返回航电工程工作台";
+            BuiltinZhCN["UI_CANVAS_DOCK_TITLE"] = "画布自由排版";
+            BuiltinZhCN["UI_CANVAS_SEL_COUNT"] = "已选 {0} 项";
+            BuiltinZhCN["UI_CANVAS_DRAG_HINT"] = "拖拽/旋转调整中";
+            BuiltinZhCN["UI_CANVAS_RETURN_WORKBENCH"] = "✔ 返回工坊 (Alt+N)";
             BuiltinZhCN["UI_NAVBALL_ON"] = "🌐 姿态球: 开";
             BuiltinZhCN["UI_NAVBALL_OFF"] = "🌐 姿态球: 关";
             BuiltinZhCN["UI_TAB_LIBRARY"] = "📦 航电库";
@@ -307,6 +314,9 @@ namespace ModularFlightPanel.Core
             BuiltinZhCN["WIDGET_ALERT_READY"] = "就绪";
             BuiltinZhCN["WIDGET_ALERT_ARMED"] = "待命";
             BuiltinZhCN["WIDGET_ALERT_NORM"] = "正常";
+            BuiltinZhCN["WIDGET_STAGE_TRIGGER_FMT"] = "分级 S{0:00}";
+            BuiltinZhCN["WIDGET_STAGE_NO_STAGE"] = "无分级";
+            BuiltinZhCN["WIDGET_STAGE_LOCKED"] = "锁定";
 
             // 轨道六根数 i18n 键
             BuiltinZhCN["ORBIT_ELEM_SMA"] = "a";
@@ -340,6 +350,13 @@ namespace ModularFlightPanel.Core
             BuiltinEnUS["UI_REF_FRAME"] = "Frame";
             BuiltinEnUS["UI_DRAG_MODE_ACTIVE"] = "🎯 [Drag Mode] Click to Lock";
             BuiltinEnUS["UI_DRAG_MODE_IDLE"] = "🎯 [Enable Drag Mode]";
+            BuiltinEnUS["UI_BTN_CANVAS_MODE"] = "📐 Canvas Layout";
+            BuiltinEnUS["UI_TOAST_ENTER_CANVAS"] = "📐 Entered Canvas Layout Mode (Click floating dock to return)";
+            BuiltinEnUS["UI_TOAST_EXIT_CANVAS"] = "✔ Returned to Avionics Workbench";
+            BuiltinEnUS["UI_CANVAS_DOCK_TITLE"] = "Canvas Layout Mode";
+            BuiltinEnUS["UI_CANVAS_SEL_COUNT"] = "{0} selected";
+            BuiltinEnUS["UI_CANVAS_DRAG_HINT"] = "Dragging / Rotating...";
+            BuiltinEnUS["UI_CANVAS_RETURN_WORKBENCH"] = "✔ Return to Studio (Alt+N)";
             BuiltinEnUS["UI_NAVBALL_ON"] = "🌐 Navball: ON";
             BuiltinEnUS["UI_NAVBALL_OFF"] = "🌐 Navball: OFF";
             BuiltinEnUS["UI_TAB_LIBRARY"] = "📦 Library";
@@ -358,6 +375,9 @@ namespace ModularFlightPanel.Core
             BuiltinEnUS["WIDGET_ALERT_READY"] = "READY";
             BuiltinEnUS["WIDGET_ALERT_ARMED"] = "ARMED";
             BuiltinEnUS["WIDGET_ALERT_NORM"] = "NORM";
+            BuiltinEnUS["WIDGET_STAGE_TRIGGER_FMT"] = "STAGE S{0:00}";
+            BuiltinEnUS["WIDGET_STAGE_NO_STAGE"] = "NO STAGE";
+            BuiltinEnUS["WIDGET_STAGE_LOCKED"] = "LOCKED";
 
             // Orbital elements i18n keys
             BuiltinEnUS["ORBIT_ELEM_SMA"] = "a";

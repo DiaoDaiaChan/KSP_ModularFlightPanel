@@ -67,14 +67,9 @@ namespace ModularFlightPanel.UI.Widgets
     }
 
     /// <summary>
-    /// 常用 MOD 独立快捷面板 / 快速启动坞 (Favorite Mods Quick Dock - core.dock_favorites)
-    /// 
-    /// 专用于从 20+ MOD 工具栏中将核心常用模组 (如 MechJeb, KER, Trajectories, DPAI, Alarm) 独立置顶：
-    /// 1. 独立浮动 / 停靠面板：可在屏幕任意位置放置 (默认屏幕下边缘 / 姿态球上方)，不与主工具栏抢占视口；
-    /// 2. 100% 原始高清贴图与事件穿透：左键开关、右键菜单、悬浮提示完全兼容原版与第三方插件；
-    /// 3. 多构型自适应：横向单行 (极简快速启动条)、纵向单列、横向双行自由切换；
-    /// 4. 实时双向同步：状态 LED 微光灯、按钮激活状态、贴图热更新与主工具栏保持毫秒级一致；
-    /// 5. 0 颜色字面量与 100% 纯 C# 解耦架构，符合 MFP-SPEC-001..007 全量航电标准。
+    /// [已废弃 / DEPRECATED] 常用 MOD 独立快捷面板 / 快速启动坞 (Favorite Mods Quick Dock - core.dock_favorites)
+    /// 提示：常用 MOD 收藏与快捷功能现已全面收拢至【编辑模式顶部悬浮工具栏 (HUDEditModeToolbar)】与【航电工坊 (TabStudio)】，
+    /// 本独立小组件不再在飞行 HUD 画布上常驻实例化，仅作为旧版布局反序列化兼容保留。
     /// </summary>
     /// <summary>
     /// 常用快捷坞零 GC 不可变遥测快照 (MFP-SPEC-012)

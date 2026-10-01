@@ -154,6 +154,28 @@ namespace ModularFlightPanel.Core
         public double NetEcRate { get; private set; } = 0.0;
         public float BusVoltage { get; private set; } = 28.0f;
         public double SolarPower { get; private set; } = 0.0;
+        public int SolarPanelsTotal { get; private set; } = 4;
+        public int SolarPanelsActive { get; private set; } = 4;
+        public double RtgPower { get; private set; } = 0.0;
+        public int RtgCount { get; private set; } = 0;
+        public double FuelCellPower { get; private set; } = 0.0;
+        public int FuelCellCount { get; private set; } = 0;
+        public int FuelCellActiveCount { get; private set; } = 0;
+        public double AlternatorPower { get; private set; } = 0.0;
+        public int AlternatorCount { get; private set; } = 0;
+        public double TotalPowerGeneration { get; private set; } = 0.0;
+        public double TotalPowerConsumption { get; private set; } = 0.0;
+        public double TimeToDepletionSeconds { get; private set; } = double.NaN;
+        public double TimeToFullSeconds { get; private set; } = double.NaN;
+
+        private static readonly BatteryTelemetryInfo[] DefaultSimulationBatteries = new BatteryTelemetryInfo[]
+        {
+            new BatteryTelemetryInfo("Z-1k Battery Bank #1", 200.0, 200.0, true, true),
+            new BatteryTelemetryInfo("Z-400 Aux Battery #2", 150.0, 150.0, true, true),
+            new BatteryTelemetryInfo("Command Pod Internal Battery", 50.0, 50.0, true, false)
+        };
+
+        public IReadOnlyList<BatteryTelemetryInfo> Batteries { get; private set; } = DefaultSimulationBatteries;
 
         private static readonly CommLinkInfo[] DefaultSimulationLinks = new CommLinkInfo[]
         {
@@ -424,10 +446,10 @@ namespace ModularFlightPanel.Core
         public void InsertSimulatedStage(int stageIndex)
         {
             var list = new List<StageDeltaVInfo>(StageDeltaVList);
-            int insertPos = 0;
+            int insertPos = list.Count;
             for (int i = 0; i < list.Count; i++)
             {
-                if (list[i].Stage <= stageIndex)
+                if (list[i].Stage < stageIndex)
                 {
                     insertPos = i;
                     break;
@@ -505,7 +527,9 @@ namespace ModularFlightPanel.Core
                 var fromParts = new List<StagePartIconData>(list[fromStageIdx].PartIcons);
                 for (int p = 0; p < fromParts.Count; p++)
                 {
-                    if ((partFlightId > 0 && fromParts[p].PartFlightId == partFlightId) || (partIndex == p))
+                    bool match = (partFlightId > 0 && fromParts[p].PartFlightId == partFlightId) ||
+                                 (partFlightId == 0 && partIndex == p);
+                    if (match)
                     {
                         foundPart = fromParts[p];
                         fromParts.RemoveAt(p);
@@ -524,6 +548,101 @@ namespace ModularFlightPanel.Core
                     var toStageInfo = list[toStageIdx];
                     list[toStageIdx] = new StageDeltaVInfo(toStageInfo.Stage, toStageInfo.DeltaV, toStageInfo.BurnTime, toStageInfo.TWR, toStageInfo.Isp, toStageInfo.IsActive, toParts);
 
+                    StageDeltaVList = list;
+                }
+            }
+        }
+
+        public void ReorderSimulatedPartInStage(uint partFlightId, int stage, int fromIndex, int toIndex)
+        {
+            var list = new List<StageDeltaVInfo>(StageDeltaVList);
+            int stageIdx = -1;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Stage == stage) { stageIdx = i; break; }
+            }
+
+            if (stageIdx >= 0)
+            {
+                var parts = new List<StagePartIconData>(list[stageIdx].PartIcons);
+                if (fromIndex >= 0 && fromIndex < parts.Count)
+                {
+                    var item = parts[fromIndex];
+                    parts.RemoveAt(fromIndex);
+                    int safeTo = Math.Max(0, Math.Min(toIndex, parts.Count));
+                    parts.Insert(safeTo, item);
+                    var stgInfo = list[stageIdx];
+                    list[stageIdx] = new StageDeltaVInfo(stgInfo.Stage, stgInfo.DeltaV, stgInfo.BurnTime, stgInfo.TWR, stgInfo.Isp, stgInfo.IsActive, parts);
+                    StageDeltaVList = list;
+                }
+            }
+        }
+
+        public void ToggleSimulatedSymmetry(uint partFlightId, int stage, int partIndex)
+        {
+            var list = new List<StageDeltaVInfo>(StageDeltaVList);
+            int stageIdx = -1;
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i].Stage == stage) { stageIdx = i; break; }
+            }
+
+            if (stageIdx >= 0)
+            {
+                var parts = new List<StagePartIconData>(list[stageIdx].PartIcons);
+                int targetIdx = -1;
+                if (partFlightId > 0)
+                {
+                    for (int p = 0; p < parts.Count; p++)
+                    {
+                        if (parts[p].PartFlightId == partFlightId) { targetIdx = p; break; }
+                    }
+                }
+                if (targetIdx < 0 && partIndex >= 0 && partIndex < parts.Count)
+                {
+                    targetIdx = partIndex;
+                }
+
+                if (targetIdx >= 0)
+                {
+                    var item = parts[targetIdx];
+                    if (item.Count > 1 && !item.IsExpanded)
+                    {
+                        // 展开对称组为多个单件芯片
+                        int total = item.Count;
+                        item.IsExpanded = true;
+                        item.Count = 1;
+                        item.IsGroupLeader = true;
+                        parts[targetIdx] = item;
+                        for (int k = 1; k < total; k++)
+                        {
+                            parts.Insert(targetIdx + k, new StagePartIconData(
+                                item.IconType, item.IconTypeIndex, 1, item.PartTitle, item.PropellantName,
+                                item.PropellantFraction, item.StockUvRect, item.HasStockUv,
+                                item.PartFlightId > 0 ? (uint)(item.PartFlightId + (uint)(k * 10000)) : 0,
+                                isGroupLeader: false, isExpanded: true));
+                        }
+                    }
+                    else if (item.IsExpanded)
+                    {
+                        // 折叠对称组回单件复合芯片
+                        int foldCount = 1;
+                        for (int k = targetIdx + 1; k < parts.Count; )
+                        {
+                            if (!parts[k].IsGroupLeader && parts[k].IconType == item.IconType && parts[k].PartTitle == item.PartTitle)
+                            {
+                                foldCount++;
+                                parts.RemoveAt(k);
+                            }
+                            else break;
+                        }
+                        item.IsExpanded = false;
+                        item.Count = foldCount;
+                        parts[targetIdx] = item;
+                    }
+
+                    var stgInfo = list[stageIdx];
+                    list[stageIdx] = new StageDeltaVInfo(stgInfo.Stage, stgInfo.DeltaV, stgInfo.BurnTime, stgInfo.TWR, stgInfo.Isp, stgInfo.IsActive, parts);
                     StageDeltaVList = list;
                 }
             }
@@ -574,6 +693,12 @@ namespace ModularFlightPanel.Core
                     NetEcRate = 0.0;
                     BusVoltage = 28.2f;
                     SolarPower = 0.0;
+                    SolarPanelsTotal = 4;
+                    SolarPanelsActive = 0;
+                    TotalPowerGeneration = 0.0;
+                    TotalPowerConsumption = 0.0;
+                    TimeToDepletionSeconds = double.NaN;
+                    TimeToFullSeconds = double.NaN;
                     CommSignal = 1.0;
                     IsConnected = true;
                     ControlLevelStr = "FULL CONTROL";
@@ -610,6 +735,12 @@ namespace ModularFlightPanel.Core
                     ElectricCharge = 385.0;
                     NetEcRate = -0.85;
                     BusVoltage = 27.6f;
+                    TotalPowerGeneration = 0.0;
+                    TotalPowerConsumption = 0.85;
+                    SolarPanelsTotal = 4;
+                    SolarPanelsActive = 0;
+                    TimeToDepletionSeconds = 385.0 / 0.85;
+                    TimeToFullSeconds = double.NaN;
                     break;
 
                 case FlightScenario.MaxQ:
@@ -638,6 +769,12 @@ namespace ModularFlightPanel.Core
                     ElectricCharge = 370.0;
                     NetEcRate = -1.2;
                     BusVoltage = 27.2f;
+                    TotalPowerGeneration = 0.0;
+                    TotalPowerConsumption = 1.2;
+                    SolarPanelsTotal = 4;
+                    SolarPanelsActive = 0;
+                    TimeToDepletionSeconds = 370.0 / 1.2;
+                    TimeToFullSeconds = double.NaN;
                     break;
 
                 case FlightScenario.MECOAndStaging:
@@ -666,6 +803,12 @@ namespace ModularFlightPanel.Core
                     ElectricCharge = 355.0;
                     NetEcRate = -0.4;
                     BusVoltage = 26.9f;
+                    TotalPowerGeneration = 0.0;
+                    TotalPowerConsumption = 0.4;
+                    SolarPanelsTotal = 4;
+                    SolarPanelsActive = 0;
+                    TimeToDepletionSeconds = 355.0 / 0.4;
+                    TimeToFullSeconds = double.NaN;
                     break;
 
                 case FlightScenario.OrbitalCruise:
@@ -706,6 +849,12 @@ namespace ModularFlightPanel.Core
                     NetEcRate = 12.4;  // 太阳能全开充电
                     SolarPower = 14.2;
                     BusVoltage = 28.1f;
+                    TotalPowerGeneration = 14.2;
+                    TotalPowerConsumption = 1.8;
+                    SolarPanelsTotal = 4;
+                    SolarPanelsActive = 4;
+                    TimeToDepletionSeconds = double.NaN;
+                    TimeToFullSeconds = 15.0;
                     CommSignal = 1.0;
                     IsConnected = true;
                     ControlLevelStr = "FULL CONTROL";
@@ -741,6 +890,12 @@ namespace ModularFlightPanel.Core
                     NetEcRate = -4.5;       // 净放电急剧流失
                     SolarPower = 0.0;       // 天体阴影无光照
                     BusVoltage = 22.4f;     // 低电压严重告警
+                    TotalPowerGeneration = 0.0;
+                    TotalPowerConsumption = 4.5;
+                    SolarPanelsTotal = 4;
+                    SolarPanelsActive = 0;
+                    TimeToDepletionSeconds = 35.0 / 4.5;
+                    TimeToFullSeconds = double.NaN;
                     break;
 
                 case FlightScenario.ReentryBlackout:
@@ -769,6 +924,12 @@ namespace ModularFlightPanel.Core
                     ElectricCharge = 180.0;
                     NetEcRate = -2.1;
                     BusVoltage = 25.2f;
+                    TotalPowerGeneration = 0.0;
+                    TotalPowerConsumption = 2.1;
+                    SolarPanelsTotal = 0;
+                    SolarPanelsActive = 0;
+                    TimeToDepletionSeconds = 180.0 / 2.1;
+                    TimeToFullSeconds = double.NaN;
                     break;
             }
         }

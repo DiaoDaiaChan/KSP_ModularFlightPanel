@@ -119,10 +119,107 @@ namespace ModularFlightPanel.UI.Widgets
     }
 
     /// <summary>
+    /// GPU 程序化罗盘标尺圆弧底板与内外轮廓线 (单 Graphic 矢量几何，零额外 GameObject 堆叠，SPEC-002)
+    /// </summary>
+    public class ProceduralCompassArcGraphic : MaskableGraphic
+    {
+        public float RadiusX = 92f;
+        public float RadiusY = 92f;
+        public float YCenterOffset = 76f;
+        public float MaxAngularSpan = 55f;
+        public float DpiScale = 1f;
+        public float AdaptiveScale = 1f;
+
+        public Color PlateColor = Color.clear;
+        public Color OuterRimColor = Color.clear;
+        public Color InnerRimColor = Color.clear;
+
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            vh.Clear();
+            if (RadiusX <= 1f || RadiusY <= 1f || MaxAngularSpan <= 1f) return;
+
+            float s = DpiScale * AdaptiveScale;
+            float outerOffset = 4.5f * s;
+            float outerRimThick = Mathf.Max(1.2f, 1.4f * s);
+            float innerOffset = -22.5f * s;
+            float innerRimThick = Mathf.Max(1.0f, 1.2f * s);
+
+            const int segCount = 28;
+            float step = (MaxAngularSpan * 2f) / segCount;
+
+            for (int i = 0; i <= segCount; i++)
+            {
+                float ang = -MaxAngularSpan + (i * step);
+                float rad = ang * Mathf.Deg2Rad;
+                float sin = Mathf.Sin(rad);
+                float cos = Mathf.Cos(rad);
+
+                float nx = RadiusY * sin;
+                float ny = RadiusX * cos;
+                float normLen = Mathf.Sqrt(nx * nx + ny * ny);
+                Vector2 normDir = normLen > 0.0001f ? new Vector2(nx / normLen, ny / normLen) : Vector2.up;
+
+                Vector2 basePt = new Vector2(sin * RadiusX, cos * RadiusY - YCenterOffset);
+
+                // 两侧平滑渐隐 (边缘羽化)
+                float edgeFade = Mathf.Clamp01((MaxAngularSpan - Mathf.Abs(ang)) / 8f);
+
+                Color cOuter = OuterRimColor;
+                cOuter.a *= edgeFade;
+
+                Color cPlate = PlateColor;
+                cPlate.a *= edgeFade;
+
+                Color cInner = InnerRimColor;
+                cInner.a *= edgeFade;
+
+                // 6 顶构造 3 个独立四边形，避免颜色混合污染
+                // Quad 0: 外轮廓发光线 (outerOffset -> outerOffset + outerRimThick)
+                Vector2 p0 = basePt + normDir * (outerOffset + outerRimThick);
+                Vector2 p1 = basePt + normDir * outerOffset;
+
+                // Quad 1: 暗色玻璃底板 (innerOffset -> outerOffset)
+                Vector2 p2 = basePt + normDir * outerOffset;
+                Vector2 p3 = basePt + normDir * innerOffset;
+
+                // Quad 2: 内轮廓辅助线 (innerOffset - innerRimThick -> innerOffset)
+                Vector2 p4 = basePt + normDir * innerOffset;
+                Vector2 p5 = basePt + normDir * (innerOffset - innerRimThick);
+
+                vh.AddVert(p0, cOuter, Vector2.zero);
+                vh.AddVert(p1, cOuter, Vector2.zero);
+                vh.AddVert(p2, cPlate, Vector2.zero);
+                vh.AddVert(p3, cPlate, Vector2.zero);
+                vh.AddVert(p4, cInner, Vector2.zero);
+                vh.AddVert(p5, cInner, Vector2.zero);
+
+                if (i > 0)
+                {
+                    int prev = (i - 1) * 6;
+                    int curr = i * 6;
+
+                    // Quad 0: 外轮廓
+                    vh.AddTriangle(prev + 0, curr + 0, curr + 1);
+                    vh.AddTriangle(curr + 1, prev + 1, prev + 0);
+
+                    // Quad 1: 底板
+                    vh.AddTriangle(prev + 2, curr + 2, curr + 3);
+                    vh.AddTriangle(curr + 3, prev + 3, prev + 2);
+
+                    // Quad 2: 内轮廓
+                    vh.AddTriangle(prev + 4, curr + 4, curr + 5);
+                    vh.AddTriangle(curr + 5, prev + 5, prev + 4);
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// PFD 姿态球顶部圆弧航向指示带 (Navball Heading Arc Ribbon - Set 2 / 图2)
     /// 紧密环绕姿态球上缘，具备平滑滚动的度数刻度、红南/蓝北罗盘主方位标识、
     /// 顶部气泡框 (Speech-bubble) 权威数显标牌以及翡翠绿反T型基准游标。
-    /// 严格继承 BaseFlightWidget，所有视觉样式与数值全生命周期数据驱动。
+    /// 支持智能密度 LOD 与小分辨率自适应布局，消除摩尔纹与几何遮挡，彻底实现 0 GC 与极致性能。
     /// </summary>
     [FlightWidget("heading_arc", "heading", "compass_arc", Category = WidgetCategory.Navigation, DisplayName = "PFD 航向指示标尺弧", Description = "主飞行仪表（PFD）顶部平滑滚动机体罗盘弧，带航向数显与度数刻度。", DefaultWidgetId = "core.heading_arc", DefaultX = 0f, DefaultY = 76f, IsSingleton = true, HighFrequency = true, ExactIds = new[] { "core.heading_arc" })]
     public class HeadingArcWidget : BaseFlightWidget, IAdaptiveSizeWidget
@@ -130,6 +227,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(202f, 82f);
         protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Critical;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
 
         // 声明式自适应物理尺寸契约接口 (IAdaptiveSizeWidget - 允许编辑模式自由拉动长宽比与曲率)
         public bool AllowNonUniformScale => true;
@@ -141,10 +239,33 @@ namespace ModularFlightPanel.UI.Widgets
         private const float ARC_Y_CENTER_OFFSET = 76f;
         private const float MAX_ANGULAR_SPAN = 55f; // 可见视口半角范围 (±55°)
 
+        private static readonly string[] _hdg3DigitStrings = GenerateHdg3DigitStrings();
+        private static string[] GenerateHdg3DigitStrings()
+        {
+            var arr = new string[360];
+            for (int i = 0; i < 360; i++)
+            {
+                arr[i] = i.ToString("D3") + "°";
+            }
+            return arr;
+        }
+
+        private static readonly string[] _tickDegStrings = GenerateTickDegStrings();
+        private static string[] GenerateTickDegStrings()
+        {
+            var arr = new string[360];
+            for (int i = 0; i < 360; i++)
+            {
+                arr[i] = i.ToString("D3");
+            }
+            return arr;
+        }
+
         // 当前动态自适应尺寸与椭圆几何参数 (Adaptive Radius & Curvature)
         private float _currentRadiusX = 0f;
         private float _currentRadiusY = 0f;
         private float _currentYCenterOffset = 0f;
+        private float _currentAdaptiveScale = 1.0f;
 
         private struct HeadingTickUI
         {
@@ -160,7 +281,7 @@ namespace ModularFlightPanel.UI.Widgets
             public Color BaseLineColor;
         }
 
-        private readonly List<HeadingTickUI> _tickPool = new List<HeadingTickUI>();
+        private readonly List<HeadingTickUI> _tickPool = new List<HeadingTickUI>(MAX_VISIBLE_TICKS);
 
         // 气泡框与游标
         private GameObject _speechBubbleRoot;
@@ -174,16 +295,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 翡翠绿基准游标 (绿反T)
         private GameObject _lubberLineRoot;
+        private RectTransform _lubberRt;
         private Image _lubberBar;
         private Image _lubberStem;
 
-        // 底层弧形暗色玻璃底带
-        private GameObject _arcBandRoot;
-        private readonly List<Image> _bandBgImages = new List<Image>();
-        private readonly List<Image> _bandRimImages = new List<Image>();
-        private readonly List<RectTransform> _bandPlateRts = new List<RectTransform>();
-        private readonly List<RectTransform> _outerRimRts = new List<RectTransform>();
-        private readonly List<RectTransform> _innerRimRts = new List<RectTransform>();
+        // 单 Graphic 高性能程序化圆弧网格
+        private ProceduralCompassArcGraphic _arcBandGraphic;
 
         // 通配符通道与配置
         private string _valueToken = "{HDG}";
@@ -231,29 +348,107 @@ namespace ModularFlightPanel.UI.Widgets
             _currentRadiusX = ARC_RADIUS * s * scaleX;
             _currentRadiusY = ARC_RADIUS * s * scaleY;
             _currentYCenterOffset = ARC_Y_CENTER_OFFSET * s * scaleY;
+            _currentAdaptiveScale = Mathf.Clamp(Mathf.Min(scaleX, scaleY), 0.55f, 2.0f);
 
-            if (_arcBandRoot == null) return;
+            if (_arcBandGraphic != null)
+            {
+                _arcBandGraphic.RadiusX = _currentRadiusX;
+                _arcBandGraphic.RadiusY = _currentRadiusY;
+                _arcBandGraphic.YCenterOffset = _currentYCenterOffset;
+                _arcBandGraphic.DpiScale = s;
+                _arcBandGraphic.AdaptiveScale = _currentAdaptiveScale;
+                _arcBandGraphic.SetVerticesDirty();
+            }
 
-            UpdateArcBandLayout(_currentRadiusX, _currentRadiusY, _currentYCenterOffset, s);
+            ApplyAdaptiveElementScaling(s, _currentAdaptiveScale);
+            UpdateRotatingCompassRose(_logic.CurrentState.DisplayedHeading, force: true);
+        }
+
+        private void ApplyAdaptiveElementScaling(float s, float adaptiveScale)
+        {
+            float rY = _currentRadiusY > 0.001f ? _currentRadiusY : (ARC_RADIUS * s);
+            float yOff = _currentYCenterOffset > 0.001f ? _currentYCenterOffset : (ARC_Y_CENTER_OFFSET * s);
+            float effScale = s * adaptiveScale;
+
+            // 1. 基准游标 (翡翠绿反T): 贴紧圆弧外缘 (+4.5f * effScale)
+            float barW = Mathf.Max(10f, 12f * effScale);
+            float barH = Mathf.Max(2f, 2.2f * effScale);
+            float stemW = Mathf.Max(2f, 2.2f * effScale);
+            float stemH = Mathf.Max(4.5f, 5.0f * effScale);
+            Vector2 lubberPos = new Vector2(0f, rY - yOff + (4.5f * effScale));
+
+            if (_lubberLineRoot != null && _lubberRt != null)
+            {
+                _lubberRt.anchoredPosition = lubberPos;
+                _lubberRt.sizeDelta = new Vector2(barW + 2f, barH + stemH);
+
+                if (_lubberBar != null)
+                {
+                    _lubberBar.rectTransform.sizeDelta = new Vector2(barW, barH);
+                    _lubberBar.rectTransform.anchoredPosition = new Vector2(0f, barH * 0.5f);
+                }
+                if (_lubberStem != null)
+                {
+                    _lubberStem.rectTransform.sizeDelta = new Vector2(stemW, stemH);
+                    _lubberStem.rectTransform.anchoredPosition = new Vector2(0f, -stemH * 0.5f);
+                }
+            }
+
+            // 2. 顶部气泡框数显标牌: 坐落于基准游标正上方，指针尖端与基准横杠保留 1.5px 清爽间隔
+            float bubbleW = Mathf.Max(40f, 46f * effScale);
+            float bubbleH = Mathf.Max(16f, 18f * effScale);
+            Vector2 boxSize = new Vector2(bubbleW, bubbleH);
+
+            float tipSize = Mathf.Max(4.5f, 5.5f * effScale);
+            float tipVisualH = tipSize * 0.707f;
 
             if (_speechBubbleRt != null)
             {
-                _speechBubbleRt.anchoredPosition = new Vector2(0f, _currentRadiusY + 15f * s - _currentYCenterOffset);
+                _speechBubbleRt.sizeDelta = boxSize;
+
+                if (_bubblePointerTip != null)
+                {
+                    _bubblePointerTip.rectTransform.sizeDelta = new Vector2(tipSize, tipSize);
+                    _bubblePointerTip.rectTransform.anchoredPosition = new Vector2(0f, -boxSize.y * 0.5f + 0.5f * effScale);
+                }
+
+                // 标牌垂直位置: 基准横杠顶部 + 1.5px 间隔 + 尖角下延高 + 标牌半高
+                float bubblePosY = (lubberPos.y + barH) + 1.5f + (boxSize.y * 0.5f + tipVisualH - 0.5f * effScale);
+                _speechBubbleRt.anchoredPosition = new Vector2(0f, bubblePosY);
+
+                if (_headingText != null)
+                {
+                    _headingText.fontSize = Mathf.Clamp(Mathf.RoundToInt(11.5f * effScale), 10, 20);
+                }
             }
 
-            if (_lubberLineRoot != null)
+            // 3. 刻度文字与尺寸自适应 (高质量超采样)
+            const int BASE_LABEL_FONT_SIZE = 18;
+            float targetVisualFontSize = Mathf.Clamp(9.2f * effScale, 8.5f, 14f);
+            float fontScale = targetVisualFontSize / (float)BASE_LABEL_FONT_SIZE;
+            Vector2 labelSize = new Vector2(36f, 18f);
+
+            for (int i = 0; i < _tickPool.Count; i++)
             {
-                var lubRt = _lubberLineRoot.GetComponent<RectTransform>();
-                if (lubRt != null) lubRt.anchoredPosition = new Vector2(0f, _currentRadiusY - _currentYCenterOffset);
+                var item = _tickPool[i];
+                if (item.Label != null)
+                {
+                    item.Label.fontSize = BASE_LABEL_FONT_SIZE;
+                    item.LabelRt.sizeDelta = labelSize;
+                    item.LabelRt.localScale = new Vector3(fontScale, fontScale, 1f);
+                    item.LabelRt.anchoredPosition = new Vector2(0f, -14.0f * effScale);
+                }
             }
-
-            UpdateRotatingCompassRose(_logic.CurrentState.DisplayedHeading, force: true);
         }
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             ApplyCanvasIsolation(true);
+            if (SubCanvas != null)
+            {
+                SubCanvas.pixelPerfect = false;
+            }
 
             float s = CurrentDpiScale;
             if (_currentRadiusX <= 0.001f || _currentRadiusY <= 0.001f)
@@ -266,6 +461,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _currentRadiusX = ARC_RADIUS * s * scaleX;
                 _currentRadiusY = ARC_RADIUS * s * scaleY;
                 _currentYCenterOffset = ARC_Y_CENTER_OFFSET * s * scaleY;
+                _currentAdaptiveScale = Mathf.Clamp(Mathf.Min(scaleX, scaleY), 0.55f, 2.0f);
             }
 
             if (config != null && !string.IsNullOrEmpty(config.NumericToken))
@@ -275,31 +471,30 @@ namespace ModularFlightPanel.UI.Widgets
             _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN", "HDG" }, _valueToken);
             _logic.ValueToken = _valueToken;
 
-            // 1. 构建弧形暗色玻璃背景带
-            BuildArcBand(_currentRadiusX, _currentRadiusY, _currentYCenterOffset, s, theme);
+            // 1. 构建 GPU 矢量程序化罗盘弧
+            BuildArcBandGraphic(s, theme);
 
             // 2. 初始化刻度对象池
             BuildTickPool(s, theme);
 
             // 3. 构建顶部气泡框数显标牌
-            BuildSpeechBubble(_currentRadiusY, _currentYCenterOffset, s, theme);
+            BuildSpeechBubble(s, theme);
 
             // 4. 构建翡翠绿反T型基准游标
-            BuildLubberMark(_currentRadiusY, _currentYCenterOffset, s, theme);
+            BuildLubberMark(s, theme);
+
+            // 5. 应用尺寸自适应
+            ApplyAdaptiveElementScaling(s, _currentAdaptiveScale);
 
             // 注册微控件至标准化管理器
-            this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_band", "罗盘弧底带", _arcBandRoot, (t) => {
+            this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_band", "罗盘弧底带", _arcBandGraphic.gameObject, (t) => {
                 WidgetStyleManager st = WidgetStyleManager.Instance;
-                Material pm = st.GetUiMaterial(isText: false);
-                Color bandCol = st.GetCardBackgroundColor(CardStyleRole.Normal, t);
-                for (int i = 0; i < _bandBgImages.Count; i++)
-                {
-                    if (_bandBgImages[i] != null)
-                    {
-                        _bandBgImages[i].material = pm;
-                        _bandBgImages[i].color = bandCol;
-                    }
-                }
+                Color borderCol = WidgetStyleManager.GetDerivedColor((Color)t.FrameBorderColor, 0.50f);
+                _arcBandGraphic.PlateColor = st.GetCardBackgroundColor(CardStyleRole.Normal, t);
+                _arcBandGraphic.OuterRimColor = WidgetStyleManager.Weighted(borderCol, LineWeight.Heavy);
+                _arcBandGraphic.InnerRimColor = WidgetStyleManager.Weighted(borderCol, LineWeight.Normal);
+                _arcBandGraphic.material = st.GetUiMaterial(isText: false);
+                _arcBandGraphic.SetVerticesDirty();
             }));
             this.Controls.Register(WidgetControlManager.WrapElement(this, "speech_bubble", "气泡航向标牌", _speechBubbleRoot, (t) => {
                 ApplyCard(_bubbleBg, _bubbleOutline, CardStyleRole.Emphasized, t);
@@ -317,116 +512,31 @@ namespace ModularFlightPanel.UI.Widgets
             ApplyTheme(theme);
         }
 
-        private void BuildArcBand(float rx, float ry, float yCenterOffset, float s, ThemeConfig theme)
+        private void BuildArcBandGraphic(float s, ThemeConfig theme)
         {
-            _arcBandRoot = CreateContainer("Arc_Band_Root", transform).gameObject;
+            RectTransform bandRt = CreateContainer("Arc_Band_Root", transform, Vector2.zero, Vector2.zero);
+            _arcBandGraphic = bandRt.gameObject.AddComponent<ProceduralCompassArcGraphic>();
+            _arcBandGraphic.raycastTarget = false;
+            _arcBandGraphic.RadiusX = _currentRadiusX;
+            _arcBandGraphic.RadiusY = _currentRadiusY;
+            _arcBandGraphic.YCenterOffset = _currentYCenterOffset;
+            _arcBandGraphic.MaxAngularSpan = MAX_ANGULAR_SPAN;
+            _arcBandGraphic.DpiScale = s;
+            _arcBandGraphic.AdaptiveScale = _currentAdaptiveScale;
 
-            _bandBgImages.Clear();
-            _bandRimImages.Clear();
-            _bandPlateRts.Clear();
-            _outerRimRts.Clear();
-            _innerRimRts.Clear();
-
-            Color bandCol = WidgetStyleManager.Instance.GetCardBackgroundColor(CardStyleRole.Normal, theme);
-            Color borderCol = WidgetStyleManager.Instance.GetCardBorderColor(CardStyleRole.Normal, theme);
-
-            const int segCount = 24;
-            float step = (MAX_ANGULAR_SPAN * 2f) / segCount;
-            float rAvg = (rx + ry) * 0.5f;
-            float arcSegW = ((2f * Mathf.PI * rAvg * (MAX_ANGULAR_SPAN * 2f / 360f)) / segCount) + 1.5f * s;
-            float bandThickness = 22f * s;
-
-            for (int i = 0; i <= segCount; i++)
-            {
-                float ang = -MAX_ANGULAR_SPAN + (i * step);
-                float rad = ang * Mathf.Deg2Rad;
-                float sin = Mathf.Sin(rad);
-                float cos = Mathf.Cos(rad);
-
-                float nx = ry * sin;
-                float ny = rx * cos;
-                float normLen = Mathf.Sqrt(nx * nx + ny * ny);
-                Vector2 normDir = normLen > 0.0001f ? new Vector2(nx / normLen, ny / normLen) : Vector2.up;
-                float normalAngle = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
-
-                Vector2 basePt = new Vector2(sin * rx, cos * ry - yCenterOffset);
-
-                // 1. 半透明暗色玻璃遮光弧板
-                Vector2 platePos = basePt + normDir * (-5f * s);
-                GameObject plate = UIFactory.CreatePanel(_arcBandRoot.transform, $"BandPlate_{i}",
-                    new Vector2(arcSegW, bandThickness), platePos, bandCol);
-                plate.transform.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
-                _bandBgImages.Add(plate.GetComponent<Image>());
-                _bandPlateRts.Add(plate.GetComponent<RectTransform>());
-
-                // 2. 外缘极细发光轮廓
-                Vector2 outerRimPos = basePt + normDir * (6f * s);
-                GameObject outerRim = UIFactory.CreatePanel(_arcBandRoot.transform, $"OuterRim_{i}",
-                    new Vector2(arcSegW, 1.2f * s), outerRimPos, WidgetStyleManager.Weighted(borderCol, LineWeight.Strong));
-                outerRim.transform.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
-                _bandRimImages.Add(outerRim.GetComponent<Image>());
-                _outerRimRts.Add(outerRim.GetComponent<RectTransform>());
-
-                // 3. 内缘细弱辅助线
-                Vector2 innerRimPos = basePt + normDir * (-16f * s);
-                GameObject innerRim = UIFactory.CreatePanel(_arcBandRoot.transform, $"InnerRim_{i}",
-                    new Vector2(arcSegW, 1.0f * s), innerRimPos, WidgetStyleManager.Weighted(borderCol, LineWeight.Subtle));
-                innerRim.transform.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
-                _bandRimImages.Add(innerRim.GetComponent<Image>());
-                _innerRimRts.Add(innerRim.GetComponent<RectTransform>());
-            }
-        }
-
-        private void UpdateArcBandLayout(float rx, float ry, float yCenterOffset, float s)
-        {
-            if (_bandPlateRts.Count == 0) return;
-
-            const int segCount = 24;
-            float step = (MAX_ANGULAR_SPAN * 2f) / segCount;
-            float rAvg = (rx + ry) * 0.5f;
-            float arcSegW = ((2f * Mathf.PI * rAvg * (MAX_ANGULAR_SPAN * 2f / 360f)) / segCount) + 1.5f * s;
-            float bandThickness = 22f * s;
-
-            for (int i = 0; i <= segCount && i < _bandPlateRts.Count; i++)
-            {
-                float ang = -MAX_ANGULAR_SPAN + (i * step);
-                float rad = ang * Mathf.Deg2Rad;
-                float sin = Mathf.Sin(rad);
-                float cos = Mathf.Cos(rad);
-
-                float nx = ry * sin;
-                float ny = rx * cos;
-                float normLen = Mathf.Sqrt(nx * nx + ny * ny);
-                Vector2 normDir = normLen > 0.0001f ? new Vector2(nx / normLen, ny / normLen) : Vector2.up;
-                float normalAngle = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
-
-                Vector2 basePt = new Vector2(sin * rx, cos * ry - yCenterOffset);
-
-                if (_bandPlateRts[i] != null)
-                {
-                    _bandPlateRts[i].anchoredPosition = basePt + normDir * (-5f * s);
-                    _bandPlateRts[i].localEulerAngles = new Vector3(0f, 0f, -normalAngle);
-                    _bandPlateRts[i].sizeDelta = new Vector2(arcSegW, bandThickness);
-                }
-                if (i < _outerRimRts.Count && _outerRimRts[i] != null)
-                {
-                    _outerRimRts[i].anchoredPosition = basePt + normDir * (6f * s);
-                    _outerRimRts[i].localEulerAngles = new Vector3(0f, 0f, -normalAngle);
-                    _outerRimRts[i].sizeDelta = new Vector2(arcSegW, 1.2f * s);
-                }
-                if (i < _innerRimRts.Count && _innerRimRts[i] != null)
-                {
-                    _innerRimRts[i].anchoredPosition = basePt + normDir * (-16f * s);
-                    _innerRimRts[i].localEulerAngles = new Vector3(0f, 0f, -normalAngle);
-                    _innerRimRts[i].sizeDelta = new Vector2(arcSegW, 1.0f * s);
-                }
-            }
+            WidgetStyleManager st = WidgetStyleManager.Instance;
+            Color borderCol = WidgetStyleManager.GetDerivedColor((Color)theme.FrameBorderColor, 0.50f);
+            _arcBandGraphic.PlateColor = st.GetCardBackgroundColor(CardStyleRole.Normal, theme);
+            _arcBandGraphic.OuterRimColor = WidgetStyleManager.Weighted(borderCol, LineWeight.Heavy);
+            _arcBandGraphic.InnerRimColor = WidgetStyleManager.Weighted(borderCol, LineWeight.Normal);
+            _arcBandGraphic.material = st.GetUiMaterial(isText: false);
         }
 
         private void BuildTickPool(float s, ThemeConfig theme)
         {
             _tickPool.Clear();
             WidgetStyleManager style = WidgetStyleManager.Instance;
+            Material textMat = style.GetUiMaterial(isText: true);
 
             for (int i = 0; i < MAX_VISIBLE_TICKS; i++)
             {
@@ -434,21 +544,25 @@ namespace ModularFlightPanel.UI.Widgets
                     new Vector2(30f * s, 30f * s), Vector2.zero);
                 GameObject root = rt.gameObject;
 
-                // 刻度线
+                // 刻度线 (高清晰度纯净矢量线元)
                 Image lineImg = CreateChild<Image>("Line", root.transform,
-                    new Vector2(1.5f * s, 7f * s), Vector2.zero);
-                GameObject lineObj = lineImg.gameObject;
+                    new Vector2(1.5f * s, 6.5f * s), Vector2.zero);
+                lineImg.sprite = null;
+                lineImg.raycastTarget = false;
                 RectTransform lineRt = lineImg.rectTransform;
+                lineRt.pivot = new Vector2(0.5f, 0.5f);
                 lineImg.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
 
-                // 刻度数字 / 罗盘主方位
-                int fontSize = Mathf.Max(8, Mathf.RoundToInt(9.5f * s));
-                Text lbl = UIFactory.CreateText(root.transform, "Label", "", fontSize, TextAnchor.MiddleCenter,
+                // 刻度数字 / 罗盘主方位 (高质量 18px 超采样字模)
+                const int baseFontSize = 18;
+                Text lbl = UIFactory.CreateText(root.transform, "Label", "", baseFontSize, TextAnchor.MiddleCenter,
                     style.GetTextColor(TextStyleRole.PrimaryValue, theme), null, addShadow: false);
                 lbl.fontStyle = FontStyle.Bold;
+                lbl.raycastTarget = false;
+                if (textMat != null) lbl.material = textMat;
                 RectTransform lblRt = lbl.GetComponent<RectTransform>();
-                lblRt.sizeDelta = new Vector2(32f * s, 16f * s);
-                lblRt.anchoredPosition = new Vector2(0f, -10f * s);
+                lblRt.sizeDelta = new Vector2(36f, 18f);
+                lblRt.anchoredPosition = new Vector2(0f, -14f * s);
 
                 _tickPool.Add(new HeadingTickUI
                 {
@@ -468,10 +582,20 @@ namespace ModularFlightPanel.UI.Widgets
             }
         }
 
-        private void BuildSpeechBubble(float ry, float yCenterOffset, float s, ThemeConfig theme)
+        private void BuildSpeechBubble(float s, ThemeConfig theme)
         {
-            Vector2 boxSize = new Vector2(50f * s, 20f * s);
-            Vector2 bubblePos = new Vector2(0f, ry + 15f * s - yCenterOffset);
+            float adaptiveScale = _currentAdaptiveScale;
+            float effScale = s * adaptiveScale;
+            float bubbleW = Mathf.Max(40f, 46f * effScale);
+            float bubbleH = Mathf.Max(16f, 18f * effScale);
+            Vector2 boxSize = new Vector2(bubbleW, bubbleH);
+
+            float barH = Mathf.Max(2f, 2.2f * effScale);
+            float tipSize = Mathf.Max(4.5f, 5.5f * effScale);
+            float tipVisualH = tipSize * 0.707f;
+            float lubberPosY = _currentRadiusY - _currentYCenterOffset + (4.5f * effScale);
+            float bubblePosY = (lubberPosY + barH) + 1.5f + (boxSize.y * 0.5f + tipVisualH - 0.5f * effScale);
+            Vector2 bubblePos = new Vector2(0f, bubblePosY);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             _bubbleBtn = CreateButton("Heading_SpeechBubble", transform, out _speechBubbleRt, out _bubbleBg,
@@ -505,7 +629,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 气泡框向下尖角指针
             _bubblePointerTip = CreateChild<Image>("Bubble_Pointer_Tip", _speechBubbleRoot.transform,
-                new Vector2(7f * s, 7f * s), new Vector2(0f, -boxSize.y * 0.5f + 0.5f * s));
+                new Vector2(tipSize, tipSize), new Vector2(0f, -boxSize.y * 0.5f + 0.5f * effScale));
+            _bubblePointerTip.raycastTarget = false;
             GameObject tipObj = _bubblePointerTip.gameObject;
             RectTransform tipRt = _bubblePointerTip.rectTransform;
             tipRt.localEulerAngles = new Vector3(0f, 0f, 45f);
@@ -515,11 +640,12 @@ namespace ModularFlightPanel.UI.Widgets
             _bubblePointerOutline.effectColor = style.GetCardBorderColor(CardStyleRole.Emphasized, theme);
             _bubblePointerOutline.effectDistance = new Vector2(1f * s, 1f * s);
 
-            // 气泡框内部数显读数 (189°) - 纯净居中航向角
-            int fontSize = Mathf.RoundToInt(12.5f * s);
+            // 气泡框内部数显读数 (090°) - 等宽纯净居中航向角
+            int fontSize = Mathf.Clamp(Mathf.RoundToInt(11.5f * effScale), 10, 20);
             _headingText = UIFactory.CreateText(_speechBubbleRoot.transform, "Heading_Value", "000°", fontSize,
                 TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.PrimaryValue, theme));
             _headingText.fontStyle = FontStyle.Bold;
+            _headingText.raycastTarget = false;
             RectTransform textRt = _headingText.GetComponent<RectTransform>();
             textRt.anchorMin = Vector2.zero;
             textRt.anchorMax = Vector2.one;
@@ -527,25 +653,33 @@ namespace ModularFlightPanel.UI.Widgets
             textRt.anchoredPosition = Vector2.zero;
         }
 
-        private void BuildLubberMark(float ry, float yCenterOffset, float s, ThemeConfig theme)
+        private void BuildLubberMark(float s, ThemeConfig theme)
         {
-            Vector2 lubberPos = new Vector2(0f, ry - yCenterOffset);
+            float adaptiveScale = _currentAdaptiveScale;
+            float effScale = s * adaptiveScale;
+            float barW = Mathf.Max(10f, 12f * effScale);
+            float barH = Mathf.Max(2f, 2.2f * effScale);
+            float stemW = Mathf.Max(2f, 2.2f * effScale);
+            float stemH = Mathf.Max(4.5f, 5.0f * effScale);
+            Vector2 lubberPos = new Vector2(0f, _currentRadiusY - _currentYCenterOffset + (4.5f * effScale));
 
-            RectTransform lubRt = CreateContainer("Lubber_Line_Root", transform,
-                new Vector2(16f * s, 12f * s), lubberPos);
-            _lubberLineRoot = lubRt.gameObject;
+            _lubberRt = CreateContainer("Lubber_Line_Root", transform,
+                new Vector2(barW + 2f, barH + stemH), lubberPos);
+            _lubberLineRoot = _lubberRt.gameObject;
 
             Color lubberColor = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 
-            // 顶部横杠
+            // 顶部横杠 (纯净矢量线元)
             GameObject barObj = UIFactory.CreatePanel(_lubberLineRoot.transform, "Lubber_Bar",
-                new Vector2(14f * s, 2f * s), new Vector2(0f, 1f * s), lubberColor);
+                new Vector2(barW, barH), new Vector2(0f, barH * 0.5f), lubberColor);
             _lubberBar = barObj.GetComponent<Image>();
+            _lubberBar.raycastTarget = false;
 
-            // 竖向立柱
+            // 竖向立柱 (纯净矢量线元)
             GameObject stemObj = UIFactory.CreatePanel(_lubberLineRoot.transform, "Lubber_Stem",
-                new Vector2(2f * s, 6f * s), new Vector2(0f, -3f * s), lubberColor);
+                new Vector2(stemW, stemH), new Vector2(0f, -stemH * 0.5f), lubberColor);
             _lubberStem = stemObj.GetComponent<Image>();
+            _lubberStem.raycastTarget = false;
         }
 
         private void OnBubbleClicked()
@@ -573,7 +707,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (_lastBubbleDeg.Update(degInt))
                 {
-                    _headingText.text = $"{degInt:D3}°";
+                    _headingText.SetTextSafe(_hdg3DigitStrings[degInt]);
                 }
             }
         }
@@ -593,8 +727,15 @@ namespace ModularFlightPanel.UI.Widgets
             float rx = _currentRadiusX > 0.001f ? _currentRadiusX : (ARC_RADIUS * s);
             float ry = _currentRadiusY > 0.001f ? _currentRadiusY : (ARC_RADIUS * s);
             float yCenterOffset = _currentYCenterOffset > 0.001f ? _currentYCenterOffset : (ARC_Y_CENTER_OFFSET * s);
+            float adaptiveScale = _currentAdaptiveScale;
 
-            int centerTickDeg = Mathf.RoundToInt(currentHeading / 5f) * 5;
+            // 智能密度 LOD: 小分辨率/紧凑尺寸下动态调降刻度密度，根除摩尔纹与重叠拥挤
+            float arcPitch5Deg = rx * (5f * Mathf.Deg2Rad);
+            bool isCompact = arcPitch5Deg < 7.5f;
+            bool isUltraCompact = arcPitch5Deg < 4.5f;
+            int tickStep = isCompact ? 10 : 5;
+
+            int centerTickDeg = Mathf.RoundToInt(currentHeading / (float)tickStep) * tickStep;
             int tickIdx = 0;
 
             if (!_hasCachedArcColors)
@@ -612,7 +753,7 @@ namespace ModularFlightPanel.UI.Widgets
             Color textCol = _cachedTextCol;
             Color subTickCol = _cachedSubTickCol;
 
-            for (int offsetDeg = -50; offsetDeg <= 50; offsetDeg += 5)
+            for (int offsetDeg = -50; offsetDeg <= 50; offsetDeg += tickStep)
             {
                 if (tickIdx >= _tickPool.Count) break;
 
@@ -623,19 +764,25 @@ namespace ModularFlightPanel.UI.Widgets
                 if (Mathf.Abs(deltaAngle) > MAX_ANGULAR_SPAN) continue;
 
                 var item = _tickPool[tickIdx];
-                if (!item.Root.activeSelf) item.Root.SetActive(true);
+                item.Root.SetActiveSafe(true);
 
                 float rad = deltaAngle * Mathf.Deg2Rad;
                 float sin = Mathf.Sin(rad);
                 float cos = Mathf.Cos(rad);
 
-                Vector2 pos = new Vector2(sin * rx, cos * ry - yCenterOffset);
-                item.Rt.anchoredPosition = pos;
+                float nx = ry * sin;
+                float ny = rx * cos;
+                float normLen = Mathf.Sqrt(nx * nx + ny * ny);
+                Vector2 normDir = normLen > 0.0001f ? new Vector2(nx / normLen, ny / normLen) : Vector2.up;
 
-                float normalAngle = Mathf.Atan2(ry * sin, rx * cos) * Mathf.Rad2Deg;
+                // 刻度挂接于圆弧外缘略微向内 (0.5px)
+                Vector2 basePt = new Vector2(sin * rx, cos * ry - yCenterOffset);
+                item.Rt.anchoredPosition = basePt + normDir * (4.0f * s * adaptiveScale);
+
+                float normalAngle = Mathf.Atan2(nx, ny) * Mathf.Rad2Deg;
                 item.Rt.localEulerAngles = new Vector3(0f, 0f, -normalAngle);
 
-                float edgeAlpha = Mathf.Clamp01((MAX_ANGULAR_SPAN - Mathf.Abs(deltaAngle)) / 10f);
+                float edgeAlpha = Mathf.Clamp01((MAX_ANGULAR_SPAN - Mathf.Abs(deltaAngle)) / 8f);
 
                 if (item.CurrentDeg != normalizedDeg)
                 {
@@ -645,41 +792,55 @@ namespace ModularFlightPanel.UI.Widgets
 
                     if (isCardinal)
                     {
-                        string cardStr = "N";
+                        string cardStr;
                         switch (normalizedDeg)
                         {
                             case 0: cardStr = "N"; break;
                             case 90: cardStr = "E"; break;
                             case 180: cardStr = "S"; break;
-                            case 270: cardStr = "W"; break;
+                            default: cardStr = "W"; break;
                         }
                         Color cardCol = GetCachedCardinalColor(normalizedDeg);
                         item.BaseLineColor = cardCol;
                         item.BaseColor = cardCol;
-                        item.LineRt.sizeDelta = new Vector2(2f * s, 8f * s);
-                        item.Label.text = cardStr;
+
+                        float cW = Mathf.Max(1.8f, 2.0f * s * adaptiveScale);
+                        float cH = Mathf.Max(6.5f, 7.5f * s * adaptiveScale);
+                        item.LineRt.sizeDelta = new Vector2(cW, cH);
+                        item.LineRt.anchoredPosition = new Vector2(0f, -cH * 0.5f);
+                        item.LabelRt.anchoredPosition = new Vector2(0f, -14.0f * s * adaptiveScale);
+                        item.Label.SetTextSafe(cardStr);
                     }
                     else if (isMajor)
                     {
                         item.BaseLineColor = textCol;
-                        item.LineRt.sizeDelta = new Vector2(1.5f * s, 6.5f * s);
-                        if (normalizedDeg % 30 == 0)
+                        float mW = Mathf.Max(1.4f, 1.5f * s * adaptiveScale);
+                        float mH = Mathf.Max(4.5f, 5.5f * s * adaptiveScale);
+                        item.LineRt.sizeDelta = new Vector2(mW, mH);
+                        item.LineRt.anchoredPosition = new Vector2(0f, -mH * 0.5f);
+                        item.LabelRt.anchoredPosition = new Vector2(0f, -13.5f * s * adaptiveScale);
+
+                        // 30度主数字标注 (超紧凑模式下仅每60度)
+                        if (normalizedDeg % 30 == 0 && (!isUltraCompact || normalizedDeg % 60 == 0))
                         {
-                            item.BaseColor = subTickCol;
-                            item.Label.text = $"{normalizedDeg:D3}";
+                            item.BaseColor = textCol;
+                            item.Label.SetTextSafe(_tickDegStrings[normalizedDeg]);
                         }
                         else
                         {
                             item.BaseColor = Color.clear;
-                            item.Label.text = string.Empty;
+                            item.Label.SetTextSafe(string.Empty);
                         }
                     }
                     else
                     {
-                        item.BaseLineColor = WidgetStyleManager.Weighted(subTickCol, LineWeight.Bold);
+                        item.BaseLineColor = WidgetStyleManager.Weighted(subTickCol, LineWeight.Heavy);
                         item.BaseColor = Color.clear;
-                        item.LineRt.sizeDelta = new Vector2(1f * s, 4f * s);
-                        item.Label.text = string.Empty;
+                        float subW = Mathf.Max(1.0f, 1.1f * s * adaptiveScale);
+                        float subH = Mathf.Max(3.0f, 3.5f * s * adaptiveScale);
+                        item.LineRt.sizeDelta = new Vector2(subW, subH);
+                        item.LineRt.anchoredPosition = new Vector2(0f, -subH * 0.5f);
+                        item.Label.SetTextSafe(string.Empty);
                     }
                 }
 
@@ -704,7 +865,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             for (int i = tickIdx; i < _tickPool.Count; i++)
             {
-                _tickPool[i].Root.SetActive(false);
+                _tickPool[i].Root.SetActiveSafe(false);
             }
         }
 
@@ -737,28 +898,14 @@ namespace ModularFlightPanel.UI.Widgets
             if (_lubberBar != null) _lubberBar.color = lubberColor;
             if (_lubberStem != null) _lubberStem.color = lubberColor;
 
-            Material panelMat = style.GetUiMaterial(isText: false);
-            if (_bandBgImages != null && _bandBgImages.Count > 0)
+            if (_arcBandGraphic != null)
             {
-                Color bandCol = style.GetCardBackgroundColor(CardStyleRole.Normal, theme);
-                for (int i = 0; i < _bandBgImages.Count; i++)
-                {
-                    if (_bandBgImages[i] != null)
-                    {
-                        _bandBgImages[i].material = panelMat;
-                        _bandBgImages[i].color = bandCol;
-                    }
-                }
-            }
-
-            if (_bandRimImages != null && _bandRimImages.Count > 0)
-            {
-                Color borderCol = WidgetStyleManager.GetDerivedColor((Color)theme.FrameBorderColor, 0.35f);
-                for (int i = 0; i < _bandRimImages.Count; i++)
-                {
-                    if (_bandRimImages[i] != null)
-                        _bandRimImages[i].color = borderCol;
-                }
+                Color borderCol = WidgetStyleManager.GetDerivedColor((Color)theme.FrameBorderColor, 0.50f);
+                _arcBandGraphic.PlateColor = style.GetCardBackgroundColor(CardStyleRole.Normal, theme);
+                _arcBandGraphic.OuterRimColor = WidgetStyleManager.Weighted(borderCol, LineWeight.Heavy);
+                _arcBandGraphic.InnerRimColor = WidgetStyleManager.Weighted(borderCol, LineWeight.Normal);
+                _arcBandGraphic.material = style.GetUiMaterial(isText: false);
+                _arcBandGraphic.SetVerticesDirty();
             }
 
             Material textMat = style.GetUiMaterial(isText: true);
@@ -773,6 +920,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 _tickPool[i] = tick;
             }
+
             if (FlightTelemetryContext.Current != null)
             {
                 UpdateRotatingCompassRose((float)FlightTelemetryContext.Current.Heading, force: true);
@@ -811,4 +959,3 @@ namespace ModularFlightPanel.UI.Widgets
         }
     }
 }
-

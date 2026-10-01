@@ -52,9 +52,14 @@ namespace ModularFlightPanel.Core
         Texture SilhouetteTexture { get; }
         float NormalizedNoseTipY { get; }
         float NormalizedEngineBottomY { get; }
+        float PhysicalSpanX { get; }
+        float PhysicalSpanY { get; }
+        float PhysicalSpanZ { get; }
+        float PhysicalAspect { get; }
         event Action<Texture> OnSilhouetteUpdated;
         void TriggerBurst(float duration = 3.0f);
     }
+
 
     public static class VesselSilhouetteService
     {

@@ -25,6 +25,133 @@ namespace ModularFlightPanel.UI
         public RectTransform RectTransform { get; private set; }
         public WidgetDragHandler DragHandler { get; private set; }
         public Canvas SubCanvas { get; private set; }
+        public CanvasGroup CanvasGroup { get; private set; }
+
+        /// <summary>
+        /// 当前组件不透明度 (0.05f ~ 1.0f)
+        /// </summary>
+        public float Opacity
+        {
+            get => Config != null && Config.Opacity > 0.01f ? Config.Opacity : 1.0f;
+            set => SetOpacity(value);
+        }
+
+        /// <summary>
+        /// 设置当前组件整体不透明度并实时应用至 CanvasGroup
+        /// </summary>
+        public void SetOpacity(float opacity, bool save = true)
+        {
+            float clamped = Mathf.Clamp(opacity, 0.05f, 1.0f);
+            if (Config != null) Config.Opacity = clamped;
+            if (CanvasGroup != null) CanvasGroup.alpha = clamped;
+            if (save) WidgetLayoutManager.Instance?.SaveLayout();
+        }
+
+        /// <summary>
+        /// 当前组件独立配色主题覆盖 ID (若为空则跟随全局主题)
+        /// </summary>
+        public string ThemeOverride
+        {
+            get => Config?.ThemeOverride ?? "";
+            set => SetThemeOverride(value);
+        }
+
+        /// <summary>
+        /// 当前组件实际生效的主题配置
+        /// </summary>
+        public ThemeConfig WidgetTheme => ResolveEffectiveTheme(null);
+
+        /// <summary>
+        /// 解析该组件当前生效的主题配置 (优先使用组件专属 ThemeOverride，否则回退至全局主题)
+        /// </summary>
+        public ThemeConfig ResolveEffectiveTheme(ThemeConfig globalTheme = null)
+        {
+            string ovr = Config?.ThemeOverride;
+            if (!string.IsNullOrEmpty(ovr))
+            {
+                var builtins = ThemeConfig.GetAllBuiltinThemes();
+                for (int i = 0; i < builtins.Count; i++)
+                {
+                    if (string.Equals(builtins[i].ThemeId, ovr, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(builtins[i].ThemeId.Replace("_", ""), ovr.Replace("_", ""), StringComparison.OrdinalIgnoreCase))
+                    {
+                        return builtins[i];
+                    }
+                }
+                if (ThemeManager.Instance?.AvailableThemes != null)
+                {
+                    var av = ThemeManager.Instance.AvailableThemes;
+                    for (int i = 0; i < av.Count; i++)
+                    {
+                        if (string.Equals(av[i].ThemeId, ovr, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return av[i];
+                        }
+                    }
+                }
+            }
+            return WidgetStyleManager.ResolveTheme(globalTheme);
+        }
+
+        /// <summary>
+        /// 设置组件独立配色主题并实时重绘微控件与底板
+        /// </summary>
+        public void SetThemeOverride(string themeId, bool save = true)
+        {
+            if (Config != null) Config.ThemeOverride = themeId ?? "";
+            ThemeConfig effective = ResolveEffectiveTheme(null);
+            ApplyTheme(effective);
+            if (save) WidgetLayoutManager.Instance?.SaveLayout();
+        }
+
+        /// <summary>
+        /// 调整组件长宽比 (目标宽高比 ratio = ScaleX / ScaleY)
+        /// </summary>
+        public void SetAspectRatio(float targetAspectRatio, bool save = true)
+        {
+            if (Config == null) return;
+            float currentArea = Config.EffectiveScaleX * Config.EffectiveScaleY;
+            if (currentArea <= 0.01f) currentArea = 1.0f;
+            float newScaleX = Mathf.Clamp(Mathf.Sqrt(currentArea * targetAspectRatio), 0.2f, 4.0f);
+            float newScaleY = Mathf.Clamp(Mathf.Sqrt(currentArea / targetAspectRatio), 0.2f, 4.0f);
+            UpdateTransform(scaleX: newScaleX, scaleY: newScaleY);
+            if (save) WidgetLayoutManager.Instance?.SaveLayout();
+        }
+
+        /// <summary>
+        /// 调整水平比例 (细长/紧凑)
+        /// </summary>
+        public void AdjustScaleX(float delta, bool save = true)
+        {
+            if (Config == null) return;
+            float newX = Mathf.Clamp(Config.EffectiveScaleX + delta, 0.2f, 4.0f);
+            newX = Mathf.Round(newX * 20f) / 20f;
+            UpdateTransform(scaleX: newX);
+            if (save) WidgetLayoutManager.Instance?.SaveLayout();
+        }
+
+        /// <summary>
+        /// 调整垂直比例 (矮胖/拉长)
+        /// </summary>
+        public void AdjustScaleY(float delta, bool save = true)
+        {
+            if (Config == null) return;
+            float newY = Mathf.Clamp(Config.EffectiveScaleY + delta, 0.2f, 4.0f);
+            newY = Mathf.Round(newY * 20f) / 20f;
+            UpdateTransform(scaleY: newY);
+            if (save) WidgetLayoutManager.Instance?.SaveLayout();
+        }
+
+        /// <summary>
+        /// 复位长宽比为 1:1 等比例状态
+        /// </summary>
+        public void ResetAspectRatio(bool save = true)
+        {
+            if (Config == null) return;
+            float s = Config.Scale > 0.01f ? Config.Scale : 1.0f;
+            UpdateTransform(scaleX: s, scaleY: s);
+            if (save) WidgetLayoutManager.Instance?.SaveLayout();
+        }
 
         /// <summary>
         /// 组件标准化微控件管理器容器 (Standardized Control Container)
@@ -108,14 +235,46 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
-        /// 当前组件画面刷新周期 (秒)
+        /// 当前组件画面显示刷新周期 (秒, UIDrawLoop)
+        /// 优先级：AlwaysFullPower(0s) > Config.CustomHz / UpdateInterval > 组件源码 CustomHz / DefaultUpdateInterval > RefreshTier 阶梯周期
         /// </summary>
-        public float RefreshInterval => AlwaysFullPower ? 0f : GetTierInterval(RefreshTier, DefaultUpdateInterval);
+        public float RefreshInterval
+        {
+            get
+            {
+                if (AlwaysFullPower) return 0f;
+                if (Config != null)
+                {
+                    if (Config.CustomHz > 0.001f) return 1.0f / Config.CustomHz;
+                    if (Config.UpdateInterval > 0.0001f) return Config.UpdateInterval;
+                }
+                if (CustomHz > 0.001f) return 1.0f / CustomHz;
+                if (DefaultUpdateInterval > 0f) return DefaultUpdateInterval;
+                return GetTierInterval(RefreshTier, 0f);
+            }
+        }
 
         /// <summary>
-        /// 当前组件声明的数据心跳周期 (秒)
+        /// 当前组件数据心跳节拍周期 (秒, DataHeartbeat)
+        /// 优先级：AlwaysFullPower(0s) > Config.HeartBeatHz / HeartBeatInterval > 全局心跳基准 GlobalDataHeartbeatHz > HeartBeatTier 阶梯周期
         /// </summary>
-        public float HeartBeatInterval => AlwaysFullPower ? 0f : GetTierInterval(HeartBeatTier, DefaultUpdateInterval);
+        public float HeartBeatInterval
+        {
+            get
+            {
+                if (AlwaysFullPower) return 0f;
+                if (Config != null)
+                {
+                    if (Config.HeartBeatHz > 0.001f) return 1.0f / Config.HeartBeatHz;
+                    if (Config.HeartBeatInterval >= 0f) return Config.HeartBeatInterval;
+                }
+                if (WidgetRenderManager.Instance != null && WidgetRenderManager.Instance.GlobalDataHeartbeatHz > 0.001f)
+                {
+                    return 1.0f / WidgetRenderManager.Instance.GlobalDataHeartbeatHz;
+                }
+                return GetTierInterval(HeartBeatTier, DefaultUpdateInterval);
+            }
+        }
 
         /// <summary>
         /// 经父类安全拦截收敛后的实际生效数据心跳阶梯（物理保证 HeartBeat 频率 <= RefreshTier 刷新率）。
@@ -137,7 +296,7 @@ namespace ModularFlightPanel.UI
         }
 
         /// <summary>
-        /// 经父类收敛计算后的实际生效心跳周期秒数
+        /// 经父类收敛计算后的实际生效心跳周期秒数（物理保证 SPEC-002B：HeartBeat 频率 <= RefreshTier 刷新率，即心跳周期 >= 刷新周期）
         /// </summary>
         public float EffectiveHeartBeatInterval
         {
@@ -251,6 +410,7 @@ namespace ModularFlightPanel.UI
         public virtual void BaseInitialize(Transform parent, Canvas canvas, WidgetConfig config, ThemeConfig theme, float scale)
         {
             Config = config;
+            theme = ResolveEffectiveTheme(theme);
             RootCanvas = canvas;
             float widgetScale = (config != null && config.Scale > 0.01f) ? config.Scale : 1.0f;
             CommittedScale = widgetScale;
@@ -265,6 +425,14 @@ namespace ModularFlightPanel.UI
             {
                 RectTransform = gameObject.AddComponent<RectTransform>();
             }
+
+            CanvasGroup = GetComponent<CanvasGroup>();
+            if (CanvasGroup == null)
+            {
+                CanvasGroup = gameObject.AddComponent<CanvasGroup>();
+            }
+            float targetOpacity = (config != null && config.Opacity > 0.01f) ? config.Opacity : 1.0f;
+            CanvasGroup.alpha = Mathf.Clamp(targetOpacity, 0.05f, 1.0f);
 
             // 统一锚点与轴心至中心 (0.5, 0.5)，彻底杜绝编辑模式包围盒与组件像素错位
             RectTransform.anchorMin = new Vector2(0.5f, 0.5f);
@@ -638,8 +806,14 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public virtual void ApplyTheme(ThemeConfig theme)
         {
+            theme = ResolveEffectiveTheme(theme);
             if (theme == null) return;
             this.Controls.ApplyThemeToControls(theme);
+
+            if (CardBackground != null)
+            {
+                WidgetStyleManager.Instance?.ApplyCardFrame(CardBackground, CardOutline, CardRole, theme);
+            }
 
             // 递归保障：自动扫描组件根节点下所有原生 Text，确保字体与材质 100% 同步
             Text[] texts = GetComponentsInChildren<Text>(true);
@@ -651,13 +825,19 @@ namespace ModularFlightPanel.UI
                 {
                     Text t = texts[i];
                     if (t == null) continue;
-                    if (activeFont != null && t.font != activeFont)
+                    bool fontChanged = (activeFont != null && t.font != activeFont);
+                    if (fontChanged)
                     {
                         t.font = activeFont;
                     }
-                    if (activeTextMat != null && t.material != activeTextMat)
+                    bool matChanged = (t.material != activeTextMat);
+                    if (matChanged)
                     {
                         t.material = activeTextMat;
+                    }
+                    if (fontChanged || matChanged)
+                    {
+                        t.SetAllDirty();
                     }
                 }
             }
@@ -778,7 +958,10 @@ namespace ModularFlightPanel.UI
 
             float now = Time.unscaledTime;
             float interval = EffectiveHeartBeatInterval;
-            bool shouldHeartBeat = (EffectiveHeartBeatTier == RefreshTier) ||
+            float rfInterval = RefreshInterval;
+            bool isHeartbeatSameAsRefresh = (interval <= 0.001f && rfInterval <= 0.001f) ||
+                                            (Math.Abs(interval - rfInterval) < 0.001f);
+            bool shouldHeartBeat = isHeartbeatSameAsRefresh ||
                                    (_lastHeartBeatTime < 0f) ||
                                    (interval <= 0.001f) ||
                                    (now - _lastHeartBeatTime >= interval - 0.0005f);
@@ -848,6 +1031,13 @@ namespace ModularFlightPanel.UI
         /// 专用于从 LogicCore 的纯结构体状态映射到 UI 控件，零遥测查询，零 GC 分配。
         /// </summary>
         protected virtual void OnRenderState()
+        {
+        }
+
+        /// <summary>
+        /// 允许派生组件在通用右键上下文菜单中注入专属交互行为 (如分级仪简洁/完整模式切换、罗盘模式等)。
+        /// </summary>
+        public virtual void PopulateContextMenu(Action<string, Action> registerAction)
         {
         }
 
@@ -962,6 +1152,93 @@ namespace ModularFlightPanel.UI
             if (range <= 0.00001) return 0f;
             return Mathf.Clamp01((float)((val - min) / range));
         }
+
+        #region 航电平滑插值中枢 (Avionics Smoothing & Interpolation Engine)
+
+        /// <summary>
+        /// 帧率无关的一阶指数平滑插值 (Framerate-Independent Exponential Smoothing)
+        /// 专用于低频遥测心跳 (如 10Hz Standard) 与高频 UI 绘制循环 (60Hz Critical) 之间的平滑衔接，
+        /// 彻底消除低频遥测带来的视觉顿挫感。
+        /// </summary>
+        /// <param name="current">当前平滑数值</param>
+        /// <param name="target">遥测目标数值</param>
+        /// <param name="speed">收敛速度系数 (推荐 12f~25f，约 0.05~0.1 秒内平滑收敛)</param>
+        /// <param name="deltaTime">帧间隔时间 (Time.unscaledDeltaTime)</param>
+        /// <param name="deadband">吸附死区阈值，若差距小于该值直接吸附至 target</param>
+        public static float Interpolate(float current, float target, float speed = 15f, float deltaTime = 0.02f, float deadband = 0.0001f)
+        {
+            if (float.IsNaN(current)) return target;
+            if (float.IsNaN(target)) return current;
+            float diff = target - current;
+            if (Mathf.Abs(diff) <= deadband) return target;
+            float dt = deltaTime > 0f ? (deltaTime > 0.2f ? 0.2f : deltaTime) : 0.02f;
+            float factor = 1.0f - Mathf.Exp(-speed * dt);
+            float result = current + diff * factor;
+            return Mathf.Abs(target - result) <= deadband ? target : result;
+        }
+
+        /// <summary>
+        /// 双精度帧率无关一阶指数平滑插值 (Double Precision Exponential Smoothing)
+        /// 专用于速度/高度/距离等大动态范围物理遥测数据在 10Hz 与 60Hz 之间的无抖动平滑桥接。
+        /// </summary>
+        public static double Interpolate(double current, double target, double speed = 15.0, float deltaTime = 0.02f, double deadband = 0.0001)
+        {
+            if (double.IsNaN(current)) return target;
+            if (double.IsNaN(target)) return current;
+            double diff = target - current;
+            if (Math.Abs(diff) <= deadband) return target;
+            float dt = deltaTime > 0f ? (deltaTime > 0.2f ? 0.2f : deltaTime) : 0.02f;
+            double factor = 1.0 - Math.Exp(-speed * dt);
+            double result = current + diff * factor;
+            return Math.Abs(target - result) <= deadband ? target : result;
+        }
+
+        /// <summary>
+        /// 恒定速率线性平滑插值 (Constant Rate MoveTowards Smoothing)
+        /// </summary>
+        public static float InterpolateTowards(float current, float target, float maxDeltaPerSec, float deltaTime = 0.02f)
+        {
+            if (float.IsNaN(current)) return target;
+            if (float.IsNaN(target)) return current;
+            float dt = deltaTime > 0f ? (deltaTime > 0.2f ? 0.2f : deltaTime) : 0.02f;
+            return Mathf.MoveTowards(current, target, maxDeltaPerSec * dt);
+        }
+
+        /// <summary>
+        /// 双精度恒定速率线性平滑插值 (Double Precision MoveTowards Smoothing)
+        /// </summary>
+        public static double InterpolateTowards(double current, double target, double maxDeltaPerSec, float deltaTime = 0.02f)
+        {
+            if (double.IsNaN(current)) return target;
+            if (double.IsNaN(target)) return current;
+            float dt = deltaTime > 0f ? (deltaTime > 0.2f ? 0.2f : deltaTime) : 0.02f;
+            double step = maxDeltaPerSec * dt;
+            if (Math.Abs(target - current) <= step) return target;
+            return current + Math.Sign(target - current) * step;
+        }
+
+        /// <summary>
+        /// 二维坐标向量帧率无关平滑插值 (Vector2 Smoothing)
+        /// </summary>
+        public static Vector2 Interpolate(Vector2 current, Vector2 target, float speed = 15f, float deltaTime = 0.02f)
+        {
+            return new Vector2(
+                Interpolate(current.x, target.x, speed, deltaTime),
+                Interpolate(current.y, target.y, speed, deltaTime)
+            );
+        }
+
+        /// <summary>
+        /// 颜色通道平滑插值 (Color Smoothing)
+        /// </summary>
+        public static Color Interpolate(Color current, Color target, float speed = 15f, float deltaTime = 0.02f)
+        {
+            float dt = deltaTime > 0f ? (deltaTime > 0.2f ? 0.2f : deltaTime) : 0.02f;
+            float t = Mathf.Clamp01(1.0f - Mathf.Exp(-speed * dt));
+            return Color.Lerp(current, target, t);
+        }
+
+        #endregion
 
         /// <summary>
         /// 高效文本防抖写入（内容未改变时不触发 UGUI 网格与顶点重建）

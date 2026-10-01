@@ -35,14 +35,15 @@
 !Core/Telemetry/Providers/*
 
 # ── IMGUI 设置面板：KSP 游戏内配置界面，不参与 UI 预览渲染 ──
+!UI/Settings/ISettingsTab.cs
 !UI/Settings/SettingsGUI.cs
-!UI/Settings/TabAssembler.cs
-!UI/Settings/TabLibrary.cs
+!UI/Settings/TabDiagnostics.cs
 !UI/Settings/TabProfilesConfig.cs
-!UI/Settings/TabSimulation.cs
+!UI/Settings/TabStudio.cs
 !UI/Settings/TabThemeSettings.cs
-!UI/Settings/TabWidgetManager.cs
 !UI/Settings/WidgetPreviewLoader.cs
 
 # ── 构建期审计工具链：只在插件编译期/无头 CI 使用，不进 Unity 工程 ──
 !UI/Auditing/*
+!UI/Widgets/Systems/TimeCommHubWidget.cs
+

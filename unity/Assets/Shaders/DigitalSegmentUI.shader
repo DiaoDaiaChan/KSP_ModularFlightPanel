@@ -98,17 +98,26 @@ Shader "ModularFlightPanel/DigitalSegmentUI"
 
             fixed4 frag(v2f IN) : SV_Target
             {
-                // 1. 采样字模纹理 Alpha
-                half4 fontSample = tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd;
-                float litAlpha = fontSample.a;
+                // 1. 利用屏幕空间偏导数构建高保真灯丝截面感知采样 (严格限制在 0.5 像素内，保持笔画骨架饱满无缺口)
+                float2 dUVx = ddx(IN.texcoord) * 0.50;
+                float2 dUVy = ddy(IN.texcoord) * 0.50;
 
-                // 彻底丢弃非笔画区域，杜绝任何实心灰色方块底盒产生！
-                if (litAlpha < 0.005)
+                // 2. 正交灯丝核采样：中心发射核 + 4 邻域边缘融合
+                half4 sampleC = tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd;
+                half4 sampleL = tex2D(_MainTex, IN.texcoord - dUVx) + _TextureSampleAdd;
+                half4 sampleR = tex2D(_MainTex, IN.texcoord + dUVx) + _TextureSampleAdd;
+                half4 sampleU = tex2D(_MainTex, IN.texcoord + dUVy) + _TextureSampleAdd;
+                half4 sampleD = tex2D(_MainTex, IN.texcoord - dUVy) + _TextureSampleAdd;
+
+                float coreAlpha = sampleC.a;
+                float filamentAlpha = max(coreAlpha, max(max(sampleL.a, sampleR.a), max(sampleU.a, sampleD.a)) * 0.85);
+
+                if (filamentAlpha < 0.005)
                 {
                     discard;
                 }
 
-                // 2. 语义色彩智能门控 (Semantic Color Preservation):
+                // 3. 语义色彩智能门控 (Semantic Color Preservation):
                 // 若顶点颜色饱和度高 (如红色警报、黄色注意、绿色状态)，100% 忠实保留原始语义色！
                 // 仅当顶点为中性白光时，才投射数码管经典琥珀/数码原色 (_SegmentLitColor)
                 float maxC = max(max(IN.color.r, IN.color.g), IN.color.b);
@@ -116,20 +125,23 @@ Shader "ModularFlightPanel/DigitalSegmentUI"
                 float saturation = maxC - minC;
                 fixed3 baseColor = (saturation > 0.15) ? IN.color.rgb : (IN.color.rgb * _SegmentLitColor.rgb);
 
-                // 3. 数码管物理微缝隙与分段纹理 (Segment Micro-Grooves)
-                // 周期设为 8 像素平滑滤波，微刻槽深度受控 (最大 6%)，绝不破坏文字笔画
-                float groove = 1.0 - (sin(IN.worldPosition.y * 0.7854) * 0.5 + 0.5) * min(_SegmentGrooveContrast, 0.06);
+                // 4. 物理 VFD 控制栅极微金属网 (2px Fine Control Grid Mesh)
+                // 替代摧毁笔画的 8px 粗正弦切痕，赋予真实真空荧光管金属网格质感
+                float2 vfdGrid = abs(frac(IN.worldPosition.xy * 0.5) - 0.5) * 2.0;
+                float meshMask = min(vfdGrid.x, vfdGrid.y);
+                float wireMesh = 1.0 - (1.0 - smoothstep(0.12, 0.48, meshMask)) * min(_SegmentGrooveContrast, 0.08);
 
-                // 4. 核心白炽发光核 (Filament Overdrive Core - 25% 饱和微过载)
-                float coreWeight = saturate(pow(litAlpha, 3.0) * 0.25);
-                fixed3 hotColor = lerp(baseColor, _CoreHotColor.rgb, coreWeight);
-                fixed3 finalRgb = hotColor * groove;
+                // 5. 核心白炽发光核 (Filament Overdrive Core)
+                // 仅在字模最致密的灯丝中心区域产生炽热发光核，外围保留鲜明荧光色
+                float hotCore = smoothstep(0.50, 0.95, coreAlpha) * 0.38;
+                fixed3 hotColor = lerp(baseColor, _CoreHotColor.rgb, hotCore);
+                fixed3 finalRgb = hotColor * wireMesh;
 
-                // 5. 边缘抗锯齿与辉光融合 (Crisp Filament Halo)
-                float finalAlpha = saturate(pow(litAlpha, 0.90) * (1.0 + _GlowStrength * 0.20)) * IN.color.a;
+                // 6. 边缘抗锯齿与灯丝光晕融合 (Crisp Filament Halo)
+                float finalAlpha = saturate(pow(filamentAlpha, 0.75) * (1.0 + _GlowStrength * 0.22)) * IN.color.a;
                 fixed4 finalCol = fixed4(finalRgb, finalAlpha);
 
-                // 6. UGUI 视口裁切保护
+                // 7. UGUI 视口裁切保护
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

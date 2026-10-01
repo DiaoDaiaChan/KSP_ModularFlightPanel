@@ -1,5 +1,5 @@
 {
-  "SelectedThemeId": "boeing_787",
+  "SelectedThemeId": "cyber_neon",
   "SelectedLanguage": "zh-CN",
   "RenderMode": 1,
   "HideStockNavball": true,
@@ -9,11 +9,19 @@
   "HideStockCommNet": false,
   "HideStockToolbar": false,
   "ToolbarStyleMode": 2,
+  "NonFlightToolbarMode": 1,
   "MasterBypass": false,
   "ShowPerformanceBadge": false,
   "EnableGpu2DUIAcceleration": true,
   "AutoAdaptResolution": true,
   "GlobalRenderScaleMultiplier": 1.0,
+  "GlobalRefreshProfile": 1,
+  "RefreshControlMode": 0,
+  "GlobalStandardHz": 60.0,
+  "GlobalSlowHz": 30.0,
+  "GlobalRelaxedHz": 10.0,
+  "GlobalUltraLowHz": 2.0,
+  "GlobalDataHeartbeatHz": 0.0,
   "DockRules": [
     {
       "Key": "MOCK_RES",

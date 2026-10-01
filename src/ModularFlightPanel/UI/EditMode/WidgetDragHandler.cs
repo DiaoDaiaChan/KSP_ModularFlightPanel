@@ -61,6 +61,7 @@ namespace ModularFlightPanel.UI
         public bool IsHovered => _isHovered;
         private bool _isDragging = false;
         private Vector2 _dragTotalDelta = Vector2.zero;
+        private Vector2 _dragStartPos = Vector2.zero;
 
         private IWidgetControl _draggedControl = null;
         private Vector2 _controlStartOffset = Vector2.zero;
@@ -306,6 +307,15 @@ namespace ModularFlightPanel.UI
         {
             if (FlightHUDManager.IsMouseOverFloatingToolbar) return;
 
+            // 穿透拦截：如果鼠标光标位于打开的 SettingsGUI 工作台窗口内，拦截画布组件的点击与拖拽
+#if !HEADLESS && !UNITY_EDITOR
+            if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
+            {
+                Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                if (SettingsGUI.Instance.WindowRect.Contains(guiMouse)) return;
+            }
+#endif
+
             // 右键唤起通用航电上下文菜单 (锁定/复位/紧凑模式/单位制式/遥测检视)
             if (eventData.button == PointerEventData.InputButton.Right)
             {
@@ -366,6 +376,7 @@ namespace ModularFlightPanel.UI
 
             _isDragging = false;
             _dragTotalDelta = Vector2.zero;
+            _dragStartPos = _rectTransform != null ? _rectTransform.anchoredPosition : Vector2.zero;
 
             WidgetEditHistory.BeginAction();
             UpdateSelectionAppearance();
@@ -374,6 +385,13 @@ namespace ModularFlightPanel.UI
         public void OnDrag(PointerEventData eventData)
         {
             if (!IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar || _rectTransform == null || _canvas == null) return;
+#if !HEADLESS && !UNITY_EDITOR
+            if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
+            {
+                Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                if (SettingsGUI.Instance.WindowRect.Contains(guiMouse)) return;
+            }
+#endif
             if (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked) return;
 
             // 1. 微控件直接平移与磁吸拖拽
@@ -421,15 +439,16 @@ namespace ModularFlightPanel.UI
 
             // Shift 轴向锁定 (Axis-Lock): 约束为纯水平或纯垂直平移
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            Vector2 effectiveDelta = _dragTotalDelta;
             if (shift)
             {
                 if (Mathf.Abs(_dragTotalDelta.x) > Mathf.Abs(_dragTotalDelta.y))
                 {
-                    delta.y = 0f;
+                    effectiveDelta.y = 0f;
                 }
                 else
                 {
-                    delta.x = 0f;
+                    effectiveDelta.x = 0f;
                 }
             }
 
@@ -454,19 +473,19 @@ namespace ModularFlightPanel.UI
             }
             else
             {
-                // 单个组件拖拽
-                _rectTransform.anchoredPosition += delta;
+                // 单个组件拖拽：基于起始基准位置 + 累计无漂移位移量进行计算，彻底杜绝磁吸振荡与闪烁
+                Vector2 rawPos = _dragStartPos + effectiveDelta;
 
                 if (EnableMagneticSnap && WidgetSmartGuides.Instance != null)
                 {
-                    var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, _rectTransform.anchoredPosition, 8f);
+                    var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, rawPos, 8f);
                     _rectTransform.anchoredPosition = snap.SnappedPosition;
                 }
                 else
                 {
                     // 基础 5px 网格吸附
-                    float snapX = Mathf.Round(_rectTransform.anchoredPosition.x / 5f) * 5f;
-                    float snapY = Mathf.Round(_rectTransform.anchoredPosition.y / 5f) * 5f;
+                    float snapX = Mathf.Round(rawPos.x / 5f) * 5f;
+                    float snapY = Mathf.Round(rawPos.y / 5f) * 5f;
                     _rectTransform.anchoredPosition = new Vector2(snapX, snapY);
                 }
             }

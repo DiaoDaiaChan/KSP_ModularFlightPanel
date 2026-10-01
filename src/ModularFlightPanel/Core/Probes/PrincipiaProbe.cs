@@ -1208,6 +1208,56 @@ namespace ModularFlightPanel.Core.Probes
                     catch { }
                 }
                 if (IsSurfaceFrameSelected) { _cachedCategoryResult = ReferenceFrameCategory.Surface; return _cachedCategoryResult; }
+
+                // 权威参考系显示名与类型特征兜底 (Authoritative Frame Name & Type Fallback)
+                string fn = NavballFrameName;
+                if (string.IsNullOrEmpty(fn)) fn = FrameName;
+                if (!string.IsNullOrEmpty(fn))
+                {
+                    string lower = fn.ToLowerInvariant();
+                    if (lower.Contains("地固") || lower.Contains("体固") || lower.Contains("body_fixed") || lower.Contains("fixed") || lower.Contains("rotating"))
+                    {
+                        _cachedCategoryResult = ReferenceFrameCategory.Surface;
+                        return _cachedCategoryResult;
+                    }
+                    if (lower.Contains("lagrange") || lower.Contains("拉格朗日") || lower.Contains("barycentric") || lower.Contains("l1") || lower.Contains("l2") || lower.Contains("l点"))
+                    {
+                        _cachedCategoryResult = ReferenceFrameCategory.Lagrange;
+                        return _cachedCategoryResult;
+                    }
+                    if (lower.Contains("orbit") || lower.Contains("轨道") || lower.Contains("ecliptic") || lower.Contains("黄道"))
+                    {
+                        _cachedCategoryResult = ReferenceFrameCategory.Orbital;
+                        return _cachedCategoryResult;
+                    }
+                    if (lower.Contains("target") || lower.Contains("目标"))
+                    {
+                        _cachedCategoryResult = ReferenceFrameCategory.Target;
+                        return _cachedCategoryResult;
+                    }
+                }
+
+                string ft = FrameTypeString;
+                if (!string.IsNullOrEmpty(ft))
+                {
+                    string lowerFt = ft.ToLowerInvariant();
+                    if (lowerFt.Contains("surface") || lowerFt.Contains("body_fixed") || lowerFt.Contains("rotating"))
+                    {
+                        _cachedCategoryResult = ReferenceFrameCategory.Surface;
+                        return _cachedCategoryResult;
+                    }
+                    if (lowerFt.Contains("lagrange") || lowerFt.Contains("barycentric") || lowerFt.Contains("pulsating"))
+                    {
+                        _cachedCategoryResult = ReferenceFrameCategory.Lagrange;
+                        return _cachedCategoryResult;
+                    }
+                    if (lowerFt.Contains("orbit") || lowerFt.Contains("parent_direction") || lowerFt.Contains("body_direction") || lowerFt.Contains("ecliptic"))
+                    {
+                        _cachedCategoryResult = ReferenceFrameCategory.Orbital;
+                        return _cachedCategoryResult;
+                    }
+                }
+
                 _cachedCategoryResult = ReferenceFrameCategory.Inertial;
                 return _cachedCategoryResult;
             }

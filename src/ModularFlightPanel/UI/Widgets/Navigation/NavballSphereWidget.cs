@@ -339,7 +339,15 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                 }
                 NavBallHookService.SetStockNavballCleanAction?.Invoke(true);
+                NavBallHookService.SyncStockNavballAction?.Invoke(RectTransform, CommittedScale);
                 return;
+            }
+
+            if (NavBallHookService.IsCleanStockNavballActiveFunc?.Invoke() ?? false)
+            {
+                NavBallHookService.ResetStockNavballAction?.Invoke();
+                NavBallHookService.SetStockNavballCleanAction?.Invoke(false);
+                NavBallHookService.HideStockNavballAction?.Invoke(true);
             }
 
             if (_displayImage != null && !_displayImage.enabled) _displayImage.enabled = true;
@@ -391,6 +399,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnResetPrivateCache();
             _logic.Reset();
+            _displayedAttitudeRotation = Quaternion.identity;
             _lastAppliedHeadingText.Reset(string.Empty);
             _lastAppliedFrameText.Reset(string.Empty);
             _lastAppliedFrameColor.Reset(Color.clear);
@@ -560,6 +569,7 @@ namespace ModularFlightPanel.UI.Widgets
             public Vector3 CurrentDir;
             public Vector3 TransitionStartDir;
             public Vector2 RenderedPos;
+            public Vector2 LastStableBearing;
             public MarkerRenderState LastRenderState;
             public bool IsActive;
         }
@@ -873,6 +883,7 @@ namespace ModularFlightPanel.UI.Widgets
                     CurrentDir = Vector3.zero,
                     TransitionStartDir = Vector3.zero,
                     RenderedPos = Vector2.zero,
+                    LastStableBearing = Vector2.up,
                     LastRenderState = default,
                     IsActive = false
                 };
@@ -1132,7 +1143,35 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                _displayedAttitudeRotation = rawRot;
+                // 高保真自适应姿态防抖滤波 (AHRS Adaptive Anti-Jitter Filter)
+                // 彻底消除 PhysX 物理步进与 SAS PID 闭环微振颤 (0.01°~0.04°)，稳态如磐石，机动零延迟
+                if (_displayedAttitudeRotation == Quaternion.identity)
+                {
+                    _displayedAttitudeRotation = rawRot;
+                }
+                else
+                {
+                    float angleDelta = Quaternion.Angle(_displayedAttitudeRotation, rawRot);
+                    float dt = Time.unscaledDeltaTime;
+
+                    if (angleDelta > 30f || !Application.isPlaying || dt <= 0.0001f)
+                    {
+                        // 场景切变、时间加速跳变或大角位移：瞬时咬合无延迟
+                        _displayedAttitudeRotation = rawRot;
+                    }
+                    else if (angleDelta < 0.035f)
+                    {
+                        // 静止态/小微颤死区守卫：完全锁存稳态姿态，0 像素噪点抖动
+                    }
+                    else
+                    {
+                        // 航电 S 曲线自适应追踪：微颤强阻尼平滑，大操纵机动满速直跟
+                        float tRate = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.035f, 0.28f, angleDelta));
+                        float filterSpeed = Mathf.Lerp(14f, 48f, tRate);
+                        float slerpT = Mathf.Clamp01(dt * filterSpeed);
+                        _displayedAttitudeRotation = Quaternion.Slerp(_displayedAttitudeRotation, rawRot, slerpT);
+                    }
+                }
                 _currentFramePattern = newPattern;
             }
 
@@ -1173,6 +1212,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _evaluatedPaletteCategory = category;
                 _evaluatedPaletteTheme = curTheme;
                 _targetPalette = GetPaletteForCategory(category, curTheme);
+                _isPaletteLerping = true;
             }
             if (!_paletteInitialized)
             {
@@ -1293,9 +1333,6 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (hasDir && (isVisible || dir.sqrMagnitude > 0.001f))
                 {
-                    if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
-                    slot.IsActive = true;
-
                     Vector3 currentDir = dir;
                     if (_isFrameTransitioning && slot.TransitionStartDir.sqrMagnitude > 0.001f)
                     {
@@ -1307,33 +1344,75 @@ namespace ModularFlightPanel.UI.Widgets
 
                     Vector2 bearing = new Vector2(currentDir.x, currentDir.y);
                     float bearingMag = bearing.magnitude;
-                    Vector2 normBearing = bearingMag > 0.001f ? (bearing / bearingMag) : Vector2.up;
+                    float peripheryRadius = _visualRadius + 7.5f * CurrentDpiScale;
 
-                    float peripheryRadius = _visualRadius + 7.5f;
-                    Vector2 markerPos;
+                    Vector2 rawMarkerPos;
                     float targetScale;
                     float alpha;
 
                     if (currentDir.z >= 0.05f)
                     {
-                        // 前向半球：完全正交投影在球体正面
-                        markerPos = bearing * _visualRadius;
+                        // 1. 前向可见半球：正交贴合投影在球体正面
+                        rawMarkerPos = (bearingMag > 1.0f && bearingMag > 0.001f)
+                            ? (bearing / bearingMag) * _visualRadius
+                            : bearing * _visualRadius;
                         targetScale = 1.0f;
                         alpha = 1.0f;
+
+                        // 记录稳定方位角，为切入背面提供连续初值
+                        if (bearingMag > 0.08f)
+                        {
+                            slot.LastStableBearing = bearing / bearingMag;
+                        }
                     }
                     else
                     {
-                        // 背向半球与超出范围：持续吸附在表圈外围轨道，平滑过渡
-                        float tOff = Mathf.Clamp01((0.05f - currentDir.z) / 0.20f);
-                        Vector2 frontPos = bearing * _visualRadius;
-                        Vector2 periphPos = normBearing * peripheryRadius;
-                        markerPos = Vector2.Lerp(frontPos, periphPos, tOff);
+                        // 2. 背向半球与超出范围：吸附在表圈外围轨道，平滑过渡并淡化显示 (Periphery Orbit Clamping & Backside Fade)
+                        float tOff = Mathf.Clamp01((0.05f - currentDir.z) / 0.15f);
+                        Vector2 frontPos = (bearingMag > 1.0f && bearingMag > 0.001f)
+                            ? (bearing / bearingMag) * _visualRadius
+                            : bearing * _visualRadius;
 
-                        // 根据角距离远近变淡加深：-currentDir.z 从 0 (地平) 到 1.0 (正后方 180°)
+                        // ── 正后方 180° 奇点防打转与防抖滤波 (Singularity Anti-Spin & Hysteresis) ──
+                        // 当标线指向正后方死区 (bearingMag -> 0) 时，避免微小扰动或滚转导致 normBearing 在 360° 剧烈打转
+                        Vector2 normBearing;
+                        if (bearingMag >= 0.12f)
+                        {
+                            slot.LastStableBearing = bearing / bearingMag;
+                            normBearing = slot.LastStableBearing;
+                        }
+                        else
+                        {
+                            if (slot.LastStableBearing == Vector2.zero)
+                            {
+                                slot.LastStableBearing = Vector2.up;
+                            }
+
+                            if (bearingMag > 0.03f)
+                            {
+                                Vector2 instantNorm = bearing / bearingMag;
+                                slot.LastStableBearing = Vector2.MoveTowards(slot.LastStableBearing, instantNorm, Time.unscaledDeltaTime * 2.5f).normalized;
+                            }
+                            normBearing = slot.LastStableBearing;
+                        }
+
+                        Vector2 periphPos = normBearing * peripheryRadius;
+                        rawMarkerPos = Vector2.Lerp(frontPos, periphPos, tOff);
+
+                        // 根据背向角距离远近自然变淡加深：-currentDir.z 从 0 (地平) 到 1.0 (正后方 180°)
                         float tDepth = Mathf.Clamp01(-currentDir.z);
-                        alpha = Mathf.Lerp(0.88f, 0.55f, tDepth);
-                        targetScale = Mathf.Lerp(0.90f, 0.70f, tDepth);
+                        alpha = Mathf.Lerp(0.85f, 0.40f, tDepth);
+                        targetScale = Mathf.Lerp(0.90f, 0.68f, tDepth);
+
+                        // 在绝对正后方极小死区锥体 (bearingMag < 0.06) 内进一步平息透明度，避免正对时视觉抢眼
+                        if (bearingMag < 0.06f)
+                        {
+                            alpha *= Mathf.Lerp(0.35f, 1.0f, bearingMag / 0.06f);
+                        }
                     }
+
+                    if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
+                    slot.IsActive = true;
 
                     // 机动节点脉冲呼吸特效
                     if (slot.MarkerType == NavballMarkerType.Maneuver)
@@ -1350,8 +1429,30 @@ namespace ModularFlightPanel.UI.Widgets
                         targetScale *= transPulse;
                     }
 
-                    // 瞬时精准咬合球体表面，零滞后、零抽搐
-                    Vector2 renderedPos = markerPos;
+                    // 2. 标线位置亚像素自适应防抖滤波 (Marker Spatial Deadband & Anti-Jitter)
+                    // 消除载具高频物理微抖对标线投影的震荡干扰
+                    Vector2 renderedPos;
+                    if (slot.RenderedPos == Vector2.zero)
+                    {
+                        renderedPos = rawMarkerPos;
+                    }
+                    else
+                    {
+                        float posDeltaSqr = (rawMarkerPos - slot.RenderedPos).sqrMagnitude;
+                        if (posDeltaSqr < 0.10f) // < 0.31px 死区防抖
+                        {
+                            renderedPos = slot.RenderedPos;
+                        }
+                        else if (posDeltaSqr < 4.0f) // 0.31px ~ 2.0px 微抖平滑滤波
+                        {
+                            float filterT = Mathf.Clamp01(Time.unscaledDeltaTime * 28f);
+                            renderedPos = Vector2.Lerp(slot.RenderedPos, rawMarkerPos, filterT);
+                        }
+                        else
+                        {
+                            renderedPos = rawMarkerPos; // 大操纵位移瞬时咬合无延迟
+                        }
+                    }
                     slot.RenderedPos = renderedPos;
 
                     // 光标悬停交互 (Hover Scaling, Highlight & Press Feedback)
@@ -1588,35 +1689,40 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (isDirectionalLock)
                 {
-                    if (!_sasLockReticleRt.gameObject.activeSelf) _sasLockReticleRt.gameObject.SetActive(true);
-
-                    Vector2 targetPos = Vector2.zero;
                     MarkerSlot targetSlot = GetSlotForSASMode(curSASMode);
-                    if (targetSlot != null && targetSlot.Image != null && targetSlot.Image.gameObject.activeSelf)
-                    {
-                        targetPos = targetSlot.RectTransform.anchoredPosition;
-                    }
+                    bool isTargetActive = targetSlot != null && targetSlot.Image != null && targetSlot.Image.gameObject.activeSelf;
 
-                    if (Vector2.Distance(_sasLockReticleRt.anchoredPosition, targetPos) < 1.5f)
+                    if (!isTargetActive)
                     {
-                        _sasLockReticleRt.SetAnchoredPositionSafe(targetPos);
+                        if (_sasLockReticleRt.gameObject.activeSelf) _sasLockReticleRt.gameObject.SetActive(false);
                     }
                     else
                     {
-                        _sasLockReticleRt.SetAnchoredPositionSafe(Vector2.Lerp(_sasLockReticleRt.anchoredPosition, targetPos, Mathf.Clamp01(dt * 30.0f)));
-                    }
+                        if (!_sasLockReticleRt.gameObject.activeSelf) _sasLockReticleRt.gameObject.SetActive(true);
+                        Vector2 targetPos = targetSlot.RectTransform.anchoredPosition;
 
-                    float breathRaw = Mathf.Sin(Time.unscaledTime * 5.0f);
-                    float breath = 1.0f + 0.05f * (Mathf.Round(breathRaw * 8f) * 0.125f);
-                    if (_lastBreathScale.Update(breath))
-                    {
-                        _sasLockReticleRt.SetLocalScaleSafe(new Vector3(breath, breath, 1.0f));
-                    }
+                        if (Vector2.Distance(_sasLockReticleRt.anchoredPosition, targetPos) < 1.5f)
+                        {
+                            _sasLockReticleRt.SetAnchoredPositionSafe(targetPos);
+                        }
+                        else
+                        {
+                            _sasLockReticleRt.SetAnchoredPositionSafe(Vector2.Lerp(_sasLockReticleRt.anchoredPosition, targetPos, Mathf.Clamp01(dt * 30.0f)));
+                        }
 
-                    ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
-                    Color lockCol = NavballMarkerFactory.GetSASModeColor(curSASMode, curTheme);
-                    lockCol.a = 0.92f;
-                    _sasLockReticleImage.SetColor(lockCol);
+                        float breathRaw = Mathf.Sin(Time.unscaledTime * 5.0f);
+                        float breath = 1.0f + 0.05f * (Mathf.Round(breathRaw * 8f) * 0.125f);
+                        if (_lastBreathScale.Update(breath))
+                        {
+                            _sasLockReticleRt.SetLocalScaleSafe(new Vector3(breath, breath, 1.0f));
+                        }
+
+                        ThemeConfig curTheme = ThemeManager.Instance?.CurrentTheme;
+                        Color lockCol = NavballMarkerFactory.GetSASModeColor(curSASMode, curTheme);
+                        float lockAlpha = targetSlot.CurrentDir.z < 0.05f ? targetSlot.LastRenderState.Alpha : 0.92f;
+                        lockCol.a = lockAlpha;
+                        _sasLockReticleImage.SetColor(lockCol);
+                    }
                 }
                 else
                 {
@@ -1633,18 +1739,45 @@ namespace ModularFlightPanel.UI.Widgets
             if (_maneuverGuideContainer == null) return;
 
             var manSlot = _markerSlotByType[(int)NavballMarkerType.Maneuver];
-            bool hasManeuver = manSlot != null && manSlot.Image != null && manSlot.Image.gameObject.activeSelf;
+            bool hasManeuver = manSlot != null && _logic.CurrentState.HasManeuverNode && manSlot.CurrentDir.sqrMagnitude > 0.001f;
             if (!hasManeuver)
             {
                 if (_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(false);
                 return;
             }
 
-            Vector2 manPos = manSlot.RectTransform.anchoredPosition;
-            float dist = manPos.magnitude;
-
-            if (dist > 8f && dist < _visualRadius * 1.05f)
+            Vector2 manPos;
+            if (manSlot.Image != null && manSlot.Image.gameObject.activeSelf)
             {
+                manPos = manSlot.RectTransform.anchoredPosition;
+            }
+            else
+            {
+                // 机动节点在背面：若未处于正后方死区锥体内，流光指向边缘方位引导转头
+                Vector2 bearing = new Vector2(manSlot.CurrentDir.x, manSlot.CurrentDir.y);
+                float bearingMag = bearing.magnitude;
+                if (bearingMag < 0.12f)
+                {
+                    // 180° 正后方死区：平息流光，避免全向打转
+                    if (_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(false);
+                    return;
+                }
+                manPos = (bearing / bearingMag) * _visualRadius;
+            }
+
+            float dist = manPos.magnitude;
+            float maxGuideDist = _visualRadius + 15f * CurrentDpiScale;
+
+            if (dist > 8f && dist < maxGuideDist)
+            {
+                // 正后方死区锥体内平息流光，避免全向打转
+                Vector2 manBearing = new Vector2(manSlot.CurrentDir.x, manSlot.CurrentDir.y);
+                if (manSlot.CurrentDir.z < 0.05f && manBearing.magnitude < 0.12f)
+                {
+                    if (_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(false);
+                    return;
+                }
+
                 if (!_maneuverGuideContainer.activeSelf) _maneuverGuideContainer.SetActive(true);
 
                 float angleDeg = Mathf.Atan2(manPos.y, manPos.x) * Mathf.Rad2Deg - 90f;
@@ -1669,6 +1802,10 @@ namespace ModularFlightPanel.UI.Widgets
                     }
 
                     float alpha = Mathf.Sin(phase * Mathf.PI) * 0.85f;
+                    if (manSlot.CurrentDir.z < 0.05f)
+                    {
+                        alpha *= manSlot.LastRenderState.Alpha;
+                    }
                     if (Mathf.Abs(chev.color.a - alpha) > 0.03f)
                     {
                         Color c = chevronCol;
@@ -1872,8 +2009,9 @@ namespace ModularFlightPanel.UI.Widgets
                 case "BODY_FIXED":
                 case "BODY_SURFACE":
                 case "SURFACE":
+                    return theme.AccentPrimary;
                 default:
-                    return theme.AccentSecondary;
+                    return theme.AccentPrimary;
             }
         }
 
@@ -1894,44 +2032,9 @@ namespace ModularFlightPanel.UI.Widgets
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
                 case "BODY_FIXED":
                 case "BODY_SURFACE":
-                {
-                    Color bGndH = theme.GroundColor;
-                    Color bGndN = WidgetStyleManager.Darken(bGndH, 0.55f);
-                    Color bSkyH = theme.AccentSecondary;
-                    Color bSkyZ = theme.SkyColor;
-                    return new NavballFramePalette
-                    {
-                        SkyZenith = bSkyZ,
-                        SkyHorizon = bSkyH,
-                        GroundHorizon = bGndH,
-                        GroundNadir = bGndN,
-                        Equator = theme.HorizonLineColor,
-                        PitchLadder = theme.GridColor,
-                        HeadingLine = theme.AccentSecondary,
-                        Rim = theme.RimGlowColor
-                    };
-                }
                 case "SURFACE":
                 default:
-                    Color skyZ = theme.SkyColor;
-                    Color skyH = theme.AccentSecondary;
-                    Color gndH = theme.GroundColor;
-                    Color gndN = WidgetStyleManager.Darken(gndH, 0.55f);
-                    Color eq = theme.HorizonLineColor;
-                    Color pitch = theme.GridColor;
-                    Color hdg = theme.AccentSecondary;
-                    Color rim = theme.RimGlowColor;
-                    return new NavballFramePalette
-                    {
-                        SkyZenith = skyZ,
-                        SkyHorizon = skyH,
-                        GroundHorizon = gndH,
-                        GroundNadir = gndN,
-                        Equator = eq,
-                        PitchLadder = pitch,
-                        HeadingLine = hdg,
-                        Rim = rim
-                    };
+                    return WidgetStyleManager.Instance.GetNavballSurfacePalette(theme);
             }
         }
 
@@ -2108,6 +2211,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void ApplyTheme(ThemeConfig theme)
         {
+            base.ApplyTheme(theme);
             if (theme == null) return;
             _paletteInitialized = false;
             _lastFrameCategory.Reset(null);
@@ -2319,6 +2423,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             this.Controls.ApplyThemeToControls(theme);
+            MarkRenderDirty();
         }
 
         public void OnPointerClick(PointerEventData eventData)

@@ -377,10 +377,10 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 {
                     return fixed4(0.24, 0.26, 0.30, 0.90);
                 }
-                // Mode 5: BODY_FIXED - 大地测绘深海钛青带 (Geographic Oceanic Teal)
+                // Mode 5: BODY_FIXED - 大地赤道地平蓝带 (Geographic Horizon Blue: Principia navball_surface 规范)
                 else if (pat > 4.5)
                 {
-                    return fixed4(0.10, 0.28, 0.48, 0.88);
+                    return fixed4(0.40, 0.54, 0.80, 0.88);
                 }
                 // Mode 0: SURFACE - 经典航空深邃海天分界带 (Aero Horizon Ribbon)
                 else
@@ -816,6 +816,15 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         float isFullParallel = EvalConservativeLine(pMod15, 0.22, pAA) * 0.52 * polarLadderFade;
                         // 扣除俯仰数字与航向数字窗口
                         isFullParallel *= (1.0 - pitchLabelGap);
+
+                        // 矩形平直 PFD 模式：将太空参考系整周大圆弧收拢为标准化航电梯级横杠 (±9.5° 宽度)，
+                        // 彻底消除整屏贯穿大圆弧在矩形视口内产生的碗状球弧畸变，保持 100% 视觉平直与现代 PFD 质感
+                        if (_ApertureShape >= 0.5)
+                        {
+                            float rungMaskCol = (1.0 - smoothstep(8.5 - colAA, 9.8 + colAA, absColArc));
+                            float rungMaskMain = (1.0 - smoothstep(7.0 - mAA, 8.5 + mAA, absMainArc));
+                            isFullParallel *= max(rungMaskCol, rungMaskMain);
+                        }
                         combinedParallel = isFullParallel;
                     }
                 }
@@ -1116,13 +1125,13 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 else
                 {
                     float ar = max(_AspectRatio, 0.1);
-                    float rSphere = sqrt(ar * ar + 1.0) * 1.02;
-                    float u = (subCoord.x * ar) / rSphere;
-                    float v = subCoord.y / rSphere;
-                    float subR2 = u * u + v * v;
-                    float subZ = sqrt(max(0.0, 1.0 - subR2));
-                    subViewRay = float3(u, v, subZ);
-                    subNdotV = subZ;
+                    // 现代航空航天 PFD 透视投影 (垂直视场角 ~55°，纵向显示 ±27.5° 黄金跨度)
+                    // _FovScale = 1.0 对应 55° VFOV；各向同性像素比例，长宽比自由伸缩无畸变
+                    float fovMul = clamp(_FovScale, 0.3, 2.5);
+                    float tanHalfFov = tan(radians(27.5 * fovMul));
+                    float3 rayDir = float3(subCoord.x * ar * tanHalfFov, subCoord.y * tanHalfFov, 1.0);
+                    subViewRay = normalize(rayDir);
+                    subNdotV = subViewRay.z;
                 }
                 float3 subP = RotateByQuaternion(subViewRay, _SphereInvRotation);
                 subP = normalize(subP);
@@ -1130,14 +1139,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float3 procP = subP;
                 float signH = 1.0;
 
-                // Mode 5: BODY_FIXED / BODY_SURFACE (Principia 地心体固/地表参考系)
-                if (_FramePattern > 4.5)
-                {
-                    procP.x = -procP.x;
-                    procP.y = -procP.y;
-                }
                 // Mode 1: INERTIAL (Principia 地心惯性参考系)
-                else if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                if (_FramePattern > 0.5 && _FramePattern < 1.5)
                 {
                     procP.x = -procP.x;
                     signH = -1.0;
@@ -1198,12 +1201,11 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     if (rectAlpha <= 0.0) discard;
 
                     float ar = max(_AspectRatio, 0.1);
-                    float rSphere = sqrt(ar * ar + 1.0) * 1.02;
-                    float u = (coord.x * ar) / rSphere;
-                    float v = coord.y / rSphere;
-                    float r2 = u * u + v * v;
-                    z = sqrt(max(0.0, 1.0 - r2));
-                    viewRay = float3(u, v, z);
+                    float fovMul = clamp(_FovScale, 0.3, 2.5);
+                    float tanHalfFov = tan(radians(27.5 * fovMul));
+                    float3 rayDir = float3(coord.x * ar * tanHalfFov, coord.y * tanHalfFov, 1.0);
+                    viewRay = normalize(rayDir);
+                    z = viewRay.z;
                     NdotV = z;
                 }
 
@@ -1347,14 +1349,24 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     }
                 }
 
-                // 6. 3D 球面深度边缘衰减 (Limb Darkening)
-                float limbFalloff = pow(NdotV, _LimbPower);
-                float limbShade = lerp(1.0 - _LimbIntensity * 0.45, 1.0, limbFalloff);
-                col.rgb *= limbShade;
+                if (_ApertureShape < 0.5)
+                {
+                    // 6. 3D 球面深度边缘衰减 (Limb Darkening)
+                    float limbFalloff = pow(NdotV, _LimbPower);
+                    float limbShade = lerp(1.0 - _LimbIntensity * 0.45, 1.0, limbFalloff);
+                    col.rgb *= limbShade;
 
-                // 7. 边缘航电微光 (Atmospheric Rim Glow)
-                float rim = pow(1.0 - NdotV, _RimPower);
-                col.rgb += _RimColor.rgb * rim * _RimIntensity * 0.20;
+                    // 7. 边缘航电微光 (Atmospheric Rim Glow)
+                    float rim = pow(1.0 - NdotV, _RimPower);
+                    col.rgb += _RimColor.rgb * rim * _RimIntensity * 0.20;
+                }
+                else
+                {
+                    // 矩形平直 PFD 采用微弱航电 LCD 边缘防眩微渐变，纯净通透，杜绝球面暗角
+                    float edgeDist = max(abs(coord.x), abs(coord.y));
+                    float lcdShade = lerp(1.0, 0.94, smoothstep(0.85, 1.0, edgeDist));
+                    col.rgb *= lcdShade;
+                }
 
                 // 8. 仪表盘曲面玻璃高光 (Curved Cockpit Glass Lens Reflection)
                 float3 lightDir = normalize(float3(-0.35, 0.6, 0.7));

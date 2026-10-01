@@ -340,8 +340,8 @@ namespace ModularFlightPanel.UI
                 {
                     continue;
                 }
-                if ((cfg.WidgetType == "dock_favorites" || cfg.WidgetId == "core.dock_favorites" || cfg.WidgetId.StartsWith("dock_favorites") || cfg.WidgetId == "toolbar.favorites") &&
-                    (ThemeManager.Instance.ToolbarStyleMode != 2 || !ThemeManager.Instance.DockEnableFavoritePanel))
+                // 常用 MOD 独立快捷坞已废弃并全面整合至编辑 UI (TabStudio 与 HUDEditModeToolbar)，不再作为常驻 HUD 仪表实例化
+                if (cfg.WidgetType == "dock_favorites" || cfg.WidgetId == "core.dock_favorites" || cfg.WidgetId.StartsWith("dock_favorites") || cfg.WidgetId == "toolbar.favorites")
                 {
                     continue;
                 }
@@ -382,31 +382,6 @@ namespace ModularFlightPanel.UI
                         };
                     BaseFlightWidget dockWidget = WidgetRegistry.Spawn(dockCfg, theme, _hudRoot.transform, _canvasManager.Canvas, CustomScale);
                     if (dockWidget != null) _modularWidgets.Add(dockWidget);
-                }
-
-                // 独立常用快捷坞保障：若已启用常用面板且未在当前布局中，自动确保 FavoriteToolbarWidget 实例化
-                if (ThemeManager.Instance.DockEnableFavoritePanel)
-                {
-                    bool hasFavDock = false;
-                    for (int i = 0; i < _modularWidgets.Count; i++)
-                    {
-                        if (_modularWidgets[i] is FavoriteToolbarWidget)
-                        {
-                            hasFavDock = true;
-                            break;
-                        }
-                    }
-                    if (!hasFavDock)
-                    {
-                        var favCfg = WidgetLayoutManager.Instance.GetConfig("core.dock_favorites") ??
-                            new WidgetConfig("core.dock_favorites", I18n.GetWidgetName("core.dock_favorites", "AVIONICS 常用快捷工具栏"), ThemeManager.Instance.DockFavoritePosX, ThemeManager.Instance.DockFavoritePosY, 1.0f)
-                            {
-                                WidgetType = "dock_favorites",
-                                IsEnabled = true
-                            };
-                        BaseFlightWidget favWidget = WidgetRegistry.Spawn(favCfg, theme, _hudRoot.transform, _canvasManager.Canvas, CustomScale);
-                        if (favWidget != null) _modularWidgets.Add(favWidget);
-                    }
                 }
             }
 
@@ -640,38 +615,6 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            if (ThemeManager.Instance != null && ThemeManager.Instance.DockEnableFavoritePanel)
-            {
-                bool hasFav = false;
-                for (int i = 0; i < _modularWidgets.Count; i++)
-                {
-                    if (_modularWidgets[i] is FavoriteToolbarWidget)
-                    {
-                        hasFav = true;
-                        break;
-                    }
-                }
-                if (!hasFav)
-                {
-                    var favCfg = WidgetLayoutManager.Instance != null ? WidgetLayoutManager.Instance.GetConfig("core.dock_favorites") : null;
-                    if (favCfg == null)
-                    {
-                        favCfg = new WidgetConfig("core.dock_favorites", I18n.GetWidgetName("core.dock_favorites", "AVIONICS 常用快捷工具栏"), ThemeManager.Instance.DockFavoritePosX, ThemeManager.Instance.DockFavoritePosY, 1.0f)
-                        {
-                            WidgetType = "dock_favorites",
-                            IsEnabled = true
-                        };
-                    }
-                    BaseFlightWidget favWidget = WidgetRegistry.Spawn(favCfg, theme, _hudRoot.transform, _canvasManager.Canvas, CustomScale);
-                    if (favWidget != null)
-                    {
-                        _modularWidgets.Add(favWidget);
-                        WidgetRenderManager.Instance.RegisterWidget(favWidget, favWidget.RefreshTier);
-                        favWidget.IsManagedByRenderManager = true;
-                    }
-                }
-            }
-
             WidgetLayerManager.NormalizeAndSyncLayers(recordHistory: false);
         }
 
@@ -809,6 +752,7 @@ namespace ModularFlightPanel.UI
                     _modularWidgets[i].ApplyTheme(newTheme);
                 }
             }
+            Canvas.ForceUpdateCanvases();
         }
 
         private bool _isUIVisible = true;

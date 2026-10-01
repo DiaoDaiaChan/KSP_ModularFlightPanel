@@ -1210,6 +1210,14 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _lastBottomText.Reset(string.Empty);
             _trendAngle = 0f;
             _showingIntegerReadout = false;
+
+            for (int i = 0; i < _tickPool.Count; i++)
+            {
+                if (_tickPool[i].Root != null && _tickPool[i].Root.activeSelf)
+                {
+                    _tickPool[i].Root.SetActive(false);
+                }
+            }
         }
 
         protected override void OnDestroy()

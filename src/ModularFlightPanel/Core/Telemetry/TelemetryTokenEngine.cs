@@ -178,6 +178,7 @@ namespace ModularFlightPanel.Core
                 case "SPEED:TARGET":
                     return t => t.TargetSpeed;
                 case "ALT":
+                    return t => t.DisplayAltitude;
                 case "ALT:ASL":
                 case "ALT:ASL:DIST":
                     return t => t.AltitudeASL;
@@ -215,10 +216,10 @@ namespace ModularFlightPanel.Core
                     return t => t.OrbitalPeriod;
                 case "TIME_TO_AP":
                 case "TAP":
-                    return t => t.TimeToAp;
+                    return t => Math.Max(0.0, t.TimeToAp);
                 case "TIME_TO_PE":
                 case "TPE":
-                    return t => t.TimeToPe;
+                    return t => Math.Max(0.0, t.TimeToPe);
                 case "MACH":
                     return t => t.Mach;
                 case "Q":
@@ -227,9 +228,23 @@ namespace ModularFlightPanel.Core
                 case "TWR":
                     return t => t.TWR;
                 case "THROTTLE":
+                case "THR":
+                    return t => t.Throttle * 100.0;
+                case "THROTTLE:RAW":
+                case "THROTTLE:0..1":
+                case "THROTTLE:NORM":
+                case "THR:RAW":
+                case "THR:0..1":
+                case "THR:NORM":
                     return t => t.Throttle;
                 case "PROP":
                 case "FUEL":
+                case "STAGEPROP":
+                    return t => t.StagePropellantFraction * 100.0;
+                case "PROP:RAW":
+                case "PROP:0..1":
+                case "PROP:NORM":
+                case "FUEL:RAW":
                     return t => t.StagePropellantFraction;
                 case "PITCH":
                     return t => t.Pitch;
@@ -237,7 +252,7 @@ namespace ModularFlightPanel.Core
                     return t => t.Roll;
                 case "HEADING":
                 case "HDG":
-                    return t => t.Heading;
+                    return t => (t.Heading % 360.0 + 360.0) % 360.0;
                 case "NODE:DV":
                 case "MNV:DV":
                     return t => t.ManeuverDeltaV;
@@ -555,7 +570,11 @@ namespace ModularFlightPanel.Core
             RegisterStringToken("ROLL", (t, sub, fmt) => FormatNumber(t.Roll, fmt, "F1", "tok_roll"));
 
             // --- 动力与气动 ---
-            RegisterNumericToken("THROTTLE", (t, sub) => t.Throttle * 100.0, "THR");
+            RegisterNumericToken("THROTTLE", (t, sub) =>
+            {
+                if (sub == "RAW" || sub == "0..1" || sub == "NORM") return t.Throttle;
+                return t.Throttle * 100.0;
+            }, "THR");
             RegisterStringToken("THROTTLE", (t, sub, fmt) => CacheManager.FastPercent(Mathf.RoundToInt(t.Throttle * 100f)), "THR");
 
             RegisterNumericToken("TWR", (t, sub) => t.TWR);
@@ -570,8 +589,12 @@ namespace ModularFlightPanel.Core
             RegisterNumericToken("ATM", (t, sub) => t.AtmosphericPressure, "ATMOSPHERE", "BARO");
             RegisterStringToken("ATM", (t, sub, fmt) => CacheManager.Instance.FastDoubleWithAffix("tok_atm", t.AtmosphericPressure, "", " atm", fmt ?? "F2", 0.05), "ATMOSPHERE", "BARO");
 
-            RegisterNumericToken("PROP", (t, sub) => t.StagePropellantFraction * 100.0, "STAGEPROP");
-            RegisterStringToken("PROP", (t, sub, fmt) => CacheManager.FastPercent(Mathf.RoundToInt(t.StagePropellantFraction * 100f)), "STAGEPROP");
+            RegisterNumericToken("PROP", (t, sub) =>
+            {
+                if (sub == "RAW" || sub == "0..1" || sub == "NORM") return t.StagePropellantFraction;
+                return t.StagePropellantFraction * 100.0;
+            }, "STAGEPROP", "FUEL");
+            RegisterStringToken("PROP", (t, sub, fmt) => CacheManager.FastPercent(Mathf.RoundToInt(t.StagePropellantFraction * 100f)), "STAGEPROP", "FUEL");
 
             // --- 轨道力学 ---
             RegisterNumericToken("AP", (t, sub) => t.Apoapsis, "APOAPSIS");
@@ -605,6 +628,9 @@ namespace ModularFlightPanel.Core
                 if (sub == "RATE") return t.NetEcRate;
                 if (sub == "VOLT" || sub == "VOLTAGE") return t.BusVoltage;
                 if (sub == "PCT" || sub == "PERCENT") return t.EcPercent;
+                if (sub == "GEN" || sub == "PROD") return t.TotalPowerGeneration;
+                if (sub == "LOAD" || sub == "CONS" || sub == "DRAIN") return t.TotalPowerConsumption;
+                if (sub == "BATCOUNT") return t.Batteries != null ? t.Batteries.Count : 0;
                 return t.ElectricCharge;
             }, "ELEC");
 
@@ -614,6 +640,8 @@ namespace ModularFlightPanel.Core
                 if (sub == "RATE") return FormatNumber(t.NetEcRate, fmt, "F1") + " e/s";
                 if (sub == "VOLT" || sub == "VOLTAGE") return FormatNumber(t.BusVoltage, fmt, "F1") + " V";
                 if (sub == "PCT" || sub == "PERCENT") return FormatNumber(t.EcPercent, fmt, "F0") + "%";
+                if (sub == "GEN" || sub == "PROD") return FormatNumber(t.TotalPowerGeneration, fmt, "F1") + " e/s";
+                if (sub == "LOAD" || sub == "CONS" || sub == "DRAIN") return FormatNumber(t.TotalPowerConsumption, fmt, "F1") + " e/s";
                 return FormatNumber(t.ElectricCharge, fmt, "F0");
             }, "ELEC");
 
@@ -845,8 +873,18 @@ namespace ModularFlightPanel.Core
             RegisterNumericToken("TEMP", (t, sub) => t.CabinTemp, "CABINTEMP");
             RegisterStringToken("TEMP", (t, sub, fmt) => FormatNumber(t.CabinTemp, fmt, "F1") + " °C", "CABINTEMP");
 
-            RegisterNumericToken("SOLAR", (t, sub) => (sub == "ACTIVE" || sub == "COUNT") ? (t.SolarPower > 0.01 ? 2.0 : 0.0) : t.SolarPower);
-            RegisterStringToken("SOLAR", (t, sub, fmt) => (sub == "ACTIVE" || sub == "COUNT") ? (t.SolarPower > 0.01 ? 2 : 0).ToString() : FormatNumber(t.SolarPower, fmt, "F2") + " e/s");
+            RegisterNumericToken("SOLAR", (t, sub) =>
+            {
+                if (sub == "ACTIVE") return t.SolarPanelsActive;
+                if (sub == "TOTAL" || sub == "COUNT") return t.SolarPanelsTotal;
+                return t.SolarPower;
+            });
+            RegisterStringToken("SOLAR", (t, sub, fmt) =>
+            {
+                if (sub == "ACTIVE") return t.SolarPanelsActive.ToString();
+                if (sub == "TOTAL" || sub == "COUNT") return t.SolarPanelsTotal.ToString();
+                return FormatNumber(t.SolarPower, fmt, "F2") + " e/s";
+            });
 
             RegisterNumericToken("MONO", (t, sub) => t.MonoPercent, "MONOPROP", "RCS_FUEL");
             RegisterStringToken("MONO", (t, sub, fmt) => FormatNumber(t.MonoPercent, fmt, "F1") + "%", "MONOPROP", "RCS_FUEL");

@@ -93,6 +93,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (Kind == BarGaugeKind.Throttle)
             {
+                if (MaxVal >= 50.0 && val > 0.0 && val <= 1.0 && (ValueToken.Contains(":RAW") || ValueToken.Contains(":0..1") || ValueToken.Contains(":NORM")))
+                {
+                    val *= 100.0;
+                }
+
                 float targetThrottle = Mathf.Clamp((float)val, (float)MinVal, (float)MaxVal);
                 _commandedThrottle = targetThrottle;
 
@@ -116,12 +121,15 @@ namespace ModularFlightPanel.UI.Widgets
 
                 float cmdFrac = Mathf.Clamp01((_commandedThrottle - (float)MinVal) / (float)range);
                 float spoolFrac = Mathf.Clamp01((_spoolThrottle - (float)MinVal) / (float)range);
-                string valueStr = $"{Mathf.RoundToInt(_spoolThrottle)}%";
+
+                float effectivePct = (MaxVal <= 1.0) ? (_spoolThrottle * 100f) : _spoolThrottle;
+                float effectiveCmd = (MaxVal <= 1.0) ? (_commandedThrottle * 100f) : _commandedThrottle;
+                string valueStr = CacheManager.FastPercent(Mathf.Clamp(Mathf.RoundToInt(effectivePct), 0, 100));
 
                 string statusTag;
-                if (_spoolThrottle < 2f) statusTag = "IDLE";
-                else if (Mathf.Abs(_spoolThrottle - _commandedThrottle) > 1.5f) statusTag = "SPOOL";
-                else if (_spoolThrottle >= 98f) statusTag = "MAX";
+                if (effectivePct < 2f) statusTag = "IDLE";
+                else if (Mathf.Abs(effectivePct - effectiveCmd) > 1.5f) statusTag = "SPOOL";
+                else if (effectivePct >= 98f) statusTag = "MAX";
                 else statusTag = "MIL";
 
                 TextStyleRole btmRole = (statusTag == "MAX" || statusTag == "SPOOL") ? TextStyleRole.Accent : TextStyleRole.Muted;
@@ -366,7 +374,15 @@ namespace ModularFlightPanel.UI.Widgets
             }));
             if (_fillBarRt != null)
             {
-                this.Controls.Register(new WidgetLinearBarControl(this, "fill_bar", "充填光柱", _fillBarRt.gameObject, null, _fillBarImage, _valueToken, _minVal, _maxVal, 100f, false) { CautionThreshold = double.MaxValue, WarningThreshold = double.MaxValue });
+                this.Controls.Register(WidgetControlManager.WrapElement(this, "fill_bar", "充填光柱", _fillBarRt.gameObject, (t) => {
+                    if (_fillBarImage != null)
+                    {
+                        if (_kind == BarGaugeKind.AtmosphericPressure || _kind == BarGaugeKind.Throttle)
+                            _fillBarImage.color = Color.clear;
+                        else
+                            _fillBarImage.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, t);
+                    }
+                }));
             }
             if (_actPointerObj != null)
             {
@@ -634,7 +650,7 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             float trackH = 186f * s;
             float usableH = trackH - (4f * s);
-            bool isLeft = Config.IsLeftOrientation;
+            bool isLeft = Config != null ? Config.IsLeftOrientation : true;
             float pointerX = isLeft ? (-16f * s) : (16f * s);
 
             if (_topTagTitle != null)

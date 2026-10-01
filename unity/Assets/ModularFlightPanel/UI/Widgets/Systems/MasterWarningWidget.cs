@@ -593,6 +593,7 @@ namespace ModularFlightPanel.UI.Widgets
                 {
                     _bannerState = BannerDisplayState.Normal;
                     _bannerTimer = 0f;
+                    _currentEvent = default;
                 }
             }
         }
@@ -652,11 +653,22 @@ namespace ModularFlightPanel.UI.Widgets
                 s.BannerSlideX = 0f;
             }
             s.BannerPulseAlpha = 0.82f + 0.18f * Mathf.Sin(_bannerTimer * 12f);
-            s.EventTitle = _currentEvent.Title;
-            s.EventSub = _currentEvent.Sub;
-            s.EventLeftIcon = _currentEvent.LeftIcon;
-            s.EventRightIcon = _currentEvent.RightIcon;
-            s.EventColor = _currentEvent.ColorRole;
+            if (_bannerState != BannerDisplayState.Normal)
+            {
+                s.EventTitle = _currentEvent.Title;
+                s.EventSub = _currentEvent.Sub;
+                s.EventLeftIcon = _currentEvent.LeftIcon;
+                s.EventRightIcon = _currentEvent.RightIcon;
+                s.EventColor = _currentEvent.ColorRole;
+            }
+            else
+            {
+                s.EventTitle = null;
+                s.EventSub = null;
+                s.EventLeftIcon = null;
+                s.EventRightIcon = null;
+                s.EventColor = default;
+            }
 
             // Nominal
             s.NominalTitle = _dataNominalTitle;
@@ -1874,6 +1886,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         // 缓存与防抖 (SPEC-009)
         private readonly CachedFloat _bannerSlidePos = new CachedFloat(-999f, tolerance: 0.5f);
+        private readonly Cached<BannerDisplayState> _lastBannerDisplayState = new Cached<BannerDisplayState>(BannerDisplayState.Normal);
         private readonly Cached<int> _lastCautCount = new Cached<int>(-1);
         private readonly Cached<int> _lastWarnCount = new Cached<int>(-1);
         private readonly Cached<bool> _lastCautBlink = new Cached<bool>(false);
@@ -2153,6 +2166,13 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             ApplyLayoutMode();
+            _cellsStyleNeedsUpdate = true;
+            _nominalStyleNeedsUpdate = true;
+            _lastBannerDisplayState.Reset(BannerDisplayState.Normal);
+            _lastRenderedNominalTitle.Reset(null);
+            _lastRenderedNominalSub.Reset(null);
+            _lastRenderedNominalIcon.Reset(null);
+            _lastNominalPhaseColor.Reset(Color.clear);
             ThemeConfig theme = WidgetStyleManager.Instance?.CurrentTheme ?? WidgetStyleManager.ResolveTheme(null);
             ApplyTheme(theme);
         }
@@ -2299,6 +2319,29 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (!state.HasVessel) return;
 
+            // 检测横幅状态机阶跃 (SPEC-009 防抖状态机路由)
+            bool bannerStateChanged = _lastBannerDisplayState.Update(state.BannerState);
+            if (bannerStateChanged)
+            {
+                if (state.BannerState == BannerDisplayState.Normal)
+                {
+                    // 从横幅事件回归常态：强制重置所有巡航工况文本与样式缓存，确保光字牌文字与颜色瞬时复位熄灭
+                    _lastRenderedNominalTitle.Reset(null);
+                    _lastRenderedNominalSub.Reset(null);
+                    _lastRenderedNominalIcon.Reset(null);
+                    _lastNominalPhaseColor.Reset(Color.clear);
+                    _nominalStyleNeedsUpdate = true;
+                }
+                else
+                {
+                    // 进入新横幅事件：重置事件文本缓存，确保新事件文案无死区即时写入
+                    _lastRenderedEventTitle.Reset(null);
+                    _lastRenderedEventSub.Reset(null);
+                    _lastRenderedEventLeftIcon.Reset(null);
+                    _lastRenderedEventRightIcon.Reset(null);
+                }
+            }
+
             if (state.ModulesCount == 3)
             {
                 RenderVisualCells(in state, theme);
@@ -2318,6 +2361,15 @@ namespace ModularFlightPanel.UI.Widgets
                     UpdateBannerAnimation(in state, theme);
                     return;
                 }
+
+                // 2模块模式回归常态：确保关闭横幅光字牌，复位中央筋条与左右舱位置
+                float s = CurrentDpiScale;
+                if (_bannerCell != null && _bannerCell.activeSelf) _bannerCell.SetActive(false);
+                if (_cautCell != null && !_cautCell.activeSelf) _cautCell.SetActive(true);
+                if (_warnCell != null && !_warnCell.activeSelf) _warnCell.SetActive(true);
+                if (_centerDivider != null && !_centerDivider.gameObject.activeSelf) _centerDivider.gameObject.SetActive(true);
+                if (_cautRect != null) _cautRect.anchoredPosition = new Vector2(-46f * s, 0f);
+                if (_warnRect != null) _warnRect.anchoredPosition = new Vector2(46f * s, 0f);
 
                 RenderVisualCells(in state, theme);
             }
@@ -2392,10 +2444,20 @@ namespace ModularFlightPanel.UI.Widgets
                     float slideX = state.BannerSlideX * s;
                     if (_bannerSlidePos.Update(slideX))
                     {
+                        if (_bannerCell != null && _bannerCell.activeSelf) _bannerCell.SetActive(false);
                         if (_cautCell != null && !_cautCell.activeSelf) _cautCell.SetActive(true);
                         if (_warnCell != null && !_warnCell.activeSelf) _warnCell.SetActive(true);
                         if (_cautRect != null) _cautRect.anchoredPosition = new Vector2(-slideX, 0f);
                         if (_warnRect != null) _warnRect.anchoredPosition = new Vector2(slideX, 0f);
+                    }
+                }
+                else
+                {
+                    // 3模块模式回闪收尾：快速淡出高光条
+                    if (_bannerPipBar != null)
+                    {
+                        Color fadeCol = WidgetStyleManager.WithAlpha(eventColor, state.BannerPulseAlpha * 0.5f);
+                        SetColorIfChanged(_bannerPipBar, fadeCol);
                     }
                 }
             }
@@ -2572,6 +2634,7 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnResetPrivateCache()
         {
             _bannerSlidePos.Reset(-999f);
+            _lastBannerDisplayState.Reset(BannerDisplayState.Normal);
             _lastCautCount.Reset(-1);
             _lastWarnCount.Reset(-1);
             _lastCautBlink.Reset(false);

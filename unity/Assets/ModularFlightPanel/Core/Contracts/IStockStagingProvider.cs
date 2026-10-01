@@ -74,6 +74,21 @@ namespace ModularFlightPanel.Core
         void MovePartToStage(uint partFlightId, int fromStage, int partIndex, int targetStage);
 
         /// <summary>
+        /// 在指定索引处插入新分级并将部件移入该新分级 (支持在分级间拖拽新建分级)
+        /// </summary>
+        void InsertStageAndMovePart(uint partFlightId, int fromStage, int partIndex, int insertAtStageIndex);
+
+        /// <summary>
+        /// 在同级内调整部件芯片的排布位置次序
+        /// </summary>
+        void ReorderPartInStage(uint partFlightId, int stage, int fromIndex, int toIndex);
+
+        /// <summary>
+        /// 切换对称部件组展开/折叠状态 (与原版 StageIcon.ExpandGroup / CollapseGroup 联动)
+        /// </summary>
+        void ToggleSymmetryExpansion(uint partFlightId, int stage, int partIndex);
+
+        /// <summary>
         /// 在 3D 游戏场景中高亮/取消高亮该部件及其对称体
         /// </summary>
         /// <param name="partFlightId">部件的全局唯一 flightID / craftID</param>
@@ -112,6 +127,12 @@ namespace ModularFlightPanel.Core
         public static void MoveStage(int fromStage, int toStage) => Provider?.MoveStage(fromStage, toStage);
         public static void MovePartToStage(uint partFlightId, int fromStage, int partIndex, int targetStage)
             => Provider?.MovePartToStage(partFlightId, fromStage, partIndex, targetStage);
+        public static void InsertStageAndMovePart(uint partFlightId, int fromStage, int partIndex, int insertAtStageIndex)
+            => Provider?.InsertStageAndMovePart(partFlightId, fromStage, partIndex, insertAtStageIndex);
+        public static void ReorderPartInStage(uint partFlightId, int stage, int fromIndex, int toIndex)
+            => Provider?.ReorderPartInStage(partFlightId, stage, fromIndex, toIndex);
+        public static void ToggleSymmetryExpansion(uint partFlightId, int stage, int partIndex)
+            => Provider?.ToggleSymmetryExpansion(partFlightId, stage, partIndex);
         public static void SetPartHighlight(uint partFlightId, bool highlight, Color? highlightColor = null)
             => Provider?.SetPartHighlight(partFlightId, highlight, highlightColor);
         public static void ClearAllHighlights() => Provider?.ClearAllHighlights();

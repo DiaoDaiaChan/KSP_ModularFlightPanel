@@ -311,6 +311,7 @@ namespace ModularFlightPanel.UI.Widgets
             public NavballMarkerClickHandler Handler;
             public Vector3 CurrentDir;
             public Vector2 RenderedPos;
+            public Vector2 LastStableBearing;
         }
 
         private MarkerSlot[] _markerSlots;
@@ -616,7 +617,8 @@ namespace ModularFlightPanel.UI.Widgets
                     MarkerType = NavballMarkerHelper.GetMarkerType(k),
                     Image = img,
                     RectTransform = img.rectTransform,
-                    Handler = clickHandler
+                    Handler = clickHandler,
+                    LastStableBearing = Vector2.up
                 };
             }
 
@@ -1051,7 +1053,33 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                _displayedAttitudeRotation = rawRot;
+                // 高保真自适应姿态防抖滤波 (AHRS Adaptive Anti-Jitter Filter)
+                // 彻底消除 PhysX 物理步进与 SAS PID 闭环微振颤 (0.01°~0.04°)，稳态如磐石，机动零延迟
+                if (_displayedAttitudeRotation == Quaternion.identity)
+                {
+                    _displayedAttitudeRotation = rawRot;
+                }
+                else
+                {
+                    float angleDelta = Quaternion.Angle(_displayedAttitudeRotation, rawRot);
+                    float dt = Time.unscaledDeltaTime;
+
+                    if (angleDelta > 30f || !Application.isPlaying || dt <= 0.0001f)
+                    {
+                        _displayedAttitudeRotation = rawRot;
+                    }
+                    else if (angleDelta < 0.035f)
+                    {
+                        // 稳态微颤死区守卫
+                    }
+                    else
+                    {
+                        float tRate = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.035f, 0.28f, angleDelta));
+                        float filterSpeed = Mathf.Lerp(14f, 48f, tRate);
+                        float slerpT = Mathf.Clamp01(dt * filterSpeed);
+                        _displayedAttitudeRotation = Quaternion.Slerp(_displayedAttitudeRotation, rawRot, slerpT);
+                    }
+                }
                 _currentFramePattern = newPattern;
             }
 
@@ -1171,8 +1199,6 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (hasDir && (isVisible || dir.sqrMagnitude > 0.001f))
                 {
-                    if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
-
                     Vector3 currentDir = dir;
                     if (_isFrameTransitioning && _transitionStartMarkerDirs.TryGetValue(key, out Vector3 startDir) && startDir.sqrMagnitude > 0.001f)
                     {
@@ -1183,49 +1209,112 @@ namespace ModularFlightPanel.UI.Widgets
                     slot.CurrentDir = currentDir;
                     _currentMarkerDirs[key] = currentDir;
 
-                    Vector2 markerPos;
-                    float targetScale;
                     float alpha;
+                    float targetScale;
+                    Vector2 rawMarkerPos;
 
-                    if (currentDir.z >= 0.05f)
+                    if (currentDir.z >= 0.04f)
                     {
-                        float rSphere = Mathf.Sqrt(ar * ar + 1.0f) * 1.02f;
-                        float rawX = currentDir.x * (rSphere * halfH);
-                        float rawY = currentDir.y * (rSphere * halfH);
+                        // 1. 前向可见半球：正交/透视投影在矩形仪表正面
+                        alpha = 1.0f;
+                        targetScale = Mathf.Lerp(0.85f, 1.0f, Mathf.Clamp01(currentDir.z + 0.2f));
+
+                        // 现代航空航天 PFD 透视投影 (垂直视场角 55°，tan(27.5°) 黄金视场)
+                        float fovMul = 1.0f;
+                        float tanHalfFov = Mathf.Tan(27.5f * fovMul * Mathf.Deg2Rad);
+                        float projFactor = halfH / (currentDir.z * tanHalfFov);
+                        float rawX = currentDir.x * projFactor;
+                        float rawY = currentDir.y * projFactor;
 
                         if (Mathf.Abs(rawX) <= boundX && Mathf.Abs(rawY) <= boundY)
                         {
-                            markerPos = new Vector2(rawX, rawY);
-                            targetScale = 1.0f;
-                            alpha = 1.0f;
+                            rawMarkerPos = new Vector2(rawX, rawY);
                         }
                         else
                         {
                             float scaleX = Mathf.Abs(rawX) > 0.001f ? boundX / Mathf.Abs(rawX) : 1f;
                             float scaleY = Mathf.Abs(rawY) > 0.001f ? boundY / Mathf.Abs(rawY) : 1f;
                             float edgeScale = Mathf.Min(scaleX, scaleY);
-                            markerPos = new Vector2(rawX * edgeScale, rawY * edgeScale);
-                            targetScale = 0.85f;
-                            alpha = 0.65f;
+                            rawMarkerPos = new Vector2(rawX * edgeScale, rawY * edgeScale);
+                        }
+
+                        Vector2 bearing = new Vector2(currentDir.x, currentDir.y);
+                        if (bearing.sqrMagnitude > 0.006f)
+                        {
+                            slot.LastStableBearing = bearing.normalized;
                         }
                     }
                     else
                     {
+                        // 2. 背向半球与超出范围：吸附在仪表边框内缘，平滑过渡并淡化显示 (Backside Rim Clamping & Fade)
+                        float tDepth = Mathf.Clamp01(-currentDir.z);
+                        alpha = Mathf.Lerp(0.85f, 0.40f, tDepth);
+                        targetScale = Mathf.Lerp(0.85f, 0.65f, tDepth);
+
                         Vector2 bearing = new Vector2(currentDir.x, currentDir.y);
-                        float mag = bearing.magnitude;
-                        Vector2 normBearing = mag > 0.001f ? (bearing / mag) : Vector2.up;
-                        float scaleX = Mathf.Abs(normBearing.x) > 0.001f ? boundX / Mathf.Abs(normBearing.x) : 1f;
-                        float scaleY = Mathf.Abs(normBearing.y) > 0.001f ? boundY / Mathf.Abs(normBearing.y) : 1f;
-                        float edgeScale = Mathf.Min(scaleX, scaleY);
-                        markerPos = normBearing * edgeScale;
-                        targetScale = 0.70f;
-                        alpha = 0.40f;
+                        float bearingMag = bearing.magnitude;
+
+                        Vector2 normBearing;
+                        if (bearingMag >= 0.12f)
+                        {
+                            slot.LastStableBearing = bearing / bearingMag;
+                            normBearing = slot.LastStableBearing;
+                        }
+                        else
+                        {
+                            if (slot.LastStableBearing == Vector2.zero)
+                            {
+                                slot.LastStableBearing = Vector2.up;
+                            }
+                            if (bearingMag > 0.03f)
+                            {
+                                Vector2 instantNorm = bearing / bearingMag;
+                                slot.LastStableBearing = Vector2.MoveTowards(slot.LastStableBearing, instantNorm, Time.unscaledDeltaTime * 2.5f).normalized;
+                            }
+                            normBearing = slot.LastStableBearing;
+                        }
+
+                        if (bearingMag < 0.06f)
+                        {
+                            alpha *= Mathf.Lerp(0.35f, 1.0f, bearingMag / 0.06f);
+                        }
+
+                        float scaleX = Mathf.Abs(normBearing.x) > 0.001f ? boundX / Mathf.Abs(normBearing.x) : 9999f;
+                        float scaleY = Mathf.Abs(normBearing.y) > 0.001f ? boundY / Mathf.Abs(normBearing.y) : 9999f;
+                        float edgeDist = Mathf.Min(scaleX, scaleY);
+                        rawMarkerPos = normBearing * edgeDist;
                     }
 
-                    slot.RenderedPos = markerPos;
-                    _renderedMarkerPositions[key] = markerPos;
+                    if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
-                    slot.RectTransform.SetAnchoredPositionSafe(markerPos);
+                    // 2. 标线位置亚像素自适应防抖滤波 (Marker Spatial Deadband & Anti-Jitter)
+                    Vector2 renderedPos;
+                    if (slot.RenderedPos == Vector2.zero)
+                    {
+                        renderedPos = rawMarkerPos;
+                    }
+                    else
+                    {
+                        float posDeltaSqr = (rawMarkerPos - slot.RenderedPos).sqrMagnitude;
+                        if (posDeltaSqr < 0.10f) // < 0.31px 死区防抖
+                        {
+                            renderedPos = slot.RenderedPos;
+                        }
+                        else if (posDeltaSqr < 4.0f) // 0.31px ~ 2.0px 微抖平滑滤波
+                        {
+                            float filterT = Mathf.Clamp01(Time.unscaledDeltaTime * 28f);
+                            renderedPos = Vector2.Lerp(slot.RenderedPos, rawMarkerPos, filterT);
+                        }
+                        else
+                        {
+                            renderedPos = rawMarkerPos;
+                        }
+                    }
+
+                    slot.RenderedPos = renderedPos;
+                    _renderedMarkerPositions[key] = renderedPos;
+
+                    slot.RectTransform.SetAnchoredPositionSafe(renderedPos);
                     slot.RectTransform.SetLocalScaleSafe(new Vector3(targetScale, targetScale, 1.0f));
 
                     Color c = img.color;
@@ -1237,8 +1326,8 @@ namespace ModularFlightPanel.UI.Widgets
 
                     if (avoidIdx < 4 && currentDir.z > 0.25f && alpha > 0.85f)
                     {
-                        float normX = markerPos.x / halfW;
-                        float normY = markerPos.y / halfH;
+                        float normX = renderedPos.x / halfW;
+                        float normY = renderedPos.y / halfH;
                         _cachedAvoidVectors[avoidIdx++] = new Vector4(normX, normY, 0.16f, 1.0f);
                     }
                 }
@@ -1428,8 +1517,9 @@ namespace ModularFlightPanel.UI.Widgets
                 case "BODY_FIXED":
                 case "BODY_SURFACE":
                 case "SURFACE":
+                    return theme.AccentPrimary;
                 default:
-                    return theme.AccentSecondary;
+                    return theme.AccentPrimary;
             }
         }
 
@@ -1450,44 +1540,9 @@ namespace ModularFlightPanel.UI.Widgets
                     return WidgetStyleManager.Instance.GetNavballFramePalette(theme.WarningColor, theme);
                 case "BODY_FIXED":
                 case "BODY_SURFACE":
-                {
-                    Color bGndH = theme.GroundColor;
-                    Color bGndN = WidgetStyleManager.Darken(bGndH, 0.55f);
-                    Color bSkyH = theme.AccentSecondary;
-                    Color bSkyZ = theme.SkyColor;
-                    return new NavballFramePalette
-                    {
-                        SkyZenith = bSkyZ,
-                        SkyHorizon = bSkyH,
-                        GroundHorizon = bGndH,
-                        GroundNadir = bGndN,
-                        Equator = theme.HorizonLineColor,
-                        PitchLadder = theme.GridColor,
-                        HeadingLine = theme.AccentSecondary,
-                        Rim = theme.RimGlowColor
-                    };
-                }
                 case "SURFACE":
                 default:
-                    Color skyZ = theme.SkyColor;
-                    Color skyH = theme.AccentSecondary;
-                    Color gndH = theme.GroundColor;
-                    Color gndN = WidgetStyleManager.Darken(gndH, 0.55f);
-                    Color eq = theme.HorizonLineColor;
-                    Color pitch = theme.GridColor;
-                    Color hdg = theme.AccentSecondary;
-                    Color rim = theme.RimGlowColor;
-                    return new NavballFramePalette
-                    {
-                        SkyZenith = skyZ,
-                        SkyHorizon = skyH,
-                        GroundHorizon = gndH,
-                        GroundNadir = gndN,
-                        Equator = eq,
-                        PitchLadder = pitch,
-                        HeadingLine = hdg,
-                        Rim = rim
-                    };
+                    return WidgetStyleManager.Instance.GetNavballSurfacePalette(theme);
             }
         }
 

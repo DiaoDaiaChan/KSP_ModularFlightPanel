@@ -15,10 +15,13 @@ namespace ModularFlightPanel.Config
         public float ScaleX = 1.0f; // 独立水平缩放 (支持编辑模式自由调整细长/矮胖)
         public float ScaleY = 1.0f; // 独立垂直缩放 (支持编辑模式自由调整细长/矮胖)
         public float Rotation = 0f; // 旋转角度 (度, 0~360)
+        public float Opacity = 1.0f; // 组件整体不透明度 (0.05f~1.0f, 缺省 1.0f 全不透明)
+        public string ThemeOverride = ""; // 单组件独立配色主题覆盖 (空为跟随全局, 或指定主题 ID)
         public string CustomTemplate = "";
 
         public float EffectiveScaleX => ScaleX > 0.01f ? ScaleX : (Scale > 0.01f ? Scale : 1.0f);
         public float EffectiveScaleY => ScaleY > 0.01f ? ScaleY : (Scale > 0.01f ? Scale : 1.0f);
+        public float EffectiveOpacity => Opacity > 0.01f ? (Opacity < 0.05f ? 0.05f : (Opacity > 1.0f ? 1.0f : Opacity)) : 1.0f;
 
         // 航电套件元数据 (Kit Metadata)
         public string WidgetType = "custom"; // "core", "custom", "tape"
@@ -37,6 +40,8 @@ namespace ModularFlightPanel.Config
         public bool IsolateCanvas = true;     // 是否为此组件挂载独立 Sub-Canvas，隔离几何网格重建与 Draw Call 批处理
         public float UpdateInterval = 0f;     // 遥测求值与绘制刷新间隔 (秒, 0=每帧 60Hz+, 0.05=20Hz, 0.2=5Hz, 0.5=2Hz)
         public float CustomHz = 0f;           // 任意浮点数自定义刷新率 (Hz, 例如 11.2f)。0f 表示遵循全局阶梯或 UpdateInterval，>0f 表示独立精确定义
+        public float HeartBeatInterval = -1f; // 数据心跳刷新间隔 (秒, -1=跟随显示/组件默认, 0=每帧同步, 0.05=20Hz, 0.1=10Hz, 0.2=5Hz, 0.5=2Hz)
+        public float HeartBeatHz = 0f;        // 数据心跳自定义频率 (Hz, 例如 10f)。0f 表示遵循 HeartBeatInterval 或组件默认
         public float RenderScale = 1.0f;      // 单组件渲染分辨率缩放倍率 (0.5x~2.0x, 缺省 1.0f，支持 0.8x 节能或 1.5x 超采样)
 
         // 图层与绘制顺序 (Layer & Drawing Order)
@@ -172,10 +177,11 @@ namespace ModularFlightPanel.Config
         public string BadgeWarning = "WARN";
 
         public float EffectiveUpdateInterval => CustomHz > 0.001f ? (1.0f / CustomHz) : UpdateInterval;
+        public float EffectiveHeartBeatInterval => HeartBeatHz > 0.001f ? (1.0f / HeartBeatHz) : (HeartBeatInterval >= 0f ? HeartBeatInterval : -1f);
 
         public WidgetConfig() { }
 
-        public WidgetConfig(string id, string name, float x, float y, float scale = 1.0f, string template = "", float rotation = 0f, float scaleX = 1.0f, float scaleY = 1.0f)
+        public WidgetConfig(string id, string name, float x, float y, float scale = 1.0f, string template = "", float rotation = 0f, float scaleX = 1.0f, float scaleY = 1.0f, float opacity = 1.0f, string themeOverride = "")
         {
             WidgetId = id;
             DisplayName = name;
@@ -186,6 +192,8 @@ namespace ModularFlightPanel.Config
             ScaleY = scaleY > 0.01f ? scaleY : scale;
             CustomTemplate = template;
             Rotation = rotation;
+            Opacity = opacity > 0.01f ? opacity : 1.0f;
+            ThemeOverride = themeOverride ?? "";
             WidgetType = id.StartsWith("tape.") ? "tape" : (id.StartsWith("arc_tape.") ? "arc_tape" : (id.StartsWith("custom.") ? "custom" : "core"));
         }
 

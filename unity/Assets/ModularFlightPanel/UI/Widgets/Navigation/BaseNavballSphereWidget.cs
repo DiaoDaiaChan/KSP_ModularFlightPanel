@@ -22,6 +22,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         public override void ApplyTheme(ThemeConfig theme)
         {
+            base.ApplyTheme(theme);
         }
 
         public override void OnUpdateTelemetry(IFlightTelemetry telemetry)

@@ -37,6 +37,7 @@ namespace ModularFlightPanel.Editor
             public Vector2 TextureScale => new Vector2(1f, 1f);
             public Vector2 TextureOffset => Vector2.zero;
             public Quaternion CameraRotation => Quaternion.identity;
+            public Quaternion ViewRotation => Quaternion.identity;
             public Quaternion BallRotation => Quaternion.Euler(12f, 0f, 0f);
             public Texture BallTexture => _texture;
             public string HeadingText => $"HDG {Mathf.RoundToInt(_sim.Heading) % 360:D3}°";
@@ -52,7 +53,7 @@ namespace ModularFlightPanel.Editor
                         if (n.Contains("inertial") || n.Contains("non_rotating") || n.Contains("惯性") || n.Contains("不旋转")) return "INERTIAL";
                         if (n.Contains("orbit") || n.Contains("body_direction") || n.Contains("parent_direction") || n.Contains("轨道") || n.Contains("黄道") || n.Contains("ecliptic")) return "ORBIT";
                         if (n.Contains("target") || n.Contains("dock") || n.Contains("目标")) return "TARGET";
-                        if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("rotating") || n.Contains("fixed") || n.Contains("体固") || n.Contains("地固")) return "BODY_FIXED";
+                        if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("navball_surface") || n.Contains("rotating") || n.Contains("fixed") || n.Contains("体固") || n.Contains("地固")) return "BODY_FIXED";
                         if (n.Contains("surface") || n.Contains("ground") || n.Contains("地表")) return "SURFACE";
                     }
                     return "ORBIT";
@@ -194,6 +195,8 @@ namespace ModularFlightPanel.Editor
             }
         }
 
+        private static string CurrentScenario = "";
+
         [MenuItem("ModularFlightPanel/Render Headless Preview")]
         public static void RenderHeadlessPreview()
         {
@@ -207,6 +210,7 @@ namespace ModularFlightPanel.Editor
             // 2. 加载着色器与初始化配置
             AssetLoader.LoadBundle();
             ThemeManager.Instance.Initialize();
+            I18nManager.Instance.Initialize();
 
             // 解析命令行参数 (支持按组件单独隔离绘制优化与切片导出: -targetWidget <widgetId>, 蓝幕/绿幕高反差背景: -screen <blue|green|dark>)
             string targetWidgetId = null;
@@ -251,6 +255,7 @@ namespace ModularFlightPanel.Editor
                 if ((cmdArgs[i] == "-scenario" || cmdArgs[i] == "--scenario") && i + 1 < cmdArgs.Length)
                 {
                     targetScenario = cmdArgs[i + 1].Trim().ToLowerInvariant();
+                    CurrentScenario = targetScenario;
                 }
                 if ((cmdArgs[i] == "-theme" || cmdArgs[i] == "--theme") && i + 1 < cmdArgs.Length)
                 {
@@ -321,10 +326,15 @@ namespace ModularFlightPanel.Editor
 
             // 4. 挂载真实姿态球纹理
             Texture2D navballTex = null;
+            string texFileName = (targetFrameType.Equals("body_fixed", StringComparison.OrdinalIgnoreCase) || targetFrameType.Equals("body_surface", StringComparison.OrdinalIgnoreCase))
+                ? "navball_surface.png"
+                : $"navball_{targetFrameType}.png";
             string[] searchPaths = new string[]
             {
+                Path.Combine(projectRoot, texFileName),
                 Path.Combine(projectRoot, $"navball_{targetFrameType}.png"),
                 Path.Combine(projectRoot, "navball_barycentric.png"),
+                Path.Combine(@"C:\Users\43701\Documents\github\Principia\ksp_plugin_adapter\assets", texFileName),
                 Path.Combine(@"C:\Users\43701\Documents\github\Principia\ksp_plugin_adapter\assets", $"navball_{targetFrameType}.png"),
                 Path.Combine(@"C:\Users\43701\Documents\github\Principia\ksp_plugin_adapter\assets", "navball_barycentric.png")
             };
@@ -335,7 +345,9 @@ namespace ModularFlightPanel.Editor
                     byte[] imgBytes = File.ReadAllBytes(path);
                     navballTex = new Texture2D(512, 256, TextureFormat.RGBA32, false);
                     navballTex.LoadImage(imgBytes);
-                    navballTex.name = "navball_" + targetFrameType;
+                    navballTex.name = (targetFrameType.Equals("body_fixed", StringComparison.OrdinalIgnoreCase) || targetFrameType.Equals("body_surface", StringComparison.OrdinalIgnoreCase))
+                        ? "navball_body_fixed"
+                        : "navball_" + targetFrameType;
                     navballTex.filterMode = FilterMode.Trilinear;
                     Debug.Log($"[HeadlessUIRenderer] Loaded Navball Texture from {path} for frame {targetFrameType}");
                     break;
@@ -344,7 +356,9 @@ namespace ModularFlightPanel.Editor
             if (navballTex == null)
             {
                 navballTex = new Texture2D(64, 64, TextureFormat.RGBA32, false);
-                navballTex.name = "navball_" + targetFrameType;
+                navballTex.name = (targetFrameType.Equals("body_fixed", StringComparison.OrdinalIgnoreCase) || targetFrameType.Equals("body_surface", StringComparison.OrdinalIgnoreCase))
+                    ? "navball_body_fixed"
+                    : "navball_" + targetFrameType;
             }
             NavBallHookService.Provider = new HeadlessNavBallHook(navballTex, simEngine);
             StockStageIconService.Provider = new HeadlessStageIconHook();
@@ -406,6 +420,8 @@ namespace ModularFlightPanel.Editor
             bool forceM2 = false;
             bool forceM3 = false;
             bool triggerSts = false;
+            bool triggerSmall = false;
+            string cleanTargetId = targetWidgetId;
 
             if (!string.IsNullOrEmpty(targetPreset))
             {
@@ -441,7 +457,7 @@ namespace ModularFlightPanel.Editor
             }
             else if (!string.IsNullOrEmpty(targetWidgetId))
             {
-                string cleanTargetId = targetWidgetId;
+                cleanTargetId = targetWidgetId;
 
                 bool loop = true;
                 while (loop)
@@ -516,15 +532,44 @@ namespace ModularFlightPanel.Editor
                         forceM2 = true; // 复用为 force3D 标志位
                         loop = true;
                     }
+                    else if (cleanTargetId.EndsWith(".small", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_small", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith(".mini", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (cleanTargetId.EndsWith(".mini", StringComparison.OrdinalIgnoreCase))
+                            cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 5);
+                        else
+                            cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 6);
+                        triggerSmall = true;
+                        loop = true;
+                    }
                     else if (cleanTargetId.EndsWith(".sts", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_sts", StringComparison.OrdinalIgnoreCase))
                     {
                         cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 4);
                         triggerSts = true;
                         loop = true;
                     }
+                    else if (cleanTargetId.EndsWith(".concise", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_concise", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 8);
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".avionics", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_avionics", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 9);
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".diagram", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_diagram", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 8);
+                        loop = true;
+                    }
+                    else if (cleanTargetId.EndsWith(".exploded", StringComparison.OrdinalIgnoreCase) || cleanTargetId.EndsWith("_exploded", StringComparison.OrdinalIgnoreCase))
+                    {
+                        cleanTargetId = cleanTargetId.Substring(0, cleanTargetId.Length - 9);
+                        loop = true;
+                    }
                 }
 
-                Debug.Log($"[HeadlessUIRenderer] >>> Isolating single widget for drawing optimization: {cleanTargetId} (sep={triggerSep}, eng={triggerEng}, node={triggerNode}, meco={triggerMeco}, deorb={triggerDeorb}, esc={triggerEsc}, m2={forceM2}, m3={forceM3})");
+                Debug.Log($"[HeadlessUIRenderer] >>> Isolating single widget for drawing optimization: {cleanTargetId} (sep={triggerSep}, eng={triggerEng}, node={triggerNode}, meco={triggerMeco}, deorb={triggerDeorb}, esc={triggerEsc}, m2={forceM2}, m3={forceM3}, small={triggerSmall})");
                 if (cleanTargetId.Equals("core.toolbar", StringComparison.OrdinalIgnoreCase) || cleanTargetId.Equals("toolbar", StringComparison.OrdinalIgnoreCase) ||
                     cleanTargetId.Equals("core.dock_favorites", StringComparison.OrdinalIgnoreCase) || cleanTargetId.Equals("dock_favorites", StringComparison.OrdinalIgnoreCase))
                 {
@@ -542,6 +587,21 @@ namespace ModularFlightPanel.Editor
                         // 居中呈现单组件以便高清独立校验
                         w.PositionX = 0f;
                         w.PositionY = 0f;
+                        if (!string.IsNullOrEmpty(targetScenario))
+                        {
+                            if (targetScenario.Contains("concise") || targetScenario.Contains("minimal") || targetScenario.Contains("stock"))
+                            {
+                                w.CustomTemplate = "MODE=0";
+                            }
+                            else if (targetScenario.Contains("silhouette") || targetScenario.Contains("2d") || targetScenario.Contains("diagram") || targetScenario.Contains("exploded") || targetScenario.Contains("rocket"))
+                            {
+                                w.CustomTemplate = "MODE=2";
+                            }
+                            else if (targetScenario.Contains("standard") || targetScenario.Contains("avionics") || targetScenario.Contains("modern"))
+                            {
+                                w.CustomTemplate = "MODE=1";
+                            }
+                        }
                     }
                 }
                 hud.RebuildHUD();
@@ -564,6 +624,12 @@ namespace ModularFlightPanel.Editor
                     {
                         var toggleM = oew.GetType().GetMethod("OnModeToggle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
                         if (toggleM != null) toggleM.Invoke(oew, null);
+                    }
+                    if (triggerSmall && ew is ModularFlightPanel.UI.Framework.IAdaptiveSizeWidget adaptive)
+                    {
+                        Vector2 testSmall = forceM2 ? new Vector2(250f, 250f) : new Vector2(185f, 62f);
+                        ew.RectTransform.sizeDelta = testSmall * ew.CurrentDpiScale;
+                        adaptive.OnAdaptiveResize(testSmall * ew.CurrentDpiScale);
                     }
                 }
             }
@@ -612,10 +678,27 @@ namespace ModularFlightPanel.Editor
                         ecamWidget.ToggleStatusPage();
                     }
                 }
-                if (w is OrbitalElementsWidget oew && !string.IsNullOrEmpty(targetWidgetId) && targetWidgetId.IndexOf("orbit", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (w is ModularFlightPanel.UI.Widgets.Controls.StagingSequenceWidget stagingWidget)
                 {
-                    var toggle = oew.GetType().GetMethod("OnModeToggle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-                    toggle?.Invoke(oew, null);
+                    string sc = targetScenario != null ? targetScenario.ToLowerInvariant() : "";
+                    string tid = targetWidgetId != null ? targetWidgetId.ToLowerInvariant() : "";
+                    if (sc.Contains("concise") || sc.Contains("minimal") || sc.Contains("stock") || tid.Contains("concise"))
+                    {
+                        stagingWidget.SetDisplayMode(ModularFlightPanel.UI.Widgets.Controls.StagingDisplayMode.Concise);
+                    }
+                    else if (sc.Contains("silhouette") || sc.Contains("2d") || sc.Contains("diagram") || sc.Contains("rocket") || sc.Contains("exploded") || tid.Contains("silhouette") || tid.Contains("diagram") || tid.Contains("rocket") || tid.Contains("exploded"))
+                    {
+                        stagingWidget.SetDisplayMode(ModularFlightPanel.UI.Widgets.Controls.StagingDisplayMode.Silhouette2D);
+                        stagingWidget.RectTransform.sizeDelta = new Vector2(240f, 260f) * stagingWidget.CurrentDpiScale;
+                        if (sc.Contains("exploded") || tid.Contains("exploded"))
+                        {
+                            stagingWidget.SetExplodedView(true);
+                        }
+                    }
+                    else if (sc.Contains("standard") || sc.Contains("avionics") || sc.Contains("modern") || tid.Contains("standard") || tid.Contains("avionics"))
+                    {
+                        stagingWidget.SetDisplayMode(ModularFlightPanel.UI.Widgets.Controls.StagingDisplayMode.Standard);
+                    }
                 }
                 w.MasterUpdateTelemetry(simEngine);
                 var update = w.GetType().GetMethod("Update", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
@@ -683,7 +766,7 @@ namespace ModularFlightPanel.Editor
                 BaseFlightWidget targetWidget = null;
                 foreach (var w in widgets)
                 {
-                    if (w.Config != null && (w.Config.WidgetId.Equals(targetWidgetId, StringComparison.OrdinalIgnoreCase) || targetWidgetId.StartsWith(w.Config.WidgetId, StringComparison.OrdinalIgnoreCase)))
+                    if (w.Config != null && (w.Config.WidgetId.Equals(targetWidgetId, StringComparison.OrdinalIgnoreCase) || targetWidgetId.StartsWith(w.Config.WidgetId, StringComparison.OrdinalIgnoreCase) || w.Config.WidgetId.Equals(cleanTargetId, StringComparison.OrdinalIgnoreCase)))
                     {
                         targetWidget = w;
                         break;
@@ -737,6 +820,11 @@ namespace ModularFlightPanel.Editor
                 {
                     string isolatedArtifact = Path.Combine(artifactDir, $"isolated_{safeName}.png");
                     SafeWriteAllBytes(isolatedArtifact, targetBytes);
+                    if (!string.IsNullOrEmpty(outputName))
+                    {
+                        string outputArtifact = Path.Combine(artifactDir, outputName);
+                        SafeWriteAllBytes(outputArtifact, targetBytes);
+                    }
                 }
 
                 if (targetWidgetId.Equals("core.navball", StringComparison.OrdinalIgnoreCase))
@@ -925,6 +1013,17 @@ namespace ModularFlightPanel.Editor
                 cfg.IsEnabled = enabled;
                 cfg.PositionX = x;
                 cfg.PositionY = y;
+                if (id == "nav.orbital_elements" || id == "orbital_elements" || id == "orbit_elements" || id == "orbital_3d")
+                {
+                    cfg.CustomTemplate = (id == "orbital_3d" || id.EndsWith(".3d") || id.EndsWith(".full")) ? "full" : "compact";
+                }
+                else if (id == "custom.staging_sequence" || id == "staging_sequence" || id == "stage_sequence")
+                {
+                    if (CurrentScenario == "concise" || CurrentScenario == "minimal" || CurrentScenario == "stock" || CurrentScenario == "0")
+                    {
+                        cfg.CustomTemplate = "{MODE:0}";
+                    }
+                }
             }
             else
             {
@@ -954,6 +1053,15 @@ namespace ModularFlightPanel.Editor
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(tw);
+                }
+                else if (id == "core.time_comm_hub" || id == "time_comm_hub" || id == "timecomm" || id == "custom.time_comm_hub")
+                {
+                    var tch = new WidgetConfig("core.time_comm_hub", "MISSION & COMM 任务时钟通信综合中枢", x, y, 1.0f)
+                    {
+                        WidgetType = "time_comm_hub",
+                        IsEnabled = enabled
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(tch);
                 }
                 else if (id == "core.comm_signal" || id == "comm_signal")
                 {
@@ -1142,7 +1250,8 @@ namespace ModularFlightPanel.Editor
                     var stg = new WidgetConfig("custom.staging_sequence", "STAGE 垂直火箭分级序列仪", x, y, 1.0f)
                     {
                         WidgetType = "staging_sequence",
-                        IsEnabled = enabled
+                        IsEnabled = enabled,
+                        CustomTemplate = (CurrentScenario == "concise" || CurrentScenario == "minimal" || CurrentScenario == "stock" || CurrentScenario == "0") ? "{MODE:0}" : ""
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(stg);
                 }
@@ -1301,7 +1410,7 @@ namespace ModularFlightPanel.Editor
                     cfg = new WidgetConfig("nav.orbital_elements", "ORBITAL ELEMENTS 轨道六根数面板", x, y, 1.0f)
                     {
                         WidgetType = "orbital_elements",
-                        CustomTemplate = "full",
+                        CustomTemplate = (id == "orbital_3d" || id.EndsWith(".3d") || id.EndsWith(".full")) ? "full" : "compact",
                         IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
@@ -1313,6 +1422,15 @@ namespace ModularFlightPanel.Editor
                         WidgetType = "custom_token",
                         IsEnabled = enabled,
                         CustomTemplate = "MODE=KV;COLS=2;ROWS=3;R0C0_LBL=SPD;R0C0_VAL={SPD};R0C1_LBL=ASL;R0C1_VAL={ALT:ASL:DIST};R1C0_LBL=RALT;R1C0_VAL={ALT:AGL:DIST};R1C1_LBL=Q;R1C1_VAL={Q};R2C0_LBL=VSI;R2C0_VAL={VSI};R2C1_LBL=G;R2C1_VAL={GFORCE};"
+                    };
+                    WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
+                }
+                else if (id == "custom.electrical" || id == "electrical" || id == "custom.elec" || id == "elec" || id == "core.electrical")
+                {
+                    cfg = new WidgetConfig("custom.electrical", "ELEC 电力分配与电网系统", x, y, 1.0f)
+                    {
+                        WidgetType = "electrical",
+                        IsEnabled = enabled
                     };
                     WidgetLayoutManager.Instance.CurrentLayout.Widgets.Add(cfg);
                 }

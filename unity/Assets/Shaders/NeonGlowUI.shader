@@ -101,33 +101,48 @@ Shader "ModularFlightPanel/NeonGlowUI"
 
             fixed4 frag(v2f IN) : SV_Target
             {
-                // 1. 字体或精灵基础采样
-                half4 fontTex = tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd;
-                float alpha = fontTex.a;
+                // 1. 利用屏幕空间偏导数构建亚像素放电管正交光晕采样 (<= 0.65 像素，严禁图集越界)
+                float2 dUVx = ddx(IN.texcoord) * 0.65;
+                float2 dUVy = ddy(IN.texcoord) * 0.65;
 
-                if (alpha < 0.005)
+                // 2. 正交 5 点等离子放电柱感知采样：中心玻璃管柱 + 4 邻域气辉光晕
+                half4 sampleC = tex2D(_MainTex, IN.texcoord) + _TextureSampleAdd;
+                half4 sampleL = tex2D(_MainTex, IN.texcoord - dUVx) + _TextureSampleAdd;
+                half4 sampleR = tex2D(_MainTex, IN.texcoord + dUVx) + _TextureSampleAdd;
+                half4 sampleU = tex2D(_MainTex, IN.texcoord + dUVy) + _TextureSampleAdd;
+                half4 sampleD = tex2D(_MainTex, IN.texcoord - dUVy) + _TextureSampleAdd;
+
+                float coreAlpha = sampleC.a;
+                float haloAlpha = (sampleL.a + sampleR.a + sampleU.a + sampleD.a) * 0.25;
+                float totalAlpha = max(coreAlpha, haloAlpha * 0.85);
+
+                if (totalAlpha < 0.005)
                 {
                     discard;
                 }
 
-                // 2. 霓虹放电管物理层级 (Neon Discharge Tube Model):
-                // 核心管体 (Core Tube, alpha > 0.5): 纯粹鲜艳的主基色 (IN.color.rgb)；
-                // 边缘气辉 (Fringe Glow, alpha <= 0.5): 向副霓虹辉光 (_NeonGlowColor.rgb) 平滑过渡，形成标志性赛博霓虹双色轮廓！
+                // 3. 物理霓虹放电管层级解耦 (Decoupled Plasma Tube & Gas Corona Model):
+                // 核心管体：优先保持高纯度基色 (IN.color.rgb) 与白炽高能核，绝不因单像素抗锯齿发生泥泞偏色
+                // 外缘光晕：在管体外围亚像素晕影区向副霓虹辉光 (_NeonGlowColor.rgb) 平滑过渡，呈现纯正赛博双色霓虹！
                 fixed3 primaryNeon = IN.color.rgb;
                 fixed3 fringeNeon = _NeonGlowColor.rgb;
 
-                float fringeFactor = 1.0 - smoothstep(0.15, 0.65, alpha);
-                fixed3 tubeColor = lerp(primaryNeon, fringeNeon, fringeFactor * 0.70);
+                float tubeWeight = smoothstep(0.18, 0.55, coreAlpha);
+                fixed3 tubeColor = lerp(fringeNeon, primaryNeon, tubeWeight);
 
-                // 3. 核心白炽等离子放电 (White-Hot Plasma Discharge - 25% 饱和微过载)
-                float coreWeight = saturate(pow(alpha, 3.0) * 0.25);
-                fixed3 finalRgb = lerp(tubeColor, _CoreHotColor.rgb, coreWeight);
+                // 4. 核心白炽等离子放电 (White-Hot Plasma Core)
+                float hotCore = smoothstep(0.55, 0.95, coreAlpha) * 0.40;
+                fixed3 dischargeRgb = lerp(tubeColor, _CoreHotColor.rgb, hotCore);
 
-                // 4. 外发光光晕叠加与透明度合成 (Crisp Neon Halo)
-                float finalAlpha = saturate(pow(alpha, 0.85) * (1.0 + _GlowStrength * 0.25)) * IN.color.a;
+                // 5. 2 像素高频赛博微扫描光栅 (2px Micro Scanlines)
+                float scan = 1.0 - (sin(IN.worldPosition.y * 3.14159) * 0.5 + 0.5) * min(_ScanlineStrength, 0.05);
+                fixed3 finalRgb = dischargeRgb * scan;
+
+                // 6. 霓虹气体电离辉光与高反差伽马强化 (Crisp Neon Corona)
+                float finalAlpha = saturate(pow(totalAlpha, 0.76) * (1.0 + _GlowStrength * 0.28)) * IN.color.a;
                 fixed4 finalCol = fixed4(finalRgb, finalAlpha);
 
-                // 5. UGUI 视口裁切保护
+                // 7. UGUI 视口裁切保护
                 #ifdef UNITY_UI_CLIP_RECT
                 finalCol.a *= UnityGet2DClipping(IN.worldPosition.xy, _ClipRect);
                 #endif

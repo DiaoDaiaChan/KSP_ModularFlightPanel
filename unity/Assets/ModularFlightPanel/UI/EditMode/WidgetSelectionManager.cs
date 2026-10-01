@@ -447,6 +447,100 @@ namespace ModularFlightPanel.UI
             }
         }
 
+        public static void BatchAdjustScaleXY(float deltaX, float deltaY, bool commit = true)
+        {
+            foreach (var w in SelectedWidgets)
+            {
+                if (w != null && w.Config != null && !w.Config.IsLocked)
+                {
+                    float currentX = w.Config.EffectiveScaleX;
+                    float currentY = w.Config.EffectiveScaleY;
+                    float newX = Mathf.Clamp(currentX + deltaX, 0.2f, 4.0f);
+                    float newY = Mathf.Clamp(currentY + deltaY, 0.2f, 4.0f);
+                    newX = Mathf.Round(newX * 20f) / 20f;
+                    newY = Mathf.Round(newY * 20f) / 20f;
+                    w.UpdateTransform(scaleX: newX, scaleY: newY);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
+        }
+
+        public static void BatchSetAspectRatio(float targetAspectRatio, bool commit = true)
+        {
+            foreach (var w in SelectedWidgets)
+            {
+                if (w != null && w.Config != null && !w.Config.IsLocked)
+                {
+                    w.SetAspectRatio(targetAspectRatio, save: false);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
+        }
+
+        public static void BatchResetAspectRatio(bool commit = true)
+        {
+            foreach (var w in SelectedWidgets)
+            {
+                if (w != null && w.Config != null && !w.Config.IsLocked)
+                {
+                    w.ResetAspectRatio(save: false);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+            if (commit)
+            {
+                FlightHUDManager.Instance?.RespawnWidgets(SelectedWidgets);
+            }
+        }
+
+        public static void BatchSetOpacity(float opacity)
+        {
+            float clamped = Mathf.Clamp(opacity, 0.05f, 1.0f);
+            foreach (var w in SelectedWidgets)
+            {
+                if (w != null && w.Config != null)
+                {
+                    w.SetOpacity(clamped, save: false);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+        }
+
+        public static void BatchAdjustOpacity(float delta)
+        {
+            foreach (var w in SelectedWidgets)
+            {
+                if (w != null && w.Config != null)
+                {
+                    float cur = w.Opacity;
+                    float next = Mathf.Clamp(cur + delta, 0.05f, 1.0f);
+                    next = Mathf.Round(next * 20f) / 20f;
+                    w.SetOpacity(next, save: false);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+        }
+
+        public static void BatchSetThemeOverride(string themeId)
+        {
+            foreach (var w in SelectedWidgets)
+            {
+                if (w != null && w.Config != null)
+                {
+                    w.SetThemeOverride(themeId, save: false);
+                }
+            }
+            WidgetLayoutManager.Instance.SaveLayout();
+        }
+
         public static void BatchRotate(float deltaAngle)
         {
             foreach (var w in SelectedWidgets)

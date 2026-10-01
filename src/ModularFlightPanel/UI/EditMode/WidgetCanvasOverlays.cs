@@ -284,6 +284,15 @@ namespace ModularFlightPanel.UI
         {
             if (!WidgetDragHandler.IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar) return;
 
+            // 穿透拦截：如果鼠标光标位于打开的 SettingsGUI 工作台窗口内，拦截框选操作
+#if !HEADLESS && !UNITY_EDITOR
+            if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
+            {
+                Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                if (SettingsGUI.Instance.WindowRect.Contains(guiMouse)) return;
+            }
+#endif
+
             bool isAdditive = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ||
                               Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
 

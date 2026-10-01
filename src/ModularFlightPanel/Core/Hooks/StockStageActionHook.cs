@@ -53,37 +53,19 @@ namespace ModularFlightPanel.Core
                 if (KSP.UI.Screens.StageManager.Instance != null)
                 {
                     var mgr = KSP.UI.Screens.StageManager.Instance;
-                    int target = Mathf.Max(0, stageIndex);
-
-                    // 优先调用现有分级组原生 AddStageAfter (完全保证原版逻辑一致)
                     var stages = mgr.Stages;
-                    KSP.UI.Screens.StageGroup sourceGroup = null;
-                    if (stages != null)
-                    {
-                        for (int i = 0; i < stages.Count; i++)
-                        {
-                            var grp = stages[i];
-                            if (grp != null && grp.inverseStageIndex == target - 1)
-                            {
-                                sourceGroup = grp;
-                                break;
-                            }
-                        }
-                    }
+                    if (stages == null) return;
 
-                    if (sourceGroup != null)
-                    {
-                        sourceGroup.AddStageAfter();
-                    }
-                    else
-                    {
-                        mgr.IncrementCurrentStage();
-                        mgr.AddStageAt(target);
-                        mgr.SetManualStageOffset(target);
-                        KSP.UI.Screens.StageManager.SetSeparationIndices();
-                        GameEvents.StageManager.OnGUIStageAdded.Fire(target);
-                    }
-                    Debug.Log($"[ModularFlightPanel] Inserted new stage at index {target}");
+                    int target = Mathf.Clamp(stageIndex, 0, stages.Count);
+
+                    mgr.IncrementCurrentStage();
+                    mgr.AddStageAt(target);
+                    mgr.SetManualStageOffset(target);
+                    KSP.UI.Screens.StageManager.SetSeparationIndices();
+                    GameEvents.StageManager.OnGUIStageAdded.Fire(target);
+                    GameEvents.StageManager.OnGUIStageSequenceModified.Fire();
+                    TelemetryHub.Instance?.InvalidateStagePartIcons();
+                    Debug.Log($"[ModularFlightPanel] Inserted new stage at index {target} (requested {stageIndex})");
                 }
             }
             catch (Exception ex)
@@ -122,6 +104,8 @@ namespace ModularFlightPanel.Core
                                 mgr.SetManualStageOffset(stgIdx);
                                 KSP.UI.Screens.StageManager.SetSeparationIndices();
                                 GameEvents.StageManager.OnGUIStageRemoved.Fire(stgIdx);
+                                GameEvents.StageManager.OnGUIStageSequenceModified.Fire();
+                                TelemetryHub.Instance?.InvalidateStagePartIcons();
                                 Debug.Log($"[ModularFlightPanel] Deleted stage S{stageIndex:00}");
                                 return;
                             }
@@ -169,43 +153,18 @@ namespace ModularFlightPanel.Core
 
                         if (srcGroup != null && dstGroup != null)
                         {
+                            int dstListIndex = stages.IndexOf(dstGroup);
+                            int dstSiblingIndex = dstGroup.transform.GetSiblingIndex();
                             mgr.RemoveStage(srcGroup);
-                            mgr.InsertStageAt(srcGroup, dstGroup.inverseStageIndex, dstGroup.transform.GetSiblingIndex());
+                            mgr.InsertStageAt(srcGroup, dstListIndex, dstSiblingIndex);
                             srcGroup.transform.localScale = Vector3.one;
                             srcGroup.SetManualStageOffset();
                             dstGroup.SetManualStageOffset();
                             KSP.UI.Screens.StageManager.SetSeparationIndices();
                             GameEvents.StageManager.OnGUIStageSequenceModified.Fire();
+                            TelemetryHub.Instance?.InvalidateStagePartIcons();
                         }
                     }
-                }
-
-                var parts = GetCurrentVesselParts();
-                if (parts != null)
-                {
-                    for (int i = 0; i < parts.Count; i++)
-                    {
-                        var p = parts[i];
-                        if (p == null) continue;
-                        if (p.inverseStage == fromStage)
-                        {
-                            p.inverseStage = toStage;
-                        }
-                        else if (fromStage < toStage && p.inverseStage > fromStage && p.inverseStage <= toStage)
-                        {
-                            p.inverseStage--;
-                        }
-                        else if (fromStage > toStage && p.inverseStage < fromStage && p.inverseStage >= toStage)
-                        {
-                            p.inverseStage++;
-                        }
-                    }
-                }
-
-                if (KSP.UI.Screens.StageManager.Instance != null)
-                {
-                    KSP.UI.Screens.StageManager.Instance.SortIcons(false);
-                    KSP.UI.Screens.StageManager.Instance.UpdateStageGroups(false);
                 }
                 Debug.Log($"[ModularFlightPanel] Moved stage S{fromStage:00} -> S{toStage:00}");
             }
@@ -221,58 +180,286 @@ namespace ModularFlightPanel.Core
 #if KSP_RUNTIME
             try
             {
-                Part targetPart = null;
-                if (partFlightId > 0)
+                if (fromStage == targetStage) return;
+                if (TelemetryHub.Instance != null && TelemetryHub.Instance.IsSimulationMode)
                 {
-                    targetPart = FindPartById(partFlightId);
+                    TelemetryHub.Instance.SimulationEngine.MoveSimulatedPartToStage(partFlightId, fromStage, partIndex, targetStage);
+                    return;
                 }
 
-                // 若未按 flightID 查找到，则按原版 StageManager 顺序查找
-                if (targetPart == null && KSP.UI.Screens.StageManager.Instance != null)
+                if (KSP.UI.Screens.StageManager.Instance == null) return;
+                var mgr = KSP.UI.Screens.StageManager.Instance;
+                var stages = mgr.Stages;
+                if (stages == null) return;
+
+                KSP.UI.Screens.StageGroup srcGroup = null;
+                KSP.UI.Screens.StageGroup dstGroup = null;
+                for (int i = 0; i < stages.Count; i++)
                 {
-                    var stages = KSP.UI.Screens.StageManager.Instance.Stages;
+                    var grp = stages[i];
+                    if (grp == null) continue;
+                    int idx = (grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
+                    if (idx == fromStage || grp.defaultStage == fromStage) srcGroup = grp;
+                    if (idx == targetStage || grp.defaultStage == targetStage) dstGroup = grp;
+                }
+
+                if (srcGroup == null)
+                {
+                    Debug.LogWarning($"[ModularFlightPanel] MovePartToStage: source stage S{fromStage:00} not found");
+                    return;
+                }
+
+                if (dstGroup == null)
+                {
+                    InsertStage(targetStage);
+                    stages = mgr.Stages;
                     if (stages != null)
                     {
                         for (int i = 0; i < stages.Count; i++)
                         {
                             var grp = stages[i];
-                            int stgIdx = (grp != null && grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
-                            if (grp != null && (stgIdx == fromStage || grp.defaultStage == fromStage) && grp.Icons != null && partIndex >= 0 && partIndex < grp.Icons.Count)
+                            if (grp == null) continue;
+                            int idx = (grp.inverseStageIndex >= 0) ? grp.inverseStageIndex : i;
+                            if (idx == targetStage || grp.defaultStage == targetStage) { dstGroup = grp; break; }
+                        }
+                        if (dstGroup == null && stages.Count > 0)
+                        {
+                            int clampIdx = Mathf.Clamp(targetStage, 0, stages.Count - 1);
+                            dstGroup = stages[clampIdx];
+                        }
+                    }
+                }
+
+                if (dstGroup == null) return;
+
+                KSP.UI.Screens.StageIcon targetIcon = null;
+                KSP.UI.Screens.StageIcon parentLead = null;
+                var srcIcons = srcGroup.Icons;
+
+                if (srcIcons != null)
+                {
+                    if (partFlightId > 0)
+                    {
+                        for (int j = 0; j < srcIcons.Count; j++)
+                        {
+                            var icon = srcIcons[j];
+                            if (icon == null) continue;
+                            if (icon.Part != null && (icon.Part.flightID == partFlightId || icon.Part.craftID == partFlightId || (uint)icon.Part.persistentId == partFlightId))
                             {
-                                var icon = grp.Icons[partIndex];
-                                if (icon != null && icon.Part != null)
+                                targetIcon = icon;
+                                break;
+                            }
+                            if (icon.groupedIcons != null)
+                            {
+                                for (int g = 0; g < icon.groupedIcons.Count; g++)
                                 {
-                                    targetPart = icon.Part;
-                                    break;
+                                    var child = icon.groupedIcons[g];
+                                    if (child != null && child.Part != null && (child.Part.flightID == partFlightId || child.Part.craftID == partFlightId || (uint)child.Part.persistentId == partFlightId))
+                                    {
+                                        targetIcon = child;
+                                        parentLead = icon;
+                                        break;
+                                    }
                                 }
+                                if (targetIcon != null) break;
+                            }
+                        }
+                    }
+
+                    if (targetIcon == null && partIndex >= 0 && partIndex < srcIcons.Count)
+                    {
+                        targetIcon = srcIcons[partIndex];
+                    }
+                }
+
+                if (targetIcon == null)
+                {
+                    Debug.LogWarning($"[ModularFlightPanel] MovePartToStage: could not find icon for part {partFlightId} in S{fromStage:00}");
+                    return;
+                }
+
+                if (parentLead != null)
+                {
+                    parentLead.RemoveFromGroup(targetIcon, true);
+                    dstGroup.AddIcon(targetIcon, true);
+                }
+                else
+                {
+                    srcGroup.RemoveIcon(targetIcon, true);
+                    dstGroup.AddIcon(targetIcon, true);
+
+                    if (targetIcon.grouped && targetIcon.groupedIcons != null)
+                    {
+                        for (int g = 0; g < targetIcon.groupedIcons.Count; g++)
+                        {
+                            var child = targetIcon.groupedIcons[g];
+                            if (child != null)
+                            {
+                                child.Stage = dstGroup;
+                                child.SetInverseSequenceIndex(dstGroup.inverseStageIndex, child.InStageIndex, true);
                             }
                         }
                     }
                 }
 
-                if (targetPart != null)
-                {
-                    targetPart.inverseStage = targetStage;
-                    if (targetPart.symmetryCounterparts != null)
-                    {
-                        for (int s = 0; s < targetPart.symmetryCounterparts.Count; s++)
-                        {
-                            var sym = targetPart.symmetryCounterparts[s];
-                            if (sym != null) sym.inverseStage = targetStage;
-                        }
-                    }
+                srcGroup.UpdateInStageIndexes();
+                dstGroup.UpdateInStageIndexes();
+                srcGroup.SetPartIndices(true);
+                dstGroup.SetPartIndices(true);
+                srcGroup.SetManualStageOffset();
+                dstGroup.SetManualStageOffset();
+                KSP.UI.Screens.StageManager.SetSeparationIndices();
+                GameEvents.StageManager.OnGUIStageSequenceModified.Fire();
+                TelemetryHub.Instance?.InvalidateStagePartIcons();
 
-                    if (KSP.UI.Screens.StageManager.Instance != null)
-                    {
-                        KSP.UI.Screens.StageManager.Instance.SortIcons(false);
-                        KSP.UI.Screens.StageManager.Instance.UpdateStageGroups(false);
-                    }
-                    Debug.Log($"[ModularFlightPanel] Moved part '{targetPart.name}' to Stage S{targetStage:00}");
-                }
+                Debug.Log($"[ModularFlightPanel] Moved part '{targetIcon.Part?.name ?? targetIcon.name}' to Stage S{dstGroup.inverseStageIndex:00}");
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[ModularFlightPanel] MovePartToStage error: {ex.Message}");
+            }
+#endif
+        }
+
+        public void InsertStageAndMovePart(uint partFlightId, int fromStage, int partIndex, int insertAtStageIndex)
+        {
+#if KSP_RUNTIME
+            try
+            {
+                if (TelemetryHub.Instance != null && TelemetryHub.Instance.IsSimulationMode)
+                {
+                    TelemetryHub.Instance.SimulationEngine.InsertSimulatedStage(insertAtStageIndex);
+                    TelemetryHub.Instance.SimulationEngine.MoveSimulatedPartToStage(partFlightId, fromStage, partIndex, insertAtStageIndex);
+                    return;
+                }
+
+                if (KSP.UI.Screens.StageManager.Instance != null && KSP.UI.Screens.StageManager.Instance.Stages != null)
+                {
+                    int target = Mathf.Clamp(insertAtStageIndex, 0, KSP.UI.Screens.StageManager.Instance.Stages.Count);
+                    InsertStage(target);
+                    MovePartToStage(partFlightId, fromStage, partIndex, target);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ModularFlightPanel] InsertStageAndMovePart error: {ex.Message}");
+            }
+#endif
+        }
+
+        public void ReorderPartInStage(uint partFlightId, int stage, int fromIndex, int toIndex)
+        {
+#if KSP_RUNTIME
+            try
+            {
+                if (fromIndex == toIndex) return;
+                if (TelemetryHub.Instance != null && TelemetryHub.Instance.IsSimulationMode)
+                {
+                    TelemetryHub.Instance.SimulationEngine.ReorderSimulatedPartInStage(partFlightId, stage, fromIndex, toIndex);
+                    return;
+                }
+
+                if (KSP.UI.Screens.StageManager.Instance == null) return;
+                var mgr = KSP.UI.Screens.StageManager.Instance;
+                var stages = mgr.Stages;
+                if (stages == null) return;
+
+                KSP.UI.Screens.StageGroup group = null;
+                for (int i = 0; i < stages.Count; i++)
+                {
+                    var grp = stages[i];
+                    if (grp != null && (grp.inverseStageIndex == stage || grp.defaultStage == stage))
+                    {
+                        group = grp;
+                        break;
+                    }
+                }
+
+                if (group != null && group.Icons != null && fromIndex >= 0 && fromIndex < group.Icons.Count)
+                {
+                    var icon = group.Icons[fromIndex];
+                    int safeTo = Mathf.Clamp(toIndex, 0, group.Icons.Count - 1);
+                    group.RemoveIcon(icon, true);
+                    group.AddIconAt(icon, safeTo, -1, true);
+                    group.UpdateInStageIndexes();
+                    group.SetPartIndices(true);
+                    group.SetManualStageOffset();
+                    KSP.UI.Screens.StageManager.SetSeparationIndices();
+                    GameEvents.StageManager.OnGUIStageSequenceModified.Fire();
+                    TelemetryHub.Instance?.InvalidateStagePartIcons();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ModularFlightPanel] ReorderPartInStage error: {ex.Message}");
+            }
+#endif
+        }
+
+        public void ToggleSymmetryExpansion(uint partFlightId, int stage, int partIndex)
+        {
+#if KSP_RUNTIME
+            try
+            {
+                if (TelemetryHub.Instance != null && TelemetryHub.Instance.IsSimulationMode)
+                {
+                    TelemetryHub.Instance.SimulationEngine.ToggleSimulatedSymmetry(partFlightId, stage, partIndex);
+                    return;
+                }
+
+                if (KSP.UI.Screens.StageManager.Instance == null) return;
+                var mgr = KSP.UI.Screens.StageManager.Instance;
+                var stages = mgr.Stages;
+                if (stages == null) return;
+
+                KSP.UI.Screens.StageGroup group = null;
+                for (int i = 0; i < stages.Count; i++)
+                {
+                    var grp = stages[i];
+                    if (grp != null && (grp.inverseStageIndex == stage || grp.defaultStage == stage))
+                    {
+                        group = grp;
+                        break;
+                    }
+                }
+
+                if (group != null && group.Icons != null)
+                {
+                    KSP.UI.Screens.StageIcon targetIcon = null;
+                    if (partFlightId > 0)
+                    {
+                        for (int j = 0; j < group.Icons.Count; j++)
+                        {
+                            var ic = group.Icons[j];
+                            if (ic != null && ic.Part != null && (ic.Part.flightID == partFlightId || ic.Part.craftID == partFlightId || (uint)ic.Part.persistentId == partFlightId))
+                            {
+                                targetIcon = ic;
+                                break;
+                            }
+                        }
+                    }
+                    if (targetIcon == null && partIndex >= 0 && partIndex < group.Icons.Count)
+                    {
+                        targetIcon = group.Icons[partIndex];
+                    }
+
+                    if (targetIcon != null && targetIcon.grouped)
+                    {
+                        if (targetIcon.expanded)
+                        {
+                            targetIcon.CollapseGroup();
+                        }
+                        else
+                        {
+                            targetIcon.ExpandGroup();
+                        }
+                        TelemetryHub.Instance?.InvalidateStagePartIcons();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[ModularFlightPanel] ToggleSymmetryExpansion error: {ex.Message}");
             }
 #endif
         }
@@ -355,6 +542,10 @@ namespace ModularFlightPanel.Core
                 if (KSP.UI.Screens.StageManager.Instance != null)
                 {
                     KSP.UI.Screens.StageManager.ActivateNextStage();
+                    if (ModularFlightPanel.Config.ThemeManager.IsStockBottomLeftHidden)
+                    {
+                        StockUIHider.HideStockBottomLeft(true);
+                    }
                 }
             }
             catch (Exception ex)
@@ -437,6 +628,7 @@ namespace ModularFlightPanel.Core
 
         public bool HasStockAtlas => StockAtlas != null;
 
+#if KSP_RUNTIME
         private static System.Reflection.FieldInfo _defaultIconMapField;
         private static System.Reflection.FieldInfo _iconImageField;
         private static bool _fieldsResolved = false;
@@ -520,6 +712,9 @@ namespace ModularFlightPanel.Core
             }
             return null;
         }
+#else
+        private Texture2D FindStockAtlas() => null;
+#endif
 
         public Rect GetStockIconUv(string iconType)
         {
@@ -598,6 +793,34 @@ namespace ModularFlightPanel.Core
                 _simEngine.MoveSimulatedPartToStage(partFlightId, fromStage, partIndex, targetStage);
             }
             Debug.Log($"[HeadlessStageActionHook] Moved simulated part {partFlightId} (from S{fromStage} idx {partIndex}) to S{targetStage:00}");
+        }
+
+        public void InsertStageAndMovePart(uint partFlightId, int fromStage, int partIndex, int insertAtStageIndex)
+        {
+            if (_simEngine != null)
+            {
+                _simEngine.InsertSimulatedStage(insertAtStageIndex);
+                _simEngine.MoveSimulatedPartToStage(partFlightId, fromStage, partIndex, insertAtStageIndex);
+            }
+            Debug.Log($"[HeadlessStageActionHook] Inserted stage S{insertAtStageIndex:00} and moved simulated part {partFlightId}");
+        }
+
+        public void ReorderPartInStage(uint partFlightId, int stage, int fromIndex, int toIndex)
+        {
+            if (_simEngine != null)
+            {
+                _simEngine.ReorderSimulatedPartInStage(partFlightId, stage, fromIndex, toIndex);
+            }
+            Debug.Log($"[HeadlessStageActionHook] Reordered simulated part in S{stage:00} from idx {fromIndex} -> {toIndex}");
+        }
+
+        public void ToggleSymmetryExpansion(uint partFlightId, int stage, int partIndex)
+        {
+            if (_simEngine != null)
+            {
+                _simEngine.ToggleSimulatedSymmetry(partFlightId, stage, partIndex);
+            }
+            Debug.Log($"[HeadlessStageActionHook] Toggled symmetry expansion for part {partFlightId} in S{stage:00}");
         }
 
         public void SetPartHighlight(uint partFlightId, bool highlight, Color? highlightColor = null)

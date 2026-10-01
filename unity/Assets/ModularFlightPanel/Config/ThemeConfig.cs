@@ -177,7 +177,7 @@ namespace ModularFlightPanel.Config
         public AvionicsFontStyle FontStyle = AvionicsFontStyle.ModernSmooth;
 
         // UI 专属着色器参数 (点阵、全息、数码管、玻璃)
-        public float UiDotSpacing = 1.3f;
+        public float UiDotSpacing = 2.0f;
         public float UiScanlineStrength = 0.10f;
         public float UiGlowStrength = 0.40f;
         public ColorHex UiGhostColor = ColorHex.FromColor(new Color(0.04f, 0.08f, 0.05f, 0.22f));
@@ -193,9 +193,9 @@ namespace ModularFlightPanel.Config
         public float DotMaxRadius = 0.46f;
         public bool EnableScanlines = false;
 
-        // 姿态球色彩
-        public ColorHex SkyColor = ColorHex.FromColor(new Color(0.06f, 0.20f, 0.40f, 1.0f));
-        public ColorHex GroundColor = ColorHex.FromColor(new Color(0.12f, 0.12f, 0.12f, 1.0f));
+        // 姿态球色彩 (航空标准：上半球湛蓝天穹，下半球暖橙大地)
+        public ColorHex SkyColor = ColorHex.FromColor(new Color(0.04f, 0.35f, 0.80f, 1.0f));
+        public ColorHex GroundColor = ColorHex.FromColor(new Color(0.76f, 0.38f, 0.08f, 1.0f));
         public ColorHex HorizonLineColor = ColorHex.FromColor(new Color(0.95f, 0.98f, 1.0f, 0.95f));
         public ColorHex GridColor = ColorHex.FromColor(new Color(0.40f, 0.70f, 0.95f, 0.35f));
         public ColorHex DitherDotColor = ColorHex.FromColor(new Color(0.0f, 0.0f, 0.0f, 0.0f));
@@ -300,8 +300,8 @@ namespace ModularFlightPanel.Config
                 ShaderName = "ModularFlightPanel/NavballModern",
                 EnableHalftoneDither = false,
                 EnableScanlines = false,
-                SkyColor = ColorHex.FromColor(new Color(0.06f, 0.20f, 0.40f, 1.0f)),
-                GroundColor = ColorHex.FromColor(new Color(0.45f, 0.25f, 0.12f, 1.0f)),
+                SkyColor = ColorHex.FromColor(new Color(0.04f, 0.35f, 0.80f, 1.0f)),
+                GroundColor = ColorHex.FromColor(new Color(0.76f, 0.38f, 0.08f, 1.0f)),
                 HorizonLineColor = ColorHex.FromColor(new Color(0.95f, 0.98f, 1.0f, 0.95f)),
                 GridColor = ColorHex.FromColor(new Color(0.40f, 0.70f, 0.95f, 0.35f)),
                 RimGlowColor = ColorHex.FromColor(new Color(0.20f, 0.65f, 1.0f, 0.30f)),
@@ -328,8 +328,8 @@ namespace ModularFlightPanel.Config
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = false,
                 EnableScanlines = false,
-                SkyColor = ColorHex.FromColor(new Color(0.12f, 0.38f, 0.72f, 1.0f)),     // 经典深蓝
-                GroundColor = ColorHex.FromColor(new Color(0.48f, 0.28f, 0.12f, 1.0f)),  // 经典棕褐
+                SkyColor = ColorHex.FromColor(new Color(0.04f, 0.35f, 0.80f, 1.0f)),     // 经典天空湛蓝
+                GroundColor = ColorHex.FromColor(new Color(0.76f, 0.38f, 0.08f, 1.0f)),  // 经典大地暖橙
                 HorizonLineColor = ColorHex.FromColor(new Color(1.0f, 0.9f, 0.2f, 1.0f)),
                 GridColor = ColorHex.FromColor(new Color(1.0f, 1.0f, 1.0f, 0.75f)),
                 AccentPrimary = ColorHex.FromColor(new Color(0.2f, 0.9f, 0.3f, 1.0f)),
@@ -382,7 +382,7 @@ namespace ModularFlightPanel.Config
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
-                UiDotSpacing = 1.3f,
+                UiDotSpacing = 2.0f,
                 UiGlowStrength = 0.45f,
                 UiScanlineStrength = 0.12f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.02f, 0.08f, 0.03f, 0.25f)),
@@ -479,7 +479,7 @@ namespace ModularFlightPanel.Config
                 ShaderName = "ModularFlightPanel/NavballHalftone",
                 EnableHalftoneDither = true,
                 EnableScanlines = true,
-                UiDotSpacing = 1.3f,
+                UiDotSpacing = 2.0f,
                 UiGlowStrength = 0.50f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.12f, 0.02f, 0.10f, 0.25f)),
@@ -547,7 +547,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.45f,
                 EnableScanlines = true,
-                UiDotSpacing = 1.3f,
+                UiDotSpacing = 2.0f,
                 UiGlowStrength = 0.52f,
                 UiScanlineStrength = 0.15f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.12f, 0.09f, 0.02f, 0.25f)),
@@ -617,7 +617,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.03f,
                 DotMaxRadius = 0.48f,
                 EnableScanlines = true,
-                UiDotSpacing = 1.3f,
+                UiDotSpacing = 2.0f,
                 UiGlowStrength = 0.42f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.01f, 0.06f, 0.06f, 0.25f)),
@@ -655,7 +655,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.46f,
                 EnableScanlines = true,
-                UiDotSpacing = 1.3f,
+                UiDotSpacing = 2.0f,
                 UiGlowStrength = 0.48f,
                 UiScanlineStrength = 0.15f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.01f, 0.08f, 0.03f, 0.25f)),
@@ -693,7 +693,7 @@ namespace ModularFlightPanel.Config
                 DotMinRadius = 0.04f,
                 DotMaxRadius = 0.45f,
                 EnableScanlines = true,
-                UiDotSpacing = 1.3f,
+                UiDotSpacing = 2.0f,
                 UiGlowStrength = 0.50f,
                 UiScanlineStrength = 0.14f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.08f, 0.02f, 0.10f, 0.25f)),
@@ -729,7 +729,7 @@ namespace ModularFlightPanel.Config
                 ShaderName = "ModularFlightPanel/NavballModern",
                 EnableHalftoneDither = false,
                 EnableScanlines = false,
-                UiDotSpacing = 1.3f,
+                UiDotSpacing = 2.0f,
                 UiScanlineStrength = 0.0f,
                 UiGlowStrength = 0.15f,
                 UiGhostColor = ColorHex.FromColor(new Color(0.02f, 0.03f, 0.04f, 0.20f)),
@@ -821,13 +821,22 @@ namespace ModularFlightPanel.Config
         public bool AutoAdaptResolution = true;
         public float GlobalRenderScaleMultiplier = 1.0f;
 
+        // 全局双轨刷新率与心跳调度配置 (Global Dual-Track Refresh & Heartbeat Scheduling)
+        public int GlobalRefreshProfile = 1; // 0 = Ultra60Hz, 1 = Balanced, 2 = EcoPowerSaver
+        public int RefreshControlMode = 0;   // 0 = VSync_GameFPS, 1 = CustomHz_FreeTier
+        public float GlobalStandardHz = 60.0f;
+        public float GlobalSlowHz = 30.0f;
+        public float GlobalRelaxedHz = 10.0f;
+        public float GlobalUltraLowHz = 2.0f;
+        public float GlobalDataHeartbeatHz = 0f; // 0f = 遵循各组件阶梯/独立定义, >0f = 全局数据心跳统一频率
+
         // 收纳坞按钮自定义过滤与别名配置
         public System.Collections.Generic.List<DockButtonRule> DockRules = new System.Collections.Generic.List<DockButtonRule>();
         public bool DockShowHiddenDrawer = false;
         public int DockOrientation = 0; // 0 = 纵向双列, 1 = 横向双行, 2 = 横向单行
 
-        // 常用 MOD 独立快捷面板设置
-        public bool DockEnableFavoritePanel = true;
+        // 常用 MOD 独立快捷面板设置 (已废弃并整合至编辑UI)
+        public bool DockEnableFavoritePanel = false;
         public int DockFavoriteOrientation = 1; // 0 = 纵向单列, 1 = 横向单行, 2 = 横向双行
         public bool DockKeepFavoritesInMain = false;
         public float DockFavoritePosX = 0f;

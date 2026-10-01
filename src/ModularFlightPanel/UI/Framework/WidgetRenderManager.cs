@@ -131,6 +131,7 @@ namespace ModularFlightPanel.UI
         public float SlowHz { get; set; } = 30.0f;         // 30 Hz
         public float RelaxedHz { get; set; } = 10.0f;      // 10 Hz
         public float UltraLowHz { get; set; } = 2.0f;      // 2 Hz
+        public float GlobalDataHeartbeatHz { get; set; } = 0f; // 0 表示各组件独立/默认推荐, >0 表示全局统一心跳基准频率 (Hz)
 
         // 硬限微秒级帧预算切片调度器配置 (Budgeted Frame Slicing)
         public bool EnableBudgetSlicing { get; set; } = true;
@@ -308,6 +309,25 @@ namespace ModularFlightPanel.UI
             {
                 CurrentProfile = profile;
                 OnProfileChanged?.Invoke(profile);
+            }
+        }
+
+        public void SetControlMode(RefreshControlMode mode)
+        {
+            if (ControlMode != mode)
+            {
+                ControlMode = mode;
+                OnRenderSettingChanged?.Invoke();
+            }
+        }
+
+        public void SetGlobalDataHeartbeatHz(float hz)
+        {
+            float clamped = Mathf.Max(0f, hz);
+            if (Math.Abs(GlobalDataHeartbeatHz - clamped) > 0.001f)
+            {
+                GlobalDataHeartbeatHz = clamped;
+                OnRenderSettingChanged?.Invoke();
             }
         }
 

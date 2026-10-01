@@ -96,6 +96,10 @@ namespace ModularFlightPanel.Core
         {
             _vesselTopologyDirty = true;
             TriggerStageSeparationEvent();
+            if (ModularFlightPanel.Config.ThemeManager.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
         }
 
         private void OnPartUndocked(Part p)
@@ -171,6 +175,9 @@ namespace ModularFlightPanel.Core
             GameEvents.onVesselChange.Add(OnVesselChanged);
             GameEvents.onPartUndock.Add(OnPartUndocked);
             GameEvents.onPartDeCouple.Add(OnPartDecoupled);
+            GameEvents.StageManager.OnGUIStageSequenceModified.Add(OnStageSequenceModified);
+            GameEvents.StageManager.OnGUIStageAdded.Add(OnStageAdded);
+            GameEvents.StageManager.OnGUIStageRemoved.Add(OnStageRemoved);
 
             // 初始化统一探针中枢与场景搜索排队调度器
             ProbeManager.Instance.InitializeAll();
@@ -211,6 +218,9 @@ namespace ModularFlightPanel.Core
             GameEvents.onVesselChange.Remove(OnVesselChanged);
             GameEvents.onPartUndock.Remove(OnPartUndocked);
             GameEvents.onPartDeCouple.Remove(OnPartDecoupled);
+            GameEvents.StageManager.OnGUIStageSequenceModified.Remove(OnStageSequenceModified);
+            GameEvents.StageManager.OnGUIStageAdded.Remove(OnStageAdded);
+            GameEvents.StageManager.OnGUIStageRemoved.Remove(OnStageRemoved);
 
             if (_instance == this)
             {
@@ -221,6 +231,31 @@ namespace ModularFlightPanel.Core
                 ModularFlightPanel.UI.Widgets.Gauges.ArcTapeWidget.OnCycleSpeedModeAction = null;
                 ModularFlightPanel.UI.Widgets.Gauges.ArcTapeWidget.OnCycleAltitudeModeAction = null;
                 ModularFlightPanel.UI.Widgets.BottomControlsWidget.OnTogglePrincipiaWindowAction = null;
+            }
+        }
+
+        private void OnStageSequenceModified()
+        {
+            InvalidateStagePartIcons();
+            if (ModularFlightPanel.Config.ThemeManager.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+        private void OnStageAdded(int stg)
+        {
+            InvalidateStagePartIcons();
+            if (ModularFlightPanel.Config.ThemeManager.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
+            }
+        }
+        private void OnStageRemoved(int stg)
+        {
+            InvalidateStagePartIcons();
+            if (ModularFlightPanel.Config.ThemeManager.IsStockBottomLeftHidden)
+            {
+                StockUIHider.HideStockBottomLeft(true);
             }
         }
 

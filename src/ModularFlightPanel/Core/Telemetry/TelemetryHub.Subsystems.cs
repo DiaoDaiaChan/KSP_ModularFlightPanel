@@ -15,6 +15,20 @@ namespace ModularFlightPanel.Core
         private double _netEcRate = 0.0;
         private float _busVoltage = 28.0f;
         private double _solarPower = 0.0;
+        private int _solarPanelsTotal = 0;
+        private int _solarPanelsActive = 0;
+        private double _rtgPower = 0.0;
+        private int _rtgCount = 0;
+        private double _fuelCellPower = 0.0;
+        private int _fuelCellCount = 0;
+        private int _fuelCellActiveCount = 0;
+        private double _alternatorPower = 0.0;
+        private int _alternatorCount = 0;
+        private double _totalPowerGeneration = 0.0;
+        private double _totalPowerConsumption = 0.0;
+        private double _timeToDepletionSeconds = double.NaN;
+        private double _timeToFullSeconds = double.NaN;
+        private IReadOnlyList<BatteryTelemetryInfo> _batteries = Array.Empty<BatteryTelemetryInfo>();
 
         public double ElectricCharge
         {
@@ -68,11 +82,155 @@ namespace ModularFlightPanel.Core
             }
         }
 
-        // 差分计算电量速率与太阳能缓存
+        public int SolarPanelsTotal
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.SolarPanelsTotal;
+                EnsureSubsystemsUpdated();
+                return _solarPanelsTotal;
+            }
+        }
+
+        public int SolarPanelsActive
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.SolarPanelsActive;
+                EnsureSubsystemsUpdated();
+                return _solarPanelsActive;
+            }
+        }
+
+        public double RtgPower
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.RtgPower;
+                EnsureSubsystemsUpdated();
+                return _rtgPower;
+            }
+        }
+
+        public int RtgCount
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.RtgCount;
+                EnsureSubsystemsUpdated();
+                return _rtgCount;
+            }
+        }
+
+        public double FuelCellPower
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.FuelCellPower;
+                EnsureSubsystemsUpdated();
+                return _fuelCellPower;
+            }
+        }
+
+        public int FuelCellCount
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.FuelCellCount;
+                EnsureSubsystemsUpdated();
+                return _fuelCellCount;
+            }
+        }
+
+        public int FuelCellActiveCount
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.FuelCellActiveCount;
+                EnsureSubsystemsUpdated();
+                return _fuelCellActiveCount;
+            }
+        }
+
+        public double AlternatorPower
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.AlternatorPower;
+                EnsureSubsystemsUpdated();
+                return _alternatorPower;
+            }
+        }
+
+        public int AlternatorCount
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.AlternatorCount;
+                EnsureSubsystemsUpdated();
+                return _alternatorCount;
+            }
+        }
+
+        public double TotalPowerGeneration
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.TotalPowerGeneration;
+                EnsureSubsystemsUpdated();
+                return _totalPowerGeneration;
+            }
+        }
+
+        public double TotalPowerConsumption
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.TotalPowerConsumption;
+                EnsureSubsystemsUpdated();
+                return _totalPowerConsumption;
+            }
+        }
+
+        public double TimeToDepletionSeconds
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.TimeToDepletionSeconds;
+                EnsureSubsystemsUpdated();
+                return _timeToDepletionSeconds;
+            }
+        }
+
+        public double TimeToFullSeconds
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.TimeToFullSeconds;
+                EnsureSubsystemsUpdated();
+                return _timeToFullSeconds;
+            }
+        }
+
+        public IReadOnlyList<BatteryTelemetryInfo> Batteries
+        {
+            get
+            {
+                if (IsSimulationMode) return SimulationEngine.Batteries;
+                EnsureSubsystemsUpdated();
+                return _batteries;
+            }
+        }
+
+        // 差分计算电量速率与发电设备缓存
         private double _lastEc = 0.0;
         private float _lastEcTime = 0f;
         private float _lastSubsystemTime = -1f;
         private List<ModuleDeployableSolarPanel> _cachedSolarPanels = new List<ModuleDeployableSolarPanel>();
+        private List<ModuleGenerator> _cachedGenerators = new List<ModuleGenerator>();
+        private List<ModuleResourceConverter> _cachedConverters = new List<ModuleResourceConverter>();
+        private List<ModuleAlternator> _cachedAlternators = new List<ModuleAlternator>();
+        private readonly List<BatteryTelemetryInfo> _cachedBatteriesList = new List<BatteryTelemetryInfo>(16);
         private float _lastPanelScanTime = -1f;
         private int _lastSubsystemPartCount = -1;
 
@@ -370,25 +528,177 @@ namespace ModularFlightPanel.Core
                     _lastEc = curEc;
                     _lastEcTime = now;
                 }
-                float ecPct = maxEc > 0.001 ? (float)(curEc / maxEc) : 1.0f;
-                _busVoltage = 22.0f + 6.2f * Mathf.Clamp01(ecPct);
+                // 电池分项扫描 (节流更新)
+                _cachedBatteriesList.Clear();
+                for (int i = 0; i < v.parts.Count; i++)
+                {
+                    Part p = v.parts[i];
+                    if (p != null && p.Resources != null)
+                    {
+                        for (int r = 0; r < p.Resources.Count; r++)
+                        {
+                            PartResource res = p.Resources[r];
+                            if (res != null && (ecId >= 0 ? (res.info != null && res.info.id == ecId) : (res.resourceName == "ElectricCharge")))
+                            {
+                                if (res.maxAmount > 0.001)
+                                {
+                                    bool isDedicated = !p.Modules.Contains<ModuleCommand>() &&
+                                        ((p.partInfo != null && (p.partInfo.category == PartCategories.Utility || p.partInfo.category == PartCategories.Electrical)) ||
+                                         (p.name != null && (p.name.IndexOf("batt", StringComparison.OrdinalIgnoreCase) >= 0 || p.name.IndexOf("z-", StringComparison.OrdinalIgnoreCase) >= 0)));
+                                    string bTitle = p.partInfo != null ? p.partInfo.title : p.name;
+                                    _cachedBatteriesList.Add(new BatteryTelemetryInfo(bTitle, res.amount, res.maxAmount, res.flowState, isDedicated));
+                                }
+                            }
+                        }
+                    }
+                }
+                _batteries = _cachedBatteriesList;
 
-                // 太阳能 (节流缓存)
+                // 2. 发电源设备探测 (太阳能 / RTG / 燃料电池 / 发电机)
                 if (partsChanged || _cachedSolarPanels == null || (now - _lastPanelScanTime) >= 1.0f)
                 {
                     _lastPanelScanTime = now;
                     _cachedSolarPanels = v.FindPartModulesImplementing<ModuleDeployableSolarPanel>();
+                    _cachedGenerators = v.FindPartModulesImplementing<ModuleGenerator>();
+                    _cachedConverters = v.FindPartModulesImplementing<ModuleResourceConverter>();
+                    _cachedAlternators = v.FindPartModulesImplementing<ModuleAlternator>();
                 }
-                double sol = 0.0;
+
+                int solTotal = 0, solActive = 0;
+                double solOutput = 0.0;
                 if (_cachedSolarPanels != null)
                 {
+                    solTotal = _cachedSolarPanels.Count;
                     for (int i = 0; i < _cachedSolarPanels.Count; i++)
                     {
-                        if (_cachedSolarPanels[i] != null && _cachedSolarPanels[i].flowRate > 0.0001)
-                            sol += _cachedSolarPanels[i].flowRate;
+                        var sp = _cachedSolarPanels[i];
+                        if (sp == null) continue;
+                        if (sp.deployState != ModuleDeployablePart.DeployState.BROKEN)
+                        {
+                            if (sp.flowRate > 0.0001) solActive++;
+                            solOutput += sp.flowRate;
+                        }
                     }
                 }
-                _solarPower = sol;
+                _solarPanelsTotal = solTotal;
+                _solarPanelsActive = solActive;
+                _solarPower = solOutput;
+
+                int rtgCount = 0;
+                double rtgOutput = 0.0;
+                if (_cachedGenerators != null)
+                {
+                    for (int i = 0; i < _cachedGenerators.Count; i++)
+                    {
+                        var gen = _cachedGenerators[i];
+                        if (gen == null || gen.resHandler == null || gen.resHandler.outputResources == null) continue;
+                        for (int j = 0; j < gen.resHandler.outputResources.Count; j++)
+                        {
+                            var oRes = gen.resHandler.outputResources[j];
+                            if (oRes != null && oRes.name == "ElectricCharge")
+                            {
+                                if (gen.isAlwaysActive || gen.generatorIsActive)
+                                {
+                                    rtgCount++;
+                                    rtgOutput += oRes.rate;
+                                }
+                            }
+                        }
+                    }
+                }
+                _rtgCount = rtgCount;
+                _rtgPower = rtgOutput;
+
+                int fcCount = 0, fcActive = 0;
+                double fcOutput = 0.0;
+                if (_cachedConverters != null)
+                {
+                    for (int i = 0; i < _cachedConverters.Count; i++)
+                    {
+                        var conv = _cachedConverters[i];
+                        if (conv == null || conv.outputList == null) continue;
+                        for (int j = 0; j < conv.outputList.Count; j++)
+                        {
+                            var oRes = conv.outputList[j];
+                            if (string.Equals(oRes.ResourceName, "ElectricCharge", StringComparison.OrdinalIgnoreCase))
+                            {
+                                fcCount++;
+                                if (conv.IsActivated)
+                                {
+                                    fcActive++;
+                                    fcOutput += oRes.Ratio * conv.lastTimeFactor;
+                                }
+                            }
+                        }
+                    }
+                }
+                _fuelCellCount = fcCount;
+                _fuelCellActiveCount = fcActive;
+                _fuelCellPower = fcOutput;
+
+                int altCount = 0;
+                double altOutput = 0.0;
+                if (_cachedAlternators != null)
+                {
+                    for (int i = 0; i < _cachedAlternators.Count; i++)
+                    {
+                        var alt = _cachedAlternators[i];
+                        if (alt == null || alt.resHandler == null || alt.resHandler.outputResources == null || alt.part == null) continue;
+                        for (int j = 0; j < alt.resHandler.outputResources.Count; j++)
+                        {
+                            var oRes = alt.resHandler.outputResources[j];
+                            if (oRes != null && oRes.name == "ElectricCharge")
+                            {
+                                altCount++;
+                                var eng = alt.part.FindModuleImplementing<ModuleEngines>();
+                                if (eng != null && eng.isOperational && eng.currentThrottle > 0.001f)
+                                {
+                                    altOutput += oRes.rate * eng.currentThrottle;
+                                }
+                            }
+                        }
+                    }
+                }
+                _alternatorCount = altCount;
+                _alternatorPower = altOutput;
+
+                double totalGen = solOutput + rtgOutput + fcOutput + altOutput;
+                double totalLoad = 0.0;
+                if (DynamicBatteryStorageProbe.IsAvailable)
+                {
+                    double dbsGen = DynamicBatteryStorageProbe.ResolveNumeric("PowerGeneration");
+                    double dbsCons = DynamicBatteryStorageProbe.ResolveNumeric("PowerConsumption");
+                    if (!double.IsNaN(dbsGen) && dbsGen > 0.0001) totalGen = dbsGen;
+                    if (!double.IsNaN(dbsCons) && dbsCons >= 0.0) totalLoad = dbsCons;
+                    else totalLoad = Math.Max(0.0, totalGen - _netEcRate);
+
+                    double dbsDepletion = DynamicBatteryStorageProbe.ResolveNumeric("TimeToDepletionSeconds");
+                    if (!double.IsNaN(dbsDepletion) && dbsDepletion >= 0.0) _timeToDepletionSeconds = dbsDepletion;
+                    else _timeToDepletionSeconds = (_netEcRate < -0.01 && curEc > 0.001) ? (curEc / -_netEcRate) : double.NaN;
+                }
+                else
+                {
+                    totalLoad = Math.Max(0.0, totalGen - _netEcRate);
+                    _timeToDepletionSeconds = (_netEcRate < -0.01 && curEc > 0.001) ? (curEc / -_netEcRate) : double.NaN;
+                }
+
+                _totalPowerGeneration = totalGen;
+                _totalPowerConsumption = totalLoad;
+                _timeToFullSeconds = (_netEcRate > 0.01 && curEc < maxEc - 0.1) ? ((maxEc - curEc) / _netEcRate) : double.NaN;
+
+                // 3. 物理直流母线电压解算 (MIL-STD-704 28V 航电放电特性)
+                if (maxEc > 0.001)
+                {
+                    float soc = Mathf.Clamp01((float)(curEc / maxEc));
+                    float baseV = (soc > 0.2f) ? (24.0f + 4.0f * ((soc - 0.2f) / 0.8f)) : (18.0f + 6.0f * (soc / 0.2f));
+                    if (_netEcRate > 0.05) baseV += Mathf.Min(1.2f, (float)_netEcRate * 0.1f);
+                    else if (_netEcRate < -0.05) baseV -= Mathf.Min(1.0f, (float)(-_netEcRate) * 0.05f);
+                    _busVoltage = Mathf.Clamp(baseV, 0f, 30.0f);
+                }
+                else
+                {
+                    _busVoltage = (totalGen > 0.001) ? 28.0f : 0.0f;
+                }
 
                 // 2. 通信网络与链路 (RealAntennas / Stock CommNet - 节流 5 Hz)
                 if (partsChanged || (now - _lastCommScanTime) >= 0.2f)

@@ -59,10 +59,29 @@ namespace ModularFlightPanel.Core
         private static GeeGauge _cachedGeeGauge;
         private static StageTumbler _cachedStageTumbler;
         private static StagingLED _cachedStagingLED;
+        private static System.Reflection.FieldInfo _stageManagerMainListAnchorField;
+
+        private static VerticalLayoutGroup GetStageManagerMainListAnchor(StageManager sm)
+        {
+            if (sm == null) return null;
+            if (_stageManagerMainListAnchorField == null)
+            {
+                _stageManagerMainListAnchorField = typeof(StageManager).GetField("mainListAnchor", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            }
+            return _stageManagerMainListAnchorField?.GetValue(sm) as VerticalLayoutGroup;
+        }
 
         // ── 时间加速与时钟 (Time Warp & MET) 缓存 ──
         private static bool _isTimeWarpCached = false;
         private static METDisplay _cachedMETDisplay = null;
+
+        // ── 纯净原生导航球 (Clean Stock Navball) 缓存 ──
+        private static bool _isCleanNavballCached = false;
+        private static readonly List<Graphic> _cachedCleanNavballDecorations = new List<Graphic>(32);
+        private static readonly List<Graphic> _cachedCleanNavballCoreGraphics = new List<Graphic>(16);
+        private static readonly List<Graphic> _cachedNavballToggleGraphics = new List<Graphic>(8);
+        private static readonly List<Graphic> _cachedSpeedDisplayGraphics = new List<Graphic>(16);
+        private static readonly List<GameObject> _cachedCleanNavballButtons = new List<GameObject>(8);
 
         public static void ClearCaches()
         {
@@ -75,6 +94,13 @@ namespace ModularFlightPanel.Core
             _cachedBurnVector = null;
             _burnVectorSearched = false;
             _isNavballCached = false;
+
+            _cachedCleanNavballDecorations.Clear();
+            _cachedCleanNavballCoreGraphics.Clear();
+            _cachedNavballToggleGraphics.Clear();
+            _cachedSpeedDisplayGraphics.Clear();
+            _cachedCleanNavballButtons.Clear();
+            _isCleanNavballCached = false;
 
             _cachedAltimeterRenderers = null;
             _cachedAltimeterActionButtons.Clear();
@@ -90,6 +116,7 @@ namespace ModularFlightPanel.Core
             _cachedGeeGauge = null;
             _cachedStageTumbler = null;
             _cachedStagingLED = null;
+            _stageManagerMainListAnchorField = null;
             _isBottomLeftCached = false;
 
             _cachedMETDisplay = null;
@@ -98,6 +125,7 @@ namespace ModularFlightPanel.Core
 
         public static void RestoreAllStockUI()
         {
+            try { SetStockNavballClean(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (CleanNavball) warning: {ex.Message}"); }
             try { HideStockNavballCompletely(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (Navball) warning: {ex.Message}"); }
             try { HideStockAltimeter(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (Altimeter) warning: {ex.Message}"); }
             try { HideStockBottomLeft(false); } catch (Exception ex) { Debug.LogWarning($"[ModularFlightPanel] RestoreAllStockUI (BottomLeft) warning: {ex.Message}"); }
@@ -174,9 +202,13 @@ namespace ModularFlightPanel.Core
                         subCanvas.planeDistance = parentCanvas.planeDistance;
                     }
                 }
-                if (subCanvas != null && subCanvas.enabled != !hide)
+                if (subCanvas != null)
                 {
-                    subCanvas.enabled = !hide;
+                    subCanvas.overrideSorting = true;
+                    if (subCanvas.enabled != !hide)
+                    {
+                        subCanvas.enabled = !hide;
+                    }
                 }
 
                 // 2. 射线拾取屏蔽 (GraphicRaycaster Sleep)
@@ -334,13 +366,69 @@ namespace ModularFlightPanel.Core
                 }
 
                 // 核心保活铁律：StageManager.Instance 严禁休眠！
-                // 仅对其 GameObject 施加画布隔离以消除 UGUI 重绘，其 MonoBehaviour 必须持续运转以响应空格分级与 Hook 调度
+                // 仅对其 GameObject 及全套分级容器施加画布深度隔离以消除 UGUI 重绘，其 MonoBehaviour 必须持续运转以响应空格分级与 Hook 调度
                 if (StageManager.Instance != null)
                 {
-                    ApplyStealthCanvasIsolation(StageManager.Instance.gameObject, hide);
-                    if (!StageManager.Instance.enabled)
+                    var sm = StageManager.Instance;
+                    ApplyStealthCanvasIsolation(sm.gameObject, hide);
+                    if (!sm.enabled)
                     {
-                        StageManager.Instance.enabled = true;
+                        sm.enabled = true;
+                    }
+                    if (!sm.gameObject.activeSelf)
+                    {
+                        sm.gameObject.SetActive(true);
+                    }
+
+                    // 深度拦截分级序列根容器、视口滚动器与布局容器 (彻底切断 UGUI 网格构建与批处理)
+                    var mainAnchor = GetStageManagerMainListAnchor(sm);
+                    if (mainAnchor != null)
+                    {
+                        ApplyStealthCanvasIsolation(mainAnchor.gameObject, hide);
+                        if (hide && mainAnchor.gameObject.activeSelf)
+                        {
+                            mainAnchor.gameObject.SetActive(false);
+                        }
+                        else if (!hide && !mainAnchor.gameObject.activeSelf)
+                        {
+                            mainAnchor.gameObject.SetActive(true);
+                        }
+                    }
+                    if (sm.layoutGroup != null)
+                    {
+                        ApplyStealthCanvasIsolation(sm.layoutGroup.gameObject, hide);
+                    }
+                    if (sm.scrollRect != null)
+                    {
+                        ApplyStealthCanvasIsolation(sm.scrollRect.gameObject, hide);
+                    }
+
+                    // 深度拦截原版 delta-V 总结算胶囊 (deltaVTotalSection)
+                    if (sm.deltaVTotalSection != null)
+                    {
+                        ApplyStealthCanvasIsolation(sm.deltaVTotalSection.gameObject, hide);
+                        if (hide && sm.deltaVTotalSection.gameObject.activeSelf)
+                        {
+                            sm.deltaVTotalSection.gameObject.SetActive(false);
+                        }
+                        else if (!hide && !sm.deltaVTotalSection.gameObject.activeSelf && sm.Stages != null && sm.Stages.Count > 1)
+                        {
+                            sm.deltaVTotalSection.gameObject.SetActive(true);
+                        }
+                    }
+
+                    // 深度穿透全量 StageGroup，彻底屏蔽新增或重排的分级行渲染
+                    var stages = sm.Stages;
+                    if (stages != null)
+                    {
+                        for (int i = 0; i < stages.Count; i++)
+                        {
+                            var grp = stages[i];
+                            if (grp != null)
+                            {
+                                ApplyStealthCanvasIsolation(grp.gameObject, hide);
+                            }
+                        }
                     }
                 }
             }
@@ -531,8 +619,143 @@ namespace ModularFlightPanel.Core
         private static bool _isCleanStockNavballActive = false;
         public static bool IsCleanStockNavballActive => _isCleanStockNavballActive;
 
+        private static bool IsStockNavballCoreGraphic(Graphic g)
+        {
+            if (g == null) return false;
+            string name = g.name.ToLowerInvariant();
+
+            // 明确包含装饰、背景、框架、阴影、滑块、按键的图元一律排除
+            if (name.Contains("frame") || name.Contains("bg") || name.Contains("mask") ||
+                name.Contains("shading") || name.Contains("shadow") || name.Contains("baked") ||
+                name.Contains("backing") || name.Contains("bezel") || name.Contains("bracket") ||
+                name.Contains("trim") || name.Contains("tray") || name.Contains("panel") ||
+                name.Contains("plate") || name.Contains("base") || name.Contains("gauge") ||
+                name.Contains("slider") || name.Contains("arrow") || name.Contains("button"))
+            {
+                return false;
+            }
+
+            // 核心瞄准准星 / 十字瞄准标 (NavBallCursor, reticle, cross)
+            if (name.Contains("cursor") || name.Contains("reticle") || name.Contains("cross"))
+                return true;
+
+            // 核心姿态矢量标 (vector, waypoint, pivot, marker)
+            if (name.Contains("vector") || name.Contains("waypoint") || name.Contains("pivot") || name.Contains("marker"))
+                return true;
+
+            return false;
+        }
+
+        private static void EnsureCleanNavballCached()
+        {
+            if (_isCleanNavballCached) return;
+            _isCleanNavballCached = true;
+
+            _cachedCleanNavballDecorations.Clear();
+            _cachedCleanNavballCoreGraphics.Clear();
+            _cachedNavballToggleGraphics.Clear();
+            _cachedSpeedDisplayGraphics.Clear();
+            _cachedCleanNavballButtons.Clear();
+
+            // 1. 扫描 NavBallToggle 及其折叠把手按钮
+            if (NavBallToggle.Instance != null)
+            {
+                if (NavBallToggle.Instance.overrideButton != null)
+                {
+                    var obGo = NavBallToggle.Instance.overrideButton.gameObject;
+                    if (!_cachedCleanNavballButtons.Contains(obGo))
+                        _cachedCleanNavballButtons.Add(obGo);
+                }
+                var nbtG = NavBallToggle.Instance.GetComponentsInChildren<Graphic>(true);
+                if (nbtG != null)
+                {
+                    for (int i = 0; i < nbtG.Length; i++)
+                    {
+                        if (nbtG[i] != null && !_cachedNavballToggleGraphics.Contains(nbtG[i]))
+                            _cachedNavballToggleGraphics.Add(nbtG[i]);
+                    }
+                }
+            }
+
+            // 2. 扫描 SpeedDisplay (原版速度条与背景)
+            if (SpeedDisplay.Instance != null)
+            {
+                var spdG = SpeedDisplay.Instance.GetComponentsInChildren<Graphic>(true);
+                if (spdG != null)
+                {
+                    for (int i = 0; i < spdG.Length; i++)
+                    {
+                        if (spdG[i] != null && !_cachedSpeedDisplayGraphics.Contains(spdG[i]))
+                            _cachedSpeedDisplayGraphics.Add(spdG[i]);
+                    }
+                }
+            }
+
+            // 3. 扫描左右切换/微调按键 (ButtonLeft / ButtonRight)
+            if (FlightUIModeController.Instance != null)
+            {
+                var allTrans = FlightUIModeController.Instance.GetComponentsInChildren<Transform>(true);
+                if (allTrans != null)
+                {
+                    for (int i = 0; i < allTrans.Length; i++)
+                    {
+                        var t = allTrans[i];
+                        if (t == null) continue;
+                        string tName = t.name.ToLowerInvariant();
+                        if (tName == "buttonleft" || tName == "buttonright" ||
+                            tName.Contains("buttonleft") || tName.Contains("buttonright"))
+                        {
+                            if (!_cachedCleanNavballButtons.Contains(t.gameObject))
+                                _cachedCleanNavballButtons.Add(t.gameObject);
+                        }
+                    }
+                }
+            }
+
+            // 4. 扫描 NavBall 上的所有 Graphic 并分类
+            var allGraphics = new List<Graphic>(64);
+            if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+            {
+                var gArr = FlightUIModeController.Instance.navBall.GetComponentsInChildren<Graphic>(true);
+                if (gArr != null)
+                {
+                    for (int i = 0; i < gArr.Length; i++)
+                    {
+                        if (gArr[i] != null && !allGraphics.Contains(gArr[i]))
+                            allGraphics.Add(gArr[i]);
+                    }
+                }
+            }
+            if (StockNavBallHook.StockInstance != null)
+            {
+                var gArr = StockNavBallHook.StockInstance.GetComponentsInChildren<Graphic>(true);
+                if (gArr != null)
+                {
+                    for (int i = 0; i < gArr.Length; i++)
+                    {
+                        if (gArr[i] != null && !allGraphics.Contains(gArr[i]))
+                            allGraphics.Add(gArr[i]);
+                    }
+                }
+            }
+
+            for (int i = 0; i < allGraphics.Count; i++)
+            {
+                var g = allGraphics[i];
+                if (g == null) continue;
+                if (IsStockNavballCoreGraphic(g))
+                {
+                    _cachedCleanNavballCoreGraphics.Add(g);
+                }
+                else
+                {
+                    _cachedCleanNavballDecorations.Add(g);
+                }
+            }
+        }
+
         /// <summary>
-        /// 纯净原生导航球模式：激活 3D 姿态球与矢量，剥离侧面油门/G表/SAS按钮/装饰底框，保持极简悬浮
+        /// 纯净原生导航球模式：激活 3D 姿态球与矢量，剥离侧面油门/G表/SAS按钮/装饰底框/折叠把手/速度背景/左右微调键，保持极简悬浮
         /// </summary>
         public static void SetStockNavballClean(bool clean)
         {
@@ -542,11 +765,16 @@ namespace ModularFlightPanel.Core
 
             try
             {
+                EnsureCleanNavballCached();
+
                 if (!clean)
                 {
+                    // 恢复原生全部外围控件
                     var nb = StockNavBallHook.StockInstance;
                     if (nb.sideGaugeGee != null) nb.sideGaugeGee.gameObject.SetActive(true);
                     if (nb.sideGaugeThrottle != null) nb.sideGaugeThrottle.gameObject.SetActive(true);
+                    if (nb.headingText != null) nb.headingText.enabled = true;
+
                     for (int i = 0; i < _cachedNavballActionButtons.Count; i++)
                     {
                         if (_cachedNavballActionButtons[i] != null) _cachedNavballActionButtons[i].gameObject.SetActive(true);
@@ -555,17 +783,34 @@ namespace ModularFlightPanel.Core
                     if (_cachedRCSDisplay != null) _cachedRCSDisplay.gameObject.SetActive(true);
                     if (_cachedLightDisplay != null) _cachedLightDisplay.gameObject.SetActive(true);
 
-                    if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+                    for (int i = 0; i < _cachedCleanNavballButtons.Count; i++)
                     {
-                        var graphics = FlightUIModeController.Instance.navBall.GetComponentsInChildren<Graphic>(true);
-                        for (int i = 0; i < graphics.Length; i++)
-                        {
-                            if (graphics[i] != null && !graphics[i].enabled) graphics[i].enabled = true;
-                        }
+                        if (_cachedCleanNavballButtons[i] != null) _cachedCleanNavballButtons[i].SetActive(true);
+                    }
+                    for (int i = 0; i < _cachedCleanNavballDecorations.Count; i++)
+                    {
+                        if (_cachedCleanNavballDecorations[i] != null && !_cachedCleanNavballDecorations[i].enabled)
+                            _cachedCleanNavballDecorations[i].enabled = true;
+                    }
+                    for (int i = 0; i < _cachedNavballToggleGraphics.Count; i++)
+                    {
+                        if (_cachedNavballToggleGraphics[i] != null && !_cachedNavballToggleGraphics[i].enabled)
+                            _cachedNavballToggleGraphics[i].enabled = true;
+                    }
+                    for (int i = 0; i < _cachedSpeedDisplayGraphics.Count; i++)
+                    {
+                        if (_cachedSpeedDisplayGraphics[i] != null && !_cachedSpeedDisplayGraphics[i].enabled)
+                            _cachedSpeedDisplayGraphics[i].enabled = true;
+                    }
+                    if (SpeedDisplay.Instance != null)
+                    {
+                        SpeedDisplay.Instance.enabled = true;
+                        ApplyStealthCanvasIsolation(SpeedDisplay.Instance.gameObject, false);
                     }
                     return;
                 }
 
+                // ── 纯净模式启用 ──
                 // 1. 确保子画布对 NavBall 处于开启状态，确保渲染能够正常进行
                 HideStockNavballCompletely(false);
 
@@ -578,7 +823,7 @@ namespace ModularFlightPanel.Core
                     ApplyStealthCanvasIsolation(StockNavBallHook.StockInstance.gameObject, false);
                 }
 
-                // 2. 确保官方折叠托盘处于展开态
+                // 2. 确保官方折叠托盘处于展开态，防止 KSP 内核暂停姿态矩阵更新
                 if (NavBallToggle.Instance != null && NavBallToggle.Instance.panel != null)
                 {
                     var panel = NavBallToggle.Instance.panel;
@@ -609,25 +854,23 @@ namespace ModularFlightPanel.Core
                     }
                 }
 
-                // 4. 干净模式：隐藏侧边加速度 G 表与油门表 (sideGaugeGee, sideGaugeThrottle)
+                // 4. 隐藏侧边加速度 G 表与油门表 (sideGaugeGee, sideGaugeThrottle)
                 var stockNb = StockNavBallHook.StockInstance;
                 if (stockNb.sideGaugeGee != null && stockNb.sideGaugeGee.gameObject.activeSelf)
-                {
                     stockNb.sideGaugeGee.gameObject.SetActive(false);
-                }
                 if (stockNb.sideGaugeThrottle != null && stockNb.sideGaugeThrottle.gameObject.activeSelf)
-                {
                     stockNb.sideGaugeThrottle.gameObject.SetActive(false);
-                }
+
+                // 隐藏原版航向文字 (MFP 姿态球已有航向读数盒)
+                if (stockNb.headingText != null && stockNb.headingText.enabled)
+                    stockNb.headingText.enabled = false;
 
                 // 5. 隐藏外围 SAS/RCS 指示牌与动作按钮
                 for (int i = 0; i < _cachedNavballActionButtons.Count; i++)
                 {
                     var btn = _cachedNavballActionButtons[i];
                     if (btn != null && btn.gameObject.activeSelf)
-                    {
                         btn.gameObject.SetActive(false);
-                    }
                 }
                 if (_cachedSASDisplay != null && _cachedSASDisplay.gameObject.activeSelf)
                     _cachedSASDisplay.gameObject.SetActive(false);
@@ -636,25 +879,49 @@ namespace ModularFlightPanel.Core
                 if (_cachedLightDisplay != null && _cachedLightDisplay.gameObject.activeSelf)
                     _cachedLightDisplay.gameObject.SetActive(false);
 
-                // 6. 隐藏原生外框与装饰性托盘背景图片 (保护 navball、ball、reticle、cross、marker 等核心图元)
-                if (FlightUIModeController.Instance != null && FlightUIModeController.Instance.navBall != null)
+                // 6. 彻底隐藏左右小三角切换按键 (ButtonLeft / ButtonRight) 与顶部收起小把手 (overrideButton)
+                for (int i = 0; i < _cachedCleanNavballButtons.Count; i++)
                 {
-                    var graphics = FlightUIModeController.Instance.navBall.GetComponentsInChildren<Graphic>(true);
-                    for (int i = 0; i < graphics.Length; i++)
-                    {
-                        var g = graphics[i];
-                        if (g == null) continue;
-                        string nameLower = g.name.ToLowerInvariant();
-                        if (nameLower.Contains("navball") || nameLower.Contains("ball") || nameLower.Contains("reticle") || nameLower.Contains("cross") || nameLower.Contains("marker") || nameLower.Contains("heading") || nameLower.Contains("text"))
-                            continue;
-                        if (nameLower.Contains("frame") || nameLower.Contains("bezel") || nameLower.Contains("bracket") || nameLower.Contains("backing") || nameLower.Contains("trim"))
-                        {
-                            if (g.enabled)
-                            {
-                                g.enabled = false;
-                            }
-                        }
-                    }
+                    var go = _cachedCleanNavballButtons[i];
+                    if (go != null && go.activeSelf)
+                        go.SetActive(false);
+                }
+
+                // 7. 隐藏 NavBallToggle 下的所有外显 Graphic
+                for (int i = 0; i < _cachedNavballToggleGraphics.Count; i++)
+                {
+                    var g = _cachedNavballToggleGraphics[i];
+                    if (g != null && g.enabled)
+                        g.enabled = false;
+                }
+
+                // 8. 隐藏原版速度显示 SpeedDisplay (及其背景框 NavBallSpeedGaugeFrame)
+                if (SpeedDisplay.Instance != null)
+                {
+                    SpeedDisplay.Instance.enabled = false;
+                    ApplyStealthCanvasIsolation(SpeedDisplay.Instance.gameObject, true);
+                }
+                for (int i = 0; i < _cachedSpeedDisplayGraphics.Count; i++)
+                {
+                    var g = _cachedSpeedDisplayGraphics[i];
+                    if (g != null && g.enabled)
+                        g.enabled = false;
+                }
+
+                // 9. 隐藏所有外围装饰/背景框/底座 Graphic (NavBallHeadingFrame, NavballFrame, NavBall_BG_Baked 等)
+                for (int i = 0; i < _cachedCleanNavballDecorations.Count; i++)
+                {
+                    var g = _cachedCleanNavballDecorations[i];
+                    if (g != null && g.enabled)
+                        g.enabled = false;
+                }
+
+                // 10. 保证核心瞄准十字准星与姿态指示图元正常开启
+                for (int i = 0; i < _cachedCleanNavballCoreGraphics.Count; i++)
+                {
+                    var g = _cachedCleanNavballCoreGraphics[i];
+                    if (g != null && !g.enabled)
+                        g.enabled = true;
                 }
             }
             catch (Exception ex)
@@ -671,7 +938,17 @@ namespace ModularFlightPanel.Core
         {
             try
             {
-                bool isNavballHidden = ThemeManager.IsStockNavballHidden && !_isCleanStockNavballActive;
+                // ── 纯净原生导航球保护：确保姿态解算存活，但外围原版 SpeedDisplay 严格休眠 ──
+                if (_isCleanStockNavballActive)
+                {
+                    if (StockNavBallHook.StockInstance != null && !StockNavBallHook.StockInstance.enabled)
+                        StockNavBallHook.StockInstance.enabled = true;
+                    if (SpeedDisplay.Instance != null && SpeedDisplay.Instance.enabled)
+                        SpeedDisplay.Instance.enabled = false;
+                    return;
+                }
+
+                bool isNavballHidden = ThemeManager.IsStockNavballHidden;
                 if (!isNavballHidden)
                 {
                     // 若原版 UI 处于显示状态，全部组件强制保持激活
@@ -716,6 +993,26 @@ namespace ModularFlightPanel.Core
                 if (StockNavBallHook.StockInstance != null)
                 {
                     StockNavBallHook.UpdateStockNavballGymbalsLightweight(StockNavBallHook.StockInstance);
+                }
+
+                // ── 4. 分级序列极速帧守卫 (零延迟压制任何由 KSP 原生分级事件瞬态唤醒的残余图元) ──
+                if (ThemeManager.IsStockBottomLeftHidden && StageManager.Instance != null)
+                {
+                    var sm = StageManager.Instance;
+                    if (sm.deltaVTotalSection != null && sm.deltaVTotalSection.gameObject.activeSelf)
+                    {
+                        sm.deltaVTotalSection.gameObject.SetActive(false);
+                    }
+                    var mainAnchor = GetStageManagerMainListAnchor(sm);
+                    if (mainAnchor != null)
+                    {
+                        if (mainAnchor.gameObject.activeSelf)
+                        {
+                            mainAnchor.gameObject.SetActive(false);
+                        }
+                        var c = mainAnchor.GetComponent<Canvas>();
+                        if (c != null && c.enabled) c.enabled = false;
+                    }
                 }
             }
             catch (Exception ex)

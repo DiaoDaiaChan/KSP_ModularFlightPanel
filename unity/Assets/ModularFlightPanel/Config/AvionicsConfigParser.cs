@@ -577,6 +577,8 @@ namespace ModularFlightPanel.Config
                         cfg.IsolateCanvas = wObj.GetBool("IsolateCanvas", true);
                         cfg.UpdateInterval = wObj.GetFloat("UpdateInterval", 0f);
                         cfg.CustomHz = wObj.GetFloat("CustomHz", 0f);
+                        cfg.HeartBeatInterval = wObj.GetFloat("HeartBeatInterval", -1f);
+                        cfg.HeartBeatHz = wObj.GetFloat("HeartBeatHz", 0f);
                         cfg.RenderScale = wObj.GetFloat("RenderScale", 1.0f);
                         cfg.DrawOrder = wObj.GetInt("DrawOrder", i);
                         cfg.IsLocked = wObj.GetBool("IsLocked", false);
@@ -644,6 +646,8 @@ namespace ModularFlightPanel.Config
                     wObj.Add("IsolateCanvas", cfg.IsolateCanvas);
                     wObj.Add("UpdateInterval", cfg.UpdateInterval);
                     wObj.Add("CustomHz", cfg.CustomHz);
+                    wObj.Add("HeartBeatInterval", cfg.HeartBeatInterval);
+                    wObj.Add("HeartBeatHz", cfg.HeartBeatHz);
                     wObj.Add("RenderScale", cfg.RenderScale);
                     wObj.Add("DrawOrder", cfg.DrawOrder);
                     wObj.Add("IsLocked", cfg.IsLocked);
@@ -704,6 +708,13 @@ namespace ModularFlightPanel.Config
                 data.EnableGpu2DUIAcceleration = root.GetBool("EnableGpu2DUIAcceleration", true);
                 data.AutoAdaptResolution = root.GetBool("AutoAdaptResolution", true);
                 data.GlobalRenderScaleMultiplier = root.GetFloat("GlobalRenderScaleMultiplier", 1.0f);
+                data.GlobalRefreshProfile = root.GetInt("GlobalRefreshProfile", 1);
+                data.RefreshControlMode = root.GetInt("RefreshControlMode", 0);
+                data.GlobalStandardHz = root.GetFloat("GlobalStandardHz", 60.0f);
+                data.GlobalSlowHz = root.GetFloat("GlobalSlowHz", 30.0f);
+                data.GlobalRelaxedHz = root.GetFloat("GlobalRelaxedHz", 10.0f);
+                data.GlobalUltraLowHz = root.GetFloat("GlobalUltraLowHz", 2.0f);
+                data.GlobalDataHeartbeatHz = root.GetFloat("GlobalDataHeartbeatHz", 0f);
 
                 // Dock 规则列表
                 var rulesArr = root.GetArray("DockRules");
@@ -773,6 +784,13 @@ namespace ModularFlightPanel.Config
             root.Add("EnableGpu2DUIAcceleration", data.EnableGpu2DUIAcceleration);
             root.Add("AutoAdaptResolution", data.AutoAdaptResolution);
             root.Add("GlobalRenderScaleMultiplier", data.GlobalRenderScaleMultiplier);
+            root.Add("GlobalRefreshProfile", data.GlobalRefreshProfile);
+            root.Add("RefreshControlMode", data.RefreshControlMode);
+            root.Add("GlobalStandardHz", data.GlobalStandardHz);
+            root.Add("GlobalSlowHz", data.GlobalSlowHz);
+            root.Add("GlobalRelaxedHz", data.GlobalRelaxedHz);
+            root.Add("GlobalUltraLowHz", data.GlobalUltraLowHz);
+            root.Add("GlobalDataHeartbeatHz", data.GlobalDataHeartbeatHz);
 
             var rulesArr = new JsonArray();
             if (data.DockRules != null)
