@@ -25,6 +25,13 @@ namespace ModularFlightPanel.UI.Settings
     /// </summary>
     public class TabStudio : ISettingsTab
     {
+        public static TabStudio Instance { get; private set; }
+
+        public TabStudio()
+        {
+            Instance = this;
+        }
+
         public string TabId => "studio";
         public string DisplayTitle => I18n.Tr("UI_TAB_STUDIO", "🛠️ 航电工坊");
 
@@ -81,6 +88,84 @@ namespace ModularFlightPanel.UI.Settings
         {
             _selectedWidgetId = widgetId;
             if (TelemetryParamDrawer.IsOpen) TelemetryParamDrawer.Close();
+
+            // 双向联动：同步将 HUD 上的实时实例置为唯一选中，即刻激活 8 点变换手柄
+            if (!string.IsNullOrEmpty(widgetId) && FlightHUDManager.Instance?.ModularWidgets != null)
+            {
+                for (int i = 0; i < FlightHUDManager.Instance.ModularWidgets.Count; i++)
+                {
+                    var live = FlightHUDManager.Instance.ModularWidgets[i];
+                    if (live != null && live.Config?.WidgetId == widgetId)
+                    {
+                        if (!WidgetSelectionManager.IsSelected(live))
+                        {
+                            WidgetSelectionManager.Select(live, false);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 全局创建自由航电画板 (PS 自由搭建工坊)
+        /// </summary>
+        public static void CreateNewArtboard(bool blank = false)
+        {
+            var layout = WidgetLayoutManager.Instance.CurrentLayout;
+            if (layout == null) return;
+
+            string baseId = "custom.artboard";
+            string newId = baseId;
+            int counter = 1;
+            while (layout.Widgets.Any(x => x.WidgetId == newId))
+            {
+                newId = $"{baseId}_{counter++}";
+            }
+
+            float px = Mathf.Round((Screen.width - 380f) * 0.5f / 10f) * 10f;
+            float py = Mathf.Round((Screen.height - 220f) * 0.5f / 10f) * 10f;
+
+            var demoCfg = blank ? CompositePanelConfig.CreateBlankPanel() : CompositePanelConfig.CreateDefaultDemoPanel();
+
+            var w = new WidgetConfig(newId, I18n.Tr("COMP_ARTBOARD_DEFAULT_NAME", "自由航电仪表板"), px, py)
+            {
+                WidgetType = "composite_panel",
+                Scale = 1.0f,
+                Rotation = 0f,
+                IsEnabled = true,
+                CustomTemplate = demoCfg.ToJson()
+            };
+
+            layout.Widgets.Add(w);
+            SetSelectedWidget(newId);
+            if (Instance != null)
+            {
+                Instance._leftPanelMode = 0;
+                Instance.CommitPendingSaves();
+                Instance.ShowToast(I18n.Tr("LIB_TOAST_ARTBOARD_ADDED", "已创建自由航电画板！可在右侧工坊开始自由布局"));
+            }
+            else
+            {
+                WidgetLayoutManager.Instance.SaveLayout();
+                FlightHUDManager.Instance?.RebuildHUD();
+                MFPGuiSkin.ShowToast(I18n.Tr("LIB_TOAST_ARTBOARD_ADDED", "已创建自由航电画板！可在右侧工坊开始自由布局"));
+            }
+
+            // 同步激活编辑模式并选中新画板
+            WidgetDragHandler.IsEditModeActive = true;
+            if (FlightHUDManager.Instance?.ModularWidgets != null)
+            {
+                for (int i = 0; i < FlightHUDManager.Instance.ModularWidgets.Count; i++)
+                {
+                    var live = FlightHUDManager.Instance.ModularWidgets[i];
+                    if (live != null && live.Config?.WidgetId == newId)
+                    {
+                        WidgetSelectionManager.Select(live, false);
+                        break;
+                    }
+                }
+            }
         }
 
         public void SetLeftPanelMode(int mode)
@@ -265,6 +350,10 @@ namespace ModularFlightPanel.UI.Settings
                 _leftPanelMode = 2;
                 EnsureDockRulesPopulated();
             }
+            if (GUILayout.Button(I18n.Tr("STUDIO_BTN_QUICK_ARTBOARD", "🎨 +画板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(66f), GUILayout.Height(24f)))
+            {
+                CreateNewArtboard(false);
+            }
             GUILayout.EndHorizontal();
 
             GUILayout.Space(4f);
@@ -289,6 +378,17 @@ namespace ModularFlightPanel.UI.Settings
 
         private void DrawHierarchySubPanel(List<WidgetConfig> widgets, float availableHeight)
         {
+            // 自由画板快捷入口
+            GUILayout.BeginHorizontal(MFPGuiSkin.InsetStyle);
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><b>🎨 {I18n.Tr("STUDIO_HIER_ARTBOARD_TITLE", "自由航电搭建画板")}</b></color>", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button(I18n.Tr("STUDIO_BTN_NEW_ARTBOARD_SHORT", "✨ 新建"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(58f), GUILayout.Height(20f)))
+            {
+                CreateNewArtboard(false);
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(3f);
+
             // 搜索与过滤
             MFPGuiSkin.DrawSearchBar(ref _hierarchySearch, I18n.Tr("STUDIO_SEARCH_HIERARCHY", "过滤已挂载组件..."));
 
@@ -390,6 +490,10 @@ namespace ModularFlightPanel.UI.Settings
 
                     // 组件名称 (点击选中)
                     string dName = string.IsNullOrEmpty(w.DisplayName) ? w.WidgetId : w.DisplayName;
+                    if (w.WidgetType == "composite_panel" || w.WidgetType == "custom_composite_panel")
+                    {
+                        dName = $"🎨 {dName}";
+                    }
                     if (GUILayout.Button(dName, GUI.skin.label, GUILayout.ExpandWidth(true), GUILayout.Height(20f)))
                     {
                         SetSelectedWidget(w.WidgetId);
@@ -580,36 +684,12 @@ namespace ModularFlightPanel.UI.Settings
 
         private void SpawnCompositePanelWidget()
         {
-            var layout = WidgetLayoutManager.Instance.CurrentLayout;
-            if (layout == null) return;
+            CreateNewArtboard(false);
+        }
 
-            string baseId = "custom.artboard";
-            string newId = baseId;
-            int counter = 1;
-            while (layout.Widgets.Any(x => x.WidgetId == newId))
-            {
-                newId = $"{baseId}_{counter++}";
-            }
-
-            float px = Mathf.Round((Screen.width - 380f) * 0.5f / 10f) * 10f;
-            float py = Mathf.Round((Screen.height - 220f) * 0.5f / 10f) * 10f;
-
-            var demoCfg = CompositePanelConfig.CreateDefaultDemoPanel();
-
-            var w = new WidgetConfig(newId, I18n.Tr("COMP_ARTBOARD_DEFAULT_NAME", "自由航电仪表板"), px, py)
-            {
-                WidgetType = "composite_panel",
-                Scale = 1.0f,
-                Rotation = 0f,
-                IsEnabled = true,
-                CustomTemplate = demoCfg.ToJson()
-            };
-
-            layout.Widgets.Add(w);
-            SetSelectedWidget(newId);
-            _leftPanelMode = 0; // 自动切回已挂载层级
-            CommitPendingSaves();
-            ShowToast(I18n.Tr("LIB_TOAST_ARTBOARD_ADDED", "已创建自由航电画板！可在右侧工坊开始自由布局"));
+        private void SpawnBlankCompositePanelWidget()
+        {
+            CreateNewArtboard(true);
         }
 
         private void DrawModToolbarSubPanel(float availableHeight)
@@ -972,7 +1052,28 @@ namespace ModularFlightPanel.UI.Settings
         private void DrawEmptyInspectorState(float availableHeight)
         {
             MFPGuiSkin.BeginCard(GUILayout.Height(availableHeight - 10f));
-            GUILayout.Space(30f);
+            GUILayout.Space(12f);
+
+            // 🎨 自由航电搭建工坊 Hero Card (置顶醒目引导)
+            MFPGuiSkin.BeginInset();
+            GUILayout.BeginHorizontal();
+            GUILayout.BeginVertical();
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=13><b>🎨 {I18n.Tr("STUDIO_HERO_FREEFORM_BANNER", "自由航电搭建工坊 (PS 自由画板)")}</b></size></color>");
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=11>{I18n.Tr("STUDIO_HERO_FREEFORM_SUB", "自由添加微控件图层、0%~100% 透明度调节、8 点变换手柄缩放旋转，遍历 44+ 款组件构件")}</size></color>");
+            GUILayout.EndVertical();
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button(I18n.Tr("STUDIO_BTN_NEW_ARTBOARD_HERO", "✨ 立即创建自由画板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(30f), GUILayout.Width(150f)))
+            {
+                CreateNewArtboard(false);
+            }
+            if (GUILayout.Button(I18n.Tr("STUDIO_BTN_NEW_BLANK_HERO", "📄 空白画板"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Height(30f), GUILayout.Width(90f)))
+            {
+                CreateNewArtboard(true);
+            }
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndInset();
+
+            GUILayout.Space(20f);
             GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=14><b>{I18n.Tr("STUDIO_EMPTY_INSPECTOR_TITLE", "🛠️ 未选中航电组件")}</b></size></color>", GUI.skin.label);
             GUILayout.Space(8f);
             GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=11>{I18n.Tr("STUDIO_EMPTY_INSPECTOR_DESC", "请在左侧列表中点击选择要配置的组件，或点击下方按钮快速生成开箱即用航电模板：")}</size></color>");
@@ -1622,6 +1723,18 @@ namespace ModularFlightPanel.UI.Settings
             {
                 _selectedWidgetId = null;
                 return;
+            }
+
+            // 优先遵循 HUD 现场的主动选中
+            var firstSel = WidgetSelectionManager.SelectedWidgets.FirstOrDefault();
+            if (firstSel?.Config != null)
+            {
+                string hudSelId = firstSel.Config.WidgetId;
+                if (widgets.Any(x => x.WidgetId == hudSelId))
+                {
+                    _selectedWidgetId = hudSelId;
+                    return;
+                }
             }
 
             if (string.IsNullOrEmpty(_selectedWidgetId) || !widgets.Any(x => x.WidgetId == _selectedWidgetId))

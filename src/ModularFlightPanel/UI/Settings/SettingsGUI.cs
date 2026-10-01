@@ -142,7 +142,7 @@ namespace ModularFlightPanel.UI
         {
             _isOpen = true;
             _isCanvasLayoutMode = false;
-            WidgetDragHandler.IsEditModeActive = false;
+            WidgetDragHandler.IsEditModeActive = true;
 
             if (_drawer != null && !_drawer.enabled)
             {
@@ -207,7 +207,7 @@ namespace ModularFlightPanel.UI
                 else
                 {
                     _isCanvasLayoutMode = false;
-                    WidgetDragHandler.IsEditModeActive = false;
+                    WidgetDragHandler.IsEditModeActive = true;
                     EnsureWindowRect();
                     if (_tabs != null && _currentTab >= 0 && _currentTab < _tabs.Length)
                     {
@@ -249,7 +249,7 @@ namespace ModularFlightPanel.UI
         public void ExitCanvasLayoutMode()
         {
             _isCanvasLayoutMode = false;
-            WidgetDragHandler.IsEditModeActive = false;
+            WidgetDragHandler.IsEditModeActive = true;
             WidgetSelectionManager.ClearSelection();
             WidgetLayoutManager.Instance.SaveLayout();
             MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_EXIT_CANVAS", "✔ 已返回航电工程工作台"));
@@ -257,7 +257,7 @@ namespace ModularFlightPanel.UI
 
         private void DrawCanvasModeFloatingDock()
         {
-            float dockW = 460f;
+            float dockW = 540f;
             float dockH = 40f;
             float dockX = (Screen.width - dockW) * 0.5f;
             float dockY = Screen.height - 54f; // 牢牢锚定在屏幕最底端，零遮挡
@@ -275,6 +275,11 @@ namespace ModularFlightPanel.UI
             int selCount = WidgetSelectionManager.Count;
             string selInfo = selCount > 0 ? string.Format(I18n.Tr("UI_CANVAS_SEL_COUNT", "已选 {0} 项"), selCount) : I18n.Tr("UI_CANVAS_DRAG_HINT", "拖拽/旋转调整中");
             GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentAmber}><size=11>{selInfo}</size></color>", GUILayout.ExpandWidth(true));
+
+            if (GUILayout.Button(I18n.Tr("UI_CANVAS_BTN_ARTBOARD", "🎨 +画板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(76f), GUILayout.Height(24f)))
+            {
+                TabStudio.CreateNewArtboard(false);
+            }
 
             if (GUILayout.Button(I18n.Tr("UI_CANVAS_RETURN_WORKBENCH", "✔ 返回工坊 (Alt+N)"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(140f), GUILayout.Height(24f)))
             {
@@ -492,6 +497,15 @@ namespace ModularFlightPanel.UI
             GUILayout.Label(statusText);
 
             GUILayout.FlexibleSpace();
+
+            // 🎨 自由航电画板快捷创建入口 (一键创建 PS 自由搭建面板)
+            if (GUILayout.Button(I18n.Tr("UI_BTN_NEW_ARTBOARD", "🎨 新建自由画板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Height(24f), GUILayout.Width(126f)))
+            {
+                SwitchTab(0);
+                TabStudio.CreateNewArtboard(false);
+            }
+
+            GUILayout.Space(6f);
 
             // 画布自由排版模式入口 (点击后折叠工作台为屏幕底部药丸栏，留出全屏无遮挡自由拖拽与排版)
             if (GUILayout.Button(I18n.Tr("UI_BTN_CANVAS_MODE", "📐 画布自由排版"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(24f), GUILayout.Width(130f)))

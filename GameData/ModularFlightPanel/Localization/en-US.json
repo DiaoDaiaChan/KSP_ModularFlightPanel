@@ -1800,6 +1800,17 @@
     "COMP_BTN_BROWSE_PARAM": "\uD83D\uDD0D Browse Params (736+)",
     "COMP_TOOLBOX_TITLE": "Micro-Control Toolbox (Traversed 44+ Widgets & Native Controls)",
     "COMP_BTN_PLACE": "+ Add to Canvas",
-    "COMP_CANVAS_SETTINGS_TITLE": "Canvas Parameters & Presets"
+    "COMP_CANVAS_SETTINGS_TITLE": "Canvas Parameters & Presets",
+    "UI_BTN_NEW_ARTBOARD": "🎨 New Freeform Panel",
+    "UI_CANVAS_BTN_ARTBOARD": "🎨 +Artboard",
+    "STUDIO_BTN_QUICK_ARTBOARD": "🎨 +Artboard",
+    "STUDIO_HIER_ARTBOARD_TITLE": "Freeform Avionics Panel",
+    "STUDIO_BTN_NEW_ARTBOARD_SHORT": "✨ New",
+    "STUDIO_HERO_FREEFORM_BANNER": "Freeform Avionics Studio (PS Artboard)",
+    "STUDIO_HERO_FREEFORM_SUB": "Add micro-control layers, 0%~100% opacity, 8-point handles, and traverse 44+ widgets",
+    "STUDIO_BTN_NEW_ARTBOARD_HERO": "✨ Create Freeform Panel",
+    "STUDIO_BTN_NEW_BLANK_HERO": "📄 Blank Artboard",
+    "HUD_BTN_NEW_ARTBOARD": "🎨 New Artboard",
+    "HUD_BTN_OPEN_ARTBOARD_STUDIO": "🎨 Artboard Studio"
   }
 }

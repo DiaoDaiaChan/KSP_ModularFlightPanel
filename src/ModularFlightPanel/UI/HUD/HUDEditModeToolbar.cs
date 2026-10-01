@@ -53,7 +53,7 @@ namespace ModularFlightPanel.UI.HUD
             FlightHUDManager.IsMouseOverFloatingToolbar = false;
             WidgetControlHighlighter.HighlightedControl = null;
 
-            float toolbarW = 1180f;
+            float toolbarW = 1260f;
             float toolbarH = 78f;
             float x = (Screen.width - toolbarW) * 0.5f;
             float y = 12f;
@@ -94,6 +94,10 @@ namespace ModularFlightPanel.UI.HUD
             GUI.enabled = true;
 
             GUILayout.Space(6f);
+            if (GUILayout.Button(I18n.Tr("HUD_BTN_NEW_ARTBOARD", "🎨 新建画板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(84f), GUILayout.Height(24f)))
+            {
+                TabStudio.CreateNewArtboard(false);
+            }
             if (GUILayout.Button("📋 分享码", GUILayout.Width(68f), GUILayout.Height(24f)))
             {
                 string code = LayoutShareHub.ExportShareCode(WidgetLayoutManager.Instance.CurrentLayout);
@@ -285,8 +289,9 @@ namespace ModularFlightPanel.UI.HUD
             float guiMinY = Screen.height - maxY_screen;
             float guiMaxY = Screen.height - minY_screen;
 
-            float badgeW = 352f;
-            float badgeH = selCount == 1 ? 218f : 188f;
+            bool isComposite = primary is Widgets.Gauges.CustomCompositePanelWidget;
+            float badgeW = isComposite ? 370f : 352f;
+            float badgeH = selCount == 1 ? (isComposite ? 242f : 218f) : 188f;
 
             // 优先置于组件右侧，留出 10px 空隙
             float bx = maxX + 10f;
@@ -480,6 +485,23 @@ namespace ModularFlightPanel.UI.HUD
                     {
                         _showInspectorDrawer = true;
                         _activeInspectorTab = InspectorTab.Telemetry;
+                    }
+                }
+
+                // 自由画板专属工作台跳转入口
+                if (primary is Widgets.Gauges.CustomCompositePanelWidget)
+                {
+                    if (GUILayout.Button(I18n.Tr("HUD_BTN_OPEN_ARTBOARD_STUDIO", "🎨 画板工坊"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(76f), GUILayout.Height(20f)))
+                    {
+                        if (SettingsGUI.Instance != null)
+                        {
+                            if (SettingsGUI.Instance.IsCanvasLayoutMode)
+                            {
+                                SettingsGUI.Instance.ExitCanvasLayoutMode();
+                            }
+                            SettingsGUI.Instance.OpenToTab(0);
+                            TabStudio.SetSelectedWidget(primary.Config?.WidgetId);
+                        }
                     }
                 }
 

@@ -1800,6 +1800,17 @@
     "COMP_BTN_BROWSE_PARAM": "\uD83D\uDD0D 查表选择 (736+)",
     "COMP_TOOLBOX_TITLE": "航电微构件工具箱 (自动遍历现有 44+ 款组件与原生构件)",
     "COMP_BTN_PLACE": "+ 置入画板",
-    "COMP_CANVAS_SETTINGS_TITLE": "画板底盘参数与预设 (Artboard & Presets)"
+    "COMP_CANVAS_SETTINGS_TITLE": "画板底盘参数与预设 (Artboard & Presets)",
+    "UI_BTN_NEW_ARTBOARD": "🎨 新建自由画板",
+    "UI_CANVAS_BTN_ARTBOARD": "🎨 +画板",
+    "STUDIO_BTN_QUICK_ARTBOARD": "🎨 +画板",
+    "STUDIO_HIER_ARTBOARD_TITLE": "自由航电搭建画板",
+    "STUDIO_BTN_NEW_ARTBOARD_SHORT": "✨ 新建",
+    "STUDIO_HERO_FREEFORM_BANNER": "自由航电搭建工坊 (PS 自由画板)",
+    "STUDIO_HERO_FREEFORM_SUB": "自由添加微控件图层、0%~100% 透明度调节、8 点变换手柄缩放旋转，遍历 44+ 款组件构件",
+    "STUDIO_BTN_NEW_ARTBOARD_HERO": "✨ 立即创建自由画板",
+    "STUDIO_BTN_NEW_BLANK_HERO": "📄 空白画板",
+    "HUD_BTN_NEW_ARTBOARD": "🎨 新建画板",
+    "HUD_BTN_OPEN_ARTBOARD_STUDIO": "🎨 画板工坊"
   }
 }
