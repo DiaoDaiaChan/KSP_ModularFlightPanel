@@ -8,6 +8,7 @@ using ModularFlightPanel.UI;
 using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.Widgets;
 using ModularFlightPanel.UI.Widgets.Controls;
+using AnnunciatorState = ModularFlightPanel.UI.Framework.AnnunciatorState;
 
 namespace ModularFlightPanel.UI.Settings
 {
@@ -47,6 +48,15 @@ namespace ModularFlightPanel.UI.Settings
         private string _paletteSearch = "";
         private int _paletteCategoryFilter = 0; // 0=All, 1=Gauges, 2=Nav, 3=Systems, 4=SpaceX, 5=Controls
         private bool _showPreviews = true;
+
+        // 自由搭建工坊专属状态 (Composite Panel Freeform Studio State)
+        private string _selectedLayerId = null;
+        private int _studioSubTab = 0; // 0 = 图层与精调 (Layers & Inspector), 1 = 构件素材箱 (Toolbox), 2 = 画板与预设 (Canvas & Presets)
+        private string _toolboxSearch = "";
+        private int _toolboxCategoryFilter = 0;
+        private int _toolboxSourceFilter = 0;
+        private Vector2 _layersScroll = Vector2.zero;
+        private Vector2 _toolboxScroll = Vector2.zero;
 
         // 右栏属性检查器状态
         private Vector2 _inspectorScroll = Vector2.zero;
@@ -408,6 +418,11 @@ namespace ModularFlightPanel.UI.Settings
 
         private void DrawPaletteSubPanel(float availableHeight)
         {
+            // ✨ 自由航电工坊创建入口 (对标 Photoshop 自由画布搭建)
+            DrawFreeformPanelHeroCard();
+
+            GUILayout.Space(4f);
+
             // 搜索栏
             MFPGuiSkin.DrawSearchBar(ref _paletteSearch, I18n.Tr("LIB_SEARCH_PLACEHOLDER", "搜索组件名称或标识..."));
 
@@ -549,6 +564,54 @@ namespace ModularFlightPanel.UI.Settings
             ShowToast(string.Format(I18n.Tr("LIB_TOAST_ADDED", "已添加组件: {0}"), desc.DisplayName));
         }
 
+        private void DrawFreeformPanelHeroCard()
+        {
+            GUILayout.BeginVertical(MFPGuiSkin.InsetStyle);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"🎨 <b>{I18n.Tr("STUDIO_FREEFORM_HERO_TITLE", "自由航电搭建画板")}</b>", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button(I18n.Tr("STUDIO_BTN_NEW_ARTBOARD", "✨ 新建画板"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(78f), GUILayout.Height(22f)))
+            {
+                SpawnCompositePanelWidget();
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=10>{I18n.Tr("STUDIO_FREEFORM_HERO_DESC", "对标 PS 自由画布：图层透明度、8点拉伸、旋转与遍历 44+ 款组件构件")}</size></color>");
+            GUILayout.EndVertical();
+        }
+
+        private void SpawnCompositePanelWidget()
+        {
+            var layout = WidgetLayoutManager.Instance.CurrentLayout;
+            if (layout == null) return;
+
+            string baseId = "custom.artboard";
+            string newId = baseId;
+            int counter = 1;
+            while (layout.Widgets.Any(x => x.WidgetId == newId))
+            {
+                newId = $"{baseId}_{counter++}";
+            }
+
+            float px = Mathf.Round((Screen.width - 380f) * 0.5f / 10f) * 10f;
+            float py = Mathf.Round((Screen.height - 220f) * 0.5f / 10f) * 10f;
+
+            var demoCfg = CompositePanelConfig.CreateDefaultDemoPanel();
+
+            var w = new WidgetConfig(newId, I18n.Tr("COMP_ARTBOARD_DEFAULT_NAME", "自由航电仪表板"), px, py)
+            {
+                WidgetType = "composite_panel",
+                Scale = 1.0f,
+                Rotation = 0f,
+                IsEnabled = true,
+                CustomTemplate = demoCfg.ToJson()
+            };
+
+            layout.Widgets.Add(w);
+            SetSelectedWidget(newId);
+            _leftPanelMode = 0; // 自动切回已挂载层级
+            CommitPendingSaves();
+            ShowToast(I18n.Tr("LIB_TOAST_ARTBOARD_ADDED", "已创建自由航电画板！可在右侧工坊开始自由布局"));
+        }
+
         private void DrawModToolbarSubPanel(float availableHeight)
         {
             // 搜索与过滤
@@ -662,6 +725,12 @@ namespace ModularFlightPanel.UI.Settings
             if (w == null)
             {
                 DrawEmptyInspectorState(availableHeight);
+                return;
+            }
+
+            if (w.WidgetType == "composite_panel" || w.WidgetType == "custom_composite_panel")
+            {
+                DrawCompositePanelStudio(w, availableHeight);
                 return;
             }
 
@@ -1708,6 +1777,954 @@ namespace ModularFlightPanel.UI.Settings
             _toastMsg = msg;
             _toastTimer = 2.0f;
         }
+
+        #region Freeform Avionics Studio (PS-Grade Freeform Panel Workbench)
+
+        private void DrawCompositePanelStudio(WidgetConfig w, float availableHeight)
+        {
+            var panelCfg = CompositePanelConfig.FromJson(w.CustomTemplate);
+            if (panelCfg == null)
+            {
+                panelCfg = CompositePanelConfig.CreateDefaultDemoPanel();
+                SyncCompositeConfig(w, panelCfg);
+            }
+
+            // 确保有有效选中图层
+            if (panelCfg.Elements != null && panelCfg.Elements.Count > 0)
+            {
+                if (string.IsNullOrEmpty(_selectedLayerId) || !panelCfg.Elements.Any(e => e.LayerId == _selectedLayerId))
+                {
+                    _selectedLayerId = panelCfg.Elements[0].LayerId;
+                }
+            }
+            else
+            {
+                _selectedLayerId = null;
+            }
+
+            _inspectorScroll = GUILayout.BeginScrollView(_inspectorScroll, GUILayout.Height(availableHeight));
+
+            // 1. 顶部工坊状态卡片
+            MFPGuiSkin.BeginCard();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"🎨 <b>{I18n.Tr("STUDIO_FREEFORM_TITLE", "自由航电工坊 (PS 自由编辑模式)")}</b>", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button(w.IsEnabled ? "● 运行中" : "○ 已挂起", w.IsEnabled ? MFPGuiSkin.PrimaryButtonStyle : MFPGuiSkin.StepperButtonStyle, GUILayout.Width(75f), GUILayout.Height(20f)))
+            {
+                w.IsEnabled = !w.IsEnabled;
+                MarkDirty();
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(2f);
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=10>画板: <b>{w.DisplayName}</b> (ID: {w.WidgetId}) | 基准分辨率: <b>{panelCfg.BaseWidth:0} × {panelCfg.BaseHeight:0}</b> | 图层: <b>{panelCfg.Elements.Count}</b> 个 | 透明度: <b>{(int)(panelCfg.PanelOpacity * 100)}%</b></size></color>");
+
+            GUILayout.Space(5f);
+
+            // 模式分段切片
+            GUILayout.BeginHorizontal();
+            string[] subTabs = new string[]
+            {
+                string.Format(I18n.Tr("STUDIO_SUBTAB_LAYERS", "📑 图层与精调 ({0})"), panelCfg.Elements.Count),
+                I18n.Tr("STUDIO_SUBTAB_TOOLBOX", "📦 构件素材箱 (44+款组件)"),
+                I18n.Tr("STUDIO_SUBTAB_CANVAS", "⚙️ 画板与预设")
+            };
+            for (int i = 0; i < subTabs.Length; i++)
+            {
+                bool isSel = _studioSubTab == i;
+                GUIStyle tabStyle = isSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                if (GUILayout.Button(subTabs[i], tabStyle, GUILayout.Height(24f)))
+                {
+                    _studioSubTab = i;
+                }
+            }
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndCard();
+
+            GUILayout.Space(5f);
+
+            // 2. 根据 SubTab 绘制主体内容
+            if (_studioSubTab == 0)
+            {
+                DrawCompositeLayersAndInspector(w, panelCfg);
+            }
+            else if (_studioSubTab == 1)
+            {
+                DrawCompositeToolbox(w, panelCfg);
+            }
+            else
+            {
+                DrawCompositeCanvasAndPresets(w, panelCfg);
+            }
+
+            GUILayout.EndScrollView();
+        }
+
+        private void DrawCompositeLayersAndInspector(WidgetConfig w, CompositePanelConfig panelCfg)
+        {
+            // === 1. 图层列表面板 (PS Layers Panel) ===
+            MFPGuiSkin.BeginCard();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"📑 <b>{I18n.Tr("COMP_LAYERS_HEADER", "图层堆叠管理 (从顶层至底层)")}</b>", GUILayout.ExpandWidth(true));
+
+            if (GUILayout.Button(I18n.Tr("COMP_BTN_ADD_CONTROL", "➕ 置入新构件"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(95f), GUILayout.Height(20f)))
+            {
+                _studioSubTab = 1; // 切换到构件箱
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 针对当前选中图层的快捷操作工具条
+            CompositeElementConfig curElem = panelCfg.Elements.Find(e => e.LayerId == _selectedLayerId);
+
+            GUILayout.BeginHorizontal();
+            GUI.enabled = curElem != null;
+
+            if (GUILayout.Button("🔝 置顶", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+            {
+                int maxOrder = panelCfg.Elements.Count > 0 ? panelCfg.Elements.Max(e => e.DrawOrder) : 0;
+                curElem.DrawOrder = maxOrder + 1;
+                NormalizeDrawOrders(panelCfg);
+                SyncCompositeConfig(w, panelCfg);
+            }
+            if (GUILayout.Button("⬆️ 上移", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+            {
+                MoveLayerOrder(panelCfg, curElem, 1);
+                SyncCompositeConfig(w, panelCfg);
+            }
+            if (GUILayout.Button("⬇️ 下移", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+            {
+                MoveLayerOrder(panelCfg, curElem, -1);
+                SyncCompositeConfig(w, panelCfg);
+            }
+            if (GUILayout.Button("🔚 置底", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+            {
+                int minOrder = panelCfg.Elements.Count > 0 ? panelCfg.Elements.Min(e => e.DrawOrder) : 0;
+                curElem.DrawOrder = minOrder - 1;
+                NormalizeDrawOrders(panelCfg);
+                SyncCompositeConfig(w, panelCfg);
+            }
+
+            GUILayout.Space(10f);
+
+            if (GUILayout.Button("📋 复制", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+            {
+                var clone = curElem.Clone();
+                clone.LayerId = "elem_" + Guid.NewGuid().ToString("N").Substring(0, 6);
+                clone.Name = curElem.Name + " (副本)";
+                clone.X += 15f;
+                clone.Y -= 15f;
+                clone.DrawOrder = curElem.DrawOrder + 1;
+                panelCfg.Elements.Add(clone);
+                NormalizeDrawOrders(panelCfg);
+                _selectedLayerId = clone.LayerId;
+                SyncCompositeConfig(w, panelCfg);
+                ShowToast(string.Format("已复制图层: {0}", clone.Name));
+            }
+            if (GUILayout.Button("🗑️ 删除", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(50f), GUILayout.Height(20f)))
+            {
+                panelCfg.Elements.Remove(curElem);
+                _selectedLayerId = panelCfg.Elements.Count > 0 ? panelCfg.Elements[0].LayerId : null;
+                SyncCompositeConfig(w, panelCfg);
+                ShowToast("已删除图层");
+            }
+
+            GUI.enabled = true;
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 滚动图层列表 (降序显示：越顶层越在上面，符合 Photoshop / Figma 直觉)
+            var sortedLayers = new List<CompositeElementConfig>(panelCfg.Elements);
+            sortedLayers.Sort((a, b) => b.DrawOrder.CompareTo(a.DrawOrder));
+
+            _layersScroll = GUILayout.BeginScrollView(_layersScroll, GUILayout.Height(Mathf.Min(160f, Mathf.Max(65f, sortedLayers.Count * 28f + 10f))));
+
+            if (sortedLayers.Count == 0)
+            {
+                GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=11>画板尚无任何图层，点击上方「➕ 置入新构件」开始搭建！</size></color>");
+            }
+            else
+            {
+                for (int i = 0; i < sortedLayers.Count; i++)
+                {
+                    var elem = sortedLayers[i];
+                    bool isSelected = elem.LayerId == _selectedLayerId;
+                    GUIStyle rowStyle = isSelected ? MFPGuiSkin.RowSelectedStyle : MFPGuiSkin.RowNormalStyle;
+
+                    GUILayout.BeginHorizontal(rowStyle);
+
+                    // 显隐眼睛
+                    string eyeIcon = elem.IsVisible ? "👁️" : "🕶️";
+                    if (GUILayout.Button(eyeIcon, MFPGuiSkin.StepperButtonStyle, GUILayout.Width(24f), GUILayout.Height(20f)))
+                    {
+                        elem.IsVisible = !elem.IsVisible;
+                        SyncCompositeConfig(w, panelCfg);
+                    }
+
+                    // 锁定挂锁
+                    string lockIcon = elem.IsLocked ? "🔒" : "🔓";
+                    if (GUILayout.Button(lockIcon, MFPGuiSkin.StepperButtonStyle, GUILayout.Width(24f), GUILayout.Height(20f)))
+                    {
+                        elem.IsLocked = !elem.IsLocked;
+                        SyncCompositeConfig(w, panelCfg);
+                    }
+
+                    // 图层名选择按钮
+                    string namePrefix = isSelected ? $"<b><color=#{MFPGuiSkin.HexAccentCyan}>{elem.Name}</color></b>" : elem.Name;
+                    if (GUILayout.Button(namePrefix, GUI.skin.label, GUILayout.ExpandWidth(true), GUILayout.Height(20f)))
+                    {
+                        _selectedLayerId = elem.LayerId;
+                    }
+
+                    // 类型标牌
+                    string protoTag = GetPrototypeCategoryTag(elem.PrototypeId);
+                    GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>[{protoTag}]</size></color>", GUILayout.Width(55f));
+
+                    // 不透明度
+                    GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>α:{(int)(elem.Opacity * 100)}%</size></color>", GUILayout.Width(45f));
+
+                    GUILayout.EndHorizontal();
+                    GUILayout.Space(1f);
+                }
+            }
+
+            GUILayout.EndScrollView();
+            MFPGuiSkin.EndCard();
+
+            GUILayout.Space(5f);
+
+            // === 2. 选中图层精细属性检查器 (Selected Layer Properties Inspector) ===
+            DrawSelectedLayerInspectorCard(w, panelCfg, curElem);
+        }
+
+        private void DrawSelectedLayerInspectorCard(WidgetConfig w, CompositePanelConfig panelCfg, CompositeElementConfig curElem)
+        {
+            MFPGuiSkin.BeginCard();
+
+            if (curElem == null)
+            {
+                GUILayout.Label($"👈 <color=#{MFPGuiSkin.HexTextSecondary}>请在上方图层列表中选择一个图层进行精细调整</color>");
+                MFPGuiSkin.EndCard();
+                return;
+            }
+
+            GUILayout.Label($"🛠️ <b>{I18n.Tr("COMP_LAYER_INSPECT_TITLE", "图层精细调校")}</b> | <color=#{MFPGuiSkin.HexAccentCyan}>{curElem.Name}</color>");
+            GUILayout.Space(4f);
+
+            // 1. 图层基本标识与重命名
+            MFPGuiSkin.BeginInset();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("图层名称:", GUILayout.Width(75f));
+            string newName = GUILayout.TextField(curElem.Name, GUILayout.ExpandWidth(true), GUILayout.Height(20f));
+            if (newName != curElem.Name)
+            {
+                curElem.Name = newName;
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("原型标识:", GUILayout.Width(75f));
+            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=10>{curElem.PrototypeId} (来源: {curElem.SourceWidgetTypeName})</size></color>", GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndInset();
+
+            GUILayout.Space(4f);
+
+            // 2. 几何变换 (Transform: X, Y, W, H, Rotation)
+            MFPGuiSkin.BeginInset();
+            GUILayout.Label("📐 <b>几何变换与位置尺寸 (Transform)</b>");
+            GUILayout.Space(2f);
+
+            // X 轴
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("水平位置 X:", GUILayout.Width(75f));
+            float oldX = curElem.X;
+            float newX = DrawStepNumericField(curElem.X, 10f, 1f);
+            if (Mathf.Abs(newX - oldX) > 0.01f)
+            {
+                curElem.X = Mathf.Round(newX * 10f) / 10f;
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            // Y 轴
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("垂直位置 Y:", GUILayout.Width(75f));
+            float oldY = curElem.Y;
+            float newY = DrawStepNumericField(curElem.Y, 10f, 1f);
+            if (Mathf.Abs(newY - oldY) > 0.01f)
+            {
+                curElem.Y = Mathf.Round(newY * 10f) / 10f;
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            // 宽度 Width
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("宽度 Width:", GUILayout.Width(75f));
+            float oldW = curElem.Width;
+            float newW = Mathf.Max(10f, DrawStepNumericField(curElem.Width, 10f, 1f));
+            if (Mathf.Abs(newW - oldW) > 0.01f)
+            {
+                curElem.Width = Mathf.Round(newW * 10f) / 10f;
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            // 高度 Height
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("高度 Height:", GUILayout.Width(75f));
+            float oldH = curElem.Height;
+            float newH = Mathf.Max(10f, DrawStepNumericField(curElem.Height, 10f, 1f));
+            if (Mathf.Abs(newH - oldH) > 0.01f)
+            {
+                curElem.Height = Mathf.Round(newH * 10f) / 10f;
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            // 旋转 Rotation
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("旋转角度:", GUILayout.Width(75f));
+            float oldRot = curElem.Rotation;
+            float newRot = GUILayout.HorizontalSlider(curElem.Rotation, 0f, 360f, GUILayout.ExpandWidth(true));
+            GUILayout.Label($"<b>{newRot:0}°</b>", GUILayout.Width(45f));
+            if (GUILayout.Button("0°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(30f), GUILayout.Height(18f))) newRot = 0f;
+            if (GUILayout.Button("90°", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(35f), GUILayout.Height(18f))) newRot = 90f;
+            if (Mathf.Abs(newRot - oldRot) > 0.1f)
+            {
+                curElem.Rotation = Mathf.Round(newRot);
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            MFPGuiSkin.EndInset();
+
+            GUILayout.Space(4f);
+
+            // 3. 图层独立不透明度 (Layer Opacity - 对标 Photoshop)
+            MFPGuiSkin.BeginInset();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("🪟 <b>图层独立不透明度 (Opacity)</b>:", GUILayout.ExpandWidth(true));
+            GUILayout.Label($"<b><color=#{MFPGuiSkin.HexAccentCyan}>{(int)(curElem.Opacity * 100)}%</color></b>", GUILayout.Width(45f));
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            float oldOp = curElem.Opacity;
+            float newOp = GUILayout.HorizontalSlider(curElem.Opacity, 0.0f, 1.0f, GUILayout.ExpandWidth(true));
+            if (GUILayout.Button("25%", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f), GUILayout.Height(18f))) newOp = 0.25f;
+            if (GUILayout.Button("50%", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f), GUILayout.Height(18f))) newOp = 0.50f;
+            if (GUILayout.Button("75%", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(38f), GUILayout.Height(18f))) newOp = 0.75f;
+            if (GUILayout.Button("100%", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(42f), GUILayout.Height(18f))) newOp = 1.0f;
+            if (Mathf.Abs(newOp - oldOp) > 0.005f)
+            {
+                curElem.Opacity = Mathf.Clamp01(Mathf.Round(newOp * 100f) / 100f);
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndInset();
+
+            GUILayout.Space(4f);
+
+            // 4. 遥测数据源与量纲设置 (Telemetry & Units)
+            bool isTelemetryControl = !curElem.PrototypeId.Contains("header") && !curElem.PrototypeId.Contains("separator") && !curElem.PrototypeId.Contains("box");
+            if (isTelemetryControl)
+            {
+                MFPGuiSkin.BeginInset();
+                GUILayout.Label("📡 <b>遥测数据源与量纲 (Telemetry & Units)</b>");
+                GUILayout.Space(2f);
+
+                // Token 与 查表抽屉按钮
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("数据 Token:", GUILayout.Width(75f));
+                string oldTok = curElem.Token ?? "";
+                string newTok = GUILayout.TextField(oldTok, GUILayout.ExpandWidth(true), GUILayout.Height(20f));
+                if (newTok != oldTok)
+                {
+                    curElem.Token = newTok;
+                    SyncCompositeConfig(w, panelCfg);
+                }
+                if (GUILayout.Button(I18n.Tr("COMP_BTN_BROWSE_PARAM", "🔍 查表选择 (736+)"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(130f), GUILayout.Height(20f)))
+                {
+                    TelemetryParamDrawer.Open($"选择图层 [{curElem.Name}] 遥测参数", chosen =>
+                    {
+                        curElem.Token = chosen;
+                        if (chosen.Contains("SPD") || chosen.Contains("VEL")) curElem.UnitDimension = "Velocity";
+                        else if (chosen.Contains("ALT") || chosen.Contains("AP") || chosen.Contains("PE") || chosen.Contains("DIST")) curElem.UnitDimension = "Length";
+                        else if (chosen.Contains("ACC") || chosen.Contains("G_FORCE")) curElem.UnitDimension = "Acceleration";
+                        else if (chosen.Contains("ATM") || chosen.Contains("PRES") || chosen.Contains("Q")) curElem.UnitDimension = "Pressure";
+                        SyncCompositeConfig(w, panelCfg);
+                    });
+                }
+                GUILayout.EndHorizontal();
+
+                // 标题与单位
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("显示标题:", GUILayout.Width(75f));
+                string newTitle = GUILayout.TextField(curElem.Title ?? "", GUILayout.Width(110f), GUILayout.Height(20f));
+                if (newTitle != (curElem.Title ?? ""))
+                {
+                    curElem.Title = newTitle;
+                    SyncCompositeConfig(w, panelCfg);
+                }
+
+                GUILayout.Space(8f);
+                GUILayout.Label("单位角标:", GUILayout.Width(60f));
+                string newUnit = GUILayout.TextField(curElem.Unit ?? "", GUILayout.Width(80f), GUILayout.Height(20f));
+                if (newUnit != (curElem.Unit ?? ""))
+                {
+                    curElem.Unit = newUnit;
+                    SyncCompositeConfig(w, panelCfg);
+                }
+                GUILayout.EndHorizontal();
+
+                // 量纲选择
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("量纲制式:", GUILayout.Width(75f));
+                string[] dims = new string[] { "无", "Velocity", "Length", "Acceleration", "Pressure" };
+                string[] dimLabels = new string[] { "无换算", "航速", "高度", "加速度", "压强" };
+                for (int d = 0; d < dims.Length; d++)
+                {
+                    bool isDimSel = string.Equals(curElem.UnitDimension, dims[d], StringComparison.OrdinalIgnoreCase) || (d == 0 && string.IsNullOrEmpty(curElem.UnitDimension));
+                    GUIStyle bStyle = isDimSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                    if (GUILayout.Button(dimLabels[d], bStyle, GUILayout.Height(18f)))
+                    {
+                        curElem.UnitDimension = d == 0 ? "" : dims[d];
+                        SyncCompositeConfig(w, panelCfg);
+                    }
+                }
+                GUILayout.EndHorizontal();
+
+                // 标定阈值 (适用于 LinearBar 或 Readout)
+                if (curElem.PrototypeId.Contains("bar") || curElem.PrototypeId.Contains("gauge") || curElem.PrototypeId.Contains("readout"))
+                {
+                    GUILayout.Space(2f);
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("量程范围:", GUILayout.Width(75f));
+                    GUILayout.Label(I18n.Tr("ASM_PROP_MIN", "最小值:"), GUILayout.Width(45f));
+                    curElem.MinValue = DrawStepDoubleField(curElem.MinValue, 10.0, 1.0);
+                    GUILayout.Label(I18n.Tr("ASM_PROP_MAX", "最大值:"), GUILayout.Width(45f));
+                    curElem.MaxValue = DrawStepDoubleField(curElem.MaxValue, 10.0, 1.0);
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Space(80f);
+                    GUILayout.Label("注意阈:", GUILayout.Width(45f));
+                    curElem.CautionThreshold = DrawStepDoubleField(curElem.CautionThreshold, 5.0, 1.0);
+                    GUILayout.Label("告警阈:", GUILayout.Width(45f));
+                    curElem.WarningThreshold = DrawStepDoubleField(curElem.WarningThreshold, 5.0, 1.0);
+                    GUILayout.EndHorizontal();
+                }
+
+                MFPGuiSkin.EndInset();
+            }
+
+            // 5. 交互动作配置 (适用于开关/分级按钮)
+            bool isActionControl = curElem.PrototypeId.Contains("btn") || curElem.PrototypeId.Contains("button") || curElem.PrototypeId.Contains("switch") || curElem.PrototypeId.Contains("stage");
+            if (isActionControl)
+            {
+                GUILayout.Space(4f);
+                MFPGuiSkin.BeginInset();
+                GUILayout.Label("⚡ <b>系统动作绑定 (Flight System Action)</b>");
+                GUILayout.Space(2f);
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("动作类型:", GUILayout.Width(75f));
+                string[] actions = new string[] { "RCS", "SAS", "Gear", "Brakes", "Lights", "Abort", "Stage" };
+                for (int a = 0; a < actions.Length; a++)
+                {
+                    bool isActSel = string.Equals(curElem.ActionType, actions[a], StringComparison.OrdinalIgnoreCase);
+                    GUIStyle aStyle = isActSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                    if (GUILayout.Button(actions[a], aStyle, GUILayout.Height(18f)))
+                    {
+                        curElem.ActionType = actions[a];
+                        SyncCompositeConfig(w, panelCfg);
+                    }
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("开关模式:", GUILayout.Width(75f));
+                string toggleText = curElem.IsToggle ? "🔒 自锁双态开关" : "⚡ 瞬时触发按钮";
+                if (GUILayout.Button(toggleText, MFPGuiSkin.StepperButtonStyle, GUILayout.Height(20f), GUILayout.Width(130f)))
+                {
+                    curElem.IsToggle = !curElem.IsToggle;
+                    SyncCompositeConfig(w, panelCfg);
+                }
+                GUILayout.EndHorizontal();
+
+                MFPGuiSkin.EndInset();
+            }
+
+            MFPGuiSkin.EndCard();
+        }
+
+        private void DrawCompositeToolbox(WidgetConfig w, CompositePanelConfig panelCfg)
+        {
+            MFPGuiSkin.BeginCard();
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"📦 <b>{I18n.Tr("COMP_TOOLBOX_TITLE", "航电微构件工具箱 (自动遍历现有 44+ 款组件与原生构件)")}</b>", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button("📑 返回图层面板", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(100f), GUILayout.Height(20f)))
+            {
+                _studioSubTab = 0;
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 搜索栏
+            MFPGuiSkin.DrawSearchBar(ref _toolboxSearch, "搜索构件显示名、原型 ID 或 Token...");
+
+            GUILayout.Space(3f);
+
+            // 功能类别标签横条
+            GUILayout.BeginHorizontal();
+            string[] catLabels = new string[] { "全类别", "读数盒", "线性槽", "弧形表", "光字牌", "动作开关", "姿控排", "结构装饰" };
+            for (int i = 0; i < catLabels.Length; i++)
+            {
+                bool isSel = _toolboxCategoryFilter == i;
+                GUIStyle catStyle = isSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                if (GUILayout.Button(catLabels[i], catStyle, GUILayout.Height(20f)))
+                {
+                    _toolboxCategoryFilter = i;
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 来源组件筛选横条
+            GUILayout.BeginHorizontal();
+            string[] srcLabels = new string[] { "全来源", "官方原生", "姿态球", "底控台", "推力表", "SpaceX", "其他组件" };
+            for (int s = 0; s < srcLabels.Length; s++)
+            {
+                bool isSel = _toolboxSourceFilter == s;
+                GUIStyle srcStyle = isSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                if (GUILayout.Button(srcLabels[s], srcStyle, GUILayout.Height(18f)))
+                {
+                    _toolboxSourceFilter = s;
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 构件卡片列表
+            var allPrototypes = WidgetControlCatalog.AllPrototypes;
+            string searchLower = (_toolboxSearch ?? "").Trim().ToLowerInvariant();
+
+            _toolboxScroll = GUILayout.BeginScrollView(_toolboxScroll, GUILayout.Height(380f));
+
+            int displayedCount = 0;
+
+            for (int i = 0; i < allPrototypes.Count; i++)
+            {
+                var proto = allPrototypes[i];
+                if (proto == null) continue;
+
+                // 类别过滤
+                if (!MatchesToolboxCategory(proto, _toolboxCategoryFilter)) continue;
+
+                // 来源过滤
+                if (!MatchesToolboxSource(proto, _toolboxSourceFilter)) continue;
+
+                // 搜索过滤
+                if (!string.IsNullOrEmpty(searchLower))
+                {
+                    string idLower = (proto.PrototypeId ?? "").ToLowerInvariant();
+                    string nameLower = (proto.DisplayName ?? "").ToLowerInvariant();
+                    string descLower = (proto.Description ?? "").ToLowerInvariant();
+                    string tokLower = (proto.DefaultToken ?? "").ToLowerInvariant();
+                    string srcLower = (proto.SourceWidgetDisplayName ?? "").ToLowerInvariant();
+                    if (!idLower.Contains(searchLower) && !nameLower.Contains(searchLower) &&
+                        !descLower.Contains(searchLower) && !tokLower.Contains(searchLower) &&
+                        !srcLower.Contains(searchLower))
+                    {
+                        continue;
+                    }
+                }
+
+                displayedCount++;
+
+                GUILayout.BeginVertical(MFPGuiSkin.InsetStyle);
+                GUILayout.BeginHorizontal();
+
+                // 构件名称与分类徽章
+                GUILayout.Label($"<b>{proto.DisplayName}</b>", GUILayout.ExpandWidth(true));
+                GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=10>[{proto.DefaultSize.x:0}×{proto.DefaultSize.y:0}]</size></color>", GUILayout.Width(65f));
+
+                if (GUILayout.Button(I18n.Tr("COMP_BTN_PLACE", "+ 置入画板"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(78f), GUILayout.Height(20f)))
+                {
+                    PlacePrototypeIntoPanel(w, panelCfg, proto);
+                }
+                GUILayout.EndHorizontal();
+
+                // 来源与说明
+                GUILayout.BeginHorizontal();
+                GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=10>来源: {proto.SourceWidgetDisplayName} | 标识: {proto.PrototypeId}</size></color>", GUILayout.ExpandWidth(true));
+                if (!string.IsNullOrEmpty(proto.DefaultToken))
+                {
+                    GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><size=9>{proto.DefaultToken}</size></color>", GUILayout.Width(110f));
+                }
+                else if (!string.IsNullOrEmpty(proto.DefaultAction))
+                {
+                    GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentAmber}><size=9>动作: {proto.DefaultAction}</size></color>", GUILayout.Width(110f));
+                }
+                GUILayout.EndHorizontal();
+
+                if (!string.IsNullOrEmpty(proto.Description))
+                {
+                    GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>{proto.Description}</size></color>");
+                }
+
+                GUILayout.EndVertical();
+                GUILayout.Space(2f);
+            }
+
+            if (displayedCount == 0)
+            {
+                GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=11>未搜索到匹配构件，尝试清空搜索词或切换筛选标签。</size></color>");
+            }
+
+            GUILayout.EndScrollView();
+            MFPGuiSkin.EndCard();
+        }
+
+        private void PlacePrototypeIntoPanel(WidgetConfig w, CompositePanelConfig panelCfg, ControlPrototypeDescriptor proto)
+        {
+            var newElem = new CompositeElementConfig
+            {
+                LayerId = "elem_" + Guid.NewGuid().ToString("N").Substring(0, 6),
+                Name = proto.DisplayName,
+                PrototypeId = proto.PrototypeId,
+                SourceWidgetTypeName = proto.SourceWidgetTypeName,
+                Width = proto.DefaultSize.x,
+                Height = proto.DefaultSize.y,
+                Token = proto.DefaultToken,
+                Title = proto.DefaultTitle,
+                Unit = proto.DefaultUnit,
+                UnitDimension = proto.DefaultUnitDimension,
+                MinValue = proto.DefaultMinValue,
+                MaxValue = proto.DefaultMaxValue,
+                CautionThreshold = proto.DefaultCaution,
+                WarningThreshold = proto.DefaultWarning,
+                ActionType = proto.DefaultAction,
+                IsToggle = proto.IsToggle,
+                Opacity = proto.DefaultOpacity,
+                DrawOrder = panelCfg.Elements.Count > 0 ? panelCfg.Elements.Max(e => e.DrawOrder) + 1 : 0
+            };
+
+            // 错开位置避免完全重叠
+            int count = panelCfg.Elements.Count;
+            newElem.X = (count % 4 - 1.5f) * 35f;
+            newElem.Y = (count % 3 - 1f) * 20f;
+
+            panelCfg.Elements.Add(newElem);
+            NormalizeDrawOrders(panelCfg);
+            _selectedLayerId = newElem.LayerId;
+            _studioSubTab = 0; // 自动切回图层精调页
+            SyncCompositeConfig(w, panelCfg);
+            ShowToast(string.Format("已置入控件: {0}", proto.DisplayName));
+        }
+
+        private void DrawCompositeCanvasAndPresets(WidgetConfig w, CompositePanelConfig panelCfg)
+        {
+            MFPGuiSkin.BeginCard();
+            GUILayout.Label($"⚙️ <b>{I18n.Tr("COMP_CANVAS_SETTINGS_TITLE", "画板底盘参数与预设 (Artboard & Presets)")}</b>");
+            GUILayout.Space(4f);
+
+            // 1. 画板尺寸与几何参数
+            MFPGuiSkin.BeginInset();
+            GUILayout.Label("📐 <b>画板基准分辨率 (Base Resolution)</b>");
+            GUILayout.Space(2f);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("画板宽度:", GUILayout.Width(75f));
+            float oldW = panelCfg.BaseWidth;
+            float newW = DrawStepNumericField(panelCfg.BaseWidth, 20f, 5f);
+            if (Mathf.Abs(newW - oldW) > 0.1f)
+            {
+                panelCfg.BaseWidth = Mathf.Clamp(newW, 100f, 1920f);
+                SyncCompositeConfig(w, panelCfg);
+            }
+
+            GUILayout.Space(10f);
+            GUILayout.Label("画板高度:", GUILayout.Width(75f));
+            float oldH = panelCfg.BaseHeight;
+            float newH = DrawStepNumericField(panelCfg.BaseHeight, 20f, 5f);
+            if (Mathf.Abs(newH - oldH) > 0.1f)
+            {
+                panelCfg.BaseHeight = Mathf.Clamp(newH, 60f, 1080f);
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            // 常用预设分辨率
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("常用分辨率:", GUILayout.Width(75f));
+            if (GUILayout.Button("380×220 标准", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(18f))) { panelCfg.BaseWidth = 380f; panelCfg.BaseHeight = 220f; SyncCompositeConfig(w, panelCfg); }
+            if (GUILayout.Button("440×240 宽屏", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(18f))) { panelCfg.BaseWidth = 440f; panelCfg.BaseHeight = 240f; SyncCompositeConfig(w, panelCfg); }
+            if (GUILayout.Button("240×360 竖屏", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(18f))) { panelCfg.BaseWidth = 240f; panelCfg.BaseHeight = 360f; SyncCompositeConfig(w, panelCfg); }
+            if (GUILayout.Button("320×320 正方", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(18f))) { panelCfg.BaseWidth = 320f; panelCfg.BaseHeight = 320f; SyncCompositeConfig(w, panelCfg); }
+            GUILayout.EndHorizontal();
+
+            MFPGuiSkin.EndInset();
+
+            GUILayout.Space(4f);
+
+            // 2. 底盘材质与不透明度
+            MFPGuiSkin.BeginInset();
+            GUILayout.Label("🪟 <b>画板底衬材质与不透明度 (Backdrop Style & Opacity)</b>");
+            GUILayout.Space(2f);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("材质风格:", GUILayout.Width(75f));
+            string[] styles = new string[] { "DarkGlass", "Clear", "Framed", "MetalOutline" };
+            string[] styleLabels = new string[] { "深色航空玻璃", "无框纯透", "工程边框", "金属拉丝" };
+            for (int s = 0; s < styles.Length; s++)
+            {
+                bool isSel = string.Equals(panelCfg.BackgroundStyle, styles[s], StringComparison.OrdinalIgnoreCase);
+                GUIStyle bStyle = isSel ? MFPGuiSkin.TabActiveStyle : MFPGuiSkin.TabInactiveStyle;
+                if (GUILayout.Button(styleLabels[s], bStyle, GUILayout.Height(18f)))
+                {
+                    panelCfg.BackgroundStyle = styles[s];
+                    SyncCompositeConfig(w, panelCfg);
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(2f);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("底衬不透明度:", GUILayout.Width(85f));
+            float oldOp = panelCfg.PanelOpacity;
+            float newOp = GUILayout.HorizontalSlider(panelCfg.PanelOpacity, 0f, 1f, GUILayout.ExpandWidth(true));
+            GUILayout.Label($"<b>{(int)(newOp * 100)}%</b>", GUILayout.Width(45f));
+            if (GUILayout.Button("0% 纯透", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(55f), GUILayout.Height(18f))) newOp = 0.0f;
+            if (GUILayout.Button("30%", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(35f), GUILayout.Height(18f))) newOp = 0.30f;
+            if (GUILayout.Button("70%", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(35f), GUILayout.Height(18f))) newOp = 0.70f;
+            if (GUILayout.Button("95%", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(35f), GUILayout.Height(18f))) newOp = 0.95f;
+            if (Mathf.Abs(newOp - oldOp) > 0.005f)
+            {
+                panelCfg.PanelOpacity = Mathf.Clamp01(Mathf.Round(newOp * 100f) / 100f);
+                SyncCompositeConfig(w, panelCfg);
+            }
+            GUILayout.EndHorizontal();
+
+            MFPGuiSkin.EndInset();
+
+            GUILayout.Space(4f);
+
+            // 3. 一键载入预设面板
+            MFPGuiSkin.BeginInset();
+            GUILayout.Label("📋 <b>一键置入预设模板 (Presets)</b>");
+            GUILayout.Space(2f);
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("🛩️ 经典综合座舱 PFD", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            {
+                panelCfg = CompositePanelConfig.CreateDefaultDemoPanel();
+                SyncCompositeConfig(w, panelCfg);
+                ShowToast("已载入经典综合座舱 PFD 模板");
+            }
+            if (GUILayout.Button("🚀 SpaceX 推进遥测台", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            {
+                panelCfg = CompositePanelConfig.CreateSpaceXPropulsionPanel();
+                SyncCompositeConfig(w, panelCfg);
+                ShowToast("已载入 SpaceX 推进遥测台模板");
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("🪐 轨道机动领航综合板", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            {
+                panelCfg = CompositePanelConfig.CreateOrbitalManeuverPanel();
+                SyncCompositeConfig(w, panelCfg);
+                ShowToast("已载入轨道机动领航综合板模板");
+            }
+            if (GUILayout.Button("✨ 清空为纯净画板", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            {
+                panelCfg = CompositePanelConfig.CreateBlankPanel();
+                SyncCompositeConfig(w, panelCfg);
+                ShowToast("已清空画板");
+            }
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndInset();
+
+            GUILayout.Space(4f);
+
+            // 4. JSON 配置导入与导出
+            MFPGuiSkin.BeginInset();
+            GUILayout.Label("💾 <b>画板配置 JSON 导入 / 导出</b>");
+            GUILayout.Space(2f);
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("📋 复制配置到剪贴板", MFPGuiSkin.PrimaryButtonStyle, GUILayout.Height(22f)))
+            {
+                GUIUtility.systemCopyBuffer = panelCfg.ToJson(true);
+                ShowToast("已复制画板完整 JSON 配置到剪贴板！");
+            }
+            if (GUILayout.Button("📥 从剪贴板粘贴导入", MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f)))
+            {
+                string clip = GUIUtility.systemCopyBuffer;
+                if (!string.IsNullOrEmpty(clip) && clip.Contains("Elements"))
+                {
+                    var imported = CompositePanelConfig.FromJson(clip);
+                    if (imported != null && imported.Elements != null)
+                    {
+                        panelCfg = imported;
+                        SyncCompositeConfig(w, panelCfg);
+                        ShowToast("成功从剪贴板导入画板配置！");
+                    }
+                    else
+                    {
+                        ShowToast("剪贴板内容不是合法的画板配置 JSON");
+                    }
+                }
+                else
+                {
+                    ShowToast("剪贴板中未发现有效画板 JSON 数据");
+                }
+            }
+            GUILayout.EndHorizontal();
+            MFPGuiSkin.EndInset();
+
+            MFPGuiSkin.EndCard();
+        }
+
+        private static float DrawStepNumericField(float val, float bigStep, float smallStep)
+        {
+            GUILayout.BeginHorizontal(GUILayout.Width(180f));
+            if (GUILayout.Button($"-{bigStep:0}", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f), GUILayout.Height(18f))) val -= bigStep;
+            if (GUILayout.Button($"-{smallStep:0}", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(18f))) val -= smallStep;
+
+            string sVal = GUILayout.TextField($"{val:0.0}", GUILayout.Width(50f), GUILayout.Height(18f));
+            if (float.TryParse(sVal, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsed))
+            {
+                val = parsed;
+            }
+
+            if (GUILayout.Button($"+{smallStep:0}", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(22f), GUILayout.Height(18f))) val += smallStep;
+            if (GUILayout.Button($"+{bigStep:0}", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(26f), GUILayout.Height(18f))) val += bigStep;
+            GUILayout.EndHorizontal();
+            return val;
+        }
+
+        private static double DrawStepDoubleField(double val, double bigStep, double smallStep)
+        {
+            GUILayout.BeginHorizontal(GUILayout.Width(130f));
+            if (GUILayout.Button("-", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(18f), GUILayout.Height(18f))) val -= smallStep;
+
+            string sVal = GUILayout.TextField($"{val:0.0}", GUILayout.Width(45f), GUILayout.Height(18f));
+            if (double.TryParse(sVal, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+            {
+                val = parsed;
+            }
+
+            if (GUILayout.Button("+", MFPGuiSkin.StepperButtonStyle, GUILayout.Width(18f), GUILayout.Height(18f))) val += smallStep;
+            GUILayout.EndHorizontal();
+            return val;
+        }
+
+        private static void NormalizeDrawOrders(CompositePanelConfig cfg)
+        {
+            if (cfg?.Elements == null) return;
+            var list = new List<CompositeElementConfig>(cfg.Elements);
+            list.Sort((a, b) => a.DrawOrder.CompareTo(b.DrawOrder));
+            for (int i = 0; i < list.Count; i++)
+            {
+                list[i].DrawOrder = i;
+            }
+        }
+
+        private static void MoveLayerOrder(CompositePanelConfig cfg, CompositeElementConfig target, int delta)
+        {
+            if (cfg?.Elements == null || target == null || delta == 0) return;
+            var list = new List<CompositeElementConfig>(cfg.Elements);
+            list.Sort((a, b) => a.DrawOrder.CompareTo(b.DrawOrder));
+            int idx = list.IndexOf(target);
+            if (idx < 0) return;
+            int newIdx = Mathf.Clamp(idx + delta, 0, list.Count - 1);
+            if (newIdx == idx) return;
+
+            list.RemoveAt(idx);
+            list.Insert(newIdx, target);
+            for (int i = 0; i < list.Count; i++)
+            {
+                list[i].DrawOrder = i;
+            }
+        }
+
+        private static string GetPrototypeCategoryTag(string protoId)
+        {
+            if (string.IsNullOrEmpty(protoId)) return "通用";
+            string p = protoId.ToLowerInvariant();
+            if (p.Contains("readout") || p.Contains("speed") || p.Contains("alt")) return "读数盒";
+            if (p.Contains("bar") || p.Contains("linear") || p.Contains("gauge") || p.Contains("thr")) return "线性槽";
+            if (p.Contains("arc")) return "弧表";
+            if (p.Contains("annunciator") || p.Contains("lamp")) return "光字牌";
+            if (p.Contains("btn") || p.Contains("button") || p.Contains("switch")) return "开关";
+            if (p.Contains("sas")) return "姿控";
+            if (p.Contains("header") || p.Contains("box") || p.Contains("separator")) return "结构";
+            return "构件";
+        }
+
+        private static bool MatchesToolboxCategory(ControlPrototypeDescriptor proto, int catFilter)
+        {
+            if (catFilter == 0) return true;
+            switch (catFilter)
+            {
+                case 1: return proto.Category == WidgetControlCategory.Readout;
+                case 2: return proto.Category == WidgetControlCategory.LinearGauge;
+                case 3: return proto.Category == WidgetControlCategory.ArcGauge;
+                case 4: return proto.Category == WidgetControlCategory.Annunciator;
+                case 5: return proto.Category == WidgetControlCategory.ActionButton;
+                case 6: return proto.PrototypeId.Contains("sas") || proto.Category == WidgetControlCategory.ModeCapsule;
+                case 7: return proto.Category == WidgetControlCategory.Header || proto.Category == WidgetControlCategory.GenericElement;
+                default: return true;
+            }
+        }
+
+        private static bool MatchesToolboxSource(ControlPrototypeDescriptor proto, int srcFilter)
+        {
+            if (srcFilter == 0) return true;
+            string src = (proto.SourceWidgetTypeName ?? "").ToLowerInvariant();
+            switch (srcFilter)
+            {
+                case 1: return src == "native";
+                case 2: return src.Contains("navball");
+                case 3: return src.Contains("bottom_controls");
+                case 4: return src.Contains("throttle");
+                case 5: return src.Contains("spacex");
+                default: return src != "native" && !src.Contains("navball") && !src.Contains("bottom_controls") && !src.Contains("throttle") && !src.Contains("spacex");
+            }
+        }
+
+        private void SyncCompositeConfig(WidgetConfig w, CompositePanelConfig panelCfg)
+        {
+            if (w == null || panelCfg == null) return;
+            w.CustomTemplate = panelCfg.ToJson();
+            MarkDirty();
+
+            // 实时热刷新当前活跃小组件实例
+            if (FlightHUDManager.Instance?.ModularWidgets != null)
+            {
+                for (int i = 0; i < FlightHUDManager.Instance.ModularWidgets.Count; i++)
+                {
+                    var liveWidget = FlightHUDManager.Instance.ModularWidgets[i];
+                    if (liveWidget != null && liveWidget.Config?.WidgetId == w.WidgetId && liveWidget is Widgets.Gauges.CustomCompositePanelWidget composite)
+                    {
+                        composite.UpdateCompositeConfig(panelCfg);
+                        break;
+                    }
+                }
+            }
+        }
+
+        #endregion
 
         #endregion
     }

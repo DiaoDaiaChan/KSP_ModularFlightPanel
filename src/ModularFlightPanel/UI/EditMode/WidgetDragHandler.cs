@@ -325,8 +325,9 @@ namespace ModularFlightPanel.UI
 
             if (!IsEditModeActive) return;
 
-            // 优先拦截：处于微控件精细定制态且命中下属微控件
-            if (HUDEditModeToolbar.IsSubControlCustomizerOpen && _ownerWidget != null && _ownerWidget.Controls != null && WidgetSelectionManager.IsSelected(_ownerWidget))
+            // 优先拦截：处于微控件精细定制态且命中下属微控件，或当前选中小组件为自由搭建画板 CustomCompositePanelWidget
+            bool isComposite = _ownerWidget is Widgets.Gauges.CustomCompositePanelWidget;
+            if ((HUDEditModeToolbar.IsSubControlCustomizerOpen || isComposite) && _ownerWidget != null && _ownerWidget.Controls != null && WidgetSelectionManager.IsSelected(_ownerWidget))
             {
                 var hitControl = FindSubControlAtScreenPoint(eventData.position);
                 if (hitControl != null)
@@ -429,6 +430,10 @@ namespace ModularFlightPanel.UI
 
                 _draggedControl.ApplyOffset(rawOffset);
                 _ownerWidget.Config?.SetSubElementOffset(_draggedControl.Id, rawOffset);
+                if (_ownerWidget is Widgets.Gauges.CustomCompositePanelWidget composite)
+                {
+                    composite.UpdateLayerPositionFromOffset(_draggedControl.Id, rawOffset);
+                }
                 WidgetControlHighlighter.HighlightedControl = _draggedControl;
                 return;
             }
@@ -500,6 +505,10 @@ namespace ModularFlightPanel.UI
             if (_isDraggingControl)
             {
                 _isDraggingControl = false;
+                if (_ownerWidget is Widgets.Gauges.CustomCompositePanelWidget composite)
+                {
+                    composite.CommitLayerOffsetsToConfig();
+                }
                 _draggedControl = null;
                 WidgetLayoutManager.Instance.SaveLayout();
                 WidgetEditHistory.CommitAction(I18n.TrFormat("DRAG_HIST_MOVE_FMT", _ownerWidget?.DisplayName ?? ""));

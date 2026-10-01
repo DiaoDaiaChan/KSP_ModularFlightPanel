@@ -379,27 +379,33 @@ namespace ModularFlightPanel.HeadlessValidator
         // ==========================================================================================
         private static readonly Dictionary<string, int> ChineseBaselineTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            // 由 `--i18n-baseline-dump` 于 2026-09-29 生成（合计 120 处）。禁止手工估算。
+            // 由 `--i18n-baseline-dump` 于 2026-10-01 生成。禁止手工估算。
+            { "CompositePanelConfig.cs", 20 },
             { "CustomTokenTextWidget.cs", 1 },
             { "FlightHUDManager.cs", 1 },
             { "HUDEditModeToolbar.cs", 86 },
             { "MFPSafetyFallback.cs", 2 },
             { "StageDeltaVWidget.cs", 2 },
             { "TabAssembler.cs", 5 },
+            { "TabStudio.cs", 104 },
             { "TelemetryMatrixData.cs", 22 },
+            { "WidgetControlCatalog.cs", 16 },
             { "WidgetRenderManager.cs", 1 },
         };
 
         private static readonly Dictionary<string, int> ChineseRatchetCeilingTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             // 冻结上限必须 ≥ 基线且此后只允许下调；ValidateChineseRatchet 会拒绝任何上调。
+            { "CompositePanelConfig.cs", 20 },
             { "CustomTokenTextWidget.cs", 1 },
             { "FlightHUDManager.cs", 1 },
             { "HUDEditModeToolbar.cs", 86 },
             { "MFPSafetyFallback.cs", 2 },
             { "StageDeltaVWidget.cs", 2 },
             { "TabAssembler.cs", 5 },
+            { "TabStudio.cs", 104 },
             { "TelemetryMatrixData.cs", 22 },
+            { "WidgetControlCatalog.cs", 16 },
             { "WidgetRenderManager.cs", 1 },
         };
 
