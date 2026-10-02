@@ -253,8 +253,10 @@ namespace ModularFlightPanel.HeadlessValidator
             { "StageControlWidget.cs", 7 },
             { "StageDeltaVWidget.cs", 1 },
             { "StagingSequenceWidget.cs", 3 },
-            { "VesselAttitudeSphereWidget.cs", 36 },
+            { "VesselAttitudeSphereWidget.cs", 35 },
             { "WidgetDslControls.cs", 12 },
+            { "WorkbenchCanvasView.cs", 1 },
+            { "WorkbenchTabPreferences.cs", 3 },
         };
 
         /// <summary>
@@ -294,6 +296,8 @@ namespace ModularFlightPanel.HeadlessValidator
             { "StagingSequenceWidget.cs", 3 },
             { "VesselAttitudeSphereWidget.cs", 36 },
             { "WidgetDslControls.cs", 12 },
+            { "WorkbenchCanvasView.cs", 1 },
+            { "WorkbenchTabPreferences.cs", 3 },
         };
 
         public static int TotalRegisteredEnglishDebt
@@ -381,7 +385,7 @@ namespace ModularFlightPanel.HeadlessValidator
         // ==========================================================================================
         private static readonly Dictionary<string, int> ChineseBaselineTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
-            // 由 `--i18n-baseline-dump` 于 2026-10-01 生成。禁止手工估算。
+            // 由 `--i18n-baseline-dump` 生成。禁止手工估算。
             { "CompositePanelConfig.cs", 20 },
             { "CustomTokenTextWidget.cs", 1 },
             { "FlightHUDManager.cs", 1 },
@@ -389,10 +393,16 @@ namespace ModularFlightPanel.HeadlessValidator
             { "MFPSafetyFallback.cs", 2 },
             { "StageDeltaVWidget.cs", 2 },
             { "TabAssembler.cs", 5 },
-            { "TabStudio.cs", 133 },
+            { "TabStudio.cs", 95 },
             { "TelemetryMatrixData.cs", 22 },
             { "WidgetControlCatalog.cs", 24 },
             { "WidgetRenderManager.cs", 1 },
+            { "WorkbenchCanvasView.cs", 18 },
+            { "WorkbenchTabDiagnostics.cs", 8 },
+            { "WorkbenchTabPreferences.cs", 5 },
+            { "WorkbenchTabProfiles.cs", 15 },
+            { "WorkbenchTabStudio.cs", 16 },
+            { "WorkbenchTabThemes.cs", 19 },
         };
 
         private static readonly Dictionary<string, int> ChineseRatchetCeilingTable = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
@@ -409,6 +419,12 @@ namespace ModularFlightPanel.HeadlessValidator
             { "TelemetryMatrixData.cs", 22 },
             { "WidgetControlCatalog.cs", 24 },
             { "WidgetRenderManager.cs", 1 },
+            { "WorkbenchCanvasView.cs", 18 },
+            { "WorkbenchTabDiagnostics.cs", 8 },
+            { "WorkbenchTabPreferences.cs", 5 },
+            { "WorkbenchTabProfiles.cs", 15 },
+            { "WorkbenchTabStudio.cs", 16 },
+            { "WorkbenchTabThemes.cs", 19 },
         };
 
         public static int TotalRegisteredChineseDebt

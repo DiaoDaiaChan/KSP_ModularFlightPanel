@@ -24,6 +24,7 @@ namespace ModularFlightPanel.Core
         public static Shader CrispAvionicsTextShader { get; private set; }
         public static Shader RaymarchShader { get; private set; }
         public static Shader AvionicsProceduralShader { get; private set; }
+        public static Shader ModernWorkbenchShader { get; private set; }
         public static Shader TapeGaugeShader => AvionicsProceduralShader;
 
         public static void LoadBundle()
@@ -48,6 +49,7 @@ namespace ModularFlightPanel.Core
             MinimalistAttitudeShader = Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere");
             CrispAvionicsTextShader = Shader.Find("ModularFlightPanel/CrispAvionicsText");
             AvionicsProceduralShader = Shader.Find("ModularFlightPanel/AvionicsProceduralUI") ?? Shader.Find("ModularFlightPanel/AvionicsTapeGauge");
+            ModernWorkbenchShader = Shader.Find("ModularFlightPanel/ModernWorkbenchGlass") ?? GlassCockpitShader;
             if (RaymarchShader != null && EnhancedShader != null)
             {
                 MFPLogger.Info(MFPLogger.CatRender, "In Editor: Loaded live project shaders successfully!");
@@ -76,6 +78,7 @@ namespace ModularFlightPanel.Core
                         DigitalSegmentShader = _bundle.LoadAsset<Shader>("Assets/Shaders/DigitalSegmentUI.shader");
                         CrispAvionicsTextShader = _bundle.LoadAsset<Shader>("Assets/Shaders/CrispAvionicsText.shader");
                         AvionicsProceduralShader = _bundle.LoadAsset<Shader>("Assets/Shaders/AvionicsProceduralUI.shader") ?? _bundle.LoadAsset<Shader>("Assets/Shaders/AvionicsTapeGauge.shader");
+                        ModernWorkbenchShader = _bundle.LoadAsset<Shader>("Assets/Shaders/ModernWorkbenchGlass.shader");
                         Vessel3DShader = _bundle.LoadAsset<Shader>("Assets/Shaders/Vessel3DTechnical.shader");
                         MinimalistAttitudeShader = _bundle.LoadAsset<Shader>("Assets/Shaders/MinimalistAttitudeSphere.shader");
                         MFPLogger.Info(MFPLogger.CatRender, "Successfully loaded custom shaders from AssetBundle!");
@@ -95,6 +98,7 @@ namespace ModularFlightPanel.Core
             if (RaymarchShader == null) RaymarchShader = Shader.Find("ModularFlightPanel/NavballRaymarch") ?? Shader.Find("UI/Default");
             if (ProceduralShader == null) ProceduralShader = RaymarchShader ?? Shader.Find("UI/Default");
             if (AvionicsProceduralShader == null) AvionicsProceduralShader = Shader.Find("ModularFlightPanel/AvionicsProceduralUI") ?? Shader.Find("ModularFlightPanel/AvionicsTapeGauge") ?? Shader.Find("UI/Default");
+            if (ModernWorkbenchShader == null) ModernWorkbenchShader = Shader.Find("ModularFlightPanel/ModernWorkbenchGlass") ?? GlassCockpitShader ?? AvionicsProceduralShader ?? Shader.Find("UI/Default");
             if (EnhancedShader == null) EnhancedShader = Shader.Find("ModularFlightPanel/NavballEnhanced") ?? Shader.Find("Unlit/Texture");
             if (HalftoneShader == null) HalftoneShader = Shader.Find("ModularFlightPanel/NavballHalftone") ?? Shader.Find("Unlit/Texture");
             if (ModernShader == null) ModernShader = Shader.Find("ModularFlightPanel/NavballModern") ?? Shader.Find("Unlit/Texture");

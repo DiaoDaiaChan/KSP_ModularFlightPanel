@@ -5,6 +5,7 @@ using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.Settings;
 using ModularFlightPanel.UI.Widgets.Controls;
+using ModularFlightPanel.UI.Workbench;
 
 namespace ModularFlightPanel.UI
 {
@@ -67,14 +68,17 @@ namespace ModularFlightPanel.UI
 
         private SettingsGUIDrawer _drawer;
 
+        private WorkbenchCanvasView _modernView;
+
         private void Awake()
         {
             _instance = this;
+            _modernView = gameObject.GetComponent<WorkbenchCanvasView>() ?? gameObject.AddComponent<WorkbenchCanvasView>();
             _drawer = gameObject.GetComponent<SettingsGUIDrawer>() ?? gameObject.AddComponent<SettingsGUIDrawer>();
             _drawer.Owner = this;
             _drawer.enabled = false;
 
-            // 实例化 4 大功能中枢
+            // 实例化 4 大功能中枢 (保留以兼容历史模块)
             _tabs = new ISettingsTab[]
             {
                 new TabStudio(),
@@ -133,6 +137,7 @@ namespace ModularFlightPanel.UI
                 _currentTab = target;
                 _tabs[_currentTab]?.OnEnter();
             }
+            _modernView?.SwitchTab(target);
         }
 
         /// <summary>
@@ -144,10 +149,6 @@ namespace ModularFlightPanel.UI
             _isCanvasLayoutMode = false;
             WidgetDragHandler.IsEditModeActive = true;
 
-            if (_drawer != null && !_drawer.enabled)
-            {
-                _drawer.enabled = true;
-            }
             EnsureWindowRect();
 
             // 向下兼容映射:
@@ -162,6 +163,7 @@ namespace ModularFlightPanel.UI
             else if (tabIndex >= 5) mapped = 3;
 
             SwitchTab(mapped);
+            _modernView?.SetVisible(_isOpen, _isCanvasLayoutMode);
             OnWindowStateChanged?.Invoke(_isOpen);
         }
 
@@ -170,10 +172,6 @@ namespace ModularFlightPanel.UI
             try
             {
                 _isOpen = !_isOpen;
-                if (_drawer != null && _drawer.enabled != _isOpen)
-                {
-                    _drawer.enabled = _isOpen;
-                }
 
                 if (!_isOpen)
                 {
@@ -215,6 +213,8 @@ namespace ModularFlightPanel.UI
                     }
                 }
 
+                _modernView?.SetVisible(_isOpen, _isCanvasLayoutMode);
+
                 try
                 {
                     OnWindowStateChanged?.Invoke(_isOpen);
@@ -243,6 +243,7 @@ namespace ModularFlightPanel.UI
         {
             _isCanvasLayoutMode = true;
             WidgetDragHandler.IsEditModeActive = true;
+            _modernView?.SetVisible(_isOpen, _isCanvasLayoutMode);
             MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_ENTER_CANVAS", "📐 已进入画布自由排版模式 (点击药丸栏返回工作台)"));
         }
 
@@ -252,6 +253,7 @@ namespace ModularFlightPanel.UI
             WidgetDragHandler.IsEditModeActive = true;
             WidgetSelectionManager.ClearSelection();
             WidgetLayoutManager.Instance.SaveLayout();
+            _modernView?.SetVisible(_isOpen, _isCanvasLayoutMode);
             MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_EXIT_CANVAS", "✔ 已返回航电工程工作台"));
         }
 
