@@ -143,7 +143,7 @@ Shader "ModularFlightPanel/ModernWorkbenchGlass"
                 fixed4 baseTint = tex * IN.color;
 
                 // 1. 深度暗晶背景 + 垂直漫反射高光渐变
-                fixed4 glass = _GlassBgColor;
+                fixed4 glass = baseTint;
                 float topSheen = (1.0 - uv.y) * _GlassGradientStrength;
                 glass.rgb += topSheen;
 
@@ -161,7 +161,7 @@ Shader "ModularFlightPanel/ModernWorkbenchGlass"
                     glass.a = saturate(glass.a + _HoverGlow * 0.08);
                 }
 
-                fixed4 finalCol = glass * baseTint;
+                fixed4 finalCol = glass;
 
                 // 4. 程序化发光边框 (SDF Border & Outer Glow)
                 if (_BorderWidth > 0.001)

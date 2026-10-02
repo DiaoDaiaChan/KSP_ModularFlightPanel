@@ -41,7 +41,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _container.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_container.GetChild(i).gameObject);
+                var c = _container.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             GameObject card = WorkbenchControls.CreateCard(_container, "ThemesCard", Vector2.zero);
@@ -79,7 +81,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _contentRt.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_contentRt.GetChild(i).gameObject);
+                var c = _contentRt.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             var tm = ThemeManager.Instance;
@@ -88,6 +92,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 1. 出厂主题画廊
             GameObject subHeader1 = new GameObject("SubHeader1", typeof(RectTransform), typeof(Text));
             subHeader1.transform.SetParent(_contentRt, false);
+            var sh1Le = subHeader1.AddComponent<LayoutElement>();
+            sh1Le.preferredHeight = 24f;
+            sh1Le.minHeight = 24f;
+
             Text sh1Txt = subHeader1.GetComponent<Text>();
             sh1Txt.font = WorkbenchControls.MainFont;
             sh1Txt.fontSize = 13;
@@ -103,6 +111,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 2. 着色器与玻璃质感参数精调
             GameObject subHeader2 = new GameObject("SubHeader2", typeof(RectTransform), typeof(Text));
             subHeader2.transform.SetParent(_contentRt, false);
+            var sh2Le = subHeader2.AddComponent<LayoutElement>();
+            sh2Le.preferredHeight = 28f;
+            sh2Le.minHeight = 28f;
+
             Text sh2Txt = subHeader2.GetComponent<Text>();
             sh2Txt.font = WorkbenchControls.MainFont;
             sh2Txt.fontSize = 13;
@@ -153,12 +165,21 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject colorDot = new GameObject("ColorDot", typeof(RectTransform), typeof(Image));
             colorDot.transform.SetParent(card.transform, false);
             colorDot.GetComponent<RectTransform>().sizeDelta = new Vector2(24f, 24f);
+            var dotLe = colorDot.AddComponent<LayoutElement>();
+            dotLe.preferredWidth = 24f;
+            dotLe.preferredHeight = 24f;
+            dotLe.minWidth = 24f;
+            dotLe.minHeight = 24f;
             colorDot.GetComponent<Image>().color = item.Primary;
 
             // 描述列
             GameObject infoCol = new GameObject("InfoCol", typeof(RectTransform), typeof(VerticalLayoutGroup));
             infoCol.transform.SetParent(card.transform, false);
             infoCol.GetComponent<RectTransform>().sizeDelta = new Vector2(400f, 40f);
+            var colLe = infoCol.AddComponent<LayoutElement>();
+            colLe.flexibleWidth = 1f;
+            colLe.preferredHeight = 40f;
+
             var vlg = infoCol.GetComponent<VerticalLayoutGroup>();
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;

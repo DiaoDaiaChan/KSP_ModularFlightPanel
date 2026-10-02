@@ -525,7 +525,9 @@ namespace ModularFlightPanel.HeadlessValidator
             // 注意：这里刻意【不】调 RenderConsoleReport —— 那份完整大盘含逐组件字段明细与整改指南
             // （约 2500 行），塞进主门禁只会淹没真正的失败信号；深挖请走旁路 `--audit-fields`。
             // 口径与残留清单见 docs/SEMANTIC_COMPILATION_AUDIT.md §八（8.6/8.7/8.8）。
-            Console.WriteLine($"\n[附加] 字段穿透性语义审计 (Field Penetration Report, 仅报告不阻断)...");
+            Console.WriteLine($"\n[附加] 字段穿透性语义审计 (Field Penetration Report)...");
+            int fieldLeaksCount = 0;
+            int leakingClassesCount = 0;
             try
             {
                 var fieldReport = ModularFlightPanel.UI.Auditing.WidgetFieldPenetrationAudit.Scan(repoRoot);
@@ -546,12 +548,52 @@ namespace ModularFlightPanel.HeadlessValidator
                                   + $"（纳管率 {fieldReport.OverallManagedRatio:F1}%）");
                 Console.WriteLine($"  ├─ 存量裸字段残留 (Total Leaks): {fieldReport.TotalAllLeaks} 处"
                                   + $"（脏缓存 {fieldReport.TotalResidualLeaks} / 裸标量 {fieldReport.TotalScalarLeaks}）");
-                Console.WriteLine($"  └─ 本项属历史技术债，不计入门禁；完整大盘与整改指南: --audit-fields");
+
+                if (fieldReport.TotalAllLeaks > 0)
+                {
+                    fieldLeaksCount = fieldReport.TotalAllLeaks;
+                    var leakingWidgets = fieldReport.FieldsByWidget
+                        .Where(kvp => kvp.Value.Any(f => f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.ResidualDirtyField || f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.RawScalarLeak))
+                        .Select(kvp => new
+                        {
+                            ClassName = kvp.Key,
+                            FileName = kvp.Value[0].FileName,
+                            ResidualCount = kvp.Value.Count(f => f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.ResidualDirtyField),
+                            RawCount = kvp.Value.Count(f => f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.RawScalarLeak),
+                            TotalLeaks = kvp.Value.Count(f => f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.ResidualDirtyField || f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.RawScalarLeak),
+                            Samples = kvp.Value.Where(f => f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.ResidualDirtyField || f.Kind == ModularFlightPanel.UI.Auditing.FieldKind.RawScalarLeak).Take(3).Select(f => f.FieldName)
+                        })
+                        .OrderByDescending(w => w.TotalLeaks)
+                        .ToList();
+
+                    leakingClassesCount = leakingWidgets.Count;
+
+                    PrintWarning($"【存量私有变量技术债告警】全库 113 个类中共有 {leakingClassesCount} 个类存在 {fieldReport.TotalAllLeaks} 处未纳管裸私有变量残留 (脏缓存 {fieldReport.TotalResidualLeaks} 处 + 裸标量 {fieldReport.TotalScalarLeaks} 处)！");
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"  ┌─ 裸私有变量泄漏 Top 重灾区清单 (共 {leakingClassesCount} 类, 完整大盘与逐字段指南: --audit-fields):");
+                    foreach (var w in leakingWidgets.Take(12))
+                    {
+                        string sample = string.Join(", ", w.Samples);
+                        Console.WriteLine($"  │  • {w.ClassName,-26} ({w.FileName}) => ✘ [{w.TotalLeaks,3} 处裸变量: 脏缓存 {w.ResidualCount}, 标量 {w.RawCount}] (样例: {sample})");
+                    }
+                    if (leakingWidgets.Count > 12)
+                    {
+                        Console.WriteLine($"  │  ... 另有 {leakingWidgets.Count - 12} 个组件类存在存量裸变量残留 (执行 --audit-fields 查看全量明细与整改建议)");
+                    }
+                    Console.WriteLine($"  └─ 💡 核心整改原则: 1.手写 _last*/_cached* 迁移至 Cached<T>; 2.浮点连续量配死区容差; 3.热循环由 Update 守卫; 4.解耦快照化。");
+                    Console.ResetColor();
+                }
+                else
+                {
+                    PrintSuccess("✔ 满分纳管: 全库组件 0 裸私有变量残留，全量接入智能缓存与图元纳管!");
+                }
             }
             catch (Exception ex)
             {
                 PrintWarning($"字段穿透审计跳过（非阻断项）: {ex.Message}");
             }
+
+            int totalWarnings = specWarningCount + fieldLeaksCount;
 
             // 最终汇报
             Console.WriteLine($"\n-----------------------------------------------------------------------");
@@ -559,11 +601,19 @@ namespace ModularFlightPanel.HeadlessValidator
             {
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine($"✔ [ALL CHECKS PASSED] 无头测试全部通过! UI 组件已彻底解耦，随时可用于游戏实装或分享!");
-                // 通过口径必须写明：否则绿灯会被读成"零问题"，而实际口径是
-                // "无 ERROR 级发现 + 无超出冻结棘轮基线的新增欠账"（详见 docs/SEMANTIC_COMPILATION_AUDIT.md §8.9.4）。
-                Console.WriteLine($"  通过口径: 无 ERROR 级发现 + 无超基线新增欠账；"
-                                + $"不等于零问题（未阻断的 WARNING 级发现 {specWarningCount} 条，见上方 [6/10] 清单）。");
                 Console.ResetColor();
+                Console.WriteLine($"  通过口径: 无 ERROR 级阻断违规 + 无超基线新增欠账。");
+                if (totalWarnings > 0)
+                {
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"  ⚠ 提醒: 本次审计共传达 {totalWarnings} 项未阻断 WARNING / 技术债告警 (规范效能告警 {specWarningCount} 项, 存量私有变量残留 {fieldLeaksCount} 处覆盖 {leakingClassesCount} 个类)！");
+                    Console.WriteLine($"    请参考上方 [6/10] 效能雷达与 [附加] 字段穿透大盘逐步推进治理。");
+                    Console.ResetColor();
+                }
+                else
+                {
+                    Console.WriteLine($"  全量无警告: 0 条 WARNING 发现。");
+                }
                 return 0;
             }
             else
@@ -644,12 +694,20 @@ namespace ModularFlightPanel.HeadlessValidator
                 else PrintWarning(message);
             }
 
+            var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
+            var antiPatternWidgets = modReport.WidgetsWithAntiPatterns.ToList();
+            int modWarningCount = 0;
+            foreach (var item in antiPatternWidgets)
+            {
+                modWarningCount += item.StandardizationSuggestions.Count;
+            }
+            warningCount += modWarningCount;
+
             if (errors == 0)
             {
-                // 措辞必须与同屏事实一致：紧接着下面就会列出 WARNING 级违规，
-                // 因此不能笼统写"100% 通过 / 完全合规"——准确表述是"ERROR 级 0 违规 + N 条 WARNING 未阻断"。
-                string warningNote = report.WarningCount > 0
-                    ? $"；另有 {report.WarningCount} 条 WARNING 级发现未阻断（见下）"
+                // 措辞必须与同屏事实一致：准确表述"ERROR 级 0 违规 + N 条 WARNING 未阻断"
+                string warningNote = warningCount > 0
+                    ? $"；另有 {warningCount} 条 WARNING 级发现未阻断（见下）"
                     : "；0 条 WARNING";
                 PrintSuccess($"规范合规审计通过: ERROR 级 0 违规 ({report.WidgetsScanned} 个组件类){warningNote}:");
                 Console.WriteLine($"  ├─ 继承契约: 全部组件统一继承 {WidgetSpecRules.ContractRootType}（含『声明元数据却未继承』的反向不变量）");
@@ -659,19 +717,14 @@ namespace ModularFlightPanel.HeadlessValidator
                 Console.WriteLine($"  ├─ 自动注册与元数据: 全部具体组件沿继承链声明 [{WidgetSpecRules.MetadataAttribute}] 特性 (MFP-SPEC-008 自动挂载)");
                 Console.WriteLine($"  ├─ 探针与场景调度: 0 组件内场景查询（黑名单表 {WidgetSpecRules.SceneQueryApis.Count} 条：Find*ByType / GameObject.Find* / Camera.main·current·allCameras·GetAllCameras / GetRootGameObjects）");
                 Console.WriteLine($"  ├─ 智能私有缓存: 全部组件接入 Cached<T> / CachedFloat / CachedDouble / DirtyField 全托管死区缓存 (MFP-SPEC-009)");
-                var modReport = ModularFlightPanel.UI.Auditing.WidgetModernizationAudit.Scan(discovery);
                 Console.WriteLine($"  ├─ 架构现代化进度: 现代微控件 DSL {modReport.ModernCount} 个 | 核心 3D 引擎 {modReport.Core3DCount} 个 | 待改造旧版 {modReport.LegacyCount} 个 (架构现代率 {modReport.ModernizationPercentage:F1}%)");
-                var perfRisks = modReport.WidgetsWithAntiPatterns
-                    .Where(i => i.HotLoopHeapAllocations > 0 || i.HasUnmanagedCore3DUgui || i.HotLoopUguiSetters > 5 || i.HasBannedDockSyncCall)
-                    .ToList();
-                if (perfRisks.Count > 0)
+                if (antiPatternWidgets.Count > 0)
                 {
                     Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine($"  ⚠ 航电效能与架构雷达侦测到 {perfRisks.Count} 个组件存在高频帧循环堆分配/裸 UGUI 逃逸/非集中调度 (详见 --audit-modernization):");
-                    foreach (var risk in perfRisks)
+                    Console.WriteLine($"  ⚠ 航电效能与架构雷达侦测到 {antiPatternWidgets.Count} 个组件存在 {modWarningCount} 处架构告警 (详见 --audit-modernization):");
+                    foreach (var risk in antiPatternWidgets)
                     {
-                        var issues = risk.StandardizationSuggestions.Where(s => s.Contains("高频") || s.Contains("Core3D") || s.Contains("调度")).ToList();
-                        Console.WriteLine($"     • {risk.FileName,-24} => {string.Join("; ", issues)}");
+                        Console.WriteLine($"     • {risk.FileName,-24} => {string.Join("; ", risk.StandardizationSuggestions)}");
                     }
                     Console.ResetColor();
                 }
@@ -681,7 +734,7 @@ namespace ModularFlightPanel.HeadlessValidator
                 PrintError($"组件规范审计发现 {errors} 处严重违规，禁止提交!");
             }
 
-            Console.WriteLine($"  └─ 审计统计: ERROR {errors} / WARNING {report.WarningCount}");
+            Console.WriteLine($"  └─ 审计统计: ERROR {errors} / WARNING {warningCount}");
             return errors;
         }
 

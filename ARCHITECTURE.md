@@ -1,12 +1,12 @@
-# Modular Flight Panel (MFP) 全景架构蓝图 (Architecture Blueprint v2.0)
+# Modular Flight Panel (MFP) 全景架构蓝图 (Architecture Blueprint v3.0)
 
-> **Modular Flight Panel (MFP)** 是面向 **坎巴拉太空计划 1 (KSP1 1.12.x)** 与 **Unity 2019.4 LTS** 的下一代高度解耦、全模块化、五中枢协同、100% 数据与文案通配符双驱动的飞行航电仪表系统。
+> **Modular Flight Panel (MFP)** 是面向 **坎巴拉太空计划 1 (KSP1 1.12.x)** 与 **Unity 2019.4 LTS** 的全新一代高度解耦、全模块化、六中枢协同、100% 业务大脑与纯值快照解耦、支持自由画板搭建与 GPU 硬件加速的现代化飞行航电仪表系统。
 
 ---
 
-## 1. 核心架构全景鸟瞰图 (Master System Panorama)
+## 1. 核心架构全景鸟瞰图 (Master System Panorama v3.0)
 
-MFP 架构打破了传统 KSP 插件"单个脚本混杂物理采样与 UI 绘制"的混沌模式，自底向上构建了**八层解耦、五中枢协同、双总线驱动**的工业级航电体系：
+MFP 架构打破了传统 KSP 插件"单个脚本混杂物理采样与 UI 绘制"的混沌模式，自底向上构建了**九层解耦、六中枢协同、双轨时钟驱动**的工业级航电体系：
 
 ```mermaid
 flowchart TD
@@ -14,7 +14,7 @@ flowchart TD
     subgraph L0["一、底层游戏运行时与原生拦截网格 (Runtime & Stock Interception)"]
         KSP_Core["KSP 物理与轨道内核<br/>(Vessel, Orbit, FlightGlobals, CelestialBody)"]
         KSP_Events["KSP 事件总线<br/>(onVesselWasModified, onStageActivate, onVesselChange)"]
-        Hooks["原生拦截网格 (Core/Hooks)<br/>• Harmony 运行时补丁 (HarmonyPatches)<br/>• 原生姿态球无感隐藏 (StockNavBallHook & StockUIHider)<br/>• 分级图标/动作拦截 (StockStageAction/IconHook)<br/>• 原生工具栏注入 (StockToolbarHook & MFPToolbarButton)<br/>• 对接口物理锚点追踪 (DockAnchorTracker)"]
+        Hooks["原生拦截网格 (Core/Hooks)<br/>• Harmony 运行时补丁 (HarmonyPatches)<br/>• 姿态球单源快照拦截 (StockNavBallHook & NavballAttitudeSnapshot)<br/>• 原生姿态球无感隐藏 (StockUIHider)<br/>• 分级图标/动作拦截 (StockStageActionHook)<br/>• 原生工具栏注入 (StockToolbarHook & MFPToolbarButton)<br/>• 对接口物理锚点追踪 (DockAnchorTracker)"]
     end
 
     %% ── 外部探针与容灾层 ──
@@ -25,367 +25,412 @@ flowchart TD
         SimEngine["离线高压仿真引擎 (TelemetrySimulationEngine)<br/>(7 飞行阶段 / 700 Ticks 纯 C# 离线注水)"]
     end
 
-    %% ── 核心五中枢网格 ──
-    subgraph L2["三、核心五中枢协同网格 (Core Five-Pillars Mesh)"]
-        Pillar1["【中枢 1: 动力学与遥测中枢】<br/>TelemetryHub [Order: -500]<br/>• IFlightTelemetry 纯 C# 契约解耦<br/>• 分部动力学解算 (Dynamics, Propulsion, Subsystems, Maneuver)<br/>• 差分电量与资源总量解算"]
-        
-        Pillar2["【中枢 2: 外部探针协调中枢】<br/>ExternalProbeRegistry<br/>• 探针动态参数目录映射<br/>• 软反射与异常降级隔离"]
+    %% ── 核心六中枢网格 ──
+    subgraph L2["三、核心六中枢协同网格 (Core Six-Pillars Mesh)"]
+        Pillar1["【中枢 1: 动力学与遥测中枢】<br/>TelemetryHub [Order: -500]<br/>• IFlightTelemetry 纯 C# 契约解耦<br/>• 分部动力学解算 (Dynamics, Propulsion, Subsystems, Maneuver)<br/>• 差分电量与资源网络总计优化"]
 
-        Pillar3["【中枢 3: 统一缓存与零 GC 中枢】<br/>CacheManager (Unified Caching Hub)<br/>• P1: 静态整数/百分比/度数常量表 + 浮点死区量化池<br/>• P2: 载具拓扑与推力事件驱动缓存 (滑行0开销)<br/>• P3: 目标交会对接 15Hz 平滑一阶外推<br/>• P4: 主题色彩连续内存扁平直查 (O(1) 直读)<br/>• 探针同帧快照防重缓存 (Probe Frame Cache)"]
+        Pillar2["【中枢 2: 全局物理量纲与单位换算中枢】<br/>AvionicsUnitSystem<br/>• 7 大物理量纲 (速度/高度/升降/气压/质量/温度/距离)<br/>• 4 大全局制式 (公制 SI / 英制航空 / 混合航空 / 航海制)<br/>• 0 GC 快速转换与阶梯自适应工程格式化 (FormatAdaptive)"]
 
-        Pillar4["【中枢 4: 分级渲染与调度中枢】<br/>WidgetRenderManager<br/>• 4 级刷新阶梯 (Critical 60Hz / Standard 30Hz / Relaxed 10Hz / UltraLow 2Hz)<br/>• 源码级精确 CustomHz 支持<br/>• 视口可见性裁剪 (Viewport Culling)<br/>• GraphicRaycaster 动态休眠治理"]
+        Pillar3["【中枢 3: 外部探针协调中枢】<br/>ExternalProbeRegistry<br/>• 探针动态参数目录映射<br/>• 软反射与异常降级隔离 (NaN/Missing -> 占位符 '---')"]
 
-        Pillar5["【中枢 5: 样式与着色管道中枢】<br/>WidgetStyleManager & ThemeManager<br/>• SPEC-006 零颜色字面量 (语义调色板驱动)<br/>• 8 款 Shader 材质复用缓存池<br/>• 多风格切换 (点阵 / 全息 / 玻璃 / 霓虹 / 现代)"]
+        Pillar4["【中枢 4: 统一缓存与零 GC 中枢】<br/>CacheManager (Unified Caching Hub)<br/>• P1: 静态整数/百分比/度数常量表 + 浮点死区量化池<br/>• P2: 载具拓扑与推力事件驱动缓存 (滑行0开销)<br/>• P3: 目标交会对接 15Hz 平滑一阶外推<br/>• P4: 主题色彩连续内存扁平直查 (O(1) 直读)<br/>• 探针同帧快照防重缓存 (Probe Frame Cache)"]
+
+        Pillar5["【中枢 5: 双轨时钟与分级调度中枢】<br/>WidgetRenderManager<br/>• 低频心跳驱动 (HeartBeatTier: 10Hz 物理解算)<br/>• 高频渲染分发 (RefreshTier: 60Hz UI 绘制)<br/>• 满帧直通授权 (AlwaysFullPower 豁免帧预算)<br/>• 视口可见性裁剪 (Viewport Culling) 与 GraphicRaycaster 动态休眠"]
+
+        Pillar6["【中枢 6: 样式与着色管道中枢】<br/>WidgetStyleManager & ThemeManager<br/>• SPEC-006 零颜色字面量 (语义调色板驱动)<br/>• 16 款出厂高精主题预设 (B787 / 龙飞船 / 赛博 / 阿波罗等)<br/>• 15 款专属 GPU Shader 材质复用缓存池"]
     end
 
-    %% ── 遥测求值与通配符引擎 ──
+    %% ── 遥测求值与通道解析 ──
     subgraph L3["四、通配符求值与通道解析引擎 (Telemetry Token & Channel Engine)"]
         TokenEngine["通配符求值器 (TelemetryTokenEngine)<br/>• 62 个原生 Tag + 736 个外部探针 Token<br/>• 正则段模板解析 {TAG:SUB:FMT}<br/>• 向量分量与量纲安全格式化"]
         ChannelParser["组件通道契约解析器 (BaseFlightWidget Channels)<br/>• 键值对 DSL (KEY=VALUE;...)<br/>• 类型化安全解析 (Double/Float/Int/Bool)<br/>• 多别名优先提取与默认值回退"]
     end
 
-    %% ── 装配、布局与生命周期 ──
-    subgraph L4["五、装配、布局与生命周期中枢 (Assembly & Lifecycle Management)"]
-        HUDMgr["【HUD 装配总管】FlightHUDManager [Order: +100]<br/>• MasterUpdate 单点帧序分发<br/>• Sub-Canvas 隔离树与层级管理<br/>• 游戏场景切换状态恢复"]
-        Registry["【自动装配中枢】WidgetRegistry<br/>• [FlightWidget] 特性反射全自动扫描发现<br/>• 约定优于配置兜底推导 (Convention Fallback)<br/>• 泛型实例化工厂 (Spawn) 与别名目录"]
-        LayoutMgr["【排版与分享中枢】WidgetLayoutManager & LayoutShareHub<br/>• layout.json 序列化与校验<br/>• GZip + Base64 航电分享码往返无损编解码<br/>• 载具专属预设管理 (Vessels/*)"]
+    %% ── 业务大脑与纯值快照 ──
+    subgraph L4["五、业务大脑与纯值状态快照 (Decoupled Logic & Value Snapshots)"]
+        LogicBase["【业务大脑基类】WidgetLogic&lt;TState&gt;<br/>• 纯 C# 无引擎依赖 (0 UnityEngine 引用)<br/>• 100% 离线无头单测覆盖<br/>• Evaluate(telemetry, dt) 集中运算"]
+        StateSnap["【纯值快照】struct TState (0 GC)<br/>• 只读状态交付，严禁堆分配<br/>• 线程安全与时间旅行回放基础"]
+        Router["【通用交互路由】WidgetInteractionRouter<br/>• 全组件标配右键上下文菜单 (锁定/复位/不透明度/切制式/探针速览)<br/>• 专属动作声明 (RegisterAction) 与双击/悬浮交互"]
     end
 
-    %% ── 微控件 DSL 与基类 ──
-    subgraph L5["六、UI 框架与声明式微控件 DSL (Framework & Micro-Controls DSL)"]
-        BFW["【组件通用基类】BaseFlightWidget<br/>• AutoCreateCardFrame 自动卡片底板与微光边框<br/>• FastFormat / SetTextIfChanged / SetBarFill 零 GC 写入<br/>• EvaluateThresholdRole 语义阈值机"]
-        DSL["声明式微控件容器 (WidgetControlContainer)<br/>• TextWidget (Title / Badge / Value / Unit 语义泊靠)<br/>• LinearBarWidget (自动归一化进度条)<br/>• ToggleButtonWidget / ActionButtonWidget (防抖交互键)<br/>• AvionicsSegmentedControl / Annunciator / Tooltip"]
+    %% ── 自由搭建模版与构件库 ──
+    subgraph L5["六、自由航电搭建模版与构件目录中枢 (Freeform Studio & Control Catalog)"]
+        Catalog["【构件遍历中枢】WidgetControlCatalog<br/>• 自动反射提取 45+ 款组件内微控件<br/>• 按来源溯源与按功能分类双重视图<br/>• 动态导出 ControlPrototypeDescriptor"]
+        FreeformPanel["【自由画板组件】CustomCompositePanelWidget<br/>• 对标 Photoshop 图层管理与 8 点形变拉伸<br/>• 独立图层不透明度 (0%~100%) 与旋转<br/>• CompositePanelConfig 完整 JSON 序列化"]
+        MicroDSL["声明式微控件容器 (WidgetControlContainer)<br/>• TextWidget (Title / Badge / Value / Unit 语义泊靠)<br/>• LinearBarWidget (自动归一化进度条)<br/>• ToggleButtonWidget / ActionButtonWidget (防抖交互键)<br/>• AvionicsSegmentedControl / Annunciator / Tooltip"]
     end
 
-    %% ── 42 个全量标准化组件 ──
-    subgraph L6["七、五大标准化航电组件族 (42 Specialized Flight Widgets)"]
-        W_Nav["【姿态与轨道导航族 - 9 个】<br/>NavballSphereWidget (3D 离屏相机球) / VesselAttitudeSphereWidget<br/>HeadingArcWidget / NDNavigationWidget / SASDialWidget<br/>OrbitalElementsWidget / ReferenceFrameWidget<br/>ManeuverNodeWidget / ManeuverTimelineWidget"]
+    %% ── 48 个全量航电组件族 ──
+    subgraph L6["七、五大标准化航电组件族 (48 Specialized Flight Widgets - 100% 现代化)"]
+        W_Nav["【姿态与轨道导航族 - 11 个】<br/>NavballSphereWidget (&lt;0.05ms 优化 3D 球) / RectangularNavballWidget (3D 矩形框)<br/>VesselAttitudeSphereWidget / HeadingArcWidget / NDNavigationWidget<br/>SASDialWidget / OrbitalElementsWidget / ReferenceFrameWidget<br/>ManeuverNodeWidget / ManeuverNodeWidgetv2 / ManeuverTimelineWidget"]
 
-        W_Gauges["【表盘与带状仪表族 - 5 个】<br/>TapeGaugeWidget (双速/高度带) / ArcTapeWidget (弧形滚带)<br/>AvionicsBarGaugeWidget / ArcMeterWidget (弧形推力/VSI)<br/>CustomTokenTextWidget (自由通配卡)"]
+        W_Gauges["【表盘与带状仪表族 - 6 个】<br/>TapeGaugeWidget (双速/高度带) / ArcTapeWidget (弧形滚带)<br/>AvionicsBarGaugeWidget / ArcMeterWidget (弧形推力/VSI)<br/>CustomTokenTextWidget (自由通配卡) / CustomCompositePanelWidget (自由画板)"]
 
         W_SpaceX["【SpaceX 龙飞船与星舰航电族 - 8 个】<br/>SpaceXDockingReticleWidget (ISS 对接光标) / SpaceXAttitudeWidget<br/>SpaceXOverviewWidget / SpaceXHeaderWidget / SpaceXBottomBarWidget<br/>SpaceXTimelineWidget / SpaceXEngineWidget / SpaceXArcGaugeWidget"]
 
-        W_Systems["【飞船系统与工程监视族 - 12 个】<br/>ElectricalSystemWidget (电力拓扑图) / LifeSupportWidget (维生监视)<br/>Rocket2DWidget (2D 分级轮廓) / SignalStatusWidget / CommSignalWidget<br/>EcamAlertLogWidget / MasterWarningWidget<br/>B747EicasWidget / B747LowerEicasWidget / B787EicasWidget<br/>PerformanceMonitorWidget / StageDeltaVWidget"]
+        W_Systems["【飞船系统与工程监视族 - 14 个】<br/>ElectricalSystemWidget / LifeSupportWidget / Rocket2DWidget<br/>SignalStatusWidget / CommSignalWidget / CommSignalWidgetv2<br/>EcamAlertLogWidget / MasterWarningWidget / TimeCommHubWidget<br/>B747EicasWidget / B747LowerEicasWidget / B787EicasWidget<br/>PerformanceMonitorWidget / StageDeltaVWidget"]
 
-        W_Controls["【控制台与交互操纵族 - 8 个】<br/>StageControlWidget (分级防误触锁) / StagingSequenceWidget<br/>BottomControlsWidget / ModernToolbarWidget / FavoriteToolbarWidget<br/>TimeWarpWidget / UIWidget"]
+        W_Controls["【控制台与交互操纵族 - 8 个】<br/>StageControlWidget (分级防误触锁) / StagingSequenceWidget<br/>BottomControlsWidget / ModernToolbarWidget / FavoriteToolbarWidget<br/>TimeWarpWidget / UIWidget / BaseFlightWidget 基类"]
     end
 
-    %% ── 交互设计与设置中心 ──
-    subgraph L7["八、交互编辑设计台与设置中心 (Interactive Designer & Settings Suite)"]
-        EditMode["【可视化编辑系统】EditModeController (Alt+N 唤起)<br/>• WidgetCanvasGrid (网格吸附与自适应参考线)<br/>• WidgetDragHandler & MarqueeSelectionHandler (拖拽与多选框选)<br/>• WidgetTransformGizmo (8向自由形变与比例缩放)<br/>• WidgetSmartGuides (边缘/中心磁吸对齐辅助线)<br/>• WidgetEditHistory (撤销重做 Undo/Redo 历史栈)<br/>• WidgetLayerManager (Z-Index 图层层级管理)"]
+    %% ── 现代工作台与交互设计 ──
+    subgraph L7["八、现代航电暗晶工程工作台 3.0 (Alt+N Cyber-Dark Workbench)"]
+        ModernWorkbench["【全 UGUI + GPU 磨砂玻璃工作台】WorkbenchCanvasView<br/>• ModernWorkbenchGlass.shader 硬件加速暗晶毛玻璃<br/>• 彻底告别 IMGUI，实现 0 GC、0 掉帧与平滑拖拽<br/>• 顶部实时遥测胶囊 (Vessel, Frame, FPS)<br/>• 底部极简悬浮药丸 Dock (排版模式彻底消除视口遮挡)"]
 
-        SettingsSuite["【航电综合配置台】SettingsGUI<br/>• TabAssembler (动力学仪表装配与 Token 绑定)<br/>• TabLibrary (分类检索、元数据呈现与一键拖拽)<br/>• TabThemeSettings (实时多主题配色与 Shader 切换)<br/>• TabProfilesConfig (载具预设绑定)<br/>• TabSharePresets (导入导出与预设广场)<br/>• TabSimulation (7 阶段动力学离线测试)<br/>• TabWidgetManager (活动组件树与图层编辑)<br/>• WidgetLiveBaker (实时离屏切片预览)"]
+        Tabs["5 大现代 IDE 级工作视口 (IWorkbenchTabView)<br/>• WorkbenchTabStudio: 自由画板搭建、构件库选取、图层管理与属性面板<br/>• WorkbenchTabThemes: 16 款主题热切、15 款 Shader 选用与调色板定制<br/>• WorkbenchTabProfiles: 载具专属预设绑定、备份还原与 GZip+Base64 分享码<br/>• WorkbenchTabDiagnostics: 实时微秒级采样大盘、Top Offender 诊断与遥测沙盒<br/>• WorkbenchTabPreferences: 全局缩放、DPI 自适应、节能模式与按键定制"]
     end
 
     %% ── 质量门禁与工具链 ──
     subgraph L8["九、质量保障门禁与 CI 工具链 (Quality Gates & Toolchain)"]
-        Profiler["【可观测性分析】MFPProfiler & HUDProfilerOverlay<br/>纳秒级采样 / Top Offender / 帧预算占比 / GC 节约大盘"]
-        I18n["【国际化系统】I18nManager (13 种语言包与实时动态切换)"]
-        Auditor["【静态门禁与代码异味雷达】UI/Auditing<br/>SPEC-001..008 规则门禁 / 4 大代码异味扫描 / Roslyn AST 分析"]
-        CI["【无头验证工具链】tools/HeadlessValidator & test-ui.ps1<br/>10/10 规则自检 / Unity 2019 Batchmode 离线渲染 / deploy.ps1 NTFS 热替换"]
+        RoslynAudit["【Roslyn AST 静态门禁】UI/Auditing<br/>• SPEC-001..012 共 15 条架构铁律全项检验<br/>• L4 真实符号语义与常量折叠 (链接 18 个程序集)<br/>• 零颜色字面量、零场景查询、智能私有缓存与死区验证"]
+        Validator["【10/10 无头自动化门禁套件】tools/HeadlessValidator<br/>• 双向配置往返测试 / 视口防碰撞 / 7阶段动力学注水仿真 / I18n多语言对齐"]
+        BatchRender["【Unity 离线切片渲染】test-ui.ps1 -Render<br/>• Unity 2019 Batchmode 离线像素级肉眼验收"]
+        Deploy["【NTFS 热部署】deploy.ps1<br/>• 原子更名安全替换游戏运行目录 DLL"]
     end
 
     %% ── 核心流向依赖线 ──
     KSP_Core --> Hooks
     KSP_Events --> Hooks
     Hooks --> Pillar1
-    ExternalMods --> ProbeTraverser --> ProbeMgr --> Pillar2
+    ExternalMods --> ProbeTraverser --> ProbeMgr --> Pillar3
     SimEngine -.->|离线高压测试| Pillar1
 
-    Pillar1 -->|IFlightTelemetry| HUDMgr
-    Pillar1 -->|P2 稳态拓扑 / P3 目标外推| Pillar3
-    Pillar2 -->|探针同帧快照| Pillar3
-    Pillar5 -->|P4 调色板重烘焙| Pillar3
+    Pillar1 -->|IFlightTelemetry| Pillar2
+    Pillar2 --> L3
+    Pillar1 & Pillar3 --> TokenEngine
+    TokenEngine --> ChannelParser
 
-    Pillar1 & Pillar2 --> TokenEngine
-    TokenEngine --> ChannelParser --> BFW
+    L3 --> LogicBase
+    LogicBase --> StateSnap
+    StateSnap --> L6
 
-    HUDMgr <-->|反射查询与实例化| Registry
-    HUDMgr --> Pillar4
-    Pillar4 -->|分级 Tick 调度| BFW
-    Pillar3 -->|零 GC 字符串/外推几何/O1 色彩| BFW
-    Pillar5 -->|材质池与 Shader 绑定| BFW
+    L6 <--> Router
+    L6 <--> MicroDSL
+    L6 <--> Catalog --> FreeformPanel
+    L6 <--> ModernWorkbench
+    ModernWorkbench --> Tabs
 
-    BFW --> DSL --> L6
-    L6 <--> EditMode
-    L6 <--> SettingsSuite
-    LayoutMgr <--> EditMode & SettingsSuite
-
-    L6 -.->|纳秒级采样| Profiler
-    Pillar3 -.->|缓存命中率| Profiler
-    L6 --- Auditor
-    Auditor --- CI
+    L6 --- RoslynAudit
+    RoslynAudit --- Validator
+    Validator --- BatchRender --> Deploy
 ```
 
 ---
 
-## 2. 全生命周期时钟与执行序编排 (Execution Order & Clock Sequence)
+## 2. 核心六中枢协同拓扑 (Core Six-Pillars Mesh)
 
-为彻底消灭采样与渲染间的撕裂、时序漂移与高频重复遍历，MFP 构建了严格的执行序流水线：
+MFP 航电系统的核心运转建立在六大相互解耦、权责明确的中枢网格之上：
+
+| 中枢代号 | 中枢名称 | 核心实现文件 | 职责与技术边界 |
+| :-- | :-- | :-- | :-- |
+| **中枢 1** | **动力学与遥测中枢** | [`TelemetryHub.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/Core/Telemetry/TelemetryHub.cs) | 挂载于 KSP 执行序早期 (`Order: -500`)，以纯 C# 契约 [`IFlightTelemetry`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/Core/Contracts/IFlightTelemetry.cs) 隔离引擎，拆分为 Dynamics / Propulsion / Subsystems / OrbitManeuver 四大分部解算，并针对滑行阶段推力与质量进行事件驱动缓存。 |
+| **中枢 2** | **全局物理量纲中枢** | [`AvionicsUnitSystem.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/Core/Avionics/AvionicsUnitSystem.cs) | 统一接管全座舱物理换算，覆盖 7 大物理量纲（长度、速度、高度、垂直速度、动压、质量、温度）与 4 种全局制式（公制 SI、英制航空、混合航空、航海制），支持零 GC 换算与阶梯自适应工程格式化（如 `1200m -> 1.2km`，`45000ft -> 45.0kft`）。 |
+| **中枢 3** | **外部探针协调中枢** | [`TelemetryProbeManager.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/Core/Probes/TelemetryProbeManager.cs) | 纳管 FAR、KER、MechJeb、Principia 等 15 大模组共 736+ 参数。内置 3 秒双重排队冷却队列与连续 5 次异常自动熔断（Circuit Breaker），未安装或返回 `NaN` 时优雅降级为 `"---"`。 |
+| **中枢 4** | **统一缓存与零 GC 中枢** | [`CacheManager.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/Core/Diagnostics/CacheManager.cs) | **P1**: 静态整数 (-1000..9999)、百分比 (0%..100%)、度数 (0°..360°) 常量池与浮点死区量化池；<br/>**P2**: 载具拓扑与推力事件驱动缓存（滑行 0 开销）；<br/>**P3**: 目标交会对接 15Hz 物理采样 + 一阶平滑外推；<br/>**P4**: 主题色彩扁平数组直接寻址 ($O(1)$ 纳秒直读)；探针同帧快照去重。 |
+| **中枢 5** | **双轨调度中枢** | [`WidgetRenderManager.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Framework/WidgetRenderManager.cs) | 双轨生命周期调度：`OnDataHeartBeat`（10Hz 低频物理推算）与 `OnUIDrawLoop`（60Hz 高频视图绘制）；支持 4 级刷新阶梯（Critical / Standard / Relaxed / UltraLow）与源码级精确 `CustomHz`；视口剔除与射线按需休眠。 |
+| **中枢 6** | **样式与着色管道中枢** | [`WidgetStyleManager.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Framework/WidgetStyleManager.cs) | 践行 SPEC-006 零颜色字面量红线，通过语义角色（`CardStyleRole`, `TextStyleRole`, `MeterStyleRole`）解析颜色；管理 16 款内置主题与 15 款专属 GPU Shader 材质复用池。 |
+
+---
+
+## 3. 双轨生命周期与业务大脑解耦机制 (Dual-Loop & WidgetLogic Pipeline)
+
+为彻底消灭“物理采样与 UI 绘制混杂导致的帧率撕裂与 GC 顿挫”，MFP 实施了严格的**“大脑解耦、双轨调度、纯值快照”**管道：
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant KSP as KSP Physics / Unity
-    participant TH as TelemetryHub<br/>[Order: -500]
-    participant CM as CacheManager<br/>(统一缓存中枢)
-    participant HUD as FlightHUDManager<br/>[Order: +100]
-    participant WRM as WidgetRenderManager<br/>(阶梯调度)
-    participant W as BaseFlightWidget<br/>(45 个标准化组件)
-    participant PRF as MFPProfiler<br/>(硬件级性能采集)
+    participant TH as TelemetryHub<br/>[Pre-Update -500]
+    participant WRM as WidgetRenderManager<br/>(双轨分发中枢)
+    participant WL as WidgetLogic<TState><br/>(纯 C# 业务大脑)
+    participant SNAP as struct TState<br/>(0 GC 状态快照)
+    participant W as BaseFlightWidget<br/>(UGUI 视图容器)
+    participant SUI as SmartUIExtensions<br/>(零开销脏检)
 
-    Note over KSP,PRF: ══ 阶段 1: 早期物理采样与稳态拓扑缓存 (Pre-Update Order: -500) ══
-    KSP->>TH: Update()
-    TH->>PRF: BeginSample(ProfilerSection.Telemetry)
-    alt 载具事件驱动 (onVesselModified / onStageActivate) 或油门变动
-        TH->>TH: 全量扫描活跃引擎、推进剂管道与级间质量
-    else 稳态滑行 (油门=0 且无拓扑脏标记)
-        TH->>CM: 直接复用 P2 静态推力与质量缓存 (0 遍历)
+    Note over KSP,SUI: ══ 轨 1: 低频数据心跳循环 (OnDataHeartBeat - 如 10Hz) ══
+    KSP->>TH: Update() (收集原生状态与探针数据)
+    WRM->>WRM: 判定心跳步长 (HeartBeatTier / EffectiveHeartBeatInterval)
+    opt 达到数据心跳时间戳
+        WRM->>W: OnDataHeartBeat(in context)
+        W->>WL: LogicCore.Evaluate(telemetry, dt)
+        WL->>WL: 纯数学/物理推演 + AvionicsUnitSystem 统一量纲换算
+        WL->>SNAP: 构造并存储只读状态快照 (CurrentState = new TState)
+        Note over WL,W: 纯算物理，绝不访问任何 UnityEngine.UI 元素
     end
-    TH->>CM: P3: 15Hz 物理基准采样 + 帧间平滑一阶外推 (交会对接目标相对几何)
-    TH->>PRF: EndSample(ProfilerSection.Telemetry)
 
-    Note over KSP,PRF: ══ 阶段 2: 核心渲染与分级刷新分发 (Master Dispatch Order: +100) ══
-    KSP->>HUD: LateUpdate()
-    HUD->>PRF: BeginSample(ProfilerSection.Widgets)
-    HUD->>WRM: MasterUpdate(Time.time)
-    loop 遍历所有活跃组件实例
-        WRM->>WRM: 阶梯步长判定 (Critical 60Hz / Standard 30Hz / Relaxed 10Hz / UltraLow 2Hz / CustomHz)
-        opt 满足刷新步长 且 位于视口可见区域 (未被 Culling 剔除)
-            WRM->>W: UpdateTelemetry(telem)
-            W->>CM: P1: FastDouble / FastFormat (浮点死区量化)
-            alt 数值波动在微小容差 (Deadband) 内
-                CM-->>W: 返回上一帧静态常量字符串引用 (0 内存分配)
-            else 突破容差
-                CM-->>W: 格式化新文本并更新死区槽位
-            end
-            W->>W: SetTextIfChanged (指针相同跳过 UGUI 顶点脏标记)
-            W->>W: SetBarFill (防抖判定更新 Image.fillAmount)
+    Note over KSP,SUI: ══ 轨 2: 高频 UI 绘制循环 (OnUIDrawLoop - 如 60Hz) ══
+    KSP->>WRM: LateUpdate() (游戏画面渲染前夕)
+    WRM->>WRM: 判定画面刷新步长 (RefreshTier / Viewport Culling 检查)
+    opt 达到显示刷新时间戳 且 位于视口可见区域
+        WRM->>W: OnUIDrawLoop(ref context)
+        W->>W: OnRenderState() (只读提取 _logic.CurrentState)
+        W->>SUI: Cached<T>.Update(state.Value) 防抖脏检
+        opt 数据发生有效跳变 (超出死区容差)
+            SUI->>W: SetTextSafe / SetBarFillSafe 写入 UGUI 缓冲区
+        else 保持微小抖动内
+            SUI-->>W: 阻断 UGUI 重建 (0 顶点重绘 / 0 堆分配)
         end
-    end
-    HUD->>PRF: EndSample(ProfilerSection.Widgets)
-
-    Note over KSP,PRF: ══ 阶段 3: 帧尾耗时汇流与可观测性归集 (Post-Frame Observability) ══
-    HUD->>PRF: EndFrame() (滑动窗口汇总、GC 次数、帧预算占比大盘归集)
-```
-
----
-
-## 3. 统一缓存中枢 (CacheManager) 四大支柱实现拓扑
-
-```mermaid
-graph LR
-    subgraph P1["P1: 零 GC 死区量化与静态常量池"]
-        direction TB
-        T1["静态整数字符串池<br/>FastInt: -1000 ~ 9999 (11000 常驻槽位)"]
-        T2["静态百分比常量池<br/>FastPercent: 0% ~ 100% (101 常驻槽位)"]
-        T3["静态度数常量池<br/>FastDegree: 0° ~ 360° (361 常驻槽位)"]
-        T4["浮点死区量化池<br/>FastDouble(key, val, fmt, tolerance)<br/>微小抖动直接命中缓存，命中率 > 75%"]
-    end
-
-    subgraph P2["P2: 载具拓扑与推力事件驱动缓存"]
-        direction TB
-        E1["GameEvents.onVesselWasModified"]
-        E2["GameEvents.onStageActivate"]
-        E3["GameEvents.onVesselChange"]
-        E_Logic["稳态滑行 0 油门推力直接置 0<br/>跳过 100% 全船部件与发动机扫描"]
-        E1 & E2 & E3 --> E_Logic
-    end
-
-    subgraph P3["P3: 目标交会对接平滑外推缓存"]
-        direction TB
-        K1["15Hz 物理严密基准采样"]
-        K2["帧间线性平滑一阶外推<br/>(RelativePosition, Velocity, Rotation)"]
-        K3["消灭每帧数十次四元数逆变换与矩阵投影开销"]
-        K1 --> K2 --> K3
-    end
-
-    subgraph P4["P4: 主题色彩扁平数组直接寻址"]
-        direction TB
-        C1["ThemeManager.OnThemeChanged"]
-        C2["RebakeThemePalette<br/>连续内存数组预烘焙"]
-        C3["GetCardBgFast / GetTextFast / GetMeterFast<br/>下标寻址 O(1) 纳秒级直读"]
-        C1 --> C2 --> C3
-    end
-
-    subgraph ProbeCache["探针同帧快照去重缓存"]
-        direction TB
-        PC1["Time.frameCount 瞬态时间戳"]
-        PC2["跨组件同帧共享外部 Mod 反射结果<br/>(FAR, KER, MechJeb, Trajectories)"]
-        PC3["反射查询开销降至 1/N"]
-        PC1 --> PC2 --> PC3
+        Note over W,SUI: 纯读状态，绝不重新查询遥测或计算物理
     end
 ```
 
+### 核心契约原则：
+1. **`HeartBeatTier` 频率必须 $\le$ `RefreshTier` 频率 (SPEC-002B)**：数据心跳不能快于画面刷新率，杜绝无效解算。
+2. **纯值快照结构体 (`struct TState`, SPEC-010/012)**：必须为只读纯值结构体，严禁在状态中包含 `class` 引用或在每帧 `new` 引用对象。
+3. **100% 离线无头测试性**：`WidgetLogic<TState>` 完全不引用 `UnityEngine`，可在 `HeadlessValidator` 中注入任何遥测假数据进行纯 CPU 毫秒级单测。
+
 ---
 
-## 4. 小组件渲染流水线与零 GC 过滤机制 (Widget Render Pipeline)
+## 4. 3D 姿态球超极限渲染优化管线 (0.05ms Pipeline)
 
-在任何单个 `BaseFlightWidget` 内部，数据从原始输入到屏幕网格遵循**零损耗四重防线**：
+姿态球作为航电系统的心脏，经历了从传统 0.187ms 密集开销到 `<0.05ms` 的极限性能重构：
 
 ```mermaid
 flowchart TD
-    Raw["原始遥测输入 (IFlightTelemetry 双精度/三维矢量)"] --> DeltaCheck{"防线 1: 几何脏检查<br/>Math.Abs(val - _lastValue) > Config.ValueDeltaThreshold"}
-    
-    DeltaCheck -- 未超阈值 --> Sleep1["[拦截] 保持指针与几何不变 (0 CPU 运算)"]
-    
-    DeltaCheck -- 超过阈值 --> DeadbandCheck{"防线 2: 浮点死区量化<br/>CacheManager.FastDouble(tolerance)"}
-    
-    DeadbandCheck -- 容差内波动 --> ReuseRef["[命中] 复用上一帧 string 引用 (0 堆内存 GC 分配)"]
-    DeadbandCheck -- 显著变化 --> FormatNew["格式化并更新死区槽位缓存"]
-    
-    ReuseRef & FormatNew --> TextDirty{"防线 3: 文本脏标记守卫<br/>SetTextIfChanged(textComp, newStr)"}
-    
-    TextDirty -- 引用或内容相同 --> Sleep2["[拦截] 阻断 UGUI Text.text 写入<br/>(避免 SetVerticesDirty 与 Canvas Rebatching)"]
-    TextDirty -- 内容改变 --> ApplyUGUI["写入 UGUI Text 顶点缓冲区"]
-    
-    subgraph RaycastDefense["防线 4: EventSystem 射线裁剪"]
-        Detect["BaseInitialize 深度扫描 Selectable / PointerHandler"] --> IsInteract{"是否具交互性或处于 Alt+N 编辑拖拽？"}
-        IsInteract -- 否 (纯读数仪表) --> DisableRaycast["关闭 SubRaycaster<br/>纯视觉元件 raycastTarget = false<br/>(消除鼠标滑过全屏射线遍历)"]
-        IsInteract -- 是 (按钮/拖拽) --> EnableRaycast["按需激活 GraphicRaycaster"]
+    subgraph Old["历史性能瓶颈 (0.187ms / 帧)"]
+        O1["每帧多次 Quaternion.Inverse 与乘法"]
+        O2["每帧 GetComponentInParent 与 Camera.allCameras 查询"]
+        O3["6 个运行时 Dictionary 频繁哈希寻址与装箱"]
+        O4["每帧无条件 UpdateProceduralDetailScale 刷新材质参数"]
+        O1 & O2 & O3 & O4 --> Slow["CPU 耗时高，低配置卡顿"]
+    end
+
+    subgraph New["现代化极限优化架构 (<0.05ms / 帧)"]
+        N1["【单源姿态快照】StockNavBallHook.CurrentAttitudeSnapshot<br/>同帧内全组件共享单次四元数姿态解算，消除重复逆矩阵计算"]
+        N2["【持久 Canvas 缓存】消灭 GetComponentInParent 与相机扫描堆分配<br/>材质属性访问降频至 30 帧一次"]
+        N3["【扁平 Slot 数组】用 MarkerSlot[] 与 O(1) 枚举索引表<br/>彻底取代 6 个运行时 Dictionary"]
+        N4["【死区向量量化】FastVector4RoughEquals 死区比对<br/>避障 Uniform 参数变动超出阈值才提交 GPU"]
+        N5["【事件驱动标度】UpdateProceduralDetailScale 仅在分辨率/缩放变动时触发<br/>彻底移出 LateUpdate 高频热循环"]
+        N1 & N2 & N3 & N4 & N5 --> Fast["单帧耗时 < 0.05ms / 0 GC 内存分配"]
     end
 ```
 
 ---
 
-## 5. 可视化交互设计系统与装配台架构 (Design & Assembly Hub)
+## 5. 自由航电搭建工坊与构件中枢 (Freeform Studio & Control Catalog)
 
-```mermaid
-flowchart TD
-    subgraph EditModeArch["一、可视化排版与编辑系统 (EditModeController - Alt+N)"]
-        InputHandler["快捷键与输入监听<br/>(EditModeShortcutHandler)"] --> Ctrl["编辑总控中枢<br/>(EditModeController)"]
-        
-        Ctrl <--> SelectMgr["选择总管 (WidgetSelectionManager)<br/>• 单选 / 多选 / Shift 追加<br/>• 框选交互 (MarqueeSelectionHandler)"]
-        Ctrl <--> DragMgr["拖拽对齐 (WidgetDragHandler)<br/>• 网格磁吸 (WidgetCanvasGrid)<br/>• 动态辅助线吸附 (WidgetSmartGuides)"]
-        Ctrl <--> Gizmo["变换手柄 (WidgetTransformGizmo)<br/>• 8 向边缘拖拉伸缩<br/>• 等比缩放与尺寸锁定"]
-        Ctrl <--> History["历史操作栈 (WidgetEditHistory)<br/>• 50 步 Undo / Redo<br/>• 位置、尺寸、缩放原子快照"]
-        Ctrl <--> LayerMgr["图层中枢 (WidgetLayerManager)<br/>• Z-Index 层级升降<br/>• 置顶 / 置底 / 图层锁定"]
-    end
-
-    subgraph SettingsSuiteArch["二、航电综合配置控制台 (SettingsGUI)"]
-        Tab1["【装配台】TabAssembler<br/>• 数据源绑定 (NumericToken)<br/>• 通道模板编辑器 (CH1..CH6 / Custom Channels)<br/>• 实时微缩预览"]
-        Tab2["【组件库】TabLibrary<br/>• 5 大分类动态筛选<br/>• 实时描述与微缩图<br/>• 一键拖拽生成实例"]
-        Tab3["【样式调色】TabThemeSettings<br/>• 9 款内置预设主题<br/>• 8 款 Shader 材质切换<br/>• 语义颜色自定义"]
-        Tab4["【方案管理】TabProfilesConfig<br/>• 载具类型绑定<br/>• 自动加载特定预设"]
-        Tab5["【分享广场】TabSharePresets<br/>• GZip+Base64 字符串导入导出<br/>• 社区预设一键载入"]
-        Tab6["【离线仿真】TabSimulation<br/>• 7 阶段动力学注水测试<br/>• 报警门限触发演练"]
-        Tab7["【实例大纲】TabWidgetManager<br/>• 场景所有活动组件树<br/>• 可见性 / 尺寸 / 锁定切换"]
-        LiveBaker["【实时切片烘焙】WidgetLiveBaker<br/>• 离线渲染生成微缩图"]
-    end
-
-    Ctrl <--> SettingsSuiteArch
-    SettingsSuiteArch <--> Storage["本地配置持久化 (PluginData/layout.json / theme_settings.json)"]
-```
-
----
-
-## 6. 着色器材质与 3D 离屏烘焙管线 (Shaders & Rendering Pipeline)
+MFP 提供了完全对标 Photoshop / Figma 体验的自由航电设计工坊：
 
 ```mermaid
 flowchart LR
-    subgraph Shaders["8+ 专有高清晰度航电 Shader 矩阵"]
-        direction TB
-        S1["AvionicsProceduralUI.shader<br/>(无纹理程序化圆角、细线与边框)"]
-        S2["CrispAvionicsText.shader<br/>(高对比度抗锯齿矢量航电字体)"]
-        S3["DigitalSegmentUI.shader<br/>(数码荧光管多段数码管)"]
-        S4["DotMatrixUI.shader<br/>(点阵式 LED 矩阵高光滤镜)"]
-        S5["GlassCockpitUI.shader<br/>(现代玻璃座舱微光与漫反射)"]
-        S6["NeonGlowUI.shader<br/>(赛博霓虹脉冲发光管)"]
-        S7["PhosphorHoloUI.shader<br/>(绿/琥珀色磷光全息扫描线)"]
-        S8["RadialSegmentedMeter.shader<br/>(多段式圆弧刻度标尺)"]
-        S9["NavballRaymarch / Modern / Enhanced<br/>(多风格 3D 姿态球着色器)"]
+    subgraph Discovery["一、构件自动发现与提取 (Traversal & Extraction)"]
+        AllWidgets["45+ 款已有飞行仪表组件<br/>(SAS 盘, 罗盘, 读数盒, 状态条, 控制键)"]
+        Traverser["WidgetControlCatalog 构件遍历中枢<br/>• 自动反射扫描 IWidgetDslControl<br/>• 动态捕获 Controls.All 活跃实例<br/>• 生成 ControlPrototypeDescriptor 目录"]
+        AllWidgets --> Traverser
     end
 
-    subgraph Bakers["离屏几何烘焙与渲染管道"]
-        direction TB
-        B1["NavballSphereWidget<br/>(独立离屏 Camera + 3D 物理球体 + RenderTexture)"]
-        B2["VesselSilhouetteBaker<br/>(载具部件网格投影生成 2D 轮廓矢量)"]
-        B3["Vessel3DBaker<br/>(载具 3D 线框技术透视渲染 Technical3D)"]
-        B4["ReferenceFrameIconAtlasGenerator<br/>(天体与参考系矢量图集动态生成)"]
+    subgraph CatalogView["二、设计台双重视图 (WorkbenchTabStudio)"]
+        ByWidget["按来源组件溯源视图<br/>(拾取指定表盘的某个局部小构件)"]
+        ByCategory["按功能分类视图<br/>(Readout, LinearGauge, Toggle, Annunciator)"]
+        Traverser --> ByWidget & ByCategory
     end
 
-    Shaders --> MaterialPool["材质复用池 (MaterialPool)<br/>按主题色彩与 Shader 变体零冗余复用"]
-    MaterialPool --> RenderCanvas["UGUI 最终画板呈现"]
-    Bakers --> RenderCanvas
+    subgraph CanvasArtboard["三、自由画板画布 (CustomCompositePanelWidget)"]
+        Artboard["自由画板画布 (Custom Artboard)<br/>• 8 点形变 Gizmo 自由拉伸<br/>• 独立图层不透明度 (0%~100%)<br/>• 像素级 X/Y、宽高、旋转角<br/>• Z-Index 图层堆叠与锁定/显隐"]
+        ByWidget & ByCategory -->|点击拾取放入| Artboard
+        Artboard --> Config["CompositePanelConfig<br/>(完整 JSON 序列化存储)"]
+    end
+```
+
+- **构件任意提取**：无需重新编写组件，直接从波音 747 EICAS、SpaceX 龙飞船或底控台中“抠出”任意指示灯、进度条或读数键，拖入画板自由组合；
+- **Photoshop 级图层系统**：每个子图层（`CompositeElementConfig`）拥有独立的绝对坐标、尺寸、旋转、不透明度、绑定 Token、警告门限与动作行为；
+- **统一解耦大脑**：画板由 [`CompositePanelLogic.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/Core/Avionics/CompositePanelLogic.cs) 统一驱动，0 GC 评估并驱动所有动态子图层。
+
+---
+
+## 6. 现代航电暗晶工程工作台 3.0 (Alt+N Cyber-Dark Workbench)
+
+彻底弃用 Unity 历史遗留 IMGUI，全量迁移至基于 UGUI + GPU 磨砂玻璃 Shader 的现代工程工作台：
+
+```mermaid
+flowchart TD
+    AltN["按下 Alt + N 快捷键"] --> View["WorkbenchCanvasView (独立 Overlay 画布, Order: 8500)"]
+    
+    subgraph UI_Shell["工作台现代架构外壳 (Modern Workbench Shell)"]
+        TopBar["顶部状态条 (Top App Bar)<br/>• 当前载具名称胶囊 (Vessel)<br/>• 当前飞行参考系 (Frame: Surface/Orbit/Target)<br/>• 实时游戏帧率胶囊 (FPS 采样)<br/>• 快捷保存与退出按钮"]
+        
+        ActivityBar["左侧活动栏 (Activity Bar)<br/>• 🛠️ 设计工坊 (Studio)<br/>• 🎨 视觉风格 (Themes)<br/>• 💾 档案预设 (Profiles)<br/>• 🚀 诊断沙盒 (Diagnostics)<br/>• ⚙️ 系统偏好 (Preferences)"]
+        
+        Viewport["自适应工作视口 (Dynamic Viewport)<br/>• 基于 ModernWorkbenchGlass.shader 磨砂玻璃底板<br/>• 自由拉伸 (Min: 860x460 / Default: 1060x670)<br/>• 独占输入穿透拦截底板 (Raycast Blocker + MFPInputLock)"]
+        
+        Dock["底部极简悬浮药丸 Dock (Floating Canvas Dock)<br/>• 画布排版模式一键折叠收拢<br/>• 彻底消除主窗口遮挡视口，边排版边观察仪表"]
+    end
+
+    View --> TopBar & ActivityBar & Viewport & Dock
+```
+
+### 5 大核心工作视口：
+1. **🛠️ 航电设计工坊 ([`WorkbenchTabStudio`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Workbench/Tabs/WorkbenchTabStudio.cs))**：
+   - 包含自由画板搭建（图层树、构件库、属性检查器）与屏幕已有组件管理；
+   - 支持一键进入画布排版模式、网格磁吸（Grid Snapping）与辅助线吸附。
+2. **🎨 视觉风格与主题 ([`WorkbenchTabThemes`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Workbench/Tabs/WorkbenchTabThemes.cs))**：
+   - 16 款出厂高精主题无缝热切换；
+   - 15 款专用 GPU Shader 材质预览与选用；
+   - 字体样式切换（现代平滑矢量 / 硬件复古点阵）与语义调色板微调。
+3. **💾 档案与预设中枢 ([`WorkbenchTabProfiles`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Workbench/Tabs/WorkbenchTabProfiles.cs))**：
+   - 载具专属布局自动绑定（按 Vessel 类型/名称加载）；
+   - 出厂航电预设库（波音、阿波罗、深空探针、SpaceX 等）一键还原；
+   - 社区分享码（`MFP:v1:...` GZip+Base64）无损往返编解码与导入导出。
+4. **🚀 诊断与遥测沙盒 ([`WorkbenchTabDiagnostics`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Workbench/Tabs/WorkbenchTabDiagnostics.cs))**：
+   - 微秒级性能大盘采样（Telemetry / Widgets / Rendering 耗时与 GC 节约）；
+   - 7 阶段 700 Ticks 离线动力学注水仿真与报警演练；
+   - 62 原生 Tag + 736 外部探针参数实时查表器。
+5. **⚙️ 系统偏好与按键 ([`WorkbenchTabPreferences`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Workbench/Tabs/WorkbenchTabPreferences.cs))**：
+   - 全局尺寸比例（0.7x ~ 2.0x）与 DPI 缩放模式；
+   - 节电模式（Eco Saver）与心跳基准频率调节；
+   - 音频反馈（点击音效）开关与快捷键重映射；
+   - 13 种语言包实时切换。
+
+---
+
+## 7. 着色器材质矩阵与离屏烘焙管线 (Shaders & Rendering Pipeline)
+
+MFP 自研了 15 款专有高清晰度着色器，全部由 `MaterialPool` 实行零冗余管理：
+
+```mermaid
+flowchart LR
+    subgraph UI_Shaders["15 款专有 GPU 航电着色器矩阵"]
+        direction TB
+        S1["ModernWorkbenchGlass.shader (现代暗晶工作台毛玻璃/色散/边缘光)"]
+        S2["AvionicsProceduralUI.shader (无纹理程序化圆角、细线与边框)"]
+        S3["CrispAvionicsText.shader (高对比度抗锯齿矢量航电字体)"]
+        S4["DigitalSegmentUI.shader (荧光管 7 段数码液晶管)"]
+        S5["DotMatrixUI.shader (物理点阵 / LED 荧光屏示波器)"]
+        S6["GlassCockpitUI.shader (现代玻璃座舱微光与漫反射)"]
+        S7["NeonGlowUI.shader (赛博霓虹脉冲发光管)"]
+        S8["PhosphorHoloUI.shader (衍射全息绿/琥珀色磷光 CRT 扫描线)"]
+        S9["RadialSegmentedMeter.shader (多段式圆弧刻度标尺与动态范围)"]
+        S10["MinimalistAttitudeSphere.shader (极简扁平态势球)"]
+        S11["NavballModern.shader (现代梯度天顶/俯仰刻度梯/菲涅尔光)"]
+        S12["NavballHalftone.shader (屏幕空间点阵半色调 Dither 渐变)"]
+        S13["NavballRaymarch.shader (纯数学光线投射 3D 姿态球直出)"]
+        S14["NavballEnhanced.shader (高保真增强型原版贴图着色器)"]
+        S15["Vessel3DTechnical.shader (载具 3D 线框技术透视渲染)"]
+    end
+
+    subgraph OffscreenBakers["离屏几何烘焙与渲染管道"]
+        direction TB
+        B1["NavballSphereWidget (独立离屏 Camera + 3D 球体 + RenderTexture)"]
+        B2["VesselSilhouetteBaker (载具网格正交投影生成 2D 轮廓矢量)"]
+        B3["Vessel3DBaker (载具 3D 线框技术透视 Technical3D)"]
+        B4["ReferenceFrameIconAtlasGenerator (天体与参考系矢量图集动态生成)"]
+        B5["SASDialVisualGenerator (SAS 罗盘程序化刻度与环形视效)"]
+    end
+
+    UI_Shaders --> MaterialPool["材质复用池 (MaterialPool)<br/>按主题色彩与变体零冗余复用"]
+    MaterialPool --> CanvasRender["UGUI 最终画板呈现"]
+    OffscreenBakers --> CanvasRender
 ```
 
 ---
 
-## 7. 45 个全量航电小组件谱系表 (Complete Widget Taxonomy)
+## 8. SPEC 架构铁律与门禁红线全集 (SPEC Core Matrix 全集)
 
-全仓库 45 个组件类统一规范化实现（100% 继承 `BaseFlightWidget`）：
+所有航电小组件必须 100% 遵从 [`WidgetSpecRules.cs`](file:///c:/Users/43701/Documents/github/KSP_naviball/src/ModularFlightPanel/UI/Auditing/WidgetSpecRules.cs) 单点声明的 **15 大架构铁律**：
 
-| 分类大类 | 组件实现类 | 默认/确切 ID | 刷新阶梯 | 核心功能与亮点 |
-| :-- | :-- | :-- | :-- | :-- |
-| **姿态导航 (Navigation)** | `NavballSphereWidget` | `core.navball` | Standard (离屏对齐) | 3D 物理姿态球、离屏相机渲染、静止 10Hz 智能降频 |
-| | `VesselAttitudeSphereWidget` | `nav.vessel_navball` | Standard | 载具姿态指示球与空间矢量投影 |
-| | `HeadingArcWidget` | `core.heading_arc` | Critical (60Hz) | 现代平显航向刻度指示弧 (PFD 核心) |
-| | `NDNavigationWidget` | `custom.nd_navigation` | Standard (30Hz) | 综合导航罗盘、航点、对接口与轨道交会标识 |
-| | `SASDialWidget` | `core.sas_dial` | Standard (30Hz) | 环形 SAS 航向罗盘与多态指向环 |
-| | `OrbitalElementsWidget` | `nav.orbital_elements`| Relaxed (10Hz) | 轨道摄动与偏心率/半长轴精准解析卡片 |
-| | `ReferenceFrameWidget` | `nav.reference_frame` | Relaxed (10Hz) | 地表/轨道/目标参考系切换与天体标识徽标 |
-| | `ManeuverNodeWidget` | `core.maneuver` | Standard (30Hz) | 变轨机动节点矢量分量与点火时长读数盒 |
-| | `ManeuverTimelineWidget` | `custom.maneuver_timeline` | Relaxed (10Hz) | 机动时间线与节点倒计时进度标尺 |
-| **表盘滚带 (Gauges)** | `TapeGaugeWidget` | `tape.speed` / `tape.alt`| Standard (30Hz) | 双侧速度/气压高度物理滚带表 (带趋势矢量箭头) |
-| | `ArcTapeWidget` | `custom.arc_speed_tape`| Standard (30Hz) | 弯曲弧形滚带表盘 (航电高端拟物) |
-| | `AvionicsBarGaugeWidget` | `gauge.throttle` | Standard (30Hz) | 垂直多段式动力学柱状条 |
-| | `ArcMeterWidget` | `core.throttle` / `core.vsi` | Standard (30Hz) | 120°/180°/270° 圆弧刻度推力与垂直速度表 |
-| | `CustomTokenTextWidget` | `custom.*` | Standard (30Hz) | 自由通配符文本卡片 (支持多槽位与自定义格式) |
-| **SpaceX 航电 (SpaceX)** | `SpaceXDockingReticleWidget` | `spacex.docking` | Critical (60Hz) | 龙飞船 ISS 对接光标 HUD (联动 P3 目标运动学外推) |
-| | `SpaceXAttitudeWidget` | `spacex.attitude` | Critical (60Hz) | 极简数字姿态三轴读数盒 |
-| | `SpaceXOverviewWidget` | `spacex.overview` | Relaxed (10Hz) | 综合全船状态轮廓看板与多系统健康摘要 |
-| | `SpaceXHeaderWidget` | `spacex.header` | Relaxed (10Hz) | 顶部任务时钟 (T- / T+) 与天体运行状态条 |
-| | `SpaceXBottomBarWidget` | `spacex.bottom` | Relaxed (10Hz) | 触控式航电功能控制底栏 |
-| | `SpaceXTimelineWidget` | `spacex.timeline` | Relaxed (10Hz) | 发射时序里程碑与任务推进阶段指示器 |
-| | `SpaceXEngineWidget` | `spacex.engines` | Standard (30Hz) | 发动机集群状态矩阵与室压监视 |
-| | `SpaceXArcGaugeWidget` | `spacex.arc` | Standard (30Hz) | 龙飞船专属圆弧平滑表盘 |
-| **系统监视 (Systems)** | `ElectricalSystemWidget` | `custom.electrical` | Relaxed (10Hz) | 电力拓扑图 (带差分电量与资源网络总计优化) |
-| | `LifeSupportWidget` | `custom.life_support` | Relaxed (10Hz) | 氧气/水/气压维生监视 (支持 Kerbalism / TAC-LS) |
-| | `Rocket2DWidget` | `custom.rocket` | Relaxed (10Hz) | 2D 分级轮廓剪影与级间状态图 |
-| | `SignalStatusWidget` | `custom.signal` | Relaxed (10Hz) | 深空通信天线指向与增益列表 |
-| | `CommSignalWidget` | `core.comm_signal` | Relaxed (10Hz) | 通信数据速率、信号强度与丢包率监视 |
-| | `EcamAlertLogWidget` | `core.ecam_alert_log` | Relaxed (10Hz) | 历史告警回溯日志记录器 |
-| | `MasterWarningWidget` | `core.master_warning` | Critical (60Hz) | 航空级主警告 (Master Warning) 与主注意灯闪烁器 |
-| | `B747EicasWidget` | `custom.b747_eicas` | Standard (30Hz) | 波音 747 主发动机参数指示 EICAS |
-| | `B747LowerEicasWidget` | `custom.b747_lower_eicas`| Standard (30Hz) | 波音 747 辅助动力与控制面状态 EICAS |
-| | `B787EicasWidget` | `custom.b787_eicas` | Standard (30Hz) | 波音 787 综合航电发动机监视卡片 |
-| | `PerformanceMonitorWidget` | `core.performance_monitor`| Relaxed (10Hz) | 游戏实时帧率 (FPS) 与系统性能开销监视卡 |
-| | `StageDeltaVWidget` | `core.stage_dv` | Relaxed (10Hz) | 实时分级 ΔV 列表与分级控制条目 |
-| **操纵控制 (Controls)** | `StageControlWidget` | `core.stage_control` | Standard (30Hz) | 分级触发、倒计时与安全防误触锁 (IsInteractive) |
-| | `StagingSequenceWidget` | `core.staging_sequence`| Standard (30Hz) | 多级分离时序控制与级间延时监视器 |
-| | `BottomControlsWidget` | `core.bottom_controls` | Standard (30Hz) | SAS / RCS / 参考系 / 齿轮 / 刹车快速切换底栏 |
-| | `ModernToolbarWidget` | `core.toolbar` | Relaxed (10Hz) | 悬浮功能呼出工具栏 (带折叠与图标收纳) |
-| | `FavoriteToolbarWidget` | `core.dock_favorites` | Relaxed (10Hz) | 玩家收藏小组件快速泊靠停靠坞 |
-| | `TimeWarpWidget` | `core.time_warp` | Relaxed (10Hz) | 时间加速倍率步进控制器与物理加急开关 |
-| | `UIWidget` | `core.ui_widget` | Relaxed (10Hz) | 通用 UI 容器与背景底板占位控件 |
+| 规则码 | 规范契约 | 核心要求与匹配判定 | 违规后果 |
+| :-- | :-- | :-- | :-- |
+| **MFP-SPEC-001** | **统一继承契约** | 必须直接派生自 `BaseFlightWidget`，杜绝多层派生与无关自定义基类 | 门禁报 ERROR |
+| **MFP-SPEC-002** | **刷新率契约** | 显式重写 `RefreshTier` (或精确 `CustomHz`)；满帧阶梯 `Critical` 必须标注 `HighFrequency = true` | 门禁报 ERROR |
+| **MFP-SPEC-002B**| **心跳阶梯契约** | `HeartBeatTier` 频率必须 $\le$ `RefreshTier` 频率，严禁数据心跳反向倒挂高于渲染率 | 门禁报 ERROR |
+| **MFP-SPEC-003** | **语义主题管道** | 若显式声明 `ApplyTheme`，签名必须符合规范且必须调用 `base.ApplyTheme(theme)` | 门禁报 ERROR |
+| **MFP-SPEC-004** | **遥测驱动契约** | 读数与文案 100% 由 `TelemetryTokenEngine` 驱动；**严禁臆造参数，必须查表接入** | 门禁报 ERROR |
+| **MFP-SPEC-004C**| **独立数据心跳** | 显式重写 `OnDataHeartBeat`（或挂载大脑），所有遥测解算/物理计算收拢在此，**严禁写 UI** | 门禁报 ERROR |
+| **MFP-SPEC-004D**| **独立 UI 绘制** | 显式重写 `OnUIDrawLoop`（或 `OnRenderState`），所有 UGUI 渲染与脏检收拢在此，**严禁算物理** | 门禁报 ERROR |
+| **MFP-SPEC-005** | **安全生命周期** | 若显式声明 `OnDestroy`，必须为 `protected override void OnDestroy()` 并调用 `base.OnDestroy()` | 门禁报 ERROR |
+| **MFP-SPEC-006** | **零裸颜色字面量** | **零容忍**：严禁 `new Color(...)` 或 `Color.white/red`（透明 `Color.clear` 除外），统一经由 `WidgetStyleManager` 语义取色 | 门禁报 ERROR |
+| **MFP-SPEC-007** | **零场景查询** | **零容忍**：严禁 `FindObjectOfType` / `GameObject.Find` / `Camera.main`，统一走 `IFlightTelemetry` | 门禁报 ERROR |
+| **MFP-SPEC-008** | **声明式自动注册** | 必须标注 `[FlightWidget("type_id", ...)]` 元数据，由 `WidgetRegistry` 自动装配进仪表库 | 门禁报 ERROR |
+| **MFP-SPEC-009** | **智能私有缓存** | **禁止手写 `_lastXxx` 裸字段**；必须使用 `Cached<T>` / `DirtyField<T>` 或 `SmartUIExtensions` | 门禁报 ERROR |
+| **MFP-SPEC-010** | **热循环无守卫操作**| 高频生命周期禁止无守卫堆分配（`new` 闭包/容器）、字符串插值与非脏检 UGUI 几何赋值 | 门禁报 ERROR |
+| **MFP-SPEC-011** | **内部空间防碰撞** | 禁止组件内部微控件、图元与文本发生几何坐标重叠与视觉遮挡冲突 (Spatial Collision) | 门禁报 ERROR |
+| **MFP-SPEC-012** | **业务大脑契约** | 必须重写 `protected override IWidgetLogic LogicCore => ...` 挂载大脑，底层状态快照必须为 0 GC 结构体 (`struct TState`) | 门禁报 ERROR |
+| **MFP-WARN-TELEM**| **标准化遥测装配** | 注册微控件（如 `WidgetReadoutControl`）或声明 `TextWidget.Value()` 时必须传入有效默认 Token | 门禁报 WARNING |
 
 ---
 
-## 8. 门禁验证与 CI 交付工具链 (Toolchain & Quality Gates)
+## 9. 48 个全量航电小组件谱系总表 (Complete 48-Widget Taxonomy)
+
+仓库内全部 48 个航电组件类现已 **100% 达成架构现代化**（全部挂载 `WidgetLogic<TState>` 解耦大脑，0 违规，0 遗留旧版）：
+
+| 序号 | 分类大类 | 组件类名 | 注册 ID | 刷新阶梯 | 心跳阶梯 | 业务大脑类名 | 核心功能与亮点 |
+| :--: | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| 1 | **导航** | `NavballSphereWidget` | `core.navball` | Critical (满帧) | Critical | `NavballSphereLogic` | 3D 姿态球、离屏相机渲染、`<0.05ms` 极速 Slot 渲染 |
+| 2 | **导航** | `RectangularNavballWidget` | `nav.rectangular_navball`| Critical (满帧) | Critical | `RectangularNavballLogic` | 现代矩形平显 3D 姿态框、航向带与俯仰梯投影 |
+| 3 | **导航** | `VesselAttitudeSphereWidget`| `nav.vessel_navball` | Standard (60Hz) | Relaxed (10Hz) | `VesselAttitudeSphereLogic` | 载具姿态指示球与三维空间矢量投影 |
+| 4 | **导航** | `HeadingArcWidget` | `core.heading_arc` | Critical (满帧) | Relaxed (10Hz) | `HeadingArcLogic` | 现代平显航向指示圆弧 (PFD 核心) |
+| 5 | **导航** | `NDNavigationWidget` | `custom.nd_navigation` | Standard (60Hz) | Relaxed (10Hz) | `NDNavigationLogic` | 综合水平态势导航罗盘、航点与交会对接标识 |
+| 6 | **导航** | `SASDialWidget` | `core.sas_dial` | Standard (60Hz) | Relaxed (10Hz) | `SASDialLogic` | 环形 SAS 罗盘、程序化刻度与多态指向环 |
+| 7 | **导航** | `OrbitalElementsWidget` | `nav.orbital_elements` | Relaxed (10Hz) | Relaxed (10Hz) | `OrbitalElementsLogic` | 轨道六根数精准解析、半长轴与离心率卡片 |
+| 8 | **导航** | `ReferenceFrameWidget` | `nav.reference_frame` | Relaxed (10Hz) | Relaxed (10Hz) | `ReferenceFrameLogic` | 地表/轨道/目标参考系切换与天体标识徽标 |
+| 9 | **导航** | `ManeuverNodeWidget` | `core.maneuver` | Standard (60Hz) | Relaxed (10Hz) | `ManeuverNodeLogic` | 变轨机动节点矢量分量与点火时长读数盒 |
+| 10 | **导航** | `ManeuverNodeWidgetv2` | `core.maneuver_v2` | Standard (60Hz) | Relaxed (10Hz) | `ManeuverNodev2Logic` | 极简现代化机动节点卡片 (纯微控件 DSL) |
+| 11 | **导航** | `ManeuverTimelineWidget` | `custom.maneuver_timeline` | Relaxed (10Hz) | Relaxed (10Hz) | `ManeuverTimelineLogic` | 机动时序时间线与节点倒计时进度标尺 |
+| 12 | **表盘** | `TapeGaugeWidget` | `tape.speed` / `tape.alt` | Standard (60Hz) | Relaxed (10Hz) | `TapeGaugeLogic` | 双侧速度/气压高度物理滚带表 (带趋势矢量) |
+| 13 | **表盘** | `ArcTapeWidget` | `custom.arc_speed_tape` | Standard (60Hz) | Relaxed (10Hz) | `ArcTapeLogic` | 弯曲弧形滚带表盘 (航电高端拟物) |
+| 14 | **表盘** | `AvionicsBarGaugeWidget` | `gauge.throttle` | Standard (60Hz) | Relaxed (10Hz) | `AvionicsBarGaugeLogic` | 垂直多段式动力学柱状条 |
+| 15 | **表盘** | `ArcMeterWidget` | `core.throttle` / `vsi` | Standard (60Hz) | Relaxed (10Hz) | `ArcMeterLogic` | 120°/180°/270° 圆弧刻度推力与垂直速度表 |
+| 16 | **表盘** | `CustomTokenTextWidget` | `custom.*` | Standard (60Hz) | Relaxed (10Hz) | `CustomTokenTextLogic` | 自由通配符文本卡片 (支持多槽位与自定义格式) |
+| 17 | **表盘** | `CustomCompositePanelWidget`| `custom.composite_panel`| Standard (60Hz) | Relaxed (10Hz) | `CompositePanelLogic` | **自由航电搭建画板** (PS级图层/8点形变/任意控件) |
+| 18 | **SpaceX**| `SpaceXDockingReticleWidget`| `spacex.docking` | Critical (满帧) | Relaxed (10Hz) | `SpaceXDockingReticleLogic`| 龙飞船 ISS 对接光标 HUD (运动学平滑外推) |
+| 19 | **SpaceX**| `SpaceXAttitudeWidget` | `spacex.attitude` | Critical (满帧) | Relaxed (10Hz) | `SpaceXAttitudeLogic` | 极简数字姿态三轴读数盒 (GPU 程序化图元) |
+| 20 | **SpaceX**| `SpaceXOverviewWidget` | `spacex.overview` | Relaxed (10Hz) | Relaxed (10Hz) | `SpaceXOverviewLogic` | 综合全船状态轮廓看板与多系统健康摘要 |
+| 21 | **SpaceX**| `SpaceXHeaderWidget` | `spacex.header` | Relaxed (10Hz) | Relaxed (10Hz) | `SpaceXHeaderLogic` | 顶部任务时钟 (T- / T+) 与天体运行状态条 |
+| 22 | **SpaceX**| `SpaceXBottomBarWidget` | `spacex.bottom` | Relaxed (10Hz) | Relaxed (10Hz) | `SpaceXBottomBarLogic` | 触控式航电功能控制底栏 |
+| 23 | **SpaceX**| `SpaceXTimelineWidget` | `spacex.timeline` | Relaxed (10Hz) | Relaxed (10Hz) | `SpaceXTimelineLogic` | 发射时序里程碑与任务推进阶段指示器 |
+| 24 | **SpaceX**| `SpaceXEngineWidget` | `spacex.engines` | Standard (60Hz) | Relaxed (10Hz) | `SpaceXEngineLogic` | 9发/多发集群状态矩阵与室压监视 |
+| 25 | **SpaceX**| `SpaceXArcGaugeWidget` | `spacex.arc` | Standard (60Hz) | Relaxed (10Hz) | `SpaceXArcGaugeLogic` | 龙飞船专属圆弧平滑表盘 |
+| 26 | **系统** | `ElectricalSystemWidget` | `custom.electrical` | Relaxed (10Hz) | Relaxed (10Hz) | `ElectricalSystemLogic` | 电力拓扑图 (差分电量与资源网络总计) |
+| 27 | **系统** | `LifeSupportWidget` | `custom.life_support` | Relaxed (10Hz) | Relaxed (10Hz) | `LifeSupportLogic` | 氧气/水/气压维生监视 (支持 Kerbalism) |
+| 28 | **系统** | `Rocket2DWidget` | `custom.rocket` | Relaxed (10Hz) | Relaxed (10Hz) | `Rocket2DLogic` | 2D 分级轮廓剪影与级间状态指示 |
+| 29 | **系统** | `SignalStatusWidget` | `custom.signal` | Relaxed (10Hz) | Relaxed (10Hz) | `SignalStatusLogic` | 深空通信天线指向与增益列表 |
+| 30 | **系统** | `CommSignalWidget` | `core.comm_signal` | Relaxed (10Hz) | Relaxed (10Hz) | `CommSignalCapsuleLogic`| 通信速率、信号强度与丢包率监视 |
+| 31 | **系统** | `CommSignalWidgetv2` | `core.comm_signal_v2` | Relaxed (10Hz) | Relaxed (10Hz) | `CommSignalLogic` | 现代柱状图通信信号监视卡 |
+| 32 | **系统** | `EcamAlertLogWidget` | `core.ecam_alert_log` | Relaxed (10Hz) | Relaxed (10Hz) | `EcamAlertLogLogic` | 空客风格 ECAM 历史告警回溯日志记录器 |
+| 33 | **系统** | `MasterWarningWidget` | `core.master_warning` | Critical (满帧) | Relaxed (10Hz) | `MasterWarningLogic` | 航空级主警告与主注意灯闪烁器 |
+| 34 | **系统** | `TimeCommHubWidget` | `core.time_comm_hub` | Relaxed (10Hz) | Relaxed (10Hz) | `TimeCommHubLogic` | 时间与通信一体化微型集成仪表 |
+| 35 | **系统** | `B747EicasWidget` | `custom.b747_eicas` | Standard (60Hz) | Relaxed (10Hz) | `B747EicasLogic` | 波音 747 主发动机参数指示 EICAS |
+| 36 | **系统** | `B747LowerEicasWidget` | `custom.b747_lower_eicas`| Standard (60Hz) | Relaxed (10Hz) | `B747LowerEicasLogic` | 波音 747 辅助动力与控制面状态 EICAS |
+| 37 | **系统** | `B787EicasWidget` | `custom.b787_eicas` | Standard (60Hz) | Relaxed (10Hz) | `B787EicasLogic` | 波音 787 综合航电发动机监视卡片 |
+| 38 | **系统** | `PerformanceMonitorWidget` | `core.performance_monitor`| Relaxed (10Hz) | Relaxed (10Hz) | `PerformanceMonitorLogic`| 游戏实时帧率 (FPS) 与系统性能开销监视卡 |
+| 39 | **系统** | `StageDeltaVWidget` | `core.stage_dv` | Relaxed (10Hz) | Relaxed (10Hz) | `StageDeltaVLogic` | 实时分级 $\Delta V$ 列表与分级控制条目 |
+| 40 | **控制** | `StageControlWidget` | `core.stage_control` | Standard (60Hz) | Relaxed (10Hz) | `StageControlLogic` | 分级触发、倒计时与安全防误触锁 |
+| 41 | **控制** | `StagingSequenceWidget` | `core.staging_sequence`| Standard (60Hz) | Relaxed (10Hz) | `StagingSequenceLogic` | 多级分离时序控制与级间延时监视器 |
+| 42 | **控制** | `BottomControlsWidget` | `core.bottom_controls` | Standard (60Hz) | Relaxed (10Hz) | `BottomControlsLogic` | SAS / RCS / 参考系 / 齿轮 / 刹车快速切换底栏 |
+| 43 | **控制** | `ModernToolbarWidget` | `core.toolbar` | Relaxed (10Hz) | Relaxed (10Hz) | `ModernToolbarLogic` | 悬浮功能呼出工具栏 (带折叠与图标收纳) |
+| 44 | **控制** | `FavoriteToolbarWidget` | `core.dock_favorites` | Relaxed (10Hz) | Relaxed (10Hz) | `FavoriteToolbarLogic` | 玩家收藏小组件快速泊靠停靠坞 |
+| 45 | **控制** | `TimeWarpWidget` | `core.time_warp` | Relaxed (10Hz) | Relaxed (10Hz) | `TimeWarpLogic` | 时间加速倍率步进控制器与物理加急开关 |
+| 46 | **控制** | `UIWidget` | `core.ui_widget` | Relaxed (10Hz) | Relaxed (10Hz) | `UIWidgetLogic` | 通用 UI 容器与背景底板占位控件 |
+| 47 | **抽象** | `BaseNavballSphereWidget` | - | - | - | - | 3D 姿态球通用抽象基类 |
+| 48 | **模板** | `StandardFlightWidgetTemplate`| - | Standard (60Hz) | Relaxed (10Hz) | `WidgetLogic<TState>` | 官方标准黄金组件范本实现 |
+
+---
+
+## 10. 10/10 门禁验证与 CI 交付工具链 (Toolchain & Quality Gates)
 
 ```mermaid
 flowchart LR
     Dev["开发/重构组件代码<br/>src/ModularFlightPanel/"] --> Build["dotnet build<br/>0 警告 0 错误"]
-    
+
     Build --> SyncMirror["HeadlessValidator --mirror-fix<br/>按 unity_mirror.manifest 逐字节同步镜像"]
-    
+
     SyncMirror --> Gate["test-ui.ps1 -NoAscii<br/>执行全量 10/10 无头自动化门禁"]
-    
+
     subgraph TenGates["10/10 自动化门禁矩阵"]
         direction TB
         G1["[1/10] layout.json 序列化与语法载入"]
         G2["[2/10] LayoutShareHub GZip+Base64 往返无损编解码"]
         G3["[3/10] AABB 视口几何与重叠碰撞检测"]
         G4["[4/10] TelemetryTokenEngine 通配符语法审计"]
-        G5["[5/10] 7 阶段 700 Ticks 物理遥测解耦仿真高压测试"]
-        G6["[6/10] 45/45 组件 SPEC-001..008 规范校验 (0颜色字面量/0场景查询)"]
-        G7["[7/10] 审计内核 Linter 自检与代码异味雷达"]
-        G8["[8/10] 全量组件 [FlightWidget] 自动注册与元数据契约审计"]
-        G9["[9/10] I18n 多语言硬编码文本扫描 (13 语言同步)"]
-        G10["[10/10] Unity 镜像一致性校验 (逐字节对齐)"]
+        G5["[5/10] 7 阶段 700 Ticks 物理遥测解耦仿真高压测试 (0 NaN)"]
+        G6["[6/10] 48/48 组件 SPEC-001..012 规范校验 (0颜色字面量/0场景查询/100%现代率)"]
+        G7["[7/10] 审计内核自检 (Spec Rules + Color Ledger + I18n AST)"]
+        G8["[8/10] Unity 无头预览工程镜像一致性审计 (逐字节对齐)"]
+        G9["[9/10] 全局国际化多语言一致性审计 (13 语言同步)"]
+        G10["[10/10] 全局配置与预设双向导入导出高保真往返测试套件"]
         G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> G7 --> G8 --> G9 --> G10
     end
-    
+
     Gate --> TenGates
     TenGates --> BatchRender["pwsh ./test-ui.ps1 -Render<br/>Unity 2019 Batchmode 离线切片渲染肉眼验收"]
     BatchRender --> Deploy["deploy.ps1<br/>NTFS 原子更名热部署至 KSP 运行目录"]

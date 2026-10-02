@@ -41,7 +41,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _container.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_container.GetChild(i).gameObject);
+                var c = _container.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             GameObject card = WorkbenchControls.CreateCard(_container, "DiagCard", Vector2.zero);
@@ -82,7 +84,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _contentRt.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_contentRt.GetChild(i).gameObject);
+                var c = _contentRt.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             // 1. 实时性能仪表盘 (Profiler Metrics)
@@ -154,6 +158,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 GameObject fText = new GameObject("FText", typeof(RectTransform), typeof(Text));
                 fText.transform.SetParent(faultCard.transform, false);
                 fText.GetComponent<RectTransform>().sizeDelta = new Vector2(400f, 28f);
+                var fLe = fText.AddComponent<LayoutElement>();
+                fLe.flexibleWidth = 1f;
+
                 Text ft = fText.GetComponent<Text>();
                 ft.font = WorkbenchControls.MainFont;
                 ft.fontSize = 11;
@@ -170,6 +177,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 3. 736+ 遥测参数动态探针检索沙盒
             GameObject subHeader = new GameObject("SubHeader", typeof(RectTransform), typeof(Text));
             subHeader.transform.SetParent(_contentRt, false);
+            var shLe = subHeader.AddComponent<LayoutElement>();
+            shLe.preferredHeight = 28f;
+            shLe.minHeight = 28f;
+
             Text shTxt = subHeader.GetComponent<Text>();
             shTxt.font = WorkbenchControls.MainFont;
             shTxt.fontSize = 13;
@@ -205,6 +216,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject nameObj = new GameObject("Name", typeof(RectTransform), typeof(Text));
             nameObj.transform.SetParent(row.transform, false);
             nameObj.GetComponent<RectTransform>().sizeDelta = new Vector2(140f, 24f);
+            var nLe = nameObj.AddComponent<LayoutElement>();
+            nLe.preferredWidth = 140f;
+            nLe.minWidth = 120f;
+
             Text nameTxt = nameObj.GetComponent<Text>();
             nameTxt.font = WorkbenchControls.MainFont;
             nameTxt.fontSize = 12;
@@ -215,6 +230,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject valObj = new GameObject("Val", typeof(RectTransform), typeof(Text));
             valObj.transform.SetParent(row.transform, false);
             valObj.GetComponent<RectTransform>().sizeDelta = new Vector2(260f, 24f);
+            var vLe = valObj.AddComponent<LayoutElement>();
+            vLe.flexibleWidth = 1f;
+
             Text valTxt = valObj.GetComponent<Text>();
             valTxt.font = WorkbenchControls.MainFont;
             valTxt.fontSize = 12;

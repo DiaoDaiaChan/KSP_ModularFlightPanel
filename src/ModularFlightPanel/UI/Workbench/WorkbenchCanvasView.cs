@@ -113,7 +113,7 @@ namespace ModularFlightPanel.UI.Workbench
 
             _windowBgImg = winObj.GetComponent<Image>();
             _windowBgImg.material = WorkbenchStyleEngine.GetWindowGlassMaterial();
-            _windowBgImg.color = Color.white;
+            _windowBgImg.color = WorkbenchStyleEngine.ColorWindowBg;
 
             _windowCanvasGroup = winObj.GetComponent<CanvasGroup>();
 
@@ -121,6 +121,8 @@ namespace ModularFlightPanel.UI.Workbench
             VerticalLayoutGroup winVlg = winObj.AddComponent<VerticalLayoutGroup>();
             winVlg.childForceExpandWidth = true;
             winVlg.childForceExpandHeight = false;
+            winVlg.childControlWidth = true;
+            winVlg.childControlHeight = true;
             winVlg.spacing = 0f;
             winVlg.padding = new RectOffset(4, 4, 4, 4);
 
@@ -150,9 +152,16 @@ namespace ModularFlightPanel.UI.Workbench
         private void BuildTopHeader(Transform parent)
         {
             GameObject header = WorkbenchControls.CreateCard(parent, "TopHeader", new Vector2(0f, 44f));
+            var hLe = header.GetComponent<LayoutElement>() ?? header.AddComponent<LayoutElement>();
+            hLe.preferredHeight = 44f;
+            hLe.minHeight = 44f;
+            hLe.flexibleHeight = 0f;
+
             var hHlg = header.AddComponent<HorizontalLayoutGroup>();
             hHlg.childForceExpandWidth = false;
             hHlg.childForceExpandHeight = true;
+            hHlg.childControlWidth = true;
+            hHlg.childControlHeight = true;
             hHlg.spacing = 10f;
             hHlg.padding = new RectOffset(12, 12, 6, 6);
 
@@ -163,6 +172,11 @@ namespace ModularFlightPanel.UI.Workbench
             // 品牌标题与版本徽标
             GameObject titleObj = new GameObject("BrandTitle", typeof(RectTransform), typeof(Text));
             titleObj.transform.SetParent(header.transform, false);
+            var tLe = titleObj.AddComponent<LayoutElement>();
+            tLe.preferredWidth = 230f;
+            tLe.minWidth = 200f;
+            tLe.flexibleWidth = 0f;
+
             Text titleTxt = titleObj.GetComponent<Text>();
             titleTxt.font = WorkbenchControls.MainFont;
             titleTxt.fontSize = 13;
@@ -170,6 +184,7 @@ namespace ModularFlightPanel.UI.Workbench
             titleTxt.alignment = TextAnchor.MiddleLeft;
             titleTxt.color = WorkbenchStyleEngine.ColorAccentPrimary;
             titleTxt.text = "MODULAR FLIGHT PANEL 3.0";
+            titleTxt.horizontalOverflow = HorizontalWrapMode.Overflow;
 
             WorkbenchControls.CreatePill(header.transform, "AeroPill", "CYBER WORKBENCH", WorkbenchStyleEngine.ColorAccentSecondary, 10);
 
@@ -200,6 +215,12 @@ namespace ModularFlightPanel.UI.Workbench
         private Text CreateHeaderChip(Transform parent, string initialText)
         {
             GameObject chip = WorkbenchControls.CreateCard(parent, "Chip", new Vector2(140f, 26f));
+            var cLe = chip.GetComponent<LayoutElement>() ?? chip.AddComponent<LayoutElement>();
+            cLe.preferredWidth = 140f;
+            cLe.minWidth = 120f;
+            cLe.preferredHeight = 26f;
+            cLe.flexibleWidth = 0f;
+
             RectTransform cRt = chip.GetComponent<RectTransform>();
             cRt.sizeDelta = new Vector2(140f, 26f);
 
@@ -236,20 +257,31 @@ namespace ModularFlightPanel.UI.Workbench
             bodyRt.sizeDelta = new Vector2(0f, _windowHeight - 92f);
             var le = body.AddComponent<LayoutElement>();
             le.flexibleHeight = 1f;
+            le.flexibleWidth = 1f;
 
             HorizontalLayoutGroup bHlg = body.GetComponent<HorizontalLayoutGroup>();
             bHlg.childForceExpandWidth = false;
             bHlg.childForceExpandHeight = true;
+            bHlg.childControlWidth = true;
+            bHlg.childControlHeight = true;
             bHlg.spacing = 6f;
             bHlg.padding = new RectOffset(6, 6, 6, 6);
 
             // =========================================================================
-            // 左侧 Activity Bar 图钉导航栏 (52px 定宽)
+            // 左侧 Activity Bar 图钉导航栏 (56px 定宽)
             // =========================================================================
-            GameObject activityBar = WorkbenchControls.CreateCard(body.transform, "ActivityBar", new Vector2(52f, 0f));
+            GameObject activityBar = WorkbenchControls.CreateCard(body.transform, "ActivityBar", new Vector2(56f, 0f));
+            var abLe = activityBar.GetComponent<LayoutElement>() ?? activityBar.AddComponent<LayoutElement>();
+            abLe.preferredWidth = 56f;
+            abLe.minWidth = 56f;
+            abLe.flexibleWidth = 0f;
+            abLe.flexibleHeight = 1f;
+
             VerticalLayoutGroup aVlg = activityBar.AddComponent<VerticalLayoutGroup>();
             aVlg.childForceExpandWidth = true;
             aVlg.childForceExpandHeight = false;
+            aVlg.childControlWidth = true;
+            aVlg.childControlHeight = true;
             aVlg.spacing = 8f;
             aVlg.padding = new RectOffset(4, 4, 8, 8);
 
@@ -260,10 +292,16 @@ namespace ModularFlightPanel.UI.Workbench
             for (int i = 0; i < tabIcons.Length; i++)
             {
                 int index = i;
-                _activityButtons[i] = WorkbenchControls.CreateButton(activityBar.transform, "TabBtn_" + i, $"{tabIcons[i]}\n<size=9>{tabNames[i]}</size>", new Vector2(44f, 44f), () =>
+                _activityButtons[i] = WorkbenchControls.CreateButton(activityBar.transform, "TabBtn_" + i, $"{tabIcons[i]}\n<size=9>{tabNames[i]}</size>", new Vector2(46f, 46f), () =>
                 {
                     SwitchTab(index);
                 }, i == 0, 14);
+
+                var btnLe = _activityButtons[i].GetComponent<LayoutElement>() ?? _activityButtons[i].AddComponent<LayoutElement>();
+                btnLe.preferredHeight = 46f;
+                btnLe.minHeight = 44f;
+                btnLe.flexibleWidth = 1f;
+                btnLe.flexibleHeight = 0f;
             }
 
             // =========================================================================
@@ -284,20 +322,31 @@ namespace ModularFlightPanel.UI.Workbench
         private void BuildFooterBar(Transform parent)
         {
             GameObject footer = WorkbenchControls.CreateCard(parent, "FooterBar", new Vector2(0f, 36f));
+            var fLe = footer.GetComponent<LayoutElement>() ?? footer.AddComponent<LayoutElement>();
+            fLe.preferredHeight = 36f;
+            fLe.minHeight = 36f;
+            fLe.flexibleHeight = 0f;
+
             var fHlg = footer.AddComponent<HorizontalLayoutGroup>();
             fHlg.childForceExpandWidth = false;
             fHlg.childForceExpandHeight = true;
+            fHlg.childControlWidth = true;
+            fHlg.childControlHeight = true;
             fHlg.spacing = 10f;
             fHlg.padding = new RectOffset(12, 12, 4, 4);
 
             GameObject statusText = new GameObject("StatusText", typeof(RectTransform), typeof(Text));
             statusText.transform.SetParent(footer.transform, false);
+            var stLe = statusText.AddComponent<LayoutElement>();
+            stLe.flexibleWidth = 1f;
+
             Text st = statusText.GetComponent<Text>();
             st.font = WorkbenchControls.MainFont;
             st.fontSize = 11;
             st.alignment = TextAnchor.MiddleLeft;
             st.color = WorkbenchStyleEngine.ColorTextMuted;
             st.text = "快捷键: Alt+N / ESC 随时唤出与关闭 | F2 隐藏全屏 UI | 0 GC 高性能硬件加速模式";
+            st.horizontalOverflow = HorizontalWrapMode.Overflow;
 
             GameObject flex = new GameObject("FlexSpace", typeof(RectTransform));
             flex.transform.SetParent(footer.transform, false);
@@ -313,6 +362,12 @@ namespace ModularFlightPanel.UI.Workbench
             GameObject resizeGrip = new GameObject("ResizeGrip", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
             resizeGrip.transform.SetParent(footer.transform, false);
             resizeGrip.GetComponent<RectTransform>().sizeDelta = new Vector2(24f, 24f);
+            var rgLe = resizeGrip.AddComponent<LayoutElement>();
+            rgLe.preferredWidth = 24f;
+            rgLe.minWidth = 24f;
+            rgLe.preferredHeight = 24f;
+            rgLe.minHeight = 24f;
+
             Text gt = resizeGrip.GetComponent<Text>();
             gt.font = WorkbenchControls.MainFont;
             gt.fontSize = 14;
@@ -347,7 +402,7 @@ namespace ModularFlightPanel.UI.Workbench
 
             Image dockImg = _floatingDockObj.GetComponent<Image>();
             dockImg.material = WorkbenchStyleEngine.GetPillDockMaterial(false);
-            dockImg.color = Color.white;
+            dockImg.color = WorkbenchStyleEngine.ColorPillDarkBg;
 
             var dHlg = _floatingDockObj.AddComponent<HorizontalLayoutGroup>();
             dHlg.childForceExpandWidth = false;
@@ -447,6 +502,7 @@ namespace ModularFlightPanel.UI.Workbench
                             if (effect.ButtonImage != null)
                             {
                                 effect.ButtonImage.material = WorkbenchStyleEngine.GetButtonMaterial(i == _currentTabIndex, false);
+                                effect.ButtonImage.color = (i == _currentTabIndex) ? WorkbenchStyleEngine.ColorBtnPrimaryBg : WorkbenchStyleEngine.ColorBtnSecondaryBg;
                             }
                         }
                     }

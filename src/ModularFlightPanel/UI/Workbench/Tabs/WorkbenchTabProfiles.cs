@@ -26,7 +26,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _container.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_container.GetChild(i).gameObject);
+                var c = _container.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             GameObject card = WorkbenchControls.CreateCard(_container, "ProfilesCard", Vector2.zero);
@@ -64,7 +66,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _contentRt.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_contentRt.GetChild(i).gameObject);
+                var c = _contentRt.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             var lm = WidgetLayoutManager.Instance;
@@ -80,6 +84,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             GameObject infoObj = new GameObject("CurInfo", typeof(RectTransform), typeof(Text));
             infoObj.transform.SetParent(curCard.transform, false);
+            var infoLe = infoObj.AddComponent<LayoutElement>();
+            infoLe.flexibleWidth = 1f;
+
             Text infoTxt = infoObj.GetComponent<Text>();
             infoTxt.font = WorkbenchControls.MainFont;
             infoTxt.fontSize = 12;
@@ -98,6 +105,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             {
                 GameObject fbObj = new GameObject("Feedback", typeof(RectTransform), typeof(Text));
                 fbObj.transform.SetParent(_contentRt, false);
+                var fbLe = fbObj.AddComponent<LayoutElement>();
+                fbLe.preferredHeight = 20f;
+
                 Text fbTxt = fbObj.GetComponent<Text>();
                 fbTxt.font = WorkbenchControls.MainFont;
                 fbTxt.fontSize = 11;
@@ -108,6 +118,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 2. 社区分享码 (GZip Base64)
             GameObject subHeader1 = new GameObject("SubHeader1", typeof(RectTransform), typeof(Text));
             subHeader1.transform.SetParent(_contentRt, false);
+            var sh1Le = subHeader1.AddComponent<LayoutElement>();
+            sh1Le.preferredHeight = 28f;
+            sh1Le.minHeight = 28f;
+
             Text sh1Txt = subHeader1.GetComponent<Text>();
             sh1Txt.font = WorkbenchControls.MainFont;
             sh1Txt.fontSize = 13;
@@ -118,6 +132,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject shareRow = new GameObject("ShareRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             shareRow.transform.SetParent(_contentRt, false);
             shareRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 32f);
+            var srLe = shareRow.AddComponent<LayoutElement>();
+            srLe.preferredHeight = 32f;
+            srLe.minHeight = 32f;
+
             var sHlg = shareRow.GetComponent<HorizontalLayoutGroup>();
             sHlg.childForceExpandWidth = false;
             sHlg.childForceExpandHeight = true;
@@ -162,6 +180,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 3. 出厂经典预设库
             GameObject subHeader2 = new GameObject("SubHeader2", typeof(RectTransform), typeof(Text));
             subHeader2.transform.SetParent(_contentRt, false);
+            var sh2Le = subHeader2.AddComponent<LayoutElement>();
+            sh2Le.preferredHeight = 28f;
+            sh2Le.minHeight = 28f;
+
             Text sh2Txt = subHeader2.GetComponent<Text>();
             sh2Txt.font = WorkbenchControls.MainFont;
             sh2Txt.fontSize = 13;
@@ -188,6 +210,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject nameObj = new GameObject("Name", typeof(RectTransform), typeof(Text));
             nameObj.transform.SetParent(row.transform, false);
             nameObj.GetComponent<RectTransform>().sizeDelta = new Vector2(380f, 26f);
+            var nameLe = nameObj.AddComponent<LayoutElement>();
+            nameLe.flexibleWidth = 1f;
+
             Text nameTxt = nameObj.GetComponent<Text>();
             nameTxt.font = WorkbenchControls.MainFont;
             nameTxt.fontSize = 12;

@@ -426,11 +426,14 @@ namespace ModularFlightPanel.UI.Auditing
                     HasCpuRasterizer = true;
                 }
 
-                foreach (var v in node.Declaration.Variables)
+                if (!WidgetSpecRules.IsValidCacheType(typeName))
                 {
-                    if (IsManualDirtyTrackingField(v.Identifier.Text))
+                    foreach (var v in node.Declaration.Variables)
                     {
-                        RedundantDirtyTrackingFields++;
+                        if (IsManualDirtyTrackingField(v.Identifier.Text))
+                        {
+                            RedundantDirtyTrackingFields++;
+                        }
                     }
                 }
 

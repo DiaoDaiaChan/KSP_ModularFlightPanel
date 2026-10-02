@@ -39,7 +39,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 清理既有子节点
             for (int i = _container.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_container.GetChild(i).gameObject);
+                var c = _container.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             // 创建水平左右双栏分割容器
@@ -54,15 +56,20 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             HorizontalLayoutGroup hlg = splitObj.GetComponent<HorizontalLayoutGroup>();
             hlg.childForceExpandWidth = false;
             hlg.childForceExpandHeight = true;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
             hlg.spacing = 10f;
             hlg.padding = new RectOffset(6, 6, 6, 6);
 
             // =========================================================================
-            // 1. 左栏：组件库 / 层级树 (定宽 340px)
+            // 1. 左栏：组件库 / 层级树 (定宽 360px)
             // =========================================================================
-            GameObject leftPanel = WorkbenchControls.CreateCard(splitObj.transform, "LeftPanel", new Vector2(340f, 0f));
-            RectTransform leftRt = leftPanel.GetComponent<RectTransform>();
-            leftRt.sizeDelta = new Vector2(340f, 0f);
+            GameObject leftPanel = WorkbenchControls.CreateCard(splitObj.transform, "LeftPanel", new Vector2(360f, 0f));
+            var lpLe = leftPanel.AddComponent<LayoutElement>();
+            lpLe.preferredWidth = 360f;
+            lpLe.minWidth = 320f;
+            lpLe.flexibleWidth = 0f;
+            lpLe.flexibleHeight = 1f;
 
             BuildLeftPanel(leftPanel.transform);
 
@@ -70,10 +77,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 2. 右栏：实时属性检查器 (自适应剩余宽度)
             // =========================================================================
             GameObject rightPanel = WorkbenchControls.CreateCard(splitObj.transform, "RightPanel", new Vector2(0f, 0f));
-            RectTransform rightRt = rightPanel.GetComponent<RectTransform>();
-            rightRt.sizeDelta = new Vector2(0f, 0f);
             var le = rightPanel.AddComponent<LayoutElement>();
             le.flexibleWidth = 1f;
+            le.flexibleHeight = 1f;
 
             BuildInspectorPanel(rightPanel.transform);
 
@@ -86,17 +92,26 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             VerticalLayoutGroup vlg = parent.gameObject.AddComponent<VerticalLayoutGroup>();
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
             vlg.spacing = 8f;
             vlg.padding = new RectOffset(10, 10, 10, 10);
 
             // 模式切换分段按钮栏
             GameObject segRow = new GameObject("SegmentRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             segRow.transform.SetParent(parent, false);
+            var srLe = segRow.AddComponent<LayoutElement>();
+            srLe.preferredHeight = 32f;
+            srLe.minHeight = 32f;
+            srLe.flexibleHeight = 0f;
+
             HorizontalLayoutGroup segHlg = segRow.GetComponent<HorizontalLayoutGroup>();
             segHlg.childForceExpandWidth = true;
             segHlg.childForceExpandHeight = true;
+            segHlg.childControlWidth = true;
+            segHlg.childControlHeight = true;
             segHlg.spacing = 6f;
-            segRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 28f);
+            segRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 32f);
 
             WorkbenchControls.CreateButton(segRow.transform, "BtnPalette", "📦 航电组件库", new Vector2(150f, 28f), () =>
             {
@@ -128,6 +143,8 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             VerticalLayoutGroup vlg = parent.gameObject.AddComponent<VerticalLayoutGroup>();
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
             vlg.spacing = 8f;
             vlg.padding = new RectOffset(14, 14, 14, 14);
 
@@ -135,19 +152,30 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject header = new GameObject("InspectorHeader", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             header.transform.SetParent(parent, false);
             header.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 28f);
+            var hLe = header.AddComponent<LayoutElement>();
+            hLe.preferredHeight = 28f;
+            hLe.minHeight = 28f;
+            hLe.flexibleHeight = 0f;
+
             var hHlg = header.GetComponent<HorizontalLayoutGroup>();
             hHlg.childForceExpandWidth = false;
             hHlg.childForceExpandHeight = true;
+            hHlg.childControlWidth = true;
+            hHlg.childControlHeight = true;
             hHlg.spacing = 8f;
 
             GameObject titleObj = new GameObject("Title", typeof(RectTransform), typeof(Text));
             titleObj.transform.SetParent(header.transform, false);
+            var tLe = titleObj.AddComponent<LayoutElement>();
+            tLe.flexibleWidth = 1f;
+
             Text titleTxt = titleObj.GetComponent<Text>();
             titleTxt.font = WorkbenchControls.MainFont;
             titleTxt.fontSize = 14;
             titleTxt.fontStyle = FontStyle.Bold;
             titleTxt.color = WorkbenchStyleEngine.ColorTextPrimary;
             titleTxt.text = "🛠️ 实时属性检查器 (Inspector)";
+            titleTxt.horizontalOverflow = HorizontalWrapMode.Overflow;
 
             _inspectorContent = WorkbenchControls.CreateScrollView(parent, "InspectorScrollView", new Vector2(0f, 440f), out GameObject scrollObj);
             var le = scrollObj.AddComponent<LayoutElement>();
@@ -167,7 +195,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             // 清理既有条目
             for (int i = _leftContent.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_leftContent.GetChild(i).gameObject);
+                var c = _leftContent.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             if (_leftMode == 0)
@@ -299,7 +329,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _inspectorContent.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_inspectorContent.GetChild(i).gameObject);
+                var c = _inspectorContent.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             var sel = WidgetSelectionManager.SelectedWidgets.FirstOrDefault();

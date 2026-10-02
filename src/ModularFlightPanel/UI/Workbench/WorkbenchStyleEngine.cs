@@ -51,7 +51,89 @@ namespace ModularFlightPanel.UI.Workbench
 
         #region Semantic Theme Colors
 
-        public static Color ColorWindowBg => (Color)ActiveTheme.FrameBgColor;
+        public static Color ColorWindowBg
+        {
+            get
+            {
+                Color c = (Color)ActiveTheme.FrameBgColor;
+                if (c.r > 0.4f && c.g > 0.4f && c.b > 0.4f)
+                    c = new Color(0.02f, 0.025f, 0.035f, 0.94f);
+                else
+                    c.a = Mathf.Clamp(c.a * 1.05f, 0.90f, 0.96f);
+                return c;
+            }
+        }
+
+        public static Color ColorCardBg
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorWindowBg, ColorBorder, 0.08f);
+                c.a = 0.88f;
+                return c;
+            }
+        }
+
+        public static Color ColorCardBgHover
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorWindowBg, ColorAccentPrimary, 0.16f);
+                c.a = 0.94f;
+                return c;
+            }
+        }
+
+        public static Color ColorBtnPrimaryBg
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorAccentPrimary, ColorWindowBg, 0.45f);
+                c.a = 0.90f;
+                return c;
+            }
+        }
+
+        public static Color ColorBtnSecondaryBg
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorWindowBg, ColorBorder, 0.18f);
+                c.a = 0.82f;
+                return c;
+            }
+        }
+
+        public static Color ColorBtnHoverBg
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorBtnSecondaryBg, ColorAccentPrimary, 0.35f);
+                c.a = 0.95f;
+                return c;
+            }
+        }
+
+        public static Color ColorPillAccentBg
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorAccentPrimary, ColorWindowBg, 0.55f);
+                c.a = 0.90f;
+                return c;
+            }
+        }
+
+        public static Color ColorPillDarkBg
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorWindowBg, ColorBorder, 0.25f);
+                c.a = 0.85f;
+                return c;
+            }
+        }
+
         public static Color ColorBorder => (Color)ActiveTheme.FrameBorderColor;
         public static Color ColorAccentPrimary => (Color)ActiveTheme.AccentPrimary;
         public static Color ColorAccentSecondary => (Color)ActiveTheme.AccentSecondary;
@@ -59,7 +141,7 @@ namespace ModularFlightPanel.UI.Workbench
         public static Color ColorDanger => (Color)ActiveTheme.DangerColor;
         public static Color ColorTextPrimary => (Color)ActiveTheme.TextPrimaryColor;
         public static Color ColorTextAccent => (Color)ActiveTheme.TextAccentColor;
-        public static Color ColorTextMuted => new Color(ColorTextAccent.r, ColorTextAccent.g, ColorTextAccent.b, 0.45f);
+        public static Color ColorTextMuted => new Color(ColorTextAccent.r, ColorTextAccent.g, ColorTextAccent.b, 0.55f);
 
         #endregion
 

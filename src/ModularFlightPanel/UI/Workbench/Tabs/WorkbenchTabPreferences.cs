@@ -22,7 +22,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _container.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_container.GetChild(i).gameObject);
+                var c = _container.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             GameObject card = WorkbenchControls.CreateCard(_container, "PrefsCard", Vector2.zero);
@@ -60,7 +62,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             for (int i = _contentRt.childCount - 1; i >= 0; i--)
             {
-                UnityEngine.Object.Destroy(_contentRt.GetChild(i).gameObject);
+                var c = _contentRt.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
             }
 
             var tm = ThemeManager.Instance;
@@ -70,6 +74,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject langRow = new GameObject("LangRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
             langRow.transform.SetParent(_contentRt, false);
             langRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 32f);
+            var lrLe = langRow.AddComponent<LayoutElement>();
+            lrLe.preferredHeight = 32f;
+            lrLe.minHeight = 32f;
+
             var lHlg = langRow.GetComponent<HorizontalLayoutGroup>();
             lHlg.childForceExpandWidth = false;
             lHlg.childForceExpandHeight = true;
@@ -78,6 +86,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             GameObject lTitle = new GameObject("LTitle", typeof(RectTransform), typeof(Text));
             lTitle.transform.SetParent(langRow.transform, false);
             lTitle.GetComponent<RectTransform>().sizeDelta = new Vector2(160f, 28f);
+            var ltLe = lTitle.AddComponent<LayoutElement>();
+            ltLe.preferredWidth = 160f;
+            ltLe.minWidth = 140f;
             Text lt = lTitle.GetComponent<Text>();
             lt.font = WorkbenchControls.MainFont;
             lt.fontSize = 12;

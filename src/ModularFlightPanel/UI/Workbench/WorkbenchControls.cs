@@ -28,10 +28,17 @@ namespace ModularFlightPanel.UI.Workbench
             RectTransform rt = btnObj.GetComponent<RectTransform>();
             rt.sizeDelta = size;
 
+            if (size.x > 0 || size.y > 0)
+            {
+                var le = btnObj.AddComponent<LayoutElement>();
+                if (size.x > 0) { le.preferredWidth = size.x; le.minWidth = size.x; }
+                if (size.y > 0) { le.preferredHeight = size.y; le.minHeight = size.y; }
+            }
+
             Image img = btnObj.GetComponent<Image>();
             img.type = Image.Type.Simple;
             img.material = WorkbenchStyleEngine.GetButtonMaterial(isPrimary, false);
-            img.color = Color.white;
+            img.color = isPrimary ? WorkbenchStyleEngine.ColorBtnPrimaryBg : WorkbenchStyleEngine.ColorBtnSecondaryBg;
 
             Button btn = btnObj.GetComponent<Button>();
             btn.targetGraphic = img;
@@ -83,9 +90,16 @@ namespace ModularFlightPanel.UI.Workbench
             RectTransform rt = cardObj.GetComponent<RectTransform>();
             rt.sizeDelta = size;
 
+            if (size.x > 0 || size.y > 0)
+            {
+                var le = cardObj.AddComponent<LayoutElement>();
+                if (size.x > 0) { le.preferredWidth = size.x; le.minWidth = size.x; }
+                if (size.y > 0) { le.preferredHeight = size.y; le.minHeight = size.y; }
+            }
+
             Image img = cardObj.GetComponent<Image>();
             img.material = WorkbenchStyleEngine.GetCardMaterial(false);
-            img.color = Color.white;
+            img.color = WorkbenchStyleEngine.ColorCardBg;
 
             if (isInteractive)
             {
@@ -108,12 +122,20 @@ namespace ModularFlightPanel.UI.Workbench
             GameObject pillObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             pillObj.transform.SetParent(parent, false);
 
+            float pillWidth = Mathf.Max(48f, labelText.Length * 8f + 20f);
             RectTransform rt = pillObj.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(Mathf.Max(32f, labelText.Length * 8f + 16f), 20f);
+            rt.sizeDelta = new Vector2(pillWidth, 22f);
+
+            var le = pillObj.AddComponent<LayoutElement>();
+            le.preferredWidth = pillWidth;
+            le.minWidth = pillWidth;
+            le.preferredHeight = 22f;
+            le.minHeight = 22f;
+            le.flexibleWidth = 0f;
 
             Image img = pillObj.GetComponent<Image>();
             img.material = WorkbenchStyleEngine.GetPillDockMaterial(true);
-            img.color = Color.white;
+            img.color = WorkbenchStyleEngine.ColorPillDarkBg;
 
             GameObject txtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
             txtObj.transform.SetParent(pillObj.transform, false);
@@ -131,6 +153,8 @@ namespace ModularFlightPanel.UI.Workbench
             txt.color = accentColor;
             txt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
             txt.text = labelText;
+            txt.horizontalOverflow = HorizontalWrapMode.Overflow;
+            txt.verticalOverflow = VerticalWrapMode.Truncate;
             txt.raycastTarget = false;
 
             return pillObj;
@@ -150,6 +174,10 @@ namespace ModularFlightPanel.UI.Workbench
 
             RectTransform rootRt = root.GetComponent<RectTransform>();
             rootRt.sizeDelta = new Vector2(240f, 26f);
+
+            var rootLe = root.AddComponent<LayoutElement>();
+            rootLe.preferredHeight = 28f;
+            rootLe.minHeight = 28f;
 
             // 标题文本
             GameObject titleObj = new GameObject("Title", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
@@ -180,7 +208,7 @@ namespace ModularFlightPanel.UI.Workbench
 
             Image trackImg = trackObj.GetComponent<Image>();
             trackImg.material = WorkbenchStyleEngine.GetPillDockMaterial(initialValue);
-            trackImg.color = Color.white;
+            trackImg.color = initialValue ? WorkbenchStyleEngine.ColorPillAccentBg : WorkbenchStyleEngine.ColorPillDarkBg;
 
             // 开关圆形滑块 (Thumb)
             GameObject thumbObj = new GameObject("Thumb", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
@@ -200,6 +228,7 @@ namespace ModularFlightPanel.UI.Workbench
                 curVal = !curVal;
                 thumbRt.anchoredPosition = new Vector2(curVal ? 12f : -12f, 0f);
                 trackImg.material = WorkbenchStyleEngine.GetPillDockMaterial(curVal);
+                trackImg.color = curVal ? WorkbenchStyleEngine.ColorPillAccentBg : WorkbenchStyleEngine.ColorPillDarkBg;
                 onValueChanged?.Invoke(curVal);
             });
 
@@ -220,6 +249,10 @@ namespace ModularFlightPanel.UI.Workbench
 
             RectTransform rootRt = root.GetComponent<RectTransform>();
             rootRt.sizeDelta = new Vector2(300f, 32f);
+
+            var rootLe = root.AddComponent<LayoutElement>();
+            rootLe.preferredHeight = 32f;
+            rootLe.minHeight = 32f;
 
             // 标签
             GameObject lblObj = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
@@ -277,7 +310,7 @@ namespace ModularFlightPanel.UI.Workbench
             bgRt.anchorMax = Vector2.one;
             bgRt.sizeDelta = Vector2.zero;
             Image bgImg = bgObj.GetComponent<Image>();
-            bgImg.color = new Color(0.12f, 0.16f, 0.24f, 0.8f);
+            bgImg.color = WorkbenchStyleEngine.ColorCardBg;
 
             // 填充槽
             GameObject fillArea = new GameObject("Fill Area", typeof(RectTransform));
@@ -319,9 +352,16 @@ namespace ModularFlightPanel.UI.Workbench
             RectTransform rt = root.GetComponent<RectTransform>();
             rt.sizeDelta = size;
 
+            if (size.x > 0 || size.y > 0)
+            {
+                var le = root.AddComponent<LayoutElement>();
+                if (size.x > 0) { le.preferredWidth = size.x; le.minWidth = size.x; }
+                if (size.y > 0) { le.preferredHeight = size.y; le.minHeight = size.y; }
+            }
+
             Image bg = root.GetComponent<Image>();
             bg.material = WorkbenchStyleEngine.GetCardMaterial(false);
-            bg.color = Color.white;
+            bg.color = WorkbenchStyleEngine.ColorCardBg;
 
             InputField input = root.GetComponent<InputField>();
 
@@ -384,6 +424,13 @@ namespace ModularFlightPanel.UI.Workbench
             RectTransform rootRt = scrollRoot.GetComponent<RectTransform>();
             rootRt.sizeDelta = size;
 
+            if (size.x > 0 || size.y > 0)
+            {
+                var le = scrollRoot.AddComponent<LayoutElement>();
+                if (size.x > 0) { le.preferredWidth = size.x; le.minWidth = size.x; }
+                if (size.y > 0) { le.preferredHeight = size.y; le.minHeight = size.y; }
+            }
+
             Image rootImg = scrollRoot.GetComponent<Image>();
             rootImg.color = new Color(0f, 0f, 0f, 0.05f); // 微透明遮罩背景
 
@@ -433,12 +480,20 @@ namespace ModularFlightPanel.UI.Workbench
 
         public void OnPointerEnter(PointerEventData eventData)
         {
-            if (ButtonImage != null) ButtonImage.material = WorkbenchStyleEngine.GetButtonMaterial(IsPrimary, true);
+            if (ButtonImage != null)
+            {
+                ButtonImage.material = WorkbenchStyleEngine.GetButtonMaterial(IsPrimary, true);
+                ButtonImage.color = WorkbenchStyleEngine.ColorBtnHoverBg;
+            }
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
-            if (ButtonImage != null) ButtonImage.material = WorkbenchStyleEngine.GetButtonMaterial(IsPrimary, false);
+            if (ButtonImage != null)
+            {
+                ButtonImage.material = WorkbenchStyleEngine.GetButtonMaterial(IsPrimary, false);
+                ButtonImage.color = IsPrimary ? WorkbenchStyleEngine.ColorBtnPrimaryBg : WorkbenchStyleEngine.ColorBtnSecondaryBg;
+            }
         }
 
         public void OnPointerDown(PointerEventData eventData)
@@ -458,12 +513,20 @@ namespace ModularFlightPanel.UI.Workbench
 
         public void OnPointerEnter(PointerEventData eventData)
         {
-            if (CardImage != null) CardImage.material = WorkbenchStyleEngine.GetCardMaterial(true);
+            if (CardImage != null)
+            {
+                CardImage.material = WorkbenchStyleEngine.GetCardMaterial(true);
+                CardImage.color = WorkbenchStyleEngine.ColorCardBgHover;
+            }
         }
 
         public void OnPointerExit(PointerEventData eventData)
         {
-            if (CardImage != null) CardImage.material = WorkbenchStyleEngine.GetCardMaterial(false);
+            if (CardImage != null)
+            {
+                CardImage.material = WorkbenchStyleEngine.GetCardMaterial(false);
+                CardImage.color = WorkbenchStyleEngine.ColorCardBg;
+            }
         }
     }
 
