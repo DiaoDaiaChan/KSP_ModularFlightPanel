@@ -29,6 +29,9 @@ namespace ModularFlightPanel.UI
 
         // 浮动图层面板交互状态
         public static bool IsLayerPanelOpen = false;
+        private static Rect _layerPanelRect = new Rect(0, 0, 260f, 380f);
+        private static Vector2 _panelScrollPos = Vector2.zero;
+        private static bool _rectInitialized = false;
 
         public static int TotalLayers
         {
@@ -476,6 +479,144 @@ namespace ModularFlightPanel.UI
             {
                 PerformSync();
             }
+        }
+
+        #endregion
+
+        #region Floating Layer Panel GUI (Photoshop/Figma Style)
+
+        /// <summary>
+        /// 在屏幕右上方绘制悬浮图层管理器抽屉
+        /// </summary>
+        public static void DrawLayerPanel(int selCount)
+        {
+            if (!IsLayerPanelOpen || !WidgetDragHandler.IsEditModeActive) return;
+
+            if (!_rectInitialized)
+            {
+                _layerPanelRect = new Rect(Screen.width - 275f, 100f, 265f, 380f);
+                _rectInitialized = true;
+            }
+
+            _layerPanelRect.x = Mathf.Clamp(_layerPanelRect.x, 10f, Screen.width - _layerPanelRect.width - 10f);
+            _layerPanelRect.y = Mathf.Clamp(_layerPanelRect.y, 10f, Screen.height - _layerPanelRect.height - 10f);
+
+            if (_layerPanelRect.Contains(Event.current.mousePosition))
+            {
+                FlightHUDManager.IsMouseOverFloatingToolbar = true;
+            }
+
+            GUILayout.BeginArea(_layerPanelRect, GUI.skin.box);
+
+            // 1. 顶栏标题 + 关闭按钮
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b>{I18n.Tr("LAYER_PANEL_TITLE", "📑 图层管理")}</b> <color=#94A3B8>({TotalLayers})</color>", GUILayout.ExpandWidth(true));
+            if (GUILayout.Button("✕", GUI.skin.button, GUILayout.Width(22f), GUILayout.Height(20f)))
+            {
+                IsLayerPanelOpen = false;
+            }
+            GUILayout.EndHorizontal();
+
+            // 2. 快捷层级控制按钮条
+            GUILayout.BeginHorizontal();
+            GUI.enabled = selCount > 0;
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_TOP", "⤒ 顶"), GUI.skin.button, GUILayout.Height(22f)))
+            {
+                BringToFront(WidgetSelectionManager.SelectedWidgets);
+            }
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_UP", "▲ 升"), GUI.skin.button, GUILayout.Height(22f)))
+            {
+                BringForward(WidgetSelectionManager.SelectedWidgets);
+            }
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_DOWN", "▼ 降"), GUI.skin.button, GUILayout.Height(22f)))
+            {
+                SendBackward(WidgetSelectionManager.SelectedWidgets);
+            }
+            if (GUILayout.Button(I18n.Tr("LAYER_BTN_BOTTOM", "⤓ 底"), GUI.skin.button, GUILayout.Height(22f)))
+            {
+                SendToBack(WidgetSelectionManager.SelectedWidgets);
+            }
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(4f);
+
+            // 3. Photoshop 倒序图层堆叠列表 (顶层在上方，底层在下方)
+            var widgetsTopDown = GetWidgetsTopToBottom();
+            _panelScrollPos = GUILayout.BeginScrollView(_panelScrollPos, GUILayout.Height(290f));
+
+            if (widgetsTopDown.Count == 0)
+            {
+                GUILayout.Label($"<color=#7088A8><size=11>{I18n.Tr("LAYER_NO_WIDGETS", "当前画布无加载的组件")}</size></color>");
+            }
+            else
+            {
+                for (int i = 0; i < widgetsTopDown.Count; i++)
+                {
+                    var w = widgetsTopDown[i];
+                    if (w == null || w.Config == null) continue;
+
+                    bool isSelected = WidgetSelectionManager.IsSelected(w);
+                    bool isLocked = w.Config.IsLocked;
+                    bool isVisible = w.Config.IsEnabled;
+
+                    Color prevBg = GUI.backgroundColor;
+                    if (isSelected)
+                    {
+                        GUI.backgroundColor = new Color(0.2f, 0.7f, 1f, 1f);
+                    }
+                    else if (isLocked)
+                    {
+                        GUI.backgroundColor = new Color(0.5f, 0.5f, 0.5f, 0.8f);
+                    }
+
+                    GUILayout.BeginHorizontal("box");
+
+                    // 显隐按钮 (Eye)
+                    string eyeIcon = isVisible ? "<color=#00FF88>👁</color>" : "<color=#64748B>○</color>";
+                    if (GUILayout.Button(eyeIcon, GUI.skin.button, GUILayout.Width(22f), GUILayout.Height(22f)))
+                    {
+                        ToggleVisibility(w);
+                    }
+
+                    // 锁定按钮 (Lock)
+                    string lockIcon = isLocked ? "<color=#FFB703>🔒</color>" : "<color=#64748B>🔓</color>";
+                    if (GUILayout.Button(lockIcon, GUI.skin.button, GUILayout.Width(22f), GUILayout.Height(22f)))
+                    {
+                        ToggleLock(w);
+                    }
+
+                    // 层级徽章
+                    int layerNum = w.Config.DrawOrder + 1;
+                    GUILayout.Label($"<color=#38BDF8><b>#{layerNum}</b></color>", GUILayout.Width(28f));
+
+                    // 组件名称 (点击单选/多选)
+                    string displayName = w.DisplayName;
+                    if (displayName.Length > 9) displayName = displayName.Substring(0, 8) + "..";
+                    string labelText = isLocked ? $"<color=#94A3B8>{displayName}</color>" : (isSelected ? $"<b>{displayName}</b>" : displayName);
+
+                    if (GUILayout.Button(labelText, "label", GUILayout.ExpandWidth(true), GUILayout.Height(22f)))
+                    {
+                        bool isAdditive = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ||
+                                          Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+                        if (isAdditive)
+                        {
+                            WidgetSelectionManager.ToggleSelect(w);
+                        }
+                        else
+                        {
+                            WidgetSelectionManager.Select(w);
+                        }
+                    }
+
+                    GUILayout.EndHorizontal();
+                    GUI.backgroundColor = prevBg;
+                }
+            }
+
+            GUILayout.EndScrollView();
+
+            GUILayout.EndArea();
         }
 
         #endregion

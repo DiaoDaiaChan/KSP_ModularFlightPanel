@@ -338,7 +338,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _footerStatusText;
         private ThemeConfig _currentTheme;
 
-        private float _cachedScale = 1.0f;
+        private readonly CachedFloat _cachedScale = new CachedFloat(1.0f);
         private const float DefaultPanelWidth = 254f;
         private const float DefaultPanelHeight = 186f;
         private const float TrackWidth = 54f;
@@ -351,7 +351,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            _cachedScale = s;
+            _cachedScale.Value = s;
 
             Vector2 panelSize = BaseSize * s;
             _panelBg = CardBackground;
@@ -757,7 +757,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 3. 逐行速度条
-            float maxTrackW = TrackWidth * _cachedScale;
+            float maxTrackW = TrackWidth * _cachedScale.Value;
             for (int i = 0; i < _stageRows.Count && i < MaxDisplayedStages; i++)
             {
                 StageRowUI row = _stageRows[i];
@@ -784,10 +784,10 @@ namespace ModularFlightPanel.UI.Widgets
                         row.LeaderLine.color = WidgetStyleManager.Weighted(borderCol, LineWeight.Normal);
                     }
 
-                    float barW = Mathf.Max(3f * _cachedScale, snap.Ratio * maxTrackW);
+                    float barW = Mathf.Max(3f * _cachedScale.Value, snap.Ratio * maxTrackW);
                     if (row.LastBarW.Update(barW))
                     {
-                        row.FillBarRt.sizeDelta = new Vector2(barW, row.TrackRt.sizeDelta.y - 2f * _cachedScale);
+                        row.FillBarRt.sizeDelta = new Vector2(barW, row.TrackRt.sizeDelta.y - 2f * _cachedScale.Value);
                     }
 
                     if (snap.IsActive)
@@ -836,7 +836,7 @@ namespace ModularFlightPanel.UI.Widgets
                     float thr = state.Throttle;
                     if (_dirtyPlumeThr.Update(thr))
                     {
-                        _plumeRt.sizeDelta = new Vector2(9f * _cachedScale, (6f + 8f * thr) * _cachedScale);
+                        _plumeRt.sizeDelta = new Vector2(9f * _cachedScale.Value, (6f + 8f * thr) * _cachedScale.Value);
                     }
                     _plumeImg.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
                 }

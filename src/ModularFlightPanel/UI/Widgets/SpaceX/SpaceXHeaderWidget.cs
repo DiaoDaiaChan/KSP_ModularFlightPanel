@@ -297,8 +297,9 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         protected override IWidgetLogic LogicCore => _logic;
 
         // ── 智能私有缓存与脏检查 (MFP-SPEC-009) ──
-        private readonly Cached<int> _lastSlotCount = new Cached<int>(-1);
-        private readonly Cached<bool> _lastHasVessel = new Cached<bool>(false);
+        private readonly Cached<float> _cachedWidth = new Cached<float>(960f);
+        private readonly Cached<float> _cachedHeight = new Cached<float>(42f);
+        private readonly Cached<SpaceXHeaderState> _cachedState = new Cached<SpaceXHeaderState>();
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {

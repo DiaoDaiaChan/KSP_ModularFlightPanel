@@ -2234,16 +2234,6 @@ namespace ModularFlightPanel.UI
         }
     }
 
-    /// <summary>
-    /// 通用航电卡片组件兼容基类 (向后兼容保留，新组件建议直接继承 BaseFlightWidget)
-    /// </summary>
-    [Obsolete("BaseFlightWidget 已全面内置航电算子与默认遥测更新，新组件推荐直接继承 BaseFlightWidget。")]
-    public abstract class BaseAvionicsWidget : BaseFlightWidget
-    {
-        public override Vector2 BaseSize => new Vector2(160f, 50f);
-        protected override bool AutoCreateCardFrame => true;
-    }
-
     #region Zero-GC Component Private State Helpers
 
     /// <summary>
@@ -2504,4 +2494,5 @@ namespace ModularFlightPanel.UI
 
     #endregion
 }
+
 

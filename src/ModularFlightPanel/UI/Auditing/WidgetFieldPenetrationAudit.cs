@@ -103,17 +103,28 @@ namespace ModularFlightPanel.UI.Auditing
             if ((t.StartsWith("List<", StringComparison.Ordinal) ||
                  t.StartsWith("IList<", StringComparison.Ordinal) ||
                  t.StartsWith("IEnumerable<", StringComparison.Ordinal) ||
-                 t.StartsWith("HashSet<", StringComparison.Ordinal)) && t.EndsWith(">", StringComparison.Ordinal))
+                 t.StartsWith("HashSet<", StringComparison.Ordinal) ||
+                 t.StartsWith("Queue<", StringComparison.Ordinal) ||
+                 t.StartsWith("Stack<", StringComparison.Ordinal)) && t.EndsWith(">", StringComparison.Ordinal))
             {
                 int start = t.IndexOf('<');
                 t = t.Substring(start + 1, t.Length - start - 2).Trim();
             }
+            if ((t.StartsWith("Dictionary<", StringComparison.Ordinal) ||
+                 t.StartsWith("IDictionary<", StringComparison.Ordinal)) && t.EndsWith(">", StringComparison.Ordinal))
+            {
+                int comma = t.LastIndexOf(',');
+                if (comma >= 0)
+                {
+                    t = t.Substring(comma + 1, t.Length - comma - 2).Trim();
+                }
+            }
             return t;
         }
 
-        public static FieldKind ClassifyField(string typeName, string fieldName, bool isConst, bool isReadOnly)
+        public static FieldKind ClassifyField(string typeName, string fieldName, bool isConst, bool isReadOnly, bool isStatic = false)
         {
-            if (isConst) return FieldKind.ConfigToken;
+            if (isConst || isStatic) return FieldKind.ConfigToken;
 
             string baseType = UnwrapType(typeName);
 
@@ -126,16 +137,7 @@ namespace ModularFlightPanel.UI.Auditing
             }
 
             // 2. 视觉 UI 句柄
-            if (KnownUiTypeNames.Contains(baseType) ||
-                baseType.EndsWith("UI", StringComparison.Ordinal) ||
-                baseType.EndsWith("Widget", StringComparison.Ordinal) ||
-                baseType.EndsWith("Graphic", StringComparison.Ordinal) ||
-                baseType.EndsWith("View", StringComparison.Ordinal) ||
-                baseType.EndsWith("Feedback", StringComparison.Ordinal) ||
-                baseType.EndsWith("Item", StringComparison.Ordinal) ||
-                baseType.EndsWith("Proxy", StringComparison.Ordinal) ||
-                baseType.EndsWith("Transform", StringComparison.Ordinal) ||
-                baseType == "ApplicationLauncherButton")
+            if (IsUiHandleName(baseType))
             {
                 return FieldKind.UiHandle;
             }
@@ -149,30 +151,54 @@ namespace ModularFlightPanel.UI.Auditing
                 return FieldKind.EventCallback;
             }
 
-            // 4. 零 GC 遥测快照结构体
-            if (baseType.EndsWith("Snapshot", StringComparison.Ordinal) || baseType == "IFlightTelemetry")
+            // 4. 零 GC 遥测快照结构体与解耦业务大脑
+            if (baseType.EndsWith("Snapshot", StringComparison.Ordinal) ||
+                baseType.EndsWith("Logic", StringComparison.Ordinal) ||
+                baseType == "IFlightTelemetry" ||
+                baseType == "IWidgetLogic")
             {
                 return FieldKind.SnapshotStruct;
             }
 
-            // 5. 主题与样式配置
+            // 5. 主题与样式配置及本地调色板缓存
             if (baseType == "ThemeConfig" || baseType == "WidgetConfig" ||
+                baseType.EndsWith("Config", StringComparison.Ordinal) ||
+                baseType.EndsWith("Settings", StringComparison.Ordinal) ||
                 baseType.EndsWith("Role", StringComparison.Ordinal) ||
                 baseType.EndsWith("Palette", StringComparison.Ordinal) ||
-                baseType == "LineWeight")
+                baseType == "LineWeight" ||
+                ((baseType == "Color" || baseType == "Color32") &&
+                 (fieldName.StartsWith("_c", StringComparison.Ordinal) ||
+                  fieldName.EndsWith("Color", StringComparison.OrdinalIgnoreCase) ||
+                  fieldName.EndsWith("Col", StringComparison.OrdinalIgnoreCase) ||
+                  fieldName.EndsWith("Palette", StringComparison.OrdinalIgnoreCase))))
             {
                 return FieldKind.ConfigTheme;
             }
 
-            // 6. 静态 Token / 模板配置 / Shader Property ID
-            if (isReadOnly && (fieldName.EndsWith("Token", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Template", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Prefix", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Format", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Key", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Aliases", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.StartsWith("_Prop", StringComparison.Ordinal) ||
-                               fieldName.StartsWith("Prop", StringComparison.Ordinal)))
+            // 6. 静态 Token / 模板配置 / 标签 / Shader Property ID
+            if (fieldName.StartsWith("_hasProp", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("hasProp", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_comm", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Descriptors", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("ArcColors", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Token", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Template", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Prefix", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Format", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Key", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Aliases", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Label", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("LabelStr", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("LabelText", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Title", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Affix", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Custom", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Units", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("UnitStr", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Names", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_Prop", StringComparison.Ordinal) ||
+                fieldName.StartsWith("Prop", StringComparison.Ordinal))
             {
                 return FieldKind.ConfigToken;
             }
@@ -246,12 +272,28 @@ namespace ModularFlightPanel.UI.Auditing
                     type = array.ElementType;
                     continue;
                 }
-                if (type is INamedTypeSymbol named &&
-                    named.Arity == 1 &&
-                    named.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T)
+                if (type is INamedTypeSymbol named)
                 {
-                    type = named.TypeArguments[0];
-                    continue;
+                    if (named.Arity == 1 &&
+                        named.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T)
+                    {
+                        type = named.TypeArguments[0];
+                        continue;
+                    }
+                    if (named.Arity >= 1 && !WidgetSpecRules.IsValidCacheType(named.OriginalDefinition?.Name ?? named.Name))
+                    {
+                        if (named.Name == "List" || named.Name == "IList" || named.Name == "IEnumerable" ||
+                            named.Name == "HashSet" || named.Name == "Queue" || named.Name == "Stack")
+                        {
+                            type = named.TypeArguments[0];
+                            continue;
+                        }
+                        if (named.Name == "Dictionary" || named.Name == "IDictionary")
+                        {
+                            type = named.TypeArguments[named.TypeArguments.Length - 1];
+                            continue;
+                        }
+                    }
                 }
                 return type;
             }
@@ -279,6 +321,11 @@ namespace ModularFlightPanel.UI.Auditing
                    baseType.EndsWith("Item", StringComparison.Ordinal) ||
                    baseType.EndsWith("Proxy", StringComparison.Ordinal) ||
                    baseType.EndsWith("Transform", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Handles", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Slot", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Row", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Node", StringComparison.Ordinal) ||
+                   baseType.EndsWith("Accents", StringComparison.Ordinal) ||
                    baseType == "ApplicationLauncherButton";
         }
 
@@ -313,11 +360,16 @@ namespace ModularFlightPanel.UI.Auditing
         private static bool IsTelemetrySnapshotType(ITypeSymbol type, string simpleName)
         {
             if (type != null &&
-                SemanticCompilationProvider.IsOrInheritsOrImplements(type, "IFlightTelemetry"))
+                (SemanticCompilationProvider.IsOrInheritsOrImplements(type, "IFlightTelemetry") ||
+                 SemanticCompilationProvider.IsOrInheritsOrImplements(type, "ModularFlightPanel.Core.Avionics.IWidgetLogic") ||
+                 SemanticCompilationProvider.IsOrInheritsOrImplements(type, "ModularFlightPanel.UI.Framework.WidgetLogic") ||
+                 SemanticCompilationProvider.IsOrInheritsOrImplements(type, "IWidgetLogic")))
             {
                 return true;
             }
-            return !string.IsNullOrEmpty(simpleName) && simpleName.EndsWith("Snapshot", StringComparison.Ordinal);
+            return !string.IsNullOrEmpty(simpleName) &&
+                   (simpleName.EndsWith("Snapshot", StringComparison.Ordinal) ||
+                    simpleName.EndsWith("Logic", StringComparison.Ordinal));
         }
 
         /// <summary>
@@ -326,7 +378,7 @@ namespace ModularFlightPanel.UI.Auditing
         /// </summary>
         public static FieldKind ClassifyFieldBySymbol(IFieldSymbol fieldSymbol, string fieldName, bool isConst, bool isReadOnly)
         {
-            if (isConst) return FieldKind.ConfigToken;
+            if (isConst || (fieldSymbol != null && fieldSymbol.IsStatic)) return FieldKind.ConfigToken;
 
             ITypeSymbol type = UnwrapToElementType(fieldSymbol?.Type);
             string baseType = type?.Name ?? string.Empty;
@@ -343,24 +395,45 @@ namespace ModularFlightPanel.UI.Auditing
             // 4. 零 GC 遥测快照结构体
             if (IsTelemetrySnapshotType(type, baseType)) return FieldKind.SnapshotStruct;
 
-            // 5. 主题与样式配置
+            // 5. 主题与样式配置及本地调色板缓存
             if (baseType == "ThemeConfig" || baseType == "WidgetConfig" ||
+                baseType.EndsWith("Config", StringComparison.Ordinal) ||
+                baseType.EndsWith("Settings", StringComparison.Ordinal) ||
                 baseType.EndsWith("Role", StringComparison.Ordinal) ||
                 baseType.EndsWith("Palette", StringComparison.Ordinal) ||
-                baseType == "LineWeight")
+                baseType == "LineWeight" ||
+                ((baseType == "Color" || baseType == "Color32") &&
+                 (fieldName.StartsWith("_c", StringComparison.Ordinal) ||
+                  fieldName.EndsWith("Color", StringComparison.OrdinalIgnoreCase) ||
+                  fieldName.EndsWith("Col", StringComparison.OrdinalIgnoreCase) ||
+                  fieldName.EndsWith("Palette", StringComparison.OrdinalIgnoreCase))))
             {
                 return FieldKind.ConfigTheme;
             }
 
-            // 6. 静态 Token / 模板配置 / Shader Property ID
-            if (isReadOnly && (fieldName.EndsWith("Token", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Template", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Prefix", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Format", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Key", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.EndsWith("Aliases", StringComparison.OrdinalIgnoreCase) ||
-                               fieldName.StartsWith("_Prop", StringComparison.Ordinal) ||
-                               fieldName.StartsWith("Prop", StringComparison.Ordinal)))
+            // 6. 静态 Token / 模板配置 / 标签 / Shader Property ID
+            if (fieldName.StartsWith("_hasProp", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("hasProp", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_comm", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Descriptors", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("ArcColors", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Token", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Template", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Prefix", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Format", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Key", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Aliases", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Label", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("LabelStr", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("LabelText", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Title", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Affix", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Custom", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Units", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("UnitStr", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Names", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.StartsWith("_Prop", StringComparison.Ordinal) ||
+                fieldName.StartsWith("Prop", StringComparison.Ordinal))
             {
                 return FieldKind.ConfigToken;
             }
@@ -481,6 +554,22 @@ namespace ModularFlightPanel.UI.Auditing
 
                 foreach (var classDecl in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
+                    INamedTypeSymbol classSymbol = model?.GetDeclaredSymbol(classDecl);
+                    bool isWidgetClass;
+                    if (classSymbol != null)
+                    {
+                        isWidgetClass = SemanticCompilationProvider.IsOrInheritsFrom(classSymbol, "ModularFlightPanel.UI.Framework.BaseFlightWidget") ||
+                                        SemanticCompilationProvider.IsOrInheritsFrom(classSymbol, "BaseFlightWidget");
+                    }
+                    else
+                    {
+                        string cName = classDecl.Identifier.Text;
+                        isWidgetClass = cName.EndsWith("Widget", StringComparison.Ordinal) ||
+                                        cName.StartsWith("BaseNavball", StringComparison.Ordinal);
+                    }
+
+                    if (!isWidgetClass) continue;
+
                     string className = classDecl.Identifier.Text;
                     var fieldList = new List<AuditedFieldInfo>();
 
@@ -488,6 +577,7 @@ namespace ModularFlightPanel.UI.Auditing
                     {
                         bool isConst = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ConstKeyword));
                         bool isReadOnly = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ReadOnlyKeyword));
+                        bool isStatic = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword));
                         string typeName = RoslynAstHelper.GetSimpleTypeName(field.Declaration.Type);
 
                         foreach (var v in field.Declaration.Variables)
@@ -499,7 +589,7 @@ namespace ModularFlightPanel.UI.Auditing
 
                             FieldKind kind = fieldSymbol != null
                                 ? ClassifyFieldBySymbol(fieldSymbol, fieldName, isConst, isReadOnly)
-                                : ClassifyField(typeName, fieldName, isConst, isReadOnly);
+                                : ClassifyField(typeName, fieldName, isConst, isReadOnly, isStatic);
 
                             if (fieldSymbol != null) report.SemanticResolvedFieldCount++;
 

@@ -136,7 +136,7 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly ArcMeterLogic _logic = new ArcMeterLogic();
         protected override IWidgetLogic LogicCore => _logic;
 
-        private ArcMeterType _type = ArcMeterType.Throttle;
+        private readonly Cached<ArcMeterType> _type = new Cached<ArcMeterType>(ArcMeterType.Throttle);
         private Image _meterImage;
         private Material _meterMaterial;
 
@@ -158,7 +158,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 识别预设类型
             if (config != null && (config.WidgetId == "core.vsi" || config.WidgetType == "vsi"))
             {
-                _type = ArcMeterType.VerticalSpeed;
+                _type.Value = ArcMeterType.VerticalSpeed;
                 _valueToken = !string.IsNullOrEmpty(config.NumericToken) ? config.NumericToken : "{VSI:NORM}";
                 Title.Text = "VSI";
                 MinScale.Text = "-";
@@ -166,7 +166,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else if (config != null && (config.WidgetId == "core.propellant" || config.WidgetType == "propellant"))
             {
-                _type = ArcMeterType.StagePropellant;
+                _type.Value = ArcMeterType.StagePropellant;
                 _valueToken = !string.IsNullOrEmpty(config.NumericToken) ? config.NumericToken : "{PROP}";
                 Title.Text = I18n.Tr("WIDGET_GAUGE_PROP", "推进剂");
                 MinScale.Text = "0";
@@ -174,14 +174,14 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                _type = ArcMeterType.Throttle;
+                _type.Value = ArcMeterType.Throttle;
                 _valueToken = !string.IsNullOrEmpty(config?.NumericToken) ? config.NumericToken : "{THROTTLE}";
                 Title.Text = "THR";
                 MinScale.Text = "0";
                 MaxScale.Text = "100";
             }
 
-            _logic.MeterType = _type;
+            _logic.MeterType = _type.Value;
             _logic.Config = config;
 
             // 构建圆弧着色器 GameObject
@@ -211,7 +211,7 @@ namespace ModularFlightPanel.UI.Widgets
             _meterMaterial.SetFloat("_SegmentCount", 16.0f);
             _meterMaterial.SetFloat("_SegmentGap", 0.06f);
 
-            Color activeCol = _type == ArcMeterType.VerticalSpeed ? style.GetMeterColor(MeterStyleRole.Secondary, theme) : style.GetMeterColor(MeterStyleRole.Primary, theme);
+            Color activeCol = _type.Value == ArcMeterType.VerticalSpeed ? style.GetMeterColor(MeterStyleRole.Secondary, theme) : style.GetMeterColor(MeterStyleRole.Primary, theme);
             _meterMaterial.SetColor("_ActiveColor", activeCol);
             _meterMaterial.SetColor("_InactiveColor", style.GetMeterColor(MeterStyleRole.Track, theme));
             _meterMaterial.SetColor("_BorderColor", style.GetCardBorderColor(CardStyleRole.Normal, theme));

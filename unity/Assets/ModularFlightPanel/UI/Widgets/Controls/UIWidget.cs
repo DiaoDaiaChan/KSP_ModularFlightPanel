@@ -380,8 +380,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         // 私有托管死区缓存槽位 (MFP-SPEC-009)
         private readonly Cached<int> _lastTotalCount = new Cached<int>(-1);
         private readonly Cached<int> _lastActiveCount = new Cached<int>(-1);
-        private readonly Cached<int> _lastLockedCount = new Cached<int>(-1);
-        private readonly Cached<bool> _lastHasVessel = new Cached<bool>(false);
         private readonly Cached<bool> _lastRcs = new Cached<bool>(false);
         private readonly Cached<bool> _lastSas = new Cached<bool>(false);
         private readonly Cached<bool> _lastGear = new Cached<bool>(false);
@@ -391,7 +389,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private readonly Cached<bool> _lastPrecision = new Cached<bool>(false);
         private readonly Cached<FlightSASMode> _lastSasMode = new Cached<FlightSASMode>((FlightSASMode)(-1));
         private readonly Cached<string> _lastSpeedMode = new Cached<string>(string.Empty);
-        private readonly Cached<int> _lastWarpRate = new Cached<int>(-1);
         private readonly Cached<bool> _lastPaused = new Cached<bool>(false);
         private readonly Cached<uint> _lastAgMask = new Cached<uint>(0);
         private readonly CachedFloat _lastEcPct = new CachedFloat(-1f);
@@ -404,8 +401,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private readonly Cached<string> _lastApPe = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastApPeTime = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastOrbitElements = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastUnitModeStr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastThemeStr = new Cached<string>(string.Empty);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {

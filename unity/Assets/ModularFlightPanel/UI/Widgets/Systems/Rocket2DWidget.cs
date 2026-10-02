@@ -392,15 +392,9 @@ namespace ModularFlightPanel.UI.Widgets
         private ThemeConfig _cachedTheme;
 
         // 姿态与视觉补间状态
-        private float _currentTilt = 0f;
+        private readonly CachedFloat _currentTilt = new CachedFloat(0f, tolerance: 0.05f);
 
         // 托管缓存 (SPEC-009)
-        private readonly Cached<string> _lastRenderedTitle = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastRenderedSubTitle = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastRenderedTwr = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastRenderedDv = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastRenderedBayTitle = new Cached<string>(string.Empty);
-        private readonly Cached<string> _lastRenderedBayFooter = new Cached<string>(string.Empty);
 
         // 动画时间模拟支持 (用于无头单帧/连续帧确定性渲染)
         public static float CustomAnimationTime = -1f;
@@ -862,8 +856,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_rocketAssemblyRt != null)
             {
-                _currentTilt = Mathf.MoveTowards(_currentTilt, state.TargetTilt, dt * 60f);
-                _rocketAssemblyRt.localRotation = Quaternion.Euler(0f, 0f, -_currentTilt);
+                _currentTilt.Value = Mathf.MoveTowards(_currentTilt.Value, state.TargetTilt, dt * 60f);
+                _rocketAssemblyRt.localRotation = Quaternion.Euler(0f, 0f, -_currentTilt.Value);
             }
 
             Texture silTex = VesselSilhouetteService.Provider?.SilhouetteTexture;

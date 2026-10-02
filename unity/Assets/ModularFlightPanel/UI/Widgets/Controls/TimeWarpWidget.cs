@@ -150,7 +150,7 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly TimeWarpLogic _logic = new TimeWarpLogic();
         protected override IWidgetLogic LogicCore => _logic;
 
-        private bool _stockHidden = true;
+        private readonly Cached<bool> _stockHidden = new Cached<bool>(true);
         private ThemeConfig _currentTheme;
         private IFlightTelemetry _telemetry;
 
@@ -288,8 +288,8 @@ namespace ModularFlightPanel.UI.Widgets
             _cancelBtnText.GetComponent<RectTransform>().sizeDelta = cancelBtnSize;
 
             // 初始化根据主题配置执行原版时间栏静默隐藏
-            _stockHidden = ThemeManager.IsStockTimeWarpHidden;
-            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden);
+            _stockHidden.Value = ThemeManager.IsStockTimeWarpHidden;
+            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden.Value);
 
             // 标准化组件内部控件注册至管理器 (0 影响原画质与排版)
             ModularFlightPanel.UI.Framework.WidgetControlManager.WrapElement(this, "background", "时间加速底板", panel);
@@ -422,8 +422,8 @@ namespace ModularFlightPanel.UI.Widgets
             // 6. 原版时间栏显隐按键文本与颜色
             if (_stockBtnText != null)
             {
-                _stockBtnText.text = _stockHidden ? "KSP" : "MFP";
-                ApplyText(_stockBtnText, _stockHidden ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
+                _stockBtnText.text = _stockHidden.Value ? "KSP" : "MFP";
+                ApplyText(_stockBtnText, _stockHidden.Value ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
             }
         }
 
@@ -483,9 +483,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnToggleStock()
         {
-            _stockHidden = !_stockHidden;
-            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden);
-            ThemeManager.IsStockTimeWarpHidden = _stockHidden;
+            _stockHidden.Value = !_stockHidden.Value;
+            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden.Value);
+            ThemeManager.IsStockTimeWarpHidden = _stockHidden.Value;
             ThemeManager.Instance.SaveSettings();
         }
 

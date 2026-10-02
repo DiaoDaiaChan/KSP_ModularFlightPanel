@@ -759,7 +759,6 @@ namespace ModularFlightPanel.UI
             };
         }
 
-        private static readonly Color StandardSkyZenith = new Color(0.03f, 0.18f, 0.52f, 1.0f);
         private static readonly Color StandardSkyHorizon = new Color(0.06f, 0.40f, 0.78f, 1.0f);
         private static readonly Color StandardGroundHorizon = new Color(0.60f, 0.30f, 0.08f, 1.0f);
         private static readonly Color StandardLadderWhite = new Color(0.98f, 0.99f, 1.0f, 1.0f);

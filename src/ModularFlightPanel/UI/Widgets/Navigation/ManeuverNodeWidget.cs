@@ -17,6 +17,173 @@ namespace ModularFlightPanel.UI.Widgets
     }
 
     /// <summary>
+    /// 机动节点解算纯状态快照 (0 GC 纯值结构体)
+    /// </summary>
+    public struct ManeuverNodeState
+    {
+        public bool HasNode;
+        public double DeltaV;
+        public double TotalDeltaV;
+        public float MeterFraction;
+        public double TimeToNode;
+        public double BurnTime;
+        public double TimeToBurn;
+        public string FormattedDeltaV;
+        public string FormattedTotalDeltaV;
+        public string UnitLabel;
+        public string FormattedTNode;
+        public string FormattedBurnTime;
+        public string FormattedTimeToBurn;
+        public string FormattedBurnIn;
+        public string BadgeText;
+        public CardStyleRole TargetCardRole;
+        public bool IsBurning;
+        public bool IsUrgent;
+        public bool IsPreIgnition;
+        public bool IsBurnComplete;
+        public string FormattedPercent;
+        public string VectorTag;
+    }
+
+    /// <summary>
+    /// 机动节点解算纯逻辑大脑 (Headless Pure C# Logic Engine)
+    /// 完全脱离 UnityEngine，支持无头仿真、离线单元测试与零 GC 解算。
+    /// </summary>
+    public class ManeuverNodeLogic : WidgetLogic<ManeuverNodeState>
+    {
+        public override void Reset()
+        {
+            CurrentState = default;
+        }
+
+        public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
+        {
+            if (telemetry == null || !telemetry.HasVessel || !telemetry.HasManeuverNode)
+            {
+                Reset();
+                return;
+            }
+
+            double dv = telemetry.ManeuverDeltaV;
+            double totalDv = telemetry.ManeuverTotalDeltaV;
+            if (totalDv < dv) totalDv = dv;
+            double timeToNode = telemetry.ManeuverTimeToNode;
+            double burnTime = telemetry.ManeuverBurnTime;
+            double timeToBurn = telemetry.ManeuverTimeToBurn;
+
+            float fraction = 1.0f;
+            if (totalDv > 0.1)
+            {
+                double ratio = dv / totalDv;
+                fraction = (float)Math.Max(0.0, Math.Min(1.0, ratio));
+            }
+
+            bool isBurning = timeToBurn <= 0.0 && dv > 0.1;
+            bool isBurnComplete = dv <= 0.1;
+            bool isUrgent = timeToBurn > 0.0 && timeToBurn <= 15.0;
+            bool isPreIgnition = timeToBurn > 0.0 && timeToBurn <= 60.0;
+            string percentStr = AvionicsFastFormat.FastPercent(fraction);
+
+            double proDv = telemetry.ManeuverDeltaVPrograde;
+            double normDv = telemetry.ManeuverDeltaVNormal;
+            double radDv = telemetry.ManeuverDeltaVRadial;
+            string vectorTag;
+            if (double.IsNaN(proDv) || (Math.Abs(proDv) < 0.1 && Math.Abs(normDv) < 0.1 && Math.Abs(radDv) < 0.1))
+            {
+                vectorTag = percentStr;
+            }
+            else if (Math.Abs(proDv) >= Math.Abs(normDv) && Math.Abs(proDv) >= Math.Abs(radDv))
+            {
+                vectorTag = (proDv >= 0 ? "PRO " : "RET ") + percentStr;
+            }
+            else if (Math.Abs(normDv) >= Math.Abs(radDv))
+            {
+                vectorTag = (normDv >= 0 ? "NORM " : "ANT ") + percentStr;
+            }
+            else
+            {
+                vectorTag = (radDv >= 0 ? "RAD " : "A-RAD ") + percentStr;
+            }
+
+            // 统一航电量纲制式换算 (公制/英制/航海制自动自适应)
+            double convertedDv = AvionicsUnitSystem.Convert(
+                dv,
+                UnitDimension.Velocity,
+                AvionicsUnitSystem.GlobalMode,
+                out string unitSymbol);
+
+            string formattedDv = convertedDv.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+            double convertedTotalDv = AvionicsUnitSystem.Convert(
+                totalDv,
+                UnitDimension.Velocity,
+                AvionicsUnitSystem.GlobalMode,
+                out _);
+            string formattedTotalDv = convertedTotalDv.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+            CardStyleRole targetRole = CardStyleRole.Normal;
+            string badgeText = I18n.Tr("WIDGET_ALERT_ARMED", "待命");
+
+            if (isBurning)
+            {
+                targetRole = CardStyleRole.Emphasized;
+                badgeText = I18n.Tr("WIDGET_NAV_BURNING", "燃烧中");
+            }
+            else if (isBurnComplete)
+            {
+                targetRole = CardStyleRole.Normal;
+                badgeText = I18n.Tr("WIDGET_NAV_BURN_COMPLETE", "已完成");
+            }
+            else if (isUrgent)
+            {
+                targetRole = CardStyleRole.Emphasized;
+                badgeText = I18n.Tr("WIDGET_NAV_BURN_IN", "点火准备");
+            }
+            else if (isPreIgnition)
+            {
+                targetRole = CardStyleRole.Warning;
+                badgeText = I18n.Tr("WIDGET_NAV_COUNTDOWN", "倒计时");
+            }
+
+            string prefix = timeToNode < 0 ? "T+ " : "T- ";
+            string formattedTNode = prefix + BaseFlightWidget.FormatDuration(Math.Abs(timeToNode));
+            string formattedBurnTime = BaseFlightWidget.FormatDuration(Math.Max(0.0, burnTime));
+            string formattedTimeToBurn = timeToBurn <= 0.0
+                ? (I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!")
+                : BaseFlightWidget.FormatDuration(timeToBurn);
+            string burnIn = timeToBurn <= 0.0
+                ? (I18n.Tr("WIDGET_NAV_BURNING", "燃烧中") + "!")
+                : (I18n.Tr("WIDGET_NAV_BURN_IN", "点火") + " " + BaseFlightWidget.FormatDuration(timeToBurn));
+
+            CurrentState = new ManeuverNodeState
+            {
+                HasNode = true,
+                DeltaV = dv,
+                TotalDeltaV = totalDv,
+                MeterFraction = fraction,
+                TimeToNode = timeToNode,
+                BurnTime = burnTime,
+                TimeToBurn = timeToBurn,
+                FormattedDeltaV = formattedDv,
+                FormattedTotalDeltaV = formattedTotalDv,
+                UnitLabel = unitSymbol,
+                FormattedTNode = formattedTNode,
+                FormattedBurnTime = formattedBurnTime,
+                FormattedTimeToBurn = formattedTimeToBurn,
+                FormattedBurnIn = burnIn,
+                BadgeText = badgeText,
+                TargetCardRole = targetRole,
+                IsBurning = isBurning,
+                IsUrgent = isUrgent,
+                IsPreIgnition = isPreIgnition,
+                IsBurnComplete = isBurnComplete,
+                FormattedPercent = percentStr,
+                VectorTag = vectorTag
+            };
+        }
+    }
+
+    /// <summary>
     /// ====================================================================================
     /// Modular Flight Panel (MFP) 机动节点指示器 (Maneuver Node Indicator)
     /// ====================================================================================
@@ -108,7 +275,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _btnDismissText;
 
         // 模式与模板通道
-        private ManeuverIdleMode _idleMode = ManeuverIdleMode.MinimalPill;
+        private readonly Cached<ManeuverIdleMode> _idleMode = new Cached<ManeuverIdleMode>(ManeuverIdleMode.MinimalPill);
         private string _titleTemplate = I18n.Tr("WIDGET_NAV_MANEUVER_NODE", "机动节点");
         private string _deltaVToken = "{MN:DV}";
         private string _totalDvToken = "{MN:TOTAL_DV}";
@@ -125,7 +292,6 @@ namespace ModularFlightPanel.UI.Widgets
         // 智能私有缓存 (SPEC-009: 杜绝裸 _last 字段)
         private readonly Cached<bool?> _lastHasNode = new Cached<bool?>(null);
         private readonly CachedDouble _lastDeltaV = new CachedDouble(double.NaN);
-        private readonly CachedFloat _lastMeterFraction = new CachedFloat(-1f);
         private readonly Cached<string> _lastBadgeStr = new Cached<string>(string.Empty);
         private readonly Cached<CardStyleRole> _lastCardRole = new Cached<CardStyleRole>(CardStyleRole.Normal);
         private readonly Cached<string> _lastTNodeStr = new Cached<string>(string.Empty);
@@ -163,7 +329,7 @@ namespace ModularFlightPanel.UI.Widgets
             string idleSetting = GetTemplateChannel("IDLE", string.Empty);
             if (idleSetting.Equals("HIDE", StringComparison.OrdinalIgnoreCase))
             {
-                _idleMode = ManeuverIdleMode.AutoHide;
+                _idleMode.Value = ManeuverIdleMode.AutoHide;
             }
 
             // 2. 创建视口容器
@@ -570,7 +736,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (!state.HasNode)
                 {
-                    if (_idleMode == ManeuverIdleMode.AutoHide && !isEdit)
+                    if (_idleMode.Value == ManeuverIdleMode.AutoHide && !isEdit)
                     {
                         if (_canvasGroup != null)
                         {
@@ -810,7 +976,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.PopulateContextMenu(registerAction);
 
-            string idleLabel = _idleMode == ManeuverIdleMode.MinimalPill
+            string idleLabel = _idleMode.Value == ManeuverIdleMode.MinimalPill
                 ? I18n.Tr("CTX_MNV_MODE_AUTOHIDE", "⚡ 无节点模式: 切换为【自动完全隐身】")
                 : I18n.Tr("CTX_MNV_MODE_PILL", "⚡ 无节点模式: 切换为【极简胶囊待命】");
 
@@ -819,13 +985,13 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ToggleIdleMode()
         {
-            _idleMode = (_idleMode == ManeuverIdleMode.MinimalPill) ? ManeuverIdleMode.AutoHide : ManeuverIdleMode.MinimalPill;
-            string modeStr = ((int)_idleMode).ToString();
+            _idleMode.Value = (_idleMode.Value == ManeuverIdleMode.MinimalPill) ? ManeuverIdleMode.AutoHide : ManeuverIdleMode.MinimalPill;
+            string modeStr = ((int)_idleMode.Value).ToString();
             if (Config != null)
             {
                 Config.CustomTemplate = string.IsNullOrEmpty(Config.CustomTemplate) ? $"IDLE={modeStr}" : $"IDLE={modeStr};" + Config.CustomTemplate;
             }
-            string tip = _idleMode == ManeuverIdleMode.AutoHide
+            string tip = _idleMode.Value == ManeuverIdleMode.AutoHide
                 ? I18n.Tr("TIP_MNV_MODE_AUTOHIDE", "已切换至自动完全隐身模式 (无机动节点时自动隐形)")
                 : I18n.Tr("TIP_MNV_MODE_PILL", "已切换至极简胶囊模式 (无机动节点时收起为微型待命条)");
             MFPToastBridge.Show(tip);
@@ -878,3 +1044,4 @@ namespace ModularFlightPanel.UI.Widgets
         }
     }
 }
+

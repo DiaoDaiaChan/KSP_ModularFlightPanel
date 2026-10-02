@@ -377,7 +377,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private IFlightTelemetry _telemetry;
         private ThemeConfig _currentTheme;
-        private bool _stockHidden = true;
+        private readonly Cached<bool> _stockHidden = new Cached<bool>(true);
 
         // 中央垂直细分割线
         private GameObject _centerDivider;
@@ -707,9 +707,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 5. 初始化原版时间与通信栏状态
-            _stockHidden = ThemeManager.IsStockTimeWarpHidden && ThemeManager.IsStockCommNetHidden;
-            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden);
-            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden);
+            _stockHidden.Value = ThemeManager.IsStockTimeWarpHidden && ThemeManager.IsStockCommNetHidden;
+            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden.Value);
+            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden.Value);
 
             // 6. 执行几何排版与坐标锚定 (必须在微控件注册前完成，确保捕获真实设计默认坐标)
             ApplyLayout(baseW, baseH);
@@ -1213,11 +1213,11 @@ namespace ModularFlightPanel.UI.Widgets
             // 原版切换按钮
             if (_stockBtnText != null)
             {
-                string stockStr = _stockHidden ? "KSP" : "MFP";
+                string stockStr = _stockHidden.Value ? "KSP" : "MFP";
                 if (_dirtyStockBtnStr.Update(stockStr))
                 {
                     _stockBtnText.SetTextSafe(stockStr);
-                    ApplyText(_stockBtnText, _stockHidden ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
+                    ApplyText(_stockBtnText, _stockHidden.Value ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
                 }
             }
 
@@ -1490,11 +1490,11 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnToggleStock()
         {
-            _stockHidden = !_stockHidden;
-            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden);
-            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden);
-            ThemeManager.IsStockTimeWarpHidden = _stockHidden;
-            ThemeManager.IsStockCommNetHidden = _stockHidden;
+            _stockHidden.Value = !_stockHidden.Value;
+            NavBallHookService.HideStockTimeWarpAction?.Invoke(_stockHidden.Value);
+            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden.Value);
+            ThemeManager.IsStockTimeWarpHidden = _stockHidden.Value;
+            ThemeManager.IsStockCommNetHidden = _stockHidden.Value;
             ThemeManager.Instance.SaveSettings();
         }
 

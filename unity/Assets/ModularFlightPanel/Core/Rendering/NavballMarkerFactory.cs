@@ -716,14 +716,6 @@ namespace ModularFlightPanel.Core
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
         }
 
-        private static float BoxSdf(float x, float y, float halfW, float halfH)
-        {
-            float dx = Mathf.Abs(x) - halfW;
-            float dy = Mathf.Abs(y) - halfH;
-            float d = Mathf.Max(dx, dy);
-            return Mathf.Clamp01(0.5f - d);
-        }
-
         private static float EquilateralTriangleSdf(float px, float py, float r, float strokeW, bool pointingUp)
         {
             if (!pointingUp) py = -py;
@@ -788,3 +780,4 @@ namespace ModularFlightPanel.Core
         }
     }
 }
+

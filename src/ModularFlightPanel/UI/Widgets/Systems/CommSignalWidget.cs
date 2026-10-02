@@ -277,8 +277,8 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly PeerRowUI[] _peerRows = new PeerRowUI[MaxPeerRows];
         private Text _matrixFooterText;
 
-        private bool _isExpanded = false;
-        private bool _stockHidden = true;
+        private readonly Cached<bool> _isExpanded = new Cached<bool>(false);
+        private readonly Cached<bool> _stockHidden = new Cached<bool>(true);
         private ThemeConfig _currentTheme;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -409,8 +409,8 @@ namespace ModularFlightPanel.UI.Widgets
             footRt.anchoredPosition = new Vector2(0f, -dropSize.y * 0.5f + 8f * s);
 
             // 初始化根据主题配置执行原版通信指示器静默隐藏
-            _stockHidden = ThemeManager.IsStockCommNetHidden;
-            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden);
+            _stockHidden.Value = ThemeManager.IsStockCommNetHidden;
+            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden.Value);
 
             UpdateExpansionLayout();
 
@@ -602,11 +602,11 @@ namespace ModularFlightPanel.UI.Widgets
             // 5. 原版通信栏开关文本
             if (_stockBtnText != null)
             {
-                string newStockText = _stockHidden ? "KSP" : "MFP";
+                string newStockText = _stockHidden.Value ? "KSP" : "MFP";
                 if (_lastStockBtnText.Update(newStockText))
                 {
                     _stockBtnText.text = newStockText;
-                    ApplyText(_stockBtnText, _stockHidden ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
+                    ApplyText(_stockBtnText, _stockHidden.Value ? TextStyleRole.SecondaryValue : TextStyleRole.Accent, theme);
                 }
             }
         }
@@ -666,8 +666,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnToggleExpand()
         {
-            _isExpanded = !_isExpanded;
-            _logic.IsDropdownOpen = _isExpanded;
+            _isExpanded.Value = !_isExpanded.Value;
+            _logic.IsDropdownOpen = _isExpanded.Value;
             UpdateExpansionLayout();
         }
 
@@ -676,21 +676,21 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             float dropH = 142f * s;
             float capH = 26f * s;
-            float totalH = _isExpanded ? (capH + dropH + 2f * s) : capH;
+            float totalH = _isExpanded.Value ? (capH + dropH + 2f * s) : capH;
 
             RectTransform.sizeDelta = new Vector2(236f * s, totalH);
 
             if (_capsuleBar != null)
             {
                 RectTransform capRt = _capsuleBar.GetComponent<RectTransform>();
-                float capY = _isExpanded ? (totalH * 0.5f - capH * 0.5f) : 0f;
+                float capY = _isExpanded.Value ? (totalH * 0.5f - capH * 0.5f) : 0f;
                 capRt.anchoredPosition = new Vector2(0f, capY);
             }
 
             if (_dropdownPanel != null)
             {
-                _dropdownPanel.SetActive(_isExpanded);
-                if (_isExpanded)
+                _dropdownPanel.SetActive(_isExpanded.Value);
+                if (_isExpanded.Value)
                 {
                     RectTransform dropRt = _dropdownPanel.GetComponent<RectTransform>();
                     float dropY = -totalH * 0.5f + dropH * 0.5f;
@@ -706,9 +706,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnToggleStock()
         {
-            _stockHidden = !_stockHidden;
-            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden);
-            ThemeManager.IsStockCommNetHidden = _stockHidden;
+            _stockHidden.Value = !_stockHidden.Value;
+            NavBallHookService.HideStockCommNetAction?.Invoke(_stockHidden.Value);
+            ThemeManager.IsStockCommNetHidden = _stockHidden.Value;
             ThemeManager.Instance.SaveSettings();
         }
 

@@ -911,7 +911,7 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _btnStsText;
         private AvionicsButtonFeedback _btnStsFb;
 
-        private float _globalBlinkTimer = 0f;
+        private readonly CachedFloat _globalBlinkTimer = new CachedFloat(0f, tolerance: 0.001f);
 
         // 视觉缓存防抖
         private readonly Cached<string> _lastPhaseText = new Cached<string>(string.Empty);
@@ -1314,8 +1314,8 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            _globalBlinkTimer += context.DeltaTime;
-            if (_globalBlinkTimer >= 1000f) _globalBlinkTimer = 0f;
+            _globalBlinkTimer.Value += context.DeltaTime;
+            if (_globalBlinkTimer.Value >= 1000f) _globalBlinkTimer.Value = 0f;
 
             EcamAlertLogState state = _logic.CurrentState;
             OnRenderState(in state, context.Theme ?? WidgetStyleManager.Instance?.CurrentTheme);
@@ -1343,7 +1343,7 @@ namespace ModularFlightPanel.UI.Widgets
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            bool blinkOn = ((int)(_globalBlinkTimer * 2f)) % 2 == 0;
+            bool blinkOn = ((int)(_globalBlinkTimer.Value * 2f)) % 2 == 0;
 
             // 1. 顶栏飞行阶段胶囊更新
             if (_lastPhaseText.Update(state.PhaseText))

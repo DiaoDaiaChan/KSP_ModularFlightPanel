@@ -345,7 +345,6 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<int> _lastHeadingValue = new Cached<int>(-1);
         private readonly Cached<string> _lastHeadingCategory = new Cached<string>(null);
         private readonly CachedFloat _lastRollPointerAngle = new CachedFloat(-9999f, 0.05f);
-        private readonly CachedFloat _lastBankTicksAlpha = new CachedFloat(-1f, 0.01f);
         private bool _detailScaleDirty = true;
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)

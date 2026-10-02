@@ -1226,13 +1226,5 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         }
     }
 
-    [Obsolete("Use ArcTapeWidget with custom.arc_speed_tape instead.")]
-    public class ArcSpeedTapeWidget : ArcTapeWidget
-    {
-    }
-
-    [Obsolete("Use ArcTapeWidget with custom.arc_altitude_tape instead.")]
-    public class ArcAltitudeTapeWidget : ArcTapeWidget
-    {
-    }
 }
+

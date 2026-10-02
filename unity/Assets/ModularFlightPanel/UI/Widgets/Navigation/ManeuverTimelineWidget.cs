@@ -295,7 +295,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private const float ZoneBurnoutNorm = 0.88f;
 
         // 风格配置 (FAINT: 极细淡边框[默认], NONE: 完全无框, NORMAL: 传统卡片)
-        private string _frameMode = "FAINT";
+        private readonly Cached<string> _frameMode = new Cached<string>("FAINT");
 
         // 通配符通道与可覆盖模板
         private string _deltaVToken = "{MN:DV}";
@@ -315,7 +315,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
             string frame = GetTemplateChannel("FRAME", null);
-            _frameMode = !string.IsNullOrEmpty(frame) ? frame.ToUpperInvariant() : "FAINT";
+            _frameMode.Value = !string.IsNullOrEmpty(frame) ? frame.ToUpperInvariant() : "FAINT";
             _deltaVToken = GetTemplateChannel(new[] { "DV_TOKEN", "DELTA_V_TOKEN" }, "{MN:DV}");
             _totalDvToken = GetTemplateChannel("TOTAL_DV_TOKEN", "{MN:TOTAL_DV}");
             _tNodeToken = GetTemplateChannel("T_NODE_TOKEN", "{MN:T_NODE}");
@@ -432,12 +432,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "card_bg", "卡片底板", gameObject, (t) => {
-                if (_frameMode == "NONE")
+                if (_frameMode.Value == "NONE")
                 {
                     if (_bgImage != null) _bgImage.color = Color.clear;
                     if (_bgOutline != null) _bgOutline.enabled = false;
                 }
-                else if (_frameMode == "FAINT")
+                else if (_frameMode.Value == "FAINT")
                 {
                     if (_bgImage != null) _bgImage.color = Color.clear;
                     if (_bgOutline != null)
@@ -518,12 +518,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 外框模式着色
-            if (_frameMode == "NONE")
+            if (_frameMode.Value == "NONE")
             {
                 if (_bgImage != null) _bgImage.color = Color.clear;
                 if (_bgOutline != null) _bgOutline.enabled = false;
             }
-            else if (_frameMode == "FAINT")
+            else if (_frameMode.Value == "FAINT")
             {
                 if (_bgImage != null) _bgImage.color = Color.clear;
                 if (_bgOutline != null)
@@ -607,13 +607,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (_currentCardRole != state.CardRole)
             {
                 _currentCardRole = state.CardRole;
-                if (_frameMode == "FAINT" && _bgOutline != null)
+                if (_frameMode.Value == "FAINT" && _bgOutline != null)
                 {
                     _bgOutline.effectColor = _currentCardRole == CardStyleRole.Emphasized
                         ? WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Medium)
                         : WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost);
                 }
-                else if (_frameMode == "NORMAL")
+                else if (_frameMode.Value == "NORMAL")
                 {
                     ApplyCard(_bgImage, _bgOutline, _currentCardRole, theme);
                 }

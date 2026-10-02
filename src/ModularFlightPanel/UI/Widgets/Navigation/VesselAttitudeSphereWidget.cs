@@ -426,14 +426,6 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         // 姿态缓存与脏标记
         private readonly CachedDouble _lastPitch = new CachedDouble(double.NaN, 0.05);
-        private readonly CachedDouble _lastRoll = new CachedDouble(double.NaN, 0.05);
-        private readonly CachedDouble _lastHeading = new CachedDouble(double.NaN, 0.05);
-        private readonly Cached<int> _lastHdgInt = new Cached<int>(-1);
-        private readonly Cached<string> _lastTopFrameCat = new Cached<string>(null);
-        private readonly Cached<int> _lastPitchInt = new Cached<int>(-9999);
-        private readonly Cached<int> _lastRollInt = new Cached<int>(-9999);
-        private readonly Cached<FlightSASMode> _lastSASMode = new Cached<FlightSASMode>((FlightSASMode)(-1));
-        private readonly Cached<bool> _lastDirectorLocked = new Cached<bool>(false);
         private readonly Cached<string> _lastTopText = new Cached<string>(string.Empty);
         private readonly Cached<string> _lastBottomText = new Cached<string>(string.Empty);
 
@@ -1186,11 +1178,5 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         }
     }
 
-    /// <summary>
-    /// 向后兼容类型别名 (与文件名 VesselAttitudeSphereWidget.cs 对齐)
-    /// </summary>
-    [Obsolete("Use VesselAttitudeSphereWidget instead.")]
-    public class VesselNavballWidget : VesselAttitudeSphereWidget
-    {
-    }
 }
+

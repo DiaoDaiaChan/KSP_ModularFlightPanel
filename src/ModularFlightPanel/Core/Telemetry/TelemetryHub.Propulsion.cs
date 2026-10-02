@@ -220,7 +220,6 @@ namespace ModularFlightPanel.Core
         private double _cachedTotalThrust = 0.0;
         private List<ModuleEngines> _cachedEngines = new List<ModuleEngines>();
         private readonly List<StageDeltaVInfo> _cachedStockStages = new List<StageDeltaVInfo>(16);
-        private static readonly Comparison<StageDeltaVInfo> CompareStageDescending = (a, b) => b.Stage.CompareTo(a.Stage);
         private readonly Dictionary<int, List<StagePartIconData>> _cachedStagePartIcons = new Dictionary<int, List<StagePartIconData>>();
         private float _lastStageIconScanTime = -10f;
         private static System.Reflection.FieldInfo _stageIconImageField;

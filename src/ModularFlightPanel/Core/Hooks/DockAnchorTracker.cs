@@ -244,22 +244,6 @@ namespace ModularFlightPanel.Core
             return Camera.main;
         }
 
-        private static object GetAAInstance(Type aaType)
-        {
-            if (aaType == null) return null;
-            var prop = AccessTools.Property(aaType, "Instance");
-            if (prop != null)
-            {
-                try { return prop.GetValue(null, null); } catch { }
-            }
-            var field = AccessTools.Field(aaType, "Instance") ?? AccessTools.Field(aaType, "<Instance>k__BackingField");
-            if (field != null)
-            {
-                try { return field.GetValue(null); } catch { }
-            }
-            return null;
-        }
-
         /// <summary>
         /// 瞬时对齐指定按钮的 Transform 与容器物理坐标
         /// </summary>
@@ -1305,3 +1289,4 @@ namespace ModularFlightPanel.Core
     }
 #endif
 }
+

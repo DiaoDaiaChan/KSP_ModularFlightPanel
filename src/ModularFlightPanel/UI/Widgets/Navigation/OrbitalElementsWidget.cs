@@ -479,7 +479,6 @@ namespace ModularFlightPanel.UI.Widgets
         // ── 每帧复用的采样缓冲 (几何图元不再逐帧分配数组) ──
         private readonly Vector2[] _orbitPts = new Vector2[385];
         private readonly bool[] _orbitFront = new bool[385];
-        private readonly Vector2[] _diskPts = new Vector2[129];
 
         private readonly CachedDouble _lastDrawnAp = new CachedDouble(double.NaN);
         private readonly CachedDouble _lastDrawnPe = new CachedDouble(double.NaN);

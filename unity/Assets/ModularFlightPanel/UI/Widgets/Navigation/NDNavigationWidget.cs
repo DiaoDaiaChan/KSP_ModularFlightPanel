@@ -182,7 +182,7 @@ namespace ModularFlightPanel.UI.Widgets
         private GameObject _rangeRingsRoot;
 
         // 飞机中心挂载点 (相对面板底部偏置)
-        private Vector2 _aircraftCenterPos;
+        private readonly Cached<Vector2> _aircraftCenterPos = new Cached<Vector2>(Vector2.zero);
 
         // 通配符通道与模板
         private string _headingToken = "{HDG}";
@@ -213,7 +213,7 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             Vector2 panelSize = BaseSize * s;
             RectTransform.sizeDelta = panelSize;
-            _aircraftCenterPos = new Vector2(0f, -panelSize.y * 0.5f + 48f * s);
+            _aircraftCenterPos.Value = new Vector2(0f, -panelSize.y * 0.5f + 48f * s);
             if (config != null && !string.IsNullOrEmpty(config.NumericToken))
             {
                 _headingToken = config.NumericToken;
@@ -353,7 +353,7 @@ namespace ModularFlightPanel.UI.Widgets
                     if (i % 2 == 1) continue;
                     float ang = -52f + (i * (104f / segs));
                     float rad = ang * Mathf.Deg2Rad;
-                    Vector2 pos = _aircraftCenterPos + new Vector2(Mathf.Sin(rad) * radius, Mathf.Cos(rad) * radius);
+                    Vector2 pos = _aircraftCenterPos.Value + new Vector2(Mathf.Sin(rad) * radius, Mathf.Cos(rad) * radius);
 
                     GameObject dot = UIFactory.CreatePanel(_rangeRingsRoot.transform, $"Ring_{rIdx}_Seg_{i}",
                         new Vector2(4f * s, 1.2f * s), pos, ringCol);
@@ -363,14 +363,14 @@ namespace ModularFlightPanel.UI.Widgets
                 if (!string.IsNullOrEmpty(label))
                 {
                     float leftAng = -42f * Mathf.Deg2Rad;
-                    Vector2 leftPos = _aircraftCenterPos + new Vector2(Mathf.Sin(leftAng) * radius - 10f * s, Mathf.Cos(leftAng) * radius);
+                    Vector2 leftPos = _aircraftCenterPos.Value + new Vector2(Mathf.Sin(leftAng) * radius - 10f * s, Mathf.Cos(leftAng) * radius);
                     Text lTxt = UIFactory.CreateText(_rangeRingsRoot.transform, $"RingLbl_L_{label}", label,
                         Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter,
                         WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
                     lTxt.GetComponent<RectTransform>().anchoredPosition = leftPos;
 
                     float rightAng = 42f * Mathf.Deg2Rad;
-                    Vector2 rightPos = _aircraftCenterPos + new Vector2(Mathf.Sin(rightAng) * radius + 10f * s, Mathf.Cos(rightAng) * radius);
+                    Vector2 rightPos = _aircraftCenterPos.Value + new Vector2(Mathf.Sin(rightAng) * radius + 10f * s, Mathf.Cos(rightAng) * radius);
                     Text rTxt = UIFactory.CreateText(_rangeRingsRoot.transform, $"RingLbl_R_{label}", label,
                         Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter,
                         WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
@@ -385,7 +385,7 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 顶部正中央倒三角形基准游标
-            Vector2 lubberPos = _aircraftCenterPos + new Vector2(0f, radius + 3f * s);
+            Vector2 lubberPos = _aircraftCenterPos.Value + new Vector2(0f, radius + 3f * s);
             Image lubImg = CreateChild<Image>("Lubber_Triangle", transform,
                 new Vector2(7f * s, 7f * s), lubberPos);
             _lubberTriangle = lubImg.gameObject;
@@ -436,13 +436,13 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 垂直基准航迹线
             _trackLine = UIFactory.CreatePanel(transform, "ND_Track_Line",
                 new Vector2(1.5f * s, radius - 10f * s),
-                _aircraftCenterPos + new Vector2(0f, (radius - 10f * s) * 0.5f),
+                _aircraftCenterPos.Value + new Vector2(0f, (radius - 10f * s) * 0.5f),
                 WidgetStyleManager.Meter(MeterStyleRole.Primary, theme));
 
             // 跟踪双箭头
             GameObject chev = UIFactory.CreatePanel(transform, "ND_Track_Chevron",
                 new Vector2(8f * s, 8f * s),
-                _aircraftCenterPos + new Vector2(0f, radius * 0.85f),
+                _aircraftCenterPos.Value + new Vector2(0f, radius * 0.85f),
                 Color.clear);
             Outline chevOl = chev.AddComponent<Outline>();
             chevOl.effectColor = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
@@ -452,7 +452,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 2. 标志性飞机微标
             Color goldCol = style.GetTextColor(TextStyleRole.Warning, theme);
             _airplaneSymbol = CreateContainer("ND_Aircraft_Symbol", transform,
-                Vector2.zero, _aircraftCenterPos).gameObject;
+                Vector2.zero, _aircraftCenterPos.Value).gameObject;
 
             // 主机翼横杠
             UIFactory.CreatePanel(_airplaneSymbol.transform, "Wings", new Vector2(24f * s, 2.5f * s), Vector2.zero, goldCol);
@@ -468,7 +468,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 目标航点微标 (绿色菱形 ◇)
             Image wpImg = CreateChild<Image>("ND_Target_Waypoint", transform,
-                new Vector2(8f * s, 8f * s), _aircraftCenterPos + new Vector2(35f * s, 45f * s));
+                new Vector2(8f * s, 8f * s), _aircraftCenterPos.Value + new Vector2(35f * s, 45f * s));
             _targetWaypointMarker = wpImg.gameObject;
             RectTransform wpRt = wpImg.rectTransform;
             wpRt.localEulerAngles = new Vector3(0f, 0f, 45f);
@@ -491,7 +491,7 @@ namespace ModularFlightPanel.UI.Widgets
             Color priCol = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
             _targetRouteLine = UIFactory.CreatePanel(transform, "ND_Route_Line",
                 new Vector2(1.2f * s, 55f * s),
-                _aircraftCenterPos + new Vector2(18f * s, 24f * s),
+                _aircraftCenterPos.Value + new Vector2(18f * s, 24f * s),
                 WidgetStyleManager.WithAlpha(priCol, 0.45f));
             _targetRouteLine.transform.localEulerAngles = new Vector3(0f, 0f, -36f);
         }
@@ -524,7 +524,7 @@ namespace ModularFlightPanel.UI.Widgets
                 style.GetTextColor(TextStyleRole.Accent, theme));
             RectTransform driftRt = _driftText.GetComponent<RectTransform>();
             driftRt.sizeDelta = new Vector2(45f * s, 14f * s);
-            driftRt.anchoredPosition = _aircraftCenterPos + new Vector2(-28f * s, 0f);
+            driftRt.anchoredPosition = _aircraftCenterPos.Value + new Vector2(-28f * s, 0f);
         }
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
@@ -629,7 +629,7 @@ namespace ModularFlightPanel.UI.Widgets
                 item.Root.SetActive(true);
 
                 float rad = deltaAngle * Mathf.Deg2Rad;
-                Vector2 pos = _aircraftCenterPos + new Vector2(Mathf.Sin(rad) * radius, Mathf.Cos(rad) * radius);
+                Vector2 pos = _aircraftCenterPos.Value + new Vector2(Mathf.Sin(rad) * radius, Mathf.Cos(rad) * radius);
                 item.Rt.anchoredPosition = pos;
                 item.Rt.localEulerAngles = new Vector3(0f, 0f, -deltaAngle);
 

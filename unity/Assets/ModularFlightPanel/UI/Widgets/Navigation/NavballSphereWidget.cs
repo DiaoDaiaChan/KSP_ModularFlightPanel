@@ -1929,25 +1929,6 @@ namespace ModularFlightPanel.UI.Widgets
             return slot;
         }
 
-        private static string GetMarkerKeyForSASMode(FlightSASMode mode)
-        {
-            switch (mode)
-            {
-                case FlightSASMode.Prograde: return "prograde";
-                case FlightSASMode.Retrograde: return "retrograde";
-                case FlightSASMode.Normal: return "normal";
-                case FlightSASMode.Antinormal: return "antinormal";
-                case FlightSASMode.RadialIn: return "radialin";
-                case FlightSASMode.RadialOut: return "radialout";
-                case FlightSASMode.Target: return "target";
-                case FlightSASMode.AntiTarget: return "antitarget";
-                case FlightSASMode.Maneuver: return "maneuver";
-                case FlightSASMode.StabilityAssist:
-                default:
-                    return null;
-            }
-        }
-
         public static FlightSASMode? GetSASModeForMarker(string markerKey)
         {
             switch (markerKey?.ToLowerInvariant())
@@ -2559,3 +2540,4 @@ namespace ModularFlightPanel.UI.Widgets
         }
     }
 }
+
