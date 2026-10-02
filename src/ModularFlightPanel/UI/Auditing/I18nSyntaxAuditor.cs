@@ -91,12 +91,12 @@ namespace ModularFlightPanel.HeadlessValidator
             // 飞行参数与动力装置读数
             "SPD", "ALT", "VSI", "VERTSPD", "HDG", "THR", "TWR", "MACH", "G", "Q", "MAX-Q", "PE", "EC", "COMM", "STG", "IGN",
             "ECC", "INC", "PER", "PRO", "RET", "NRM", "RAD", "ANT", "SOI", "TRAJ", "AN", "DN",
-            "N1", "N2", "EPR", "EGT", "FF", "RPM", "ENG", "VIB", "REV", "MECO", "TO", "GA", "JETT", "ACC",
+            "N1", "N2", "EPR", "EGT", "FF", "RPM", "ENG", "VIB", "REV", "MECO", "TO", "GA", "JETT", "ACC", "IDLE", "SPOOL", "MIL", "MAX",
             "TAS", "IAS", "GS", "RA", "WT", "QTY", "PRESS", "TEMP", "SAT", "TAT", "CAB", "LDG", "RDR", "MON", "CH",
             // 时间 / 机构 / 项目 / 外部模组代号
             "UT", "MET", "MFP", "KSP", "SPX", "TDRS", "ISS", "DSN", "AFT", "FWD", "LO", "HI", "T", "RF", "FAR", "TF", "MJ", "WARP", "PHYS",
             // 标准告警与状态代号
-            "NORM", "CAUT", "WARN", "OK", "ERR", "ON", "OFF",
+            "NORM", "CAUT", "WARN", "OK", "ERR", "ON", "OFF", "VAC",
             // 单位与量纲符号 (含长距离天文单位与角度)
             "M", "KM", "MM", "GM", "TM", "AU", "LY", "DEG", "RAD", "S", "SEC", "MIN", "H", "D", "Y", "KN", "KPA", "ATM", "MS", "HZ", "FPS", "PX",
             "KB", "MB", "GB", "V", "A", "W", "k", "KG", "KGS", "C", "F", "PSI", "BPS", "KBPS", "MBPS", "DV",

@@ -53,7 +53,7 @@ namespace ModularFlightPanel.Editor
                         if (n.Contains("inertial") || n.Contains("non_rotating") || n.Contains("惯性") || n.Contains("不旋转")) return "INERTIAL";
                         if (n.Contains("orbit") || n.Contains("body_direction") || n.Contains("parent_direction") || n.Contains("轨道") || n.Contains("黄道") || n.Contains("ecliptic")) return "ORBIT";
                         if (n.Contains("target") || n.Contains("dock") || n.Contains("目标")) return "TARGET";
-                        if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("navball_surface") || n.Contains("rotating") || n.Contains("fixed") || n.Contains("体固") || n.Contains("地固")) return "BODY_FIXED";
+                        if (n.Contains("body_fixed") || n.Contains("body_surface") || n.Contains("rotating") || n.Contains("fixed") || n.Contains("体固") || n.Contains("地固")) return "BODY_FIXED";
                         if (n.Contains("surface") || n.Contains("ground") || n.Contains("地表")) return "SURFACE";
                     }
                     return "ORBIT";
@@ -576,6 +576,11 @@ namespace ModularFlightPanel.Editor
                     ThemeManager.Instance.ToolbarStyleMode = 2;
                     ThemeManager.Instance.DockEnableFavoritePanel = true;
                 }
+                else
+                {
+                    ThemeManager.Instance.ToolbarStyleMode = 0;
+                    ThemeManager.Instance.DockEnableFavoritePanel = false;
+                }
                 EnablePreviewWidgets();
                 SetWidgetState(cleanTargetId, true, 0f, 0f);
                 foreach (var w in WidgetLayoutManager.Instance.CurrentLayout.Widgets)
@@ -587,6 +592,12 @@ namespace ModularFlightPanel.Editor
                         // 居中呈现单组件以便高清独立校验
                         w.PositionX = 0f;
                         w.PositionY = 0f;
+                        if (cleanTargetId.Equals("gauge.barometer", StringComparison.OrdinalIgnoreCase) || cleanTargetId.IndexOf("atm", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            w.NumericToken = "{ATM}";
+                            w.MinValue = 0;
+                            w.MaxValue = 1;
+                        }
                         if (!string.IsNullOrEmpty(targetScenario))
                         {
                             if (targetScenario.Contains("concise") || targetScenario.Contains("minimal") || targetScenario.Contains("stock"))

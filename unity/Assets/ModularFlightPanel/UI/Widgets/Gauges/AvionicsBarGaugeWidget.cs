@@ -15,6 +15,16 @@ namespace ModularFlightPanel.UI.Widgets
     }
 
     /// <summary>
+    /// 大气压强带在真空（气压为0）环境下的交互模态
+    /// </summary>
+    public enum BarGaugeVacuumMode
+    {
+        Standard = 0,       // 始终常显 (始终保持完整 240px 标尺)
+        CollapsePill = 1,   // 极简折叠 (零压时收起为微型 VAC 胶囊标牌，默认推荐)
+        AutoHide = 2        // 自动完全隐形 (零压时彻底隐形)
+    }
+
+    /// <summary>
     /// 垂直柱状计量表状态快照 (0 GC struct)
     /// </summary>
     public struct AvionicsBarGaugeState : IEquatable<AvionicsBarGaugeState>
@@ -31,6 +41,8 @@ namespace ModularFlightPanel.UI.Widgets
         public float FillFraction;
         public float CmdFraction;
         public bool HasCmdPointer;
+        public bool IsVacuum;
+        public BarGaugeVacuumMode VacuumMode;
 
         public bool Equals(AvionicsBarGaugeState other)
         {
@@ -42,11 +54,13 @@ namespace ModularFlightPanel.UI.Widgets
                    Role == other.Role &&
                    Math.Abs(FillFraction - other.FillFraction) < 0.001f &&
                    Math.Abs(CmdFraction - other.CmdFraction) < 0.001f &&
-                   HasCmdPointer == other.HasCmdPointer;
+                   HasCmdPointer == other.HasCmdPointer &&
+                   IsVacuum == other.IsVacuum &&
+                   VacuumMode == other.VacuumMode;
         }
 
         public override bool Equals(object obj) => obj is AvionicsBarGaugeState other && Equals(other);
-        public override int GetHashCode() => (TitleStr, ValueStr, Role).GetHashCode();
+        public override int GetHashCode() => (TitleStr, ValueStr, Role, IsVacuum, VacuumMode).GetHashCode();
     }
 
     /// <summary>
@@ -62,6 +76,7 @@ namespace ModularFlightPanel.UI.Widgets
         public double MaxVal = 100.0;
         public double CautionVal = 0.0;
         public double WarningVal = 0.0;
+        public BarGaugeVacuumMode VacuumMode = BarGaugeVacuumMode.CollapsePill;
 
         private float _commandedThrottle = float.NaN;
         private float _spoolThrottle = float.NaN;
@@ -150,7 +165,9 @@ namespace ModularFlightPanel.UI.Widgets
                     SpoolThrottle = _spoolThrottle,
                     FillFraction = spoolFrac,
                     CmdFraction = cmdFrac,
-                    HasCmdPointer = true
+                    HasCmdPointer = true,
+                    IsVacuum = false,
+                    VacuumMode = BarGaugeVacuumMode.Standard
                 };
             }
             else if (Kind == BarGaugeKind.AtmosphericPressure)
@@ -171,6 +188,7 @@ namespace ModularFlightPanel.UI.Widgets
                 else layerTag = "VAC";
 
                 TextStyleRole btmRole = (layerTag == "VAC") ? TextStyleRole.Muted : TextStyleRole.Accent;
+                bool isVac = val <= 0.0001;
 
                 CurrentState = new AvionicsBarGaugeState
                 {
@@ -185,7 +203,9 @@ namespace ModularFlightPanel.UI.Widgets
                     SpoolThrottle = 0f,
                     FillFraction = atmFrac,
                     CmdFraction = 0f,
-                    HasCmdPointer = false
+                    HasCmdPointer = false,
+                    IsVacuum = isVac,
+                    VacuumMode = VacuumMode
                 };
             }
             else
@@ -207,7 +227,9 @@ namespace ModularFlightPanel.UI.Widgets
                     SpoolThrottle = 0f,
                     FillFraction = generalFrac,
                     CmdFraction = 0f,
-                    HasCmdPointer = false
+                    HasCmdPointer = false,
+                    IsVacuum = false,
+                    VacuumMode = BarGaugeVacuumMode.Standard
                 };
             }
         }
@@ -230,6 +252,7 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedFloat _lastFillHeight = new CachedFloat(-9999f, 0.05f);
 
         private BarGaugeKind _kind;
+        private BarGaugeVacuumMode _vacuumMode = BarGaugeVacuumMode.CollapsePill;
 
         // 核心轨道与背景 (Track)
         private RectTransform _trackRt;
@@ -276,6 +299,19 @@ namespace ModularFlightPanel.UI.Widgets
         private Outline _bottomTagOutline;
         private Text _bottomTagText;
 
+        // 极简 VAC 胶囊标牌盒 (Vacuum Collapsed Pill Box)
+        private GameObject _vacuumPillBox;
+        private Image _vacuumPillBg;
+        private Outline _vacuumPillOutline;
+        private Image _vacuumLedDot;
+        private Text _vacuumPillTitle;
+        private Text _vacuumPillValue;
+
+        // 折叠与模态防抖缓存 (SPEC-009)
+        private readonly Cached<bool> _lastCollapsed = new Cached<bool>(false);
+        private readonly Cached<bool> _lastHidden = new Cached<bool>(false);
+        private readonly Cached<bool> _lastEditMode = new Cached<bool>(false);
+
         // 警戒线
         private GameObject _cautionLineObj;
         private RectTransform _cautionLineRt;
@@ -302,7 +338,7 @@ namespace ModularFlightPanel.UI.Widgets
             float barWidth = 22f * s;
             float barHeight = 240f * s;
 
-            if (config != null && (config.NumericToken == "{ATM}" || config.WidgetId == "gauge.barometer" || config.WidgetId.Contains("baro") || config.WidgetId.Contains("atm")))
+            if (config != null && (config.NumericToken == "{ATM}" || (config.WidgetId == "gauge.barometer" && config.NumericToken != "{Q}") || config.WidgetId.Contains("atm")))
             {
                 _kind = BarGaugeKind.AtmosphericPressure;
                 _valueToken = "{ATM}";
@@ -344,6 +380,27 @@ namespace ModularFlightPanel.UI.Widgets
             _cautionVal = GetTemplateChannelFloat("CAUTION", (float)_cautionVal);
             _warningVal = GetTemplateChannelFloat("WARNING", (float)_warningVal);
 
+            if (_kind == BarGaugeKind.AtmosphericPressure)
+            {
+                string vacChannel = GetTemplateChannel(new[] { "VAC_MODE", "VAC", "VACUUM" }, string.Empty);
+                if (vacChannel.Equals("STANDARD", StringComparison.OrdinalIgnoreCase) || vacChannel.Equals("OFF", StringComparison.OrdinalIgnoreCase) || vacChannel.Equals("ALWAYS", StringComparison.OrdinalIgnoreCase) || vacChannel == "0")
+                {
+                    _vacuumMode = BarGaugeVacuumMode.Standard;
+                }
+                else if (vacChannel.Equals("AUTOHIDE", StringComparison.OrdinalIgnoreCase) || vacChannel.Equals("HIDE", StringComparison.OrdinalIgnoreCase) || vacChannel == "2")
+                {
+                    _vacuumMode = BarGaugeVacuumMode.AutoHide;
+                }
+                else
+                {
+                    _vacuumMode = BarGaugeVacuumMode.CollapsePill;
+                }
+            }
+            else
+            {
+                _vacuumMode = BarGaugeVacuumMode.Standard;
+            }
+
             _logic.Kind = _kind;
             _logic.ValueToken = _valueToken;
             _logic.TitleTemplate = _titleTemplate;
@@ -352,6 +409,7 @@ namespace ModularFlightPanel.UI.Widgets
             _logic.MaxVal = _maxVal;
             _logic.CautionVal = _cautionVal;
             _logic.WarningVal = _warningVal;
+            _logic.VacuumMode = _vacuumMode;
 
             RectTransform.sizeDelta = new Vector2(barWidth, barHeight);
 
@@ -363,6 +421,11 @@ namespace ModularFlightPanel.UI.Widgets
             BuildNeedlePointers(trackWidth, trackHeight, s, theme);
             BuildTopTag(barWidth, barHeight, s, theme);
             BuildBottomTag(barWidth, barHeight, s, theme);
+
+            if (_kind == BarGaugeKind.AtmosphericPressure)
+            {
+                BuildVacuumPill(s, theme);
+            }
 
             if (_kind == BarGaugeKind.DynamicPressure || _cautionVal > 0)
             {
@@ -399,6 +462,10 @@ namespace ModularFlightPanel.UI.Widgets
             if (_bottomTagBox != null)
             {
                 this.Controls.Register(new WidgetReadoutControl("bottom_tag", "底部档位标牌", _bottomTagBox, _bottomTagText, null, TextStyleRole.Accent, _valueToken));
+            }
+            if (_vacuumPillBox != null)
+            {
+                this.Controls.Register(new WidgetReadoutControl("vacuum_pill", I18n.Tr("CTRL_BARO_VACUUM_PILL", "真空极简胶囊"), _vacuumPillBox, _vacuumPillValue, _vacuumPillTitle, TextStyleRole.Accent, "{ATM}"));
             }
             if (_cautionLineObj != null)
             {
@@ -617,6 +684,39 @@ namespace ModularFlightPanel.UI.Widgets
             _bottomTagText.horizontalOverflow = HorizontalWrapMode.Overflow;
         }
 
+        private void BuildVacuumPill(float s, ThemeConfig theme)
+        {
+            Vector2 pillSize = new Vector2(26f * s, 22f * s);
+            _vacuumPillBox = UIFactory.CreatePanel(transform, "Vacuum_Pill_Box", pillSize, Vector2.zero, theme.FrameBgColor);
+            _vacuumPillBg = _vacuumPillBox.GetComponent<Image>();
+            _vacuumPillOutline = _vacuumPillBox.AddComponent<Outline>();
+            _vacuumPillOutline.effectDistance = new Vector2(1f * s, 1f * s);
+            _vacuumPillOutline.effectColor = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.45f);
+
+            _vacuumLedDot = CreateChild<Image>("Vacuum_Led_Dot", _vacuumPillBox.transform,
+                new Vector2(4f * s, 2.0f * s), new Vector2(0f, (pillSize.y * 0.5f) - 2f * s));
+            _vacuumLedDot.color = theme.AccentSecondary.ToColor();
+
+            _vacuumPillTitle = UIFactory.CreateText(_vacuumPillBox.transform, "Vacuum_Pill_Title", _titleTemplate,
+                Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Label, theme));
+            _vacuumPillTitle.fontStyle = FontStyle.Bold;
+            RectTransform trt = _vacuumPillTitle.GetComponent<RectTransform>();
+            trt.sizeDelta = new Vector2(pillSize.x, 9f * s);
+            trt.anchoredPosition = new Vector2(0f, 3.5f * s);
+
+            _vacuumPillValue = UIFactory.CreateText(_vacuumPillBox.transform, "Vacuum_Pill_Value", "VAC",
+                Mathf.Max(7, Mathf.RoundToInt(8.0f * s)), TextAnchor.MiddleCenter,
+                WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Accent, theme));
+            _vacuumPillValue.fontStyle = FontStyle.Bold;
+            RectTransform vrt = _vacuumPillValue.GetComponent<RectTransform>();
+            vrt.sizeDelta = new Vector2(pillSize.x, 9f * s);
+            vrt.anchoredPosition = new Vector2(0f, -4.5f * s);
+            _vacuumPillValue.horizontalOverflow = HorizontalWrapMode.Overflow;
+
+            _vacuumPillBox.SetActiveSafe(false);
+        }
+
         private void BuildCautionCue(float w, float h, float s, ThemeConfig theme)
         {
             double range = _maxVal - _minVal;
@@ -648,6 +748,84 @@ namespace ModularFlightPanel.UI.Widgets
             if (!state.HasVessel) return;
 
             float s = CurrentDpiScale;
+            float barWidth = 22f * s;
+            float barHeight = 240f * s;
+            bool isEdit = WidgetDragHandler.IsEditModeActive;
+
+            // 1. 真空状态机与折叠判定
+            bool shouldCollapse = false;
+            bool shouldHide = false;
+
+            if (_kind == BarGaugeKind.AtmosphericPressure && !isEdit)
+            {
+                if (state.IsVacuum)
+                {
+                    if (state.VacuumMode == BarGaugeVacuumMode.CollapsePill)
+                    {
+                        shouldCollapse = true;
+                    }
+                    else if (state.VacuumMode == BarGaugeVacuumMode.AutoHide)
+                    {
+                        shouldHide = true;
+                    }
+                }
+            }
+
+            bool collapseChanged = _lastCollapsed.Update(shouldCollapse);
+            bool hideChanged = _lastHidden.Update(shouldHide);
+            bool editChanged = _lastEditMode.Update(isEdit);
+
+            if (collapseChanged || hideChanged || editChanged)
+            {
+                if (shouldHide)
+                {
+                    if (CanvasGroup != null)
+                    {
+                        CanvasGroup.alpha = 0f;
+                        CanvasGroup.blocksRaycasts = false;
+                    }
+                    if (_vacuumPillBox != null) _vacuumPillBox.SetActiveSafe(false);
+                    if (_trackRt != null) _trackRt.gameObject.SetActiveSafe(false);
+                    if (_topTagBox != null) _topTagBox.SetActiveSafe(false);
+                    if (_bottomTagBox != null) _bottomTagBox.SetActiveSafe(false);
+                    return;
+                }
+                else
+                {
+                    if (CanvasGroup != null)
+                    {
+                        CanvasGroup.alpha = Opacity;
+                        CanvasGroup.blocksRaycasts = true;
+                    }
+
+                    if (shouldCollapse)
+                    {
+                        if (_vacuumPillBox != null) _vacuumPillBox.SetActiveSafe(true);
+                        if (_trackRt != null) _trackRt.gameObject.SetActiveSafe(false);
+                        if (_topTagBox != null) _topTagBox.SetActiveSafe(false);
+                        if (_bottomTagBox != null) _bottomTagBox.SetActiveSafe(false);
+                        RectTransform.SetSizeDeltaSafe(new Vector2(26f * s, 22f * s));
+                    }
+                    else
+                    {
+                        if (_vacuumPillBox != null) _vacuumPillBox.SetActiveSafe(false);
+                        if (_trackRt != null) _trackRt.gameObject.SetActiveSafe(true);
+                        if (_topTagBox != null) _topTagBox.SetActiveSafe(true);
+                        if (_bottomTagBox != null) _bottomTagBox.SetActiveSafe(true);
+                        RectTransform.SetSizeDeltaSafe(new Vector2(barWidth, barHeight));
+                    }
+                }
+            }
+
+            if (shouldHide) return;
+
+            if (shouldCollapse)
+            {
+                if (_vacuumPillTitle != null) _vacuumPillTitle.SetTextSafe(state.TitleStr);
+                if (_vacuumPillValue != null) _vacuumPillValue.SetTextSafe("VAC");
+                return;
+            }
+
             float trackH = 186f * s;
             float usableH = trackH - (4f * s);
             bool isLeft = Config != null ? Config.IsLeftOrientation : true;
@@ -742,6 +920,16 @@ namespace ModularFlightPanel.UI.Widgets
             if (_bottomTagBg != null) ApplyCard(_bottomTagBg, _bottomTagOutline, CardStyleRole.Normal, theme);
             if (_bottomTagText != null) ApplyText(_bottomTagText, TextStyleRole.Accent, theme);
 
+            if (_vacuumPillBg != null) ApplyCard(_vacuumPillBg, _vacuumPillOutline, CardStyleRole.Normal, theme);
+            if (_vacuumPillOutline != null)
+                _vacuumPillOutline.effectColor = WidgetStyleManager.WithAlpha(resolved.AccentSecondary.ToColor(), 0.45f);
+            if (_vacuumLedDot != null)
+                _vacuumLedDot.color = resolved.AccentSecondary.ToColor();
+            if (_vacuumPillTitle != null)
+                ApplyText(_vacuumPillTitle, TextStyleRole.Label, theme);
+            if (_vacuumPillValue != null)
+                ApplyText(_vacuumPillValue, TextStyleRole.Accent, theme);
+
             MeterStyleRole meterRole = _currentRole == CardStyleRole.Danger
                 ? MeterStyleRole.Danger
                 : (_currentRole == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
@@ -782,12 +970,112 @@ namespace ModularFlightPanel.UI.Widgets
             this.Controls.ApplyThemeToControls(theme);
         }
 
+        public override void PopulateContextMenu(Action<string, Action> registerAction)
+        {
+            base.PopulateContextMenu(registerAction);
+            if (_kind == BarGaugeKind.AtmosphericPressure)
+            {
+                string label;
+                switch (_vacuumMode)
+                {
+                    case BarGaugeVacuumMode.CollapsePill:
+                        label = I18n.Tr("CTX_BARO_VAC_PILL", "⚡ 真空模式: 【极简折叠】 (点击切换)");
+                        break;
+                    case BarGaugeVacuumMode.AutoHide:
+                        label = I18n.Tr("CTX_BARO_VAC_HIDE", "⚡ 真空模式: 【自动全隐】 (点击切换)");
+                        break;
+                    default:
+                        label = I18n.Tr("CTX_BARO_VAC_STD", "⚡ 真空模式: 【始终常显】 (点击切换)");
+                        break;
+                }
+                registerAction?.Invoke(label, CycleVacuumMode);
+            }
+        }
+
+        private void CycleVacuumMode()
+        {
+            switch (_vacuumMode)
+            {
+                case BarGaugeVacuumMode.CollapsePill:
+                    _vacuumMode = BarGaugeVacuumMode.AutoHide;
+                    break;
+                case BarGaugeVacuumMode.AutoHide:
+                    _vacuumMode = BarGaugeVacuumMode.Standard;
+                    break;
+                default:
+                    _vacuumMode = BarGaugeVacuumMode.CollapsePill;
+                    break;
+            }
+            _logic.VacuumMode = _vacuumMode;
+            if (Config != null)
+            {
+                string modeStr = ((int)_vacuumMode).ToString();
+                SetCustomTemplateChannel("VAC_MODE", modeStr);
+                WidgetLayoutManager.Instance?.SaveLayout();
+            }
+            string tip;
+            switch (_vacuumMode)
+            {
+                case BarGaugeVacuumMode.CollapsePill:
+                    tip = I18n.Tr("TIP_BARO_VAC_PILL", "已切换至真空极简折叠模式 (气压为0时收起为微型VAC标牌)");
+                    break;
+                case BarGaugeVacuumMode.AutoHide:
+                    tip = I18n.Tr("TIP_BARO_VAC_HIDE", "已切换至真空自动全隐模式 (气压为0时自动隐形)");
+                    break;
+                default:
+                    tip = I18n.Tr("TIP_BARO_VAC_STD", "已切换至真空始终常显模式 (始终保持完整240px光柱标尺)");
+                    break;
+            }
+            MFPToastBridge.Show(tip);
+            _lastCollapsed.Reset(!_lastCollapsed.Value);
+            _lastHidden.Reset(!_lastHidden.Value);
+        }
+
+        private void SetCustomTemplateChannel(string key, string value)
+        {
+            if (Config == null) return;
+            string raw = Config.CustomTemplate ?? string.Empty;
+            var parts = new System.Collections.Generic.List<string>();
+            bool updated = false;
+
+            if (!string.IsNullOrEmpty(raw))
+            {
+                string[] pairs = raw.Split(';');
+                foreach (var p in pairs)
+                {
+                    int eq = p.IndexOf('=');
+                    if (eq > 0)
+                    {
+                        string k = p.Substring(0, eq).Trim();
+                        if (string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+                        {
+                            parts.Add($"{key}={value}");
+                            updated = true;
+                            continue;
+                        }
+                    }
+                    if (!string.IsNullOrWhiteSpace(p)) parts.Add(p);
+                }
+            }
+
+            if (!updated)
+            {
+                parts.Add($"{key}={value}");
+            }
+
+            Config.CustomTemplate = string.Join(";", parts.ToArray());
+            InvalidateTemplateChannels();
+        }
+
         protected override void OnResetPrivateCache()
         {
             base.OnResetPrivateCache();
             _logic.Reset();
             _lastValStr.Reset(string.Empty);
             _lastFillHeight.Reset(-9999f);
+            _lastCollapsed.Reset(false);
+            _lastHidden.Reset(false);
+            _lastEditMode.Reset(false);
         }
 
         protected override void OnDestroy()

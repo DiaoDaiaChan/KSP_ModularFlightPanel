@@ -133,8 +133,8 @@ namespace ModularFlightPanel.UI
                 _gridLines.Add(line);
             }
 
-            // 垂直向上下展开网格线 (±100, ±200, ±300, ±400)
-            for (int y = -400; y <= 400; y += 100)
+            // 垂直向上下展开网格线 (覆盖地平线下方至屏幕顶端)
+            for (int y = -300; y <= 1200; y += 100)
             {
                 if (y == 0) continue;
                 var line = CreateLine(_gridRoot.transform, $"Grid_H_{y}", false, _gridCol, 1.0f);
@@ -312,7 +312,7 @@ namespace ModularFlightPanel.UI
 
         public void OnDrag(PointerEventData eventData)
         {
-            if (!_isDraggingBox || !WidgetDragHandler.IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar) return;
+            if (!_isDraggingBox || !WidgetDragHandler.IsEditModeActive) return;
 
             RectTransformUtility.ScreenPointToLocalPointInRectangle(_parentRt, eventData.position, eventData.pressEventCamera, out Vector2 currentPos);
 

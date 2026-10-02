@@ -442,12 +442,16 @@ namespace ModularFlightPanel.UI
             // 应用保存的绝对/相对坐标、缩放与旋转 (以原生 1:1 坐标系建立)
             float posX = config.PositionX;
             float posY = config.PositionY;
-            float halfScreenW = (Screen.width / Mathf.Max(0.1f, scale)) * 0.5f;
-            float halfScreenH = (Screen.height / Mathf.Max(0.1f, scale)) * 0.5f;
-            if (halfScreenW > 100f && (Mathf.Abs(posX) > halfScreenW + 200f || Mathf.Abs(posY) > halfScreenH + 200f))
+            float effScale = Mathf.Max(0.1f, scale);
+            float halfScreenW = (Screen.width / effScale) * 0.5f;
+            float canvasH = Screen.height / effScale;
+            float hudRootY = 215f * scale;
+            float minSafeY = -hudRootY - 200f;
+            float maxSafeY = (canvasH - hudRootY) + 200f;
+            if (halfScreenW > 100f && (Mathf.Abs(posX) > halfScreenW + 200f || posY < minSafeY || posY > maxSafeY))
             {
                 posX = Mathf.Clamp(posX, -halfScreenW + 100f, halfScreenW - 100f);
-                posY = Mathf.Clamp(posY, -halfScreenH + 100f, halfScreenH - 100f);
+                posY = Mathf.Clamp(posY, -hudRootY + 50f, (canvasH - hudRootY) - 50f);
                 config.PositionX = posX;
                 config.PositionY = posY;
             }
@@ -1761,11 +1765,13 @@ namespace ModularFlightPanel.UI
                     float canvasScale = rm != null ? rm.GetCanvasScaleFactor() : 1.0f;
                     if (canvasScale < 0.01f) canvasScale = 1.0f;
                     float halfScreenW = (Screen.width / canvasScale) * 0.5f;
-                    float halfScreenH = (Screen.height / canvasScale) * 0.5f;
+                    float canvasH = Screen.height / canvasScale;
+                    float hudRootY = 215f * (FlightHUDManager.Instance?.CustomScale ?? 1.0f);
                     float clampRangeX = Mathf.Max(400f, halfScreenW + 100f);
-                    float clampRangeY = Mathf.Max(300f, halfScreenH + 100f);
+                    float minClampY = -hudRootY - 100f;
+                    float maxClampY = (canvasH - hudRootY) + 100f;
                     curX = Mathf.Clamp(curX, -clampRangeX, clampRangeX);
-                    curY = Mathf.Clamp(curY, -clampRangeY, clampRangeY);
+                    curY = Mathf.Clamp(curY, minClampY, maxClampY);
 
                     if (Config != null)
                     {

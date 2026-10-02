@@ -122,8 +122,8 @@ namespace ModularFlightPanel.UI.Widgets
         public bool ShowUniversalTime { get; set; } = false;
         public string UtTemplate { get; set; } = "{UT}";
         public string MetTemplate { get; set; } = "{MET}";
-        public string PhysLabel { get; set; } = I18n.Tr("WIDGET_TIMEWARP_PHYS", "物理加速");
-        public string WarpLabel { get; set; } = I18n.Tr("WIDGET_TIMEWARP_WARP", "时间加速");
+        public string PhysLabel { get; set; } = "PHYS";
+        public string WarpLabel { get; set; } = "WARP";
 
         public override void Reset()
         {
@@ -591,7 +591,7 @@ namespace ModularFlightPanel.UI.Widgets
             _stockBtnText.GetComponent<RectTransform>().sizeDelta = stockBtnSize;
 
             // 加速模式提示 (WARP / PHYS)
-            _warpModeText = UIFactory.CreateText(transform, "WarpMode", I18n.Tr("WIDGET_TIMEWARP_WARP", "时间加速"),
+            _warpModeText = UIFactory.CreateText(transform, "WarpMode", "WARP",
                 Mathf.Max(6, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleLeft, secondaryAccent);
 
             // 加速倍率读数 (1x / 10,000x)
@@ -1543,8 +1543,8 @@ namespace ModularFlightPanel.UI.Widgets
         protected override void OnLanguageChanged()
         {
             base.OnLanguageChanged();
-            _logic.PhysLabel = GetTemplateChannel("PHYS_LABEL", I18n.Tr("WIDGET_TIMEWARP_PHYS", "物理加速"));
-            _logic.WarpLabel = GetTemplateChannel("WARP_LABEL", I18n.Tr("WIDGET_TIMEWARP_WARP", "时间加速"));
+            _logic.PhysLabel = GetTemplateChannel("PHYS_LABEL", "PHYS");
+            _logic.WarpLabel = GetTemplateChannel("WARP_LABEL", "WARP");
             OnResetPrivateCache();
         }
 

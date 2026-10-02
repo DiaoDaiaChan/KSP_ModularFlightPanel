@@ -3360,7 +3360,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             StageItemUI hoveredItem = null;
             int hoveredDisplayIndex = -1;
-            Vector2 hoveredLocalPt = Vector2.zero;
 
             for (int i = 0; i < _stageItems.Count; i++)
             {
@@ -3371,7 +3370,6 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 {
                     hoveredItem = item;
                     hoveredDisplayIndex = i;
-                    RectTransformUtility.ScreenPointToLocalPointInRectangle(item.RootRt, eventData.position, eventData.pressEventCamera, out hoveredLocalPt);
                     break;
                 }
             }
@@ -3395,42 +3393,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             if (hoveredItem != null)
             {
-                float actualH = hoveredItem.RootRt.rect.height;
-                bool isUpperQuarter = hoveredLocalPt.y > actualH * 0.25f;
-                bool isLowerQuarter = hoveredLocalPt.y < -actualH * 0.25f;
-
-                if (isUpperQuarter || isLowerQuarter)
-                {
-                    // === 拖拽至分级边界：触发新建分级插入指示微线 (Drop Between Stages) ===
-                    showDropLine = true;
-                    bool isReverse = _logic.StageOrder == "REVERSE";
-                    int stgNum = hoveredItem.StageNumber;
-                    int insertStageNum;
-
-                    if (isUpperQuarter)
-                    {
-                        insertStageNum = isReverse ? stgNum + 1 : (hoveredDisplayIndex == 0 ? 0 : stgNum);
-                    }
-                    else
-                    {
-                        insertStageNum = isReverse ? (stgNum == 0 ? 0 : stgNum) : stgNum + 1;
-                    }
-
-                    _chipDropAction = ChipDropAction.InsertStage;
-                    _pendingTargetStage = Mathf.Max(0, insertStageNum);
-
-                    if (_stageDropIndicatorRt != null)
-                    {
-                        float indicatorY = isUpperQuarter
-                            ? hoveredItem.RootRt.anchoredPosition.y + (actualH * 0.5f)
-                            : hoveredItem.RootRt.anchoredPosition.y - (actualH * 0.5f);
-
-                        float rowW = RectTransform.rect.width > 10f ? RectTransform.rect.width - 10f * s : (DefaultWidth - 10f) * s;
-                        _stageDropIndicatorRt.sizeDelta = new Vector2(rowW, 2.5f * s);
-                        _stageDropIndicatorRt.anchoredPosition = new Vector2(0f, indicatorY);
-                    }
-                }
-                else if (hoveredItem.StageNumber != chip.StageNumber)
+                // 1. 悬停在另一分级行：明确判定为跨级移动 (Move Part To Stage)
+                // 整行卡片均为该级的安全受体，杜绝边缘误触触发插入新级或打乱分级时序
+                if (hoveredItem.StageNumber != chip.StageNumber)
                 {
                     // === 拖拽至另一分级行中部：跨级移动 (Move Part To Stage) ===
                     _chipDropAction = ChipDropAction.MoveToStage;
@@ -3439,7 +3404,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
                 else
                 {
-                    // === 拖拽在本级行内部：检查是否悬停于其他部件芯片以重排次序 (Reorder In Stage) ===
+                    // 2. 悬停在本级行内部：仅当明确悬停于其他部件芯片上方时触发本级调序 (Reorder In Stage)
                     StageIconChipUI targetChip = null;
                     for (int c = 0; c < hoveredItem.IconChips.Count; c++)
                     {
@@ -3459,6 +3424,89 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                         _chipDropAction = ChipDropAction.ReorderInStage;
                         _pendingTargetChipIndex = targetChip.PartIndex;
                         targetChip.ChipOutline.effectColor = theme.AccentPrimary;
+                    }
+                    else
+                    {
+                        _chipDropAction = ChipDropAction.None;
+                        _pendingTargetChipIndex = -1;
+                    }
+                }
+            }
+            else if (_scrollContentRt != null && RectTransformUtility.RectangleContainsScreenPoint(RectTransform, eventData.position, eventData.pressEventCamera))
+            {
+                // 3. 游标未命中任何具体分级卡片，而是处于分级之间的物理缝隙/边界处：
+                // 仅在明确落入分级间隙时才触发新建分级指示微线 (Drop In Gap Between Stages)
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(_scrollContentRt, eventData.position, eventData.pressEventCamera, out Vector2 contentLocalPt);
+
+                int activeCount = 0;
+                for (int i = 0; i < _stageItems.Count; i++)
+                {
+                    if (_stageItems[i].Root.activeSelf) activeCount++;
+                    else break;
+                }
+
+                if (activeCount > 0)
+                {
+                    bool isReverse = _logic.StageOrder == "REVERSE";
+                    float rowW = RectTransform.rect.width > 10f ? RectTransform.rect.width - 10f * s : (DefaultWidth - 10f) * s;
+
+                    StageItemUI firstItem = _stageItems[0];
+                    float firstTopY = firstItem.RootRt.anchoredPosition.y + (firstItem.RootRt.rect.height * 0.5f);
+
+                    StageItemUI lastItem = _stageItems[activeCount - 1];
+                    float lastBottomY = lastItem.RootRt.anchoredPosition.y - (lastItem.RootRt.rect.height * 0.5f);
+
+                    // A) 顶部上方缝隙 (Above first stage item)
+                    if (contentLocalPt.y >= firstTopY && contentLocalPt.y <= firstTopY + 14f * s)
+                    {
+                        showDropLine = true;
+                        _chipDropAction = ChipDropAction.InsertStage;
+                        _pendingTargetStage = isReverse ? (_highestStageNumber + 1) : 0;
+                        if (_stageDropIndicatorRt != null)
+                        {
+                            _stageDropIndicatorRt.sizeDelta = new Vector2(rowW, 2.5f * s);
+                            _stageDropIndicatorRt.anchoredPosition = new Vector2(0f, firstTopY);
+                        }
+                    }
+                    // B) 底部下方缝隙 (Below last stage item)
+                    else if (contentLocalPt.y <= lastBottomY && contentLocalPt.y >= lastBottomY - 14f * s)
+                    {
+                        showDropLine = true;
+                        _chipDropAction = ChipDropAction.InsertStage;
+                        _pendingTargetStage = isReverse ? 0 : (_highestStageNumber + 1);
+                        if (_stageDropIndicatorRt != null)
+                        {
+                            _stageDropIndicatorRt.sizeDelta = new Vector2(rowW, 2.5f * s);
+                            _stageDropIndicatorRt.anchoredPosition = new Vector2(0f, lastBottomY);
+                        }
+                    }
+                    // C) 相邻两级之间的缝隙 (Between two stage items)
+                    else
+                    {
+                        for (int i = 0; i < activeCount - 1; i++)
+                        {
+                            StageItemUI upperItem = _stageItems[i];
+                            StageItemUI lowerItem = _stageItems[i + 1];
+
+                            float upperBottomY = upperItem.RootRt.anchoredPosition.y - (upperItem.RootRt.rect.height * 0.5f);
+                            float lowerTopY = lowerItem.RootRt.anchoredPosition.y + (lowerItem.RootRt.rect.height * 0.5f);
+
+                            if (contentLocalPt.y <= upperBottomY && contentLocalPt.y >= lowerTopY)
+                            {
+                                showDropLine = true;
+                                _chipDropAction = ChipDropAction.InsertStage;
+                                int targetStage = isReverse ? upperItem.StageNumber : lowerItem.StageNumber;
+                                _pendingTargetStage = Mathf.Max(0, targetStage);
+
+                                if (_stageDropIndicatorRt != null)
+                                {
+                                    float gapCenterY = (upperBottomY + lowerTopY) * 0.5f;
+                                    _stageDropIndicatorRt.sizeDelta = new Vector2(rowW, 2.5f * s);
+                                    _stageDropIndicatorRt.anchoredPosition = new Vector2(0f, gapCenterY);
+                                }
+                                break;
+                            }
+                        }
                     }
                 }
             }

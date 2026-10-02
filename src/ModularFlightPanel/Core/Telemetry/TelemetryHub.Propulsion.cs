@@ -494,13 +494,24 @@ namespace ModularFlightPanel.Core
 
                         _activeEngines = engineCount;
                         _totalStageEngines = stageTotalEngines > 0 ? stageTotalEngines : (engineCount > 0 ? engineCount : 1);
-                        if (nativeGaugeCount > 0)
+                        if (maxResource > 0.0001)
+                        {
+                            float physFrac = Mathf.Clamp01((float)(currentResource / maxResource));
+                            if (nativeGaugeCount > 0)
+                            {
+                                float gaugeFrac = Mathf.Clamp01(nativeGaugeSum / nativeGaugeCount);
+                                // 当原版分级 UI 被抑制或隐藏时，ProtoStageIcon 的 pBarValue 会冻结在 1.0f，
+                                // 此时结合物理拓扑真实余量 (physFrac) 取最小值，彻底根除燃料常驻 100% 缺陷！
+                                _stagePropellantFraction = Mathf.Min(physFrac, gaugeFrac);
+                            }
+                            else
+                            {
+                                _stagePropellantFraction = physFrac;
+                            }
+                        }
+                        else if (nativeGaugeCount > 0)
                         {
                             _stagePropellantFraction = Mathf.Clamp01(nativeGaugeSum / nativeGaugeCount);
-                        }
-                        else if (maxResource > 0.0001)
-                        {
-                            _stagePropellantFraction = Mathf.Clamp01((float)(currentResource / maxResource));
                         }
                         else
                         {
@@ -837,8 +848,8 @@ namespace ModularFlightPanel.Core
                 }
             }
 
-            // 2. 检查部件上的 ModuleEngines 与 PropellantGauges
-            if (propFrac < 0f && icon.Part != null)
+            // 2. 检查部件上的 ModuleEngines 与联通储箱拓扑
+            if (icon.Part != null)
             {
                 var engines = icon.Part.FindModulesImplementing<ModuleEngines>();
                 if (engines != null && engines.Count > 0)
@@ -847,7 +858,7 @@ namespace ModularFlightPanel.Core
                     {
                         _moduleEnginesPropellantGaugesField = typeof(ModuleEngines).GetField("PropellantGauges", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
                     }
-                    for (int e = 0; e < engines.Count && propFrac < 0f; e++)
+                    for (int e = 0; e < engines.Count; e++)
                     {
                         var eng = engines[e];
                         if (eng == null) continue;
@@ -859,15 +870,16 @@ namespace ModularFlightPanel.Core
                                 var gauge = kvp.Value;
                                 if (gauge != null && gauge.pBarValue >= 0f)
                                 {
-                                    propFrac = Mathf.Clamp01(gauge.pBarValue);
+                                    float gVal = Mathf.Clamp01(gauge.pBarValue);
+                                    propFrac = propFrac >= 0f ? Mathf.Min(propFrac, gVal) : gVal;
                                     propName = !string.IsNullOrEmpty(gauge.pBarCaption) ? gauge.pBarCaption : (kvp.Key?.displayName ?? kvp.Key?.name);
                                     break;
                                 }
                             }
                         }
 
-                        // 若仪表未初始化，强制 un-cached (cache=false) 换算联通储箱余量
-                        if (propFrac < 0f && eng.propellants != null && eng.propellants.Count > 0)
+                        // 强制 un-cached (cache=false) 换算联通储箱物理真实余量，防原版 UI 冻结
+                        if (eng.propellants != null && eng.propellants.Count > 0)
                         {
                             double eCur = 0, eMax = 0;
                             for (int pIdx = 0; pIdx < eng.propellants.Count; pIdx++)
@@ -885,15 +897,16 @@ namespace ModularFlightPanel.Core
                             }
                             if (eMax > 0.0001)
                             {
-                                propFrac = Mathf.Clamp01((float)(eCur / eMax));
+                                float physVal = Mathf.Clamp01((float)(eCur / eMax));
+                                propFrac = propFrac >= 0f ? Mathf.Min(propFrac, physVal) : physVal;
                             }
                         }
                     }
                 }
             }
 
-            // 3. 部件直属资源兜底
-            if (propFrac < 0f && icon.Part != null && icon.Part.Resources != null)
+            // 3. 部件直属资源兜底 (固体火箭助推器/直属油箱)
+            if (icon.Part != null && icon.Part.Resources != null)
             {
                 var res = icon.Part.Resources;
                 for (int r = 0; r < res.Count; r++)
@@ -909,7 +922,8 @@ namespace ModularFlightPanel.Core
                             rName.IndexOf("Propellant", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             propName = resItem.info?.displayName ?? rName;
-                            propFrac = Mathf.Clamp01((float)(resItem.amount / resItem.maxAmount));
+                            float tankVal = Mathf.Clamp01((float)(resItem.amount / resItem.maxAmount));
+                            propFrac = propFrac >= 0f ? Mathf.Min(propFrac, tankVal) : tankVal;
                             break;
                         }
                     }
@@ -938,10 +952,13 @@ namespace ModularFlightPanel.Core
             {
                 var exist = iconList[existingIdx];
                 exist.Count += count;
-                if (propFrac >= 0 && exist.PropellantFraction < 0)
+                if (propFrac >= 0f)
                 {
-                    exist.PropellantName = propName;
-                    exist.PropellantFraction = propFrac;
+                    if (exist.PropellantFraction < 0f || propFrac < exist.PropellantFraction)
+                    {
+                        exist.PropellantName = propName;
+                        exist.PropellantFraction = propFrac;
+                    }
                 }
                 iconList[existingIdx] = exist;
             }

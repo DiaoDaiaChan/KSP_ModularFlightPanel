@@ -20,7 +20,7 @@ namespace ModularFlightPanel.UI
     /// 4. Shift 轴向锁定 (Axis-Lock) 平移与双击快速唤起检视工作台。
     /// 5. 8 点包围盒几何变换手柄与旋转操纵器联动。
     /// </summary>
-    public class WidgetDragHandler : MonoBehaviour, IPointerDownHandler, IDragHandler, IEndDragHandler, IPointerEnterHandler, IPointerExitHandler
+    public class WidgetDragHandler : MonoBehaviour, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerUpHandler, IPointerEnterHandler, IPointerExitHandler
     {
         private static bool _isEditModeActive = false;
         public static event Action<bool> OnEditModeChanged;
@@ -62,6 +62,7 @@ namespace ModularFlightPanel.UI
         private bool _isDragging = false;
         private Vector2 _dragTotalDelta = Vector2.zero;
         private Vector2 _dragStartPos = Vector2.zero;
+        private readonly Dictionary<BaseFlightWidget, Vector2> _multiDragStartPositions = new Dictionary<BaseFlightWidget, Vector2>();
 
         private IWidgetControl _draggedControl = null;
         private Vector2 _controlStartOffset = Vector2.zero;
@@ -90,6 +91,14 @@ namespace ModularFlightPanel.UI
         private void Update()
         {
             if (!IsEditModeActive) return;
+
+            // 拖拽防丢帧与状态看门狗：若因点击 IMGUI 或屏幕外丢失了 PointerUp，及时安全提交
+            if (_isDragging && !Input.GetMouseButton(0))
+            {
+                OnEndDrag(null);
+                return;
+            }
+
             if (_isHovered && !_isDragging && !_isDraggingControl && HUDEditModeToolbar.IsSubControlCustomizerOpen && WidgetSelectionManager.IsSelected(_ownerWidget))
             {
                 var hit = FindSubControlAtScreenPoint(Input.mousePosition);
@@ -379,20 +388,39 @@ namespace ModularFlightPanel.UI
             _dragTotalDelta = Vector2.zero;
             _dragStartPos = _rectTransform != null ? _rectTransform.anchoredPosition : Vector2.zero;
 
+            _multiDragStartPositions.Clear();
+            if (WidgetSelectionManager.IsSelected(_ownerWidget) && WidgetSelectionManager.Count > 1)
+            {
+                foreach (var w in WidgetSelectionManager.SelectedWidgets)
+                {
+                    if (w != null && w.RectTransform != null)
+                    {
+                        _multiDragStartPositions[w] = w.RectTransform.anchoredPosition;
+                    }
+                }
+            }
+
             WidgetEditHistory.BeginAction();
             UpdateSelectionAppearance();
         }
 
+        public void OnBeginDrag(PointerEventData eventData)
+        {
+            _isDragging = true;
+        }
+
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            // 防御性安全兜底：若指针在外部释放未收到 OnEndDrag，在此兜底结算
+            if (_isDragging)
+            {
+                OnEndDrag(eventData);
+            }
+        }
+
         public void OnDrag(PointerEventData eventData)
         {
-            if (!IsEditModeActive || FlightHUDManager.IsMouseOverFloatingToolbar || _rectTransform == null || _canvas == null) return;
-#if !HEADLESS && !UNITY_EDITOR
-            if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
-            {
-                Vector2 guiMouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
-                if (SettingsGUI.Instance.WindowRect.Contains(guiMouse)) return;
-            }
-#endif
+            if (!IsEditModeActive || _rectTransform == null || _canvas == null) return;
             if (_ownerWidget?.Config != null && _ownerWidget.Config.IsLocked) return;
 
             // 1. 微控件直接平移与磁吸拖拽
@@ -461,18 +489,41 @@ namespace ModularFlightPanel.UI
 
             if (isMulti)
             {
-                // 多选批量拖拽
-                WidgetSelectionManager.BatchMove(delta);
+                // 多选批量拖拽：基于主选中组件计算磁吸位移，基于初态累计位移彻底杜绝逐帧累积振荡与闪烁
+                Vector2 primaryRawPos = _dragStartPos + effectiveDelta;
+                Vector2 primaryTargetPos;
 
-                // 智能磁吸参考线计算
                 if (EnableMagneticSnap && WidgetSmartGuides.Instance != null)
                 {
-                    Vector2 curPos = _rectTransform.anchoredPosition;
-                    var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, curPos, 8f);
-                    Vector2 snapDelta = snap.SnappedPosition - curPos;
-                    if (snapDelta.sqrMagnitude > 0.001f)
+                    var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, primaryRawPos, 8f);
+                    primaryTargetPos = snap.SnappedPosition;
+                }
+                else
+                {
+                    float snapX = Mathf.Round(primaryRawPos.x / 5f) * 5f;
+                    float snapY = Mathf.Round(primaryRawPos.y / 5f) * 5f;
+                    primaryTargetPos = new Vector2(snapX, snapY);
+                }
+
+                Vector2 totalOffset = primaryTargetPos - _dragStartPos;
+
+                foreach (var w in WidgetSelectionManager.SelectedWidgets)
+                {
+                    if (w != null && w.RectTransform != null && (w.Config == null || !w.Config.IsLocked))
                     {
-                        WidgetSelectionManager.BatchMove(snapDelta);
+                        if (!_multiDragStartPositions.TryGetValue(w, out Vector2 basePos))
+                        {
+                            basePos = w.RectTransform.anchoredPosition;
+                            _multiDragStartPositions[w] = basePos;
+                        }
+
+                        Vector2 clamped = ClampToScreen(basePos + totalOffset, w.RectTransform);
+                        w.RectTransform.anchoredPosition = clamped;
+                        if (w.Config != null)
+                        {
+                            w.Config.PositionX = clamped.x;
+                            w.Config.PositionY = clamped.y;
+                        }
                     }
                 }
             }
@@ -484,32 +535,67 @@ namespace ModularFlightPanel.UI
                 if (EnableMagneticSnap && WidgetSmartGuides.Instance != null)
                 {
                     var snap = WidgetSmartGuides.Instance.EvaluateAndShowGuides(_ownerWidget, rawPos, 8f);
-                    _rectTransform.anchoredPosition = ClampToScreen(snap.SnappedPosition);
+                    Vector2 clamped = ClampToScreen(snap.SnappedPosition, _rectTransform);
+                    _rectTransform.anchoredPosition = clamped;
+                    if (_ownerWidget.Config != null)
+                    {
+                        _ownerWidget.Config.PositionX = clamped.x;
+                        _ownerWidget.Config.PositionY = clamped.y;
+                    }
                 }
                 else
                 {
                     // 基础 5px 网格吸附
                     float snapX = Mathf.Round(rawPos.x / 5f) * 5f;
                     float snapY = Mathf.Round(rawPos.y / 5f) * 5f;
-                    _rectTransform.anchoredPosition = ClampToScreen(new Vector2(snapX, snapY));
+                    Vector2 clamped = ClampToScreen(new Vector2(snapX, snapY), _rectTransform);
+                    _rectTransform.anchoredPosition = clamped;
+                    if (_ownerWidget.Config != null)
+                    {
+                        _ownerWidget.Config.PositionX = clamped.x;
+                        _ownerWidget.Config.PositionY = clamped.y;
+                    }
                 }
             }
 
             WidgetTransformGizmo.Instance?.UpdateGizmoPosition();
         }
 
-        private Vector2 ClampToScreen(Vector2 pos)
+        private Vector2 ClampToScreen(Vector2 pos, RectTransform targetRt = null)
         {
+            if (targetRt == null) targetRt = _rectTransform;
             float canvasScale = _canvas != null && _canvas.scaleFactor > 0.01f ? _canvas.scaleFactor : 1.0f;
-            float halfScreenW = (Screen.width / canvasScale) * 0.5f;
-            float halfScreenH = (Screen.height / canvasScale) * 0.5f;
-            float wHalf = _rectTransform != null ? Mathf.Max(20f, _rectTransform.rect.width * 0.5f) : 40f;
-            float hHalf = _rectTransform != null ? Mathf.Max(20f, _rectTransform.rect.height * 0.5f) : 40f;
-            float margin = 10f;
+            float canvasW = Screen.width / canvasScale;
+            float canvasH = Screen.height / canvasScale;
+            float halfScreenW = canvasW * 0.5f;
+
+            // _hudRoot 位于 Canvas 底部中心，Y 偏移量为 215 * CustomScale
+            float hudRootY = 0f;
+            if (transform.parent is RectTransform parentRt)
+            {
+                hudRootY = parentRt.anchoredPosition.y;
+            }
+            else if (FlightHUDManager.Instance != null)
+            {
+                hudRootY = 215f * FlightHUDManager.Instance.CustomScale;
+            }
+
+            float wHalf = targetRt != null ? Mathf.Max(15f, targetRt.rect.width * Mathf.Abs(targetRt.localScale.x) * 0.5f) : 40f;
+            float hHalf = targetRt != null ? Mathf.Max(15f, targetRt.rect.height * Mathf.Abs(targetRt.localScale.y) * 0.5f) : 40f;
+            float margin = 8f;
+
+            // 水平方向：以屏幕水平中心 (X=0) 为原点，向左右各半屏扩展
             float minX = -halfScreenW + Mathf.Min(wHalf, 40f) + margin;
             float maxX = halfScreenW - Mathf.Min(wHalf, 40f) - margin;
-            float minY = -halfScreenH + Mathf.Min(hHalf, 40f) + margin;
-            float maxY = halfScreenH - Mathf.Min(hHalf, 40f) - margin;
+
+            // 垂直方向：_hudRoot 的 Y 原点在屏幕底部上方 hudRootY 像素处
+            // 屏幕下边缘对应 Y = -hudRootY
+            // 屏幕上边缘对应 Y = canvasH - hudRootY
+            float minScreenY = -hudRootY;
+            float maxScreenY = canvasH - hudRootY;
+            float minY = minScreenY + Mathf.Min(hHalf, 40f) + margin;
+            float maxY = maxScreenY - Mathf.Min(hHalf, 40f) - margin;
+
             return new Vector2(Mathf.Clamp(pos.x, minX, maxX), Mathf.Clamp(pos.y, minY, maxY));
         }
 
@@ -539,8 +625,10 @@ namespace ModularFlightPanel.UI
                 {
                     if (w != null && w.Config != null && w.RectTransform != null)
                     {
-                        w.Config.PositionX = w.RectTransform.anchoredPosition.x;
-                        w.Config.PositionY = w.RectTransform.anchoredPosition.y;
+                        Vector2 clamped = ClampToScreen(w.RectTransform.anchoredPosition, w.RectTransform);
+                        w.RectTransform.anchoredPosition = clamped;
+                        w.Config.PositionX = clamped.x;
+                        w.Config.PositionY = clamped.y;
                     }
                 }
             }
@@ -548,7 +636,7 @@ namespace ModularFlightPanel.UI
             {
                 if (_ownerWidget?.Config != null && _rectTransform != null)
                 {
-                    Vector2 clamped = ClampToScreen(_rectTransform.anchoredPosition);
+                    Vector2 clamped = ClampToScreen(_rectTransform.anchoredPosition, _rectTransform);
                     _rectTransform.anchoredPosition = clamped;
                     _ownerWidget.Config.PositionX = clamped.x;
                     _ownerWidget.Config.PositionY = clamped.y;
@@ -561,6 +649,7 @@ namespace ModularFlightPanel.UI
                 _isDragging = false;
             }
 
+            _multiDragStartPositions.Clear();
             WidgetLayoutManager.Instance.SaveLayout();
             WidgetTransformGizmo.Instance?.UpdateGizmoPosition();
             UpdateSelectionAppearance();

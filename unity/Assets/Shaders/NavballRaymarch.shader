@@ -724,6 +724,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float headingTextEnabled = 0.0;
                 float headingGap = 0.0;
                 float headingGlyphAA = 0.45;
+                float glyphAA = 0.45;
+                bool isEqHeadingZone = false;
                 float combinedRulerAndLadder = 0.0;
 
                 float pAA = clamp(fwidth(pitchDeg) * 0.75, 0.005, 2.5);
@@ -807,7 +809,9 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     // 2. 俯仰梯级数字 (在阶梯左右两侧 absLat ~ 9.8° 呈现，字体大小恒定且自适应分辨率)
                     if (pLevel10 >= 8.0 && pLevel10 <= 82.0)
                     {
-                        float latNumOffset = absLat - (9.5 + (fontScale - 1.0) * 1.5);
+                        float signLat = lateralDeg >= 0.0 ? 1.0 : -1.0;
+                        float latCenter = signLat * (9.5 + (fontScale - 1.0) * 1.5);
+                        float latNumOffset = lateralDeg - latCenter;
                         if (abs(latNumOffset) < (4.6 * fontScale) && absOffset10 < (4.0 * fontScale))
                         {
                             float tens = floor(pLevel10 / 10.0);
@@ -887,6 +891,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                             headingGlyphAA = clamp(max(fwidth(hOffset45), fwidth(hYOffset)) * 0.75, 0.005, 2.5);
                         }
                     }
+                    glyphAA = clamp(fwidth(pitchDeg) * 0.75, 0.005, 2.5);
                 }
                 else
                 {
@@ -1181,6 +1186,19 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     }
                     headingGlyphAA = clamp(max(fwidth(mainHeadArc * tangentAspect), fwidth(pitchDeg)) * 0.75, 0.005, 2.5);
                 }
+
+                // 6.3 赤道航向微刻度线 (Equator Minor Ticks at pitch < 1.8°)
+                if (absPitch < 1.8)
+                {
+                    float eqPitchAA = clamp(fwidth(absPitch) * 0.75, 0.005, 2.0);
+                    float eqPitchMask45 = 1.0 - smoothstep(1.7 - eqPitchAA, 1.7 + eqPitchAA, absPitch);
+                    float eqTick45 = EvalConservativeLine(absMainArc, 0.32, mAA) * 0.90 * eqPitchMask45;
+                    float eqSubMod = abs(pitchColOffset);
+                    float eqSubAA = clamp(fwidth(eqSubMod) * 0.75, 0.005, 2.0);
+                    float eqTickSub = EvalConservativeLine(eqSubMod, 0.24, eqSubAA) * 0.60 * (1.0 - smoothstep(1.0 - eqPitchAA, 1.0 + eqPitchAA, absPitch));
+                    col = lerp(col, _EquatorColor, saturate(max(eqTick45, eqTickSub)));
+                }
+                glyphAA = clamp(max(fwidth(pitchColArc * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.005, 2.5);
                 }
 
                 // 数字区域清空标尺线条，保持高反差整洁性
@@ -1196,7 +1214,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float primeAngle = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
                 float antiAngle  = abs(headDeg - 180.0);
 
-                if (primeAngle < 3.0 || antiAngle < 3.0)
+                if (_ApertureShape < 0.5 && (primeAngle < 3.0 || antiAngle < 3.0))
                 {
                     float primeArc = primeAngle * cosP;
                     float antiArc  = antiAngle * cosP;
@@ -1247,20 +1265,8 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     col.rgb = lerp(col.rgb, antiColor,  saturate(isAnti  * dividerMask * 0.95));
                 }
 
-                // 8. 赤道航向微刻度线 (Equator Minor Ticks at pitch < 1.8°)
-                if (absPitch < 1.8)
-                {
-                    float eqPitchAA = clamp(fwidth(absPitch) * 0.75, 0.005, 2.0);
-                    float eqPitchMask45 = 1.0 - smoothstep(1.7 - eqPitchAA, 1.7 + eqPitchAA, absPitch);
-                    float eqTick45 = EvalConservativeLine(absMainArc, 0.32, mAA) * 0.90 * eqPitchMask45;
-                    float eqSubMod = abs(pitchColOffset);
-                    float eqSubAA = clamp(fwidth(eqSubMod) * 0.75, 0.005, 2.0);
-                    float eqTickSub = EvalConservativeLine(eqSubMod, 0.24, eqSubAA) * 0.60 * (1.0 - smoothstep(1.0 - eqPitchAA, 1.0 + eqPitchAA, absPitch));
-                    col = lerp(col, _EquatorColor, saturate(max(eqTick45, eqTickSub)));
-                }
 
                 // 9. 字符描边与填充合成 (俯仰数字 + 航向数字，应用 SDF 笔画物理保底与超锐利边缘)
-                float glyphAA = clamp(max(fwidth(pitchColArc * tangentAspect), fwidth(pitchLabelOffset)) * 0.75, 0.005, 2.5);
                 float pitchTextFill, pitchTextOutline;
                 EvalConservativeSDF(pitchGlyphDistance, 0.42 * fontScale, glyphAA, pitchTextFill, pitchTextOutline);
                 pitchTextOutline *= pitchGlyphEnabled;
