@@ -62,6 +62,17 @@ namespace ModularFlightPanel.UI.Framework
             return true;
         }
 
+        /// <summary>
+        /// 智能材质赋值：仅材质发生变动时写入 Graphic.material
+        /// </summary>
+        public static bool SetMaterialSafe(this Graphic graphic, Material newMaterial)
+        {
+            if (graphic == null) return false;
+            if (graphic.material == newMaterial) return false;
+            graphic.material = newMaterial;
+            return true;
+        }
+
         #endregion
 
         #region Text Extensions
@@ -111,6 +122,46 @@ namespace ModularFlightPanel.UI.Framework
             }
             target.sizeDelta = newSize;
             return true;
+        }
+
+        /// <summary>
+        /// 智能左下角偏移赋值：仅偏移变化超出容差 (默认 0.05 像素) 时写入 offsetMin
+        /// </summary>
+        public static bool SetOffsetMinSafe(this RectTransform target, Vector2 newOffset, float tolerance = 0.05f)
+        {
+            if (target == null) return false;
+            Vector2 cur = target.offsetMin;
+            if (Mathf.Abs(cur.x - newOffset.x) <= tolerance && Mathf.Abs(cur.y - newOffset.y) <= tolerance)
+            {
+                return false;
+            }
+            target.offsetMin = newOffset;
+            return true;
+        }
+
+        /// <summary>
+        /// 智能右上角偏移赋值：仅偏移变化超出容差 (默认 0.05 像素) 时写入 offsetMax
+        /// </summary>
+        public static bool SetOffsetMaxSafe(this RectTransform target, Vector2 newOffset, float tolerance = 0.05f)
+        {
+            if (target == null) return false;
+            Vector2 cur = target.offsetMax;
+            if (Mathf.Abs(cur.x - newOffset.x) <= tolerance && Mathf.Abs(cur.y - newOffset.y) <= tolerance)
+            {
+                return false;
+            }
+            target.offsetMax = newOffset;
+            return true;
+        }
+
+        /// <summary>
+        /// 智能双角偏移赋值：同时安全更新 offsetMin 与 offsetMax
+        /// </summary>
+        public static bool SetOffsetsSafe(this RectTransform target, Vector2 min, Vector2 max, float tolerance = 0.05f)
+        {
+            bool changed = SetOffsetMinSafe(target, min, tolerance);
+            changed |= SetOffsetMaxSafe(target, max, tolerance);
+            return changed;
         }
 
         /// <summary>

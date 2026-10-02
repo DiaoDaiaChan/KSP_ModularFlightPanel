@@ -333,14 +333,12 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 槽位挂载根节点
             if (_slotsContainer == null)
             {
-                GameObject containerGo = new GameObject("SlotsContainer", typeof(RectTransform));
-                containerGo.transform.SetParent(transform, false);
-                RectTransform cRt = containerGo.GetComponent<RectTransform>();
+                RectTransform cRt = CreateContainer("SlotsContainer", transform);
                 cRt.anchorMin = Vector2.zero;
                 cRt.anchorMax = Vector2.one;
                 cRt.sizeDelta = Vector2.zero;
                 cRt.anchoredPosition = Vector2.zero;
-                _slotsContainer = containerGo.transform;
+                _slotsContainer = cRt;
             }
 
             // 2. 加载槽位并构建 UI
@@ -673,11 +671,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private void CreatePhaseBadge(Transform parent, SpaceXSlotItem slot, float centerX, float width, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject root = new GameObject($"Slot_{slot.Id}", typeof(RectTransform));
-            root.transform.SetParent(parent, false);
-            RectTransform rRt = root.GetComponent<RectTransform>();
-            rRt.sizeDelta = new Vector2(width, _currentHeight);
-            rRt.anchoredPosition = new Vector2(centerX, 0f);
+            RectTransform rRt = CreateContainer($"Slot_{slot.Id}", parent, new Vector2(width, _currentHeight), new Vector2(centerX, 0f));
+            GameObject root = rRt.gameObject;
             slot.Root = root;
 
             // 药丸微标背景
@@ -710,11 +705,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private void CreateReadoutColumn(Transform parent, SpaceXSlotItem slot, float centerX, float width, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            GameObject root = new GameObject($"Slot_{slot.Id}", typeof(RectTransform));
-            root.transform.SetParent(parent, false);
-            RectTransform rRt = root.GetComponent<RectTransform>();
-            rRt.sizeDelta = new Vector2(width, _currentHeight);
-            rRt.anchoredPosition = new Vector2(centerX, 0f);
+            RectTransform rRt = CreateContainer($"Slot_{slot.Id}", parent, new Vector2(width, _currentHeight), new Vector2(centerX, 0f));
+            GameObject root = rRt.gameObject;
             slot.Root = root;
 
             slot.TitleLabel = UIFactory.CreateText(root.transform, "Title", slot.Title ?? slot.Id.ToUpperInvariant(), Mathf.RoundToInt(7.5f * s), TextAnchor.UpperCenter,

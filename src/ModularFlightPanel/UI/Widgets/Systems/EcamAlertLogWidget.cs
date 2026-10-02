@@ -1361,17 +1361,17 @@ namespace ModularFlightPanel.UI.Widgets
             if (state.WarnCount > 0)
             {
                 Color warnCol = blinkOn ? theme.DangerColor : WidgetStyleManager.WithAlpha(theme.DangerColor, 0.60f);
-                if (_warnBoxBg != null) _warnBoxBg.color = WidgetStyleManager.WithAlpha(theme.DangerColor, blinkOn ? 0.35f : 0.18f);
-                if (_warnBoxOutline != null) _warnBoxOutline.effectColor = warnCol;
-                if (_warnTopPip != null) _warnTopPip.color = warnCol;
-                if (_badgeWarnText != null) _badgeWarnText.color = warnCol;
+                if (_warnBoxBg != null) _warnBoxBg.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, blinkOn ? 0.35f : 0.18f));
+                if (_warnBoxOutline != null) _warnBoxOutline.SetColor(warnCol);
+                if (_warnTopPip != null) _warnTopPip.SetColor(warnCol);
+                if (_badgeWarnText != null) _badgeWarnText.SetColor(warnCol);
             }
             else
             {
-                if (_warnBoxBg != null) _warnBoxBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                if (_warnBoxOutline != null) _warnBoxOutline.effectColor = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.22f);
-                if (_warnTopPip != null) _warnTopPip.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.22f);
-                if (_badgeWarnText != null) _badgeWarnText.color = WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f);
+                if (_warnBoxBg != null) _warnBoxBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                if (_warnBoxOutline != null) _warnBoxOutline.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.22f));
+                if (_warnTopPip != null) _warnTopPip.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.22f));
+                if (_badgeWarnText != null) _badgeWarnText.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, 0.40f));
             }
 
             if (_lastCautCount.Update(state.CautCount))
@@ -1382,17 +1382,17 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (state.CautCount > 0)
             {
-                if (_cautBoxBg != null) _cautBoxBg.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.25f);
-                if (_cautBoxOutline != null) _cautBoxOutline.effectColor = theme.WarningColor;
-                if (_cautTopPip != null) _cautTopPip.color = theme.WarningColor;
-                if (_badgeCautText != null) _badgeCautText.color = theme.WarningColor;
+                if (_cautBoxBg != null) _cautBoxBg.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.25f));
+                if (_cautBoxOutline != null) _cautBoxOutline.SetColor(theme.WarningColor);
+                if (_cautTopPip != null) _cautTopPip.SetColor(theme.WarningColor);
+                if (_badgeCautText != null) _badgeCautText.SetColor(theme.WarningColor);
             }
             else
             {
-                if (_cautBoxBg != null) _cautBoxBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                if (_cautBoxOutline != null) _cautBoxOutline.effectColor = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.22f);
-                if (_cautTopPip != null) _cautTopPip.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.22f);
-                if (_badgeCautText != null) _badgeCautText.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f);
+                if (_cautBoxBg != null) _cautBoxBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                if (_cautBoxOutline != null) _cautBoxOutline.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.22f));
+                if (_cautTopPip != null) _cautTopPip.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.22f));
+                if (_badgeCautText != null) _badgeCautText.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.40f));
             }
 
             if (_lastMemoCount.Update(state.MemoCount))
@@ -1403,17 +1403,17 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (state.MemoCount > 0)
             {
-                if (_memoBoxBg != null) _memoBoxBg.color = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.18f);
-                if (_memoBoxOutline != null) _memoBoxOutline.effectColor = theme.AccentPositive;
-                if (_memoTopPip != null) _memoTopPip.color = theme.AccentPositive;
-                if (_badgeMemoText != null) _badgeMemoText.color = theme.AccentPositive;
+                if (_memoBoxBg != null) _memoBoxBg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.18f));
+                if (_memoBoxOutline != null) _memoBoxOutline.SetColor(theme.AccentPositive);
+                if (_memoTopPip != null) _memoTopPip.SetColor(theme.AccentPositive);
+                if (_badgeMemoText != null) _badgeMemoText.SetColor(theme.AccentPositive);
             }
             else
             {
-                if (_memoBoxBg != null) _memoBoxBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                if (_memoBoxOutline != null) _memoBoxOutline.effectColor = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.22f);
-                if (_memoTopPip != null) _memoTopPip.color = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.22f);
-                if (_badgeMemoText != null) _badgeMemoText.color = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.40f);
+                if (_memoBoxBg != null) _memoBoxBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                if (_memoBoxOutline != null) _memoBoxOutline.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.22f));
+                if (_memoTopPip != null) _memoTopPip.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.22f));
+                if (_badgeMemoText != null) _badgeMemoText.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.40f));
             }
 
             // 3. 底栏总体工况显示
@@ -1423,29 +1423,29 @@ namespace ModularFlightPanel.UI.Widgets
                 return;
             }
 
-            if (_btnStsActiveBar != null) _btnStsActiveBar.color = Color.clear;
-            if (_btnStsBg != null) _btnStsBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Control, theme);
-            if (_btnStsOutline != null) _btnStsOutline.effectColor = WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Subtle);
+            if (_btnStsActiveBar != null) _btnStsActiveBar.SetColor(Color.clear);
+            if (_btnStsBg != null) _btnStsBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Control, theme));
+            if (_btnStsOutline != null) _btnStsOutline.SetColor(WidgetStyleManager.Weighted(theme.AccentPrimary, LineWeight.Subtle));
 
             if (_lastStatusText.Update(state.StatusText)) SetTextIfChanged(_statusText, state.StatusText);
             Color statusCol = style.GetTextColor(state.StatusRole, theme);
-            if (_statusText != null) _statusText.color = statusCol;
+            if (_statusText != null) _statusText.SetColor(statusCol);
 
             if (state.WarnCount > 0)
             {
                 Color dotCol = blinkOn ? theme.DangerColor : WidgetStyleManager.WithAlpha(theme.DangerColor, 0.3f);
-                if (_statusLedDot != null) _statusLedDot.color = dotCol;
-                if (_statusLedHalo != null) _statusLedHalo.color = WidgetStyleManager.WithAlpha(theme.DangerColor, blinkOn ? 0.40f : 0.15f);
+                if (_statusLedDot != null) _statusLedDot.SetColor(dotCol);
+                if (_statusLedHalo != null) _statusLedHalo.SetColor(WidgetStyleManager.WithAlpha(theme.DangerColor, blinkOn ? 0.40f : 0.15f));
             }
             else if (state.CautCount > 0)
             {
-                if (_statusLedDot != null) _statusLedDot.color = theme.WarningColor;
-                if (_statusLedHalo != null) _statusLedHalo.color = WidgetStyleManager.WithAlpha(theme.WarningColor, 0.25f);
+                if (_statusLedDot != null) _statusLedDot.SetColor(theme.WarningColor);
+                if (_statusLedHalo != null) _statusLedHalo.SetColor(WidgetStyleManager.WithAlpha(theme.WarningColor, 0.25f));
             }
             else
             {
-                if (_statusLedDot != null) _statusLedDot.color = theme.AccentPositive;
-                if (_statusLedHalo != null) _statusLedHalo.color = WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.25f);
+                if (_statusLedDot != null) _statusLedDot.SetColor(theme.AccentPositive);
+                if (_statusLedHalo != null) _statusLedHalo.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.25f));
             }
 
             // 4. 缓冲日志计数
@@ -1480,45 +1480,45 @@ namespace ModularFlightPanel.UI.Widgets
                     }
 
                     // 1. 左侧竖条指示色彩
-                    if (slot.LeftPipBar != null) slot.LeftPipBar.color = itemColor;
+                    if (slot.LeftPipBar != null) slot.LeftPipBar.SetColor(itemColor);
 
                     // 2. 等级图标与子系统芯片 (Badge Chip)
-                    if (slot.BadgeBg != null) slot.BadgeBg.color = WidgetStyleManager.WithAlpha(itemColor, 0.16f);
-                    if (slot.BadgeOutline != null) slot.BadgeOutline.effectColor = WidgetStyleManager.WithAlpha(itemColor, 0.65f);
+                    if (slot.BadgeBg != null) slot.BadgeBg.SetColor(WidgetStyleManager.WithAlpha(itemColor, 0.16f));
+                    if (slot.BadgeOutline != null) slot.BadgeOutline.SetColor(WidgetStyleManager.WithAlpha(itemColor, 0.65f));
                     SetTextIfChanged(slot.IconText, row.Tag);
-                    if (slot.IconText != null) slot.IconText.color = itemColor;
+                    if (slot.IconText != null) slot.IconText.SetColor(itemColor);
 
                     // 3. 标题
                     SetTextIfChanged(slot.TitleText, row.Title);
                     if (slot.TitleText != null)
                     {
-                        slot.TitleText.color = (row.Severity == EcamAlertSeverity.Warning || row.Severity == EcamAlertSeverity.Caution)
+                        slot.TitleText.SetColor((row.Severity == EcamAlertSeverity.Warning || row.Severity == EcamAlertSeverity.Caution)
                             ? itemColor
-                            : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                            : style.GetTextColor(TextStyleRole.PrimaryValue, theme));
                     }
 
                     // 4. 遥测读数芯片
                     SetTextIfChanged(slot.DetailText, row.Detail);
-                    if (slot.DetailBg != null) slot.DetailBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                    if (slot.DetailOutline != null) slot.DetailOutline.effectColor = WidgetStyleManager.WithAlpha(itemColor, 0.35f);
-                    if (slot.DetailText != null) slot.DetailText.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
+                    if (slot.DetailBg != null) slot.DetailBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                    if (slot.DetailOutline != null) slot.DetailOutline.SetColor(WidgetStyleManager.WithAlpha(itemColor, 0.35f));
+                    if (slot.DetailText != null) slot.DetailText.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
 
                     // 5. 任务时钟
                     SetTextIfChanged(slot.TimeText, row.Timestamp);
-                    if (slot.TimeText != null) slot.TimeText.color = style.GetTextColor(TextStyleRole.Unit, theme);
+                    if (slot.TimeText != null) slot.TimeText.SetColor(style.GetTextColor(TextStyleRole.Unit, theme));
 
                     // 6. 卡片底色与微光边框
                     if (slot.RowBg != null)
                     {
-                        slot.RowBg.color = row.IsPersistent
+                        slot.RowBg.SetColor(row.IsPersistent
                             ? WidgetStyleManager.WithAlpha(itemColor, 0.15f)
-                            : WidgetStyleManager.WithAlpha(theme.AccentSecondary, slotIdx % 2 == 0 ? 0.04f : 0.07f);
+                            : WidgetStyleManager.WithAlpha(theme.AccentSecondary, slotIdx % 2 == 0 ? 0.04f : 0.07f));
                     }
                     if (slot.RowOutline != null)
                     {
-                        slot.RowOutline.effectColor = row.IsPersistent
+                        slot.RowOutline.SetColor(row.IsPersistent
                             ? WidgetStyleManager.WithAlpha(itemColor, 0.50f)
-                            : WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.15f);
+                            : WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.15f));
                     }
                 }
                 else
@@ -1532,14 +1532,14 @@ namespace ModularFlightPanel.UI.Widgets
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
             if (_lastStatusText.Update(state.StatusText)) SetTextIfChanged(_statusText, state.StatusText);
-            if (_statusText != null) _statusText.color = theme.AccentPrimary;
-            if (_statusLedDot != null) _statusLedDot.color = theme.AccentPrimary;
-            if (_statusLedHalo != null) _statusLedHalo.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.25f);
+            if (_statusText != null) _statusText.SetColor(theme.AccentPrimary);
+            if (_statusLedDot != null) _statusLedDot.SetColor(theme.AccentPrimary);
+            if (_statusLedHalo != null) _statusLedHalo.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.25f));
             SetTextIfChanged(_bufferCountText, I18n.Tr("WIDGET_EICAS_PAGE_COUNT", "页 1/1"));
 
-            if (_btnStsBg != null) _btnStsBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.35f);
-            if (_btnStsOutline != null) _btnStsOutline.effectColor = theme.AccentPrimary;
-            if (_btnStsActiveBar != null) _btnStsActiveBar.color = theme.AccentPrimary;
+            if (_btnStsBg != null) _btnStsBg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.35f));
+            if (_btnStsOutline != null) _btnStsOutline.SetColor(theme.AccentPrimary);
+            if (_btnStsActiveBar != null) _btnStsActiveBar.SetColor(theme.AccentPrimary);
 
             for (int i = 0; i < MAX_DISPLAY_ROWS; i++)
             {
@@ -1548,25 +1548,25 @@ namespace ModularFlightPanel.UI.Widgets
                 EcamDiagRowState d = state.GetDiag(i);
                 Color col = style.GetTextColor(d.Role, theme);
 
-                if (slot.LeftPipBar != null) slot.LeftPipBar.color = col;
-                if (slot.BadgeBg != null) slot.BadgeBg.color = WidgetStyleManager.WithAlpha(col, 0.16f);
-                if (slot.BadgeOutline != null) slot.BadgeOutline.effectColor = WidgetStyleManager.WithAlpha(col, 0.65f);
+                if (slot.LeftPipBar != null) slot.LeftPipBar.SetColor(col);
+                if (slot.BadgeBg != null) slot.BadgeBg.SetColor(WidgetStyleManager.WithAlpha(col, 0.16f));
+                if (slot.BadgeOutline != null) slot.BadgeOutline.SetColor(WidgetStyleManager.WithAlpha(col, 0.65f));
                 SetTextIfChanged(slot.IconText, d.Tag);
-                if (slot.IconText != null) slot.IconText.color = col;
+                if (slot.IconText != null) slot.IconText.SetColor(col);
 
                 SetTextIfChanged(slot.TitleText, d.Title);
-                if (slot.TitleText != null) slot.TitleText.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
+                if (slot.TitleText != null) slot.TitleText.SetColor(style.GetTextColor(TextStyleRole.PrimaryValue, theme));
 
                 SetTextIfChanged(slot.DetailText, d.Val);
-                if (slot.DetailBg != null) slot.DetailBg.color = WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme);
-                if (slot.DetailOutline != null) slot.DetailOutline.effectColor = WidgetStyleManager.WithAlpha(col, 0.35f);
-                if (slot.DetailText != null) slot.DetailText.color = style.GetTextColor(TextStyleRole.SecondaryValue, theme);
+                if (slot.DetailBg != null) slot.DetailBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
+                if (slot.DetailOutline != null) slot.DetailOutline.SetColor(WidgetStyleManager.WithAlpha(col, 0.35f));
+                if (slot.DetailText != null) slot.DetailText.SetColor(style.GetTextColor(TextStyleRole.SecondaryValue, theme));
 
                 SetTextIfChanged(slot.TimeText, d.Aux);
-                if (slot.TimeText != null) slot.TimeText.color = style.GetTextColor(TextStyleRole.Unit, theme);
+                if (slot.TimeText != null) slot.TimeText.SetColor(style.GetTextColor(TextStyleRole.Unit, theme));
 
-                if (slot.RowBg != null) slot.RowBg.color = WidgetStyleManager.WithAlpha(theme.AccentSecondary, i % 2 == 0 ? 0.04f : 0.07f);
-                if (slot.RowOutline != null) slot.RowOutline.effectColor = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.15f);
+                if (slot.RowBg != null) slot.RowBg.SetColor(WidgetStyleManager.WithAlpha(theme.AccentSecondary, i % 2 == 0 ? 0.04f : 0.07f));
+                if (slot.RowOutline != null) slot.RowOutline.SetColor(WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.15f));
             }
         }
 

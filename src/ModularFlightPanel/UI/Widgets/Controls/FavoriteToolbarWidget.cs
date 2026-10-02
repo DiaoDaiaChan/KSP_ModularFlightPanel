@@ -676,8 +676,8 @@ namespace ModularFlightPanel.UI.Widgets
             Text txt = UIFactory.CreateText(_emptyHintObj.transform, "Text", hintText,
                 Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Text(TextStyleRole.Cardinal));
             txt.raycastTarget = false;
-            txt.rectTransform.anchoredPosition = Vector2.zero;
-            txt.rectTransform.sizeDelta = new Vector2(150f * s, 28f * s);
+            txt.rectTransform.SetAnchoredPositionSafe(Vector2.zero);
+            txt.rectTransform.SetSizeDeltaSafe(new Vector2(150f * s, 28f * s));
 
             btn.onClick.AddListener(() =>
             {
@@ -706,7 +706,7 @@ namespace ModularFlightPanel.UI.Widgets
             itemRt.anchorMin = anchor;
             itemRt.anchorMax = anchor;
             itemRt.pivot = new Vector2(0.5f, 0.5f);
-            itemRt.anchoredPosition = new Vector2(x, y);
+            itemRt.SetAnchoredPositionSafe(new Vector2(x, y));
 
             Image bg = itemObj.GetComponent<Image>();
             bg.raycastTarget = true;
@@ -732,29 +732,29 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (hasExplicitCustomLabel && !string.IsNullOrEmpty(label))
                 {
-                    irt.sizeDelta = new Vector2(20f * s, 20f * s);
-                    irt.anchoredPosition = new Vector2(0f, 4f * s);
+                    irt.SetSizeDeltaSafe(new Vector2(20f * s, 20f * s));
+                    irt.SetAnchoredPositionSafe(new Vector2(0f, 4f * s));
 
-                    lbl.text = label;
+                    lbl.SetTextSafe(label);
                     lbl.fontSize = Mathf.RoundToInt(8f * s);
-                    lblRt.sizeDelta = new Vector2(w - 2f * s, 10f * s);
-                    lblRt.anchoredPosition = new Vector2(0f, -11f * s);
+                    lblRt.SetSizeDeltaSafe(new Vector2(w - 2f * s, 10f * s));
+                    lblRt.SetAnchoredPositionSafe(new Vector2(0f, -11f * s));
                     lbl.gameObject.SetActive(true);
                 }
                 else
                 {
-                    irt.sizeDelta = new Vector2(w - 8f * s, h - 8f * s);
-                    irt.anchoredPosition = Vector2.zero;
+                    irt.SetSizeDeltaSafe(new Vector2(w - 8f * s, h - 8f * s));
+                    irt.SetAnchoredPositionSafe(Vector2.zero);
                     lbl.gameObject.SetActive(false);
                 }
             }
             else
             {
                 rawImg.gameObject.SetActive(false);
-                lbl.text = label;
+                lbl.SetTextSafe(label);
                 lbl.fontSize = Mathf.RoundToInt(9.5f * s);
-                lblRt.sizeDelta = new Vector2(w - 4f * s, h - 4f * s);
-                lblRt.anchoredPosition = Vector2.zero;
+                lblRt.SetSizeDeltaSafe(new Vector2(w - 4f * s, h - 4f * s));
+                lblRt.SetAnchoredPositionSafe(Vector2.zero);
                 lbl.gameObject.SetActive(true);
             }
 

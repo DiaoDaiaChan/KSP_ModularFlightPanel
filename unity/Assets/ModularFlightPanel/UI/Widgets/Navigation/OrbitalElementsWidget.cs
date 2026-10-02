@@ -689,9 +689,8 @@ namespace ModularFlightPanel.UI.Widgets
             _diagramGraphic.raycastTarget = false;
 
             // 3D 权威开普勒拓扑 UGUI 矢量标注层 (挂载在网格上方，带背景描边防重叠)
-            _labelsRoot = new GameObject("Diagram_Labels", typeof(RectTransform));
-            _labelsRoot.transform.SetParent(globeBox.transform, false);
-            var lblRt = _labelsRoot.GetComponent<RectTransform>();
+            var lblRt = CreateContainer("Diagram_Labels", globeBox.transform);
+            _labelsRoot = lblRt.gameObject;
             lblRt.anchorMin = Vector2.zero;
             lblRt.anchorMax = Vector2.one;
             lblRt.sizeDelta = Vector2.zero;
@@ -732,12 +731,11 @@ namespace ModularFlightPanel.UI.Widgets
             _scVelocityArrowImg.raycastTarget = false;
             _scVelocityArrow.SetActive(false);
 
-            _scVelocityHead = new GameObject("SC_VelocityHead", typeof(RectTransform), typeof(Image));
-            _scVelocityHead.transform.SetParent(_scVelocityArrow.transform, false);
-            _scVelocityHeadRt = _scVelocityHead.GetComponent<RectTransform>();
+            _scVelocityHeadImg = CreateChild<Image>("SC_VelocityHead", _scVelocityArrow.transform);
+            _scVelocityHead = _scVelocityHeadImg.gameObject;
+            _scVelocityHeadRt = _scVelocityHeadImg.rectTransform;
             _scVelocityHeadRt.sizeDelta = new Vector2(6f * s, 6f * s);
             _scVelocityHeadRt.pivot = new Vector2(0.5f, 0.5f);
-            _scVelocityHeadImg = _scVelocityHead.GetComponent<Image>();
             _scVelocityHeadImg.material = style.GetUiMaterial(isText: false);
             _scVelocityHeadImg.color = _cVectorV;
             _scVelocityHeadImg.raycastTarget = false;
@@ -751,12 +749,11 @@ namespace ModularFlightPanel.UI.Widgets
             _scOutline.effectDistance = new Vector2(1.5f * s, 1.5f * s);
             _scOutline.effectColor = _cVesselGlow;
 
-            var scDotGo = new GameObject("SC_Dot", typeof(RectTransform), typeof(Image));
-            scDotGo.transform.SetParent(_scMarker.transform, false);
-            var scDotRt = scDotGo.GetComponent<RectTransform>();
+            _scMarkerDotImg = CreateChild<Image>("SC_Dot", _scMarker.transform);
+            var scDotGo = _scMarkerDotImg.gameObject;
+            var scDotRt = _scMarkerDotImg.rectTransform;
             scDotRt.sizeDelta = new Vector2(4f * s, 4f * s);
             scDotRt.anchoredPosition = Vector2.zero;
-            _scMarkerDotImg = scDotGo.GetComponent<Image>();
             _scMarkerDotImg.material = style.GetUiMaterial(isText: false);
             _scMarkerDotImg.color = _cVessel;
             _scMarkerDotImg.raycastTarget = false;

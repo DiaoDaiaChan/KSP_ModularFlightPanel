@@ -167,19 +167,15 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 2. 创建视口容器
-            var fullGo = new GameObject("FullNodeContainer", typeof(RectTransform));
-            fullGo.transform.SetParent(transform, false);
-            _fullNodeContainer = fullGo;
-            var fullRt = fullGo.GetComponent<RectTransform>();
+            var fullRt = CreateContainer("FullNodeContainer", transform);
+            _fullNodeContainer = fullRt.gameObject;
             fullRt.anchorMin = Vector2.zero;
             fullRt.anchorMax = Vector2.one;
             fullRt.sizeDelta = Vector2.zero;
             fullRt.anchoredPosition = Vector2.zero;
 
-            var standbyGo = new GameObject("StandbyContainer", typeof(RectTransform));
-            standbyGo.transform.SetParent(transform, false);
-            _standbyContainer = standbyGo;
-            var standbyRt = standbyGo.GetComponent<RectTransform>();
+            var standbyRt = CreateContainer("StandbyContainer", transform);
+            _standbyContainer = standbyRt.gameObject;
             standbyRt.anchorMin = Vector2.zero;
             standbyRt.anchorMax = Vector2.one;
             standbyRt.sizeDelta = Vector2.zero;

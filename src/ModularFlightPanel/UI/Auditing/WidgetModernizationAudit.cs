@@ -1004,7 +1004,7 @@ namespace ModularFlightPanel.UI.Auditing
             {
                 return symbol.ContainingType?.Name is "SmartUIExtensions";
             }
-            return invokedName is "SetTextSafe" or "SetColor" or "SetAlpha" or "SetAnchoredPositionSafe" or "SetSizeDeltaSafe" or "SetActiveSafe" or "SetFillAmountSafe";
+            return invokedName is "SetTextSafe" or "SetColor" or "SetAlpha" or "SetAnchoredPositionSafe" or "SetSizeDeltaSafe" or "SetOffsetMinSafe" or "SetOffsetMaxSafe" or "SetOffsetsSafe" or "SetMaterialSafe" or "SetActiveSafe" or "SetFillAmountSafe";
         }
 
         private static bool IsBannedDockSyncCall(IMethodSymbol symbol, InvocationExpressionSyntax node)
