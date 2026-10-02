@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -24,6 +25,8 @@ namespace ModularFlightPanel.UI.Workbench
         private static WorkbenchCanvasView _instance;
         public static WorkbenchCanvasView Instance => _instance;
 
+        // 独立子 GameObject 托管 Canvas，彻底避免污染 NavballPlugin 宿主
+        private GameObject _canvasObj;
         private Canvas _canvas;
         private CanvasScaler _scaler;
         private CanvasGroup _windowCanvasGroup;
@@ -46,13 +49,24 @@ namespace ModularFlightPanel.UI.Workbench
         private GameObject _floatingDockObj;
         private Text _dockSelInfoText;
 
-        // 窗体拉伸与拖拽几何
+        // 窗体拉伸、拖拽与最大化几何
         private float _windowWidth = 1060f;
         private float _windowHeight = 670f;
         private Vector2 _windowPos = Vector2.zero;
+        private bool _isMaximized = false;
+        private Vector2 _preMaximizePos;
+        private Vector2 _preMaximizeSize;
+        private Text _maximizeBtnText;
 
         // 全屏射线穿透拦截底板
         private GameObject _blockerObj;
+
+        // 全局命令面板 (Ctrl+K)
+        private GameObject _cmdPaletteObj;
+        private bool _isCmdPaletteOpen = false;
+        private InputField _cmdPaletteInput;
+        private RectTransform _cmdPaletteResults;
+        private readonly List<Action> _cmdPaletteActions = new List<Action>();
 
         private void Awake()
         {
@@ -63,6 +77,11 @@ namespace ModularFlightPanel.UI.Workbench
         private void OnDestroy()
         {
             if (_instance == this) _instance = null;
+            if (_canvasObj != null)
+            {
+                Destroy(_canvasObj);
+                _canvasObj = null;
+            }
         }
 
         public void EnsureBuilt()
@@ -77,24 +96,21 @@ namespace ModularFlightPanel.UI.Workbench
         {
             WorkbenchStyleEngine.EnsureInitialized();
 
-            // 1. 独立 Overlay 画布
-            gameObject.name = "MFP_ModernWorkbench_Root";
-            _canvas = gameObject.GetComponent<Canvas>() ?? gameObject.AddComponent<Canvas>();
+            // 1. 独立 Overlay 画布，完全隔离于 NavballPlugin 宿主 GameObject
+            _canvasObj = new GameObject("MFP_ModernWorkbench_Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            _canvasObj.transform.SetParent(transform, false);
+
+            _canvas = _canvasObj.GetComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             _canvas.sortingOrder = 8500;
             _canvas.pixelPerfect = false;
 
-            _scaler = gameObject.GetComponent<CanvasScaler>() ?? gameObject.AddComponent<CanvasScaler>();
+            _scaler = _canvasObj.GetComponent<CanvasScaler>();
             _scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-
-            if (gameObject.GetComponent<GraphicRaycaster>() == null)
-            {
-                gameObject.AddComponent<GraphicRaycaster>();
-            }
 
             // 2. 全屏射线拦截器 (阻止点击穿透到 3D 飞船零件)
             _blockerObj = new GameObject("RaycastBlocker", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            _blockerObj.transform.SetParent(transform, false);
+            _blockerObj.transform.SetParent(_canvasObj.transform, false);
             RectTransform bRt = _blockerObj.GetComponent<RectTransform>();
             bRt.anchorMin = Vector2.zero;
             bRt.anchorMax = Vector2.one;
@@ -103,13 +119,16 @@ namespace ModularFlightPanel.UI.Workbench
             bImg.color = new Color(0f, 0f, 0f, 0.005f); // 极弱透明阻断
             bImg.raycastTarget = true;
 
-            // 3. 工作台主窗体
+            // 3. 读取并同步持久化窗口几何尺寸
+            ApplyWindowGeometryFromSettings();
+
+            // 4. 工作台主窗体
             GameObject winObj = new GameObject("MainWindow", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(CanvasGroup));
-            winObj.transform.SetParent(transform, false);
+            winObj.transform.SetParent(_canvasObj.transform, false);
 
             _windowRt = winObj.GetComponent<RectTransform>();
             _windowRt.sizeDelta = new Vector2(_windowWidth, _windowHeight);
-            _windowRt.anchoredPosition = Vector2.zero;
+            _windowRt.anchoredPosition = _windowPos;
 
             _windowBgImg = winObj.GetComponent<Image>();
             _windowBgImg.material = WorkbenchStyleEngine.GetWindowGlassMaterial();
@@ -130,10 +149,13 @@ namespace ModularFlightPanel.UI.Workbench
             BuildBodyArea(winObj.transform);
             BuildFooterBar(winObj.transform);
 
-            // 4. 画布排版模式极简悬浮药丸 Dock
+            // 5. 画布排版模式极简悬浮药丸 Dock
             BuildFloatingCanvasDock();
 
-            // 5. 初始化 5 大标签页视图
+            // 6. 全局命令面板 (Ctrl+K)
+            BuildCommandPalette();
+
+            // 7. 初始化 5 大标签页视图
             _tabViews = new IWorkbenchTabView[]
             {
                 new WorkbenchTabStudio(),
@@ -146,6 +168,67 @@ namespace ModularFlightPanel.UI.Workbench
             SwitchTab(0);
             SetVisible(false, false);
         }
+
+        private void ApplyWindowGeometryFromSettings()
+        {
+            if (SettingsGUI.Instance != null)
+            {
+                var r = SettingsGUI.Instance.WindowRect;
+                if (r.width > 100f && r.height > 100f)
+                {
+                    _windowWidth = r.width;
+                    _windowHeight = r.height;
+                    float posX = r.x + r.width * 0.5f - Screen.width * 0.5f;
+                    float posY = Screen.height * 0.5f - (r.y + r.height * 0.5f);
+                    _windowPos = new Vector2(posX, posY);
+                    return;
+                }
+            }
+
+            _windowWidth = SettingsGUI.DefaultWindowWidth;
+            _windowHeight = SettingsGUI.DefaultWindowHeight;
+            _windowPos = Vector2.zero;
+        }
+
+        private void SyncWindowGeometryToSettings()
+        {
+            if (_windowRt == null) return;
+            float guiX = (Screen.width * 0.5f + _windowRt.anchoredPosition.x) - _windowRt.sizeDelta.x * 0.5f;
+            float guiY = Screen.height * 0.5f - _windowRt.anchoredPosition.y - _windowRt.sizeDelta.y * 0.5f;
+            SettingsGUI.Instance?.UpdateWindowGeometry(guiX, guiY, _windowRt.sizeDelta.x, _windowRt.sizeDelta.y);
+        }
+
+        public void ToggleMaximizeWindow()
+        {
+            if (_windowRt == null) return;
+
+            if (!_isMaximized)
+            {
+                _preMaximizePos = _windowRt.anchoredPosition;
+                _preMaximizeSize = _windowRt.sizeDelta;
+                _isMaximized = true;
+
+                float maxW = Mathf.Max(860f, Screen.width - 40f);
+                float maxH = Mathf.Max(480f, Screen.height - 40f);
+                _windowRt.sizeDelta = new Vector2(maxW, maxH);
+                _windowRt.anchoredPosition = Vector2.zero;
+
+                if (_maximizeBtnText != null) _maximizeBtnText.text = "⧉";
+                Settings.MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_MAXIMIZE_WINDOW", "⛶ 已最大化窗口"));
+            }
+            else
+            {
+                _isMaximized = false;
+                _windowRt.sizeDelta = (_preMaximizeSize.x > 100f) ? _preMaximizeSize : new Vector2(SettingsGUI.DefaultWindowWidth, SettingsGUI.DefaultWindowHeight);
+                _windowRt.anchoredPosition = _preMaximizePos;
+
+                if (_maximizeBtnText != null) _maximizeBtnText.text = "⛶";
+                Settings.MFPGuiSkin.ShowToast(I18n.Tr("UI_TOAST_RESTORE_WINDOW", "⧉ 已还原窗口尺寸"));
+            }
+
+            SyncWindowGeometryToSettings();
+        }
+
 
         #region Top Header Bar
 
@@ -168,6 +251,7 @@ namespace ModularFlightPanel.UI.Workbench
             // 允许拖拽移动整个窗口
             var dragHandler = header.AddComponent<WorkbenchWindowDragHandler>();
             dragHandler.TargetWindow = _windowRt;
+            dragHandler.OnDragEnd = SyncWindowGeometryToSettings;
 
             // 品牌标题与版本徽标
             GameObject titleObj = new GameObject("BrandTitle", typeof(RectTransform), typeof(Text));
@@ -199,11 +283,18 @@ namespace ModularFlightPanel.UI.Workbench
             _frameText = CreateHeaderChip(header.transform, "🌐 参考系: ---");
             _fpsText = CreateHeaderChip(header.transform, "⚡ 60 FPS | 0.1ms");
 
+            // 全局命令面板快捷入口 (Ctrl+K)
+            WorkbenchControls.CreateButton(header.transform, "CmdPaletteBtn", I18n.Tr("CMD_PALETTE_BTN_OPEN", "🔍 命令 (Ctrl+K)"), new Vector2(115f, 28f), ToggleCommandPalette, false, 11);
+
             // 画布自由排版模式快捷入口
             WorkbenchControls.CreateButton(header.transform, "CanvasModeBtn", "📐 画布自由排版", new Vector2(130f, 28f), () =>
             {
                 SettingsGUI.Instance?.EnterCanvasLayoutMode();
             }, true, 11);
+
+            // 最大化 / 还原按钮
+            GameObject maxBtn = WorkbenchControls.CreateButton(header.transform, "MaximizeBtn", "⛶", new Vector2(28f, 28f), ToggleMaximizeWindow, false, 12);
+            _maximizeBtnText = maxBtn.GetComponentInChildren<Text>();
 
             // 顶栏关闭按钮
             WorkbenchControls.CreateButton(header.transform, "CloseBtn", "✕", new Vector2(28f, 28f), () =>
@@ -382,6 +473,7 @@ namespace ModularFlightPanel.UI.Workbench
                 _windowWidth = w;
                 _windowHeight = h;
             };
+            resizeHandler.OnResizeEnd = SyncWindowGeometryToSettings;
         }
 
         #endregion
@@ -391,7 +483,7 @@ namespace ModularFlightPanel.UI.Workbench
         private void BuildFloatingCanvasDock()
         {
             _floatingDockObj = new GameObject("FloatingCanvasDock", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            _floatingDockObj.transform.SetParent(transform, false);
+            _floatingDockObj.transform.SetParent(_canvasObj.transform, false);
 
             RectTransform dockRt = _floatingDockObj.GetComponent<RectTransform>();
             dockRt.anchorMin = new Vector2(0.5f, 0f);
@@ -453,6 +545,339 @@ namespace ModularFlightPanel.UI.Workbench
 
         #endregion
 
+        #region Command Palette (Ctrl+K)
+
+        private void BuildCommandPalette()
+        {
+            _cmdPaletteObj = new GameObject("CommandPalette_Modal", typeof(RectTransform), typeof(CanvasRenderer));
+            _cmdPaletteObj.transform.SetParent(_canvasObj.transform, false);
+
+            RectTransform modalRt = _cmdPaletteObj.GetComponent<RectTransform>();
+            modalRt.anchorMin = Vector2.zero;
+            modalRt.anchorMax = Vector2.one;
+            modalRt.sizeDelta = Vector2.zero;
+
+            // 背景全屏变暗阻断板
+            GameObject backdrop = new GameObject("Backdrop", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            backdrop.transform.SetParent(_cmdPaletteObj.transform, false);
+            RectTransform bdRt = backdrop.GetComponent<RectTransform>();
+            bdRt.anchorMin = Vector2.zero;
+            bdRt.anchorMax = Vector2.one;
+            bdRt.sizeDelta = Vector2.zero;
+            Image bdImg = backdrop.GetComponent<Image>();
+            bdImg.color = new Color(0.02f, 0.05f, 0.08f, 0.65f);
+            Button bdBtn = backdrop.GetComponent<Button>();
+            bdBtn.transition = Selectable.Transition.None;
+            bdBtn.onClick.AddListener(CloseCommandPalette);
+
+            // 居中暗晶玻璃悬浮弹窗
+            GameObject cardObj = new GameObject("PaletteCard", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(VerticalLayoutGroup));
+            cardObj.transform.SetParent(_cmdPaletteObj.transform, false);
+
+            RectTransform cardRt = cardObj.GetComponent<RectTransform>();
+            cardRt.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRt.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRt.pivot = new Vector2(0.5f, 0.5f);
+            cardRt.sizeDelta = new Vector2(640f, 440f);
+            cardRt.anchoredPosition = new Vector2(0f, 30f);
+
+            Image cardImg = cardObj.GetComponent<Image>();
+            cardImg.material = WorkbenchStyleEngine.GetCardGlassMaterial(true);
+            cardImg.color = WorkbenchStyleEngine.ColorCardBg;
+
+            VerticalLayoutGroup vlg = cardObj.GetComponent<VerticalLayoutGroup>();
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.spacing = 6f;
+            vlg.padding = new RectOffset(10, 10, 10, 10);
+
+            // 1. 顶部检索行
+            GameObject searchRow = new GameObject("SearchRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            searchRow.transform.SetParent(cardObj.transform, false);
+            searchRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 36f);
+            var srLe = searchRow.AddComponent<LayoutElement>();
+            srLe.preferredHeight = 36f;
+            srLe.minHeight = 36f;
+            srLe.flexibleHeight = 0f;
+
+            var srHlg = searchRow.GetComponent<HorizontalLayoutGroup>();
+            srHlg.childForceExpandWidth = false;
+            srHlg.childForceExpandHeight = true;
+            srHlg.spacing = 8f;
+
+            GameObject inputObj = WorkbenchControls.CreateTextField(searchRow.transform, "PaletteInput", "", I18n.Tr("CMD_PALETTE_PLACEHOLDER", "🔍 搜索标签页、快速操作、航电组件、遥测参数 (Ctrl+K)..."), new Vector2(560f, 36f), OnCommandPaletteInputChanged);
+            var inLe = inputObj.AddComponent<LayoutElement>();
+            inLe.flexibleWidth = 1f;
+            _cmdPaletteInput = inputObj.GetComponent<InputField>();
+
+            WorkbenchControls.CreateButton(searchRow.transform, "ClosePaletteBtn", "✕", new Vector2(28f, 28f), CloseCommandPalette, false, 12);
+
+            // 2. 搜索结果滚动列表
+            _cmdPaletteResults = WorkbenchControls.CreateScrollView(cardObj.transform, "ResultsScrollView", new Vector2(0f, 340f), out GameObject scrollObj);
+            var scLe = scrollObj.AddComponent<LayoutElement>();
+            scLe.flexibleHeight = 1f;
+
+            // 3. 底部操作提示栏
+            GameObject footerRow = new GameObject("FooterRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            footerRow.transform.SetParent(cardObj.transform, false);
+            footerRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 22f);
+            var frLe = footerRow.AddComponent<LayoutElement>();
+            frLe.preferredHeight = 22f;
+            frLe.minHeight = 22f;
+            frLe.flexibleHeight = 0f;
+
+            var frHlg = footerRow.GetComponent<HorizontalLayoutGroup>();
+            frHlg.childForceExpandWidth = false;
+            frHlg.childForceExpandHeight = true;
+
+            GameObject hintObj = new GameObject("HintText", typeof(RectTransform), typeof(Text));
+            hintObj.transform.SetParent(footerRow.transform, false);
+            var hntLe = hintObj.AddComponent<LayoutElement>();
+            hntLe.flexibleWidth = 1f;
+            Text hntTxt = hintObj.GetComponent<Text>();
+            hntTxt.font = WorkbenchControls.MainFont;
+            hntTxt.fontSize = 10;
+            hntTxt.color = WorkbenchStyleEngine.ColorTextMuted;
+            hntTxt.text = I18n.Tr("CMD_PALETTE_HINT", "↑/↓ 键选择 | Enter 确认执行 | ESC 关闭");
+
+            _cmdPaletteObj.SetActive(false);
+        }
+
+        public void ToggleCommandPalette()
+        {
+            if (_isCmdPaletteOpen)
+            {
+                CloseCommandPalette();
+            }
+            else
+            {
+                OpenCommandPalette();
+            }
+        }
+
+        public void OpenCommandPalette()
+        {
+            EnsureBuilt();
+            if (_cmdPaletteObj == null) return;
+
+            _isCmdPaletteOpen = true;
+            _cmdPaletteObj.SetActive(true);
+            if (_cmdPaletteInput != null)
+            {
+                _cmdPaletteInput.text = "";
+                _cmdPaletteInput.ActivateInputField();
+            }
+            PopulateCommandPalette("");
+        }
+
+        public void CloseCommandPalette()
+        {
+            if (_cmdPaletteObj == null) return;
+            _isCmdPaletteOpen = false;
+            _cmdPaletteObj.SetActive(false);
+            MFPInputLock.SetKeyboardFocusLock(false);
+        }
+
+        private void OnCommandPaletteInputChanged(string query)
+        {
+            PopulateCommandPalette(query);
+        }
+
+        private void PopulateCommandPalette(string query)
+        {
+            if (_cmdPaletteResults == null) return;
+
+            _cmdPaletteActions.Clear();
+            for (int i = _cmdPaletteResults.childCount - 1; i >= 0; i--)
+            {
+                var c = _cmdPaletteResults.GetChild(i).gameObject;
+                c.SetActive(false);
+                Destroy(c);
+            }
+
+            int count = 0;
+            const int maxResults = 30;
+
+            // 1. 标签页导航 (Tabs)
+            string[] tabNames = new string[]
+            {
+                I18n.Tr("UI_TAB_STUDIO", "🛠️ 航电工坊"),
+                I18n.Tr("UI_TAB_THEMES", "🎨 视觉风格"),
+                I18n.Tr("UI_TAB_PROFILES", "💾 档案与配置"),
+                I18n.Tr("UI_TAB_DIAGNOSTICS", "🚀 诊断与沙盒"),
+                I18n.Tr("UI_TAB_PREFERENCES", "⚙️ 偏好设置")
+            };
+            for (int i = 0; i < tabNames.Length; i++)
+            {
+                if (count >= maxResults) break;
+                int tabIdx = i;
+                string tName = tabNames[i];
+                if (string.IsNullOrEmpty(query) || tName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    AddCommandPaletteRow(I18n.Tr("CMD_PALETTE_TAG_TAB", "标签页"), WorkbenchStyleEngine.ColorAccentPrimary, tName, "TAB", () =>
+                    {
+                        SwitchTab(tabIdx);
+                    });
+                    count++;
+                }
+            }
+
+            // 2. 快速操作 (Actions)
+            var actions = new (string Title, Action Act)[]
+            {
+                (I18n.Tr("CMD_ACTION_CANVAS_MODE", "📐 进入画布自由排版模式"), () => SettingsGUI.Instance?.EnterCanvasLayoutMode()),
+                (I18n.Tr("CMD_ACTION_SAVE_LAYOUT", "💾 保存当前布局与配置"), () => { WidgetLayoutManager.Instance?.SaveLayout(); Settings.MFPGuiSkin.ShowToast(I18n.Tr("TOAST_LAYOUT_SAVED", "✔ 布局配置已成功保存！")); }),
+                (I18n.Tr("CMD_ACTION_TOGGLE_MAX", "⛶ 最大化 / 还原工作台窗口"), ToggleMaximizeWindow),
+                (I18n.Tr("CMD_ACTION_RESET_WINDOW", "🔄 还原工作台默认尺寸 (1060×670)"), () => { SettingsGUI.Instance?.ResetToDefault(); ApplyWindowGeometryFromSettings(); if (_windowRt != null) { _windowRt.sizeDelta = new Vector2(_windowWidth, _windowHeight); _windowRt.anchoredPosition = _windowPos; } }),
+                (I18n.Tr("CMD_ACTION_CREATE_ARTBOARD", "🎨 新建自由航电画板"), () => { WidgetLayoutManager.CreateArtboard(false); Settings.MFPGuiSkin.ShowToast(I18n.Tr("LIB_TOAST_ARTBOARD_ADDED", "已创建自由航电画板！可在右侧工坊开始自由布局")); }),
+                (I18n.Tr("CMD_ACTION_CLEAR_SEL", "🧹 清除画布组件选中"), () => WidgetSelectionManager.ClearSelection()),
+                (I18n.Tr("CMD_ACTION_CLOSE", "✕ 关闭航电工作台"), () => SettingsGUI.Instance?.ToggleWindow())
+            };
+
+            foreach (var act in actions)
+            {
+                if (count >= maxResults) break;
+                if (string.IsNullOrEmpty(query) || act.Title.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    AddCommandPaletteRow(I18n.Tr("CMD_PALETTE_TAG_ACTION", "快速操作"), WorkbenchStyleEngine.ColorAccentSecondary, act.Title, "ACTION", act.Act);
+                    count++;
+                }
+            }
+
+            // 3. 航电组件库 (Widgets)
+            var widgetDefs = WidgetRegistry.AllDescriptors;
+            if (widgetDefs != null)
+            {
+                foreach (var w in widgetDefs)
+                {
+                    if (count >= maxResults) break;
+                    if (w == null) continue;
+                    bool match = !string.IsNullOrEmpty(query) && (
+                        (w.DisplayName != null && w.DisplayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                        (w.TypeName != null && w.TypeName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                        (w.Description != null && w.Description.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0));
+
+                    if (match)
+                    {
+                        string wType = w.TypeName;
+                        string wName = w.DisplayName ?? w.TypeName;
+                        string wDesc = w.Description ?? wType;
+                        AddCommandPaletteRow(I18n.Tr("CMD_PALETTE_TAG_WIDGET", "航电组件"), WorkbenchStyleEngine.ColorWarning, $"➕ {wName}", $"{wType} | {wDesc}", () =>
+                        {
+                            WorkbenchTabStudio.AddWidgetToHud(wType);
+                            SwitchTab(0);
+                        });
+                        count++;
+                    }
+                }
+            }
+
+            // 4. 736+ 遥测参数 (Telemetry)
+            if (!string.IsNullOrEmpty(query) && query.Length >= 2)
+            {
+                var telemParams = TelemetryCatalog.Parameters;
+                var ctx = FlightTelemetryContext.Current;
+
+                foreach (var p in telemParams)
+                {
+                    if (count >= maxResults) break;
+                    if (p == null) continue;
+                    bool match = (p.Token != null && p.Token.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                 (p.DisplayName != null && p.DisplayName.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                                 (p.Category != null && p.Category.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                    if (match)
+                    {
+                        string tok = p.Token;
+                        string sample = TelemetryTokenEngine.Evaluate(tok, ctx);
+                        if (string.IsNullOrEmpty(sample)) sample = "---";
+                        string sub = $"{p.DisplayName} [{p.DefaultUnit}] | {sample}";
+
+                        AddCommandPaletteRow(I18n.Tr("CMD_PALETTE_TAG_TELEM", "遥测参数"), WorkbenchStyleEngine.ColorSuccess, tok, sub, () =>
+                        {
+                            var sel = WidgetSelectionManager.SelectedWidgets.FirstOrDefault();
+                            if (sel != null && sel.Config != null)
+                            {
+                                sel.Config.NumericToken = tok;
+                                WidgetLayoutManager.Instance?.SaveLayout();
+                                Settings.MFPGuiSkin.ShowToast(string.Format(I18n.Tr("DRAWER_TOAST_APPLIED", "已填入参数: {0}"), tok));
+                            }
+                            else
+                            {
+                                GUIUtility.systemCopyBuffer = tok;
+                                Settings.MFPGuiSkin.ShowToast(string.Format(I18n.Tr("DRAWER_TOAST_COPIED", "已复制 {0} 到剪贴板"), tok));
+                            }
+                        });
+                        count++;
+                    }
+                }
+            }
+
+            if (count == 0)
+            {
+                GameObject noMatch = new GameObject("NoMatch", typeof(RectTransform), typeof(Text));
+                noMatch.transform.SetParent(_cmdPaletteResults, false);
+                Text nmTxt = noMatch.GetComponent<Text>();
+                nmTxt.font = WorkbenchControls.MainFont;
+                nmTxt.fontSize = 12;
+                nmTxt.alignment = TextAnchor.MiddleCenter;
+                nmTxt.color = WorkbenchStyleEngine.ColorTextMuted;
+                nmTxt.text = I18n.Tr("CMD_PALETTE_NO_MATCH", "未找到匹配的命令或参数");
+            }
+        }
+
+        private void AddCommandPaletteRow(string tag, Color tagColor, string title, string subtitle, Action onExecute)
+        {
+            _cmdPaletteActions.Add(onExecute);
+
+            GameObject card = WorkbenchControls.CreateCard(_cmdPaletteResults, "Row_" + title, new Vector2(0f, 36f), true);
+            var hlg = card.AddComponent<HorizontalLayoutGroup>();
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = true;
+            hlg.spacing = 8f;
+            hlg.padding = new RectOffset(8, 8, 4, 4);
+
+            WorkbenchControls.CreatePill(card.transform, "Tag", tag, tagColor, 10);
+
+            GameObject txtCol = new GameObject("TxtCol", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            txtCol.transform.SetParent(card.transform, false);
+            var tcLe = txtCol.AddComponent<LayoutElement>();
+            tcLe.flexibleWidth = 1f;
+
+            var tcVlg = txtCol.GetComponent<VerticalLayoutGroup>();
+            tcVlg.childForceExpandWidth = true;
+            tcVlg.childForceExpandHeight = false;
+            tcVlg.spacing = 1f;
+
+            GameObject titleObj = new GameObject("Title", typeof(RectTransform), typeof(Text));
+            titleObj.transform.SetParent(txtCol.transform, false);
+            Text tt = titleObj.GetComponent<Text>();
+            tt.font = WorkbenchControls.MainFont;
+            tt.fontSize = 11;
+            tt.fontStyle = FontStyle.Bold;
+            tt.color = WorkbenchStyleEngine.ColorTextPrimary;
+            tt.text = title;
+
+            GameObject subObj = new GameObject("Sub", typeof(RectTransform), typeof(Text));
+            subObj.transform.SetParent(txtCol.transform, false);
+            Text st = subObj.GetComponent<Text>();
+            st.font = WorkbenchControls.MainFont;
+            st.fontSize = 9;
+            st.color = WorkbenchStyleEngine.ColorTextMuted;
+            st.text = subtitle;
+
+            // 点击触发
+            WorkbenchControls.CreateButton(card.transform, "RunBtn", "▶", new Vector2(30f, 24f), () =>
+            {
+                onExecute?.Invoke();
+                CloseCommandPalette();
+            }, false, 11);
+        }
+
+        #endregion
+
         #region Public Control & State Machine
 
         public void SetVisible(bool isOpen, bool isCanvasLayoutMode)
@@ -461,14 +886,19 @@ namespace ModularFlightPanel.UI.Workbench
 
             if (!isOpen)
             {
+                CloseCommandPalette();
                 _blockerObj?.SetActive(false);
                 _windowRt?.gameObject.SetActive(false);
                 _floatingDockObj?.SetActive(false);
+                _canvasObj?.SetActive(false);
                 return;
             }
 
+            _canvasObj?.SetActive(true);
+
             if (isCanvasLayoutMode)
             {
+                CloseCommandPalette();
                 _blockerObj?.SetActive(false); // 画布排版模式不阻断飞船操作
                 _windowRt?.gameObject.SetActive(false);
                 _floatingDockObj?.SetActive(true);
@@ -525,6 +955,29 @@ namespace ModularFlightPanel.UI.Workbench
 
         private void Update()
         {
+            // 全局快捷键 Ctrl+K 唤出/收起命令面板
+            if ((Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) && Input.GetKeyDown(KeyCode.K))
+            {
+                if (_canvasObj != null && _canvasObj.activeInHierarchy && _windowRt != null && _windowRt.gameObject.activeSelf)
+                {
+                    ToggleCommandPalette();
+                }
+            }
+            else if (_isCmdPaletteOpen && Input.GetKeyDown(KeyCode.Escape))
+            {
+                CloseCommandPalette();
+                return;
+            }
+            else if (_isCmdPaletteOpen && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)))
+            {
+                if (_cmdPaletteActions.Count > 0 && _cmdPaletteActions[0] != null)
+                {
+                    _cmdPaletteActions[0].Invoke();
+                    CloseCommandPalette();
+                    return;
+                }
+            }
+
             if (_canvas == null || !_canvas.gameObject.activeInHierarchy) return;
 
             // 顶栏遥测胶囊 4Hz 节流平滑刷新
@@ -567,9 +1020,10 @@ namespace ModularFlightPanel.UI.Workbench
 
     #region Window Drag & Resize Handlers
 
-    public class WorkbenchWindowDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler
+    public class WorkbenchWindowDragHandler : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
     {
         public RectTransform TargetWindow;
+        public Action OnDragEnd;
         private Vector2 _dragOffset;
 
         public void OnBeginDrag(PointerEventData eventData)
@@ -587,12 +1041,18 @@ namespace ModularFlightPanel.UI.Workbench
                 TargetWindow.anchoredPosition = eventData.position + _dragOffset;
             }
         }
+
+        public void OnEndDrag(PointerEventData eventData)
+        {
+            OnDragEnd?.Invoke();
+        }
     }
 
-    public class WorkbenchWindowResizeHandler : MonoBehaviour, IDragHandler
+    public class WorkbenchWindowResizeHandler : MonoBehaviour, IDragHandler, IEndDragHandler
     {
         public RectTransform TargetWindow;
         public Action<float, float> OnResized;
+        public Action OnResizeEnd;
 
         public void OnDrag(PointerEventData eventData)
         {
@@ -603,6 +1063,11 @@ namespace ModularFlightPanel.UI.Workbench
                 TargetWindow.sizeDelta = new Vector2(newW, newH);
                 OnResized?.Invoke(newW, newH);
             }
+        }
+
+        public void OnEndDrag(PointerEventData eventData)
+        {
+            OnResizeEnd?.Invoke();
         }
     }
 

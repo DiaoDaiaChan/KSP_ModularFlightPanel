@@ -139,6 +139,7 @@ namespace ModularFlightPanel.UI.Workbench
         public static Color ColorAccentSecondary => (Color)ActiveTheme.AccentSecondary;
         public static Color ColorWarning => (Color)ActiveTheme.WarningColor;
         public static Color ColorDanger => (Color)ActiveTheme.DangerColor;
+        public static Color ColorSuccess => new Color(0.2f, 0.85f, 0.45f, 1f);
         public static Color ColorTextPrimary => (Color)ActiveTheme.TextPrimaryColor;
         public static Color ColorTextAccent => (Color)ActiveTheme.TextAccentColor;
         public static Color ColorTextMuted => new Color(ColorTextAccent.r, ColorTextAccent.g, ColorTextAccent.b, 0.55f);
@@ -213,6 +214,8 @@ namespace ModularFlightPanel.UI.Workbench
             _matCache[key] = mat;
             return mat;
         }
+
+        public static Material GetCardGlassMaterial(bool isEmphasized = false) => GetCardMaterial(false, isEmphasized);
 
         /// <summary>
         /// 获取交互按钮材质

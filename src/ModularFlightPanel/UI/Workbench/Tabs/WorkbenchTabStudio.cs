@@ -7,6 +7,7 @@ using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.HUD;
+using ModularFlightPanel.UI.Settings;
 
 namespace ModularFlightPanel.UI.Workbench.Tabs
 {
@@ -31,6 +32,12 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
         private int _leftMode = 0;
         private string _searchFilter = "";
         private string _lastSelectedId = null;
+
+        // 遥测速查抽屉状态
+        private bool _isTelemetryPickerOpen = false;
+        private int _pickerCategoryIndex = 0;
+        private string _pickerSearchQuery = "";
+        private RectTransform _pickerListContent;
 
         public void Build(RectTransform container)
         {
@@ -408,11 +415,37 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
 
             // 2. 遥测插槽 (Telemetry Token)
             string curToken = cfg.NumericToken ?? "{SPD}";
-            WorkbenchControls.CreateTextField(_inspectorContent, "TokenInput", curToken, "输入遥测 Token (如 {SPD}, {ALT})...", new Vector2(0f, 28f), (val) =>
+
+            GameObject tokenRow = new GameObject("TokenRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            tokenRow.transform.SetParent(_inspectorContent, false);
+            tokenRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 28f);
+            var trLe = tokenRow.AddComponent<LayoutElement>();
+            trLe.preferredHeight = 28f;
+            trLe.minHeight = 28f;
+            trLe.flexibleHeight = 0f;
+
+            var trHlg = tokenRow.GetComponent<HorizontalLayoutGroup>();
+            trHlg.childForceExpandWidth = false;
+            trHlg.childForceExpandHeight = true;
+            trHlg.spacing = 6f;
+
+            GameObject inputObj = WorkbenchControls.CreateTextField(tokenRow.transform, "TokenInput", curToken, "输入遥测 Token (如 {SPD}, {ALT})...", new Vector2(230f, 28f), (val) =>
             {
                 cfg.NumericToken = val;
                 WidgetLayoutManager.Instance?.SaveLayout();
             });
+            var inLe = inputObj.AddComponent<LayoutElement>();
+            inLe.flexibleWidth = 1f;
+
+            string drawerBtnLabel = _isTelemetryPickerOpen 
+                ? I18n.Tr("STUDIO_BTN_CLOSE_DRAWER", "收起抽屉 ▴") 
+                : I18n.Tr("COMP_BTN_BROWSE_PARAM", "🔍 查表选择 (736+)");
+
+            WorkbenchControls.CreateButton(tokenRow.transform, "ToggleDrawerBtn", drawerBtnLabel, new Vector2(130f, 28f), () =>
+            {
+                _isTelemetryPickerOpen = !_isTelemetryPickerOpen;
+                RefreshInspector();
+            }, _isTelemetryPickerOpen, 11);
 
             // 快捷 Token 胶囊候选栏
             GameObject tokenPills = new GameObject("TokenPills", typeof(RectTransform), typeof(HorizontalLayoutGroup));
@@ -433,9 +466,194 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                     RefreshInspector();
                 }, tok == curToken, 10);
             }
+
+            // 3. 内联 736+ 全量遥测参数速查抽屉
+            if (_isTelemetryPickerOpen)
+            {
+                BuildTelemetryPickerDrawer(_inspectorContent, cfg);
+            }
         }
 
-        private void AddWidgetToHud(string widgetTypeId)
+        private void BuildTelemetryPickerDrawer(Transform parent, WidgetConfig cfg)
+        {
+            GameObject drawer = WorkbenchControls.CreateCard(parent, "TelemDrawerCard", new Vector2(0f, 290f), true);
+            var dLe = drawer.AddComponent<LayoutElement>();
+            dLe.preferredHeight = 290f;
+            dLe.minHeight = 260f;
+            dLe.flexibleHeight = 0f;
+
+            var vlg = drawer.AddComponent<VerticalLayoutGroup>();
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+            vlg.spacing = 6f;
+            vlg.padding = new RectOffset(8, 8, 8, 8);
+
+            // 抽屉顶栏: 标题 + 统计徽标 + 搜索框
+            GameObject topRow = new GameObject("DrawerTop", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            topRow.transform.SetParent(drawer.transform, false);
+            topRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 26f);
+            var trHlg = topRow.GetComponent<HorizontalLayoutGroup>();
+            trHlg.childForceExpandWidth = false;
+            trHlg.childForceExpandHeight = true;
+            trHlg.spacing = 6f;
+
+            GameObject titleObj = new GameObject("Title", typeof(RectTransform), typeof(Text));
+            titleObj.transform.SetParent(topRow.transform, false);
+            Text tt = titleObj.GetComponent<Text>();
+            tt.font = WorkbenchControls.MainFont;
+            tt.fontSize = 11;
+            tt.fontStyle = FontStyle.Bold;
+            tt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+            tt.text = I18n.Tr("STUDIO_TELEM_PICKER_TITLE", "📖 736+ 全量遥测参数速查抽屉");
+
+            WorkbenchControls.CreatePill(topRow.transform, "CountPill", $"{TelemetryCatalog.Parameters.Count}+", WorkbenchStyleEngine.ColorAccentSecondary, 9);
+
+            // 抽屉分类快捷切换横向栏
+            GameObject catRow = new GameObject("CategoryRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            catRow.transform.SetParent(drawer.transform, false);
+            catRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 24f);
+            var crHlg = catRow.GetComponent<HorizontalLayoutGroup>();
+            crHlg.childForceExpandWidth = false;
+            crHlg.childForceExpandHeight = true;
+            crHlg.spacing = 4f;
+
+            // 显示前 6 个主要大类 + 全部
+            for (int i = 0; i < Mathf.Min(6, TelemetryCatalog.Categories.Length); i++)
+            {
+                int catIdx = i;
+                string catName = (i == 0) ? I18n.Tr("STUDIO_TELEM_FILTER_ALL", "全部") : TelemetryCatalog.Categories[i];
+                string shortLabel = catName;
+                if (shortLabel.Length > 8) shortLabel = shortLabel.Substring(0, 8);
+
+                WorkbenchControls.CreateButton(catRow.transform, "CatBtn_" + i, shortLabel, new Vector2(60f, 22f), () =>
+                {
+                    _pickerCategoryIndex = catIdx;
+                    RefreshPickerList(cfg);
+                }, _pickerCategoryIndex == catIdx, 9);
+            }
+
+            // 搜索输入框
+            WorkbenchControls.CreateTextField(drawer.transform, "DrawerSearch", _pickerSearchQuery, I18n.Tr("DRAWER_SEARCH_PLACEHOLDER", "快速搜索遥测参数名、Token 标识..."), new Vector2(0f, 26f), (val) =>
+            {
+                _pickerSearchQuery = val;
+                RefreshPickerList(cfg);
+            });
+
+            // 参数列表 ScrollView
+            _pickerListContent = WorkbenchControls.CreateScrollView(drawer.transform, "TelemScrollView", new Vector2(0f, 190f), out GameObject scrollObj);
+            var scLe = scrollObj.AddComponent<LayoutElement>();
+            scLe.flexibleHeight = 1f;
+
+            RefreshPickerList(cfg);
+        }
+
+        private void RefreshPickerList(WidgetConfig cfg)
+        {
+            if (_pickerListContent == null || cfg == null) return;
+
+            for (int i = _pickerListContent.childCount - 1; i >= 0; i--)
+            {
+                var c = _pickerListContent.GetChild(i).gameObject;
+                c.SetActive(false);
+                UnityEngine.Object.Destroy(c);
+            }
+
+            string catFilter = (_pickerCategoryIndex > 0 && _pickerCategoryIndex < TelemetryCatalog.Categories.Length)
+                ? TelemetryCatalog.Categories[_pickerCategoryIndex]
+                : null;
+
+            var ctx = FlightTelemetryContext.Current;
+
+            var filtered = TelemetryCatalog.Parameters.Where(p =>
+            {
+                if (p == null) return false;
+                if (!string.IsNullOrEmpty(catFilter) && p.Category != catFilter) return false;
+                if (!string.IsNullOrEmpty(_pickerSearchQuery))
+                {
+                    bool matchToken = p.Token != null && p.Token.IndexOf(_pickerSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool matchName = p.DisplayName != null && p.DisplayName.IndexOf(_pickerSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool matchDesc = p.Description != null && p.Description.IndexOf(_pickerSearchQuery, StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!matchToken && !matchName && !matchDesc) return false;
+                }
+                return true;
+            }).Take(35).ToList();
+
+            if (filtered.Count == 0)
+            {
+                GameObject noMatch = new GameObject("NoMatch", typeof(RectTransform), typeof(Text));
+                noMatch.transform.SetParent(_pickerListContent, false);
+                Text nmTxt = noMatch.GetComponent<Text>();
+                nmTxt.font = WorkbenchControls.MainFont;
+                nmTxt.fontSize = 11;
+                nmTxt.alignment = TextAnchor.MiddleCenter;
+                nmTxt.color = WorkbenchStyleEngine.ColorTextMuted;
+                nmTxt.text = I18n.Tr("DRAWER_NO_MATCH", "未找到符合条件的遥测参数，请尝试其它关键词。");
+                return;
+            }
+
+            foreach (var p in filtered)
+            {
+                BuildTelemetryParamRow(_pickerListContent, p, cfg, ctx);
+            }
+        }
+
+        private void BuildTelemetryParamRow(Transform parent, TelemetryParam p, WidgetConfig cfg, IFlightTelemetry ctx)
+        {
+            GameObject row = WorkbenchControls.CreateCard(parent, "ParamRow_" + p.Token, new Vector2(0f, 32f), true);
+            var hlg = row.AddComponent<HorizontalLayoutGroup>();
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = true;
+            hlg.spacing = 6f;
+            hlg.padding = new RectOffset(6, 6, 2, 2);
+
+            // Token 文本
+            GameObject tokenObj = new GameObject("Token", typeof(RectTransform), typeof(Text));
+            tokenObj.transform.SetParent(row.transform, false);
+            tokenObj.GetComponent<RectTransform>().sizeDelta = new Vector2(100f, 26f);
+            Text tTxt = tokenObj.GetComponent<Text>();
+            tTxt.font = WorkbenchControls.MainFont;
+            tTxt.fontSize = 11;
+            tTxt.fontStyle = FontStyle.Bold;
+            tTxt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+            tTxt.text = p.Token;
+            tTxt.alignment = TextAnchor.MiddleLeft;
+
+            // 显示名
+            GameObject nameObj = new GameObject("Name", typeof(RectTransform), typeof(Text));
+            nameObj.transform.SetParent(row.transform, false);
+            var nLe = nameObj.AddComponent<LayoutElement>();
+            nLe.flexibleWidth = 1f;
+            Text nTxt = nameObj.GetComponent<Text>();
+            nTxt.font = WorkbenchControls.MainFont;
+            nTxt.fontSize = 10;
+            nTxt.color = WorkbenchStyleEngine.ColorTextPrimary;
+            string unitStr = string.IsNullOrEmpty(p.DefaultUnit) ? "" : $" [{p.DefaultUnit}]";
+            nTxt.text = $"{p.DisplayName}{unitStr}";
+            nTxt.alignment = TextAnchor.MiddleLeft;
+
+            // 实时采样值胶囊
+            string sampleVal = TelemetryTokenEngine.Evaluate(p.Token, ctx);
+            if (string.IsNullOrEmpty(sampleVal)) sampleVal = "---";
+            WorkbenchControls.CreatePill(row.transform, "SamplePill", sampleVal, WorkbenchStyleEngine.ColorSuccess, 9);
+
+            // 一键填槽按钮
+            WorkbenchControls.CreateButton(row.transform, "ApplyBtn", I18n.Tr("STUDIO_TELEM_APPLY_BTN", "✔ 填槽"), new Vector2(50f, 22f), () =>
+            {
+                cfg.NumericToken = p.Token;
+                WidgetLayoutManager.Instance?.SaveLayout();
+                Settings.MFPGuiSkin.ShowToast(string.Format(I18n.Tr("DRAWER_TOAST_APPLIED", "已填入参数: {0}"), p.Token));
+                RefreshInspector();
+            }, p.Token == cfg.NumericToken, 10);
+
+            // 复制按钮
+            WorkbenchControls.CreateButton(row.transform, "CopyBtn", I18n.Tr("DRAWER_BTN_COPY", "📋 复制"), new Vector2(52f, 22f), () =>
+            {
+                GUIUtility.systemCopyBuffer = p.Token;
+                Settings.MFPGuiSkin.ShowToast(string.Format(I18n.Tr("DRAWER_TOAST_COPIED", "已复制 {0} 到剪贴板"), p.Token));
+            }, false, 10);
+        }
+
+        public static void AddWidgetToHud(string widgetTypeId)
         {
             var layout = WidgetLayoutManager.Instance?.CurrentLayout;
             if (layout == null) return;
@@ -453,10 +671,10 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             WidgetLayoutManager.Instance.SaveLayout();
             FlightHUDManager.Instance?.RebuildHUD(true);
             SelectWidgetOnHud(newId);
-            Refresh();
+            WorkbenchCanvasView.Instance?.RefreshActiveTab();
         }
 
-        private void SelectWidgetOnHud(string widgetId)
+        public static void SelectWidgetOnHud(string widgetId)
         {
             if (FlightHUDManager.Instance?.ModularWidgets == null) return;
             var w = FlightHUDManager.Instance.ModularWidgets.FirstOrDefault(m => m != null && m.Config?.WidgetId == widgetId);
@@ -465,6 +683,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 WidgetSelectionManager.Select(w, false);
             }
         }
+
 
         public void OnUpdate()
         {

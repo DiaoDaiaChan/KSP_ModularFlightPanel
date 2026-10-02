@@ -406,6 +406,8 @@ namespace ModularFlightPanel.UI.Workbench
                 input.onEndEdit.AddListener((s) => onEndEdit(s));
             }
 
+            root.AddComponent<ModernInputFieldFocusLock>();
+
             return root;
         }
 
@@ -527,6 +529,24 @@ namespace ModularFlightPanel.UI.Workbench
                 CardImage.material = WorkbenchStyleEngine.GetCardMaterial(false);
                 CardImage.color = WorkbenchStyleEngine.ColorCardBg;
             }
+        }
+    }
+
+    public class ModernInputFieldFocusLock : MonoBehaviour, ISelectHandler, IDeselectHandler
+    {
+        public void OnSelect(BaseEventData eventData)
+        {
+            ModularFlightPanel.UI.Settings.MFPInputLock.SetKeyboardFocusLock(true);
+        }
+
+        public void OnDeselect(BaseEventData eventData)
+        {
+            ModularFlightPanel.UI.Settings.MFPInputLock.SetKeyboardFocusLock(false);
+        }
+
+        private void OnDisable()
+        {
+            ModularFlightPanel.UI.Settings.MFPInputLock.SetKeyboardFocusLock(false);
         }
     }
 

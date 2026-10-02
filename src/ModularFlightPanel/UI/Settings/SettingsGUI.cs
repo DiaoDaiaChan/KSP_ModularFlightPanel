@@ -279,6 +279,12 @@ namespace ModularFlightPanel.UI
             ThemeManager.Instance.SaveSettings();
         }
 
+        public void UpdateWindowGeometry(float x, float y, float w, float h)
+        {
+            _windowRect = new Rect(x, y, w, h);
+            SaveWindowSettings();
+        }
+
         public void ResetToDefault()
         {
             _isMaximized = false;

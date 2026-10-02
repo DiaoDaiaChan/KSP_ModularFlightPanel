@@ -1846,6 +1846,27 @@
     "CTX_NAV_MODE_3D": "🌐 切换为: 3D三维导航球",
     "CTX_NAV_MODE_PFD": "✈ 切换为: 民航降维PFD",
     "TIP_NAV_MODE_3D": "已切换至3D三维导航球模式",
-    "TIP_NAV_MODE_PFD": "已切换至民航降维PFD模式"
+    "TIP_NAV_MODE_PFD": "已切换至民航降维PFD模式",
+    "UI_TAB_PREFERENCES": "⚙️ 偏好设置",
+    "CMD_PALETTE_PLACEHOLDER": "🔍 搜索标签页、快速操作、航电组件、遥测参数 (Ctrl+K)...",
+    "CMD_PALETTE_BTN_OPEN": "🔍 命令 (Ctrl+K)",
+    "CMD_PALETTE_TAG_TAB": "标签页",
+    "CMD_PALETTE_TAG_ACTION": "快速操作",
+    "CMD_PALETTE_TAG_WIDGET": "航电组件",
+    "CMD_PALETTE_TAG_TELEM": "遥测参数",
+    "CMD_PALETTE_NO_MATCH": "未找到匹配的命令或参数",
+    "CMD_PALETTE_HINT": "↑/↓ 键选择 | Enter 确认执行 | ESC 关闭",
+    "CMD_ACTION_SAVE_LAYOUT": "💾 保存当前布局与配置",
+    "CMD_ACTION_CANVAS_MODE": "📐 进入画布自由排版模式",
+    "CMD_ACTION_TOGGLE_MAX": "⛶ 最大化 / 还原工作台窗口",
+    "CMD_ACTION_RESET_WINDOW": "🔄 还原工作台默认尺寸 (1060×670)",
+    "CMD_ACTION_CLEAR_SEL": "🧹 清除画布组件选中",
+    "CMD_ACTION_CREATE_ARTBOARD": "🎨 新建自由航电画板",
+    "CMD_ACTION_CLOSE": "✕ 关闭航电工作台",
+    "STUDIO_TELEM_PICKER_TITLE": "📖 736+ 全量遥测参数速查抽屉",
+    "STUDIO_TELEM_FILTER_ALL": "全部",
+    "STUDIO_BTN_CLOSE_DRAWER": "收起抽屉 ▴",
+    "STUDIO_TELEM_APPLY_BTN": "✔ 填槽",
+    "TOAST_LAYOUT_SAVED": "✔ 布局配置已成功保存！"
   }
 }

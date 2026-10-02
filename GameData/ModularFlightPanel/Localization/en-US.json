@@ -1846,6 +1846,27 @@
     "CTX_NAV_MODE_3D": "🌐 Switch to: 3D Navball",
     "CTX_NAV_MODE_PFD": "✈ Switch to: Civil Aviation PFD",
     "TIP_NAV_MODE_3D": "Switched to 3D Navball mode",
-    "TIP_NAV_MODE_PFD": "Switched to Civil Aviation PFD mode"
+    "TIP_NAV_MODE_PFD": "Switched to Civil Aviation PFD mode",
+    "UI_TAB_PREFERENCES": "⚙️ Preferences",
+    "CMD_PALETTE_PLACEHOLDER": "🔍 Search tabs, quick actions, widgets, telemetry parameters (Ctrl+K)...",
+    "CMD_PALETTE_BTN_OPEN": "🔍 Commands (Ctrl+K)",
+    "CMD_PALETTE_TAG_TAB": "Tab",
+    "CMD_PALETTE_TAG_ACTION": "Action",
+    "CMD_PALETTE_TAG_WIDGET": "Widget",
+    "CMD_PALETTE_TAG_TELEM": "Telemetry",
+    "CMD_PALETTE_NO_MATCH": "No matching commands or parameters found",
+    "CMD_PALETTE_HINT": "↑/↓ Select | Enter Execute | ESC Close",
+    "CMD_ACTION_SAVE_LAYOUT": "💾 Save current layout and settings",
+    "CMD_ACTION_CANVAS_MODE": "📐 Enter canvas layout mode",
+    "CMD_ACTION_TOGGLE_MAX": "⛶ Maximize / restore workbench window",
+    "CMD_ACTION_RESET_WINDOW": "🔄 Reset workbench default size (1060x670)",
+    "CMD_ACTION_CLEAR_SEL": "🧹 Clear widget selection",
+    "CMD_ACTION_CREATE_ARTBOARD": "🎨 Create new freeform artboard",
+    "CMD_ACTION_CLOSE": "✕ Close avionics workbench",
+    "STUDIO_TELEM_PICKER_TITLE": "📖 736+ Telemetry Parameter Drawer",
+    "STUDIO_TELEM_FILTER_ALL": "All",
+    "STUDIO_BTN_CLOSE_DRAWER": "Collapse Drawer ▴",
+    "STUDIO_TELEM_APPLY_BTN": "✔ Apply",
+    "TOAST_LAYOUT_SAVED": "✔ Layout successfully saved!"
   }
 }
