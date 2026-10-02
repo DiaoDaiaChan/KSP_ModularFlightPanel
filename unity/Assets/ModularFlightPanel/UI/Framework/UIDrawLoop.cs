@@ -232,7 +232,13 @@ namespace ModularFlightPanel.UI
         /// <summary>3D/矢量姿态球绘制管线句柄</summary>
         public FlightNavballPipeline Navball;
 
-        public FlightUIDrawContext(float dt, BaseFlightWidget widget, UIDrawPipelineKind pipelineKind, ThemeConfig theme, WidgetStyleManager style, FlightNavballPipeline navball = default)
+        /// <summary>当前 UI 绘制循环是否处于静息节能模式</summary>
+        public bool IsResting;
+
+        /// <summary>当前绘制帧是否触发了实质性视觉变动</summary>
+        public bool HasVisualChanges;
+
+        public FlightUIDrawContext(float dt, BaseFlightWidget widget, UIDrawPipelineKind pipelineKind, ThemeConfig theme, WidgetStyleManager style, FlightNavballPipeline navball = default, bool isResting = false)
         {
             DeltaTime = dt;
             UnscaledTime = Time.unscaledTime;
@@ -244,6 +250,26 @@ namespace ModularFlightPanel.UI
             Style = style;
             Shader2D = new FlightUiShader2DPipeline(theme, style);
             Navball = navball;
+            IsResting = isResting;
+            HasVisualChanges = false;
+        }
+
+        /// <summary>
+        /// 标记当前绘制帧产生了视觉改变并请求继续刷新
+        /// </summary>
+        public void MarkDirty(string reason = null)
+        {
+            HasVisualChanges = true;
+            Widget?.MarkVisualDirty(reason);
+        }
+
+        /// <summary>
+        /// 立即唤醒当前组件的绘制循环
+        /// </summary>
+        public void WakeUp(string reason = null)
+        {
+            HasVisualChanges = true;
+            Widget?.Awaken(reason);
         }
 
         /// <summary>

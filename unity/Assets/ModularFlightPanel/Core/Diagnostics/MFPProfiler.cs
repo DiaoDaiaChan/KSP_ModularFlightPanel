@@ -32,6 +32,7 @@ namespace ModularFlightPanel.Core
         public long StartTick;
         public int SampleCount;
         public int LastSampleFrame;
+        public bool IsResting;       // 当前是否处于自适应静息节流状态 (Auto-Quiescent / Resting)
 
         // 内部 60 帧环形缓冲区与当前帧累加 (零 GC，避免每帧堆分配)
         public double CurrentFrameAccumMs;
@@ -50,6 +51,7 @@ namespace ModularFlightPanel.Core
         public int DrawOrder;
         public WidgetRefreshTier Tier;
         public bool WasSliced;
+        public bool IsResting;       // 是否处于静息节流状态
         public double StartOffsetMs;
         public double DurationMs;
         public int ExecutionIndex;
@@ -157,6 +159,8 @@ namespace ModularFlightPanel.Core
 
         // ------------------ 细化到每个组件的负载监测 (Per-Widget Breakdown) ------------------
         public static int ActiveWidgetCount { get; set; }
+        public static int RestingWidgetCount { get; set; }
+        public static double QuiescenceEvalMs { get; set; }
         public static string TopOffenderWidgetId { get; private set; } = "---";
         public static double TopOffenderWidgetMs { get; private set; }
 
@@ -211,7 +215,7 @@ namespace ModularFlightPanel.Core
             return _snapshotTimelinePool[index];
         }
 
-        public static void BeginWidgetSample(string widgetId, string displayName = null, int drawOrder = -1, WidgetRefreshTier tier = WidgetRefreshTier.Standard, bool wasSliced = false)
+        public static void BeginWidgetSample(string widgetId, string displayName = null, int drawOrder = -1, WidgetRefreshTier tier = WidgetRefreshTier.Standard, bool wasSliced = false, bool isResting = false)
         {
             if (!IsWidgetProfilingActive || string.IsNullOrEmpty(widgetId)) return;
 
@@ -220,13 +224,18 @@ namespace ModularFlightPanel.Core
                 data = new WidgetProfileData
                 {
                     WidgetId = widgetId,
-                    DisplayName = !string.IsNullOrEmpty(displayName) ? displayName : widgetId
+                    DisplayName = !string.IsNullOrEmpty(displayName) ? displayName : widgetId,
+                    IsResting = isResting
                 };
                 _widgetProfiles[widgetId] = data;
             }
-            else if (!string.IsNullOrEmpty(displayName) && data.DisplayName == data.WidgetId)
+            else
             {
-                data.DisplayName = displayName;
+                data.IsResting = isResting;
+                if (!string.IsNullOrEmpty(displayName) && data.DisplayName == data.WidgetId)
+                {
+                    data.DisplayName = displayName;
+                }
             }
 
             long nowTick = Stopwatch.GetTimestamp();
@@ -246,6 +255,7 @@ namespace ModularFlightPanel.Core
             entry.DrawOrder = drawOrder >= 0 ? drawOrder : 0;
             entry.Tier = tier;
             entry.WasSliced = wasSliced;
+            entry.IsResting = isResting;
             entry.StartOffsetMs = offsetMs;
             entry.DurationMs = 0.0;
             entry.ExecutionIndex = _currentFrameTimeline.Count + 1;
@@ -634,6 +644,7 @@ namespace ModularFlightPanel.Core
                     dst.DrawOrder = src.DrawOrder;
                     dst.Tier = src.Tier;
                     dst.WasSliced = src.WasSliced;
+                    dst.IsResting = src.IsResting;
                     dst.StartOffsetMs = src.StartOffsetMs;
                     dst.DurationMs = src.DurationMs;
                     dst.ExecutionIndex = src.ExecutionIndex;
@@ -664,6 +675,7 @@ namespace ModularFlightPanel.Core
                 dst.DrawOrder = src.DrawOrder;
                 dst.Tier = src.Tier;
                 dst.WasSliced = src.WasSliced;
+                dst.IsResting = src.IsResting;
                 dst.StartOffsetMs = src.StartOffsetMs;
                 dst.DurationMs = src.DurationMs;
                 dst.ExecutionIndex = src.ExecutionIndex;
@@ -777,6 +789,12 @@ namespace ModularFlightPanel.Core
             DrawStatRow(I18n.Tr("PROF_ROW_SILHOUETTE", "飞船剪影烘焙:"), AvgSilhouetteMs);
             DrawStatRow(I18n.Tr("PROF_ROW_HOOKS", "原版界面挂钩:"), AvgHooksMs);
 
+            int totalActive = Math.Max(1, ActiveWidgetCount);
+            int resting = RestingWidgetCount;
+            double restingPct = (double)resting / totalActive * 100.0;
+            string restColor = resting > 0 ? "#00E5FF" : "#888888";
+            DrawStatRow(I18n.Tr("PROF_ROW_QUIESCENCE", "自适应静息节流:"), $"{resting} / {totalActive} ({restingPct:F0}%)", restColor);
+
             GUILayout.Space(6f);
             GUILayout.BeginHorizontal();
             int activeCount = _sortedWidgetList.Count;
@@ -802,6 +820,10 @@ namespace ModularFlightPanel.Core
                 string displayName = !string.IsNullOrEmpty(w.DisplayName) && w.DisplayName != w.WidgetId
                     ? $"{w.DisplayName}"
                     : w.WidgetId;
+                if (w.IsResting)
+                {
+                    displayName += $" <color=#00E5FF>{I18n.Tr("PROF_STATUS_RESTING", "[静息]")}</color>";
+                }
                 double frameMs = Math.Max(0.0, w.FrameAvgMs);
                 double execAvg = Math.Max(0.0, w.AvgMs);
                 double lastMs = Math.Max(0.0, w.LastMs);
@@ -902,6 +924,10 @@ namespace ModularFlightPanel.Core
                 string sliceTag = entry.WasSliced
                     ? $"<color=#34C759>{I18n.Tr("PROF_STATUS_SLICED", "[切片]")}</color>"
                     : $"<color=#00E5FF>{I18n.Tr("PROF_STATUS_FULL_PASS", "[直通]")}</color>";
+                if (entry.IsResting)
+                {
+                    sliceTag += $" <color=#00E5FF>{I18n.Tr("PROF_STATUS_RESTING", "[静息]")}</color>";
+                }
                 GUILayout.Label($"<color={costColor}><b>{entry.DurationMs:F3}</b></color> {sliceTag}", GUILayout.ExpandWidth(true));
                 GUILayout.EndHorizontal();
             }
@@ -1022,6 +1048,14 @@ namespace ModularFlightPanel.Core
             GUILayout.Label($"<color=#AAAAAA>{label}</color>", GUILayout.Width(180f));
             string color = ms < 0.2 ? "#00E5FF" : (ms < 0.8 ? "#FFE000" : "#FF5555");
             GUILayout.Label($"<color={color}><b>{ms:F3} ms</b></color>", GUILayout.ExpandWidth(true));
+            GUILayout.EndHorizontal();
+        }
+
+        private static void DrawStatRow(string label, string customValue, string valueColor = "#00E5FF")
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<color=#AAAAAA>{label}</color>", GUILayout.Width(180f));
+            GUILayout.Label($"<color={valueColor}><b>{customValue}</b></color>", GUILayout.ExpandWidth(true));
             GUILayout.EndHorizontal();
         }
     }

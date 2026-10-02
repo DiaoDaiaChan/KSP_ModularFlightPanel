@@ -167,7 +167,7 @@ namespace ModularFlightPanel.UI.Framework
         private bool _isVisible = true;
         public virtual bool IsVisible
         {
-            get => _isVisible;
+            get => _isVisible && (RootGameObject == null || RootGameObject.activeInHierarchy);
             set
             {
                 _isVisible = value;

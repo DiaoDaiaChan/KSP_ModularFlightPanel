@@ -80,12 +80,40 @@ namespace ModularFlightPanel.UI.Widgets
 
         private float _commandedThrottle = float.NaN;
         private float _spoolThrottle = float.NaN;
+        private TelemetryTokenEngine.TelemetryNumericGetter _valueGetter;
+        private string _lastCompiledValueToken;
+        private string _cachedTitleStr = string.Empty;
+        private string _lastTitleTemplate;
+        private bool _hasTitleToken;
 
         public override void Reset()
         {
             CurrentState = default;
             _commandedThrottle = float.NaN;
             _spoolThrottle = float.NaN;
+            _valueGetter = null;
+            _lastCompiledValueToken = null;
+            _cachedTitleStr = string.Empty;
+            _lastTitleTemplate = null;
+            _hasTitleToken = false;
+        }
+
+        private void EnsureGetters()
+        {
+            if (_valueGetter == null || _lastCompiledValueToken != ValueToken)
+            {
+                _valueGetter = TelemetryTokenEngine.CompileNumeric(ValueToken);
+                _lastCompiledValueToken = ValueToken;
+            }
+            if (_lastTitleTemplate != TitleTemplate)
+            {
+                _lastTitleTemplate = TitleTemplate;
+                _hasTitleToken = !string.IsNullOrEmpty(TitleTemplate) && TitleTemplate.IndexOf('{') >= 0;
+                if (!_hasTitleToken)
+                {
+                    _cachedTitleStr = TitleTemplate ?? string.Empty;
+                }
+            }
         }
 
         public override void Evaluate(IFlightTelemetry telemetry, float deltaTime)
@@ -99,8 +127,13 @@ namespace ModularFlightPanel.UI.Widgets
                 return;
             }
 
-            string titleStr = BaseFlightWidget.EvalToken(TitleTemplate, telemetry);
-            double val = BaseFlightWidget.EvalNumeric(ValueToken, telemetry);
+            EnsureGetters();
+
+            string titleStr = _hasTitleToken
+                ? BaseFlightWidget.EvalToken(TitleTemplate, telemetry)
+                : _cachedTitleStr;
+
+            double val = _valueGetter != null ? _valueGetter(telemetry) : 0.0;
             if (double.IsNaN(val)) val = 0.0;
 
             double range = MaxVal - MinVal;
@@ -172,13 +205,22 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else if (Kind == BarGaugeKind.AtmosphericPressure)
             {
+                bool isVac = val <= 0.0001;
+
+                // 真空稳态快速短路 (Vacuum Steady-State Fast Bypass)
+                if (isVac && CurrentState.HasVessel && CurrentState.IsVacuum && CurrentState.VacuumMode == VacuumMode && titleStr == CurrentState.TitleStr)
+                {
+                    // 在真空环境下，若已处于真空稳态且标题未变，直接复用当前快照，0 字符串构建，0 计算开销
+                    return;
+                }
+
                 float currentAtm = Mathf.Clamp((float)val, (float)MinVal, (float)MaxVal);
                 float atmFrac = Mathf.Clamp01((currentAtm - (float)MinVal) / (float)range);
 
                 string valueStr;
                 if (val < 0.001) valueStr = "0.00 atm";
-                else if (val < 0.10) valueStr = $"{val:F3} atm";
-                else valueStr = $"{val:F2} atm";
+                else if (val < 0.10) valueStr = CacheManager.Instance.FastDoubleWithAffix("atm_baro", val, "", " atm", "F3", 0.001);
+                else valueStr = CacheManager.Instance.FastDoubleWithAffix("atm_baro", val, "", " atm", "F2", 0.01);
 
                 string layerTag;
                 if (val >= 0.70) layerTag = "SEA";
@@ -188,7 +230,6 @@ namespace ModularFlightPanel.UI.Widgets
                 else layerTag = "VAC";
 
                 TextStyleRole btmRole = (layerTag == "VAC") ? TextStyleRole.Muted : TextStyleRole.Accent;
-                bool isVac = val <= 0.0001;
 
                 CurrentState = new AvionicsBarGaugeState
                 {
@@ -244,6 +285,7 @@ namespace ModularFlightPanel.UI.Widgets
         public override Vector2 BaseSize => new Vector2(24f, 240f);
         protected override bool AutoCreateCardFrame => false;
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Slow;
+        public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
 
         private readonly AvionicsBarGaugeLogic _logic = new AvionicsBarGaugeLogic();
         protected override IWidgetLogic LogicCore => _logic;
@@ -457,15 +499,21 @@ namespace ModularFlightPanel.UI.Widgets
             }
             if (_topTagBox != null)
             {
-                this.Controls.Register(new WidgetReadoutControl("top_tag", "顶部胶囊读数", _topTagBox, _topTagValue, _topTagTitle, TextStyleRole.PrimaryValue, _valueToken));
+                var topTag = new WidgetReadoutControl("top_tag", "顶部胶囊读数", _topTagBox, _topTagValue, _topTagTitle, TextStyleRole.PrimaryValue, _valueToken);
+                topTag.AutoUpdateTelemetry = false;
+                this.Controls.Register(topTag);
             }
             if (_bottomTagBox != null)
             {
-                this.Controls.Register(new WidgetReadoutControl("bottom_tag", "底部档位标牌", _bottomTagBox, _bottomTagText, null, TextStyleRole.Accent, _valueToken));
+                var btmTag = new WidgetReadoutControl("bottom_tag", "底部档位标牌", _bottomTagBox, _bottomTagText, null, TextStyleRole.Accent, _valueToken);
+                btmTag.AutoUpdateTelemetry = false;
+                this.Controls.Register(btmTag);
             }
             if (_vacuumPillBox != null)
             {
-                this.Controls.Register(new WidgetReadoutControl("vacuum_pill", I18n.Tr("CTRL_BARO_VACUUM_PILL", "真空极简胶囊"), _vacuumPillBox, _vacuumPillValue, _vacuumPillTitle, TextStyleRole.Accent, "{ATM}"));
+                var vacPill = new WidgetReadoutControl("vacuum_pill", I18n.Tr("CTRL_BARO_VACUUM_PILL", "真空极简胶囊"), _vacuumPillBox, _vacuumPillValue, _vacuumPillTitle, TextStyleRole.Accent, "{ATM}");
+                vacPill.AutoUpdateTelemetry = false;
+                this.Controls.Register(vacPill);
             }
             if (_cautionLineObj != null)
             {
@@ -734,6 +782,15 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
+            if (_kind == BarGaugeKind.AtmosphericPressure && _logic != null && _logic.CurrentState.IsVacuum)
+            {
+                // 真空环境下大气压为 0，气压带折叠为极简 VAC 胶囊或处于全隐模式；
+                // 巡航期间遥测心跳自适应降频至 2Hz (每 500ms 检查一次是否再入大气层)，彻底根除背景算力空转
+                if (!CheckChannelElapsed("BARO_VACUUM_HEARTBEAT", 0.5f))
+                {
+                    return;
+                }
+            }
             base.OnDataHeartBeat(in context);
         }
 
@@ -747,12 +804,32 @@ namespace ModularFlightPanel.UI.Widgets
             var state = _logic.CurrentState;
             if (!state.HasVessel) return;
 
+            bool isEdit = WidgetDragHandler.IsEditModeActive;
+
+            // 1. 真空极速短路拦截 (Zero Overhead Steady-State Vacuum Bypass)
+            if (_kind == BarGaugeKind.AtmosphericPressure && state.IsVacuum && !isEdit)
+            {
+                if (state.VacuumMode == BarGaugeVacuumMode.AutoHide && _lastHidden.Value)
+                {
+                    // 自动全隐稳态：全组件隐形且已静默，完全跳过 UGUI 运算
+                    return;
+                }
+                if (state.VacuumMode == BarGaugeVacuumMode.CollapsePill && _lastCollapsed.Value)
+                {
+                    // 极简折叠胶囊稳态：标牌已展开为 VAC，仅在标题字符变更时防抖同步
+                    if (_lastValStr.Update(state.TitleStr) && _vacuumPillTitle != null)
+                    {
+                        _vacuumPillTitle.SetTextSafe(state.TitleStr);
+                    }
+                    return;
+                }
+            }
+
             float s = CurrentDpiScale;
             float barWidth = 22f * s;
             float barHeight = 240f * s;
-            bool isEdit = WidgetDragHandler.IsEditModeActive;
 
-            // 1. 真空状态机与折叠判定
+            // 2. 真空状态机与折叠判定
             bool shouldCollapse = false;
             bool shouldHide = false;
 
@@ -821,8 +898,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (shouldCollapse)
             {
-                if (_vacuumPillTitle != null) _vacuumPillTitle.SetTextSafe(state.TitleStr);
-                if (_vacuumPillValue != null) _vacuumPillValue.SetTextSafe("VAC");
+                if (collapseChanged)
+                {
+                    if (_vacuumPillTitle != null) _vacuumPillTitle.SetTextSafe(state.TitleStr);
+                    if (_vacuumPillValue != null) _vacuumPillValue.SetTextSafe("VAC");
+                }
                 return;
             }
 

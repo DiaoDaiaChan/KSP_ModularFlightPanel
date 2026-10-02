@@ -4,6 +4,7 @@ using System.Diagnostics;
 using UnityEngine;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 
 namespace ModularFlightPanel.UI
 {
@@ -442,9 +443,16 @@ namespace ModularFlightPanel.UI
             double ticksToMs = 1000.0 / Stopwatch.Frequency;
             try
             {
+                // 评估全局整船遥测自适应静息态 (纳秒级公理判定，耗时 < 0.0001ms，全船组件共享)
+                long qStart = Stopwatch.GetTimestamp();
+                bool isVesselMotion = AdaptiveTelemetryDebouncer.SharedVesselDebouncer.Evaluate(telem);
+                IsVesselQuiescent = !isVesselMotion;
+                MFPProfiler.QuiescenceEvalMs = (Stopwatch.GetTimestamp() - qStart) * ticksToMs;
+
                 int critCount = _criticalRegistrations.Count;
                 int nonCritCount = _nonCriticalRegistrations.Count;
                 int activeCount = 0;
+                int restingCount = 0;
 
                 if (!EnableBudgetSlicing)
                 {
@@ -458,6 +466,7 @@ namespace ModularFlightPanel.UI
                         if (!reg.Widget.gameObject.activeSelf) continue;
 
                         activeCount++;
+                        if (reg.Widget.IsQuiescent) restingCount++;
 
                         if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
@@ -465,6 +474,7 @@ namespace ModularFlightPanel.UI
                         ExecuteWidgetUpdate(reg, telem, profileWidgets, wasSliced: false);
                     }
                     MFPProfiler.ActiveWidgetCount = activeCount;
+                    MFPProfiler.RestingWidgetCount = restingCount;
                     return;
                 }
 
@@ -480,6 +490,7 @@ namespace ModularFlightPanel.UI
                     if (!reg.Widget.gameObject.activeSelf) continue;
 
                     activeCount++;
+                    if (reg.Widget.IsQuiescent) restingCount++;
 
                     if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
@@ -507,6 +518,7 @@ namespace ModularFlightPanel.UI
                         if (!reg.Widget.gameObject.activeSelf) continue;
 
                         activeCount++;
+                        if (reg.Widget.IsQuiescent) restingCount++;
 
                         if (!ShouldUpdateWidget(reg, unscaledTime)) continue;
 
@@ -533,12 +545,18 @@ namespace ModularFlightPanel.UI
                 }
 
                 MFPProfiler.ActiveWidgetCount = activeCount;
+                MFPProfiler.RestingWidgetCount = restingCount;
             }
             finally
             {
                 MFPProfiler.EndSample(ProfilerSection.Widgets);
             }
         }
+
+        /// <summary>
+        /// 全局整船是否处于自适应稳态静息状态 (公理动力学判断)
+        /// </summary>
+        public bool IsVesselQuiescent { get; private set; } = false;
 
         private void ExecuteWidgetUpdate(WidgetRegistration reg, IFlightTelemetry telem, bool profileWidgets, bool wasSliced = false)
         {
@@ -549,7 +567,8 @@ namespace ModularFlightPanel.UI
                 try
                 {
                     int drawOrder = reg.Widget?.Config?.DrawOrder ?? 0;
-                    MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId, reg.Widget.DisplayName, drawOrder, reg.Tier, wasSliced);
+                    bool isResting = reg.Widget != null && reg.Widget.IsQuiescent;
+                    MFPProfiler.BeginWidgetSample(reg.Widget.WidgetId, reg.Widget.DisplayName, drawOrder, reg.Tier, wasSliced, isResting);
                     reg.Widget.MasterUpdateTelemetry(telem);
                     reg.ConsecutiveErrors = 0;
                 }

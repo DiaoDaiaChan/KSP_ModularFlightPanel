@@ -26,12 +26,22 @@ namespace ModularFlightPanel.UI.Widgets
     /// 9. 智能自适应物理尺寸契约 (IAdaptiveSizeWidget)，可在编辑模式 GUI 中随意拖拽手柄拉伸长宽比。
     /// </summary>
     /// <summary>
+    /// 矩形姿态仪显示模式 (Display Mode)
+    /// </summary>
+    public enum RectangularNavballMode
+    {
+        DimensionReducedPFD = 0, // 降维模式：民航PFD 2-DOF 姿态指示器 (俯仰+滚转解耦，航向解耦居中)
+        Spherical3D = 1          // 3D模式：三维导航球等角投影在矩形窗口中
+    }
+
+    /// <summary>
     /// 矩形姿态仪状态快照 (0 GC 值类型)
     /// </summary>
     public struct RectangularNavballState : IEquatable<RectangularNavballState>
     {
         public bool HasVessel;
         public NavballRenderMode RenderMode;
+        public RectangularNavballMode DisplayMode;
         public Texture StockTex;
         public Vector2 TexScale;
         public Vector2 TexOffset;
@@ -44,6 +54,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             return HasVessel == other.HasVessel &&
                    RenderMode == other.RenderMode &&
+                   DisplayMode == other.DisplayMode &&
                    ReferenceEquals(StockTex, other.StockTex) &&
                    TexScale == other.TexScale &&
                    TexOffset == other.TexOffset &&
@@ -62,6 +73,7 @@ namespace ModularFlightPanel.UI.Widgets
                 int hash = 17;
                 hash = (hash * 397) ^ HasVessel.GetHashCode();
                 hash = (hash * 397) ^ (int)RenderMode;
+                hash = (hash * 397) ^ (int)DisplayMode;
                 hash = (hash * 397) ^ Heading.GetHashCode();
                 if (RefCategoryUpper != null) hash = (hash * 397) ^ RefCategoryUpper.GetHashCode();
                 if (FrameName != null) hash = (hash * 397) ^ FrameName.GetHashCode();
@@ -75,6 +87,7 @@ namespace ModularFlightPanel.UI.Widgets
     /// </summary>
     public class RectangularNavballLogic : WidgetLogic<RectangularNavballState>
     {
+        public RectangularNavballMode DisplayMode = RectangularNavballMode.DimensionReducedPFD;
         private string _lastRawCat = null;
         private string _cachedCatUpper = null;
 
@@ -123,6 +136,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 HasVessel = telemetry != null && telemetry.HasVessel,
                 RenderMode = renderMode,
+                DisplayMode = DisplayMode,
                 StockTex = stockTex,
                 TexScale = texScale,
                 TexOffset = texOffset,
@@ -191,6 +205,7 @@ namespace ModularFlightPanel.UI.Widgets
         private static readonly int _PropAspectRatio = Shader.PropertyToID("_AspectRatio");
         private static readonly int _PropCornerRadius = Shader.PropertyToID("_CornerRadius");
         private static readonly int _PropFovScale = Shader.PropertyToID("_FovScale");
+        private static readonly int _PropPfdMode = Shader.PropertyToID("_PfdMode");
 
         private static readonly int _PropSkyColor = Shader.PropertyToID("_SkyColor");
         private static readonly int _PropGroundColor = Shader.PropertyToID("_GroundColor");
@@ -232,6 +247,8 @@ namespace ModularFlightPanel.UI.Widgets
         private static readonly int _PropGroundHazardAlert = Shader.PropertyToID("_GroundHazardAlert");
         private static readonly int _PropVernierScaleDetail = Shader.PropertyToID("_VernierScaleDetail");
 
+        private RectangularNavballMode _displayMode = RectangularNavballMode.DimensionReducedPFD;
+        private readonly Cached<float> _lastUploadedPfdMode = new Cached<float>(-1f);
         private float _uploadedRenderMode = -1f;
 
         // ── 坐标系平滑切变过渡动力学与多参考系动态调色板 ──
@@ -349,6 +366,17 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform.sizeDelta = new Vector2(_currentWidth, _currentHeight);
             ApplyCanvasIsolation(true);
 
+            string modeStr = GetTemplateChannel("MODE", "PFD");
+            if ("3d".Equals(modeStr, StringComparison.OrdinalIgnoreCase) || "spherical".Equals(modeStr, StringComparison.OrdinalIgnoreCase))
+            {
+                _displayMode = RectangularNavballMode.Spherical3D;
+            }
+            else
+            {
+                _displayMode = RectangularNavballMode.DimensionReducedPFD;
+            }
+            _logic.DisplayMode = _displayMode;
+
             // 1. 屏幕空间数学解析光线投射矩形姿态仪 (Screen-Space Rectangular ADI)
             _displayImage = CreateChild<RawImage>("Rect_RaymarchImage", transform,
                 new Vector2(_currentWidth, _currentHeight), Vector2.zero);
@@ -364,6 +392,9 @@ namespace ModularFlightPanel.UI.Widgets
             _sphereMaterial.SetFloat(_PropAspectRatio, _aspectRatio);
             _sphereMaterial.SetFloat(_PropCornerRadius, 0.04f);
             _sphereMaterial.SetFloat(_PropFovScale, 1.0f);
+            float pfdModeVal = (_displayMode == RectangularNavballMode.DimensionReducedPFD) ? 1.0f : 0.0f;
+            _sphereMaterial.SetFloat(_PropPfdMode, pfdModeVal);
+            _lastUploadedPfdMode.Reset(pfdModeVal);
 
             // 2. 2D 矢量标线层
             CreateMarkerOverlayLayer(transform, s);
@@ -718,6 +749,9 @@ namespace ModularFlightPanel.UI.Widgets
                 _sphereMaterial.SetFloat(_PropAspectRatio, _aspectRatio);
                 _sphereMaterial.SetFloat(_PropCornerRadius, 0.04f);
                 _sphereMaterial.SetFloat(_PropFovScale, 1.0f);
+                float pfdModeVal = (_displayMode == RectangularNavballMode.DimensionReducedPFD) ? 1.0f : 0.0f;
+                _sphereMaterial.SetFloat(_PropPfdMode, pfdModeVal);
+                _lastUploadedPfdMode.Reset(pfdModeVal);
 
                 if (mode == NavballRenderMode.StockTexture)
                 {
@@ -809,6 +843,12 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_displayImage == null || !_displayImage.gameObject.activeInHierarchy) return;
             var state = _logic.CurrentState;
+
+            float targetPfdMode = (state.DisplayMode == RectangularNavballMode.DimensionReducedPFD) ? 1.0f : 0.0f;
+            if (_sphereMaterial != null && _lastUploadedPfdMode.Update(targetPfdMode))
+            {
+                _sphereMaterial.SetFloat(_PropPfdMode, targetPfdMode);
+            }
 
             var mode = state.RenderMode;
             float targetRenderMode = (mode == NavballRenderMode.StockTexture) ? 0f : 1f;
@@ -923,6 +963,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnResetPrivateCache();
             _logic.Reset();
+            _lastUploadedPfdMode.Reset(-1f);
         }
 
         protected virtual void LateUpdate()
@@ -1219,14 +1260,25 @@ namespace ModularFlightPanel.UI.Widgets
                         alpha = 1.0f;
                         targetScale = Mathf.Lerp(0.85f, 1.0f, Mathf.Clamp01(currentDir.z + 0.2f));
 
-                        // 现代航空航天 PFD 严密线性等角投影 (垂直视场角 55°，纵向显示 ±27.5° 黄金跨度)
-                        // 与着色器 PFD 度规 100% 严格一致，各向同性像素比例，长宽比自由伸缩无畸变
-                        float fovMul = 1.0f;
-                        float degPerUnit = 27.5f * fovMul;
-                        float pitchAngle = Mathf.Asin(Mathf.Clamp(currentDir.y, -1f, 1f)) * Mathf.Rad2Deg;
-                        float yawAngle = Mathf.Atan2(currentDir.x, Mathf.Max(0.001f, currentDir.z)) * Mathf.Rad2Deg;
-                        float rawY = (pitchAngle / degPerUnit) * halfH;
-                        float rawX = (yawAngle / degPerUnit) * halfH;
+                        float rawX, rawY;
+                        if (_displayMode == RectangularNavballMode.DimensionReducedPFD)
+                        {
+                            // 现代民航 PFD 严密线性等角投影 (垂直视场角 55°，纵向显示 ±27.5° 黄金跨度)
+                            // 与着色器 PFD 度规 100% 严格一致，各向同性像素比例，长宽比自由伸缩无畸变
+                            float fovMul = 1.0f;
+                            float degPerUnit = 27.5f * fovMul;
+                            float pitchAngle = Mathf.Asin(Mathf.Clamp(currentDir.y, -1f, 1f)) * Mathf.Rad2Deg;
+                            float yawAngle = Mathf.Atan2(currentDir.x, Mathf.Max(0.001f, currentDir.z)) * Mathf.Rad2Deg;
+                            rawY = (pitchAngle / degPerUnit) * halfH;
+                            rawX = (yawAngle / degPerUnit) * halfH;
+                        }
+                        else
+                        {
+                            // 3D 球面等角正交外接球投影
+                            float rSphere = Mathf.Sqrt(ar * ar + 1.0f) * 1.02f;
+                            rawX = currentDir.x * (rSphere * halfH);
+                            rawY = currentDir.y * (rSphere * halfH);
+                        }
 
                         if (Mathf.Abs(rawX) <= boundX && Mathf.Abs(rawY) <= boundY)
                         {
@@ -1758,6 +1810,77 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 FlightTelemetryContext.Current?.CycleSpeedMode();
             }
+        }
+
+        public override void PopulateContextMenu(Action<string, Action> registerAction)
+        {
+            base.PopulateContextMenu(registerAction);
+            if (_displayMode == RectangularNavballMode.DimensionReducedPFD)
+            {
+                registerAction(I18n.Tr("CTX_NAV_MODE_3D", "🌐 切换为: 3D三维导航球"), () => SetDisplayMode(RectangularNavballMode.Spherical3D));
+            }
+            else
+            {
+                registerAction(I18n.Tr("CTX_NAV_MODE_PFD", "✈ 切换为: 民航降维PFD"), () => SetDisplayMode(RectangularNavballMode.DimensionReducedPFD));
+            }
+        }
+
+        public void SetDisplayMode(RectangularNavballMode mode)
+        {
+            if (_displayMode == mode) return;
+            _displayMode = mode;
+            _logic.DisplayMode = mode;
+            SetCustomTemplateChannel("MODE", mode == RectangularNavballMode.DimensionReducedPFD ? "PFD" : "3D");
+            if (_sphereMaterial != null)
+            {
+                float targetPfd = mode == RectangularNavballMode.DimensionReducedPFD ? 1.0f : 0.0f;
+                _lastUploadedPfdMode.Reset(targetPfd);
+                _sphereMaterial.SetFloat(_PropPfdMode, targetPfd);
+            }
+            if (mode == RectangularNavballMode.DimensionReducedPFD)
+            {
+                MFPToastBridge.Show(I18n.Tr("TIP_NAV_MODE_PFD", "已切换至民航降维PFD模式"));
+            }
+            else
+            {
+                MFPToastBridge.Show(I18n.Tr("TIP_NAV_MODE_3D", "已切换至3D三维导航球模式"));
+            }
+        }
+
+        private void SetCustomTemplateChannel(string key, string value)
+        {
+            if (Config == null) return;
+            string raw = Config.CustomTemplate ?? string.Empty;
+            var parts = new List<string>();
+            bool updated = false;
+
+            if (!string.IsNullOrEmpty(raw))
+            {
+                string[] pairs = raw.Split(';');
+                foreach (var p in pairs)
+                {
+                    int eq = p.IndexOf('=');
+                    if (eq > 0)
+                    {
+                        string k = p.Substring(0, eq).Trim();
+                        if (string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+                        {
+                            parts.Add($"{key}={value}");
+                            updated = true;
+                            continue;
+                        }
+                    }
+                    if (!string.IsNullOrWhiteSpace(p)) parts.Add(p);
+                }
+            }
+
+            if (!updated)
+            {
+                parts.Add($"{key}={value}");
+            }
+
+            Config.CustomTemplate = string.Join(";", parts.ToArray());
+            InvalidateTemplateChannels();
         }
 
         protected override void OnDestroy()

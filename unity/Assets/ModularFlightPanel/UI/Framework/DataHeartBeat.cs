@@ -28,7 +28,13 @@ namespace ModularFlightPanel.UI
         /// <summary>当前正在调度执行的宿主小组件引用</summary>
         public BaseFlightWidget Widget;
 
-        public FlightHeartbeatContext(IFlightTelemetry telem, float dt, int tick = 0, BaseFlightWidget widget = null)
+        /// <summary>当前数据心跳是否处于自适应静息节流模式 (2Hz 巡航)</summary>
+        public bool IsResting;
+
+        /// <summary>当前拍遥测是否发生了超出噪声包络的实质性变动</summary>
+        public bool TelemetryChanged;
+
+        public FlightHeartbeatContext(IFlightTelemetry telem, float dt, int tick = 0, BaseFlightWidget widget = null, bool isResting = false, bool telemetryChanged = true)
         {
             Telemetry = telem;
             DeltaTime = dt;
@@ -36,6 +42,16 @@ namespace ModularFlightPanel.UI
             UniversalTime = telem != null ? telem.UniversalTime : 0.0;
             Tick = tick;
             Widget = widget;
+            IsResting = isResting;
+            TelemetryChanged = telemetryChanged;
+        }
+
+        /// <summary>
+        /// 唤醒当前组件的心跳与绘制循环至额定全额刷新率
+        /// </summary>
+        public void WakeUp(string reason = null)
+        {
+            Widget?.Awaken(reason);
         }
 
         /// <summary>
@@ -85,6 +101,7 @@ namespace ModularFlightPanel.UI
         /// </summary>
         public bool Adaptive(WidgetRefreshTier cruiseTier = WidgetRefreshTier.Relaxed, bool forceHigh = false)
         {
+            if (IsResting && !forceHigh) return false;
             return IsManeuvering || forceHigh || Every(cruiseTier);
         }
 

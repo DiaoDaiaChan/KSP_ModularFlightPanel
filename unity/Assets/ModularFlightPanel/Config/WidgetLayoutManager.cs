@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using ModularFlightPanel.Core;
 
@@ -677,5 +678,57 @@ namespace ModularFlightPanel.Config
             CurrentLayout.Widgets.RemoveAll(w => w.WidgetId.StartsWith("custom.") || w.WidgetId.StartsWith("tape.") || w.WidgetId.StartsWith("arc_tape."));
             SaveLayout();
         }
+
+        /// <summary>
+        /// 全局创建自由航电画板 (PS 自由搭建工坊)
+        /// </summary>
+        public WidgetConfig CreateNewArtboard(bool blank = false)
+        {
+            if (CurrentLayout == null) return null;
+
+            string baseId = "custom.artboard";
+            string newId = baseId;
+            int counter = 1;
+            while (CurrentLayout.Widgets.Any(x => x.WidgetId == newId))
+            {
+                newId = $"{baseId}_{counter++}";
+            }
+
+            float px = Mathf.Round((Screen.width - 380f) * 0.5f / 10f) * 10f;
+            float py = Mathf.Round((Screen.height - 220f) * 0.5f / 10f) * 10f;
+
+            var demoCfg = blank ? CompositePanelConfig.CreateBlankPanel() : CompositePanelConfig.CreateDefaultDemoPanel();
+
+            var w = new WidgetConfig(newId, I18n.Tr("COMP_ARTBOARD_DEFAULT_NAME", "自由航电仪表板"), px, py)
+            {
+                WidgetType = "composite_panel",
+                Scale = 1.0f,
+                Rotation = 0f,
+                IsEnabled = true,
+                CustomTemplate = demoCfg.ToJson()
+            };
+
+            CurrentLayout.Widgets.Add(w);
+            SaveLayout();
+            ModularFlightPanel.UI.FlightHUDManager.Instance?.RebuildHUD();
+
+            ModularFlightPanel.UI.WidgetDragHandler.IsEditModeActive = true;
+            if (ModularFlightPanel.UI.FlightHUDManager.Instance?.ModularWidgets != null)
+            {
+                for (int i = 0; i < ModularFlightPanel.UI.FlightHUDManager.Instance.ModularWidgets.Count; i++)
+                {
+                    var live = ModularFlightPanel.UI.FlightHUDManager.Instance.ModularWidgets[i];
+                    if (live != null && live.Config?.WidgetId == newId)
+                    {
+                        ModularFlightPanel.UI.WidgetSelectionManager.Select(live, false);
+                        break;
+                    }
+                }
+            }
+
+            return w;
+        }
+
+        public static WidgetConfig CreateArtboard(bool blank = false) => Instance.CreateNewArtboard(blank);
     }
 }

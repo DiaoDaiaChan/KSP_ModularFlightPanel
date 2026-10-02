@@ -87,7 +87,7 @@ namespace ModularFlightPanel.HeadlessValidator
         private static readonly HashSet<string> AuthoritativeAbbreviations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             // 飞行控制与航电系统代号
-            "SAS", "RCS", "HUD", "AP", "PREC", "DCK", "DOCK", "TGT", "ECAM", "EICAS", "ND", "SC", "GPWS", "ECLSS", "STAB",
+            "SAS", "RCS", "HUD", "PFD", "AP", "PREC", "DCK", "DOCK", "TGT", "ECAM", "EICAS", "ND", "SC", "GPWS", "ECLSS", "STAB",
             // 飞行参数与动力装置读数
             "SPD", "ALT", "VSI", "VERTSPD", "HDG", "THR", "TWR", "MACH", "G", "Q", "MAX-Q", "PE", "EC", "COMM", "STG", "IGN",
             "ECC", "INC", "PER", "PRO", "RET", "NRM", "RAD", "ANT", "SOI", "TRAJ", "AN", "DN",
@@ -393,7 +393,6 @@ namespace ModularFlightPanel.HeadlessValidator
             { "MFPSafetyFallback.cs", 2 },
             { "StageDeltaVWidget.cs", 2 },
             { "TabAssembler.cs", 5 },
-            { "TabStudio.cs", 95 },
             { "TelemetryMatrixData.cs", 22 },
             { "WidgetControlCatalog.cs", 24 },
             { "WidgetRenderManager.cs", 1 },
@@ -415,7 +414,6 @@ namespace ModularFlightPanel.HeadlessValidator
             { "MFPSafetyFallback.cs", 2 },
             { "StageDeltaVWidget.cs", 2 },
             { "TabAssembler.cs", 5 },
-            { "TabStudio.cs", 133 },
             { "TelemetryMatrixData.cs", 22 },
             { "WidgetControlCatalog.cs", 24 },
             { "WidgetRenderManager.cs", 1 },

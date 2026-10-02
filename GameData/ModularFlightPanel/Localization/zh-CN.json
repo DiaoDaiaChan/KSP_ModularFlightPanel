@@ -1840,6 +1840,12 @@
     "STUDIO_BTN_NEW_ARTBOARD_HERO": "✨ 立即创建自由画板",
     "STUDIO_BTN_NEW_BLANK_HERO": "📄 空白画板",
     "HUD_BTN_NEW_ARTBOARD": "🎨 新建画板",
-    "HUD_BTN_OPEN_ARTBOARD_STUDIO": "🎨 画板工坊"
+    "HUD_BTN_OPEN_ARTBOARD_STUDIO": "🎨 画板工坊",
+    "PROF_ROW_QUIESCENCE": "自适应静息节流:",
+    "PROF_STATUS_RESTING": "[静息]",
+    "CTX_NAV_MODE_3D": "🌐 切换为: 3D三维导航球",
+    "CTX_NAV_MODE_PFD": "✈ 切换为: 民航降维PFD",
+    "TIP_NAV_MODE_3D": "已切换至3D三维导航球模式",
+    "TIP_NAV_MODE_PFD": "已切换至民航降维PFD模式"
   }
 }

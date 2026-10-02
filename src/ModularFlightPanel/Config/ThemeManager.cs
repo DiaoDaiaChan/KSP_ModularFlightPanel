@@ -87,6 +87,38 @@ namespace ModularFlightPanel.Config
             }
             SaveSettings();
         }
+
+        public void EnsureDockRulesPopulated()
+        {
+            if (DockRules == null) DockRules = new List<DockButtonRule>();
+#if KSP_RUNTIME
+            try
+            {
+                var launcher = KSP.UI.Screens.ApplicationLauncher.Instance;
+                if (launcher != null)
+                {
+                    var stockBtns = StockToolbarHook.GetStockButtons(launcher);
+                    var modBtns = StockToolbarHook.GetModButtons(launcher);
+                    var all = new List<KSP.UI.Screens.ApplicationLauncherButton>();
+                    if (stockBtns != null) all.AddRange(stockBtns);
+                    if (modBtns != null) all.AddRange(modBtns);
+
+                    for (int i = 0; i < all.Count; i++)
+                    {
+                        var btn = all[i];
+                        if (btn == null) continue;
+                        ModularFlightPanel.UI.Widgets.ModernToolbarWidget.GetButtonIdentity(btn, i, out string key, out string defName);
+                        GetOrCreateDockRule(key, defName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MFPLogger.Warn(MFPLogger.CatUI, $"EnsureDockRulesPopulated error: {ex.Message}");
+            }
+#endif
+        }
+
         public bool MasterBypass
         {
             get => Core.MFPProfiler.IsMasterBypassed;

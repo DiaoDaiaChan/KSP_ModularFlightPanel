@@ -34,7 +34,11 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         protected GameObject _sphereObject;
         protected Material _sphereMaterial;
         protected bool _isRenderDirty = true;
-        public void MarkRenderDirty() => _isRenderDirty = true;
+        public void MarkRenderDirty()
+        {
+            _isRenderDirty = true;
+            MarkVisualDirty();
+        }
         public void MarkRenderClean() => _isRenderDirty = false;
         public bool IsRenderDirty => _isRenderDirty;
         public Material SphereMaterial => _sphereMaterial;

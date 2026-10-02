@@ -57,6 +57,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
         // 视口孔径与几何长宽比 (Aperture Shape & Aspect Ratio)
         _ApertureShape ("Aperture Shape (0=Circle, 1=Rectangle)", Float) = 0.0
+        _PfdMode ("PFD Dimension-Reduced Mode (0=3D Sphere, 1=PFD)", Float) = 1.0
         _AspectRatio ("Aspect Ratio (Width / Height)", Float) = 1.0
         _CornerRadius ("Corner Radius", Range(0.0, 0.5)) = 0.05
         _FovScale ("FOV Scale", Range(0.4, 2.5)) = 1.0
@@ -172,6 +173,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
             float _GroundHazardAlert;
             float _VernierScaleDetail;
             float _ApertureShape;
+            float _PfdMode;
             float _AspectRatio;
             float _CornerRadius;
             float _FovScale;
@@ -735,11 +737,11 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float degPerPix = max(fwidth(pitchDeg), 0.0004);
                 float fontScale = clamp(0.95 + smoothstep(0.28, 1.10, degPerPix) * 0.55, 0.95, 1.50);
 
-                if (_ApertureShape >= 0.5)
+                if (_ApertureShape >= 0.5 && _PfdMode >= 0.5)
                 {
                     // ══════════════════════════════════════════════════════════════════════════
                     // 现代矩形平直 PFD / ADI 航电度规系统 (True Aviation PFD Orthonormal Grid)
-                    // 俯仰阶梯恒定居中、水平平直横杠、严格线性等距；横向航向沿地平线滑动、零边缘透视拉伸
+                    // 俯仰阶梯恒定居中、水平平直横杠、严格线性等距；航向解耦消解，纯净天地二分地平线
                     // ══════════════════════════════════════════════════════════════════════════
                     float absLat = abs(lateralDeg);
                     float latAA = clamp(fwidth(absLat) * 0.75, 0.005, 2.5);
@@ -806,7 +808,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     combinedRulerAndLadder = max(max(isMajorRung, isTip), isMinor5);
 
-                    // 2. 俯仰梯级数字 (在阶梯左右两侧 absLat ~ 9.8° 呈现，字体大小恒定且自适应分辨率)
+                    // 2. 俯仰梯级数字 (在阶梯左右两侧 absLat ~ 9.5° 呈现，字体大小恒定且自适应分辨率)
                     if (pLevel10 >= 8.0 && pLevel10 <= 82.0)
                     {
                         float signLat = lateralDeg >= 0.0 ? 1.0 : -1.0;
@@ -831,64 +833,6 @@ Shader "ModularFlightPanel/NavballRaymarch"
                             pitchGlyphDistance = dDigit * fontScale;
                             pitchGlyphEnabled = polarLadderFade * markerClearance;
                             pitchLabelGap = (dDigit < 2.5) ? pitchGlyphEnabled : 0.0;
-                        }
-                    }
-
-                    // 3. 地平线航向刻度带 (Heading Scale along Horizon: absPitch < 6.5°)
-                    if (absPitch < 6.5)
-                    {
-                        float hAA = clamp(fwidth(headDeg) * 0.75, 0.005, 2.5);
-
-                        // 10° 航向中刻度
-                        float hMod10 = abs(headDeg - round(headDeg / 10.0) * 10.0);
-                        float isHTick10 = EvalConservativeLine(hMod10, 0.26, hAA) *
-                                          (1.0 - smoothstep(2.0 - pAA, 2.6 + pAA, absPitch)) * 0.85;
-
-                        // 5° 航向微刻度
-                        float hMod5 = abs(headDeg - round(headDeg / 5.0) * 5.0);
-                        float isHTick5 = EvalConservativeLine(hMod5, 0.18, hAA) *
-                                         (1.0 - smoothstep(1.0 - pAA, 1.4 + pAA, absPitch)) * 0.55;
-
-                        combinedRulerAndLadder = max(combinedRulerAndLadder, max(isHTick10, isHTick5));
-
-                        // 45° 航向数字与方位字符 (N, 045, 090, 135, 180, 225, 270, 315) at pitch ~ 3.6°
-                        float hCenter45 = round(headDeg / 45.0) * 45.0;
-                        float hOffset45 = headDeg - hCenter45;
-                        if (hOffset45 > 180.0) hOffset45 -= 360.0;
-                        if (hOffset45 < -180.0) hOffset45 += 360.0;
-                        float normH45 = fmod(hCenter45 + 720.0, 360.0);
-
-                        float hYOffset = pitchDeg - 3.6;
-                        if (abs(hOffset45) < (7.5 * fontScale) && abs(hYOffset) < (3.5 * fontScale))
-                        {
-                            float2 hPos = float2(hOffset45, hYOffset) / fontScale;
-                            headingTextEnabled = (1.0 - smoothstep(4.5, 6.0, absPitch)) * markerClearance;
-
-                            if (normH45 < 1.0)
-                            {
-                                headingGlyphDistance = DigitDistance(hPos, 11.0); // N
-                            }
-                            else if (normH45 < 95.0)
-                            {
-                                float hTens = floor(normH45 / 10.0);
-                                float hOnes = fmod(normH45, 10.0);
-                                headingGlyphDistance = min(
-                                    DigitDistance(hPos + float2(1.85, 0.0), hTens),
-                                    DigitDistance(hPos - float2(1.85, 0.0), hOnes));
-                            }
-                            else
-                            {
-                                float hHundreds = floor(normH45 / 100.0);
-                                float hTens = floor(fmod(normH45, 100.0) / 10.0);
-                                float hOnes = fmod(normH45, 10.0);
-                                headingGlyphDistance = min(
-                                    DigitDistance(hPos + float2(3.5, 0.0), hHundreds),
-                                    min(DigitDistance(hPos, hTens),
-                                        DigitDistance(hPos - float2(3.5, 0.0), hOnes)));
-                            }
-                            headingGap = (headingGlyphDistance < 2.5) ? headingTextEnabled : 0.0;
-                            headingGlyphDistance *= fontScale;
-                            headingGlyphAA = clamp(max(fwidth(hOffset45), fwidth(hYOffset)) * 0.75, 0.005, 2.5);
                         }
                     }
                     glyphAA = clamp(fwidth(pitchDeg) * 0.75, 0.005, 2.5);
@@ -1214,7 +1158,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float primeAngle = abs(headDeg > 180.0 ? headDeg - 360.0 : headDeg);
                 float antiAngle  = abs(headDeg - 180.0);
 
-                if (_ApertureShape < 0.5 && (primeAngle < 3.0 || antiAngle < 3.0))
+                if ((_ApertureShape < 0.5 || _PfdMode < 0.5) && (primeAngle < 3.0 || antiAngle < 3.0))
                 {
                     float primeArc = primeAngle * cosP;
                     float antiArc  = antiAngle * cosP;
@@ -1362,8 +1306,46 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     return EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, subZ, markerClearance, signH, 0.0);
                 }
+                else if (_PfdMode < 0.5)
+                {
+                    // 3D 矩形姿态球模式 (3D Spherical Navball in Rectangular Frame)
+                    float ar = max(_AspectRatio, 0.1);
+                    float rSphere = sqrt(ar * ar + 1.0) * 1.02;
+                    float u = (subCoord.x * ar) / rSphere;
+                    float v = subCoord.y / rSphere;
+                    float subR2 = u * u + v * v;
+                    float subZ = sqrt(max(0.0, 1.0 - subR2));
+                    float3 subViewRay = float3(u, v, subZ);
+                    float3 subP = RotateByQuaternion(subViewRay, _SphereInvRotation);
+                    subP = normalize(subP);
+
+                    float3 procP = subP;
+                    float signH = 1.0;
+
+                    if (_FramePattern > 0.5 && _FramePattern < 1.5)
+                    {
+                        procP.x = -procP.x;
+                        signH = -1.0;
+                    }
+
+                    float pitchDeg = asin(clamp(procP.y, -1.0, 1.0)) * 57.2957795;
+                    float headDeg = atan2(procP.x, procP.z) * 57.2957795;
+                    if (headDeg < 0.0) headDeg += 360.0;
+                    float absY = abs(procP.y);
+                    float absPitch = abs(pitchDeg);
+                    float markerClearance = 1.0;
+                    if (_MarkerAvoid0.w > 0.01 || _MarkerAvoid1.w > 0.01 || _MarkerAvoid2.w > 0.01 || _MarkerAvoid3.w > 0.01)
+                    {
+                        float2 screenPoint = subCoord;
+                        markerClearance = min(MarkerClearance(screenPoint, _MarkerAvoid0), MarkerClearance(screenPoint, _MarkerAvoid1));
+                        markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
+                    }
+
+                    return EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, subZ, markerClearance, signH, 0.0);
+                }
                 else
                 {
+                    // 降维民航 PFD 模式 (2-DOF Pitch & Roll: 航向解耦，平直度规)
                     float ar = max(_AspectRatio, 0.1);
                     float fovMul = clamp(_FovScale, 0.3, 2.5);
                     float degPerUnit = 27.5 * fovMul;
@@ -1372,18 +1354,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     float3 upRef  = RotateByQuaternion(float3(0.0, 1.0, 0.0), _SphereInvRotation);
                     float3 rgtRef = RotateByQuaternion(float3(1.0, 0.0, 0.0), _SphereInvRotation);
 
-                    float signH = 1.0;
-                    if (_FramePattern > 0.5 && _FramePattern < 1.5)
-                    {
-                        fwdRef.x = -fwdRef.x;
-                        upRef.x  = -upRef.x;
-                        rgtRef.x = -rgtRef.x;
-                        signH = -1.0;
-                    }
-
                     float pitch0 = asin(clamp(fwdRef.y, -1.0, 1.0)) * 57.2957795;
-                    float head0  = atan2(fwdRef.x, fwdRef.z) * 57.2957795;
-                    if (head0 < 0.0) head0 += 360.0;
 
                     float2 vSky = float2(rgtRef.y, upRef.y);
                     float lenSky = length(vSky);
@@ -1396,12 +1367,10 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
                     float pitchDeg = clamp(pitch0 + pAxis * degPerUnit, -89.99, 89.99);
                     float lateralDeg = lAxis * degPerUnit;
-                    float headDeg = fmod(head0 + lateralDeg + 720.0, 360.0);
 
                     float radP = radians(pitchDeg);
-                    float radH = radians(headDeg);
                     float cp = cos(radP);
-                    float3 procP = float3(cp * sin(radH), sin(radP), cp * cos(radH));
+                    float3 procP = float3(0.0, sin(radP), cp);
 
                     float absY = abs(procP.y);
                     float absPitch = abs(pitchDeg);
@@ -1413,7 +1382,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         markerClearance = min(markerClearance, min(MarkerClearance(screenPoint, _MarkerAvoid2), MarkerClearance(screenPoint, _MarkerAvoid3)));
                     }
 
-                    return EvaluateNavballSurface(procP, pitchDeg, headDeg, absPitch, absY, 1.0, markerClearance, signH, lateralDeg);
+                    return EvaluateNavballSurface(procP, pitchDeg, 0.0, absPitch, absY, 1.0, markerClearance, 1.0, lateralDeg);
                 }
             }
 
@@ -1459,39 +1428,53 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     rectAlpha = saturate(-distBox / edgeAA);
                     if (rectAlpha <= 0.0) discard;
 
-                    float ar = max(_AspectRatio, 0.1);
-                    float fovMul = clamp(_FovScale, 0.3, 2.5);
-                    float degPerUnit = 27.5 * fovMul;
+                    if (_PfdMode < 0.5)
+                    {
+                        // 3D 矩形姿态球模式 (3D Spherical Navball in Rectangular Frame)
+                        float ar = max(_AspectRatio, 0.1);
+                        float rSphere = sqrt(ar * ar + 1.0) * 1.02;
+                        float u = (coord.x * ar) / rSphere;
+                        float v = coord.y / rSphere;
+                        float r2 = u * u + v * v;
+                        z = sqrt(max(0.0, 1.0 - r2));
+                        viewRay = float3(u, v, z);
+                        NdotV = z;
 
-                    float3 fwdRef = RotateByQuaternion(float3(0.0, 0.0, 1.0), _SphereInvRotation);
-                    float3 upRef  = RotateByQuaternion(float3(0.0, 1.0, 0.0), _SphereInvRotation);
-                    float3 rgtRef = RotateByQuaternion(float3(1.0, 0.0, 0.0), _SphereInvRotation);
+                        p = RotateByQuaternion(viewRay, _SphereInvRotation);
+                        p = normalize(p);
+                    }
+                    else
+                    {
+                        // 降维民航 PFD 模式 (2-DOF Pitch & Roll: 航向解耦，平直度规)
+                        float ar = max(_AspectRatio, 0.1);
+                        float fovMul = clamp(_FovScale, 0.3, 2.5);
+                        float degPerUnit = 27.5 * fovMul;
 
-                    float pitch0 = asin(clamp(fwdRef.y, -1.0, 1.0)) * 57.2957795;
-                    float head0  = atan2(fwdRef.x, fwdRef.z) * 57.2957795;
-                    if (head0 < 0.0) head0 += 360.0;
+                        float3 fwdRef = RotateByQuaternion(float3(0.0, 0.0, 1.0), _SphereInvRotation);
+                        float3 upRef  = RotateByQuaternion(float3(0.0, 1.0, 0.0), _SphereInvRotation);
+                        float3 rgtRef = RotateByQuaternion(float3(1.0, 0.0, 0.0), _SphereInvRotation);
 
-                    float2 vSky = float2(rgtRef.y, upRef.y);
-                    float lenSky = length(vSky);
-                    float2 nSky = (lenSky > 0.001) ? (vSky / lenSky) : float2(0.0, 1.0);
-                    float2 nHrz = float2(nSky.y, -nSky.x);
+                        float pitch0 = asin(clamp(fwdRef.y, -1.0, 1.0)) * 57.2957795;
 
-                    float2 pos = float2(coord.x * ar, coord.y);
-                    float pAxis = dot(pos, nSky);
-                    float lAxis = dot(pos, nHrz);
+                        float2 vSky = float2(rgtRef.y, upRef.y);
+                        float lenSky = length(vSky);
+                        float2 nSky = (lenSky > 0.001) ? (vSky / lenSky) : float2(0.0, 1.0);
+                        float2 nHrz = float2(nSky.y, -nSky.x);
 
-                    float pitchDeg = clamp(pitch0 + pAxis * degPerUnit, -89.99, 89.99);
-                    float lateralDeg = lAxis * degPerUnit;
-                    float headDeg = fmod(head0 + lateralDeg + 720.0, 360.0);
+                        float2 pos = float2(coord.x * ar, coord.y);
+                        float pAxis = dot(pos, nSky);
+                        float lAxis = dot(pos, nHrz);
 
-                    float radP = radians(pitchDeg);
-                    float radH = radians(headDeg);
-                    float cp = cos(radP);
-                    p = float3(cp * sin(radH), sin(radP), cp * cos(radH));
-                    viewRay = float3(0.0, 0.0, 1.0);
-                    z = 1.0;
-                    NdotV = 1.0;
-                }
+                        float pitchDeg = clamp(pitch0 + pAxis * degPerUnit, -89.99, 89.99);
+                        float lateralDeg = lAxis * degPerUnit;
+
+                        float radP = radians(pitchDeg);
+                        float cp = cos(radP);
+                        p = float3(0.0, sin(radP), cp);
+                        viewRay = float3(0.0, 0.0, 1.0);
+                        z = 1.0;
+                        NdotV = 1.0;
+                    }
 
                 fixed4 col;
 
@@ -1625,7 +1608,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                     }
                 }
 
-                if (_ApertureShape < 0.5)
+                if (_ApertureShape < 0.5 || (_ApertureShape >= 0.5 && _PfdMode < 0.5))
                 {
                     // 6. 3D 球面深度边缘衰减 (Limb Darkening)
                     float limbFalloff = pow(NdotV, _LimbPower);
@@ -1648,7 +1631,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                 float3 lightDir = normalize(float3(-0.35, 0.6, 0.7));
                 float3 viewDir = float3(0, 0, 1);
                 float3 halfDir = normalize(lightDir + viewDir);
-                float3 viewNormal = (_ApertureShape < 0.5) ? float3(coord.x, coord.y, z) : float3(0, 0, 1);
+                float3 viewNormal = (_ApertureShape < 0.5 || (_ApertureShape >= 0.5 && _PfdMode < 0.5)) ? float3(coord.x, coord.y, z) : float3(0, 0, 1);
                 float specAngle = saturate(dot(viewNormal, halfDir));
                 float spec = pow(specAngle, _Glossiness) * _SpecIntensity;
                 col.rgb += _SpecularColor.rgb * spec * 0.20;

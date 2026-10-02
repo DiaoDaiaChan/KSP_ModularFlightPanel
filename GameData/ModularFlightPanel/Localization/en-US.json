@@ -1840,6 +1840,12 @@
     "STUDIO_BTN_NEW_ARTBOARD_HERO": "✨ Create Freeform Panel",
     "STUDIO_BTN_NEW_BLANK_HERO": "📄 Blank Artboard",
     "HUD_BTN_NEW_ARTBOARD": "🎨 New Artboard",
-    "HUD_BTN_OPEN_ARTBOARD_STUDIO": "🎨 Artboard Studio"
+    "HUD_BTN_OPEN_ARTBOARD_STUDIO": "🎨 Artboard Studio",
+    "PROF_ROW_QUIESCENCE": "Auto-Quiescence Throttle:",
+    "PROF_STATUS_RESTING": "[REST]",
+    "CTX_NAV_MODE_3D": "🌐 Switch to: 3D Navball",
+    "CTX_NAV_MODE_PFD": "✈ Switch to: Civil Aviation PFD",
+    "TIP_NAV_MODE_3D": "Switched to 3D Navball mode",
+    "TIP_NAV_MODE_PFD": "Switched to Civil Aviation PFD mode"
   }
 }

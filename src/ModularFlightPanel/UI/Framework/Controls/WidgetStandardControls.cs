@@ -276,7 +276,13 @@ namespace ModularFlightPanel.UI.Framework
             }
         }
 
-        public override bool NeedsTelemetryUpdate => !string.IsNullOrEmpty(Token);
+        /// <summary>
+        /// 是否允许微控件在数据循环中全自动求值遥测 Token 并覆写文本。
+        /// 若父组件基于 WidgetLogic 在 OnRenderState 中接管渲染，可设为 false 避免双重求值与文本脏标记冲突。
+        /// </summary>
+        public bool AutoUpdateTelemetry { get; set; } = true;
+
+        public override bool NeedsTelemetryUpdate => AutoUpdateTelemetry && !string.IsNullOrEmpty(Token);
 
         public override bool HasTelemetryBinding => true;
         public override string TelemetryToken

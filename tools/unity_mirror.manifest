@@ -34,13 +34,8 @@
 !Core/Telemetry/TelemetryHub*.cs
 !Core/Telemetry/Providers/*
 
-# ── IMGUI 设置面板：KSP 游戏内配置界面，不参与 UI 预览渲染 ──
-!UI/Settings/ISettingsTab.cs
+# ── 设置面板：KSP 游戏内配置界面，不参与 UI 预览渲染 ──
 !UI/Settings/SettingsGUI.cs
-!UI/Settings/TabDiagnostics.cs
-!UI/Settings/TabProfilesConfig.cs
-!UI/Settings/TabStudio.cs
-!UI/Settings/TabThemeSettings.cs
 !UI/Settings/WidgetPreviewLoader.cs
 
 # ── Modern Workbench 设置中枢：KSP 游戏内配置界面，不参与 UI 预览渲染 ──

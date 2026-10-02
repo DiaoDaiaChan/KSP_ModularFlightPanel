@@ -37,7 +37,7 @@ namespace ModularFlightPanel.UI.HUD
             if (!WidgetDragHandler.IsEditModeActive || MFPProfiler.IsMasterBypassed) return;
 
             // 当全屏航电工坊工作台打开且未处于画布排版模式时，静默挂起 HUD 现场悬浮编辑栏与抽屉，
-            // 彻底防止与 TabStudio 的全功能 Inspector 发生视口遮挡与冲突打架！
+            // 彻底防止与 WorkbenchTabStudio 的全功能 Inspector 发生视口遮挡与冲突打架！
             if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
             {
                 return;
@@ -96,7 +96,7 @@ namespace ModularFlightPanel.UI.HUD
             GUILayout.Space(6f);
             if (GUILayout.Button(I18n.Tr("HUD_BTN_NEW_ARTBOARD", "🎨 新建画板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(84f), GUILayout.Height(24f)))
             {
-                TabStudio.CreateNewArtboard(false);
+                WidgetLayoutManager.CreateArtboard(false);
             }
             if (GUILayout.Button("📋 分享码", GUILayout.Width(68f), GUILayout.Height(24f)))
             {
@@ -162,7 +162,7 @@ namespace ModularFlightPanel.UI.HUD
                 _isFavoriteModDockOpen = !_isFavoriteModDockOpen;
                 if (_isFavoriteModDockOpen)
                 {
-                    TabStudio.EnsureDockRulesPopulated();
+                    ThemeManager.Instance?.EnsureDockRulesPopulated();
                 }
             }
             GUI.color = textCol;
@@ -500,7 +500,7 @@ namespace ModularFlightPanel.UI.HUD
                                 SettingsGUI.Instance.ExitCanvasLayoutMode();
                             }
                             SettingsGUI.Instance.OpenToTab(0);
-                            TabStudio.SetSelectedWidget(primary.Config?.WidgetId);
+                            WidgetSelectionManager.Select(primary, false);
                         }
                     }
                 }
@@ -1326,7 +1326,7 @@ namespace ModularFlightPanel.UI.HUD
                 if (GUILayout.Button(I18n.Tr("HUD_FAV_MOD_AUTO", "★ 一键推荐"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(82f), GUILayout.Height(22f)))
                 {
                     ThemeManager.Instance?.AutoRecommendFavorites();
-                    TabStudio.EnsureDockRulesPopulated();
+                    ThemeManager.Instance?.EnsureDockRulesPopulated();
                 }
             }
             else
@@ -1352,7 +1352,7 @@ namespace ModularFlightPanel.UI.HUD
 
             if (GUILayout.Button(I18n.Tr("HUD_FAV_MOD_MGR", "⚙️ 管理"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(58f), GUILayout.Height(22f)))
             {
-                TabStudio.OpenToModToolbar();
+                SettingsGUI.Instance?.OpenToTab(0);
             }
 
             if (GUILayout.Button("✕", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(22f), GUILayout.Height(22f)))

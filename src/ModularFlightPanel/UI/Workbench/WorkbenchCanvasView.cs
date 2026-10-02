@@ -435,7 +435,7 @@ namespace ModularFlightPanel.UI.Workbench
             // 快捷画板
             WorkbenchControls.CreateButton(_floatingDockObj.transform, "NewArtboardBtn", "🎨 +画板", new Vector2(80f, 28f), () =>
             {
-                TabStudio.CreateNewArtboard(false);
+                WidgetLayoutManager.CreateArtboard(false);
             }, false, 11);
 
             // 返回工坊

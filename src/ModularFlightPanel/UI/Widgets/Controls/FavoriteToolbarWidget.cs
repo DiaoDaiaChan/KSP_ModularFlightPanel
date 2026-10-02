@@ -68,7 +68,7 @@ namespace ModularFlightPanel.UI.Widgets
 
     /// <summary>
     /// [已废弃 / DEPRECATED] 常用 MOD 独立快捷面板 / 快速启动坞 (Favorite Mods Quick Dock - core.dock_favorites)
-    /// 提示：常用 MOD 收藏与快捷功能现已全面收拢至【编辑模式顶部悬浮工具栏 (HUDEditModeToolbar)】与【航电工坊 (TabStudio)】，
+    /// 提示：常用 MOD 收藏与快捷功能现已全面收拢至【编辑模式顶部悬浮工具栏 (HUDEditModeToolbar)】与【航电工坊 (WorkbenchTabStudio)】，
     /// 本独立小组件不再在飞行 HUD 画布上常驻实例化，仅作为旧版布局反序列化兼容保留。
     /// </summary>
     /// <summary>

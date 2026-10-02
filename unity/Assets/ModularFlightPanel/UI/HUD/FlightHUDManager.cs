@@ -340,7 +340,7 @@ namespace ModularFlightPanel.UI
                 {
                     continue;
                 }
-                // 常用 MOD 独立快捷坞已废弃并全面整合至编辑 UI (TabStudio 与 HUDEditModeToolbar)，不再作为常驻 HUD 仪表实例化
+                // 常用 MOD 独立快捷坞已废弃并全面整合至编辑 UI (WorkbenchTabStudio 与 HUDEditModeToolbar)，不再作为常驻 HUD 仪表实例化
                 if (cfg.WidgetType == "dock_favorites" || cfg.WidgetId == "core.dock_favorites" || cfg.WidgetId.StartsWith("dock_favorites") || cfg.WidgetId == "toolbar.favorites")
                 {
                     continue;

@@ -5,6 +5,7 @@ using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
+using ModularFlightPanel.Core.Telemetry;
 using ModularFlightPanel.UI.Framework;
 
 namespace ModularFlightPanel.UI
@@ -331,6 +332,90 @@ namespace ModularFlightPanel.UI
         /// 姿态球专属绘制管线构造器（默认返回空，由 BaseNavballSphereWidget 派生实现）
         /// </summary>
         public virtual FlightNavballPipeline GetNavballPipeline() => default;
+
+        #region 自适应自动静息中枢 (Adaptive Auto-Quiescence Engine)
+
+        /// <summary>
+        /// 当前正处于更新中的组件单例（用于 SmartUIExtensions 与底层脏标记反向关联感知，0 堆分配线程局域上下文）
+        /// </summary>
+        public static BaseFlightWidget CurrentlyUpdatingWidget { get; private set; }
+
+        /// <summary>
+        /// 是否启用自适应自动静息功能。
+        /// 当遥测数据无变化或仅有高频浮点抖动/微颤、且 UI 无变动时，自动降低心跳与画面刷新率至 2Hz 低频巡航节能状态。
+        /// 默认启用；若组件标记了 AlwaysFullPower 则强制禁用。
+        /// </summary>
+        public virtual bool EnableAutoQuiescence
+        {
+            get => !AlwaysFullPower && _enableAutoQuiescence;
+            set => _enableAutoQuiescence = value;
+        }
+        private bool _enableAutoQuiescence = true;
+
+        /// <summary>
+        /// 遥测动力学自适应防抖器（公理化 0 硬编码，支持 WatchToken 动态挂载任意探针）
+        /// </summary>
+        public AdaptiveTelemetryDebouncer QuiescenceDebouncer { get; } = new AdaptiveTelemetryDebouncer();
+
+        /// <summary>
+        /// 当前组件的数据心跳是否处于静息节能模式 (2Hz)
+        /// </summary>
+        public bool IsHeartbeatResting { get; private set; } = false;
+
+        /// <summary>
+        /// 当前组件的 UI 绘制循环是否处于静息休眠模式
+        /// </summary>
+        public bool IsUIDrawResting { get; private set; } = false;
+
+        /// <summary>
+        /// 当前组件是否处于完全静息状态 (心跳与 UI 绘制双轨均已静息)
+        /// </summary>
+        public bool IsQuiescent => IsHeartbeatResting && IsUIDrawResting;
+
+        private bool _isVisualDirty = true;
+        private float _lastUIDrawTime = -10f;
+
+        /// <summary>
+        /// 当前组件画面视觉是否已被脏标记 (Visual Dirty Flag)
+        /// </summary>
+        public bool IsVisualDirty => _isVisualDirty;
+
+        /// <summary>
+        /// 标记当前组件的 UI 视觉发生改变，立即唤醒 UI 绘制循环以渲染最新帧
+        /// </summary>
+        public void MarkVisualDirty(string reason = null)
+        {
+            _isVisualDirty = true;
+            IsUIDrawResting = false;
+        }
+
+        /// <summary>
+        /// 立即唤醒数据心跳 (0 延迟恢复全额额定刷新率)
+        /// </summary>
+        public void AwakenHeartbeat(string reason = null)
+        {
+            IsHeartbeatResting = false;
+        }
+
+        /// <summary>
+        /// 立即唤醒 UI 绘制循环
+        /// </summary>
+        public void AwakenUIDraw(string reason = null)
+        {
+            IsUIDrawResting = false;
+            _isVisualDirty = true;
+        }
+
+        /// <summary>
+        /// 双轨全面唤醒 (遥测心跳 + 画面绘制)
+        /// </summary>
+        public void Awaken(string reason = null)
+        {
+            AwakenHeartbeat(reason);
+            AwakenUIDraw(reason);
+        }
+
+        #endregion
 
         /// <summary>
         /// 是否已受全局 WidgetRenderManager 接管（接管后禁用 MonoBehaviour 独立 Update，改由主分发调度）
@@ -666,7 +751,13 @@ namespace ModularFlightPanel.UI
                 }
             }
 
-            // 2. 触发派生类额外自定义复位逻辑
+            // 2. 自适应静息与防抖器复位
+            QuiescenceDebouncer.Reset();
+            IsHeartbeatResting = false;
+            IsUIDrawResting = false;
+            _isVisualDirty = true;
+
+            // 3. 触发派生类额外自定义复位逻辑
             OnResetPrivateCache();
         }
 
@@ -963,39 +1054,107 @@ namespace ModularFlightPanel.UI
         /// 全局主遥测更新派发调度入口 (Master Telemetry Update Dispatcher)。
         /// 由 WidgetRenderManager 单点阶梯分发，自动执行：
         /// 1. 遥测上下文空值与空船安全拦截 (HasVessel Guard)
-        /// 2. 数据心跳节拍判定与专属物理计算派发 (OnDataHeartBeat, 受 EffectiveHeartBeatTier 节流)
-        /// 3. 所有已注册微控件的自动化遥测更新 (Controls.UpdateControls)
-        /// 4. 纯 UI 渲染/补间帧更新 (OnUpdateRender)
+        /// 2. 自适应遥测动力学防抖评估 (Adaptive Quiescence Debouncing)
+        /// 3. 数据心跳节拍判定与专属物理计算派发 (OnDataHeartBeat, 稳态静息时自动节流至 2Hz 巡航监视)
+        /// 4. 所有已注册微控件的自动化遥测更新 (Controls.UpdateControls)
+        /// 5. 纯 UI 渲染/补间帧更新与静息休眠判定 (UIDrawLoop, 零视觉变动时阻断 UGUI 重建)
         /// </summary>
         public void MasterUpdateTelemetry(IFlightTelemetry telemetry)
         {
             if (telemetry == null || !telemetry.HasVessel) return;
 
-            float now = Time.unscaledTime;
-            float interval = EffectiveHeartBeatInterval;
-            float rfInterval = RefreshInterval;
-            bool isHeartbeatSameAsRefresh = (interval <= 0.001f && rfInterval <= 0.001f) ||
-                                            (Math.Abs(interval - rfInterval) < 0.001f);
-            bool shouldHeartBeat = isHeartbeatSameAsRefresh ||
-                                   (_lastHeartBeatTime < 0f) ||
-                                   (interval <= 0.001f) ||
-                                   (now - _lastHeartBeatTime >= interval - 0.0005f);
+            var prevUpdating = CurrentlyUpdatingWidget;
+            CurrentlyUpdatingWidget = this;
 
-            if (shouldHeartBeat)
+            try
             {
-                float dt = _lastHeartBeatTime > 0f ? (now - _lastHeartBeatTime) : Time.unscaledDeltaTime;
-                _lastHeartBeatTime = now;
-                int tick = _heartBeatTick++;
+                float now = Time.unscaledTime;
+                bool autoQuiesce = EnableAutoQuiescence;
 
-                var ctx = new FlightHeartbeatContext(telemetry, dt, tick, this);
-                OnDataHeartBeat(in ctx);
+                // 1. 遥测动力学自适应防抖判定 (0 硬编码，符号反转/噪声包络/累积位移)
+                bool telemChanged = true;
+                if (autoQuiesce)
+                {
+                    telemChanged = QuiescenceDebouncer.Evaluate(telemetry);
+                    if (telemChanged)
+                    {
+                        IsHeartbeatResting = false;
+                        _isVisualDirty = true;
+                        IsUIDrawResting = false;
+                    }
+                    else
+                    {
+                        IsHeartbeatResting = true;
+                    }
+                }
+                else
+                {
+                    IsHeartbeatResting = false;
+                }
+
+                // 2. 数据心跳节拍判定 (静息状态下节流至 0.5s / 2Hz 低频巡航节能)
+                float baseInterval = EffectiveHeartBeatInterval;
+                float effectiveInterval = (autoQuiesce && IsHeartbeatResting)
+                    ? Mathf.Max(baseInterval, 0.5f)
+                    : baseInterval;
+
+                float rfInterval = RefreshInterval;
+                bool isHeartbeatSameAsRefresh = !IsHeartbeatResting &&
+                                                ((baseInterval <= 0.001f && rfInterval <= 0.001f) ||
+                                                 (Math.Abs(baseInterval - rfInterval) < 0.001f));
+
+                bool shouldHeartBeat = isHeartbeatSameAsRefresh ||
+                                       (_lastHeartBeatTime < 0f) ||
+                                       (effectiveInterval <= 0.001f) ||
+                                       (now - _lastHeartBeatTime >= effectiveInterval - 0.0005f);
+
+                if (shouldHeartBeat)
+                {
+                    float dt = _lastHeartBeatTime > 0f ? (now - _lastHeartBeatTime) : Time.unscaledDeltaTime;
+                    _lastHeartBeatTime = now;
+                    int tick = _heartBeatTick++;
+
+                    var ctx = new FlightHeartbeatContext(telemetry, dt, tick, this, isResting: IsHeartbeatResting, telemetryChanged: telemChanged);
+                    OnDataHeartBeat(in ctx);
+
+                    // 心跳触发时同步更新标准化微控件 (包含通配符 Token 计算与脏检查)
+                    this.Controls.UpdateControls(telemetry);
+                }
+                else if (!IsHeartbeatResting)
+                {
+                    // 活跃满帧状态下若心跳周期长于刷新周期，仍更新 Controls 中的通配符
+                    this.Controls.UpdateControls(telemetry);
+                }
+
+                // 3. UI 绘制循环调度器 (UIDrawLoop，含 2D UI Shader 材质管线与姿态球管线)
+                // 若处于静息休眠且无视觉脏标记，按 2Hz 保活巡航；一旦有视觉脏变动或处于活跃态，即刻全额调度
+                bool shouldUIDraw;
+                if (autoQuiesce && IsUIDrawResting && !_isVisualDirty)
+                {
+                    shouldUIDraw = (now - _lastUIDrawTime >= 0.5f - 0.0005f);
+                }
+                else
+                {
+                    shouldUIDraw = true;
+                }
+
+                if (shouldUIDraw)
+                {
+                    _lastUIDrawTime = now;
+                    _isVisualDirty = false;
+                    ExecuteUIDrawLoop(Time.unscaledDeltaTime);
+
+                    // 绘制完成后，若遥测保持静息且未产生新脏标记，则稳态转入 UIDraw 静息
+                    if (autoQuiesce && IsHeartbeatResting && !_isVisualDirty)
+                    {
+                        IsUIDrawResting = true;
+                    }
+                }
             }
-
-            // 1. 微控件全自动化遥测更新 (包含通配符 Token 计算与脏检查)
-            this.Controls.UpdateControls(telemetry);
-
-            // 2. UI 绘制循环调度器 (UIDrawLoop，含 2D UI Shader 材质管线与姿态球管线)
-            ExecuteUIDrawLoop(Time.unscaledDeltaTime);
+            finally
+            {
+                CurrentlyUpdatingWidget = prevUpdating;
+            }
         }
 
         /// <summary>
@@ -1008,11 +1167,16 @@ namespace ModularFlightPanel.UI
             var theme = WidgetStyleManager.Instance?.CurrentTheme;
             var style = WidgetStyleManager.Instance;
             var navball = GetNavballPipeline();
-            var drawCtx = new FlightUIDrawContext(deltaTime, this, PreferredDrawPipeline, theme, style, navball);
+            var drawCtx = new FlightUIDrawContext(deltaTime, this, PreferredDrawPipeline, theme, style, navball, isResting: IsUIDrawResting);
 
             try
             {
                 OnUIDrawLoop(ref drawCtx);
+                if (drawCtx.HasVisualChanges)
+                {
+                    _isVisualDirty = true;
+                    IsUIDrawResting = false;
+                }
             }
             catch (Exception ex)
             {
@@ -1401,6 +1565,7 @@ namespace ModularFlightPanel.UI
             if (object.ReferenceEquals(cur, newText)) return false;
             if (cur != null && cur.Length == newText.Length && string.Equals(cur, newText, StringComparison.Ordinal)) return false;
             textComponent.text = newText;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1412,6 +1577,7 @@ namespace ModularFlightPanel.UI
             if (image == null) return false;
             if (Mathf.Abs(image.fillAmount - fillAmount) <= epsilon) return false;
             image.fillAmount = fillAmount;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1423,6 +1589,7 @@ namespace ModularFlightPanel.UI
             if (graphic == null) return false;
             if (graphic.color == targetColor) return false;
             graphic.color = targetColor;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1435,6 +1602,7 @@ namespace ModularFlightPanel.UI
             if (outline == null) return false;
             if (outline.effectColor == targetColor) return false;
             outline.effectColor = targetColor;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1447,6 +1615,7 @@ namespace ModularFlightPanel.UI
             if (target == null) return false;
             if (Quaternion.Angle(target.localRotation, newRotation) <= angleTolerance) return false;
             target.localRotation = newRotation;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1464,6 +1633,7 @@ namespace ModularFlightPanel.UI
                 return false;
             }
             target.localEulerAngles = newEuler;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1479,6 +1649,7 @@ namespace ModularFlightPanel.UI
                 return false;
             }
             target.anchoredPosition = newPos;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1494,6 +1665,7 @@ namespace ModularFlightPanel.UI
                 return false;
             }
             target.sizeDelta = newSize;
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
@@ -1505,6 +1677,7 @@ namespace ModularFlightPanel.UI
             if (target == null) return false;
             if (target.activeSelf == targetActive) return false;
             target.SetActive(targetActive);
+            CurrentlyUpdatingWidget?.MarkVisualDirty();
             return true;
         }
 
