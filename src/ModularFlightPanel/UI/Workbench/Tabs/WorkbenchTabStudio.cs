@@ -69,9 +69,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             hlg.padding = new RectOffset(6, 6, 6, 6);
 
             // =========================================================================
-            // 1. 左栏：组件库 / 层级树 (定宽 360px)
+            // 1. 左栏：组件库 / 层级树 (定宽 360px，结构面板无粗暴边框)
             // =========================================================================
-            GameObject leftPanel = WorkbenchControls.CreateCard(splitObj.transform, "LeftPanel", new Vector2(360f, 0f));
+            GameObject leftPanel = WorkbenchControls.CreatePanel(splitObj.transform, "LeftPanel", new Vector2(360f, 0f));
             var lpLe = leftPanel.AddComponent<LayoutElement>();
             lpLe.preferredWidth = 360f;
             lpLe.minWidth = 320f;
@@ -81,9 +81,9 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             BuildLeftPanel(leftPanel.transform);
 
             // =========================================================================
-            // 2. 右栏：实时属性检查器 (自适应剩余宽度)
+            // 2. 右栏：实时属性检查器 (自适应剩余宽度，结构面板无粗暴边框)
             // =========================================================================
-            GameObject rightPanel = WorkbenchControls.CreateCard(splitObj.transform, "RightPanel", new Vector2(0f, 0f));
+            GameObject rightPanel = WorkbenchControls.CreatePanel(splitObj.transform, "RightPanel", new Vector2(0f, 0f));
             var le = rightPanel.AddComponent<LayoutElement>();
             le.flexibleWidth = 1f;
             le.flexibleHeight = 1f;
@@ -104,33 +104,12 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             vlg.spacing = 8f;
             vlg.padding = new RectOffset(10, 10, 10, 10);
 
-            // 模式切换分段按钮栏
-            GameObject segRow = new GameObject("SegmentRow", typeof(RectTransform), typeof(HorizontalLayoutGroup));
-            segRow.transform.SetParent(parent, false);
-            var srLe = segRow.AddComponent<LayoutElement>();
-            srLe.preferredHeight = 32f;
-            srLe.minHeight = 32f;
-            srLe.flexibleHeight = 0f;
-
-            HorizontalLayoutGroup segHlg = segRow.GetComponent<HorizontalLayoutGroup>();
-            segHlg.childForceExpandWidth = true;
-            segHlg.childForceExpandHeight = true;
-            segHlg.childControlWidth = true;
-            segHlg.childControlHeight = true;
-            segHlg.spacing = 6f;
-            segRow.GetComponent<RectTransform>().sizeDelta = new Vector2(0f, 32f);
-
-            WorkbenchControls.CreateButton(segRow.transform, "BtnPalette", "📦 航电组件库", new Vector2(150f, 28f), () =>
+            // 模式切换平滑分段选择器
+            WorkbenchControls.CreateSegmentedControl(parent, "ModeSegment", new string[] { "📦 航电组件库", "📋 已挂载层级" }, _leftMode, (idx) =>
             {
-                _leftMode = 0;
+                _leftMode = idx;
                 RefreshLeftList();
-            }, _leftMode == 0);
-
-            WorkbenchControls.CreateButton(segRow.transform, "BtnHierarchy", "📋 已挂载层级", new Vector2(150f, 28f), () =>
-            {
-                _leftMode = 1;
-                RefreshLeftList();
-            }, _leftMode == 1);
+            }, new Vector2(0f, 30f));
 
             // 快速搜索框
             WorkbenchControls.CreateTextField(parent, "SearchInput", _searchFilter, "🔍 检索名称 / 类型...", new Vector2(0f, 28f), (val) =>
@@ -288,10 +267,11 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             descTxt.color = WorkbenchStyleEngine.ColorTextMuted;
             descTxt.text = def.Description ?? def.TypeName;
 
-            WorkbenchControls.CreateButton(row2.transform, "AddBtn", "➕ 添加", new Vector2(65f, 22f), () =>
+            // 添加按钮采用次级磨砂质感 (杜绝全屏绿色大方块泛滥)
+            WorkbenchControls.CreateButton(row2.transform, "AddBtn", "+ 添加", new Vector2(65f, 22f), () =>
             {
                 AddWidgetToHud(def.TypeName);
-            }, true, 11);
+            }, false, 11);
         }
 
         private void BuildHierarchyItem(WidgetConfig cfg)
@@ -305,21 +285,32 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             hlg.spacing = 6f;
             hlg.padding = new RectOffset(8, 8, 4, 4);
 
-            // 名字与选择按钮
-            WorkbenchControls.CreateButton(item.transform, "SelectBtn", cfg.WidgetId, new Vector2(170f, 26f), () =>
+            // 名字与选择按钮 (选中时使用优雅文字微标与高亮，而非大块纯色充斥)
+            string prefix = isSelected ? "▶ " : "  ";
+            GameObject selBtn = WorkbenchControls.CreateButton(item.transform, "SelectBtn", prefix + cfg.WidgetId, new Vector2(170f, 26f), () =>
             {
                 SelectWidgetOnHud(cfg.WidgetId);
                 Refresh();
-            }, isSelected, 11);
+            }, false, 11);
+
+            if (isSelected)
+            {
+                var txt = selBtn.GetComponentInChildren<Text>();
+                if (txt != null)
+                {
+                    txt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+                    txt.fontStyle = FontStyle.Bold;
+                }
+            }
 
             // 显隐开关
-            WorkbenchControls.CreateButton(item.transform, "VisBtn", cfg.IsEnabled ? "👁 显" : "🚫 隐", new Vector2(36f, 26f), () =>
+            WorkbenchControls.CreateButton(item.transform, "VisBtn", cfg.IsEnabled ? "👁 显" : "🚫 隐", new Vector2(40f, 26f), () =>
             {
                 cfg.IsEnabled = !cfg.IsEnabled;
                 WidgetLayoutManager.Instance?.SaveLayout();
                 FlightHUDManager.Instance?.RebuildHUD(true);
                 RefreshLeftList();
-            }, cfg.IsEnabled, 10);
+            }, false, 10);
 
             // 删除按钮
             WorkbenchControls.CreateButton(item.transform, "DelBtn", "✕", new Vector2(26f, 26f), () =>
@@ -344,15 +335,15 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             var sel = WidgetSelectionManager.SelectedWidgets.FirstOrDefault();
             if (sel == null || sel.Config == null)
             {
-                // 空状态占位提示
+                // 空状态占位提示 (现代极简航电手稿风)
                 GameObject placeholder = new GameObject("Placeholder", typeof(RectTransform), typeof(Text));
                 placeholder.transform.SetParent(_inspectorContent, false);
                 Text pTxt = placeholder.GetComponent<Text>();
                 pTxt.font = WorkbenchControls.MainFont;
-                pTxt.fontSize = 13;
+                pTxt.fontSize = 12;
                 pTxt.alignment = TextAnchor.MiddleCenter;
                 pTxt.color = WorkbenchStyleEngine.ColorTextMuted;
-                pTxt.text = "\n\n👈 在左侧层级或画布上选择一个组件以精调属性\n(支持 8 点控制手柄实时同步联动)";
+                pTxt.text = "\n\n\n\n🎯\n<size=14><b>未选中任何航电组件</b></size>\n\n在左侧「已挂载层级」或画布上点击组件\n支持 8 点手柄实时拖拽缩放与精确属性调整";
                 return;
             }
 
@@ -445,7 +436,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             {
                 _isTelemetryPickerOpen = !_isTelemetryPickerOpen;
                 RefreshInspector();
-            }, _isTelemetryPickerOpen, 11);
+            }, false, 11);
 
             // 快捷 Token 胶囊候选栏
             GameObject tokenPills = new GameObject("TokenPills", typeof(RectTransform), typeof(HorizontalLayoutGroup));
@@ -459,12 +450,23 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             string[] quickTokens = new string[] { "{SPD}", "{ALT}", "{THR}", "{TWR}", "{APO}", "{PER}", "{COMM}" };
             foreach (var tok in quickTokens)
             {
-                WorkbenchControls.CreateButton(tokenPills.transform, "Btn_" + tok, tok, new Vector2(50f, 22f), () =>
+                bool isCur = (tok == curToken);
+                GameObject qBtn = WorkbenchControls.CreateButton(tokenPills.transform, "Btn_" + tok, tok, new Vector2(50f, 22f), () =>
                 {
                     cfg.NumericToken = tok;
                     WidgetLayoutManager.Instance?.SaveLayout();
                     RefreshInspector();
-                }, tok == curToken, 10);
+                }, false, 10);
+
+                if (isCur)
+                {
+                    var txt = qBtn.GetComponentInChildren<Text>();
+                    if (txt != null)
+                    {
+                        txt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+                        txt.fontStyle = FontStyle.Bold;
+                    }
+                }
             }
 
             // 3. 内联 736+ 全量遥测参数速查抽屉
@@ -525,11 +527,22 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 string shortLabel = catName;
                 if (shortLabel.Length > 8) shortLabel = shortLabel.Substring(0, 8);
 
-                WorkbenchControls.CreateButton(catRow.transform, "CatBtn_" + i, shortLabel, new Vector2(60f, 22f), () =>
+                bool isCatActive = (_pickerCategoryIndex == catIdx);
+                GameObject catBtn = WorkbenchControls.CreateButton(catRow.transform, "CatBtn_" + i, shortLabel, new Vector2(60f, 22f), () =>
                 {
                     _pickerCategoryIndex = catIdx;
                     RefreshPickerList(cfg);
-                }, _pickerCategoryIndex == catIdx, 9);
+                }, false, 9);
+
+                if (isCatActive)
+                {
+                    var txt = catBtn.GetComponentInChildren<Text>();
+                    if (txt != null)
+                    {
+                        txt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+                        txt.fontStyle = FontStyle.Bold;
+                    }
+                }
             }
 
             // 搜索输入框
@@ -637,13 +650,24 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             WorkbenchControls.CreatePill(row.transform, "SamplePill", sampleVal, WorkbenchStyleEngine.ColorSuccess, 9);
 
             // 一键填槽按钮
-            WorkbenchControls.CreateButton(row.transform, "ApplyBtn", I18n.Tr("STUDIO_TELEM_APPLY_BTN", "✔ 填槽"), new Vector2(50f, 22f), () =>
+            bool isApplied = (p.Token == cfg.NumericToken);
+            GameObject applyBtn = WorkbenchControls.CreateButton(row.transform, "ApplyBtn", I18n.Tr("STUDIO_TELEM_APPLY_BTN", "✔ 填槽"), new Vector2(50f, 22f), () =>
             {
                 cfg.NumericToken = p.Token;
                 WidgetLayoutManager.Instance?.SaveLayout();
                 Settings.MFPGuiSkin.ShowToast(string.Format(I18n.Tr("DRAWER_TOAST_APPLIED", "已填入参数: {0}"), p.Token));
                 RefreshInspector();
-            }, p.Token == cfg.NumericToken, 10);
+            }, false, 10);
+
+            if (isApplied)
+            {
+                var txt = applyBtn.GetComponentInChildren<Text>();
+                if (txt != null)
+                {
+                    txt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+                    txt.fontStyle = FontStyle.Bold;
+                }
+            }
 
             // 复制按钮
             WorkbenchControls.CreateButton(row.transform, "CopyBtn", I18n.Tr("DRAWER_BTN_COPY", "📋 复制"), new Vector2(52f, 22f), () =>

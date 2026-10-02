@@ -146,7 +146,8 @@ namespace ModularFlightPanel.UI.Auditing
             if (baseType.StartsWith("Action", StringComparison.Ordinal) ||
                 baseType.StartsWith("Func", StringComparison.Ordinal) ||
                 baseType.StartsWith("UnityAction", StringComparison.Ordinal) ||
-                baseType.StartsWith("UnityEvent", StringComparison.Ordinal))
+                baseType.StartsWith("UnityEvent", StringComparison.Ordinal) ||
+                baseType.EndsWith("Handler", StringComparison.Ordinal))
             {
                 return FieldKind.EventCallback;
             }
@@ -197,6 +198,13 @@ namespace ModularFlightPanel.UI.Auditing
                 fieldName.EndsWith("Units", StringComparison.OrdinalIgnoreCase) ||
                 fieldName.EndsWith("UnitStr", StringComparison.OrdinalIgnoreCase) ||
                 fieldName.EndsWith("Names", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Buffer", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Corners", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Angles", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Lookup", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Offsets", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Dirs", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Positions", StringComparison.OrdinalIgnoreCase) ||
                 fieldName.StartsWith("_Prop", StringComparison.Ordinal) ||
                 fieldName.StartsWith("Prop", StringComparison.Ordinal))
             {
@@ -353,7 +361,8 @@ namespace ModularFlightPanel.UI.Auditing
             return simpleName.StartsWith("Action", StringComparison.Ordinal) ||
                    simpleName.StartsWith("Func", StringComparison.Ordinal) ||
                    simpleName.StartsWith("UnityAction", StringComparison.Ordinal) ||
-                   simpleName.StartsWith("UnityEvent", StringComparison.Ordinal);
+                   simpleName.StartsWith("UnityEvent", StringComparison.Ordinal) ||
+                   simpleName.EndsWith("Handler", StringComparison.Ordinal);
         }
 
         /// <summary>语义判定：字段类型是否为遥测契约 / 零 GC 快照结构体</summary>
@@ -432,6 +441,13 @@ namespace ModularFlightPanel.UI.Auditing
                 fieldName.EndsWith("Units", StringComparison.OrdinalIgnoreCase) ||
                 fieldName.EndsWith("UnitStr", StringComparison.OrdinalIgnoreCase) ||
                 fieldName.EndsWith("Names", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Buffer", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Corners", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Angles", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Lookup", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Offsets", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Dirs", StringComparison.OrdinalIgnoreCase) ||
+                fieldName.EndsWith("Positions", StringComparison.OrdinalIgnoreCase) ||
                 fieldName.StartsWith("_Prop", StringComparison.Ordinal) ||
                 fieldName.StartsWith("Prop", StringComparison.Ordinal))
             {

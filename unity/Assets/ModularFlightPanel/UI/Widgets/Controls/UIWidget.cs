@@ -255,7 +255,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private Button _tabBtnTelemetry;
         private Image _tabBtnTelemetryImg;
         private Text _tabBtnTelemetryText;
-        private int _activeTab = 0; // 0=HUD, 1=Flight, 2=Telemetry
+        private readonly Cached<int> _activeTab = new Cached<int>(0); // 0=HUD, 1=Flight, 2=Telemetry
 
         // Tab 0: HUD 界面管家面板
         private GameObject _tabHudRoot;
@@ -268,7 +268,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         private readonly List<Button> _categoryBtns = new List<Button>();
         private readonly List<Text> _categoryBtnTexts = new List<Text>();
-        private int _selectedCategory = 0;
+        private readonly Cached<int> _selectedCategory = new Cached<int>(0);
         private readonly string[] CategoryNames = new string[]
         {
             I18n.Tr("UIW_CAT_ALL", "全部"),
@@ -374,7 +374,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private Text _timeToApPeText;
         private Text _incEccText;
 
-        private bool _isCollapsed = false;
+        private readonly Cached<bool> _isCollapsed = new Cached<bool>(false);
         private ThemeConfig _cachedTheme;
 
         // 私有托管死区缓存槽位 (MFP-SPEC-009)
@@ -566,7 +566,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 Button btn = CreateButtonElement(catRt, $"Cat_{i}", CategoryNames[i], new Vector2(catBtnW - 2f * s, 18f * s),
                     new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(posX, 0f), () =>
                     {
-                        _selectedCategory = catIdx;
+                        _selectedCategory.Value = catIdx;
                         RefreshWidgetRows();
                         UpdateCategoryButtonVisuals();
                     });
@@ -1019,10 +1019,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         private void SwitchTab(int tabIndex)
         {
-            _activeTab = tabIndex;
-            if (_tabHudRoot != null) _tabHudRoot.SetActive(_activeTab == 0);
-            if (_tabFlightRoot != null) _tabFlightRoot.SetActive(_activeTab == 1);
-            if (_tabTelemetryRoot != null) _tabTelemetryRoot.SetActive(_activeTab == 2);
+            _activeTab.Value = tabIndex;
+            if (_tabHudRoot != null) _tabHudRoot.SetActive(_activeTab.Value == 0);
+            if (_tabFlightRoot != null) _tabFlightRoot.SetActive(_activeTab.Value == 1);
+            if (_tabTelemetryRoot != null) _tabTelemetryRoot.SetActive(_activeTab.Value == 2);
             UpdateTabButtonVisuals();
         }
 
@@ -1030,35 +1030,35 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         {
             if (_tabBtnHudImg != null)
             {
-                ApplyCard(_tabBtnHudImg, null, _activeTab == 0 ? CardStyleRole.Emphasized : CardStyleRole.SubtleSlot, _cachedTheme);
-                ApplyText(_tabBtnHudText, _activeTab == 0 ? TextStyleRole.Accent : TextStyleRole.Label, _cachedTheme);
+                ApplyCard(_tabBtnHudImg, null, _activeTab.Value == 0 ? CardStyleRole.Emphasized : CardStyleRole.SubtleSlot, _cachedTheme);
+                ApplyText(_tabBtnHudText, _activeTab.Value == 0 ? TextStyleRole.Accent : TextStyleRole.Label, _cachedTheme);
             }
             if (_tabBtnFlightImg != null)
             {
-                ApplyCard(_tabBtnFlightImg, null, _activeTab == 1 ? CardStyleRole.Emphasized : CardStyleRole.SubtleSlot, _cachedTheme);
-                ApplyText(_tabBtnFlightText, _activeTab == 1 ? TextStyleRole.Accent : TextStyleRole.Label, _cachedTheme);
+                ApplyCard(_tabBtnFlightImg, null, _activeTab.Value == 1 ? CardStyleRole.Emphasized : CardStyleRole.SubtleSlot, _cachedTheme);
+                ApplyText(_tabBtnFlightText, _activeTab.Value == 1 ? TextStyleRole.Accent : TextStyleRole.Label, _cachedTheme);
             }
             if (_tabBtnTelemetryImg != null)
             {
-                ApplyCard(_tabBtnTelemetryImg, null, _activeTab == 2 ? CardStyleRole.Emphasized : CardStyleRole.SubtleSlot, _cachedTheme);
-                ApplyText(_tabBtnTelemetryText, _activeTab == 2 ? TextStyleRole.Accent : TextStyleRole.Label, _cachedTheme);
+                ApplyCard(_tabBtnTelemetryImg, null, _activeTab.Value == 2 ? CardStyleRole.Emphasized : CardStyleRole.SubtleSlot, _cachedTheme);
+                ApplyText(_tabBtnTelemetryText, _activeTab.Value == 2 ? TextStyleRole.Accent : TextStyleRole.Label, _cachedTheme);
             }
         }
 
         private void ToggleCollapse()
         {
-            _isCollapsed = !_isCollapsed;
+            _isCollapsed.Value = !_isCollapsed.Value;
             float s = CurrentDpiScale;
             float baseW = 300f * s;
-            float targetH = _isCollapsed ? 36f * s : 380f * s;
+            float targetH = _isCollapsed.Value ? 36f * s : 380f * s;
             RectTransform.sizeDelta = new Vector2(baseW, targetH);
 
-            if (_tabBarRoot != null) _tabBarRoot.SetActive(!_isCollapsed);
-            if (_tabHudRoot != null) _tabHudRoot.SetActive(!_isCollapsed && _activeTab == 0);
-            if (_tabFlightRoot != null) _tabFlightRoot.SetActive(!_isCollapsed && _activeTab == 1);
-            if (_tabTelemetryRoot != null) _tabTelemetryRoot.SetActive(!_isCollapsed && _activeTab == 2);
+            if (_tabBarRoot != null) _tabBarRoot.SetActive(!_isCollapsed.Value);
+            if (_tabHudRoot != null) _tabHudRoot.SetActive(!_isCollapsed.Value && _activeTab.Value == 0);
+            if (_tabFlightRoot != null) _tabFlightRoot.SetActive(!_isCollapsed.Value && _activeTab.Value == 1);
+            if (_tabTelemetryRoot != null) _tabTelemetryRoot.SetActive(!_isCollapsed.Value && _activeTab.Value == 2);
 
-            if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "▲" : "▼";
+            if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed.Value ? "▲" : "▼";
         }
 
         private void UpdateDragButtonVisual()
@@ -1076,7 +1076,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         {
             for (int i = 0; i < _categoryBtns.Count; i++)
             {
-                bool isSel = (_selectedCategory == i);
+                bool isSel = (_selectedCategory.Value == i);
                 Image img = _categoryBtns[i].GetComponent<Image>();
                 ApplyCard(img, null, isSel ? CardStyleRole.Emphasized : CardStyleRole.SubtleSlot, _cachedTheme);
                 ApplyText(_categoryBtnTexts[i], isSel ? TextStyleRole.Accent : TextStyleRole.Label, _cachedTheme);
@@ -1244,7 +1244,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             for (int i = 0; i < widgets.Count; i++)
             {
                 var w = widgets[i];
-                if (!MatchesCategory(w, _selectedCategory)) continue;
+                if (!MatchesCategory(w, _selectedCategory.Value)) continue;
 
                 WidgetRowView row;
                 if (viewIdx < _rowViews.Count)
@@ -1530,11 +1530,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 2. 根据激活 Tab 渲染高频组件
-            if (_activeTab == 1)
+            if (_activeTab.Value == 1)
             {
                 RenderFlightControlsTab(ref snap);
             }
-            else if (_activeTab == 2)
+            else if (_activeTab.Value == 2)
             {
                 RenderTelemetryTab(ref snap);
             }

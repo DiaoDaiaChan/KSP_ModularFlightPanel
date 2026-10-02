@@ -487,20 +487,31 @@ namespace ModularFlightPanel.UI.Widgets
         private string _trendToken = "{GFORCE}";
         private string _trendTagTemplate = "ACC";
         private string _terrainToken = "{ALT:AGL}";
-        private float _trendMaxScale = 8.0f;
-        private bool _isSpeedTape = false;
-        private bool _autoUnitEnabled = true;
+        private readonly CachedFloat _trendMaxScale = new CachedFloat(8.0f, 0.01f);
+        private readonly Cached<bool> _isSpeedTape = new Cached<bool>(false);
+        private readonly Cached<bool> _autoUnitEnabled = new Cached<bool>(true);
 
         private readonly TapeGaugeLogic _logic = new TapeGaugeLogic();
         protected override IWidgetLogic LogicCore => _logic;
         public override WidgetRefreshTier HeartBeatTier => WidgetRefreshTier.Relaxed;
 
         // 60Hz 帧率无关平滑插值追踪器 (基于父类 BaseFlightWidget.Interpolate，将 10Hz 遥测升频至 60Hz 满帧)
-        private double _smoothedDisplayVal = double.NaN;
-        private double _smoothedGForce = double.NaN;
-        private double _smoothedAccelMps2 = double.NaN;
-        private double _smoothedVs = double.NaN;
-        private double _smoothedAgl = double.NaN;
+        private struct TapeSmoothingSnapshot
+        {
+            public double SmoothedDisplayVal;
+            public double SmoothedGForce;
+            public double SmoothedAccelMps2;
+            public double SmoothedVs;
+            public double SmoothedAgl;
+        }
+        private TapeSmoothingSnapshot _smoothingSnapshot = new TapeSmoothingSnapshot
+        {
+            SmoothedDisplayVal = double.NaN,
+            SmoothedGForce = double.NaN,
+            SmoothedAccelMps2 = double.NaN,
+            SmoothedVs = double.NaN,
+            SmoothedAgl = double.NaN
+        };
 
         private readonly CachedDouble _lastDisplayVal = new CachedDouble(double.NaN, tolerance: 0.02);
         private readonly CachedDouble _lastCenterDisplayVal = new CachedDouble(double.NaN, tolerance: 0.04);
@@ -526,8 +537,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         private readonly Cached<long> _lastMajorM = new Cached<long>(long.MinValue);
 
-        private bool _showingIntegerReadout = false;
-        private float _currentHalfTrackH = 58f;
+        private readonly Cached<bool> _showingIntegerReadout = new Cached<bool>(false);
+        private readonly CachedFloat _currentHalfTrackH = new CachedFloat(58f, 0.05f);
 
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
@@ -546,20 +557,20 @@ namespace ModularFlightPanel.UI.Widgets
             float width = RectTransform.sizeDelta.x > 10f ? RectTransform.sizeDelta.x : (BaseSize.x * s);
             float height = RectTransform.sizeDelta.y > 10f ? RectTransform.sizeDelta.y : (BaseSize.y * s);
             RectTransform.sizeDelta = new Vector2(width, height);
-            _currentHalfTrackH = Mathf.Max(30f * s, (height - 124f * s) * 0.5f);
+            _currentHalfTrackH.Value = Mathf.Max(30f * s, (height - 124f * s) * 0.5f);
 
             bool isLeft = config != null && config.IsLeftOrientation;
             string numToken = config?.NumericToken ?? "";
-            _isSpeedTape = isLeft || numToken.Contains("SPD");
+            _isSpeedTape.Value = isLeft || numToken.Contains("SPD");
 
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 _valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
                 _topModeTemplate = "{SPD:MODE}";
                 _bottomSecTemplate = "{MACH}";
                 _trendToken = "{GFORCE}";
                 _trendTagTemplate = "ACC";
-                _trendMaxScale = 8.0f;
+                _trendMaxScale.Value = 8.0f;
             }
             else
             {
@@ -568,7 +579,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _bottomSecTemplate = "RDR {ALT:AGL:DIST}";
                 _trendToken = "{VSI}";
                 _trendTagTemplate = "V/S";
-                _trendMaxScale = 100.0f;
+                _trendMaxScale.Value = 100.0f;
                 _terrainToken = "{ALT:AGL}";
             }
 
@@ -587,24 +598,24 @@ namespace ModularFlightPanel.UI.Widgets
             _bottomSecTemplate = GetTemplateChannel(BottomAliases, _bottomSecTemplate);
             _trendToken = GetTemplateChannel(TrendAliases, _trendToken);
             _terrainToken = GetTemplateChannel(TerrainAliases, _terrainToken);
-            _trendMaxScale = GetTemplateChannelFloat("TREND_MAX", _trendMaxScale);
-            _autoUnitEnabled = GetTemplateChannelBool(AutoUnitAliases, _autoUnitEnabled);
+            _trendMaxScale.Value = GetTemplateChannelFloat("TREND_MAX", _trendMaxScale.Value);
+            _autoUnitEnabled.Value = GetTemplateChannelBool(AutoUnitAliases, _autoUnitEnabled.Value);
             string unitMode = GetTemplateChannel("UNIT_MODE", null);
             if (!string.IsNullOrEmpty(unitMode))
             {
-                if (unitMode.Equals("FIXED", StringComparison.OrdinalIgnoreCase)) _autoUnitEnabled = false;
-                else if (unitMode.Equals("AUTO", StringComparison.OrdinalIgnoreCase)) _autoUnitEnabled = true;
+                if (unitMode.Equals("FIXED", StringComparison.OrdinalIgnoreCase)) _autoUnitEnabled.Value = false;
+                else if (unitMode.Equals("AUTO", StringComparison.OrdinalIgnoreCase)) _autoUnitEnabled.Value = true;
             }
 
-            _logic.IsSpeedTape = _isSpeedTape;
+            _logic.IsSpeedTape = _isSpeedTape.Value;
             _logic.ValueToken = _valueToken;
             _logic.TopModeTemplate = _topModeTemplate;
             _logic.BottomSecTemplate = _bottomSecTemplate;
             _logic.TrendToken = _trendToken;
             _logic.TerrainToken = _terrainToken;
-            _logic.TrendMaxScale = _trendMaxScale;
-            _logic.AutoUnitEnabled = _autoUnitEnabled;
-            _logic.BaseStep = config != null && config.StepInterval > 0f ? config.StepInterval : (_isSpeedTape ? 10f : 100f);
+            _logic.TrendMaxScale = _trendMaxScale.Value;
+            _logic.AutoUnitEnabled = _autoUnitEnabled.Value;
+            _logic.BaseStep = config != null && config.StepInterval > 0f ? config.StepInterval : (_isSpeedTape.Value ? 10f : 100f);
             _logic.InitializeUnitTier();
 
             // 1. 半透明防炫底板与外框
@@ -756,13 +767,13 @@ namespace ModularFlightPanel.UI.Widgets
             if (_trendRoot != null)
             {
                 _trendRoot.sizeDelta = new Vector2(_trendRoot.sizeDelta.x, height);
-                float trendX = _isSpeedTape ? -(width * 0.5f + 21f * s) : (width * 0.5f + 14f * s);
+                float trendX = _isSpeedTape.Value ? -(width * 0.5f + 21f * s) : (width * 0.5f + 14f * s);
                 _trendRoot.anchoredPosition = new Vector2(trendX, 0f);
 
                 float trackH = Mathf.Max(60f * s, height - 94f * s);
-                _currentHalfTrackH = (trackH - 30f * s) * 0.5f;
+                _currentHalfTrackH.Value = (trackH - 30f * s) * 0.5f;
 
-                if (_isSpeedTape)
+                if (_isSpeedTape.Value)
                 {
                     if (_accTagBox != null)
                     {
@@ -780,7 +791,7 @@ namespace ModularFlightPanel.UI.Widgets
                     }
                     if (_accTraceRt != null)
                     {
-                        _accTraceRt.anchoredPosition = new Vector2(0f, -_currentHalfTrackH);
+                        _accTraceRt.anchoredPosition = new Vector2(0f, -_currentHalfTrackH.Value);
                     }
 
                     if (_rateTagBox != null)
@@ -823,7 +834,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildGroundRibbon(ThemeConfig theme)
         {
-            if (_isSpeedTape) return;
+            if (_isSpeedTape.Value) return;
 
             float s = CurrentDpiScale;
             float width = RectTransform.sizeDelta.x;
@@ -1107,7 +1118,7 @@ namespace ModularFlightPanel.UI.Widgets
             float width = RectTransform.sizeDelta.x;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 // 速度带双列紧凑并排动力学柱：左列 ACC (G载荷) + 右列 dV/dt (速度变化率)
                 // 采用航空级精密 -> 指针式 (Arrow Needle) 设计，彻底替代厚重填色块
@@ -1360,7 +1371,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnBoxClicked()
         {
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 OnCycleSpeedModeAction?.Invoke();
             }
@@ -1387,20 +1398,20 @@ namespace ModularFlightPanel.UI.Widgets
 
             float dt = Time.unscaledDeltaTime;
             // 采用父类通用平滑插值中枢 (Interpolate)，将 10Hz 遥测低频平滑衔接至 60Hz 满帧视觉，彻底消除顿挫
-            _smoothedDisplayVal = Interpolate(_smoothedDisplayVal, state.DisplayVal, 18.0, dt, 0.01);
-            _smoothedGForce = Interpolate(_smoothedGForce, state.GForce, 15.0, dt, 0.02);
-            _smoothedAccelMps2 = Interpolate(_smoothedAccelMps2, state.AccelMps2, 12.0, dt, 0.02);
-            _smoothedVs = Interpolate(_smoothedVs, state.Vs, 15.0, dt, 0.02);
-            _smoothedAgl = Interpolate(_smoothedAgl, state.Agl, 18.0, dt, 0.1);
+            _smoothingSnapshot.SmoothedDisplayVal = Interpolate(_smoothingSnapshot.SmoothedDisplayVal, state.DisplayVal, 18.0, dt, 0.01);
+            _smoothingSnapshot.SmoothedGForce = Interpolate(_smoothingSnapshot.SmoothedGForce, state.GForce, 15.0, dt, 0.02);
+            _smoothingSnapshot.SmoothedAccelMps2 = Interpolate(_smoothingSnapshot.SmoothedAccelMps2, state.AccelMps2, 12.0, dt, 0.02);
+            _smoothingSnapshot.SmoothedVs = Interpolate(_smoothingSnapshot.SmoothedVs, state.Vs, 15.0, dt, 0.02);
+            _smoothingSnapshot.SmoothedAgl = Interpolate(_smoothingSnapshot.SmoothedAgl, state.Agl, 18.0, dt, 0.1);
 
-            bool displayValChanged = _lastDisplayVal.Update(_smoothedDisplayVal);
+            bool displayValChanged = _lastDisplayVal.Update(_smoothingSnapshot.SmoothedDisplayVal);
             bool tierChanged = _cachedUnitTier.Update(state.CurrentTier);
             bool stepChanged = _cachedActiveStep.Update(state.ActiveStep);
 
             if (displayValChanged || tierChanged || stepChanged)
             {
-                UpdateCenterReadout(_smoothedDisplayVal, state.CurrentTier, state.ActiveUnitStr);
-                UpdateRollingTape(_smoothedDisplayVal, state.ActiveStep, state.CurrentTier, forceFullRefresh: tierChanged || stepChanged);
+                UpdateCenterReadout(_smoothingSnapshot.SmoothedDisplayVal, state.CurrentTier, state.ActiveUnitStr);
+                UpdateRollingTape(_smoothingSnapshot.SmoothedDisplayVal, state.ActiveStep, state.CurrentTier, forceFullRefresh: tierChanged || stepChanged);
             }
 
             if (_lastTopText.Update(state.TopText) && _topModeText != null)
@@ -1412,22 +1423,22 @@ namespace ModularFlightPanel.UI.Widgets
                 _bottomSecText.SetTextSafe(state.BottomText);
             }
 
-            DrawDynamicTrendIndicator(in state, _smoothedGForce, _smoothedAccelMps2, _smoothedVs);
+            DrawDynamicTrendIndicator(in state, _smoothingSnapshot.SmoothedGForce, _smoothingSnapshot.SmoothedAccelMps2, _smoothingSnapshot.SmoothedVs);
 
-            if (!_isSpeedTape)
+            if (!_isSpeedTape.Value)
             {
-                DrawTerrainRibbon(in state, _smoothedAgl);
+                DrawTerrainRibbon(in state, _smoothingSnapshot.SmoothedAgl);
             }
         }
 
         protected override void OnResetPrivateCache()
         {
             base.OnResetPrivateCache();
-            _smoothedDisplayVal = double.NaN;
-            _smoothedGForce = double.NaN;
-            _smoothedAccelMps2 = double.NaN;
-            _smoothedVs = double.NaN;
-            _smoothedAgl = double.NaN;
+            _smoothingSnapshot.SmoothedDisplayVal = double.NaN;
+            _smoothingSnapshot.SmoothedGForce = double.NaN;
+            _smoothingSnapshot.SmoothedAccelMps2 = double.NaN;
+            _smoothingSnapshot.SmoothedVs = double.NaN;
+            _smoothingSnapshot.SmoothedAgl = double.NaN;
 
             _lastDisplayVal.Reset(double.NaN);
             _lastCenterDisplayVal.Reset(double.NaN);
@@ -1471,24 +1482,24 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateCenterReadout(double displayVal, DynamicUnitTier currentTier, string activeUnitStr)
         {
             double abs = Math.Abs(displayVal);
-            bool wasInt = _showingIntegerReadout;
-            if (_showingIntegerReadout)
+            bool wasInt = _showingIntegerReadout.Value;
+            if (_showingIntegerReadout.Value)
             {
-                if (abs < 995.0) _showingIntegerReadout = false;
+                if (abs < 995.0) _showingIntegerReadout.Value = false;
             }
             else
             {
-                if (abs >= 1000.0) _showingIntegerReadout = true;
+                if (abs >= 1000.0) _showingIntegerReadout.Value = true;
             }
 
-            if (_lastCenterDisplayVal.Update(displayVal) || _cachedCenterTier.Update(currentTier) || wasInt != _showingIntegerReadout)
+            if (_lastCenterDisplayVal.Update(displayVal) || _cachedCenterTier.Update(currentTier) || wasInt != _showingIntegerReadout.Value)
             {
                 string formatted;
-                if (currentTier == DynamicUnitTier.Mega && _isSpeedTape)
+                if (currentTier == DynamicUnitTier.Mega && _isSpeedTape.Value)
                 {
                     formatted = $"{displayVal:F2}";
                 }
-                else if (_showingIntegerReadout)
+                else if (_showingIntegerReadout.Value)
                 {
                     int intVal = (int)Math.Round(displayVal);
                     if (intVal >= -1000 && intVal <= 9999)
@@ -1514,7 +1525,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateRollingTape(double currentDisplayVal, float activeStep, DynamicUnitTier currentTier, bool forceFullRefresh = false)
         {
-            if (_isSpeedTape && currentDisplayVal < 0.0)
+            if (_isSpeedTape.Value && currentDisplayVal < 0.0)
             {
                 currentDisplayVal = 0.0;
             }
@@ -1547,7 +1558,7 @@ namespace ModularFlightPanel.UI.Widgets
                     int slotOffset = i - CENTER_SLOT;
                     double tickVal = (m * 2 + slotOffset) * 0.5 * step;
 
-                    bool isNegative = _isSpeedTape && (tickVal < -0.001);
+                    bool isNegative = _isSpeedTape.Value && (tickVal < -0.001);
 
                     if (isNegative)
                     {
@@ -1566,7 +1577,7 @@ namespace ModularFlightPanel.UI.Widgets
                             {
                                 item.LastTickVal = tickVal;
                                 string labelStr;
-                                if (currentTier == DynamicUnitTier.Mega && _isSpeedTape)
+                                if (currentTier == DynamicUnitTier.Mega && _isSpeedTape.Value)
                                 {
                                     labelStr = $"{tickVal:F2}";
                                 }
@@ -1595,7 +1606,7 @@ namespace ModularFlightPanel.UI.Widgets
             float s = CurrentDpiScale;
             ThemeConfig theme = null;
 
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 // ==================== 1. ACC (G 载荷) 解算与警告/危险变色关照 (──► 指针式) ====================
                 double gForce = smoothedGForce;
@@ -1649,13 +1660,13 @@ namespace ModularFlightPanel.UI.Widgets
                     if (_accValText != null) _accValText.SetTextSafe(accStr);
 
                     float accFraction = Mathf.Clamp01((float)(gForce / 8.0));
-                    float pointerY = Mathf.Lerp(-_currentHalfTrackH, _currentHalfTrackH, accFraction);
+                    float pointerY = Mathf.Lerp(-_currentHalfTrackH.Value, _currentHalfTrackH.Value, accFraction);
                     if (_cachedAccPointerY.Update(pointerY))
                     {
                         _accPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, pointerY), 0.45f);
                         if (_accTraceRt != null)
                         {
-                            float traceLen = pointerY - (-_currentHalfTrackH);
+                            float traceLen = pointerY - (-_currentHalfTrackH.Value);
                             _accTraceRt.SetSizeDeltaSafe(new Vector2(1.2f * s, Mathf.Max(0f, traceLen)), 0.45f);
                         }
                     }
@@ -1707,7 +1718,7 @@ namespace ModularFlightPanel.UI.Widgets
                         _rateTraceImg?.SetColor(WidgetStyleManager.WithAlpha(rateCol, 0.40f));
                     }
 
-                    float ratePointerY = rateFraction * _currentHalfTrackH;
+                    float ratePointerY = rateFraction * _currentHalfTrackH.Value;
                     if (_cachedRatePointerY.Update(ratePointerY))
                     {
                         _ratePointerRt?.SetAnchoredPositionSafe(new Vector2(0f, ratePointerY), 0.45f);
@@ -1744,7 +1755,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                 if (_lastVs.Update(vs))
                 {
-                    float maxScale = _trendMaxScale > 0.001f ? _trendMaxScale : 100.0f;
+                    float maxScale = _trendMaxScale.Value > 0.001f ? _trendMaxScale.Value : 100.0f;
                     float rateFraction;
                     bool isPositive;
                     MeterStyleRole meterRole;
@@ -1792,7 +1803,7 @@ namespace ModularFlightPanel.UI.Widgets
                     formattedRate = UIFactory.FormatTabular(formattedRate);
                     if (_vsiRateText != null) _vsiRateText.SetTextSafe(formattedRate);
 
-                    float vsiPointerY = rateFraction * _currentHalfTrackH;
+                    float vsiPointerY = rateFraction * _currentHalfTrackH.Value;
                     if (_cachedVsiPointerY.Update(vsiPointerY))
                     {
                         _vsiPointerRt?.SetAnchoredPositionSafe(new Vector2(0f, vsiPointerY), 0.45f);
@@ -1822,7 +1833,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void DrawTerrainRibbon(in TapeGaugeState state, double smoothedAgl)
         {
-            if (_groundRibbonObj == null || _isSpeedTape || double.IsNaN(smoothedAgl)) return;
+            if (_groundRibbonObj == null || _isSpeedTape.Value || double.IsNaN(smoothedAgl)) return;
 
             // 高于 10km (包括入轨阶段) 地形警戒条必然不显示
             if (state.RawVal > 10000.0)
@@ -1940,7 +1951,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _groundRibbonImg.color = WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Warning, theme), 0.45f);
             }
 
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 if (_accTagBg != null) ApplyCard(_accTagBg, _accTagOutline, CardStyleRole.Normal, theme);
                 if (_accTagText != null) ApplyText(_accTagText, TextStyleRole.Cardinal, theme);

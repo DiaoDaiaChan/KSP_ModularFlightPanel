@@ -590,9 +590,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private const int MAX_ENGINES = 4;
         private EngineColumnUI[] _engineCols = new EngineColumnUI[MAX_ENGINES];
-        private readonly float[] _xCoords = new float[MAX_ENGINES];
-        private int _currentEngineCount = 2; // 默认 787 双发
-        private int _configuredEngineCount = -1; // -1: 自动感知, >0: 强制指定
+        private readonly float[] _xCoordsOffsets = new float[MAX_ENGINES];
+        private readonly Cached<int> _currentEngineCount = new Cached<int>(2); // 默认 787 双发
+        private readonly Cached<int> _configuredEngineCount = new Cached<int>(-1); // -1: 自动感知, >0: 强制指定
 
         // 发动机组公用标签
         private Text _n1Label;
@@ -737,9 +737,9 @@ namespace ModularFlightPanel.UI.Widgets
             if (!string.IsNullOrEmpty(engVal))
             {
                 if (engVal.Equals("AUTO", StringComparison.OrdinalIgnoreCase))
-                    _configuredEngineCount = 0;
+                    _configuredEngineCount.Value = 0;
                 else if (int.TryParse(engVal, out int engs))
-                    _configuredEngineCount = Mathf.Clamp(engs, 1, MAX_ENGINES);
+                    _configuredEngineCount.Value = Mathf.Clamp(engs, 1, MAX_ENGINES);
             }
 
             _tatTemplate = GetTemplateChannel("TAT", _tatTemplate);
@@ -757,7 +757,7 @@ namespace ModularFlightPanel.UI.Widgets
             _stabToken = GetTemplateChannel("STAB", _stabToken);
             _rudderToken = GetTemplateChannel("RUDDER", _rudderToken);
 
-            _logic.ConfiguredEngineCount = _configuredEngineCount;
+            _logic.ConfiguredEngineCount = _configuredEngineCount.Value;
             _logic.TatTemplate = _tatTemplate;
             _logic.ThrustModeTemplate = _thrustModeTemplate;
             _logic.GearToken = _gearToken;
@@ -1065,7 +1065,7 @@ namespace ModularFlightPanel.UI.Widgets
             SetTopCenterAnchor(_periText.rectTransform, 40f * s, -45f * sv, 56f * s, 12f * sv);
 
             // 7. 排布并激活当前发动机列与动态长宽比
-            int initialEngines = _configuredEngineCount > 0 ? _configuredEngineCount : 2;
+            int initialEngines = _configuredEngineCount.Value > 0 ? _configuredEngineCount.Value : 2;
             LayoutEngineColumns(initialEngines, s, sv);
 
             // 8. 动态注册全部核心微控件至 WidgetControlManager
@@ -1346,7 +1346,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void LayoutEngineColumns(int count, float s, float sv)
         {
-            _currentEngineCount = Mathf.Clamp(count, 1, MAX_ENGINES);
+            _currentEngineCount.Value = Mathf.Clamp(count, 1, MAX_ENGINES);
 
             // 动态长宽比与总宽度解算
             // 相对改造前整体加宽：给马蹄弧仪表与右侧系统读数区更大的水平呼吸空间，
@@ -1355,37 +1355,37 @@ namespace ModularFlightPanel.UI.Widgets
             float rightCenterX;
             float scaleFactor;
 
-            if (_currentEngineCount == 1)
+            if (_currentEngineCount.Value == 1)
             {
                 cardW = 320f * s;
-                _xCoords[0] = -78f * s;
+                _xCoordsOffsets[0] = -78f * s;
                 rightCenterX = 82f * s;
                 scaleFactor = 1.0f;
             }
-            else if (_currentEngineCount == 2)
+            else if (_currentEngineCount.Value == 2)
             {
                 cardW = 390f * s;
-                _xCoords[0] = -126f * s;
-                _xCoords[1] = -38f * s;
+                _xCoordsOffsets[0] = -126f * s;
+                _xCoordsOffsets[1] = -38f * s;
                 rightCenterX = 110f * s;
                 scaleFactor = 1.0f;
             }
-            else if (_currentEngineCount == 3)
+            else if (_currentEngineCount.Value == 3)
             {
                 cardW = 452f * s;
-                _xCoords[0] = -162f * s;
-                _xCoords[1] = -104f * s;
-                _xCoords[2] = -46f * s;
+                _xCoordsOffsets[0] = -162f * s;
+                _xCoordsOffsets[1] = -104f * s;
+                _xCoordsOffsets[2] = -46f * s;
                 rightCenterX = 138f * s;
                 scaleFactor = 0.96f;
             }
             else
             {
                 cardW = 512f * s;
-                _xCoords[0] = -196f * s;
-                _xCoords[1] = -143f * s;
-                _xCoords[2] = -90f * s;
-                _xCoords[3] = -37f * s;
+                _xCoordsOffsets[0] = -196f * s;
+                _xCoordsOffsets[1] = -143f * s;
+                _xCoordsOffsets[2] = -90f * s;
+                _xCoordsOffsets[3] = -37f * s;
                 rightCenterX = 162f * s;
                 scaleFactor = 0.92f;
             }
@@ -1409,10 +1409,10 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (_engineCols[i] == null || _engineCols[i].Root == null) continue;
 
-                if (i < _currentEngineCount)
+                if (i < _currentEngineCount.Value)
                 {
                     _engineCols[i].Root.SetActive(true);
-                    SetTopCenterAnchor(_engineCols[i].RootRt, _xCoords[i], 0f, 0f, 0f);
+                    SetTopCenterAnchor(_engineCols[i].RootRt, _xCoordsOffsets[i], 0f, 0f, 0f);
                     _engineCols[i].RootRt.localScale = new Vector3(scaleFactor, scaleFactor, 1f);
                 }
                 else
@@ -1423,11 +1423,11 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 更新中央行标签 X 坐标 (保持在左右发控之间的舒适空域)
             float labelX;
-            if (_currentEngineCount == 1)
+            if (_currentEngineCount.Value == 1)
                 labelX = -132f * s;
-            else if (_currentEngineCount == 2)
+            else if (_currentEngineCount.Value == 2)
                 labelX = -82f * s;
-            else if (_currentEngineCount == 3)
+            else if (_currentEngineCount.Value == 3)
                 labelX = -196f * s;
             else
                 labelX = -230f * s;
@@ -1699,7 +1699,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            _logic.ConfiguredEngineCount = _configuredEngineCount;
+            _logic.ConfiguredEngineCount = _configuredEngineCount.Value;
             _logic.TatTemplate = _tatTemplate;
             _logic.ThrustModeTemplate = _thrustModeTemplate;
             _logic.GearToken = _gearToken;
@@ -1726,7 +1726,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (sv <= 0.01f) sv = s;
 
             // 1. 动态发动机数量感知与自动长宽比重排
-            if (_configuredEngineCount == 0 && state.DetectedEngineCount != _currentEngineCount)
+            if (_configuredEngineCount.Value == 0 && state.DetectedEngineCount != _currentEngineCount.Value)
             {
                 LayoutEngineColumns(state.DetectedEngineCount, s, sv);
             }
@@ -1744,7 +1744,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             // 3. 多发主发动机仪表绘制
             float tapeHalfH = 9f * sv;
-            for (int i = 0; i < _currentEngineCount; i++)
+            for (int i = 0; i < _currentEngineCount.Value; i++)
             {
                 EngineColumnUI col = _engineCols[i];
                 if (col == null) continue;

@@ -138,7 +138,7 @@ namespace ModularFlightPanel.UI.Widgets
         private double _lastHeading = -9999.0;
         private FlightSASMode _lastMode = (FlightSASMode)(-1);
         private bool _lastSasOn = false;
-        private bool _hasInitializedState = false;
+        private readonly Cached<bool> _hasInitializedState = new Cached<bool>(false);
         private bool _isDirectorLocked = false;
         private Vector3 _currentMarkerDir = Vector3.forward;
         private bool _currentMarkerVisible = false;
@@ -155,7 +155,7 @@ namespace ModularFlightPanel.UI.Widgets
             _lastHeading = -9999.0;
             _lastMode = (FlightSASMode)(-1);
             _lastSasOn = false;
-            _hasInitializedState = false;
+            _hasInitializedState.Value = false;
             _isDirectorLocked = false;
             _currentMarkerDir = Vector3.forward;
             _currentMarkerVisible = false;
@@ -191,7 +191,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             bool sasOn = telemetry.IsSASEnabled;
             FlightSASMode currentMode = telemetry.CurrentSASMode;
-            bool modeChanged = !_hasInitializedState || currentMode != _lastMode || sasOn != _lastSasOn;
+            bool modeChanged = !_hasInitializedState.Value || currentMode != _lastMode || sasOn != _lastSasOn;
             bool attDirty = Math.Abs(telemetry.Roll - _lastRoll) > 0.05 ||
                             Math.Abs(telemetry.Pitch - _lastPitch) > 0.05 ||
                             Math.Abs(telemetry.Heading - _lastHeading) > 0.05;
@@ -211,7 +211,7 @@ namespace ModularFlightPanel.UI.Widgets
             _lastHeading = telemetry.Heading;
             _lastMode = currentMode;
             _lastSasOn = sasOn;
-            _hasInitializedState = true;
+            _hasInitializedState.Value = true;
 
             CurrentState = new SASDialState(
                 hasVessel: true,
@@ -460,7 +460,7 @@ namespace ModularFlightPanel.UI.Widgets
         // 声明式微控件
         public TextWidget StatusBadge = TextWidget.Badge("SAS: OFF");
 
-        private class SASButtonData
+        private class SASButtonUI
         {
             public FlightSASMode Mode;
             public Button Button;
@@ -470,7 +470,7 @@ namespace ModularFlightPanel.UI.Widgets
             public float Angle;
         }
 
-        private readonly List<SASButtonData> _buttons = new List<SASButtonData>();
+        private readonly List<SASButtonUI> _buttons = new List<SASButtonUI>();
         private GameObject _attitudeAssemblyRoot;
         private GameObject _shipSilhouette;
         private RectTransform _horizonRoot;
@@ -490,14 +490,14 @@ namespace ModularFlightPanel.UI.Widgets
         private static Texture2D _attitudeHorizonTexture;
         private static Texture2D _flightDirectorTexture;
 
-        private SASDialDisplayMode _displayMode = SASDialDisplayMode.Mode2D;
-        private bool _is3DMode = false;
+        private readonly Cached<SASDialDisplayMode> _displayMode = new Cached<SASDialDisplayMode>(SASDialDisplayMode.Mode2D);
+        private readonly Cached<bool> _is3DMode = new Cached<bool>(false);
         private readonly SASDialLogic _logic = new SASDialLogic();
         protected override IWidgetLogic LogicCore => _logic;
         private readonly Cached<FlightSASMode> _lastRenderedMode = new Cached<FlightSASMode>((FlightSASMode)(-1));
         private readonly Cached<bool> _lastRenderedSasOn = new Cached<bool>(false);
         private readonly Cached<string> _lastStatusText = new Cached<string>(null);
-        private bool _hasInitializedState = false;
+        private readonly Cached<bool> _hasInitializedState = new Cached<bool>(false);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -512,11 +512,11 @@ namespace ModularFlightPanel.UI.Widgets
             if (modeStr.Equals("3D", StringComparison.OrdinalIgnoreCase) ||
                 (config != null && config.WidgetId.Equals("core.sas_dial_3d", StringComparison.OrdinalIgnoreCase)))
             {
-                _displayMode = SASDialDisplayMode.Mode3D;
+                _displayMode.Value = SASDialDisplayMode.Mode3D;
             }
             else
             {
-                _displayMode = SASDialDisplayMode.Mode2D;
+                _displayMode.Value = SASDialDisplayMode.Mode2D;
             }
 
             _logic.OffLabel = GetTemplateChannel("OFF_LABEL", I18n.Tr("SAS_STATUS_OFF", "SAS: OFF"));
@@ -668,10 +668,10 @@ namespace ModularFlightPanel.UI.Widgets
 
         public void ToggleDisplayMode()
         {
-            _displayMode = (_displayMode == SASDialDisplayMode.Mode2D) ? SASDialDisplayMode.Mode3D : SASDialDisplayMode.Mode2D;
+            _displayMode.Value = (_displayMode.Value == SASDialDisplayMode.Mode2D) ? SASDialDisplayMode.Mode3D : SASDialDisplayMode.Mode2D;
             ApplyDisplayMode();
             _logic.Reset();
-            _hasInitializedState = false;
+            _hasInitializedState.Value = false;
             _lastStatusText.Reset(null);
             _lastRenderedMode.Reset((FlightSASMode)(-1));
             _lastRenderedSasOn.Reset(false);
@@ -679,7 +679,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ApplyDisplayMode()
         {
-            bool is3D = (_displayMode == SASDialDisplayMode.Mode3D);
+            bool is3D = (_displayMode.Value == SASDialDisplayMode.Mode3D);
             if (_horizonRoot != null)
             {
                 _horizonRoot.gameObject.SetActive(is3D);
@@ -698,10 +698,10 @@ namespace ModularFlightPanel.UI.Widgets
         private void UpdateActiveTexture()
         {
             if (_silhouetteRawImage == null) return;
-            if (_displayMode == SASDialDisplayMode.Mode3D && Vessel3DService.Provider?.Texture3D != null)
+            if (_displayMode.Value == SASDialDisplayMode.Mode3D && Vessel3DService.Provider?.Texture3D != null)
             {
                 _silhouetteRawImage.texture = Vessel3DService.Provider.Texture3D;
-                _is3DMode = true;
+                _is3DMode.Value = true;
             }
             else
             {
@@ -711,22 +711,22 @@ namespace ModularFlightPanel.UI.Widgets
                     tex2D = _fallbackRocketTexture;
                 }
                 _silhouetteRawImage.texture = tex2D;
-                _is3DMode = false;
+                _is3DMode.Value = false;
             }
         }
 
         private void OnTexture3DUpdated(Texture rt)
         {
-            if (_silhouetteRawImage != null && rt != null && _displayMode == SASDialDisplayMode.Mode3D)
+            if (_silhouetteRawImage != null && rt != null && _displayMode.Value == SASDialDisplayMode.Mode3D)
             {
                 _silhouetteRawImage.texture = rt;
-                _is3DMode = true;
+                _is3DMode.Value = true;
             }
         }
 
         private void OnSilhouetteUpdated(Texture rt)
         {
-            if (_silhouetteRawImage != null && rt != null && (_displayMode == SASDialDisplayMode.Mode2D || !_is3DMode))
+            if (_silhouetteRawImage != null && rt != null && (_displayMode.Value == SASDialDisplayMode.Mode2D || !_is3DMode.Value))
             {
                 _silhouetteRawImage.texture = rt;
             }
@@ -780,7 +780,7 @@ namespace ModularFlightPanel.UI.Widgets
                 lblRt.sizeDelta = btnSize;
                 lblRt.anchoredPosition = Vector2.zero;
 
-                _buttons.Add(new SASButtonData
+                _buttons.Add(new SASButtonUI
                 {
                     Mode = m.mode,
                     Button = btn,
@@ -827,12 +827,16 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         // ── 平滑阻尼状态 (消除跳变) ──
-        private float _smoothedRotZ = 0f;
-        private float _rotZVelocity = 0f;
-        private Vector2 _smoothedDirectorPos = Vector2.zero;
-        private Vector2 _directorPosVelocity = Vector2.zero;
-        private float _smoothedDirectorRotZ = 0f;
-        private float _directorRotZVelocity = 0f;
+        private struct SASDampingSnapshot
+        {
+            public float SmoothedRotZ;
+            public float RotZVelocity;
+            public Vector2 SmoothedDirectorPos;
+            public Vector2 DirectorPosVelocity;
+            public float SmoothedDirectorRotZ;
+            public float DirectorRotZVelocity;
+        }
+        private SASDampingSnapshot _dampingSnapshot;
         private const float kSilhouetteSmoothTime = 0.12f; // 剪影旋转平滑时间常数
         private const float kDirectorSmoothTime = 0.08f;   // 导引标平滑时间常数
 
@@ -858,7 +862,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 1. 动态 3D 人造地平仪与俯仰阶梯解算 (仅在 3D 模式下激活)
-            if (_displayMode == SASDialDisplayMode.Mode3D)
+            if (_displayMode.Value == SASDialDisplayMode.Mode3D)
             {
                 if (_horizonRoot != null)
                 {
@@ -898,7 +902,7 @@ namespace ModularFlightPanel.UI.Widgets
             // 6. 当前 SAS 模式与开关高亮指示 (Dirty Checking + 100% 语义化驱动)
             bool modeDirty = _lastRenderedMode.Update(state.CurrentMode);
             bool sasDirty = _lastRenderedSasOn.Update(state.SasOn);
-            if (!_hasInitializedState || modeDirty || sasDirty)
+            if (!_hasInitializedState.Value || modeDirty || sasDirty)
             {
                 for (int i = 0; i < _buttons.Count; i++)
                 {
@@ -908,7 +912,7 @@ namespace ModularFlightPanel.UI.Widgets
                     ApplyButton(b.Button, b.Image, b.Label, role, isCurrent, theme);
                 }
 
-                _hasInitializedState = true;
+                _hasInitializedState.Value = true;
             }
 
             // 7. 底部状态指示胶囊文本与描边
@@ -919,12 +923,12 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_shipSilhouette == null) return;
 
-            if (attDirty || modeChanged || Mathf.Abs(_rotZVelocity) > 0.001f || Mathf.Abs(Mathf.DeltaAngle(_smoothedRotZ, targetRotZ)) > 0.02f)
+            if (attDirty || modeChanged || Mathf.Abs(_dampingSnapshot.RotZVelocity) > 0.001f || Mathf.Abs(Mathf.DeltaAngle(_dampingSnapshot.SmoothedRotZ, targetRotZ)) > 0.02f)
             {
-                _smoothedRotZ = Mathf.SmoothDampAngle(_smoothedRotZ, targetRotZ, ref _rotZVelocity, kSilhouetteSmoothTime, Mathf.Infinity, dt);
-                _shipSilhouette.transform.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _smoothedRotZ), 0.05f);
+                _dampingSnapshot.SmoothedRotZ = Mathf.SmoothDampAngle(_dampingSnapshot.SmoothedRotZ, targetRotZ, ref _dampingSnapshot.RotZVelocity, kSilhouetteSmoothTime, Mathf.Infinity, dt);
+                _shipSilhouette.transform.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _dampingSnapshot.SmoothedRotZ), 0.05f);
 
-                if (_displayMode == SASDialDisplayMode.Mode3D)
+                if (_displayMode.Value == SASDialDisplayMode.Mode3D)
                 {
                     float pitchRad = pitch * Mathf.Deg2Rad;
                     float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.6f), 0.76f, 1.0f);
@@ -963,12 +967,12 @@ namespace ModularFlightPanel.UI.Widgets
                 targetColor = WidgetStyleManager.WithAlpha(WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Muted, theme), 0.35f);
             }
 
-            _smoothedDirectorPos.x = Mathf.SmoothDamp(_smoothedDirectorPos.x, targetPos.x, ref _directorPosVelocity.x, kDirectorSmoothTime, Mathf.Infinity, dt);
-            _smoothedDirectorPos.y = Mathf.SmoothDamp(_smoothedDirectorPos.y, targetPos.y, ref _directorPosVelocity.y, kDirectorSmoothTime, Mathf.Infinity, dt);
-            _smoothedDirectorRotZ = Mathf.SmoothDampAngle(_smoothedDirectorRotZ, targetRotZ, ref _directorRotZVelocity, kDirectorSmoothTime, Mathf.Infinity, dt);
+            _dampingSnapshot.SmoothedDirectorPos.x = Mathf.SmoothDamp(_dampingSnapshot.SmoothedDirectorPos.x, targetPos.x, ref _dampingSnapshot.DirectorPosVelocity.x, kDirectorSmoothTime, Mathf.Infinity, dt);
+            _dampingSnapshot.SmoothedDirectorPos.y = Mathf.SmoothDamp(_dampingSnapshot.SmoothedDirectorPos.y, targetPos.y, ref _dampingSnapshot.DirectorPosVelocity.y, kDirectorSmoothTime, Mathf.Infinity, dt);
+            _dampingSnapshot.SmoothedDirectorRotZ = Mathf.SmoothDampAngle(_dampingSnapshot.SmoothedDirectorRotZ, targetRotZ, ref _dampingSnapshot.DirectorRotZVelocity, kDirectorSmoothTime, Mathf.Infinity, dt);
 
-            _sasDirectorRoot.SetAnchoredPositionSafe(_smoothedDirectorPos, 0.05f);
-            _sasDirectorRoot.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _smoothedDirectorRotZ), 0.05f);
+            _sasDirectorRoot.SetAnchoredPositionSafe(_dampingSnapshot.SmoothedDirectorPos, 0.05f);
+            _sasDirectorRoot.SetLocalRotationSafe(Quaternion.Euler(0f, 0f, _dampingSnapshot.SmoothedDirectorRotZ), 0.05f);
             Color targetLerped = Color.Lerp(_sasDirectorRawImage.color, targetColor, Mathf.Clamp01(dt / kDirectorSmoothTime));
             _sasDirectorRawImage.SetColor(targetLerped);
         }
@@ -977,7 +981,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_noseTipRawImage == null) return;
 
-            bool showTip = (_displayMode == SASDialDisplayMode.Mode3D);
+            bool showTip = (_displayMode.Value == SASDialDisplayMode.Mode3D);
             if (_noseTipRawImage.gameObject.activeSelf != showTip)
             {
                 _noseTipRawImage.gameObject.SetActive(showTip);
@@ -1017,7 +1021,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (theme == null) return;
             base.ApplyTheme(theme);
-            _hasInitializedState = false;
+            _hasInitializedState.Value = false;
             _lastStatusText.Reset(null);
             _lastRenderedMode.Reset((FlightSASMode)(-1));
             _lastRenderedSasOn.Reset(false);
@@ -1058,7 +1062,7 @@ namespace ModularFlightPanel.UI.Widgets
             _logic.OffLabel = GetTemplateChannel("OFF_LABEL", I18n.Tr("SAS_STATUS_OFF", "SAS: OFF"));
             _logic.BadgePrefix = GetTemplateChannel("BADGE_PREFIX", "SAS: ");
             _logic.Reset();
-            _hasInitializedState = false;
+            _hasInitializedState.Value = false;
             _lastStatusText.Reset(null);
             _lastRenderedMode.Reset((FlightSASMode)(-1));
             _lastRenderedSasOn.Reset(false);

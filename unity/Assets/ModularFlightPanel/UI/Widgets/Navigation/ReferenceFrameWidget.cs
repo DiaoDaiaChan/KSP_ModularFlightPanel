@@ -134,11 +134,11 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private string _typeToken = "{FRAME:TYPE}";
 
         // 尺寸与排版参数 (支持按文字宽度全自动适应)
-        private float _cardHeight = 32f;
-        private float _padLeft = 5f;
-        private float _padRight = 7f;
-        private float _spacing = 6f;
-        private float _iconBoxSize = 26f;
+        private readonly CachedFloat _cardHeight = new CachedFloat(32f, 0.05f);
+        private readonly CachedFloat _padLeft = new CachedFloat(5f, 0.05f);
+        private readonly CachedFloat _padRight = new CachedFloat(7f, 0.05f);
+        private readonly CachedFloat _spacing = new CachedFloat(6f, 0.05f);
+        private readonly CachedFloat _iconBoxSize = new CachedFloat(26f, 0.05f);
         private RectTransform _titleRt;
 
         // 脏检查与平滑缓存
@@ -155,11 +155,11 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 初始化排版缩放参数
-            _cardHeight = 32f * s;
-            _padLeft = 5f * s;
-            _padRight = 7f * s;
-            _spacing = 6f * s;
-            _iconBoxSize = 26f * s;
+            _cardHeight.Value = 32f * s;
+            _padLeft.Value = 5f * s;
+            _padRight.Value = 7f * s;
+            _spacing.Value = 6f * s;
+            _iconBoxSize.Value = 26f * s;
 
             // 2. 底板卡片与边框 (由基类 AutoCreateCardFrame 统一托管)
             _bgImage = CardBackground;
@@ -171,12 +171,12 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             // 3. 左侧图标插槽徽章 (左对齐，垂直居中)
             _iconBox = UIFactory.CreatePanel(transform, "Frame_Icon_Box",
-                new Vector2(_iconBoxSize, _iconBoxSize), Vector2.zero, Color.clear);
+                new Vector2(_iconBoxSize.Value, _iconBoxSize.Value), Vector2.zero, Color.clear);
             RectTransform iconBoxRt = _iconBox.GetComponent<RectTransform>();
             iconBoxRt.anchorMin = new Vector2(0f, 0.5f);
             iconBoxRt.anchorMax = new Vector2(0f, 0.5f);
             iconBoxRt.pivot = new Vector2(0f, 0.5f);
-            iconBoxRt.anchoredPosition = new Vector2(_padLeft, 0f);
+            iconBoxRt.anchoredPosition = new Vector2(_padLeft.Value, 0f);
 
             _iconBoxBg = _iconBox.GetComponent<Image>();
             _iconBoxOutline = _iconBox.AddComponent<Outline>();
@@ -202,7 +202,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 _titleRt.anchorMin = new Vector2(0f, 0.5f);
                 _titleRt.anchorMax = new Vector2(0f, 0.5f);
                 _titleRt.pivot = new Vector2(0f, 0.5f);
-                _titleRt.anchoredPosition = new Vector2(_padLeft + _iconBoxSize + _spacing, 0f);
+                _titleRt.anchoredPosition = new Vector2(_padLeft.Value + _iconBoxSize.Value + _spacing.Value, 0f);
             }
             else
             {
@@ -216,7 +216,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 _titleRt.anchorMin = new Vector2(0f, 0.5f);
                 _titleRt.anchorMax = new Vector2(0f, 0.5f);
                 _titleRt.pivot = new Vector2(0f, 0.5f);
-                _titleRt.anchoredPosition = new Vector2(_padLeft + _iconBoxSize + _spacing, 0f);
+                _titleRt.anchoredPosition = new Vector2(_padLeft.Value + _iconBoxSize.Value + _spacing.Value, 0f);
             }
 
             // 立即计算初始自适应宽度，消除右侧空白
@@ -296,7 +296,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (_titleRt == null || _frameTitleText == null || RectTransform == null) return;
             float s = CurrentDpiScale;
             float textW = _frameTitleText.preferredWidth;
-            float targetW = _padLeft + _iconBoxSize + _spacing + textW + _padRight;
+            float targetW = _padLeft.Value + _iconBoxSize.Value + _spacing.Value + textW + _padRight.Value;
 
             // 限幅保护：最小 76px，最大 260px，消除右侧大片空白
             float minW = 76f * s;
@@ -305,11 +305,11 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (targetW > maxW)
             {
                 targetW = maxW;
-                textW = targetW - (_padLeft + _iconBoxSize + _spacing + _padRight);
+                textW = targetW - (_padLeft.Value + _iconBoxSize.Value + _spacing.Value + _padRight.Value);
             }
 
-            _titleRt.sizeDelta = new Vector2(textW + 4f * s, _cardHeight - 4f * s);
-            RectTransform.sizeDelta = new Vector2(targetW, _cardHeight);
+            _titleRt.sizeDelta = new Vector2(textW + 4f * s, _cardHeight.Value - 4f * s);
+            RectTransform.sizeDelta = new Vector2(targetW, _cardHeight.Value);
         }
 
         private void UpdateCategoryVisuals(string category, ThemeConfig theme)

@@ -234,7 +234,7 @@ namespace ModularFlightPanel.UI.Workbench
 
         private void BuildTopHeader(Transform parent)
         {
-            GameObject header = WorkbenchControls.CreateCard(parent, "TopHeader", new Vector2(0f, 44f));
+            GameObject header = WorkbenchControls.CreatePanel(parent, "TopHeader", new Vector2(0f, 44f));
             var hLe = header.GetComponent<LayoutElement>() ?? header.AddComponent<LayoutElement>();
             hLe.preferredHeight = 44f;
             hLe.minHeight = 44f;
@@ -267,10 +267,9 @@ namespace ModularFlightPanel.UI.Workbench
             titleTxt.fontStyle = FontStyle.Bold;
             titleTxt.alignment = TextAnchor.MiddleLeft;
             titleTxt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+            titleTxt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
             titleTxt.text = "MODULAR FLIGHT PANEL 3.0";
             titleTxt.horizontalOverflow = HorizontalWrapMode.Overflow;
-
-            WorkbenchControls.CreatePill(header.transform, "AeroPill", "CYBER WORKBENCH", WorkbenchStyleEngine.ColorAccentSecondary, 10);
 
             // 弹性空白
             GameObject flex = new GameObject("FlexSpace", typeof(RectTransform));
@@ -286,11 +285,11 @@ namespace ModularFlightPanel.UI.Workbench
             // 全局命令面板快捷入口 (Ctrl+K)
             WorkbenchControls.CreateButton(header.transform, "CmdPaletteBtn", I18n.Tr("CMD_PALETTE_BTN_OPEN", "🔍 命令 (Ctrl+K)"), new Vector2(115f, 28f), ToggleCommandPalette, false, 11);
 
-            // 画布自由排版模式快捷入口
-            WorkbenchControls.CreateButton(header.transform, "CanvasModeBtn", "📐 画布自由排版", new Vector2(130f, 28f), () =>
+            // 画布自由排版模式快捷入口 (次级按钮，不占用主视觉焦点)
+            WorkbenchControls.CreateButton(header.transform, "CanvasModeBtn", "📐 画布自由排版", new Vector2(125f, 28f), () =>
             {
                 SettingsGUI.Instance?.EnterCanvasLayoutMode();
-            }, true, 11);
+            }, false, 11);
 
             // 最大化 / 还原按钮
             GameObject maxBtn = WorkbenchControls.CreateButton(header.transform, "MaximizeBtn", "⛶", new Vector2(28f, 28f), ToggleMaximizeWindow, false, 12);
@@ -305,17 +304,23 @@ namespace ModularFlightPanel.UI.Workbench
 
         private Text CreateHeaderChip(Transform parent, string initialText)
         {
-            GameObject chip = WorkbenchControls.CreateCard(parent, "Chip", new Vector2(140f, 26f));
-            var cLe = chip.GetComponent<LayoutElement>() ?? chip.AddComponent<LayoutElement>();
+            GameObject chip = new GameObject("Chip", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            chip.transform.SetParent(parent, false);
+
+            var cLe = chip.AddComponent<LayoutElement>();
             cLe.preferredWidth = 140f;
             cLe.minWidth = 120f;
-            cLe.preferredHeight = 26f;
+            cLe.preferredHeight = 24f;
             cLe.flexibleWidth = 0f;
 
             RectTransform cRt = chip.GetComponent<RectTransform>();
-            cRt.sizeDelta = new Vector2(140f, 26f);
+            cRt.sizeDelta = new Vector2(140f, 24f);
 
-            GameObject txtObj = new GameObject("Text", typeof(RectTransform), typeof(Text));
+            Image cImg = chip.GetComponent<Image>();
+            cImg.material = WorkbenchStyleEngine.GetPillDockMaterial(false);
+            cImg.color = new Color(0.05f, 0.08f, 0.12f, 0.70f);
+
+            GameObject txtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
             txtObj.transform.SetParent(chip.transform, false);
             RectTransform txtRt = txtObj.GetComponent<RectTransform>();
             txtRt.anchorMin = Vector2.zero;
@@ -329,6 +334,7 @@ namespace ModularFlightPanel.UI.Workbench
             txt.fontSize = 11;
             txt.alignment = TextAnchor.MiddleCenter;
             txt.color = WorkbenchStyleEngine.ColorTextPrimary;
+            txt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
             txt.text = initialText;
             txt.raycastTarget = false;
 
@@ -359,12 +365,12 @@ namespace ModularFlightPanel.UI.Workbench
             bHlg.padding = new RectOffset(6, 6, 6, 6);
 
             // =========================================================================
-            // 左侧 Activity Bar 图钉导航栏 (56px 定宽)
+            // 左侧 Activity Bar 图钉导航栏 (52px 定宽，采用垂直导航轨按钮设计)
             // =========================================================================
-            GameObject activityBar = WorkbenchControls.CreateCard(body.transform, "ActivityBar", new Vector2(56f, 0f));
+            GameObject activityBar = WorkbenchControls.CreatePanel(body.transform, "ActivityBar", new Vector2(52f, 0f));
             var abLe = activityBar.GetComponent<LayoutElement>() ?? activityBar.AddComponent<LayoutElement>();
-            abLe.preferredWidth = 56f;
-            abLe.minWidth = 56f;
+            abLe.preferredWidth = 52f;
+            abLe.minWidth = 52f;
             abLe.flexibleWidth = 0f;
             abLe.flexibleHeight = 1f;
 
@@ -373,8 +379,8 @@ namespace ModularFlightPanel.UI.Workbench
             aVlg.childForceExpandHeight = false;
             aVlg.childControlWidth = true;
             aVlg.childControlHeight = true;
-            aVlg.spacing = 8f;
-            aVlg.padding = new RectOffset(4, 4, 8, 8);
+            aVlg.spacing = 6f;
+            aVlg.padding = new RectOffset(2, 2, 8, 8);
 
             string[] tabIcons = new string[] { "🛠️", "🎨", "💾", "🚀", "⚙️" };
             string[] tabNames = new string[] { "工坊", "主题", "档案", "遥测", "偏好" };
@@ -383,16 +389,10 @@ namespace ModularFlightPanel.UI.Workbench
             for (int i = 0; i < tabIcons.Length; i++)
             {
                 int index = i;
-                _activityButtons[i] = WorkbenchControls.CreateButton(activityBar.transform, "TabBtn_" + i, $"{tabIcons[i]}\n<size=9>{tabNames[i]}</size>", new Vector2(46f, 46f), () =>
+                _activityButtons[i] = WorkbenchControls.CreateActivityRailButton(activityBar.transform, "TabBtn_" + i, tabIcons[i], tabNames[i], () =>
                 {
                     SwitchTab(index);
-                }, i == 0, 14);
-
-                var btnLe = _activityButtons[i].GetComponent<LayoutElement>() ?? _activityButtons[i].AddComponent<LayoutElement>();
-                btnLe.preferredHeight = 46f;
-                btnLe.minHeight = 44f;
-                btnLe.flexibleWidth = 1f;
-                btnLe.flexibleHeight = 0f;
+                }, i == 0);
             }
 
             // =========================================================================
@@ -412,7 +412,7 @@ namespace ModularFlightPanel.UI.Workbench
 
         private void BuildFooterBar(Transform parent)
         {
-            GameObject footer = WorkbenchControls.CreateCard(parent, "FooterBar", new Vector2(0f, 36f));
+            GameObject footer = WorkbenchControls.CreatePanel(parent, "FooterBar", new Vector2(0f, 36f));
             var fLe = footer.GetComponent<LayoutElement>() ?? footer.AddComponent<LayoutElement>();
             fLe.preferredHeight = 36f;
             fLe.minHeight = 36f;
@@ -918,23 +918,15 @@ namespace ModularFlightPanel.UI.Workbench
 
             _currentTabIndex = index;
 
-            // 更新 Activity Bar 按钮状态
+            // 更新 Activity Bar 导航轨按钮激活状态
             if (_activityButtons != null)
             {
                 for (int i = 0; i < _activityButtons.Length; i++)
                 {
                     if (_activityButtons[i] != null)
                     {
-                        var effect = _activityButtons[i].GetComponent<ModernButtonEffect>();
-                        if (effect != null)
-                        {
-                            effect.IsPrimary = (i == _currentTabIndex);
-                            if (effect.ButtonImage != null)
-                            {
-                                effect.ButtonImage.material = WorkbenchStyleEngine.GetButtonMaterial(i == _currentTabIndex, false);
-                                effect.ButtonImage.color = (i == _currentTabIndex) ? WorkbenchStyleEngine.ColorBtnPrimaryBg : WorkbenchStyleEngine.ColorBtnSecondaryBg;
-                            }
-                        }
+                        var rail = _activityButtons[i].GetComponent<ModernRailButtonEffect>();
+                        rail?.SetActiveState(i == _currentTabIndex);
                     }
                 }
             }

@@ -64,12 +64,21 @@ namespace ModularFlightPanel.UI.Workbench
             }
         }
 
+        public static Color ColorPanelBg
+        {
+            get
+            {
+                Color c = Color.Lerp(ColorWindowBg, Color.black, 0.18f);
+                c.a = 0.82f;
+                return c;
+            }
+        }
+
         public static Color ColorCardBg
         {
             get
             {
-                Color c = Color.Lerp(ColorWindowBg, ColorBorder, 0.08f);
-                c.a = 0.88f;
+                Color c = new Color(ColorWindowBg.r * 0.9f + 0.035f, ColorWindowBg.g * 0.9f + 0.040f, ColorWindowBg.b * 0.9f + 0.055f, 0.75f);
                 return c;
             }
         }
@@ -78,8 +87,7 @@ namespace ModularFlightPanel.UI.Workbench
         {
             get
             {
-                Color c = Color.Lerp(ColorWindowBg, ColorAccentPrimary, 0.16f);
-                c.a = 0.94f;
+                Color c = new Color(ColorWindowBg.r * 0.85f + 0.065f, ColorWindowBg.g * 0.85f + 0.075f, ColorWindowBg.b * 0.85f + 0.105f, 0.90f);
                 return c;
             }
         }
@@ -88,7 +96,7 @@ namespace ModularFlightPanel.UI.Workbench
         {
             get
             {
-                Color c = Color.Lerp(ColorAccentPrimary, ColorWindowBg, 0.45f);
+                Color c = Color.Lerp(ColorWindowBg, ColorAccentPrimary, 0.38f);
                 c.a = 0.90f;
                 return c;
             }
@@ -98,8 +106,7 @@ namespace ModularFlightPanel.UI.Workbench
         {
             get
             {
-                Color c = Color.Lerp(ColorWindowBg, ColorBorder, 0.18f);
-                c.a = 0.82f;
+                Color c = new Color(0.08f, 0.11f, 0.16f, 0.72f);
                 return c;
             }
         }
@@ -108,8 +115,8 @@ namespace ModularFlightPanel.UI.Workbench
         {
             get
             {
-                Color c = Color.Lerp(ColorBtnSecondaryBg, ColorAccentPrimary, 0.35f);
-                c.a = 0.95f;
+                Color c = Color.Lerp(ColorBtnSecondaryBg, ColorAccentPrimary, 0.22f);
+                c.a = 0.92f;
                 return c;
             }
         }
@@ -135,6 +142,8 @@ namespace ModularFlightPanel.UI.Workbench
         }
 
         public static Color ColorBorder => (Color)ActiveTheme.FrameBorderColor;
+        public static Color ColorStructureBorder => new Color(1f, 1f, 1f, 0.08f);
+        public static Color ColorStructureBorderSubtle => new Color(1f, 1f, 1f, 0.04f);
         public static Color ColorAccentPrimary => (Color)ActiveTheme.AccentPrimary;
         public static Color ColorAccentSecondary => (Color)ActiveTheme.AccentSecondary;
         public static Color ColorWarning => (Color)ActiveTheme.WarningColor;
@@ -149,7 +158,7 @@ namespace ModularFlightPanel.UI.Workbench
         #region Material Generation & Retrieval
 
         /// <summary>
-        /// 获取暗晶工作台主窗体底盘材质
+        /// 获取暗晶工作台主窗体底盘材质 (深邃纯净底盘，1px 发丝边，无多余彩光)
         /// </summary>
         public static Material GetWindowGlassMaterial()
         {
@@ -164,25 +173,57 @@ namespace ModularFlightPanel.UI.Workbench
             mat.name = "MFP_Workbench_WindowGlass";
 
             Color bg = ColorWindowBg;
-            bg.a = Mathf.Clamp(bg.a * 1.05f, 0.90f, 0.98f);
-            Color border = ColorBorder;
-            border.a = 0.85f;
+            bg.a = Mathf.Clamp(bg.a * 1.05f, 0.92f, 0.98f);
+            Color border = new Color(ColorBorder.r, ColorBorder.g, ColorBorder.b, 0.32f);
 
             if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", bg);
             if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", border);
             if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
-            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.005f);
-            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.025f);
-            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0.08f);
-            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0.02f);
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.0030f);
+            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.022f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0.05f);
+            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
             if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", 0f);
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", 0f);
 
             _matCache[key] = mat;
             return mat;
         }
 
         /// <summary>
-        /// 获取工作台内部卡片与面板材质
+        /// 获取结构性面板容器材质 (顶栏、底栏、导航轨、左右分栏，纯净深色无彩边)
+        /// </summary>
+        public static Material GetContainerPanelMaterial()
+        {
+            EnsureInitialized();
+            string key = "panel_container_" + ActiveTheme.ThemeId;
+            if (_matCache.TryGetValue(key, out Material mat) && mat != null) return mat;
+
+            Shader s = AssetLoader.ModernWorkbenchShader ?? AssetLoader.GlassCockpitShader;
+            if (s == null) return null;
+
+            mat = new Material(s);
+            mat.name = "MFP_Workbench_ContainerPanel";
+
+            Color bg = ColorPanelBg;
+            Color border = ColorStructureBorder;
+
+            if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", bg);
+            if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", border);
+            if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.0025f);
+            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.020f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0.03f);
+            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
+            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", 0f);
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", 0f);
+
+            _matCache[key] = mat;
+            return mat;
+        }
+
+        /// <summary>
+        /// 获取工作台内部浮动卡片材质 (轻微发丝边，悬停升温，选中带左侧强调色)
         /// </summary>
         public static Material GetCardMaterial(bool isHover = false, bool isEmphasized = false)
         {
@@ -196,20 +237,33 @@ namespace ModularFlightPanel.UI.Workbench
             mat = new Material(s);
             mat.name = "MFP_Workbench_CardGlass";
 
-            Color cardBg = Color.Lerp(ColorWindowBg, ColorBorder, 0.12f);
-            cardBg.a = isHover ? 0.96f : 0.88f;
+            Color cardBg = isHover ? ColorCardBgHover : ColorCardBg;
 
-            Color borderColor = isEmphasized ? ColorAccentPrimary : (isHover ? Color.Lerp(ColorBorder, ColorAccentPrimary, 0.6f) : ColorBorder);
-            borderColor.a = isHover || isEmphasized ? 0.95f : 0.70f;
+            Color borderColor;
+            if (isEmphasized)
+            {
+                borderColor = ColorAccentPrimary;
+                borderColor.a = 0.70f;
+            }
+            else if (isHover)
+            {
+                borderColor = Color.Lerp(ColorStructureBorder, ColorAccentPrimary, 0.40f);
+                borderColor.a = 0.45f;
+            }
+            else
+            {
+                borderColor = new Color(ColorBorder.r, ColorBorder.g, ColorBorder.b, 0.16f);
+            }
 
             if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", cardBg);
             if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", borderColor);
             if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
-            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", isEmphasized ? 0.012f : 0.008f);
-            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.045f);
-            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", isHover ? 0.16f : 0.10f);
-            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0.015f);
-            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", isHover ? 0.45f : (isEmphasized ? 0.25f : 0f));
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", isEmphasized ? 0.0045f : 0.0030f);
+            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.035f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", isHover ? 0.08f : 0.04f);
+            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
+            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", isHover ? 0.30f : (isEmphasized ? 0.15f : 0f));
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", isEmphasized ? 0.30f : 0f);
 
             _matCache[key] = mat;
             return mat;
@@ -232,22 +286,137 @@ namespace ModularFlightPanel.UI.Workbench
             mat = new Material(s);
             mat.name = "MFP_Workbench_BtnGlass";
 
-            Color bg = isPrimary
-                ? Color.Lerp(ColorAccentPrimary, ColorWindowBg, 0.35f)
-                : Color.Lerp(ColorWindowBg, ColorBorder, 0.22f);
-            bg.a = isHover ? 0.95f : (isPrimary ? 0.88f : 0.82f);
+            Color bg;
+            Color border;
+            float topAccent = 0f;
 
-            Color border = isPrimary ? ColorAccentPrimary : ColorBorder;
-            border.a = isHover ? 1f : 0.75f;
+            if (isPrimary)
+            {
+                bg = isHover
+                    ? Color.Lerp(ColorWindowBg, ColorAccentPrimary, 0.46f)
+                    : Color.Lerp(ColorWindowBg, ColorAccentPrimary, 0.36f);
+                bg.a = isHover ? 0.95f : 0.88f;
+
+                border = ColorAccentPrimary;
+                border.a = isHover ? 0.85f : 0.50f;
+                topAccent = 0.30f;
+            }
+            else
+            {
+                bg = isHover
+                    ? Color.Lerp(ColorBtnSecondaryBg, ColorAccentPrimary, 0.16f)
+                    : ColorBtnSecondaryBg;
+                bg.a = isHover ? 0.88f : 0.70f;
+
+                border = new Color(1f, 1f, 1f, isHover ? 0.22f : 0.09f);
+            }
 
             if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", bg);
             if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", border);
-            if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", isPrimary ? ColorAccentPrimary : ColorAccentSecondary);
-            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.010f);
-            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.06f);
-            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", isHover ? 0.20f : 0.12f);
+            if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.0035f);
+            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.045f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", isHover ? 0.12f : 0.06f);
             if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
-            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", isHover ? 0.60f : 0f);
+            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", isHover ? (isPrimary ? 0.40f : 0.15f) : 0f);
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", topAccent);
+
+            _matCache[key] = mat;
+            return mat;
+        }
+
+        /// <summary>
+        /// 获取轻量幽灵按钮材质 (平时透明，悬停显现)
+        /// </summary>
+        public static Material GetGhostButtonMaterial(bool isHover = false)
+        {
+            EnsureInitialized();
+            string key = $"btn_ghost_{ActiveTheme.ThemeId}_{(isHover ? "hov" : "norm")}";
+            if (_matCache.TryGetValue(key, out Material mat) && mat != null) return mat;
+
+            Shader s = AssetLoader.ModernWorkbenchShader ?? AssetLoader.GlassCockpitShader;
+            if (s == null) return null;
+
+            mat = new Material(s);
+            mat.name = "MFP_Workbench_GhostBtnGlass";
+
+            Color bg = new Color(1f, 1f, 1f, isHover ? 0.09f : 0.001f);
+            Color border = new Color(1f, 1f, 1f, isHover ? 0.18f : 0f);
+
+            if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", bg);
+            if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", border);
+            if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.0030f);
+            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.040f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0f);
+            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
+            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", 0f);
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", 0f);
+
+            _matCache[key] = mat;
+            return mat;
+        }
+
+        /// <summary>
+        /// 获取分段模式控制器底轨跑道材质
+        /// </summary>
+        public static Material GetSegmentTrackMaterial()
+        {
+            EnsureInitialized();
+            string key = "seg_track_" + ActiveTheme.ThemeId;
+            if (_matCache.TryGetValue(key, out Material mat) && mat != null) return mat;
+
+            Shader s = AssetLoader.ModernWorkbenchShader ?? AssetLoader.GlassCockpitShader;
+            if (s == null) return null;
+
+            mat = new Material(s);
+            mat.name = "MFP_Workbench_SegTrack";
+
+            Color bg = new Color(0.03f, 0.045f, 0.07f, 0.88f);
+            Color border = new Color(1f, 1f, 1f, 0.07f);
+
+            if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", bg);
+            if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", border);
+            if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.0030f);
+            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.080f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0f);
+            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
+            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", 0f);
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", 0f);
+
+            _matCache[key] = mat;
+            return mat;
+        }
+
+        /// <summary>
+        /// 获取分段模式控制器浮动滑块材质
+        /// </summary>
+        public static Material GetSegmentThumbMaterial()
+        {
+            EnsureInitialized();
+            string key = "seg_thumb_" + ActiveTheme.ThemeId;
+            if (_matCache.TryGetValue(key, out Material mat) && mat != null) return mat;
+
+            Shader s = AssetLoader.ModernWorkbenchShader ?? AssetLoader.GlassCockpitShader;
+            if (s == null) return null;
+
+            mat = new Material(s);
+            mat.name = "MFP_Workbench_SegThumb";
+
+            Color bg = Color.Lerp(ColorWindowBg, ColorBorder, 0.28f);
+            bg.a = 0.95f;
+            Color border = new Color(1f, 1f, 1f, 0.18f);
+
+            if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", bg);
+            if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", border);
+            if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.0035f);
+            if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.070f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0.10f);
+            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
+            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", 0f);
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", 0f);
 
             _matCache[key] = mat;
             return mat;
@@ -269,21 +438,22 @@ namespace ModularFlightPanel.UI.Workbench
             mat.name = "MFP_Workbench_PillDockGlass";
 
             Color bg = isAccent
-                ? Color.Lerp(ColorAccentPrimary, ColorWindowBg, 0.25f)
+                ? Color.Lerp(ColorAccentPrimary, ColorWindowBg, 0.22f)
                 : Color.Lerp(ColorWindowBg, Color.black, 0.30f);
-            bg.a = isAccent ? 0.90f : 0.94f;
+            bg.a = isAccent ? 0.88f : 0.92f;
 
-            Color border = isAccent ? ColorAccentPrimary : Color.Lerp(ColorBorder, ColorAccentPrimary, 0.40f);
-            border.a = 0.90f;
+            Color border = isAccent ? ColorAccentPrimary : new Color(1f, 1f, 1f, 0.12f);
+            border.a = isAccent ? 0.75f : 0.12f;
 
             if (mat.HasProperty("_GlassBgColor")) mat.SetColor("_GlassBgColor", bg);
             if (mat.HasProperty("_BorderColor")) mat.SetColor("_BorderColor", border);
             if (mat.HasProperty("_AccentColor")) mat.SetColor("_AccentColor", ColorAccentPrimary);
-            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.015f);
+            if (mat.HasProperty("_BorderWidth")) mat.SetFloat("_BorderWidth", 0.0035f);
             if (mat.HasProperty("_CornerRadius")) mat.SetFloat("_CornerRadius", 0.18f); // 极高圆角形成胶囊药丸形态
-            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0.15f);
-            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0.02f);
-            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", isAccent ? 0.40f : 0.10f);
+            if (mat.HasProperty("_GlassGradientStrength")) mat.SetFloat("_GlassGradientStrength", 0.08f);
+            if (mat.HasProperty("_ScanlineStrength")) mat.SetFloat("_ScanlineStrength", 0f);
+            if (mat.HasProperty("_HoverGlow")) mat.SetFloat("_HoverGlow", isAccent ? 0.25f : 0f);
+            if (mat.HasProperty("_TopAccentStrength")) mat.SetFloat("_TopAccentStrength", 0f);
 
             _matCache[key] = mat;
             return mat;

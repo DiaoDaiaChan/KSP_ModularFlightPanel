@@ -27,7 +27,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 UnityEngine.Object.Destroy(c);
             }
 
-            GameObject card = WorkbenchControls.CreateCard(_container, "PrefsCard", Vector2.zero);
+            GameObject card = WorkbenchControls.CreatePanel(_container, "PrefsCard", Vector2.zero);
             RectTransform cardRt = card.GetComponent<RectTransform>();
             cardRt.anchorMin = Vector2.zero;
             cardRt.anchorMax = Vector2.one;
@@ -98,19 +98,12 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             string curLang = I18nManager.Instance?.CurrentLanguage ?? "zh-CN";
             bool isZh = curLang.Equals("zh-CN", StringComparison.OrdinalIgnoreCase);
 
-            WorkbenchControls.CreateButton(langRow.transform, "BtnZh", "🇨🇳 简体中文", new Vector2(110f, 28f), () =>
+            WorkbenchControls.CreateSegmentedControl(langRow.transform, "LangSegment", new string[] { "🇨🇳 简体中文", "🇺🇸 English" }, isZh ? 0 : 1, (idx) =>
             {
-                I18nManager.Instance?.SetLanguage("zh-CN");
+                I18nManager.Instance?.SetLanguage(idx == 0 ? "zh-CN" : "en-US");
                 ThemeManager.Instance?.SaveSettings();
                 Refresh();
-            }, isZh, 11);
-
-            WorkbenchControls.CreateButton(langRow.transform, "BtnEn", "🇺🇸 English", new Vector2(110f, 28f), () =>
-            {
-                I18nManager.Instance?.SetLanguage("en-US");
-                ThemeManager.Instance?.SaveSettings();
-                Refresh();
-            }, !isZh, 11);
+            }, new Vector2(240f, 30f));
 
             // 2. 全局缩放比率
             if (lm?.CurrentLayout != null)

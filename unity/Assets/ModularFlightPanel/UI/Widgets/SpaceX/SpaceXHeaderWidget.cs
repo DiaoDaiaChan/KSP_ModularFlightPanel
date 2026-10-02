@@ -279,8 +279,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         public Vector2 MinBaseSize => new Vector2(480f, 36f);
         public Vector2 MaxBaseSize => new Vector2(2560f, 60f);
 
-        private float _currentWidth = 960f;
-        private float _currentHeight = 42f;
+        private readonly CachedFloat _currentWidth = new CachedFloat(960f, 0.05f);
+        private readonly CachedFloat _currentHeight = new CachedFloat(42f, 0.05f);
 
         // UI 视图容器
         private Image _bgImage;
@@ -309,14 +309,14 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 1. 顶栏包围盒尺寸
             if (RectTransform.sizeDelta.x > 0.01f && RectTransform.sizeDelta.y > 0.01f)
             {
-                _currentWidth = RectTransform.sizeDelta.x;
-                _currentHeight = RectTransform.sizeDelta.y;
+                _currentWidth.Value = RectTransform.sizeDelta.x;
+                _currentHeight.Value = RectTransform.sizeDelta.y;
             }
             else
             {
-                _currentWidth = 960f * s;
-                _currentHeight = 42f * s;
-                RectTransform.sizeDelta = new Vector2(_currentWidth, _currentHeight);
+                _currentWidth.Value = 960f * s;
+                _currentHeight.Value = 42f * s;
+                RectTransform.sizeDelta = new Vector2(_currentWidth.Value, _currentHeight.Value);
             }
 
             _bgImage = CardBackground;
@@ -327,7 +327,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             // 底部电光青色细强调线 (1.5px)
             if (_bottomAccentLine == null)
             {
-                GameObject lineObj = UIFactory.CreatePanel(transform, "BottomAccentLine", new Vector2(_currentWidth, 1.5f * s), new Vector2(0f, -_currentHeight * 0.5f + 0.75f * s), theme.AccentPrimary);
+                GameObject lineObj = UIFactory.CreatePanel(transform, "BottomAccentLine", new Vector2(_currentWidth.Value, 1.5f * s), new Vector2(0f, -_currentHeight.Value * 0.5f + 0.75f * s), theme.AccentPrimary);
                 _bottomAccentLine = lineObj.GetComponent<Image>();
             }
 
@@ -469,8 +469,8 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
             }
 
             float s = CurrentDpiScale;
-            float panelW = _currentWidth > 0.01f ? _currentWidth : 960f * s;
-            float panelH = _currentHeight > 0.01f ? _currentHeight : 42f * s;
+            float panelW = _currentWidth.Value > 0.01f ? _currentWidth.Value : 960f * s;
+            float panelH = _currentHeight.Value > 0.01f ? _currentHeight.Value : 42f * s;
             float pad = 16f * s;
             float availW = Mathf.Max(60f * s, panelW - pad * 2f);
 
@@ -565,16 +565,16 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
 
         public void OnAdaptiveResize(Vector2 pixelSize)
         {
-            _currentWidth = pixelSize.x;
-            _currentHeight = pixelSize.y;
+            _currentWidth.Value = pixelSize.x;
+            _currentHeight.Value = pixelSize.y;
             ApplyDynamicLayout();
         }
 
         public void ApplyDynamicLayout()
         {
             float s = CurrentDpiScale;
-            float w = _currentWidth > 0.01f ? _currentWidth : 960f * s;
-            float h = _currentHeight > 0.01f ? _currentHeight : 42f * s;
+            float w = _currentWidth.Value > 0.01f ? _currentWidth.Value : 960f * s;
+            float h = _currentHeight.Value > 0.01f ? _currentHeight.Value : 42f * s;
 
             // 1. 调整底部细线与尺寸
             if (_bottomAccentLine != null)
@@ -672,7 +672,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private void CreatePhaseBadge(Transform parent, SpaceXSlotItem slot, float centerX, float width, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            RectTransform rRt = CreateContainer($"Slot_{slot.Id}", parent, new Vector2(width, _currentHeight), new Vector2(centerX, 0f));
+            RectTransform rRt = CreateContainer($"Slot_{slot.Id}", parent, new Vector2(width, _currentHeight.Value), new Vector2(centerX, 0f));
             GameObject root = rRt.gameObject;
             slot.Root = root;
 
@@ -706,7 +706,7 @@ namespace ModularFlightPanel.UI.Widgets.SpaceX
         private void CreateReadoutColumn(Transform parent, SpaceXSlotItem slot, float centerX, float width, float s, ThemeConfig theme)
         {
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            RectTransform rRt = CreateContainer($"Slot_{slot.Id}", parent, new Vector2(width, _currentHeight), new Vector2(centerX, 0f));
+            RectTransform rRt = CreateContainer($"Slot_{slot.Id}", parent, new Vector2(width, _currentHeight.Value), new Vector2(centerX, 0f));
             GameObject root = rRt.gameObject;
             slot.Root = root;
 

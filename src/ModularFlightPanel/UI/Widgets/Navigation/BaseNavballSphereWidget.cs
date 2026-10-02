@@ -33,35 +33,35 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         protected Camera _ballCamera;
         protected GameObject _sphereObject;
         protected Material _sphereMaterial;
-        protected bool _isRenderDirty = true;
+        protected readonly Cached<bool> _isRenderDirty = new Cached<bool>(true);
         public void MarkRenderDirty()
         {
-            _isRenderDirty = true;
+            _isRenderDirty.Value = true;
             MarkVisualDirty();
         }
-        public void MarkRenderClean() => _isRenderDirty = false;
-        public bool IsRenderDirty => _isRenderDirty;
+        public void MarkRenderClean() => _isRenderDirty.Value = false;
+        public bool IsRenderDirty => _isRenderDirty.Value;
         public Material SphereMaterial => _sphereMaterial;
         public RenderTexture TargetTexture => _renderTexture;
         public Camera OffscreenCamera => _ballCamera;
 
-        protected int _cachedOptimalResolution = 512;
-        protected bool _optimalResDirty = true;
+        protected readonly Cached<int> _cachedOptimalResolution = new Cached<int>(512);
+        protected readonly Cached<bool> _optimalResDirty = new Cached<bool>(true);
 
         public override FlightNavballPipeline GetNavballPipeline()
         {
-            if (_optimalResDirty && WidgetRenderManager.Instance != null)
+            if (_optimalResDirty.Value && WidgetRenderManager.Instance != null)
             {
                 float dim = RectTransform != null ? Mathf.Max(RectTransform.rect.width, RectTransform.rect.height) : 200f;
                 if (dim <= 0.1f) dim = 200f;
-                _cachedOptimalResolution = WidgetRenderManager.Instance.CalculateOptimalResolution(
+                _cachedOptimalResolution.Value = WidgetRenderManager.Instance.CalculateOptimalResolution(
                     new Vector2(dim, dim),
                     Config != null ? Config.Scale : 1.0f,
                     Config != null ? Config.RenderScale : 1.0f,
                     minRes: 512);
-                _optimalResDirty = false;
+                _optimalResDirty.Value = false;
             }
-            return new FlightNavballPipeline(_sphereMaterial, _renderTexture, _ballCamera, _isRenderDirty, _cachedOptimalResolution, this);
+            return new FlightNavballPipeline(_sphereMaterial, _renderTexture, _ballCamera, _isRenderDirty.Value, _cachedOptimalResolution.Value, this);
         }
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
@@ -69,7 +69,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             base.OnUIDrawLoop(ref context);
 
             // 若配置了 3D 离屏相机且检测到重绘脏标记，安全驱动离屏渲染
-            if (_ballCamera != null && _isRenderDirty && _renderTexture != null && _renderTexture.IsCreated())
+            if (_ballCamera != null && _isRenderDirty.Value && _renderTexture != null && _renderTexture.IsCreated())
             {
                 context.Navball.RenderCamera();
             }
@@ -105,13 +105,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             }
 
             _sphereObject.transform.localScale = new Vector3(baseScale / sx, baseScale / sy, baseScale / sz);
-            _isRenderDirty = true;
+            _isRenderDirty.Value = true;
         }
 
         protected override void OnScaleChanged(float targetScale, float relativeRatio)
         {
             base.OnScaleChanged(targetScale, relativeRatio);
-            _optimalResDirty = true;
+            _optimalResDirty.Value = true;
             UpdateSphereScale();
             HandleRenderSettingChanged();
         }
@@ -127,7 +127,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         protected virtual void HandleResolutionChanged(int newRes)
         {
-            _optimalResDirty = true;
+            _optimalResDirty.Value = true;
             if (_renderTexture == null || !_renderTexture.IsCreated()) return;
             if (_renderTexture.width == newRes) return;
 
@@ -148,7 +148,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             {
                 _ballCamera.targetTexture = _renderTexture;
             }
-            _isRenderDirty = true;
+            _isRenderDirty.Value = true;
             OnRenderTextureRecreated(_renderTexture);
         }
 

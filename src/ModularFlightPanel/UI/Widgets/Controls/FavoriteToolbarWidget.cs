@@ -151,7 +151,7 @@ namespace ModularFlightPanel.UI.Widgets
         private RectTransform _contentRt;
         private GameObject _emptyHintObj;
 
-        private bool _isCollapsed = false;
+        private readonly Cached<bool> _isCollapsed = new Cached<bool>(false);
         private ThemeConfig _currentTheme;
         private readonly CachedFloat _lastSyncTime = new CachedFloat(-1f);
         private readonly Cached<int> _cachedButtonCount = new Cached<int>(-1);
@@ -288,7 +288,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _headerTitle.raycastTarget = false;
 
                 Button collBtn = UIFactory.CreateCockpitButton(_headerGrip.transform, "FavCollapseBtn",
-                    _isCollapsed ? "»" : "«",
+                    _isCollapsed.Value ? "»" : "«",
                     new Vector2(18f * s, 18f * s),
                     Vector2.zero,
                     WidgetStyleManager.Surface(SurfaceStyleRole.SlotActive), borderCol, primaryAccent,
@@ -313,7 +313,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _headerTitle.rectTransform.anchorMax = new Vector2(1f, 1f);
                     _headerTitle.rectTransform.offsetMin = new Vector2(4f * s, 0f);
                     _headerTitle.rectTransform.offsetMax = new Vector2(-22f * s, 0f);
-                    _headerTitle.text = _isCollapsed ? "★" : I18n.Tr("FAV_DOCK_TITLE", "★ QUICK DOCK");
+                    _headerTitle.text = _isCollapsed.Value ? "★" : I18n.Tr("FAV_DOCK_TITLE", "★ QUICK DOCK");
                 }
                 if (_collapseBtn != null)
                 {
@@ -321,7 +321,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _collapseBtn.image.rectTransform.anchorMax = new Vector2(1f, 0.5f);
                     _collapseBtn.image.rectTransform.anchoredPosition = new Vector2(-11f * s, 0f);
                     _collapseBtn.image.rectTransform.sizeDelta = new Vector2(18f * s, 16f * s);
-                    if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "▼" : "▲";
+                    if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed.Value ? "▼" : "▲";
                 }
             }
             else
@@ -348,7 +348,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _collapseBtn.image.rectTransform.anchorMax = new Vector2(0.5f, 0.18f);
                     _collapseBtn.image.rectTransform.anchoredPosition = Vector2.zero;
                     _collapseBtn.image.rectTransform.sizeDelta = new Vector2(22f * s, 14f * s);
-                    if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "»" : "«";
+                    if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed.Value ? "»" : "«";
                 }
             }
 
@@ -378,7 +378,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private Vector2 GetEstimatedPanelSize(float s, int orient)
         {
-            if (_isCollapsed)
+            if (_isCollapsed.Value)
             {
                 return new Vector2(36f * s, 36f * s);
             }
@@ -427,11 +427,11 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ToggleCollapse()
         {
-            _isCollapsed = !_isCollapsed;
+            _isCollapsed.Value = !_isCollapsed.Value;
             float s = CurrentDpiScale;
             int orient = ThemeManager.Instance.DockFavoriteOrientation;
 
-            if (_isCollapsed)
+            if (_isCollapsed.Value)
             {
                 Vector2 pillSize = new Vector2(36f * s, 36f * s);
                 RectTransform.sizeDelta = pillSize;
@@ -800,13 +800,13 @@ namespace ModularFlightPanel.UI.Widgets
             public bool Active;
         }
         private ButtonStateSnapshot[] _cachedButtonStates;
-        private bool _needsRepopulate;
-        private int _snapshotCount;
+        private readonly Cached<bool> _needsRepopulate = new Cached<bool>(false);
+        private readonly Cached<int> _snapshotCount = new Cached<int>(0);
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            if (_isCollapsed) return;
+            if (_isCollapsed.Value) return;
 
             float now = Time.unscaledTime;
             if (now - _lastSyncTime.Value < 1.0f) return;
@@ -824,7 +824,7 @@ namespace ModularFlightPanel.UI.Widgets
 
                     if (currentCount != _cachedButtonCount.Value)
                     {
-                        _needsRepopulate = true;
+                        _needsRepopulate.Value = true;
                         return;
                     }
 
@@ -832,7 +832,7 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _cachedButtonStates = new ButtonStateSnapshot[_itemViews.Count];
                     }
-                    _snapshotCount = _itemViews.Count;
+                    _snapshotCount.Value = _itemViews.Count;
 
                     for (int i = 0; i < _itemViews.Count; i++)
                     {
@@ -860,7 +860,7 @@ namespace ModularFlightPanel.UI.Widgets
                 MFPLogger.WarnThrottled("FavToolbar_Heartbeat", $"Failed heartbeat KSP button states: {ex.Message}");
             }
 #endif
-            _logic.IsCollapsed = _isCollapsed;
+            _logic.IsCollapsed = _isCollapsed.Value;
             _logic.FavoriteCount = GetFavoriteButtonsCount();
         }
 
@@ -868,12 +868,12 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            if (_isCollapsed) return;
+            if (_isCollapsed.Value) return;
 
 #if KSP_RUNTIME
-            if (_needsRepopulate)
+            if (_needsRepopulate.Value)
             {
-                _needsRepopulate = false;
+                _needsRepopulate.Value = false;
                 PopulateButtons(_contentRt, CurrentDpiScale);
                 return;
             }
@@ -884,7 +884,7 @@ namespace ModularFlightPanel.UI.Widgets
             Color ledOn = theme.AccentPrimary;
             Color ledOff = WidgetStyleManager.Surface(SurfaceStyleRole.LedOff);
 
-            for (int i = 0; i < _snapshotCount && i < _itemViews.Count; i++)
+            for (int i = 0; i < _snapshotCount.Value && i < _itemViews.Count; i++)
             {
                 var view = _itemViews[i];
                 if (view == null) continue;

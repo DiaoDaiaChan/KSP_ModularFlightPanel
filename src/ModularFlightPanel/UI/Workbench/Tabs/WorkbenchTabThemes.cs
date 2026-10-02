@@ -46,7 +46,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 UnityEngine.Object.Destroy(c);
             }
 
-            GameObject card = WorkbenchControls.CreateCard(_container, "ThemesCard", Vector2.zero);
+            GameObject card = WorkbenchControls.CreatePanel(_container, "ThemesCard", Vector2.zero);
             RectTransform cardRt = card.GetComponent<RectTransform>();
             cardRt.anchorMin = Vector2.zero;
             cardRt.anchorMax = Vector2.one;
@@ -203,14 +203,24 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
             descTxt.text = item.Desc;
 
             // 应用按钮
-            WorkbenchControls.CreateButton(card.transform, "ApplyBtn", isActive ? "✔ 当前使用中" : "应用主题", new Vector2(100f, 28f), () =>
+            GameObject applyBtn = WorkbenchControls.CreateButton(card.transform, "ApplyBtn", isActive ? "✔ 当前使用中" : "应用主题", new Vector2(100f, 28f), () =>
             {
                 ThemeManager.Instance?.SetTheme(item.Id);
                 ThemeManager.Instance?.SaveSettings();
                 WorkbenchStyleEngine.ClearCache();
                 FlightHUDManager.Instance?.RebuildHUD();
                 Refresh();
-            }, isActive, 11);
+            }, false, 11);
+
+            if (isActive)
+            {
+                var txt = applyBtn.GetComponentInChildren<Text>();
+                if (txt != null)
+                {
+                    txt.color = WorkbenchStyleEngine.ColorAccentPrimary;
+                    txt.fontStyle = FontStyle.Bold;
+                }
+            }
         }
 
         private void ApplyAndRefreshTheme()

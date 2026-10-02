@@ -282,10 +282,10 @@ namespace ModularFlightPanel.UI.Widgets
         private int _fmtDbsMin = -9999;
 
         // I18n 缓存字符串
-        private string _cachedStrCaution;
-        private string _cachedStrWarning;
-        private string _cachedStrNorm;
-        private string _cachedStrArmed;
+        private string _cautionLabelStr;
+        private string _warningLabelStr;
+        private string _normLabelStr;
+        private string _armedLabelStr;
         private string _cachedStrNodeArmed;
         private string _cachedStrReady;
         private string _cachedStrEscape;
@@ -821,10 +821,10 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void InitCachedI18n()
         {
-            _cachedStrCaution = I18n.Tr("WIDGET_ALERT_CAUTION", "注意");
-            _cachedStrWarning = I18n.Tr("WIDGET_ALERT_WARNING", "危急");
-            _cachedStrNorm = I18n.Tr("WIDGET_ALERT_NORM", "正常");
-            _cachedStrArmed = I18n.Tr("WIDGET_ALERT_ARMED", "待命");
+            _cautionLabelStr = I18n.Tr("WIDGET_ALERT_CAUTION", "注意");
+            _warningLabelStr = I18n.Tr("WIDGET_ALERT_WARNING", "危急");
+            _normLabelStr = I18n.Tr("WIDGET_ALERT_NORM", "正常");
+            _armedLabelStr = I18n.Tr("WIDGET_ALERT_ARMED", "待命");
             _cachedStrNodeArmed = I18n.Tr("WIDGET_STATUS_NODE_ARMED", "节点待命");
             _cachedStrReady = I18n.Tr("WIDGET_STATUS_READY", "发射就绪");
             _cachedStrEscape = I18n.Tr("WIDGET_STATUS_ESCAPE", "深空逃逸");
@@ -1900,22 +1900,22 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<string> _lastRenderedEventLeftIcon = new Cached<string>(null);
         private readonly Cached<string> _lastRenderedEventRightIcon = new Cached<string>(null);
 
-        private bool _cautWasDeadFront = false;
-        private bool _warnWasDeadFront = false;
-        private bool _cellsStyleNeedsUpdate = true;
-        private bool _nominalStyleNeedsUpdate = true;
+        private readonly Cached<bool> _cautWasDeadFront = new Cached<bool>(false);
+        private readonly Cached<bool> _warnWasDeadFront = new Cached<bool>(false);
+        private readonly Cached<bool> _cellsStyleNeedsUpdate = new Cached<bool>(true);
+        private readonly Cached<bool> _nominalStyleNeedsUpdate = new Cached<bool>(true);
 
-        private string _cachedStrCaution;
-        private string _cachedStrWarning;
-        private string _cachedStrNorm;
-        private string _cachedStrArmed;
+        private string _cautionLabelStr;
+        private string _warningLabelStr;
+        private string _normLabelStr;
+        private string _armedLabelStr;
 
         private void InitCachedI18n()
         {
-            _cachedStrCaution = I18n.Tr("WIDGET_ALERT_CAUTION", "注意");
-            _cachedStrWarning = I18n.Tr("WIDGET_ALERT_WARNING", "危急");
-            _cachedStrNorm = I18n.Tr("WIDGET_ALERT_NORM", "正常");
-            _cachedStrArmed = I18n.Tr("WIDGET_ALERT_ARMED", "待命");
+            _cautionLabelStr = I18n.Tr("WIDGET_ALERT_CAUTION", "注意");
+            _warningLabelStr = I18n.Tr("WIDGET_ALERT_WARNING", "危急");
+            _normLabelStr = I18n.Tr("WIDGET_ALERT_NORM", "正常");
+            _armedLabelStr = I18n.Tr("WIDGET_ALERT_ARMED", "待命");
         }
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
@@ -2166,8 +2166,8 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             ApplyLayoutMode();
-            _cellsStyleNeedsUpdate = true;
-            _nominalStyleNeedsUpdate = true;
+            _cellsStyleNeedsUpdate.Value = true;
+            _nominalStyleNeedsUpdate.Value = true;
             _lastBannerDisplayState.Reset(BannerDisplayState.Normal);
             _lastRenderedNominalTitle.Reset(null);
             _lastRenderedNominalSub.Reset(null);
@@ -2330,7 +2330,7 @@ namespace ModularFlightPanel.UI.Widgets
                     _lastRenderedNominalSub.Reset(null);
                     _lastRenderedNominalIcon.Reset(null);
                     _lastNominalPhaseColor.Reset(Color.clear);
-                    _nominalStyleNeedsUpdate = true;
+                    _nominalStyleNeedsUpdate.Value = true;
                 }
                 else
                 {
@@ -2483,9 +2483,9 @@ namespace ModularFlightPanel.UI.Widgets
                 if (_bannerRightIcon != null) _bannerRightIcon.SetTextSafe(state.NominalIcon);
             }
 
-            if (_lastNominalPhaseColor.Update(phaseColor) || _nominalStyleNeedsUpdate)
+            if (_lastNominalPhaseColor.Update(phaseColor) || _nominalStyleNeedsUpdate.Value)
             {
-                _nominalStyleNeedsUpdate = false;
+                _nominalStyleNeedsUpdate.Value = false;
                 if (_bannerBg != null) SetColorIfChanged(_bannerBg, WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
                 if (_bannerOutline != null) SetOutlineColorIfChanged(_bannerOutline, WidgetStyleManager.Weighted(theme.AccentSecondary, LineWeight.Ghost));
                 if (_bannerPipBar != null) SetColorIfChanged(_bannerPipBar, phaseColor);
@@ -2504,12 +2504,12 @@ namespace ModularFlightPanel.UI.Widgets
             // ── A. 渲染左舱：CAUTION ──
             if (state.HasCautAlert)
             {
-                _cautWasDeadFront = false;
+                _cautWasDeadFront.Value = false;
                 _cautTitle.SetTextSafe(state.CautTitle);
                 _cautSub.SetTextSafe(state.CautSub);
                 _cautIcon.SetTextSafe(state.CautIcon);
 
-                if (_lastCautBlink.Update(state.CautBlink) || _cellsStyleNeedsUpdate)
+                if (_lastCautBlink.Update(state.CautBlink) || _cellsStyleNeedsUpdate.Value)
                 {
                     if (state.CautBlink)
                     {
@@ -2533,12 +2533,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                if (!_cautWasDeadFront || _cellsStyleNeedsUpdate)
+                if (!_cautWasDeadFront.Value || _cellsStyleNeedsUpdate.Value)
                 {
-                    _cautWasDeadFront = true;
+                    _cautWasDeadFront.Value = true;
                     // 暗态待命 (Dead-Front Nominal)
-                    _cautTitle.SetTextSafe(_cachedStrCaution ?? (_cachedStrCaution = I18n.Tr("WIDGET_ALERT_CAUTION", "注意")));
-                    _cautSub.SetTextSafe(_cachedStrNorm ?? (_cachedStrNorm = I18n.Tr("WIDGET_ALERT_NORM", "正常")));
+                    _cautTitle.SetTextSafe(_cautionLabelStr ?? (_cautionLabelStr = I18n.Tr("WIDGET_ALERT_CAUTION", "注意")));
+                    _cautSub.SetTextSafe(_normLabelStr ?? (_normLabelStr = I18n.Tr("WIDGET_ALERT_NORM", "正常")));
                     _cautIcon.SetTextSafe("●");
 
                     _cautBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
@@ -2553,12 +2553,12 @@ namespace ModularFlightPanel.UI.Widgets
             // ── B. 渲染右舱：WARNING ──
             if (state.HasWarnAlert)
             {
-                _warnWasDeadFront = false;
+                _warnWasDeadFront.Value = false;
                 _warnTitle.SetTextSafe(state.WarnTitle);
                 _warnSub.SetTextSafe(state.WarnSub);
                 _warnIcon.SetTextSafe(state.WarnIcon);
 
-                if (_lastWarnBlink.Update(state.WarnBlink) || _cellsStyleNeedsUpdate)
+                if (_lastWarnBlink.Update(state.WarnBlink) || _cellsStyleNeedsUpdate.Value)
                 {
                     if (state.WarnBlink)
                     {
@@ -2582,12 +2582,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                if (!_warnWasDeadFront || _cellsStyleNeedsUpdate)
+                if (!_warnWasDeadFront.Value || _cellsStyleNeedsUpdate.Value)
                 {
-                    _warnWasDeadFront = true;
+                    _warnWasDeadFront.Value = true;
                     // 暗态待命 (Dead-Front Nominal)
-                    _warnTitle.SetTextSafe(_cachedStrWarning ?? (_cachedStrWarning = I18n.Tr("WIDGET_ALERT_WARNING", "危急")));
-                    _warnSub.SetTextSafe(_cachedStrArmed ?? (_cachedStrArmed = I18n.Tr("WIDGET_ALERT_ARMED", "待命")));
+                    _warnTitle.SetTextSafe(_warningLabelStr ?? (_warningLabelStr = I18n.Tr("WIDGET_ALERT_WARNING", "危急")));
+                    _warnSub.SetTextSafe(_armedLabelStr ?? (_armedLabelStr = I18n.Tr("WIDGET_ALERT_ARMED", "待命")));
                     _warnIcon.SetTextSafe("●");
 
                     _warnBg.SetColor(WidgetStyleManager.Surface(SurfaceStyleRole.Inset, theme));
@@ -2599,7 +2599,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            _cellsStyleNeedsUpdate = false;
+            _cellsStyleNeedsUpdate.Value = false;
         }
 
         protected override void OnLanguageChanged()
@@ -2607,10 +2607,10 @@ namespace ModularFlightPanel.UI.Widgets
             base.OnLanguageChanged();
             InitCachedI18n();
             _logic.UpdateI18n();
-            _cautWasDeadFront = false;
-            _warnWasDeadFront = false;
-            _cellsStyleNeedsUpdate = true;
-            _nominalStyleNeedsUpdate = true;
+            _cautWasDeadFront.Value = false;
+            _warnWasDeadFront.Value = false;
+            _cellsStyleNeedsUpdate.Value = true;
+            _nominalStyleNeedsUpdate.Value = true;
         }
 
         public override void ApplyTheme(ThemeConfig theme)
@@ -2627,8 +2627,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             this.Controls.ApplyThemeToControls(theme);
 
-            _cellsStyleNeedsUpdate = true;
-            _nominalStyleNeedsUpdate = true;
+            _cellsStyleNeedsUpdate.Value = true;
+            _nominalStyleNeedsUpdate.Value = true;
         }
 
         protected override void OnResetPrivateCache()
@@ -2639,8 +2639,8 @@ namespace ModularFlightPanel.UI.Widgets
             _lastWarnCount.Reset(-1);
             _lastCautBlink.Reset(false);
             _lastWarnBlink.Reset(false);
-            _cellsStyleNeedsUpdate = true;
-            _nominalStyleNeedsUpdate = true;
+            _cellsStyleNeedsUpdate.Value = true;
+            _nominalStyleNeedsUpdate.Value = true;
             _lastNominalPhaseColor.Reset(Color.clear);
             _lastRenderedNominalTitle.Reset(null);
             _lastRenderedNominalSub.Reset(null);
@@ -2649,8 +2649,8 @@ namespace ModularFlightPanel.UI.Widgets
             _lastRenderedEventSub.Reset(null);
             _lastRenderedEventLeftIcon.Reset(null);
             _lastRenderedEventRightIcon.Reset(null);
-            _cautWasDeadFront = false;
-            _warnWasDeadFront = false;
+            _cautWasDeadFront.Value = false;
+            _warnWasDeadFront.Value = false;
             _logic.Reset();
         }
 

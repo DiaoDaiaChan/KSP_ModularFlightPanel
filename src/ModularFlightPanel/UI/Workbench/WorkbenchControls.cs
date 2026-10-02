@@ -15,6 +15,35 @@ namespace ModularFlightPanel.UI.Workbench
     {
         public static Font MainFont => UIFactory.GetActiveFont();
 
+        #region Modern Panel & Container
+
+        /// <summary>
+        /// 创建结构性容器面板 (顶栏、底栏、导航轨、左右分栏，0 粗暴霓虹边框，仅有纤细深邃结构线)
+        /// </summary>
+        public static GameObject CreatePanel(Transform parent, string name, Vector2 size)
+        {
+            GameObject panelObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            panelObj.transform.SetParent(parent, false);
+
+            RectTransform rt = panelObj.GetComponent<RectTransform>();
+            rt.sizeDelta = size;
+
+            if (size.x > 0 || size.y > 0)
+            {
+                var le = panelObj.AddComponent<LayoutElement>();
+                if (size.x > 0) { le.preferredWidth = size.x; le.minWidth = size.x; }
+                if (size.y > 0) { le.preferredHeight = size.y; le.minHeight = size.y; }
+            }
+
+            Image img = panelObj.GetComponent<Image>();
+            img.material = WorkbenchStyleEngine.GetContainerPanelMaterial();
+            img.color = WorkbenchStyleEngine.ColorPanelBg;
+
+            return panelObj;
+        }
+
+        #endregion
+
         #region Modern Button
 
         /// <summary>
@@ -62,7 +91,7 @@ namespace ModularFlightPanel.UI.Workbench
             txt.font = MainFont;
             txt.fontSize = fontSize;
             txt.alignment = TextAnchor.MiddleCenter;
-            txt.color = isPrimary ? WorkbenchStyleEngine.ColorTextPrimary : WorkbenchStyleEngine.ColorTextAccent;
+            txt.color = isPrimary ? WorkbenchStyleEngine.ColorTextPrimary : new Color(0.92f, 0.95f, 0.98f, 0.88f);
             txt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
             txt.text = labelText;
             txt.raycastTarget = false;
@@ -73,6 +102,182 @@ namespace ModularFlightPanel.UI.Workbench
             effect.LabelText = txt;
 
             return btnObj;
+        }
+
+        #endregion
+
+        #region Modern Navigation Rail Button
+
+        /// <summary>
+        /// 创建 Activity Bar 垂直导航轨专用按钮 (带左侧 3px 竖向激活高亮药丸条，无粗暴绿色大色块)
+        /// </summary>
+        public static GameObject CreateActivityRailButton(Transform parent, string name, string icon, string label, Action onClick, bool isActive)
+        {
+            GameObject btnObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(ModernRailButtonEffect));
+            btnObj.transform.SetParent(parent, false);
+
+            RectTransform rt = btnObj.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(46f, 48f);
+
+            var le = btnObj.AddComponent<LayoutElement>();
+            le.preferredWidth = 46f;
+            le.minWidth = 46f;
+            le.preferredHeight = 48f;
+            le.minHeight = 48f;
+            le.flexibleWidth = 1f;
+            le.flexibleHeight = 0f;
+
+            Image img = btnObj.GetComponent<Image>();
+            img.type = Image.Type.Simple;
+            img.material = WorkbenchStyleEngine.GetButtonMaterial(false, false);
+            img.color = isActive ? new Color(0.12f, 0.17f, 0.24f, 0.70f) : new Color(0f, 0f, 0f, 0.0f);
+
+            Button btn = btnObj.GetComponent<Button>();
+            btn.targetGraphic = img;
+            if (onClick != null)
+            {
+                btn.onClick.AddListener(() => onClick());
+            }
+
+            // 左侧竖向激活指示条 (3px 宽胶囊)
+            GameObject indObj = new GameObject("ActiveIndicator", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            indObj.transform.SetParent(btnObj.transform, false);
+
+            RectTransform indRt = indObj.GetComponent<RectTransform>();
+            indRt.anchorMin = new Vector2(0f, 0.18f);
+            indRt.anchorMax = new Vector2(0f, 0.82f);
+            indRt.pivot = new Vector2(0f, 0.5f);
+            indRt.sizeDelta = new Vector2(3f, 0f);
+            indRt.anchoredPosition = new Vector2(1f, 0f);
+
+            Image indImg = indObj.GetComponent<Image>();
+            indImg.color = WorkbenchStyleEngine.ColorAccentPrimary;
+            indImg.raycastTarget = false;
+            indObj.SetActive(isActive);
+
+            // 文本与图标
+            GameObject txtObj = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            txtObj.transform.SetParent(btnObj.transform, false);
+
+            RectTransform txtRt = txtObj.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.sizeDelta = Vector2.zero;
+
+            Text txt = txtObj.GetComponent<Text>();
+            txt.font = MainFont;
+            txt.fontSize = 14;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.color = isActive ? WorkbenchStyleEngine.ColorTextPrimary : WorkbenchStyleEngine.ColorTextMuted;
+            txt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
+            txt.text = $"{icon}\n<size=9>{label}</size>";
+            txt.raycastTarget = false;
+
+            ModernRailButtonEffect railEffect = btnObj.GetComponent<ModernRailButtonEffect>();
+            railEffect.ButtonImage = img;
+            railEffect.IndicatorObj = indObj;
+            railEffect.LabelText = txt;
+            railEffect.IsActive = isActive;
+
+            return btnObj;
+        }
+
+        #endregion
+
+        #region Modern Segmented Control
+
+        /// <summary>
+        /// 创建平滑分段滑动选择器 (iOS/Fluent Segmented Control)
+        /// </summary>
+        public static GameObject CreateSegmentedControl(Transform parent, string name, string[] options, int selectedIndex, Action<int> onSelect, Vector2 size)
+        {
+            GameObject trackObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(HorizontalLayoutGroup));
+            trackObj.transform.SetParent(parent, false);
+
+            RectTransform trackRt = trackObj.GetComponent<RectTransform>();
+            trackRt.sizeDelta = size;
+
+            if (size.x > 0 || size.y > 0)
+            {
+                var le = trackObj.AddComponent<LayoutElement>();
+                if (size.x > 0) { le.preferredWidth = size.x; le.minWidth = size.x; }
+                if (size.y > 0) { le.preferredHeight = size.y; le.minHeight = size.y; }
+                le.flexibleWidth = 1f;
+            }
+
+            Image trackImg = trackObj.GetComponent<Image>();
+            trackImg.material = WorkbenchStyleEngine.GetSegmentTrackMaterial();
+            trackImg.color = new Color(0.04f, 0.06f, 0.09f, 0.85f);
+
+            HorizontalLayoutGroup hlg = trackObj.GetComponent<HorizontalLayoutGroup>();
+            hlg.childForceExpandWidth = true;
+            hlg.childForceExpandHeight = true;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.spacing = 3f;
+            hlg.padding = new RectOffset(3, 3, 3, 3);
+
+            Image[] optionImgs = new Image[options.Length];
+            Text[] optionTxts = new Text[options.Length];
+
+            for (int i = 0; i < options.Length; i++)
+            {
+                int idx = i;
+                bool isSel = (idx == selectedIndex);
+
+                GameObject optObj = new GameObject("Opt_" + i, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+                optObj.transform.SetParent(trackObj.transform, false);
+
+                var optLe = optObj.AddComponent<LayoutElement>();
+                optLe.flexibleWidth = 1f;
+
+                Image optImg = optObj.GetComponent<Image>();
+                optImg.material = isSel ? WorkbenchStyleEngine.GetSegmentThumbMaterial() : null;
+                optImg.color = isSel ? new Color(0.14f, 0.20f, 0.28f, 0.85f) : Color.clear;
+                optionImgs[i] = optImg;
+
+                GameObject optTxtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                optTxtObj.transform.SetParent(optObj.transform, false);
+
+                RectTransform txtRt = optTxtObj.GetComponent<RectTransform>();
+                txtRt.anchorMin = Vector2.zero;
+                txtRt.anchorMax = Vector2.one;
+                txtRt.sizeDelta = Vector2.zero;
+
+                Text optTxt = optTxtObj.GetComponent<Text>();
+                optTxt.font = MainFont;
+                optTxt.fontSize = 11;
+                optTxt.fontStyle = isSel ? FontStyle.Bold : FontStyle.Normal;
+                optTxt.alignment = TextAnchor.MiddleCenter;
+                optTxt.color = isSel ? WorkbenchStyleEngine.ColorTextPrimary : WorkbenchStyleEngine.ColorTextMuted;
+                optTxt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
+                optTxt.text = options[i];
+                optTxt.raycastTarget = false;
+                optionTxts[i] = optTxt;
+
+                Button optBtn = optObj.GetComponent<Button>();
+                optBtn.targetGraphic = optImg;
+                optBtn.onClick.AddListener(() =>
+                {
+                    for (int k = 0; k < options.Length; k++)
+                    {
+                        bool active = (k == idx);
+                        if (optionImgs[k] != null)
+                        {
+                            optionImgs[k].material = active ? WorkbenchStyleEngine.GetSegmentThumbMaterial() : null;
+                            optionImgs[k].color = active ? new Color(0.14f, 0.20f, 0.28f, 0.85f) : Color.clear;
+                        }
+                        if (optionTxts[k] != null)
+                        {
+                            optionTxts[k].color = active ? WorkbenchStyleEngine.ColorTextPrimary : WorkbenchStyleEngine.ColorTextMuted;
+                            optionTxts[k].fontStyle = active ? FontStyle.Bold : FontStyle.Normal;
+                        }
+                    }
+                    onSelect?.Invoke(idx);
+                });
+            }
+
+            return trackObj;
         }
 
         #endregion
@@ -115,27 +320,28 @@ namespace ModularFlightPanel.UI.Workbench
         #region Modern Pill Badge
 
         /// <summary>
-        /// 创建带有强调色或状态色的紧凑胶囊药丸徽章
+        /// 创建带有强调色或状态色的紧凑半透胶囊药丸徽章
         /// </summary>
-        public static GameObject CreatePill(Transform parent, string name, string labelText, Color accentColor, int fontSize = 11)
+        public static GameObject CreatePill(Transform parent, string name, string labelText, Color accentColor, int fontSize = 10)
         {
             GameObject pillObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             pillObj.transform.SetParent(parent, false);
 
-            float pillWidth = Mathf.Max(48f, labelText.Length * 8f + 20f);
+            float pillWidth = Mathf.Max(38f, labelText.Length * 7.5f + 16f);
             RectTransform rt = pillObj.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(pillWidth, 22f);
+            rt.sizeDelta = new Vector2(pillWidth, 20f);
 
             var le = pillObj.AddComponent<LayoutElement>();
             le.preferredWidth = pillWidth;
             le.minWidth = pillWidth;
-            le.preferredHeight = 22f;
-            le.minHeight = 22f;
+            le.preferredHeight = 20f;
+            le.minHeight = 20f;
             le.flexibleWidth = 0f;
 
             Image img = pillObj.GetComponent<Image>();
-            img.material = WorkbenchStyleEngine.GetPillDockMaterial(true);
-            img.color = WorkbenchStyleEngine.ColorPillDarkBg;
+            img.material = WorkbenchStyleEngine.GetPillDockMaterial(false);
+            // 极简半透微彩色，杜绝实心色块刺眼
+            img.color = new Color(accentColor.r * 0.16f + 0.03f, accentColor.g * 0.16f + 0.04f, accentColor.b * 0.16f + 0.06f, 0.85f);
 
             GameObject txtObj = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
             txtObj.transform.SetParent(pillObj.transform, false);
@@ -148,9 +354,9 @@ namespace ModularFlightPanel.UI.Workbench
             Text txt = txtObj.GetComponent<Text>();
             txt.font = MainFont;
             txt.fontSize = fontSize;
-            txt.fontStyle = FontStyle.Bold;
+            txt.fontStyle = FontStyle.Normal;
             txt.alignment = TextAnchor.MiddleCenter;
-            txt.color = accentColor;
+            txt.color = Color.Lerp(accentColor, Color.white, 0.25f);
             txt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
             txt.text = labelText;
             txt.horizontalOverflow = HorizontalWrapMode.Overflow;
@@ -361,7 +567,7 @@ namespace ModularFlightPanel.UI.Workbench
 
             Image bg = root.GetComponent<Image>();
             bg.material = WorkbenchStyleEngine.GetCardMaterial(false);
-            bg.color = WorkbenchStyleEngine.ColorCardBg;
+            bg.color = new Color(0.04f, 0.06f, 0.09f, 0.88f);
 
             InputField input = root.GetComponent<InputField>();
 
@@ -379,6 +585,7 @@ namespace ModularFlightPanel.UI.Workbench
             phTxt.fontSize = 12;
             phTxt.fontStyle = FontStyle.Italic;
             phTxt.color = WorkbenchStyleEngine.ColorTextMuted;
+            phTxt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
             phTxt.text = placeholder;
             phTxt.alignment = TextAnchor.MiddleLeft;
 
@@ -395,6 +602,7 @@ namespace ModularFlightPanel.UI.Workbench
             txt.font = MainFont;
             txt.fontSize = 12;
             txt.color = WorkbenchStyleEngine.ColorTextPrimary;
+            txt.material = WorkbenchStyleEngine.GetCrispTextMaterial();
             txt.alignment = TextAnchor.MiddleLeft;
 
             input.textComponent = txt;
@@ -480,6 +688,20 @@ namespace ModularFlightPanel.UI.Workbench
         public Image ButtonImage;
         public Text LabelText;
 
+        public void SetPrimary(bool isPrimary)
+        {
+            IsPrimary = isPrimary;
+            if (ButtonImage != null)
+            {
+                ButtonImage.material = WorkbenchStyleEngine.GetButtonMaterial(IsPrimary, false);
+                ButtonImage.color = IsPrimary ? WorkbenchStyleEngine.ColorBtnPrimaryBg : WorkbenchStyleEngine.ColorBtnSecondaryBg;
+            }
+            if (LabelText != null)
+            {
+                LabelText.color = IsPrimary ? WorkbenchStyleEngine.ColorTextPrimary : new Color(0.92f, 0.95f, 0.98f, 0.88f);
+            }
+        }
+
         public void OnPointerEnter(PointerEventData eventData)
         {
             if (ButtonImage != null)
@@ -501,6 +723,65 @@ namespace ModularFlightPanel.UI.Workbench
         public void OnPointerDown(PointerEventData eventData)
         {
             transform.localScale = new Vector3(0.97f, 0.97f, 1f);
+        }
+
+        public void OnPointerUp(PointerEventData eventData)
+        {
+            transform.localScale = Vector3.one;
+        }
+    }
+
+    public class ModernRailButtonEffect : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
+    {
+        public bool IsActive;
+        public Image ButtonImage;
+        public GameObject IndicatorObj;
+        public Text LabelText;
+
+        public void SetActiveState(bool active)
+        {
+            IsActive = active;
+            if (IndicatorObj != null)
+            {
+                IndicatorObj.SetActive(active);
+            }
+            if (ButtonImage != null)
+            {
+                ButtonImage.color = active ? new Color(0.12f, 0.17f, 0.24f, 0.70f) : new Color(0f, 0f, 0f, 0.0f);
+            }
+            if (LabelText != null)
+            {
+                LabelText.color = active ? WorkbenchStyleEngine.ColorTextPrimary : WorkbenchStyleEngine.ColorTextMuted;
+            }
+        }
+
+        public void OnPointerEnter(PointerEventData eventData)
+        {
+            if (ButtonImage != null && !IsActive)
+            {
+                ButtonImage.color = new Color(0.15f, 0.20f, 0.28f, 0.45f);
+            }
+            if (LabelText != null && !IsActive)
+            {
+                LabelText.color = WorkbenchStyleEngine.ColorTextPrimary;
+            }
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            if (ButtonImage != null && !IsActive)
+            {
+                ButtonImage.color = new Color(0f, 0f, 0f, 0.0f);
+            }
+            if (LabelText != null && !IsActive)
+            {
+                LabelText.color = WorkbenchStyleEngine.ColorTextMuted;
+            }
+        }
+
+        public void OnPointerDown(PointerEventData eventData)
+        {
+            transform.localScale = new Vector3(0.96f, 0.96f, 1f);
         }
 
         public void OnPointerUp(PointerEventData eventData)

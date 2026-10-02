@@ -293,8 +293,8 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly Cached<string> _lastValStr = new Cached<string>(string.Empty);
         private readonly CachedFloat _lastFillHeight = new CachedFloat(-9999f, 0.05f);
 
-        private BarGaugeKind _kind;
-        private BarGaugeVacuumMode _vacuumMode = BarGaugeVacuumMode.CollapsePill;
+        private readonly Cached<BarGaugeKind> _kind = new Cached<BarGaugeKind>(BarGaugeKind.Throttle);
+        private readonly Cached<BarGaugeVacuumMode> _vacuumMode = new Cached<BarGaugeVacuumMode>(BarGaugeVacuumMode.CollapsePill);
 
         // 核心轨道与背景 (Track)
         private RectTransform _trackRt;
@@ -366,10 +366,10 @@ namespace ModularFlightPanel.UI.Widgets
         private string _valueToken = "{THR}";
         private string _titleTemplate = "THR";
         private string _bottomTagTemplate = "IDLE";
-        private double _minVal = 0.0;
-        private double _maxVal = 100.0;
-        private double _cautionVal = 0.0;
-        private double _warningVal = 0.0;
+        private readonly CachedDouble _minVal = new CachedDouble(0.0, 0.001);
+        private readonly CachedDouble _maxVal = new CachedDouble(100.0, 0.001);
+        private readonly CachedDouble _cautionVal = new CachedDouble(0.0, 0.001);
+        private readonly CachedDouble _warningVal = new CachedDouble(0.0, 0.001);
 
         private CardStyleRole _currentRole = CardStyleRole.Normal;
 
@@ -382,32 +382,32 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (config != null && (config.NumericToken == "{ATM}" || (config.WidgetId == "gauge.barometer" && config.NumericToken != "{Q}") || config.WidgetId.Contains("atm")))
             {
-                _kind = BarGaugeKind.AtmosphericPressure;
+                _kind.Value = BarGaugeKind.AtmosphericPressure;
                 _valueToken = "{ATM}";
                 _titleTemplate = "ATM";
                 _bottomTagTemplate = "SEA";
-                _minVal = config.MinValue != 0 ? config.MinValue : 0.0;
-                _maxVal = config.MaxValue > 0 ? config.MaxValue : 1.0;
+                _minVal.Value = config.MinValue != 0 ? config.MinValue : 0.0;
+                _maxVal.Value = config.MaxValue > 0 ? config.MaxValue : 1.0;
             }
             else if (config != null && (config.NumericToken == "{Q}" || config.WidgetId == "gauge.q" || config.WidgetId.Contains("q")))
             {
-                _kind = BarGaugeKind.DynamicPressure;
+                _kind.Value = BarGaugeKind.DynamicPressure;
                 _valueToken = "{Q}";
                 _titleTemplate = "Q";
                 _bottomTagTemplate = "MAX Q";
-                _minVal = config.MinValue != 0 ? config.MinValue : 0.0;
-                _maxVal = config.MaxValue > 0 ? config.MaxValue : 35.0;
-                _cautionVal = config.CautionThreshold > 0 ? config.CautionThreshold : 20.0;
-                _warningVal = config.WarningThreshold > 0 ? config.WarningThreshold : 28.0;
+                _minVal.Value = config.MinValue != 0 ? config.MinValue : 0.0;
+                _maxVal.Value = config.MaxValue > 0 ? config.MaxValue : 35.0;
+                _cautionVal.Value = config.CautionThreshold > 0 ? config.CautionThreshold : 20.0;
+                _warningVal.Value = config.WarningThreshold > 0 ? config.WarningThreshold : 28.0;
             }
             else
             {
-                _kind = BarGaugeKind.Throttle;
+                _kind.Value = BarGaugeKind.Throttle;
                 _valueToken = !string.IsNullOrEmpty(config?.NumericToken) ? config.NumericToken : "{THR}";
                 _titleTemplate = "THR";
                 _bottomTagTemplate = "IDLE";
-                _minVal = config != null && config.MinValue != 0 ? config.MinValue : 0.0;
-                _maxVal = config != null && config.MaxValue > 0 ? config.MaxValue : 100.0;
+                _minVal.Value = config != null && config.MinValue != 0 ? config.MinValue : 0.0;
+                _maxVal.Value = config != null && config.MaxValue > 0 ? config.MaxValue : 100.0;
             }
 
             if (!string.IsNullOrEmpty(config?.DisplayName) && config.DisplayName.Length <= 4 && !config.DisplayName.Contains(I18n.Tr("SUFFIX_TAPE_CHAR", "带")))
@@ -417,41 +417,41 @@ namespace ModularFlightPanel.UI.Widgets
             _valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN" }, _valueToken);
             _titleTemplate = GetTemplateChannel(new[] { "TITLE", "LABEL", "NAME" }, _titleTemplate);
             _bottomTagTemplate = GetTemplateChannel(new[] { "TAG", "BOTTOM", "BTM" }, _bottomTagTemplate);
-            _minVal = GetTemplateChannelFloat("MIN", (float)_minVal);
-            _maxVal = GetTemplateChannelFloat("MAX", (float)_maxVal);
-            _cautionVal = GetTemplateChannelFloat("CAUTION", (float)_cautionVal);
-            _warningVal = GetTemplateChannelFloat("WARNING", (float)_warningVal);
+            _minVal.Value = GetTemplateChannelFloat("MIN", (float)_minVal.Value);
+            _maxVal.Value = GetTemplateChannelFloat("MAX", (float)_maxVal.Value);
+            _cautionVal.Value = GetTemplateChannelFloat("CAUTION", (float)_cautionVal.Value);
+            _warningVal.Value = GetTemplateChannelFloat("WARNING", (float)_warningVal.Value);
 
-            if (_kind == BarGaugeKind.AtmosphericPressure)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure)
             {
                 string vacChannel = GetTemplateChannel(new[] { "VAC_MODE", "VAC", "VACUUM" }, string.Empty);
                 if (vacChannel.Equals("STANDARD", StringComparison.OrdinalIgnoreCase) || vacChannel.Equals("OFF", StringComparison.OrdinalIgnoreCase) || vacChannel.Equals("ALWAYS", StringComparison.OrdinalIgnoreCase) || vacChannel == "0")
                 {
-                    _vacuumMode = BarGaugeVacuumMode.Standard;
+                    _vacuumMode.Value = BarGaugeVacuumMode.Standard;
                 }
                 else if (vacChannel.Equals("AUTOHIDE", StringComparison.OrdinalIgnoreCase) || vacChannel.Equals("HIDE", StringComparison.OrdinalIgnoreCase) || vacChannel == "2")
                 {
-                    _vacuumMode = BarGaugeVacuumMode.AutoHide;
+                    _vacuumMode.Value = BarGaugeVacuumMode.AutoHide;
                 }
                 else
                 {
-                    _vacuumMode = BarGaugeVacuumMode.CollapsePill;
+                    _vacuumMode.Value = BarGaugeVacuumMode.CollapsePill;
                 }
             }
             else
             {
-                _vacuumMode = BarGaugeVacuumMode.Standard;
+                _vacuumMode.Value = BarGaugeVacuumMode.Standard;
             }
 
-            _logic.Kind = _kind;
+            _logic.Kind = _kind.Value;
             _logic.ValueToken = _valueToken;
             _logic.TitleTemplate = _titleTemplate;
             _logic.BottomTagTemplate = _bottomTagTemplate;
-            _logic.MinVal = _minVal;
-            _logic.MaxVal = _maxVal;
-            _logic.CautionVal = _cautionVal;
-            _logic.WarningVal = _warningVal;
-            _logic.VacuumMode = _vacuumMode;
+            _logic.MinVal = _minVal.Value;
+            _logic.MaxVal = _maxVal.Value;
+            _logic.CautionVal = _cautionVal.Value;
+            _logic.WarningVal = _warningVal.Value;
+            _logic.VacuumMode = _vacuumMode.Value;
 
             RectTransform.sizeDelta = new Vector2(barWidth, barHeight);
 
@@ -464,25 +464,25 @@ namespace ModularFlightPanel.UI.Widgets
             BuildTopTag(barWidth, barHeight, s, theme);
             BuildBottomTag(barWidth, barHeight, s, theme);
 
-            if (_kind == BarGaugeKind.AtmosphericPressure)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure)
             {
                 BuildVacuumPill(s, theme);
             }
 
-            if (_kind == BarGaugeKind.DynamicPressure || _cautionVal > 0)
+            if (_kind.Value == BarGaugeKind.DynamicPressure || _cautionVal.Value > 0)
             {
                 BuildCautionCue(trackWidth, trackHeight, s, theme);
             }
 
             this.Controls.Register(WidgetControlManager.WrapElement(this, "track", "刻度轨道", _trackRt != null ? _trackRt.gameObject : gameObject, (t) => {
-                if (_trackBg != null && _kind != BarGaugeKind.AtmosphericPressure) ApplyCard(_trackBg, _trackOutline, CardStyleRole.SubtleSlot, t);
+                if (_trackBg != null && _kind.Value != BarGaugeKind.AtmosphericPressure) ApplyCard(_trackBg, _trackOutline, CardStyleRole.SubtleSlot, t);
             }));
             if (_fillBarRt != null)
             {
                 this.Controls.Register(WidgetControlManager.WrapElement(this, "fill_bar", "充填光柱", _fillBarRt.gameObject, (t) => {
                     if (_fillBarImage != null)
                     {
-                        if (_kind == BarGaugeKind.AtmosphericPressure || _kind == BarGaugeKind.Throttle)
+                        if (_kind.Value == BarGaugeKind.AtmosphericPressure || _kind.Value == BarGaugeKind.Throttle)
                             _fillBarImage.color = Color.clear;
                         else
                             _fillBarImage.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, t);
@@ -530,7 +530,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildTrack(float w, float h, float s, ThemeConfig theme)
         {
-            if (_kind == BarGaugeKind.AtmosphericPressure)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure)
             {
                 _atmosphereGraphic = CreateChild<AtmosphereGradientGraphic>("Atmosphere_Gradient_Track", transform, new Vector2(w, h), Vector2.zero);
                 _trackRt = _atmosphereGraphic.rectTransform;
@@ -567,7 +567,7 @@ namespace ModularFlightPanel.UI.Widgets
             _fillBarRt.anchorMax = new Vector2(1f, 0f);
             _fillBarRt.pivot = new Vector2(0.5f, 0f);
 
-            if (_kind == BarGaugeKind.AtmosphericPressure || _kind == BarGaugeKind.Throttle)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure || _kind.Value == BarGaugeKind.Throttle)
             {
                 _fillBarImage.color = Color.clear;
             }
@@ -576,7 +576,7 @@ namespace ModularFlightPanel.UI.Widgets
                 _fillBarImage.color = WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
             }
 
-            Color capCol = (_kind == BarGaugeKind.AtmosphericPressure)
+            Color capCol = (_kind.Value == BarGaugeKind.AtmosphericPressure)
                 ? WidgetStyleManager.WithAlpha(theme.AccentSecondary.ToColor(), 0.90f)
                 : WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Primary, theme), 0.85f);
             GameObject capObj = UIFactory.CreatePanel(_fillBarRt, "Cap_Ray",
@@ -588,7 +588,7 @@ namespace ModularFlightPanel.UI.Widgets
             _capRayRt.anchoredPosition = Vector2.zero;
             _capRayImg = capObj.GetComponent<Image>();
 
-            Color traceCol = (_kind == BarGaugeKind.AtmosphericPressure)
+            Color traceCol = (_kind.Value == BarGaugeKind.AtmosphericPressure)
                 ? Color.clear
                 : WidgetStyleManager.WithAlpha(WidgetStyleManager.Meter(MeterStyleRole.Primary, theme), 0.45f);
             bool isLeft = Config.IsLeftOrientation;
@@ -656,7 +656,7 @@ namespace ModularFlightPanel.UI.Widgets
             actHead.transform.localEulerAngles = new Vector3(0f, 0f, 45f);
             _actPointerHead = actHead.GetComponent<Image>();
 
-            if (_kind == BarGaugeKind.Throttle)
+            if (_kind.Value == BarGaugeKind.Throttle)
             {
                 _cmdPointerObj = UIFactory.CreatePanel(_trackRt, "Command_Needle_Bug",
                     new Vector2(14f * s, 10f * s), Vector2.zero, Color.clear);
@@ -690,7 +690,7 @@ namespace ModularFlightPanel.UI.Widgets
             _topTagOutline.effectColor = theme.FrameBorderColor.ToColor();
 
             _topLedDot = CreateChild<Image>("Led_Dot", _topTagBox.transform, new Vector2(4f * s, 2.0f * s), new Vector2(0f, tagSize.y * 0.5f - 2f * s));
-            _topLedDot.color = (_kind == BarGaugeKind.AtmosphericPressure) ? theme.AccentSecondary.ToColor() : WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
+            _topLedDot.color = (_kind.Value == BarGaugeKind.AtmosphericPressure) ? theme.AccentSecondary.ToColor() : WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 
             _topTagTitle = UIFactory.CreateText(_topTagBox.transform, "Top_Tag_Title", _titleTemplate,
                 Mathf.Max(7, Mathf.RoundToInt(7.5f * s)), TextAnchor.MiddleCenter,
@@ -767,8 +767,8 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildCautionCue(float w, float h, float s, ThemeConfig theme)
         {
-            double range = _maxVal - _minVal;
-            float cautionFrac = range > 0.001 ? Mathf.Clamp01((float)((_cautionVal - _minVal) / range)) : 0.7f;
+            double range = _maxVal.Value - _minVal.Value;
+            float cautionFrac = range > 0.001 ? Mathf.Clamp01((float)((_cautionVal.Value - _minVal.Value) / range)) : 0.7f;
             float y = (-h * 0.5f) + (h * cautionFrac);
 
             _cautionLineObj = UIFactory.CreatePanel(_trackRt, "Caution_Cue",
@@ -782,7 +782,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
-            if (_kind == BarGaugeKind.AtmosphericPressure && _logic != null && _logic.CurrentState.IsVacuum)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure && _logic != null && _logic.CurrentState.IsVacuum)
             {
                 // 真空环境下大气压为 0，气压带折叠为极简 VAC 胶囊或处于全隐模式；
                 // 巡航期间遥测心跳自适应降频至 2Hz (每 500ms 检查一次是否再入大气层)，彻底根除背景算力空转
@@ -807,7 +807,7 @@ namespace ModularFlightPanel.UI.Widgets
             bool isEdit = WidgetDragHandler.IsEditModeActive;
 
             // 1. 真空极速短路拦截 (Zero Overhead Steady-State Vacuum Bypass)
-            if (_kind == BarGaugeKind.AtmosphericPressure && state.IsVacuum && !isEdit)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure && state.IsVacuum && !isEdit)
             {
                 if (state.VacuumMode == BarGaugeVacuumMode.AutoHide && _lastHidden.Value)
                 {
@@ -833,7 +833,7 @@ namespace ModularFlightPanel.UI.Widgets
             bool shouldCollapse = false;
             bool shouldHide = false;
 
-            if (_kind == BarGaugeKind.AtmosphericPressure && !isEdit)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure && !isEdit)
             {
                 if (state.IsVacuum)
                 {
@@ -952,7 +952,7 @@ namespace ModularFlightPanel.UI.Widgets
                     ? MeterStyleRole.Danger
                     : (state.Role == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
                 Color meterCol = WidgetStyleManager.Meter(meterRole, theme);
-                if (_fillBarImage != null && _kind != BarGaugeKind.Throttle && _kind != BarGaugeKind.AtmosphericPressure)
+                if (_fillBarImage != null && _kind.Value != BarGaugeKind.Throttle && _kind.Value != BarGaugeKind.AtmosphericPressure)
                     _fillBarImage.SetColor(meterCol);
                 if (_actPointerStem != null) _actPointerStem.SetColor(meterCol);
                 if (_actPointerHead != null) _actPointerHead.SetColor(meterCol);
@@ -968,7 +968,7 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ThemeConfig resolved = WidgetStyleManager.ResolveTheme(theme);
 
-            if (_kind == BarGaugeKind.AtmosphericPressure)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure)
             {
                 if (_atmosphereGraphic != null)
                 {
@@ -995,7 +995,7 @@ namespace ModularFlightPanel.UI.Widgets
             if (_topTagBg != null) ApplyCard(_topTagBg, _topTagOutline, CardStyleRole.Normal, theme);
             if (_topTagTitle != null) ApplyText(_topTagTitle, TextStyleRole.Label, theme);
             if (_topLedDot != null)
-                _topLedDot.color = (_kind == BarGaugeKind.AtmosphericPressure) ? resolved.AccentSecondary.ToColor() : WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
+                _topLedDot.color = (_kind.Value == BarGaugeKind.AtmosphericPressure) ? resolved.AccentSecondary.ToColor() : WidgetStyleManager.Meter(MeterStyleRole.Primary, theme);
 
             if (_bottomTagBg != null) ApplyCard(_bottomTagBg, _bottomTagOutline, CardStyleRole.Normal, theme);
             if (_bottomTagText != null) ApplyText(_bottomTagText, TextStyleRole.Accent, theme);
@@ -1014,25 +1014,25 @@ namespace ModularFlightPanel.UI.Widgets
                 ? MeterStyleRole.Danger
                 : (_currentRole == CardStyleRole.Warning ? MeterStyleRole.Warning : MeterStyleRole.Primary);
             Color meterCol = WidgetStyleManager.Meter(meterRole, theme);
-            Color actCol = (_kind == BarGaugeKind.AtmosphericPressure)
+            Color actCol = (_kind.Value == BarGaugeKind.AtmosphericPressure)
                 ? resolved.AccentSecondary.ToColor()
                 : meterCol;
 
             if (_fillBarImage != null)
             {
-                if (_kind == BarGaugeKind.AtmosphericPressure || _kind == BarGaugeKind.Throttle)
+                if (_kind.Value == BarGaugeKind.AtmosphericPressure || _kind.Value == BarGaugeKind.Throttle)
                     _fillBarImage.color = Color.clear;
                 else
                     _fillBarImage.color = meterCol;
             }
 
             if (_capRayImg != null)
-                _capRayImg.color = (_kind == BarGaugeKind.AtmosphericPressure)
+                _capRayImg.color = (_kind.Value == BarGaugeKind.AtmosphericPressure)
                     ? WidgetStyleManager.WithAlpha(resolved.AccentSecondary.ToColor(), 0.90f)
                     : WidgetStyleManager.WithAlpha(meterCol, 0.85f);
 
             if (_traceImg != null)
-                _traceImg.color = (_kind == BarGaugeKind.AtmosphericPressure)
+                _traceImg.color = (_kind.Value == BarGaugeKind.AtmosphericPressure)
                     ? Color.clear
                     : WidgetStyleManager.WithAlpha(meterCol, 0.45f);
 
@@ -1053,10 +1053,10 @@ namespace ModularFlightPanel.UI.Widgets
         public override void PopulateContextMenu(Action<string, Action> registerAction)
         {
             base.PopulateContextMenu(registerAction);
-            if (_kind == BarGaugeKind.AtmosphericPressure)
+            if (_kind.Value == BarGaugeKind.AtmosphericPressure)
             {
                 string label;
-                switch (_vacuumMode)
+                switch (_vacuumMode.Value)
                 {
                     case BarGaugeVacuumMode.CollapsePill:
                         label = I18n.Tr("CTX_BARO_VAC_PILL", "⚡ 真空模式: 【极简折叠】 (点击切换)");
@@ -1074,27 +1074,27 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void CycleVacuumMode()
         {
-            switch (_vacuumMode)
+            switch (_vacuumMode.Value)
             {
                 case BarGaugeVacuumMode.CollapsePill:
-                    _vacuumMode = BarGaugeVacuumMode.AutoHide;
+                    _vacuumMode.Value = BarGaugeVacuumMode.AutoHide;
                     break;
                 case BarGaugeVacuumMode.AutoHide:
-                    _vacuumMode = BarGaugeVacuumMode.Standard;
+                    _vacuumMode.Value = BarGaugeVacuumMode.Standard;
                     break;
                 default:
-                    _vacuumMode = BarGaugeVacuumMode.CollapsePill;
+                    _vacuumMode.Value = BarGaugeVacuumMode.CollapsePill;
                     break;
             }
-            _logic.VacuumMode = _vacuumMode;
+            _logic.VacuumMode = _vacuumMode.Value;
             if (Config != null)
             {
-                string modeStr = ((int)_vacuumMode).ToString();
+                string modeStr = ((int)_vacuumMode.Value).ToString();
                 SetCustomTemplateChannel("VAC_MODE", modeStr);
                 WidgetLayoutManager.Instance?.SaveLayout();
             }
             string tip;
-            switch (_vacuumMode)
+            switch (_vacuumMode.Value)
             {
                 case BarGaugeVacuumMode.CollapsePill:
                     tip = I18n.Tr("TIP_BARO_VAC_PILL", "已切换至真空极简折叠模式 (气压为0时收起为微型VAC标牌)");

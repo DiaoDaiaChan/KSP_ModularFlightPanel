@@ -132,8 +132,8 @@ namespace ModularFlightPanel.UI.Widgets
         private Image _topStripe;
 
         // 折叠 / 展开状态机
-        private bool _isCollapsed = false;
-        private bool _drawerExpanded = false;
+        private readonly Cached<bool> _isCollapsed = new Cached<bool>(false);
+        private readonly Cached<bool> _drawerExpanded = new Cached<bool>(false);
         private Button _collapseBtn;
         private Text _collapseBtnText;
         private GameObject _dockContent;
@@ -163,8 +163,8 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedFloat _lastSyncTime = new CachedFloat(-1f);
         private readonly Cached<int> _cachedButtonCount = new Cached<int>(-1);
         private ThemeConfig _currentTheme;
-        private float _currentPanelWidth = 240f;
-        private float _currentPanelHeight = 240f;
+        private readonly CachedFloat _currentPanelWidth = new CachedFloat(240f, 0.05f);
+        private readonly CachedFloat _currentPanelHeight = new CachedFloat(240f, 0.05f);
 
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.UltraLow;
 
@@ -226,20 +226,20 @@ namespace ModularFlightPanel.UI.Widgets
             if (orient == 0)
             {
                 // 纵向双列
-                _currentPanelHeight = 240f * s;
-                initialSize = new Vector2(88f * s, _currentPanelHeight);
+                _currentPanelHeight.Value = 240f * s;
+                initialSize = new Vector2(88f * s, _currentPanelHeight.Value);
             }
             else if (orient == 1)
             {
                 // 横向双行
-                _currentPanelWidth = 240f * s;
-                initialSize = new Vector2(_currentPanelWidth, 88f * s);
+                _currentPanelWidth.Value = 240f * s;
+                initialSize = new Vector2(_currentPanelWidth.Value, 88f * s);
             }
             else
             {
                 // 横向单行
-                _currentPanelWidth = 240f * s;
-                initialSize = new Vector2(_currentPanelWidth, 48f * s);
+                _currentPanelWidth.Value = 240f * s;
+                initialSize = new Vector2(_currentPanelWidth.Value, 48f * s);
             }
 
             RectTransform.sizeDelta = initialSize;
@@ -299,7 +299,7 @@ namespace ModularFlightPanel.UI.Widgets
                     collapseRt.sizeDelta = new Vector2(initialSize.x - 8f * s, headerH);
                     collapseRt.anchoredPosition = new Vector2(0f, initialSize.y * 0.5f - (headerH * 0.5f + 4f * s));
                 }
-                if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "»" : "« DOCK";
+                if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed.Value ? "»" : "« DOCK";
             }
             else
             {
@@ -311,7 +311,7 @@ namespace ModularFlightPanel.UI.Widgets
                     collapseRt.sizeDelta = new Vector2(btnW, initialSize.y - 8f * s);
                     collapseRt.anchoredPosition = new Vector2(-initialSize.x * 0.5f + (btnW * 0.5f + 4f * s), 0f);
                 }
-                if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed ? "»" : "«";
+                if (_collapseBtnText != null) _collapseBtnText.text = _isCollapsed.Value ? "»" : "«";
             }
 
             // 4. 滚动视口容器
@@ -374,11 +374,11 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void ToggleCollapse()
         {
-            _isCollapsed = !_isCollapsed;
+            _isCollapsed.Value = !_isCollapsed.Value;
             float s = CurrentDpiScale;
             int orient = ThemeManager.Instance.DockOrientation;
 
-            if (_isCollapsed)
+            if (_isCollapsed.Value)
             {
                 RectTransform.sizeDelta = new Vector2(38f * s, 38f * s);
                 if (_panelBg != null) _panelBg.rectTransform.sizeDelta = new Vector2(38f * s, 38f * s);
@@ -395,7 +395,7 @@ namespace ModularFlightPanel.UI.Widgets
             {
                 if (orient == 0)
                 {
-                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
+                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight.Value);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -415,7 +415,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else if (orient == 1)
                 {
-                    Vector2 panelSize = new Vector2(_currentPanelWidth, 88f * s);
+                    Vector2 panelSize = new Vector2(_currentPanelWidth.Value, 88f * s);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -435,7 +435,7 @@ namespace ModularFlightPanel.UI.Widgets
                 }
                 else
                 {
-                    Vector2 panelSize = new Vector2(_currentPanelWidth, 48f * s);
+                    Vector2 panelSize = new Vector2(_currentPanelWidth.Value, 48f * s);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -613,7 +613,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     totalContentHeight += drawerH + spacing;
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         int hRows = Mathf.CeilToInt(hiddenBtns.Count / 2f);
                         totalContentHeight += hRows * (btnH + spacing);
@@ -623,11 +623,11 @@ namespace ModularFlightPanel.UI.Widgets
 
                 parent.sizeDelta = new Vector2(parent.sizeDelta.x, totalContentHeight);
                 float preferredH = Mathf.Clamp(totalContentHeight + 36f * s, 140f * s, 420f * s);
-                _currentPanelHeight = preferredH;
+                _currentPanelHeight.Value = preferredH;
 
-                if (!_isCollapsed)
+                if (!_isCollapsed.Value)
                 {
-                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
+                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight.Value);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -663,10 +663,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
-                    string drawerText = _drawerExpanded ? I18n.Tr("MOD_TOOLBAR_COLLAPSE", "▲ 收起") : I18n.TrFormat("MOD_TOOLBAR_MORE_N", hiddenBtns.Count);
+                    string drawerText = _drawerExpanded.Value ? I18n.Tr("MOD_TOOLBAR_COLLAPSE", "▲ 收起") : I18n.TrFormat("MOD_TOOLBAR_MORE_N", hiddenBtns.Count);
                     CreateVerticalDrawerButton(parent, 0f, drawerY, 78f * s, drawerH, drawerText, s);
 
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         float hiddenStartY = -(pRows * (btnH + spacing) + drawerH + spacing + 2f * s);
                         for (int j = 0; j < hiddenBtns.Count; j++)
@@ -695,7 +695,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     totalContentWidth += drawerW + spacing;
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         int hCols = Mathf.CeilToInt(hiddenBtns.Count / 2f);
                         totalContentWidth += hCols * (btnW + spacing);
@@ -705,11 +705,11 @@ namespace ModularFlightPanel.UI.Widgets
 
                 parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
                 float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 160f * s, 680f * s);
-                _currentPanelWidth = preferredW;
+                _currentPanelWidth.Value = preferredW;
 
-                if (!_isCollapsed)
+                if (!_isCollapsed.Value)
                 {
-                    Vector2 panelSize = new Vector2(_currentPanelWidth, 88f * s);
+                    Vector2 panelSize = new Vector2(_currentPanelWidth.Value, 88f * s);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -745,10 +745,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
-                    string drawerText = _drawerExpanded ? "◀" : $"▶\n{hiddenBtns.Count}";
+                    string drawerText = _drawerExpanded.Value ? "◀" : $"▶\n{hiddenBtns.Count}";
                     CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 76f * s, drawerText, s);
 
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
                         for (int j = 0; j < hiddenBtns.Count; j++)
@@ -777,7 +777,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     totalContentWidth += drawerW + spacing;
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         int hCols = hiddenBtns.Count;
                         totalContentWidth += hCols * (btnW + spacing);
@@ -787,11 +787,11 @@ namespace ModularFlightPanel.UI.Widgets
 
                 parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
                 float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 140f * s, 760f * s);
-                _currentPanelWidth = preferredW;
+                _currentPanelWidth.Value = preferredW;
 
-                if (!_isCollapsed)
+                if (!_isCollapsed.Value)
                 {
-                    Vector2 panelSize = new Vector2(_currentPanelWidth, 48f * s);
+                    Vector2 panelSize = new Vector2(_currentPanelWidth.Value, 48f * s);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -825,10 +825,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
-                    string drawerText = _drawerExpanded ? "◀" : $"▶{hiddenBtns.Count}";
+                    string drawerText = _drawerExpanded.Value ? "◀" : $"▶{hiddenBtns.Count}";
                     CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 36f * s, drawerText, s);
 
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
                         for (int j = 0; j < hiddenBtns.Count; j++)
@@ -1097,7 +1097,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     totalContentHeight += drawerH + spacing;
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         int hRows = Mathf.CeilToInt(hiddenItems.Count / 2f);
                         totalContentHeight += hRows * (btnH + spacing);
@@ -1107,11 +1107,11 @@ namespace ModularFlightPanel.UI.Widgets
 
                 parent.sizeDelta = new Vector2(parent.sizeDelta.x, totalContentHeight);
                 float preferredH = Mathf.Clamp(totalContentHeight + 36f * s, 140f * s, 420f * s);
-                _currentPanelHeight = preferredH;
+                _currentPanelHeight.Value = preferredH;
 
-                if (!_isCollapsed)
+                if (!_isCollapsed.Value)
                 {
-                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight);
+                    Vector2 panelSize = new Vector2(88f * s, _currentPanelHeight.Value);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -1144,12 +1144,12 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerY = -(pRows * (btnH + spacing) + drawerH * 0.5f + 2f * s);
-                    string drawerText = _drawerExpanded 
+                    string drawerText = _drawerExpanded.Value 
                         ? I18n.Tr("MOD_TOOLBAR_COLLAPSE", "▲ 收起") 
                         : I18n.TrFormat("MOD_TOOLBAR_MORE_N", hiddenItems.Count);
                     CreateVerticalDrawerButton(parent, 0f, drawerY, 78f * s, drawerH, drawerText, s);
 
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         float hiddenStartY = -(pRows * (btnH + spacing) + drawerH + spacing + 2f * s);
                         for (int j = 0; j < hiddenItems.Count; j++)
@@ -1175,7 +1175,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     totalContentWidth += drawerW + spacing;
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         int hCols = Mathf.CeilToInt(hiddenItems.Count / 2f);
                         totalContentWidth += hCols * (btnW + spacing);
@@ -1185,11 +1185,11 @@ namespace ModularFlightPanel.UI.Widgets
 
                 parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
                 float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 160f * s, 680f * s);
-                _currentPanelWidth = preferredW;
+                _currentPanelWidth.Value = preferredW;
 
-                if (!_isCollapsed)
+                if (!_isCollapsed.Value)
                 {
-                    Vector2 panelSize = new Vector2(_currentPanelWidth, 88f * s);
+                    Vector2 panelSize = new Vector2(_currentPanelWidth.Value, 88f * s);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -1222,10 +1222,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
-                    string drawerText = _drawerExpanded ? "◀" : $"▶\n{hiddenItems.Count}";
+                    string drawerText = _drawerExpanded.Value ? "◀" : $"▶\n{hiddenItems.Count}";
                     CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 76f * s, drawerText, s);
 
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
                         for (int j = 0; j < hiddenItems.Count; j++)
@@ -1251,7 +1251,7 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     totalContentWidth += drawerW + spacing;
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         int hCols = hiddenItems.Count;
                         totalContentWidth += hCols * (btnW + spacing);
@@ -1261,11 +1261,11 @@ namespace ModularFlightPanel.UI.Widgets
 
                 parent.sizeDelta = new Vector2(totalContentWidth, parent.sizeDelta.y);
                 float preferredW = Mathf.Clamp(totalContentWidth + 36f * s, 140f * s, 760f * s);
-                _currentPanelWidth = preferredW;
+                _currentPanelWidth.Value = preferredW;
 
-                if (!_isCollapsed)
+                if (!_isCollapsed.Value)
                 {
-                    Vector2 panelSize = new Vector2(_currentPanelWidth, 48f * s);
+                    Vector2 panelSize = new Vector2(_currentPanelWidth.Value, 48f * s);
                     RectTransform.sizeDelta = panelSize;
                     if (_panelBg != null) _panelBg.rectTransform.sizeDelta = panelSize;
                     if (_topStripe != null)
@@ -1296,10 +1296,10 @@ namespace ModularFlightPanel.UI.Widgets
                 if (showDrawer)
                 {
                     float drawerX = (pCols * (btnW + spacing)) + drawerW * 0.5f + 2f * s;
-                    string drawerText = _drawerExpanded ? "◀" : $"▶{hiddenItems.Count}";
+                    string drawerText = _drawerExpanded.Value ? "◀" : $"▶{hiddenItems.Count}";
                     CreateHorizontalDrawerButton(parent, drawerX, 0f, drawerW, 36f * s, drawerText, s);
 
-                    if (_drawerExpanded)
+                    if (_drawerExpanded.Value)
                     {
                         float hiddenStartX = (pCols * (btnW + spacing)) + drawerW + spacing + 2f * s;
                         for (int j = 0; j < hiddenItems.Count; j++)
@@ -1351,7 +1351,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             drawerBtn.onClick.AddListener(() =>
             {
-                _drawerExpanded = !_drawerExpanded;
+                _drawerExpanded.Value = !_drawerExpanded.Value;
                 PopulateToolbarButtons(parent, s);
             });
         }
@@ -1380,7 +1380,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             drawerBtn.onClick.AddListener(() =>
             {
-                _drawerExpanded = !_drawerExpanded;
+                _drawerExpanded.Value = !_drawerExpanded.Value;
                 PopulateToolbarButtons(parent, s);
             });
         }
@@ -1502,13 +1502,13 @@ namespace ModularFlightPanel.UI.Widgets
             public bool Active;
         }
         private ButtonStateSnapshot[] _cachedButtonStates;
-        private bool _needsRepopulate;
-        private int _snapshotCount;
+        private readonly Cached<bool> _needsRepopulate = new Cached<bool>(false);
+        private readonly Cached<int> _snapshotCount = new Cached<int>(0);
 
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             base.OnDataHeartBeat(in context);
-            if (_isCollapsed) return;
+            if (_isCollapsed.Value) return;
 
             float now = Time.unscaledTime;
             if (now - _lastSyncTime.Value < 1.0f) return;
@@ -1543,7 +1543,7 @@ namespace ModularFlightPanel.UI.Widgets
                     // 1. 动态自动适配：如果模组数量发生变化，标记自适应重构
                     if (currentCount != _cachedButtonCount.Value)
                     {
-                        _needsRepopulate = true;
+                        _needsRepopulate.Value = true;
                         return;
                     }
 
@@ -1551,7 +1551,7 @@ namespace ModularFlightPanel.UI.Widgets
                     {
                         _cachedButtonStates = new ButtonStateSnapshot[_itemViews.Count];
                     }
-                    _snapshotCount = _itemViews.Count;
+                    _snapshotCount.Value = _itemViews.Count;
 
                     for (int i = 0; i < _itemViews.Count; i++)
                     {
@@ -1579,8 +1579,8 @@ namespace ModularFlightPanel.UI.Widgets
                 MFPLogger.WarnThrottled("ModernToolbar_Heartbeat", $"Failed heartbeat KSP button states: {ex.Message}");
             }
 #endif
-            _logic.IsCollapsed = _isCollapsed;
-            _logic.DrawerExpanded = _drawerExpanded;
+            _logic.IsCollapsed = _isCollapsed.Value;
+            _logic.DrawerExpanded = _drawerExpanded.Value;
             _logic.TotalButtonCount = _itemViews.Count;
         }
 
@@ -1588,12 +1588,12 @@ namespace ModularFlightPanel.UI.Widgets
         {
             base.OnUIDrawLoop(ref context);
 
-            if (_isCollapsed) return;
+            if (_isCollapsed.Value) return;
 
 #if KSP_RUNTIME
-            if (_needsRepopulate)
+            if (_needsRepopulate.Value)
             {
-                _needsRepopulate = false;
+                _needsRepopulate.Value = false;
                 PopulateToolbarButtons(_contentRt, CurrentDpiScale);
                 return;
             }
@@ -1604,7 +1604,7 @@ namespace ModularFlightPanel.UI.Widgets
             Color ledOn = theme.AccentPrimary;
             Color ledOff = WidgetStyleManager.Surface(SurfaceStyleRole.LedOff);
 
-            for (int i = 0; i < _snapshotCount && i < _itemViews.Count; i++)
+            for (int i = 0; i < _snapshotCount.Value && i < _itemViews.Count; i++)
             {
                 var view = _itemViews[i];
                 if (view == null) continue;
@@ -1655,7 +1655,7 @@ namespace ModularFlightPanel.UI.Widgets
                 string collIcon = GetTemplateChannel("COLLAPSE_ICON", "»");
                 if (_collapseBtnText != null)
                 {
-                    _collapseBtnText.text = _isCollapsed ? collIcon : dockLabel;
+                    _collapseBtnText.text = _isCollapsed.Value ? collIcon : dockLabel;
                 }
                 ApplyButton(_collapseBtn, _collapseBtn.GetComponent<Image>(), _collapseBtnText, ButtonVisualRole.Normal, false, theme);
             }

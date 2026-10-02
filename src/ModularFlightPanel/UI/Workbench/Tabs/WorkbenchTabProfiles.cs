@@ -31,7 +31,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 UnityEngine.Object.Destroy(c);
             }
 
-            GameObject card = WorkbenchControls.CreateCard(_container, "ProfilesCard", Vector2.zero);
+            GameObject card = WorkbenchControls.CreatePanel(_container, "ProfilesCard", Vector2.zero);
             RectTransform cardRt = card.GetComponent<RectTransform>();
             cardRt.anchorMin = Vector2.zero;
             cardRt.anchorMax = Vector2.one;
@@ -150,7 +150,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                     _feedbackMsg = "✔ 分享码已复制到剪贴板！可粘贴给任何玩家分享完整座舱布局。";
                     Refresh();
                 }
-            }, true, 11);
+            }, false, 11);
 
             WorkbenchControls.CreateTextField(shareRow.transform, "CodeInput", _shareCodeInput, "在此粘贴社区分享码 (MFP:v1:...)", new Vector2(300f, 30f), (v) =>
             {

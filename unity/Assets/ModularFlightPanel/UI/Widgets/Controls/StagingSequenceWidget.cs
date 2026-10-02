@@ -244,16 +244,16 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         public static readonly Vector2 BaseSilhouetteSize = new Vector2(240f, 260f);
 
         // 极简模式底部基准线锁定 (Bottom-Baseline Anchor，向上生长杜绝向上下两端扩张漂移)
-        private float _conciseBaselineY = float.NaN;
+        private readonly CachedFloat _conciseBaselineY = new CachedFloat(float.NaN, 0.05f);
 
         // 鼠标悬停状态跟踪 (简洁模式悬浮呈现控制微键)
-        private bool _isHovered = false;
+        private readonly Cached<bool> _isHovered = new Cached<bool>(false);
 
         public override Vector2 BaseSize
         {
             get
             {
-                switch (_displayMode)
+                switch (_displayMode.Value)
                 {
                     case StagingDisplayMode.Concise: return BaseConciseSize;
                     case StagingDisplayMode.Silhouette2D: return BaseSilhouetteSize;
@@ -265,8 +265,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         public override WidgetRefreshTier RefreshTier => WidgetRefreshTier.Relaxed;
 
         // 模态状态与模式切换控制
-        private StagingDisplayMode _displayMode = StagingDisplayMode.Standard;
-        public StagingDisplayMode DisplayMode => _displayMode;
+        private readonly Cached<StagingDisplayMode> _displayMode = new Cached<StagingDisplayMode>(StagingDisplayMode.Standard);
+        public StagingDisplayMode DisplayMode => _displayMode.Value;
         private Button _modeToggleBtn;
         private Image _modeToggleBg;
         private Text _modeToggleText;
@@ -298,10 +298,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private Image _plumeCoreImg;
 
         // 姿态与视觉补间状态
-        private float _currentTilt = 0f;
+        private readonly CachedFloat _currentTilt = new CachedFloat(0f, 0.05f);
 
-        private float _targetExplodedFactor = 0f;
-        private float _currentExplodedFactor = 0f;
+        private readonly CachedFloat _targetExplodedFactor = new CachedFloat(0f, 0.01f);
+        private readonly CachedFloat _currentExplodedFactor = new CachedFloat(0f, 0.01f);
 
         // 声明式微控件
         public TextWidget Title = TextWidget.Title(I18n.Tr("WIDGET_CTRL_STAGING", "分级序列"), null, 8.5f);
@@ -318,7 +318,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private Button _toggleAllBtn;
         private Image _toggleAllBg;
         private Text _toggleAllText;
-        private bool _allExpanded = true;
+        private readonly Cached<bool> _allExpanded = new Cached<bool>(true);
         private Text _totalDvText;
         private Image _topDivider;
 
@@ -411,7 +411,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private ScrollRect _scrollRect;
         private RectTransform _scrollViewportRt;
         private RectTransform _scrollContentRt;
-        private string _stageOrder = string.Empty;
+        private string _stageOrderTemplate = string.Empty;
 
         // 底栏安全与触发指示
         private Image _bottomDivider;
@@ -478,8 +478,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         private int _highestStageNumber => _logic.HighestStageNumber;
         private readonly Cached<int> _lastActiveStage = new Cached<int>(-1);
-        private float _stageTriggerRecoilTimer = 0f;
-        private float _stageTriggerFlashTimer = 0f;
+        private readonly CachedFloat _stageTriggerRecoilTimer = new CachedFloat(0f, 0.001f);
+        private readonly CachedFloat _stageTriggerFlashTimer = new CachedFloat(0f, 0.001f);
         public static float CustomAnimationTime = -1f;
         public static float CustomAnimationDeltaTime = -1f;
 
@@ -488,7 +488,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private const float DefaultHeight = 260f;
 
         // 风格配置
-        private string _frameMode = "FAINT";
+        private string _frameModeTemplate = "FAINT";
         private string _titleTemplate = I18n.Tr("WIDGET_CTRL_STAGING", "STAGING");
         private string _totalDvToken = "{DV:TOTAL}";
         private string _stageDvToken = "{DV:STAGE}";
@@ -500,12 +500,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
             string frame = GetTemplateChannel("FRAME", null);
-            _frameMode = !string.IsNullOrEmpty(frame) ? frame.ToUpperInvariant() : "FAINT";
+            _frameModeTemplate = !string.IsNullOrEmpty(frame) ? frame.ToUpperInvariant() : "FAINT";
             _titleTemplate = GetTemplateChannel("TITLE", I18n.Tr("WIDGET_CTRL_STAGING", "STAGING"));
             _totalDvToken = GetTemplateChannel("TOTAL_DV_TOKEN", "{DV:TOTAL}");
             _stageDvToken = GetTemplateChannel("STAGE_DV_TOKEN", "{DV:STAGE}");
             string order = GetTemplateChannel("ORDER", null);
-            _stageOrder = !string.IsNullOrEmpty(order) ? order.ToUpperInvariant() : "STOCK";
+            _stageOrderTemplate = !string.IsNullOrEmpty(order) ? order.ToUpperInvariant() : "STOCK";
             string mode = GetTemplateChannel("MODE", null);
             if (!string.IsNullOrEmpty(mode))
             {
@@ -515,7 +515,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     mode.Equals("STOCK", StringComparison.OrdinalIgnoreCase) ||
                     mode.Equals("SIMPLE", StringComparison.OrdinalIgnoreCase))
                 {
-                    _displayMode = StagingDisplayMode.Concise;
+                    _displayMode.Value = StagingDisplayMode.Concise;
                 }
                 else if (mode.Equals("2", StringComparison.OrdinalIgnoreCase) ||
                          mode.Equals("DIAGRAM", StringComparison.OrdinalIgnoreCase) ||
@@ -525,23 +525,23 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                          mode.Equals("SILHOUETTE", StringComparison.OrdinalIgnoreCase) ||
                          mode.Equals("2D", StringComparison.OrdinalIgnoreCase))
                 {
-                    _displayMode = StagingDisplayMode.Silhouette2D;
+                    _displayMode.Value = StagingDisplayMode.Silhouette2D;
                 }
                 else
                 {
-                    _displayMode = StagingDisplayMode.Standard;
+                    _displayMode.Value = StagingDisplayMode.Standard;
                 }
             }
             else if (config != null && !string.IsNullOrEmpty(config.WidgetId) &&
                     (config.WidgetId.Contains("rocket") || config.WidgetId.Contains("stage_diagram") || config.WidgetId.Contains("silhouette")))
             {
-                _displayMode = StagingDisplayMode.Silhouette2D;
+                _displayMode.Value = StagingDisplayMode.Silhouette2D;
             }
 
             _logic.TitleTemplate = _titleTemplate;
             _logic.TotalDvToken = _totalDvToken;
             _logic.StageDvToken = _stageDvToken;
-            _logic.StageOrder = _stageOrder;
+            _logic.StageOrder = _stageOrderTemplate;
 
             // 1. 组件包围盒 (基准逻辑像素，根据模式与缩放系数进行初始几何布局)
             if (config != null)
@@ -554,14 +554,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             float factorY = (config != null && config.ScaleY > 0.05f) ? config.ScaleY : 1.0f;
             Vector2 size = new Vector2(BaseSize.x * s * factorX, BaseSize.y * s * factorY);
             RectTransform.sizeDelta = size;
-            if (_displayMode == StagingDisplayMode.Concise)
+            if (_displayMode.Value == StagingDisplayMode.Concise)
             {
-                _conciseBaselineY = RectTransform.anchoredPosition.y - (size.y * 0.5f);
+                _conciseBaselineY.Value = RectTransform.anchoredPosition.y - (size.y * 0.5f);
             }
 
             // 2. 底板卡片 (现代化暗晶毛玻璃背板 0.75 Alpha；极简模式全透明无框)
             _bgImage = CardBackground;
-            bool enableFrame = _frameMode != "NONE" && _displayMode != StagingDisplayMode.Concise;
+            bool enableFrame = _frameModeTemplate != "NONE" && _displayMode.Value != StagingDisplayMode.Concise;
             if (_bgImage != null)
             {
                 _bgImage.enabled = enableFrame;
@@ -624,7 +624,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             _modeToggleBtn.onClick.AddListener(ToggleDisplayMode);
 
             string initialModeLabel;
-            switch (_displayMode)
+            switch (_displayMode.Value)
             {
                 case StagingDisplayMode.Concise: initialModeLabel = I18n.Tr("WIDGET_STAGING_BTN_CONCISE", "简"); break;
                 case StagingDisplayMode.Silhouette2D: initialModeLabel = I18n.Tr("WIDGET_STAGING_BTN_SILHOUETTE2D", "2D"); break;
@@ -851,7 +851,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             footRt.sizeDelta = Vector2.zero;
             footRt.anchoredPosition = Vector2.zero;
 
-            _silhouetteBayObj.SetActive(_displayMode == StagingDisplayMode.Diagram);
+            _silhouetteBayObj.SetActive(_displayMode.Value == StagingDisplayMode.Diagram);
         }
 
         private void OnSilhouetteUpdated(Texture tex)
@@ -859,7 +859,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (_silhouetteRawImage != null)
             {
                 bool hasBakerTex = tex != null;
-                bool forceProcedural = _currentExplodedFactor > 0.005f || !hasBakerTex;
+                bool forceProcedural = _currentExplodedFactor.Value > 0.005f || !hasBakerTex;
                 _silhouetteRawImage.gameObject.SetActiveSafe(!forceProcedural);
                 if (_proceduralSilhouetteGraphic != null)
                 {
@@ -874,11 +874,11 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         public void SetExplodedView(bool exploded)
         {
-            _targetExplodedFactor = exploded ? 1f : 0f;
-            _currentExplodedFactor = _targetExplodedFactor;
+            _targetExplodedFactor.Value = exploded ? 1f : 0f;
+            _currentExplodedFactor.Value = _targetExplodedFactor.Value;
             if (_proceduralSilhouetteGraphic != null)
             {
-                _proceduralSilhouetteGraphic.ExplodedFactor = _currentExplodedFactor;
+                _proceduralSilhouetteGraphic.ExplodedFactor = _currentExplodedFactor.Value;
             }
             if (_explodedToggleText != null)
             {
@@ -888,7 +888,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         public void ToggleExplodedView()
         {
-            bool next = _targetExplodedFactor <= 0.5f;
+            bool next = _targetExplodedFactor.Value <= 0.5f;
             SetExplodedView(next);
             string tip = next 
                 ? I18n.Tr("WIDGET_STAGING_EXPLODED_BTN", "💥 爆炸图") 
@@ -1027,7 +1027,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             float normH = Mathf.Clamp(spanY / (maxSpan * 1.15f), 0.10f, 0.95f);
 
             // 2. 考虑当前实时俯仰角倾斜对视口外接矩形的影响
-            float radTilt = Mathf.Abs(_currentTilt) * Mathf.Deg2Rad;
+            float radTilt = Mathf.Abs(_currentTilt.Value) * Mathf.Deg2Rad;
             float sinT = Mathf.Sin(radTilt);
             float cosT = Mathf.Cos(radTilt);
 
@@ -1069,9 +1069,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         // ==========================================
         public void OnAdaptiveResize(Vector2 pixelSize)
         {
-            if (_displayMode == StagingDisplayMode.Concise)
+            if (_displayMode.Value == StagingDisplayMode.Concise)
             {
-                _conciseBaselineY = float.NaN;
+                _conciseBaselineY.Value = float.NaN;
             }
 
             if (_scrollViewportRt != null)
@@ -1086,7 +1086,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             float halfW = width * 0.5f;
             float halfH = height * 0.5f;
 
-            bool isConcise = _displayMode == StagingDisplayMode.Concise;
+            bool isConcise = _displayMode.Value == StagingDisplayMode.Concise;
 
             // 1. 顶栏排版 (极简模式不占位，悬浮微键按需呈现)
             float headerH = isConcise ? 0f : 22f * s;
@@ -1111,7 +1111,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             // 顶栏按钮弹性流式排版 (自动从左向右流动；极简模式悬浮于右上角)
             float curBtnX = -halfW + (titleW > 0f ? (titleW + 8f * s) : 6f * s);
-            bool showFloating = _isHovered || WidgetDragHandler.IsEditModeActive;
+            bool showFloating = _isHovered.Value || WidgetDragHandler.IsEditModeActive;
 
             if (_addStageTopBtn != null)
             {
@@ -1139,7 +1139,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             if (_toggleAllBtn != null)
             {
-                bool showTog = (!isConcise && _displayMode == StagingDisplayMode.Standard) &&
+                bool showTog = (!isConcise && _displayMode.Value == StagingDisplayMode.Standard) &&
                                (Config == null || !Config.IsSubElementDisabled("staging_toggle_all"));
                 _toggleAllBtn.gameObject.SetActive(showTog);
                 if (showTog)
@@ -1265,7 +1265,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             float middleH = Mathf.Max(30f * s, height - headerH - footerH);
             float middleCenterY = (halfH - headerH) - (middleH * 0.5f);
 
-            bool showBay = (!isConcise && _displayMode == StagingDisplayMode.Silhouette2D) &&
+            bool showBay = (!isConcise && _displayMode.Value == StagingDisplayMode.Silhouette2D) &&
                            (Config == null || !Config.IsSubElementDisabled("staging_2d_bay"));
 
             if (showBay && _silhouetteBayObj != null)
@@ -1595,7 +1595,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 1. 外框模式着色 (现代化暗晶毛玻璃背板 0.75 Alpha；极简模式完全去框)
-            bool enableFrame = _frameMode != "NONE" && _displayMode != StagingDisplayMode.Concise;
+            bool enableFrame = _frameModeTemplate != "NONE" && _displayMode.Value != StagingDisplayMode.Concise;
             if (_bgImage != null)
             {
                 _bgImage.enabled = enableFrame;
@@ -1609,7 +1609,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             {
                 if (_bgImage != null) _bgImage.color = Color.clear;
             }
-            else if (_frameMode == "FAINT")
+            else if (_frameModeTemplate == "FAINT")
             {
                 if (_bgImage != null) _bgImage.color = WidgetStyleManager.WithAlpha(theme.FrameBgColor, 0.75f);
                 if (_bgOutline != null)
@@ -1634,7 +1634,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (_modeToggleText != null)
             {
                 ApplyText(_modeToggleText, TextStyleRole.SecondaryValue, theme);
-                switch (_displayMode)
+                switch (_displayMode.Value)
                 {
                     case StagingDisplayMode.Concise:
                         _modeToggleText.text = I18n.Tr("WIDGET_STAGING_BTN_CONCISE", "简");
@@ -1745,7 +1745,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            bool isConcise = _displayMode == StagingDisplayMode.Concise;
+            bool isConcise = _displayMode.Value == StagingDisplayMode.Concise;
 
             // 1. 读取当前物理尺寸并自适应布局 (仅在尺寸变化时才调用 ApplyLayout)
             float effScaleX = (Config != null && Config.ScaleX > 0.05f) ? Config.ScaleX : 1.0f;
@@ -1914,10 +1914,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 // 基准线同步守卫 (Bottom-Baseline Anchor Guard):
                 // 仅当基准线未初设，或检测到外部位移 (如用户在编辑模式拖拽了组件) 时，校准基准线
                 float curPosY = RectTransform.anchoredPosition.y;
-                float expectedCenterY = float.IsNaN(_conciseBaselineY) ? curPosY : (_conciseBaselineY + currentH * 0.5f);
-                if (float.IsNaN(_conciseBaselineY) || Mathf.Abs(curPosY - expectedCenterY) > 1.0f)
+                float expectedCenterY = float.IsNaN(_conciseBaselineY.Value) ? curPosY : (_conciseBaselineY.Value + currentH * 0.5f);
+                if (float.IsNaN(_conciseBaselineY.Value) || Mathf.Abs(curPosY - expectedCenterY) > 1.0f)
                 {
-                    _conciseBaselineY = curPosY - currentH * 0.5f;
+                    _conciseBaselineY.Value = curPosY - currentH * 0.5f;
                 }
 
                 float autoH = Mathf.Clamp(totalItemsHeight + 6f * s, 48f * s, 1200f * s);
@@ -1929,9 +1929,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
                 if (sizeChanged)
                 {
-                    // 底部基准线锁定：自适应尺寸变动时，锁定底部边缘在 _conciseBaselineY 不动，
+                    // 底部基准线锁定：自适应尺寸变动时，锁定底部边缘在 _conciseBaselineY.Value 不动，
                     // 中心坐标自动向上提升，物理包围盒严格向上增长，彻底杜绝向上下两端扩张漂移
-                    float newPosY = _conciseBaselineY + currentH * 0.5f;
+                    float newPosY = _conciseBaselineY.Value + currentH * 0.5f;
                     SetAnchoredPositionIfChanged(RectTransform, new Vector2(RectTransform.anchoredPosition.x, newPosY));
                     if (Config != null)
                     {
@@ -2244,14 +2244,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                           Mathf.Abs(item.LastRenderedAvailW - availW) > 0.5f ||
                                           item.LastRenderedExpanded != item.IsExpanded ||
                                           item.LastRenderedActive != isActive ||
-                                          item.LastRenderedMode != _displayMode;
+                                          item.LastRenderedMode != _displayMode.Value;
                         if (chipsDirty)
                         {
                             item.LastPartHash = partHash;
                             item.LastRenderedAvailW = availW;
                             item.LastRenderedExpanded = item.IsExpanded;
                             item.LastRenderedActive = isActive;
-                            item.LastRenderedMode = _displayMode;
+                            item.LastRenderedMode = _displayMode.Value;
                             ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
                         }
                     }
@@ -2272,14 +2272,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                               Mathf.Abs(item.LastRenderedAvailW - conciseBoxW) > 0.5f ||
                                               item.LastRenderedExpanded != item.IsExpanded ||
                                               item.LastRenderedActive != isActive ||
-                                              item.LastRenderedMode != _displayMode;
+                                              item.LastRenderedMode != _displayMode.Value;
                             if (chipsDirty)
                             {
                                 item.LastPartHash = partHash;
                                 item.LastRenderedAvailW = conciseBoxW;
                                 item.LastRenderedExpanded = item.IsExpanded;
                                 item.LastRenderedActive = isActive;
-                                item.LastRenderedMode = _displayMode;
+                                item.LastRenderedMode = _displayMode.Value;
                                 ArrangeIconChipsVertical(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, conciseBoxW, partsBayH * s, cols, rows);
                             }
                         }
@@ -2303,14 +2303,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                           Mathf.Abs(item.LastRenderedAvailW - compAvailW) > 0.5f ||
                                           item.LastRenderedExpanded != item.IsExpanded ||
                                           item.LastRenderedActive != isActive ||
-                                          item.LastRenderedMode != _displayMode;
+                                          item.LastRenderedMode != _displayMode.Value;
                         if (chipsDirty)
                         {
                             item.LastPartHash = partHash;
                             item.LastRenderedAvailW = compAvailW;
                             item.LastRenderedExpanded = item.IsExpanded;
                             item.LastRenderedActive = isActive;
-                            item.LastRenderedMode = _displayMode;
+                            item.LastRenderedMode = _displayMode.Value;
                             ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
                         }
                     }
@@ -2368,14 +2368,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                               Mathf.Abs(item.LastRenderedAvailW - availW) > 0.5f ||
                                               item.LastRenderedExpanded != item.IsExpanded ||
                                               item.LastRenderedActive != isActive ||
-                                              item.LastRenderedMode != _displayMode;
+                                              item.LastRenderedMode != _displayMode.Value;
                             if (chipsDirty)
                             {
                                 item.LastPartHash = partHash;
                                 item.LastRenderedAvailW = availW;
                                 item.LastRenderedExpanded = item.IsExpanded;
                                 item.LastRenderedActive = isActive;
-                                item.LastRenderedMode = _displayMode;
+                                item.LastRenderedMode = _displayMode.Value;
                                 ArrangeIconChipsGrid(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, availW, partsBayH, chipSize, chipGap, chipsPerRow);
                             }
                         }
@@ -2418,14 +2418,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                               Mathf.Abs(item.LastRenderedAvailW - conciseBoxW) > 0.5f ||
                                               item.LastRenderedExpanded != item.IsExpanded ||
                                               item.LastRenderedActive != isActive ||
-                                              item.LastRenderedMode != _displayMode;
+                                              item.LastRenderedMode != _displayMode.Value;
                             if (chipsDirty)
                             {
                                 item.LastPartHash = partHash;
                                 item.LastRenderedAvailW = conciseBoxW;
                                 item.LastRenderedExpanded = item.IsExpanded;
                                 item.LastRenderedActive = isActive;
-                                item.LastRenderedMode = _displayMode;
+                                item.LastRenderedMode = _displayMode.Value;
                                 ArrangeIconChipsVertical(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, conciseBoxW, partsBayH * s, cols, rows);
                             }
                         }
@@ -2460,14 +2460,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                                                   Mathf.Abs(item.LastRenderedAvailW - compAvailW) > 0.5f ||
                                                   item.LastRenderedExpanded != item.IsExpanded ||
                                                   item.LastRenderedActive != isActive ||
-                                                  item.LastRenderedMode != _displayMode;
+                                                  item.LastRenderedMode != _displayMode.Value;
                                 if (chipsDirty)
                                 {
                                     item.LastPartHash = partHash;
                                     item.LastRenderedAvailW = compAvailW;
                                     item.LastRenderedExpanded = item.IsExpanded;
                                     item.LastRenderedActive = isActive;
-                                    item.LastRenderedMode = _displayMode;
+                                    item.LastRenderedMode = _displayMode.Value;
                                     ArrangeIconChipsCompact(item, stg, currentAtlas, isUsingStockAtlas, isActive, theme, style, s, compAvailW);
                                 }
                             }
@@ -2561,12 +2561,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     if (partData.Count > 1)
                     {
                         chip.MultiplierText.gameObject.SetActive(true);
-                        string countStr = _displayMode == StagingDisplayMode.Concise 
+                        string countStr = _displayMode.Value == StagingDisplayMode.Concise 
                             ? $"{partData.Count}" 
                             : $"×{partData.Count}";
                         SetTextIfChanged(chip.MultiplierText, countStr);
                         chip.MultiplierText.rectTransform.SetSizeDeltaSafe(new Vector2(chipSize, 10f * s));
-                        Color numCol = _displayMode == StagingDisplayMode.Concise 
+                        Color numCol = _displayMode.Value == StagingDisplayMode.Concise 
                             ? theme.AccentPrimary 
                             : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
                         if (chip.MultiplierText.color != numCol) chip.MultiplierText.color = numCol;
@@ -2654,12 +2654,12 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     if (partData.Count > 1)
                     {
                         chip.MultiplierText.gameObject.SetActive(true);
-                        string countStr = _displayMode == StagingDisplayMode.Concise 
+                        string countStr = _displayMode.Value == StagingDisplayMode.Concise 
                             ? $"{partData.Count}" 
                             : $"×{partData.Count}";
                         SetTextIfChanged(chip.MultiplierText, countStr);
                         chip.MultiplierText.rectTransform.SetSizeDeltaSafe(new Vector2(chipSize, 10f * s));
-                        Color numCol = _displayMode == StagingDisplayMode.Concise 
+                        Color numCol = _displayMode.Value == StagingDisplayMode.Concise 
                             ? theme.AccentPrimary 
                             : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
                         if (chip.MultiplierText.color != numCol) chip.MultiplierText.color = numCol;
@@ -2769,10 +2769,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             // 1. 底栏分级点火触发按键击发回弹与战备状态
             if (_stageTriggerBtn != null && _stageTriggerBg != null)
             {
-                if (_stageTriggerRecoilTimer > 0f)
+                if (_stageTriggerRecoilTimer.Value > 0f)
                 {
-                    _stageTriggerRecoilTimer -= dt;
-                    float recoilProgress = Mathf.Clamp01(_stageTriggerRecoilTimer / 0.22f);
+                    _stageTriggerRecoilTimer.Value -= dt;
+                    float recoilProgress = Mathf.Clamp01(_stageTriggerRecoilTimer.Value / 0.22f);
                     float recoilScale = Mathf.Lerp(1.0f, 0.94f, recoilProgress);
                     _stageTriggerBtn.transform.SetLocalScaleSafe(new Vector3(recoilScale, recoilScale, 1f));
                 }
@@ -2781,10 +2781,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     _stageTriggerBtn.transform.SetLocalScaleSafe(Vector3.one);
                 }
 
-                if (_stageTriggerFlashTimer > 0f)
+                if (_stageTriggerFlashTimer.Value > 0f)
                 {
-                    _stageTriggerFlashTimer -= dt;
-                    float flashP = Mathf.Clamp01(_stageTriggerFlashTimer / 0.28f);
+                    _stageTriggerFlashTimer.Value -= dt;
+                    float flashP = Mathf.Clamp01(_stageTriggerFlashTimer.Value / 0.28f);
                     _stageTriggerBg.SetColor(Color.Lerp(theme.AccentPrimary, inverseText, flashP * 0.70f));
                 }
                 else if (_stageTriggerBtn.interactable)
@@ -2798,7 +2798,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             }
 
             // 2. 剪影姿态俯仰角旋转动画与爆炸图插值 (Diagram 模式)
-            if (_displayMode == StagingDisplayMode.Diagram)
+            if (_displayMode.Value == StagingDisplayMode.Diagram)
             {
                 StagingSequenceState state = _logic.CurrentState;
                 if (state.HasVessel)
@@ -2817,10 +2817,10 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
                     if (_rocketAssemblyRt != null)
                     {
-                        float oldTilt = _currentTilt;
-                        _currentTilt = Mathf.MoveTowards(_currentTilt, state.TargetTilt, dt * 60f);
-                        _rocketAssemblyRt.localRotation = Quaternion.Euler(0f, 0f, -_currentTilt);
-                        if (Mathf.Abs(oldTilt - _currentTilt) > 0.05f)
+                        float oldTilt = _currentTilt.Value;
+                        _currentTilt.Value = Mathf.MoveTowards(_currentTilt.Value, state.TargetTilt, dt * 60f);
+                        _rocketAssemblyRt.localRotation = Quaternion.Euler(0f, 0f, -_currentTilt.Value);
+                        if (Mathf.Abs(oldTilt - _currentTilt.Value) > 0.05f)
                         {
                             UpdateSilhouetteAssemblyScale(_lastBayW.Value, _lastBayH.Value, s);
                         }
@@ -2856,19 +2856,19 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     // 爆炸图平滑补间动画 (Exploded Factor Tweening)
                     if (_proceduralSilhouetteGraphic != null)
                     {
-                        if (Mathf.Abs(_currentExplodedFactor - _targetExplodedFactor) > 0.001f)
+                        if (Mathf.Abs(_currentExplodedFactor.Value - _targetExplodedFactor.Value) > 0.001f)
                         {
-                            _currentExplodedFactor = Mathf.MoveTowards(_currentExplodedFactor, _targetExplodedFactor, dt * 3.5f);
+                            _currentExplodedFactor.Value = Mathf.MoveTowards(_currentExplodedFactor.Value, _targetExplodedFactor.Value, dt * 3.5f);
                         }
-                        if (Mathf.Abs(_proceduralSilhouetteGraphic.ExplodedFactor - _currentExplodedFactor) > 0.0005f)
+                        if (Mathf.Abs(_proceduralSilhouetteGraphic.ExplodedFactor - _currentExplodedFactor.Value) > 0.0005f)
                         {
-                            _proceduralSilhouetteGraphic.ExplodedFactor = _currentExplodedFactor;
+                            _proceduralSilhouetteGraphic.ExplodedFactor = _currentExplodedFactor.Value;
                         }
                     }
 
                     Texture silTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
                     bool hasBakerTex = silTex != null;
-                    bool forceProcedural = _currentExplodedFactor > 0.005f || !hasBakerTex;
+                    bool forceProcedural = _currentExplodedFactor.Value > 0.005f || !hasBakerTex;
                     if (_silhouetteRawImage != null)
                     {
                         _silhouetteRawImage.gameObject.SetActiveSafe(!forceProcedural);
@@ -2891,7 +2891,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 if (!item.Root.activeSelf) continue;
 
                 // A. 激活级背景稳态高光与点火冲击淡出
-                if (item.IsActiveStage && _displayMode != StagingDisplayMode.Concise)
+                if (item.IsActiveStage && _displayMode.Value != StagingDisplayMode.Concise)
                 {
                     if (item.TransitionFlashTimer > 0f)
                     {
@@ -2973,7 +2973,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         public void OnPointerEnter(PointerEventData eventData)
         {
-            _isHovered = true;
+            _isHovered.Value = true;
             UpdateHoverVisibility();
         }
 
@@ -2983,13 +2983,13 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             {
                 return;
             }
-            _isHovered = false;
+            _isHovered.Value = false;
             UpdateHoverVisibility();
         }
 
         internal void NotifyWidgetPointerEnter()
         {
-            _isHovered = true;
+            _isHovered.Value = true;
             UpdateHoverVisibility();
         }
 
@@ -2999,14 +2999,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             {
                 return;
             }
-            _isHovered = false;
+            _isHovered.Value = false;
             UpdateHoverVisibility();
         }
 
         private void UpdateHoverVisibility()
         {
-            if (_displayMode != StagingDisplayMode.Concise) return;
-            bool showFloating = _isHovered || WidgetDragHandler.IsEditModeActive;
+            if (_displayMode.Value != StagingDisplayMode.Concise) return;
+            bool showFloating = _isHovered.Value || WidgetDragHandler.IsEditModeActive;
             if (_modeToggleBtn != null && (Config == null || !Config.IsSubElementDisabled("staging_mode_btn")))
             {
                 SetActiveIfChanged(_modeToggleBtn.gameObject, showFloating);
@@ -3026,30 +3026,30 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         private void OnToggleAllExpanded()
         {
-            _allExpanded = !_allExpanded;
+            _allExpanded.Value = !_allExpanded.Value;
             if (_toggleAllText != null)
             {
-                _toggleAllText.text = _allExpanded ? "▼" : "▶";
+                _toggleAllText.text = _allExpanded.Value ? "▼" : "▶";
             }
             for (int i = 0; i < _stageItems.Count; i++)
             {
                 StageItemUI item = _stageItems[i];
-                item.IsExpanded = _allExpanded;
+                item.IsExpanded = _allExpanded.Value;
                 item.HasUserToggled = true;
                 if (item.ToggleExpandText != null)
                 {
-                    item.ToggleExpandText.text = _allExpanded ? "▼" : "▶";
+                    item.ToggleExpandText.text = _allExpanded.Value ? "▼" : "▶";
                 }
             }
         }
 
         public void ToggleDisplayMode()
         {
-            if (_displayMode == StagingDisplayMode.Concise)
+            if (_displayMode.Value == StagingDisplayMode.Concise)
             {
                 SetDisplayMode(StagingDisplayMode.Standard);
             }
-            else if (_displayMode == StagingDisplayMode.Standard)
+            else if (_displayMode.Value == StagingDisplayMode.Standard)
             {
                 SetDisplayMode(StagingDisplayMode.Silhouette2D);
             }
@@ -3061,13 +3061,13 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         public void SetDisplayMode(StagingDisplayMode mode)
         {
-            if (_displayMode == mode) return;
+            if (_displayMode.Value == mode) return;
 
             float s = CurrentDpiScale > 0.01f ? CurrentDpiScale : 1f;
 
             // 1. 切换模式
-            _displayMode = mode;
-            _conciseBaselineY = float.NaN;
+            _displayMode.Value = mode;
+            _conciseBaselineY.Value = float.NaN;
 
             // 2. 提取目标模态物理基准尺寸
             Vector2 targetBaseSize = BaseSize;
@@ -3090,7 +3090,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
         private void UpdateCustomTemplateMode()
         {
             if (Config == null) return;
-            string modeVal = ((int)_displayMode).ToString();
+            string modeVal = ((int)_displayMode.Value).ToString();
             var dict = ParseTemplateChannels(Config.CustomTemplate);
             dict["MODE"] = modeVal;
             var sb = new System.Text.StringBuilder();
@@ -3130,7 +3130,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             float s = CurrentDpiScale > 0.01f ? CurrentDpiScale : 1f;
             if (_modeToggleText != null)
             {
-                switch (_displayMode)
+                switch (_displayMode.Value)
                 {
                     case StagingDisplayMode.Concise:
                         _modeToggleText.text = I18n.Tr("WIDGET_STAGING_BTN_CONCISE", "简");
@@ -3144,8 +3144,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 }
             }
 
-            bool isStandard = _displayMode == StagingDisplayMode.Standard;
-            bool is2D = _displayMode == StagingDisplayMode.Silhouette2D;
+            bool isStandard = _displayMode.Value == StagingDisplayMode.Standard;
+            bool is2D = _displayMode.Value == StagingDisplayMode.Silhouette2D;
 
             if (_toggleAllBtn != null)
             {
@@ -3174,7 +3174,7 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             OnRenderState();
 
             string tip;
-            switch (_displayMode)
+            switch (_displayMode.Value)
             {
                 case StagingDisplayMode.Concise:
                     tip = I18n.Tr("TIP_STAGING_MODE_CONCISE", "已切换至原版风格极简模式");
@@ -3195,9 +3195,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             registerAction?.Invoke(I18n.Tr("CTX_STAGING_MODE_CONCISE", "⚡ 切换原版风格极简模式"), () => SetDisplayMode(StagingDisplayMode.Concise));
             registerAction?.Invoke(I18n.Tr("CTX_STAGING_MODE_STANDARD", "⚡ 切换标准模式"), () => SetDisplayMode(StagingDisplayMode.Standard));
             registerAction?.Invoke(I18n.Tr("CTX_STAGING_MODE_SILHOUETTE2D", "⚡ 切换2D剪影实时高级模式 (火箭爆炸图)"), () => SetDisplayMode(StagingDisplayMode.Silhouette2D));
-            if (_displayMode == StagingDisplayMode.Silhouette2D)
+            if (_displayMode.Value == StagingDisplayMode.Silhouette2D)
             {
-                registerAction?.Invoke(_targetExplodedFactor > 0.5f 
+                registerAction?.Invoke(_targetExplodedFactor.Value > 0.5f 
                     ? I18n.Tr("WIDGET_STAGING_ASSEMBLE_BTN", "🚀 组装") 
                     : I18n.Tr("WIDGET_STAGING_EXPLODED_BTN", "💥 爆炸图"), ToggleExplodedView);
             }
@@ -3221,14 +3221,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
         private void OnStatusLockClicked()
         {
-            _stageTriggerFlashTimer = 0.16f;
+            _stageTriggerFlashTimer.Value = 0.16f;
             StockStageActionService.ToggleStagingLock();
         }
 
         private void OnStageTriggerClicked()
         {
-            _stageTriggerRecoilTimer = 0.22f;
-            _stageTriggerFlashTimer = 0.28f;
+            _stageTriggerRecoilTimer.Value = 0.22f;
+            _stageTriggerFlashTimer.Value = 0.28f;
             StockStageActionService.ActivateNextStage();
         }
 
@@ -3240,9 +3240,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             ReorderInStage
         }
 
-        private ChipDropAction _chipDropAction = ChipDropAction.None;
-        private int _pendingTargetStage = -1;
-        private int _pendingTargetChipIndex = -1;
+        private readonly Cached<ChipDropAction> _chipDropAction = new Cached<ChipDropAction>(ChipDropAction.None);
+        private readonly Cached<int> _pendingTargetStage = new Cached<int>(-1);
+        private readonly Cached<int> _pendingTargetChipIndex = new Cached<int>(-1);
 
         internal void OnChipPointerEnter(StageIconChipUI chip)
         {
@@ -3321,9 +3321,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             if (chip == null) return;
             if (_tooltipRoot != null) _tooltipRoot.SetActive(false);
 
-            _chipDropAction = ChipDropAction.None;
-            _pendingTargetStage = -1;
-            _pendingTargetChipIndex = -1;
+            _chipDropAction.Value = ChipDropAction.None;
+            _pendingTargetStage.Value = -1;
+            _pendingTargetChipIndex.Value = -1;
 
             if (_dragGhostRoot != null)
             {
@@ -3354,9 +3354,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(_cachedTheme);
             float s = CurrentDpiScale;
 
-            _chipDropAction = ChipDropAction.None;
-            _pendingTargetStage = -1;
-            _pendingTargetChipIndex = -1;
+            _chipDropAction.Value = ChipDropAction.None;
+            _pendingTargetStage.Value = -1;
+            _pendingTargetChipIndex.Value = -1;
 
             StageItemUI hoveredItem = null;
             int hoveredDisplayIndex = -1;
@@ -3398,8 +3398,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                 if (hoveredItem.StageNumber != chip.StageNumber)
                 {
                     // === 拖拽至另一分级行中部：跨级移动 (Move Part To Stage) ===
-                    _chipDropAction = ChipDropAction.MoveToStage;
-                    _pendingTargetStage = hoveredItem.StageNumber;
+                    _chipDropAction.Value = ChipDropAction.MoveToStage;
+                    _pendingTargetStage.Value = hoveredItem.StageNumber;
                     hoveredItem.RowHighlightBg.color = WidgetStyleManager.WithAlpha(theme.AccentPrimary, 0.22f);
                 }
                 else
@@ -3421,14 +3421,14 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
                     if (targetChip != null)
                     {
-                        _chipDropAction = ChipDropAction.ReorderInStage;
-                        _pendingTargetChipIndex = targetChip.PartIndex;
+                        _chipDropAction.Value = ChipDropAction.ReorderInStage;
+                        _pendingTargetChipIndex.Value = targetChip.PartIndex;
                         targetChip.ChipOutline.effectColor = theme.AccentPrimary;
                     }
                     else
                     {
-                        _chipDropAction = ChipDropAction.None;
-                        _pendingTargetChipIndex = -1;
+                        _chipDropAction.Value = ChipDropAction.None;
+                        _pendingTargetChipIndex.Value = -1;
                     }
                 }
             }
@@ -3460,8 +3460,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     if (contentLocalPt.y >= firstTopY && contentLocalPt.y <= firstTopY + 14f * s)
                     {
                         showDropLine = true;
-                        _chipDropAction = ChipDropAction.InsertStage;
-                        _pendingTargetStage = isReverse ? (_highestStageNumber + 1) : 0;
+                        _chipDropAction.Value = ChipDropAction.InsertStage;
+                        _pendingTargetStage.Value = isReverse ? (_highestStageNumber + 1) : 0;
                         if (_stageDropIndicatorRt != null)
                         {
                             _stageDropIndicatorRt.sizeDelta = new Vector2(rowW, 2.5f * s);
@@ -3472,8 +3472,8 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                     else if (contentLocalPt.y <= lastBottomY && contentLocalPt.y >= lastBottomY - 14f * s)
                     {
                         showDropLine = true;
-                        _chipDropAction = ChipDropAction.InsertStage;
-                        _pendingTargetStage = isReverse ? 0 : (_highestStageNumber + 1);
+                        _chipDropAction.Value = ChipDropAction.InsertStage;
+                        _pendingTargetStage.Value = isReverse ? 0 : (_highestStageNumber + 1);
                         if (_stageDropIndicatorRt != null)
                         {
                             _stageDropIndicatorRt.sizeDelta = new Vector2(rowW, 2.5f * s);
@@ -3494,9 +3494,9 @@ namespace ModularFlightPanel.UI.Widgets.Controls
                             if (contentLocalPt.y <= upperBottomY && contentLocalPt.y >= lowerTopY)
                             {
                                 showDropLine = true;
-                                _chipDropAction = ChipDropAction.InsertStage;
+                                _chipDropAction.Value = ChipDropAction.InsertStage;
                                 int targetStage = isReverse ? upperItem.StageNumber : lowerItem.StageNumber;
-                                _pendingTargetStage = Mathf.Max(0, targetStage);
+                                _pendingTargetStage.Value = Mathf.Max(0, targetStage);
 
                                 if (_stageDropIndicatorRt != null)
                                 {
@@ -3543,34 +3543,34 @@ namespace ModularFlightPanel.UI.Widgets.Controls
 
             if (chip != null)
             {
-                switch (_chipDropAction)
+                switch (_chipDropAction.Value)
                 {
                     case ChipDropAction.InsertStage:
-                        if (_pendingTargetStage >= 0)
+                        if (_pendingTargetStage.Value >= 0)
                         {
-                            StockStageActionService.InsertStageAndMovePart(chip.PartFlightId, chip.StageNumber, chip.PartIndex, _pendingTargetStage);
+                            StockStageActionService.InsertStageAndMovePart(chip.PartFlightId, chip.StageNumber, chip.PartIndex, _pendingTargetStage.Value);
                         }
                         break;
 
                     case ChipDropAction.MoveToStage:
-                        if (_pendingTargetStage >= 0 && _pendingTargetStage != chip.StageNumber)
+                        if (_pendingTargetStage.Value >= 0 && _pendingTargetStage.Value != chip.StageNumber)
                         {
-                            StockStageActionService.MovePartToStage(chip.PartFlightId, chip.StageNumber, chip.PartIndex, _pendingTargetStage);
+                            StockStageActionService.MovePartToStage(chip.PartFlightId, chip.StageNumber, chip.PartIndex, _pendingTargetStage.Value);
                         }
                         break;
 
                     case ChipDropAction.ReorderInStage:
-                        if (_pendingTargetChipIndex >= 0 && _pendingTargetChipIndex != chip.PartIndex)
+                        if (_pendingTargetChipIndex.Value >= 0 && _pendingTargetChipIndex.Value != chip.PartIndex)
                         {
-                            StockStageActionService.ReorderPartInStage(chip.PartFlightId, chip.StageNumber, chip.PartIndex, _pendingTargetChipIndex);
+                            StockStageActionService.ReorderPartInStage(chip.PartFlightId, chip.StageNumber, chip.PartIndex, _pendingTargetChipIndex.Value);
                         }
                         break;
                 }
             }
 
-            _chipDropAction = ChipDropAction.None;
-            _pendingTargetStage = -1;
-            _pendingTargetChipIndex = -1;
+            _chipDropAction.Value = ChipDropAction.None;
+            _pendingTargetStage.Value = -1;
+            _pendingTargetChipIndex.Value = -1;
 
             StockStageActionService.ClearAllHighlights();
         }

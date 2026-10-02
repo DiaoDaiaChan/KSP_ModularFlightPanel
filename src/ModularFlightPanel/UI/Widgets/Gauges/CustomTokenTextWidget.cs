@@ -188,9 +188,9 @@ namespace ModularFlightPanel.UI.Widgets
         public Vector2 MinBaseSize => new Vector2(160f, 50f);
         public Vector2 MaxBaseSize => new Vector2(1600f, 1000f);
 
-        private float _currentWidth = 280f;
-        private float _currentHeight = 100f;
-        private bool _isCustomResized = false;
+        private readonly CachedFloat _currentWidth = new CachedFloat(280f, 0.05f);
+        private readonly CachedFloat _currentHeight = new CachedFloat(100f, 0.05f);
+        private readonly Cached<bool> _isCustomResized = new Cached<bool>(false);
 
         private GameObject _headerObj;
         private Text _statusDotText;
@@ -246,9 +246,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         private readonly List<RowRuntimeUI> _runtimeRows = new List<RowRuntimeUI>();
         private TableHeaderRuntimeUI _tableHeaderUI = null;
-        private TelemetryMatrixData _activeData = null;
+        private readonly Cached<TelemetryMatrixData> _activeData = new Cached<TelemetryMatrixData>(null);
         private string _cachedTemplate = null;
-        private bool _needsUiRebuild = false;
+        private readonly Cached<bool> _needsUiRebuild = new Cached<bool>(false);
 
         protected override void OnInitialize(WidgetConfig config, ThemeConfig theme)
         {
@@ -334,8 +334,8 @@ namespace ModularFlightPanel.UI.Widgets
             _gridContainerRt.SetOffsetsSafe(new Vector2(6f * s, 6f * s), new Vector2(-6f * s, -30f * s));
 
             _cachedTemplate = Config?.CustomTemplate;
-            _activeData = TelemetryMatrixData.FromTemplate(_cachedTemplate);
-            _logic.ActiveData = _activeData;
+            _activeData.Value = TelemetryMatrixData.FromTemplate(_cachedTemplate);
+            _logic.ActiveData = _activeData.Value;
             _logic.DisplayTitleTemplate = Config?.DisplayName;
 
             RebuildUI(theme);
@@ -362,9 +362,9 @@ namespace ModularFlightPanel.UI.Widgets
         public void OnAdaptiveResize(Vector2 pixelSize)
         {
             float s = CurrentDpiScale;
-            _currentWidth = pixelSize.x / s;
-            _currentHeight = pixelSize.y / s;
-            _isCustomResized = true;
+            _currentWidth.Value = pixelSize.x / s;
+            _currentHeight.Value = pixelSize.y / s;
+            _isCustomResized.Value = true;
             UpdateLayoutGeometry();
         }
 
@@ -427,9 +427,9 @@ namespace ModularFlightPanel.UI.Widgets
             if (curTpl != _cachedTemplate)
             {
                 _cachedTemplate = curTpl;
-                _activeData = TelemetryMatrixData.FromTemplate(_cachedTemplate);
-                _logic.ActiveData = _activeData;
-                _needsUiRebuild = true;
+                _activeData.Value = TelemetryMatrixData.FromTemplate(_cachedTemplate);
+                _logic.ActiveData = _activeData.Value;
+                _needsUiRebuild.Value = true;
             }
 
             _logic.DisplayTitleTemplate = !string.IsNullOrEmpty(Config?.DisplayName) ? Config.DisplayName : I18n.Tr("WIDGET_NAME_CUSTOM_TOKEN", "多通道遥测综合矩阵卡");
@@ -439,9 +439,9 @@ namespace ModularFlightPanel.UI.Widgets
 
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
-            if (_needsUiRebuild)
+            if (_needsUiRebuild.Value)
             {
-                _needsUiRebuild = false;
+                _needsUiRebuild.Value = false;
                 RebuildUI(context.Theme);
             }
 
@@ -575,11 +575,11 @@ namespace ModularFlightPanel.UI.Widgets
         private void RebuildUI(ThemeConfig theme)
         {
             theme = theme ?? WidgetStyleManager.ResolveTheme(null);
-            if (!_isCustomResized)
+            if (!_isCustomResized.Value)
             {
                 Vector2 dynSize = GetDynamicBaseSize();
-                _currentWidth = dynSize.x;
-                _currentHeight = dynSize.y;
+                _currentWidth.Value = dynSize.x;
+                _currentHeight.Value = dynSize.y;
                 RectTransform.SetSizeDeltaSafe(dynSize * CurrentDpiScale);
             }
 
@@ -599,9 +599,9 @@ namespace ModularFlightPanel.UI.Widgets
             _runtimeRows.Clear();
             _tableHeaderUI = null;
 
-            if (_activeData == null) return;
+            if (_activeData.Value == null) return;
 
-            bool isTable = (_activeData.Mode == MatrixDisplayMode.Table);
+            bool isTable = (_activeData.Value.Mode == MatrixDisplayMode.Table);
 
             if (isTable)
             {
@@ -626,15 +626,15 @@ namespace ModularFlightPanel.UI.Widgets
                 hDivRt.SetSizeDeltaSafe(new Vector2(0f, 1f * s));
                 hDivRt.SetAnchoredPositionSafe(Vector2.zero);
 
-                for (int c = 0; c < _activeData.Columns; c++)
+                for (int c = 0; c < _activeData.Value.Columns; c++)
                 {
-                    string hText = (c < _activeData.TableHeaders.Count) ? _activeData.TableHeaders[c] : $"Col {c + 1}";
+                    string hText = (c < _activeData.Value.TableHeaders.Count) ? _activeData.Value.TableHeaders[c] : $"Col {c + 1}";
                     Text txt = UIFactory.CreateText(thGo.transform, $"H_{c}", hText, Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, style.GetTextColor(TextStyleRole.Label, theme));
                     _tableHeaderUI.HeaderTexts.Add(txt);
                 }
             }
 
-            for (int r = 0; r < _activeData.Rows; r++)
+            for (int r = 0; r < _activeData.Value.Rows; r++)
             {
                 var rowUi = new RowRuntimeUI { RowIndex = r };
                 GameObject rGo = UIFactory.CreatePanel(_gridContainerRt, $"Row_{r}", new Vector2(0f, 24f * s), Vector2.zero, Color.clear);
@@ -646,9 +646,9 @@ namespace ModularFlightPanel.UI.Widgets
                 rowUi.RowRt.anchorMax = new Vector2(1f, 1f);
                 rowUi.RowRt.pivot = new Vector2(0f, 1f);
 
-                for (int c = 0; c < _activeData.Columns; c++)
+                for (int c = 0; c < _activeData.Value.Columns; c++)
                 {
-                    var cellData = (r < _activeData.Grid.Count && c < _activeData.Grid[r].Count) ? _activeData.Grid[r][c] : new MatrixCellData();
+                    var cellData = (r < _activeData.Value.Grid.Count && c < _activeData.Value.Grid[r].Count) ? _activeData.Value.Grid[r][c] : new MatrixCellData();
                     var cellUi = new CellRuntimeUI
                     {
                         Row = r,
@@ -720,15 +720,15 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void UpdateLayoutGeometry()
         {
-            if (_activeData == null) return;
+            if (_activeData.Value == null) return;
             float s = CurrentDpiScale;
-            bool isTable = (_activeData.Mode == MatrixDisplayMode.Table);
+            bool isTable = (_activeData.Value.Mode == MatrixDisplayMode.Table);
 
-            int cols = Mathf.Max(1, _activeData.Columns);
-            int rows = Mathf.Max(1, _activeData.Rows);
+            int cols = Mathf.Max(1, _activeData.Value.Columns);
+            int rows = Mathf.Max(1, _activeData.Value.Rows);
 
             float headerH = isTable ? 20f * s : 0f;
-            float totalContentH = _currentHeight * s - 38f * s;
+            float totalContentH = _currentHeight.Value * s - 38f * s;
             float availRowsH = Mathf.Max(20f * s, totalContentH - headerH);
             float rowH = Mathf.Max(18f * s, availRowsH / rows);
 
@@ -774,14 +774,14 @@ namespace ModularFlightPanel.UI.Widgets
             get
             {
                 _cachedDescriptors.Clear();
-                if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
-                for (int r = 0; r < _activeData.Rows; r++)
+                if (_activeData.Value == null) _activeData.Value = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+                for (int r = 0; r < _activeData.Value.Rows; r++)
                 {
-                    for (int c = 0; c < _activeData.Columns; c++)
+                    for (int c = 0; c < _activeData.Value.Columns; c++)
                     {
-                        var cell = _activeData.Grid[r][c];
+                        var cell = _activeData.Value.Grid[r][c];
                         string title = string.IsNullOrEmpty(cell.Label) ? $"R{r + 1}C{c + 1}" : cell.Label;
-                        _cachedDescriptors.Add(new DynamicSlotDescriptor($"slot_{r}_{c}", title, cell.Token, c < _activeData.Columns - 1));
+                        _cachedDescriptors.Add(new DynamicSlotDescriptor($"slot_{r}_{c}", title, cell.Token, c < _activeData.Value.Columns - 1));
                     }
                 }
                 return _cachedDescriptors;
@@ -790,31 +790,31 @@ namespace ModularFlightPanel.UI.Widgets
 
         public void AddDynamicSlot(string token, string title = null)
         {
-            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
-            _activeData.AddRow();
-            int lastRow = _activeData.Rows - 1;
-            if (_activeData.Grid[lastRow].Count > 0)
+            if (_activeData.Value == null) _activeData.Value = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            _activeData.Value.AddRow();
+            int lastRow = _activeData.Value.Rows - 1;
+            if (_activeData.Value.Grid[lastRow].Count > 0)
             {
-                _activeData.Grid[lastRow][0].Token = token;
-                if (!string.IsNullOrEmpty(title)) _activeData.Grid[lastRow][0].Label = title;
+                _activeData.Value.Grid[lastRow][0].Token = token;
+                if (!string.IsNullOrEmpty(title)) _activeData.Value.Grid[lastRow][0].Label = title;
             }
             SaveAndApplyTemplate();
         }
 
         public void RemoveDynamicSlot(int index)
         {
-            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
-            if (index >= 0 && index < _activeData.Rows)
+            if (_activeData.Value == null) _activeData.Value = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            if (index >= 0 && index < _activeData.Value.Rows)
             {
-                _activeData.RemoveRow(index);
+                _activeData.Value.RemoveRow(index);
                 SaveAndApplyTemplate();
             }
         }
 
         public void MoveDynamicSlot(int fromIndex, int toIndex)
         {
-            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
-            _activeData.MoveRow(fromIndex, toIndex);
+            if (_activeData.Value == null) _activeData.Value = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            _activeData.Value.MoveRow(fromIndex, toIndex);
             SaveAndApplyTemplate();
         }
 
@@ -824,33 +824,33 @@ namespace ModularFlightPanel.UI.Widgets
 
         public void UpdateDynamicSlotToken(int index, string newToken)
         {
-            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
-            int cols = _activeData.Columns;
+            if (_activeData.Value == null) _activeData.Value = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            int cols = _activeData.Value.Columns;
             int r = index / cols;
             int c = index % cols;
-            if (r < _activeData.Rows && c < cols)
+            if (r < _activeData.Value.Rows && c < cols)
             {
-                _activeData.Grid[r][c].Token = newToken;
+                _activeData.Value.Grid[r][c].Token = newToken;
                 SaveAndApplyTemplate();
             }
         }
 
         public void UpdateDynamicSlotTitle(int index, string newTitle)
         {
-            if (_activeData == null) _activeData = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
-            int cols = _activeData.Columns;
+            if (_activeData.Value == null) _activeData.Value = TelemetryMatrixData.FromTemplate(Config?.CustomTemplate);
+            int cols = _activeData.Value.Columns;
             int r = index / cols;
             int c = index % cols;
-            if (r < _activeData.Rows && c < cols)
+            if (r < _activeData.Value.Rows && c < cols)
             {
-                _activeData.Grid[r][c].Label = newTitle;
+                _activeData.Value.Grid[r][c].Label = newTitle;
                 SaveAndApplyTemplate();
             }
         }
 
         public void ResetToDefaultDynamicSlots()
         {
-            _activeData = TelemetryMatrixData.CreateDefaultKeyValue();
+            _activeData.Value = TelemetryMatrixData.CreateDefaultKeyValue();
             SaveAndApplyTemplate();
         }
 
@@ -858,10 +858,10 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (Config != null)
             {
-                Config.CustomTemplate = _activeData.ToTemplate();
+                Config.CustomTemplate = _activeData.Value.ToTemplate();
             }
             _cachedTemplate = Config?.CustomTemplate;
-            _logic.ActiveData = _activeData;
+            _logic.ActiveData = _activeData.Value;
             RebuildUI(ResolveEffectiveTheme(null));
             WidgetLayoutManager.Instance?.SaveLayout();
         }

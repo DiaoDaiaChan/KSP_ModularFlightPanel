@@ -262,10 +262,10 @@ namespace ModularFlightPanel.UI.Widgets
         }
 
         // 当前动态自适应尺寸与椭圆几何参数 (Adaptive Radius & Curvature)
-        private float _currentRadiusX = 0f;
-        private float _currentRadiusY = 0f;
-        private float _currentYCenterOffset = 0f;
-        private float _currentAdaptiveScale = 1.0f;
+        private readonly CachedFloat _currentRadiusX = new CachedFloat(0f, 0.05f);
+        private readonly CachedFloat _currentRadiusY = new CachedFloat(0f, 0.05f);
+        private readonly CachedFloat _currentYCenterOffset = new CachedFloat(0f, 0.05f);
+        private readonly CachedFloat _currentAdaptiveScale = new CachedFloat(1.0f, 0.005f);
 
         private struct HeadingTickUI
         {
@@ -345,29 +345,29 @@ namespace ModularFlightPanel.UI.Widgets
             scaleX = Mathf.Clamp(scaleX, 0.4f, 3.0f);
             scaleY = Mathf.Clamp(scaleY, 0.4f, 3.0f);
 
-            _currentRadiusX = ARC_RADIUS * s * scaleX;
-            _currentRadiusY = ARC_RADIUS * s * scaleY;
-            _currentYCenterOffset = ARC_Y_CENTER_OFFSET * s * scaleY;
-            _currentAdaptiveScale = Mathf.Clamp(Mathf.Min(scaleX, scaleY), 0.55f, 2.0f);
+            _currentRadiusX.Value = ARC_RADIUS * s * scaleX;
+            _currentRadiusY.Value = ARC_RADIUS * s * scaleY;
+            _currentYCenterOffset.Value = ARC_Y_CENTER_OFFSET * s * scaleY;
+            _currentAdaptiveScale.Value = Mathf.Clamp(Mathf.Min(scaleX, scaleY), 0.55f, 2.0f);
 
             if (_arcBandGraphic != null)
             {
-                _arcBandGraphic.RadiusX = _currentRadiusX;
-                _arcBandGraphic.RadiusY = _currentRadiusY;
-                _arcBandGraphic.YCenterOffset = _currentYCenterOffset;
+                _arcBandGraphic.RadiusX = _currentRadiusX.Value;
+                _arcBandGraphic.RadiusY = _currentRadiusY.Value;
+                _arcBandGraphic.YCenterOffset = _currentYCenterOffset.Value;
                 _arcBandGraphic.DpiScale = s;
-                _arcBandGraphic.AdaptiveScale = _currentAdaptiveScale;
+                _arcBandGraphic.AdaptiveScale = _currentAdaptiveScale.Value;
                 _arcBandGraphic.SetVerticesDirty();
             }
 
-            ApplyAdaptiveElementScaling(s, _currentAdaptiveScale);
+            ApplyAdaptiveElementScaling(s, _currentAdaptiveScale.Value);
             UpdateRotatingCompassRose(_logic.CurrentState.DisplayedHeading, force: true);
         }
 
         private void ApplyAdaptiveElementScaling(float s, float adaptiveScale)
         {
-            float rY = _currentRadiusY > 0.001f ? _currentRadiusY : (ARC_RADIUS * s);
-            float yOff = _currentYCenterOffset > 0.001f ? _currentYCenterOffset : (ARC_Y_CENTER_OFFSET * s);
+            float rY = _currentRadiusY.Value > 0.001f ? _currentRadiusY.Value : (ARC_RADIUS * s);
+            float yOff = _currentYCenterOffset.Value > 0.001f ? _currentYCenterOffset.Value : (ARC_Y_CENTER_OFFSET * s);
             float effScale = s * adaptiveScale;
 
             // 1. 基准游标 (翡翠绿反T): 贴紧圆弧外缘 (+4.5f * effScale)
@@ -451,17 +451,17 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             float s = CurrentDpiScale;
-            if (_currentRadiusX <= 0.001f || _currentRadiusY <= 0.001f)
+            if (_currentRadiusX.Value <= 0.001f || _currentRadiusY.Value <= 0.001f)
             {
                 float effW = (RectTransform != null && RectTransform.sizeDelta.x > 10f) ? RectTransform.sizeDelta.x : (BaseSize.x * s);
                 float effH = (RectTransform != null && RectTransform.sizeDelta.y > 10f) ? RectTransform.sizeDelta.y : (BaseSize.y * s);
                 float scaleX = Mathf.Clamp(effW / (BaseSize.x * s), 0.4f, 3.0f);
                 float scaleY = Mathf.Clamp(effH / (BaseSize.y * s), 0.4f, 3.0f);
 
-                _currentRadiusX = ARC_RADIUS * s * scaleX;
-                _currentRadiusY = ARC_RADIUS * s * scaleY;
-                _currentYCenterOffset = ARC_Y_CENTER_OFFSET * s * scaleY;
-                _currentAdaptiveScale = Mathf.Clamp(Mathf.Min(scaleX, scaleY), 0.55f, 2.0f);
+                _currentRadiusX.Value = ARC_RADIUS * s * scaleX;
+                _currentRadiusY.Value = ARC_RADIUS * s * scaleY;
+                _currentYCenterOffset.Value = ARC_Y_CENTER_OFFSET * s * scaleY;
+                _currentAdaptiveScale.Value = Mathf.Clamp(Mathf.Min(scaleX, scaleY), 0.55f, 2.0f);
             }
 
             if (config != null && !string.IsNullOrEmpty(config.NumericToken))
@@ -484,7 +484,7 @@ namespace ModularFlightPanel.UI.Widgets
             BuildLubberMark(s, theme);
 
             // 5. 应用尺寸自适应
-            ApplyAdaptiveElementScaling(s, _currentAdaptiveScale);
+            ApplyAdaptiveElementScaling(s, _currentAdaptiveScale.Value);
 
             // 注册微控件至标准化管理器
             this.Controls.Register(WidgetControlManager.WrapElement(this, "arc_band", "罗盘弧底带", _arcBandGraphic.gameObject, (t) => {
@@ -517,12 +517,12 @@ namespace ModularFlightPanel.UI.Widgets
             RectTransform bandRt = CreateContainer("Arc_Band_Root", transform, Vector2.zero, Vector2.zero);
             _arcBandGraphic = bandRt.gameObject.AddComponent<ProceduralCompassArcGraphic>();
             _arcBandGraphic.raycastTarget = false;
-            _arcBandGraphic.RadiusX = _currentRadiusX;
-            _arcBandGraphic.RadiusY = _currentRadiusY;
-            _arcBandGraphic.YCenterOffset = _currentYCenterOffset;
+            _arcBandGraphic.RadiusX = _currentRadiusX.Value;
+            _arcBandGraphic.RadiusY = _currentRadiusY.Value;
+            _arcBandGraphic.YCenterOffset = _currentYCenterOffset.Value;
             _arcBandGraphic.MaxAngularSpan = MAX_ANGULAR_SPAN;
             _arcBandGraphic.DpiScale = s;
-            _arcBandGraphic.AdaptiveScale = _currentAdaptiveScale;
+            _arcBandGraphic.AdaptiveScale = _currentAdaptiveScale.Value;
 
             WidgetStyleManager st = WidgetStyleManager.Instance;
             Color borderCol = WidgetStyleManager.GetDerivedColor((Color)theme.FrameBorderColor, 0.50f);
@@ -584,7 +584,7 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildSpeechBubble(float s, ThemeConfig theme)
         {
-            float adaptiveScale = _currentAdaptiveScale;
+            float adaptiveScale = _currentAdaptiveScale.Value;
             float effScale = s * adaptiveScale;
             float bubbleW = Mathf.Max(40f, 46f * effScale);
             float bubbleH = Mathf.Max(16f, 18f * effScale);
@@ -593,7 +593,7 @@ namespace ModularFlightPanel.UI.Widgets
             float barH = Mathf.Max(2f, 2.2f * effScale);
             float tipSize = Mathf.Max(4.5f, 5.5f * effScale);
             float tipVisualH = tipSize * 0.707f;
-            float lubberPosY = _currentRadiusY - _currentYCenterOffset + (4.5f * effScale);
+            float lubberPosY = _currentRadiusY.Value - _currentYCenterOffset.Value + (4.5f * effScale);
             float bubblePosY = (lubberPosY + barH) + 1.5f + (boxSize.y * 0.5f + tipVisualH - 0.5f * effScale);
             Vector2 bubblePos = new Vector2(0f, bubblePosY);
             WidgetStyleManager style = WidgetStyleManager.Instance;
@@ -655,13 +655,13 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void BuildLubberMark(float s, ThemeConfig theme)
         {
-            float adaptiveScale = _currentAdaptiveScale;
+            float adaptiveScale = _currentAdaptiveScale.Value;
             float effScale = s * adaptiveScale;
             float barW = Mathf.Max(10f, 12f * effScale);
             float barH = Mathf.Max(2f, 2.2f * effScale);
             float stemW = Mathf.Max(2f, 2.2f * effScale);
             float stemH = Mathf.Max(4.5f, 5.0f * effScale);
-            Vector2 lubberPos = new Vector2(0f, _currentRadiusY - _currentYCenterOffset + (4.5f * effScale));
+            Vector2 lubberPos = new Vector2(0f, _currentRadiusY.Value - _currentYCenterOffset.Value + (4.5f * effScale));
 
             _lubberRt = CreateContainer("Lubber_Line_Root", transform,
                 new Vector2(barW + 2f, barH + stemH), lubberPos);
@@ -724,10 +724,10 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             float s = CurrentDpiScale;
-            float rx = _currentRadiusX > 0.001f ? _currentRadiusX : (ARC_RADIUS * s);
-            float ry = _currentRadiusY > 0.001f ? _currentRadiusY : (ARC_RADIUS * s);
-            float yCenterOffset = _currentYCenterOffset > 0.001f ? _currentYCenterOffset : (ARC_Y_CENTER_OFFSET * s);
-            float adaptiveScale = _currentAdaptiveScale;
+            float rx = _currentRadiusX.Value > 0.001f ? _currentRadiusX.Value : (ARC_RADIUS * s);
+            float ry = _currentRadiusY.Value > 0.001f ? _currentRadiusY.Value : (ARC_RADIUS * s);
+            float yCenterOffset = _currentYCenterOffset.Value > 0.001f ? _currentYCenterOffset.Value : (ARC_Y_CENTER_OFFSET * s);
+            float adaptiveScale = _currentAdaptiveScale.Value;
 
             // 智能密度 LOD: 小分辨率/紧凑尺寸下动态调降刻度密度，根除摩尔纹与重叠拥挤
             float arcPitch5Deg = rx * (5f * Mathf.Deg2Rad);

@@ -42,8 +42,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         public Vector2 MaxBaseSize => new Vector2(1920f, 1080f);
 
         private CompositePanelConfig _configData;
-        private string _cachedTemplateJson = null;
-        private bool _needsLayerRebuild = false;
+        private readonly Cached<string> _cachedTemplateJson = new Cached<string>(null);
+        private readonly Cached<bool> _needsLayerRebuild = new Cached<bool>(false);
 
         // 视图层图层映射与缓存
         private class RuntimeLayerItem
@@ -126,8 +126,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
         private void LoadAndParseConfig()
         {
-            _cachedTemplateJson = Config?.CustomTemplate;
-            _configData = CompositePanelConfig.FromJson(_cachedTemplateJson);
+            _cachedTemplateJson.Value = Config?.CustomTemplate;
+            _configData = CompositePanelConfig.FromJson(_cachedTemplateJson.Value);
             _logic.Config = _configData;
         }
 
@@ -741,10 +741,10 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         public override void OnDataHeartBeat(in FlightHeartbeatContext context)
         {
             string curTpl = Config?.CustomTemplate;
-            if (curTpl != _cachedTemplateJson)
+            if (curTpl != _cachedTemplateJson.Value)
             {
                 LoadAndParseConfig();
-                _needsLayerRebuild = true;
+                _needsLayerRebuild.Value = true;
             }
 
             base.OnDataHeartBeat(in context);
@@ -754,9 +754,9 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         {
             base.OnUIDrawLoop(ref context);
 
-            if (_needsLayerRebuild)
+            if (_needsLayerRebuild.Value)
             {
-                _needsLayerRebuild = false;
+                _needsLayerRebuild.Value = false;
                 RebuildLayers(ResolveEffectiveTheme(context.Theme));
             }
         }
@@ -858,7 +858,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             {
                 Config.CustomTemplate = newCfg.ToJson();
             }
-            _cachedTemplateJson = Config?.CustomTemplate;
+            _cachedTemplateJson.Value = Config?.CustomTemplate;
             RebuildLayers(WidgetStyleManager.ResolveTheme(null));
         }
 
@@ -911,7 +911,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             if (_configData != null && Config != null)
             {
                 Config.CustomTemplate = _configData.ToJson();
-                _cachedTemplateJson = Config.CustomTemplate;
+                _cachedTemplateJson.Value = Config.CustomTemplate;
             }
         }
 

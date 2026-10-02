@@ -46,7 +46,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 UnityEngine.Object.Destroy(c);
             }
 
-            GameObject card = WorkbenchControls.CreateCard(_container, "DiagCard", Vector2.zero);
+            GameObject card = WorkbenchControls.CreatePanel(_container, "DiagCard", Vector2.zero);
             RectTransform cardRt = card.GetComponent<RectTransform>();
             cardRt.anchorMin = Vector2.zero;
             cardRt.anchorMax = Vector2.one;
@@ -171,7 +171,7 @@ namespace ModularFlightPanel.UI.Workbench.Tabs
                 {
                     MFPSafetyFallback.TryRecoverFromFault();
                     Refresh();
-                }, true, 11);
+                }, false, 11);
             }
 
             // 3. 736+ 遥测参数动态探针检索沙盒

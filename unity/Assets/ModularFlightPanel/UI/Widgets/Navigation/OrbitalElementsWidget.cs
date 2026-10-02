@@ -358,30 +358,30 @@ namespace ModularFlightPanel.UI.Widgets
 
         // ── 性能节流与状态缓存 ──
         private readonly CachedFloat _lastMeshRebuildTime = new CachedFloat(-1f);
-        private float _cachedDpiScale = 1f; // DPI 缩放系数缓存 (供 PopulateOrbitMesh 使用，避免在 OnPopulateMesh 回调中查询 Unity API)
+        private readonly CachedFloat _cachedDpiScale = new CachedFloat(1f, 0.001f); // DPI 缩放系数缓存 (供 PopulateOrbitMesh 使用，避免在 OnPopulateMesh 回调中查询 Unity API)
 
         // ── 尺寸规格：精简模式 290×116，完整模式 400×440 ──
         private static readonly Vector2 CompactSize = new Vector2(290f, 116f);
         private static readonly Vector2 FullSize = new Vector2(400f, 440f);
-        public override Vector2 BaseSize => _isFullMode ? FullSize : CompactSize;
+        public override Vector2 BaseSize => _isFullMode.Value ? FullSize : CompactSize;
 
         // ── DSL 声明式微控件 (基类全自动构建与主题纳管) ──
         public TextWidget Title = TextWidget.Title(I18n.Tr("ORBIT_TITLE", "轨道要素"));
         public TextWidget OrbitBadge = TextWidget.Badge("---");
 
         // ── 模式状态 ──
-        private bool _isFullMode = false;
+        private readonly Cached<bool> _isFullMode = new Cached<bool>(false);
 
         // ── 3D 相机姿态与正对屏幕中枢 ──
         public const double DefaultEciYaw = -115.0 * Math.PI / 180.0;
         public const double DefaultEciPitch = 25.0 * Math.PI / 180.0;
-        private double _currentCamYaw = DefaultEciYaw;
-        private double _currentCamPitch = DefaultEciPitch;
-        private double _targetCamYaw = DefaultEciYaw;
-        private double _targetCamPitch = DefaultEciPitch;
-        private float _zoomFactor = 1.0f;
-        private bool _isOrbitFacingMode = true; // 默认 3D 模式下正对轨道面，确保六根数正面展开清晰可见
-        private bool _isFreeLook = false;
+        private readonly CachedDouble _currentCamYaw = new CachedDouble(DefaultEciYaw, 0.01);
+        private readonly CachedDouble _currentCamPitch = new CachedDouble(DefaultEciPitch, 0.01);
+        private readonly CachedDouble _targetCamYaw = new CachedDouble(DefaultEciYaw, 0.01);
+        private readonly CachedDouble _targetCamPitch = new CachedDouble(DefaultEciPitch, 0.01);
+        private readonly CachedFloat _zoomFactor = new CachedFloat(1.0f, 0.001f);
+        private readonly Cached<bool> _isOrbitFacingMode = new Cached<bool>(true); // 默认 3D 模式下正对轨道面，确保六根数正面展开清晰可见
+        private readonly Cached<bool> _isFreeLook = new Cached<bool>(false);
 
         // ── 根节点容器 ──
         private GameObject _compactRoot;
@@ -446,12 +446,17 @@ namespace ModularFlightPanel.UI.Widgets
         private Text _lblSmaDim;
 
         // ── 全息 3D 航电矢量引线与自适应避让锚点 (0 GC 值类型字段) ──
-        private Vector2 _leaderLineAn0, _leaderLineAn1; private bool _drawLeaderAn;
-        private Vector2 _leaderLineDn0, _leaderLineDn1; private bool _drawLeaderDn;
-        private Vector2 _leaderLinePe0, _leaderLinePe1; private bool _drawLeaderPe;
-        private Vector2 _leaderLineAp0, _leaderLineAp1; private bool _drawLeaderAp;
-        private Vector2 _leaderLineSc0, _leaderLineSc1; private bool _drawLeaderSc;
-        private Vector2 _eqBestScreenPos; private Vector2 _eqBestTickDir; private bool _hasEqPos;
+        private struct OrbitProjectionSnapshot
+        {
+            public Vector2 LeaderLineAn0, LeaderLineAn1; public bool DrawLeaderAn;
+            public Vector2 LeaderLineDn0, LeaderLineDn1; public bool DrawLeaderDn;
+            public Vector2 LeaderLinePe0, LeaderLinePe1; public bool DrawLeaderPe;
+            public Vector2 LeaderLineAp0, LeaderLineAp1; public bool DrawLeaderAp;
+            public Vector2 LeaderLineSc0, LeaderLineSc1; public bool DrawLeaderSc;
+            public Vector2 EqBestScreenPos; public Vector2 EqBestTickDir; public bool HasEqPos;
+            public Vector2 ScScreenPos;
+        }
+        private OrbitProjectionSnapshot _projectionSnapshot;
 
         // ── 读数防抖与字符串缓存 (避免逐帧 GC 与 Text 网格脏化) ──
         private readonly CachedDouble _lastCompactAp = new CachedDouble(double.NaN);
@@ -477,8 +482,8 @@ namespace ModularFlightPanel.UI.Widgets
         private readonly CachedDouble _lastFullPer = new CachedDouble(double.NaN);
 
         // ── 每帧复用的采样缓冲 (几何图元不再逐帧分配数组) ──
-        private readonly Vector2[] _orbitPts = new Vector2[385];
-        private readonly bool[] _orbitFront = new bool[385];
+        private readonly Vector2[] _orbitPtsBuffer = new Vector2[385];
+        private readonly bool[] _orbitFrontBuffer = new bool[385];
 
         private readonly CachedDouble _lastDrawnAp = new CachedDouble(double.NaN);
         private readonly CachedDouble _lastDrawnPe = new CachedDouble(double.NaN);
@@ -492,12 +497,12 @@ namespace ModularFlightPanel.UI.Widgets
         private Button _bTopLBtn, _bTopRBtn, _bBotLBtn, _bBotRBtn;
 
         // ── 孤立探查模式 (Solo Inspect Mode) 与底部释义条 ──
-        private OrbitElementFocus _focusElement = OrbitElementFocus.None;
+        private readonly Cached<OrbitElementFocus> _focusElement = new Cached<OrbitElementFocus>(OrbitElementFocus.None);
         private GameObject _inspectBanner;
         private Text _inspectText;
         private Outline _inspectBannerOutline;
         private Button _inspectBannerBtn;
-        private Vector2 _scScreenPos = Vector2.zero;
+        // _projectionSnapshot.ScScreenPos is inside _projectionSnapshot
 
 
         // ── 主题语义颜色缓存 (SPEC-006: 零颜色字面量) ──
@@ -544,7 +549,7 @@ namespace ModularFlightPanel.UI.Widgets
         {
             theme = WidgetStyleManager.ResolveTheme(theme);
             float s = CurrentDpiScale;
-            _cachedDpiScale = s;
+            _cachedDpiScale.Value = s;
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
             // 尽早烘焙语义色缓存 (确保后续微标与硬件图元初始化时获得有效色彩)
@@ -843,7 +848,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             ApplyReadoutColors(theme);   // 读数先着色 (与划线同色)
             CacheThemeColors(theme);
-            _cachedDpiScale = s;
+            _cachedDpiScale.Value = s;
 
             if (config != null && (config.CustomTemplate == "full" || config.WidgetType == "orbital_3d"))
             {
@@ -909,19 +914,19 @@ namespace ModularFlightPanel.UI.Widgets
         // ═════════════════════════════════════════════════════════════════
         private void OnModeToggle()
         {
-            _isFullMode = !_isFullMode;
+            _isFullMode.Value = !_isFullMode.Value;
 
-            _compactRoot.SetActive(!_isFullMode);
-            _fullRoot.SetActive(_isFullMode);
+            _compactRoot.SetActive(!_isFullMode.Value);
+            _fullRoot.SetActive(_isFullMode.Value);
 
             float s = CurrentDpiScale;
-            _cachedDpiScale = s;
-            Vector2 targetSize = _isFullMode ? FullSize : CompactSize;
+            _cachedDpiScale.Value = s;
+            Vector2 targetSize = _isFullMode.Value ? FullSize : CompactSize;
             RectTransform.sizeDelta = targetSize * s;
 
             if (_modeBtnLabel != null)
             {
-                _modeBtnLabel.text = _isFullMode ? I18n.Tr("ORBIT_BTN_COMPACT", "COMPACT") : I18n.Tr("ORBIT_BTN_3D", "3D SPHERE");
+                _modeBtnLabel.text = _isFullMode.Value ? I18n.Tr("ORBIT_BTN_COMPACT", "COMPACT") : I18n.Tr("ORBIT_BTN_3D", "3D SPHERE");
             }
 
             // 更新按钮坐标 (始终停靠在右上角)
@@ -933,8 +938,8 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (_viewButton != null)
             {
-                _viewButton.gameObject.SetActive(_isFullMode);
-                if (_isFullMode)
+                _viewButton.gameObject.SetActive(_isFullMode.Value);
+                if (_isFullMode.Value)
                 {
                     float vBtnX = -46f * s;
                     _viewButton.GetComponent<RectTransform>().SetAnchoredPositionSafe(new Vector2(vBtnX, btnY));
@@ -942,16 +947,18 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            if (_isFullMode)
+            if (_isFullMode.Value)
             {
-                if (_isOrbitFacingMode && !_isFreeLook)
+                if (_isOrbitFacingMode.Value && !_isFreeLook.Value)
                 {
                     var st = _logic.CurrentState;
                     if (st.HasVessel)
                     {
-                        ComputeOptimalOrbitFacingCamera(st.Inc, st.Lan, st.Aop, out _currentCamYaw, out _currentCamPitch);
-                        _targetCamYaw = _currentCamYaw;
-                        _targetCamPitch = _currentCamPitch;
+                        ComputeOptimalOrbitFacingCamera(st.Inc, st.Lan, st.Aop, out double optYaw, out double optPitch);
+                        _currentCamYaw.Value = optYaw;
+                        _currentCamPitch.Value = optPitch;
+                        _targetCamYaw.Value = _currentCamYaw.Value;
+                        _targetCamPitch.Value = _currentCamPitch.Value;
                     }
                 }
                 _lastDrawnSma.Reset(double.NaN); // 强制首次绘制
@@ -964,34 +971,36 @@ namespace ModularFlightPanel.UI.Widgets
         // ═════════════════════════════════════════════════════════════════
         public void OnViewModeToggle()
         {
-            if (_isFreeLook)
+            if (_isFreeLook.Value)
             {
-                _isFreeLook = false;
-                _isOrbitFacingMode = true;
+                _isFreeLook.Value = false;
+                _isOrbitFacingMode.Value = true;
             }
             else
             {
-                _isOrbitFacingMode = !_isOrbitFacingMode;
+                _isOrbitFacingMode.Value = !_isOrbitFacingMode.Value;
             }
-            _zoomFactor = 1.0f;
+            _zoomFactor.Value = 1.0f;
             ApplyCameraMode();
         }
 
         private void ApplyCameraMode()
         {
             var state = _logic.CurrentState;
-            if (_isOrbitFacingMode && state.HasVessel)
+            if (_isOrbitFacingMode.Value && state.HasVessel)
             {
-                ComputeOptimalOrbitFacingCamera(state.Inc, state.Lan, state.Aop, out _currentCamYaw, out _currentCamPitch);
-                _targetCamYaw = _currentCamYaw;
-                _targetCamPitch = _currentCamPitch;
+                ComputeOptimalOrbitFacingCamera(state.Inc, state.Lan, state.Aop, out double optYaw2, out double optPitch2);
+                _currentCamYaw.Value = optYaw2;
+                _currentCamPitch.Value = optPitch2;
+                _targetCamYaw.Value = _currentCamYaw.Value;
+                _targetCamPitch.Value = _currentCamPitch.Value;
             }
             else
             {
-                _currentCamYaw = DefaultEciYaw;
-                _currentCamPitch = DefaultEciPitch;
-                _targetCamYaw = DefaultEciYaw;
-                _targetCamPitch = DefaultEciPitch;
+                _currentCamYaw.Value = DefaultEciYaw;
+                _currentCamPitch.Value = DefaultEciPitch;
+                _targetCamYaw.Value = DefaultEciYaw;
+                _targetCamPitch.Value = DefaultEciPitch;
             }
 
             UpdateViewButtonState();
@@ -1004,14 +1013,14 @@ namespace ModularFlightPanel.UI.Widgets
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(WidgetStyleManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
 
-            if (_isFreeLook)
+            if (_isFreeLook.Value)
             {
                 _viewBtnLabel.text = I18n.Tr("ORBIT_BTN_VIEW_FREE", "自由旋转");
                 _viewBtnLabel.color = style.GetTextColor(TextStyleRole.Accent, theme);
                 if (_viewBtnOutline != null)
                     _viewBtnOutline.effectColor = WidgetStyleManager.WithAlpha(theme.AccentSecondary, 0.8f);
             }
-            else if (_isOrbitFacingMode)
+            else if (_isOrbitFacingMode.Value)
             {
                 _viewBtnLabel.text = I18n.Tr("ORBIT_BTN_VIEW_ORBIT", "正对轨道");
                 _viewBtnLabel.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
@@ -1029,12 +1038,12 @@ namespace ModularFlightPanel.UI.Widgets
 
         internal void OnViewportDrag(Vector2 delta)
         {
-            if (!_isFullMode) return;
-            _isFreeLook = true;
-            _currentCamYaw += delta.x * 0.006;
-            _currentCamPitch = Math.Max(-80.0 * Math.PI / 180.0, Math.Min(80.0 * Math.PI / 180.0, _currentCamPitch - delta.y * 0.006));
-            _targetCamYaw = _currentCamYaw;
-            _targetCamPitch = _currentCamPitch;
+            if (!_isFullMode.Value) return;
+            _isFreeLook.Value = true;
+            _currentCamYaw.Value += delta.x * 0.006;
+            _currentCamPitch.Value = Math.Max(-80.0 * Math.PI / 180.0, Math.Min(80.0 * Math.PI / 180.0, _currentCamPitch.Value - delta.y * 0.006));
+            _targetCamYaw.Value = _currentCamYaw.Value;
+            _targetCamPitch.Value = _currentCamPitch.Value;
 
             UpdateViewButtonState();
             TriggerFullRedrawImmediate();
@@ -1042,11 +1051,11 @@ namespace ModularFlightPanel.UI.Widgets
 
         internal void OnViewportScroll(float scrollDelta)
         {
-            if (!_isFullMode) return;
-            float prevZoom = _zoomFactor;
-            if (scrollDelta > 0.01f) _zoomFactor = Mathf.Clamp(_zoomFactor * 1.08f, 0.65f, 2.2f);
-            else if (scrollDelta < -0.01f) _zoomFactor = Mathf.Clamp(_zoomFactor * 0.92f, 0.65f, 2.2f);
-            if (Mathf.Abs(prevZoom - _zoomFactor) > 0.001f)
+            if (!_isFullMode.Value) return;
+            float prevZoom = _zoomFactor.Value;
+            if (scrollDelta > 0.01f) _zoomFactor.Value = Mathf.Clamp(_zoomFactor.Value * 1.08f, 0.65f, 2.2f);
+            else if (scrollDelta < -0.01f) _zoomFactor.Value = Mathf.Clamp(_zoomFactor.Value * 0.92f, 0.65f, 2.2f);
+            if (Mathf.Abs(prevZoom - _zoomFactor.Value) > 0.001f)
             {
                 TriggerFullRedrawImmediate();
             }
@@ -1060,7 +1069,7 @@ namespace ModularFlightPanel.UI.Widgets
         private void TriggerFullRedrawImmediate()
         {
             var state = _logic.CurrentState;
-            if (state.HasVessel && _isFullMode)
+            if (state.HasVessel && _isFullMode.Value)
             {
                 UpdateDiagramLabels(state.Tra, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop, state.Ap, state.Pe);
                 UpdateSpacecraftOverlay(state.Tra, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop);
@@ -1149,13 +1158,13 @@ namespace ModularFlightPanel.UI.Widgets
         // ═════════════════════════════════════════════════════════════════
         public void SetFocusElement(OrbitElementFocus focus)
         {
-            _focusElement = focus;
+            _focusElement.Value = focus;
             UpdateInspectBannerState();
             UpdateBadgeHighlightOutlines();
             if (_diagramGraphic != null) _diagramGraphic.InvalidateMesh();
 
             var state = _logic.CurrentState;
-            if (state.HasVessel && _isFullMode)
+            if (state.HasVessel && _isFullMode.Value)
             {
                 UpdateDiagramLabels(state.Tra, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop, state.Ap, state.Pe);
                 UpdateSpacecraftOverlay(state.Tra, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop);
@@ -1164,22 +1173,22 @@ namespace ModularFlightPanel.UI.Widgets
 
         private void OnTopRBadgeClicked()
         {
-            if (_focusElement == OrbitElementFocus.Sma) SetFocusElement(OrbitElementFocus.Ecc);
-            else if (_focusElement == OrbitElementFocus.Ecc) SetFocusElement(OrbitElementFocus.None);
+            if (_focusElement.Value == OrbitElementFocus.Sma) SetFocusElement(OrbitElementFocus.Ecc);
+            else if (_focusElement.Value == OrbitElementFocus.Ecc) SetFocusElement(OrbitElementFocus.None);
             else SetFocusElement(OrbitElementFocus.Sma);
         }
 
         private void OnBotLBadgeClicked()
         {
-            if (_focusElement == OrbitElementFocus.Lan) SetFocusElement(OrbitElementFocus.Aop);
-            else if (_focusElement == OrbitElementFocus.Aop) SetFocusElement(OrbitElementFocus.None);
+            if (_focusElement.Value == OrbitElementFocus.Lan) SetFocusElement(OrbitElementFocus.Aop);
+            else if (_focusElement.Value == OrbitElementFocus.Aop) SetFocusElement(OrbitElementFocus.None);
             else SetFocusElement(OrbitElementFocus.Lan);
         }
 
         private void OnBotRBadgeClicked()
         {
-            if (_focusElement == OrbitElementFocus.Inc) SetFocusElement(OrbitElementFocus.Tra);
-            else if (_focusElement == OrbitElementFocus.Tra) SetFocusElement(OrbitElementFocus.None);
+            if (_focusElement.Value == OrbitElementFocus.Inc) SetFocusElement(OrbitElementFocus.Tra);
+            else if (_focusElement.Value == OrbitElementFocus.Tra) SetFocusElement(OrbitElementFocus.None);
             else SetFocusElement(OrbitElementFocus.Inc);
         }
 
@@ -1191,60 +1200,60 @@ namespace ModularFlightPanel.UI.Widgets
             // TopRight: Sma / Ecc
             if (_bTopROutline != null)
             {
-                if (_focusElement == OrbitElementFocus.Sma)
+                if (_focusElement.Value == OrbitElementFocus.Sma)
                 {
                     _bTopROutline.effectColor = (Color)_cOrbitFront;
-                    _bTopROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale, 1.5f * _cachedDpiScale);
+                    _bTopROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale.Value, 1.5f * _cachedDpiScale.Value);
                 }
-                else if (_focusElement == OrbitElementFocus.Ecc)
+                else if (_focusElement.Value == OrbitElementFocus.Ecc)
                 {
                     _bTopROutline.effectColor = (Color)_cVectorE;
-                    _bTopROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale, 1.5f * _cachedDpiScale);
+                    _bTopROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale.Value, 1.5f * _cachedDpiScale.Value);
                 }
                 else
                 {
                     _bTopROutline.effectColor = defaultBorder;
-                    _bTopROutline.effectDistance = new Vector2(0.8f * _cachedDpiScale, 0.8f * _cachedDpiScale);
+                    _bTopROutline.effectDistance = new Vector2(0.8f * _cachedDpiScale.Value, 0.8f * _cachedDpiScale.Value);
                 }
             }
 
             // BotLeft: Lan / Aop
             if (_bBotLOutline != null)
             {
-                if (_focusElement == OrbitElementFocus.Lan)
+                if (_focusElement.Value == OrbitElementFocus.Lan)
                 {
                     _bBotLOutline.effectColor = (Color)_cElemLan;
-                    _bBotLOutline.effectDistance = new Vector2(1.5f * _cachedDpiScale, 1.5f * _cachedDpiScale);
+                    _bBotLOutline.effectDistance = new Vector2(1.5f * _cachedDpiScale.Value, 1.5f * _cachedDpiScale.Value);
                 }
-                else if (_focusElement == OrbitElementFocus.Aop)
+                else if (_focusElement.Value == OrbitElementFocus.Aop)
                 {
                     _bBotLOutline.effectColor = (Color)_cElemAop;
-                    _bBotLOutline.effectDistance = new Vector2(1.5f * _cachedDpiScale, 1.5f * _cachedDpiScale);
+                    _bBotLOutline.effectDistance = new Vector2(1.5f * _cachedDpiScale.Value, 1.5f * _cachedDpiScale.Value);
                 }
                 else
                 {
                     _bBotLOutline.effectColor = defaultBorder;
-                    _bBotLOutline.effectDistance = new Vector2(0.8f * _cachedDpiScale, 0.8f * _cachedDpiScale);
+                    _bBotLOutline.effectDistance = new Vector2(0.8f * _cachedDpiScale.Value, 0.8f * _cachedDpiScale.Value);
                 }
             }
 
             // BotRight: Inc / Tra
             if (_bBotROutline != null)
             {
-                if (_focusElement == OrbitElementFocus.Inc)
+                if (_focusElement.Value == OrbitElementFocus.Inc)
                 {
                     _bBotROutline.effectColor = (Color)_cElemI;
-                    _bBotROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale, 1.5f * _cachedDpiScale);
+                    _bBotROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale.Value, 1.5f * _cachedDpiScale.Value);
                 }
-                else if (_focusElement == OrbitElementFocus.Tra)
+                else if (_focusElement.Value == OrbitElementFocus.Tra)
                 {
                     _bBotROutline.effectColor = (Color)_cElemTa;
-                    _bBotROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale, 1.5f * _cachedDpiScale);
+                    _bBotROutline.effectDistance = new Vector2(1.5f * _cachedDpiScale.Value, 1.5f * _cachedDpiScale.Value);
                 }
                 else
                 {
                     _bBotROutline.effectColor = defaultBorder;
-                    _bBotROutline.effectDistance = new Vector2(0.8f * _cachedDpiScale, 0.8f * _cachedDpiScale);
+                    _bBotROutline.effectDistance = new Vector2(0.8f * _cachedDpiScale.Value, 0.8f * _cachedDpiScale.Value);
                 }
             }
         }
@@ -1255,7 +1264,7 @@ namespace ModularFlightPanel.UI.Widgets
             WidgetStyleManager style = WidgetStyleManager.Instance;
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(WidgetStyleManager.Instance?.CurrentTheme);
 
-            if (_focusElement == OrbitElementFocus.None)
+            if (_focusElement.Value == OrbitElementFocus.None)
             {
                 _inspectText.text = I18n.Tr("ORBIT_INSPECT_PROMPT", "点击卡槽聚焦六根数");
                 _inspectText.color = style.GetTextColor(TextStyleRole.Label, theme);
@@ -1266,9 +1275,9 @@ namespace ModularFlightPanel.UI.Widgets
             }
             else
             {
-                _inspectText.text = GetFocusDescription(_focusElement);
+                _inspectText.text = GetFocusDescription(_focusElement.Value);
                 _inspectText.color = style.GetTextColor(TextStyleRole.PrimaryValue, theme);
-                Color32 focusColor = GetFocusColor(_focusElement);
+                Color32 focusColor = GetFocusColor(_focusElement.Value);
                 if (_inspectBannerOutline != null)
                 {
                     _inspectBannerOutline.effectColor = (Color)focusColor;
@@ -1316,8 +1325,8 @@ namespace ModularFlightPanel.UI.Widgets
         /// </summary>
         private Color32 ModulateElementColor(Color32 baseColor, OrbitElementFocus element)
         {
-            if (_focusElement == OrbitElementFocus.None) return baseColor;
-            if (_focusElement == element || (_focusElement == OrbitElementFocus.Ecc && element == OrbitElementFocus.Sma))
+            if (_focusElement.Value == OrbitElementFocus.None) return baseColor;
+            if (_focusElement.Value == element || (_focusElement.Value == OrbitElementFocus.Ecc && element == OrbitElementFocus.Sma))
             {
                 return (Color32)WidgetStyleManager.WithAlpha(baseColor, 1f);
             }
@@ -1329,12 +1338,12 @@ namespace ModularFlightPanel.UI.Widgets
         /// </summary>
         private Color32 ModulateSectorColor(Color32 sectorBaseColor, OrbitElementFocus element)
         {
-            if (_focusElement == OrbitElementFocus.None)
+            if (_focusElement.Value == OrbitElementFocus.None)
             {
                 // 默认全态势视图：保持扇形非常柔和、通透的半透明底色 (alpha 0.06f)，凸显三维轨道线与关键节点
                 return (Color32)WidgetStyleManager.WithAlpha(sectorBaseColor, 0.06f);
             }
-            if (_focusElement == element)
+            if (_focusElement.Value == element)
             {
                 // 单项剖析聚焦模式：聚焦扇形高亮展现 (alpha 0.38f)，全神贯注剖析该根数定义
                 return (Color32)WidgetStyleManager.WithAlpha(sectorBaseColor, 0.38f);
@@ -1363,7 +1372,7 @@ namespace ModularFlightPanel.UI.Widgets
 
             ApplyReadoutColors(theme);      // 先着色读数
             CacheThemeColors(theme);        // 再烘焙语义色缓存 (两者共用同一色谱)
-            if (_isFullMode) _lastDrawnSma.Reset(double.NaN);
+            if (_isFullMode.Value) _lastDrawnSma.Reset(double.NaN);
         }
 
         /// <summary>
@@ -1519,11 +1528,11 @@ namespace ModularFlightPanel.UI.Widgets
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             base.OnUIDrawLoop(ref context);
-            if (_isFullMode && _scOutline != null && _scMarker != null && _scMarker.activeSelf)
+            if (_isFullMode.Value && _scOutline != null && _scMarker != null && _scMarker.activeSelf)
             {
                 // 60Hz 满帧呼吸光晕脉动 (1.5Hz ~ 2.0Hz 正弦波动)
                 float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 3.5f);
-                float dist = (1.2f + pulse * 1.6f) * _cachedDpiScale;
+                float dist = (1.2f + pulse * 1.6f) * _cachedDpiScale.Value;
                 _scOutline.effectDistance = new Vector2(dist, dist);
             }
         }
@@ -1537,18 +1546,18 @@ namespace ModularFlightPanel.UI.Widgets
 
             if (!state.HasVessel) return;
 
-            if (_isFullMode)
+            if (_isFullMode.Value)
             {
                 if (_labelsRoot != null && !_labelsRoot.activeSelf) _labelsRoot.SetActive(true);
                 UpdateFullModeReadouts(state.Ap, state.Pe, state.TAp, state.Sma, state.Ecc, state.Inc, state.Lan, state.Aop, state.Tra, state.Period);
 
-                if (_isOrbitFacingMode && !_isFreeLook)
+                if (_isOrbitFacingMode.Value && !_isFreeLook.Value)
                 {
                     ComputeOptimalOrbitFacingCamera(state.Inc, state.Lan, state.Aop, out double optYaw, out double optPitch);
-                    if (Math.Abs(optYaw - _targetCamYaw) > 0.05 || Math.Abs(optPitch - _targetCamPitch) > 0.05)
+                    if (Math.Abs(optYaw - _targetCamYaw.Value) > 0.05 || Math.Abs(optPitch - _targetCamPitch.Value) > 0.05)
                     {
-                        _targetCamYaw = optYaw; _targetCamPitch = optPitch;
-                        _currentCamYaw = optYaw; _currentCamPitch = optPitch;
+                        _targetCamYaw.Value = optYaw; _targetCamPitch.Value = optPitch;
+                        _currentCamYaw.Value = optYaw; _currentCamPitch.Value = optPitch;
                     }
                 }
 
@@ -1614,12 +1623,12 @@ namespace ModularFlightPanel.UI.Widgets
             _lastDrawnAp.Reset(double.NaN);
             _lastDrawnPe.Reset(double.NaN);
             _lastMeshRebuildTime.Reset(-1f);
-            _currentCamYaw = DefaultEciYaw;
-            _currentCamPitch = DefaultEciPitch;
-            _targetCamYaw = DefaultEciYaw;
-            _targetCamPitch = DefaultEciPitch;
-            _zoomFactor = 1.0f;
-            _isFreeLook = false;
+            _currentCamYaw.Value = DefaultEciYaw;
+            _currentCamPitch.Value = DefaultEciPitch;
+            _targetCamYaw.Value = DefaultEciYaw;
+            _targetCamPitch.Value = DefaultEciPitch;
+            _zoomFactor.Value = 1.0f;
+            _isFreeLook.Value = false;
         }
 
         private void UpdateCompactModeReadouts(double ap, double pe, double tAp, double tPe,
@@ -1797,15 +1806,15 @@ namespace ModularFlightPanel.UI.Widgets
                 return;
             }
 
-            float s = _cachedDpiScale > 0.01f ? _cachedDpiScale : 1f;
+            float s = _cachedDpiScale.Value > 0.01f ? _cachedDpiScale.Value : 1f;
             float cx = 0f;
             float cy = -8f * s;
-            double camPitch = _currentCamPitch;
-            double camYaw = _currentCamYaw;
+            double camPitch = _currentCamPitch.Value;
+            double camYaw = _currentCamYaw.Value;
             double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
             double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
 
-            double diskR = 135.0 * s * _zoomFactor;
+            double diskR = 135.0 * s * _zoomFactor.Value;
             double maxOrbitR = diskR * 1.25;
             bool closed = ecc < 1.0;
             double eDraw = closed ? Math.Min(Math.Max(0.0, ecc), 0.96) : Math.Min(Math.Max(1.0, ecc), 4.0);
@@ -1893,7 +1902,7 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 联动标注航天器状态与位置
-            _scScreenPos = new Vector2(scX, scY);
+            _projectionSnapshot.ScScreenPos = new Vector2(scX, scY);
             if (_lblSpacecraft != null)
             {
                 if (!_lblSpacecraft.gameObject.activeSelf) _lblSpacecraft.gameObject.SetActive(true);
@@ -1929,15 +1938,15 @@ namespace ModularFlightPanel.UI.Widgets
         {
             if (_labelsRoot == null || double.IsNaN(sma) || sma <= 0.0) return;
 
-            float s = _cachedDpiScale > 0.01f ? _cachedDpiScale : 1f;
+            float s = _cachedDpiScale.Value > 0.01f ? _cachedDpiScale.Value : 1f;
             float cx = 0f;
             float cy = -8f * s;
-            double camPitch = _currentCamPitch;
-            double camYaw = _currentCamYaw;
+            double camPitch = _currentCamPitch.Value;
+            double camYaw = _currentCamYaw.Value;
             double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
             double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
 
-            double diskR = 135.0 * s * _zoomFactor;
+            double diskR = 135.0 * s * _zoomFactor.Value;
             double maxOrbitR = diskR * 1.25;
             bool closed = ecc < 1.0;
             double eDraw = closed ? Math.Min(Math.Max(0.0, ecc), 0.96) : Math.Min(Math.Max(1.0, ecc), 4.0);
@@ -2066,9 +2075,9 @@ namespace ModularFlightPanel.UI.Widgets
                 }
             }
 
-            _eqBestScreenPos = bestEqScreen;
-            _eqBestTickDir = bestEqTick;
-            _hasEqPos = bestEqDist > 0f;
+            _projectionSnapshot.EqBestScreenPos = bestEqScreen;
+            _projectionSnapshot.EqBestTickDir = bestEqTick;
+            _projectionSnapshot.HasEqPos = bestEqDist > 0f;
             if (_lblEquator != null)
             {
                 SetAnchoredPositionIfChanged(_lblEquator.rectTransform, bestEqScreen + bestEqTick * (14f * s));
@@ -2314,12 +2323,12 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 7. 解算引线 (Leader Line)
-            ResolveLeaderLine(mAN, lAN, s, out _leaderLineAn0, out _leaderLineAn1, out _drawLeaderAn);
-            ResolveLeaderLine(mDN, lDN, s, out _leaderLineDn0, out _leaderLineDn1, out _drawLeaderDn);
-            ResolveLeaderLine(mPE, lPE, s, out _leaderLinePe0, out _leaderLinePe1, out _drawLeaderPe);
-            if (closed) ResolveLeaderLine(mAP, lAP, s, out _leaderLineAp0, out _leaderLineAp1, out _drawLeaderAp);
-            else _drawLeaderAp = false;
-            ResolveLeaderLine(mSC, lSC, s, out _leaderLineSc0, out _leaderLineSc1, out _drawLeaderSc);
+            ResolveLeaderLine(mAN, lAN, s, out _projectionSnapshot.LeaderLineAn0, out _projectionSnapshot.LeaderLineAn1, out _projectionSnapshot.DrawLeaderAn);
+            ResolveLeaderLine(mDN, lDN, s, out _projectionSnapshot.LeaderLineDn0, out _projectionSnapshot.LeaderLineDn1, out _projectionSnapshot.DrawLeaderDn);
+            ResolveLeaderLine(mPE, lPE, s, out _projectionSnapshot.LeaderLinePe0, out _projectionSnapshot.LeaderLinePe1, out _projectionSnapshot.DrawLeaderPe);
+            if (closed) ResolveLeaderLine(mAP, lAP, s, out _projectionSnapshot.LeaderLineAp0, out _projectionSnapshot.LeaderLineAp1, out _projectionSnapshot.DrawLeaderAp);
+            else _projectionSnapshot.DrawLeaderAp = false;
+            ResolveLeaderLine(mSC, lSC, s, out _projectionSnapshot.LeaderLineSc0, out _projectionSnapshot.LeaderLineSc1, out _projectionSnapshot.DrawLeaderSc);
 
             // 应用最终解算的 UGUI 标签坐标
             if (_lblNodeAn != null)
@@ -2489,15 +2498,15 @@ namespace ModularFlightPanel.UI.Widgets
             double tra = double.IsNaN(_lastDrawnTra.Value) ? 0.0 : _lastDrawnTra.Value;
 
             // 观察视角配置 (正交轴测相机，对齐教科书经典定义图视角：X 向左下，Y 向右，Z 向上)
-            float s = _cachedDpiScale > 0.01f ? _cachedDpiScale : 1f;
+            float s = _cachedDpiScale.Value > 0.01f ? _cachedDpiScale.Value : 1f;
             float cx = 0f;
             float cy = -8f * s;
-            double camPitch = _currentCamPitch;
-            double camYaw = _currentCamYaw;
+            double camPitch = _currentCamPitch.Value;
+            double camYaw = _currentCamYaw.Value;
             double cosCp = Math.Cos(camPitch), sinCp = Math.Sin(camPitch);
             double cosCy = Math.Cos(camYaw), sinCy = Math.Sin(camYaw);
 
-            double diskR = 135.0 * s * _zoomFactor;            // 赤道参考盘半径基准
+            double diskR = 135.0 * s * _zoomFactor.Value;            // 赤道参考盘半径基准
             double maxOrbitR = diskR * 1.25;     // 轨道最大径
 
             // 轨道形状：闭合椭圆 / 开放双曲线·抛物线 双路径解算
@@ -2537,11 +2546,11 @@ namespace ModularFlightPanel.UI.Widgets
             // 1. 绘制底座：赤道参考面 (Equatorial Plane Disk)
             // ─────────────────────────────────────────────────────────────
             DrawEquatorialDiskFilled(vh, cx, cy, diskR, cosCp, sinCp, cosCy, sinCy, s);
-            if (_hasEqPos)
+            if (_projectionSnapshot.HasEqPos)
             {
-                DrawFilledCircle(vh, _eqBestScreenPos.x, _eqBestScreenPos.y, dotR, ModulateElementColor(_cAxis, OrbitElementFocus.None));
-                Vector2 eqTickEnd = _eqBestScreenPos + _eqBestTickDir * (8f * s);
-                DrawAALine(vh, _eqBestScreenPos.x, _eqBestScreenPos.y, eqTickEnd.x, eqTickEnd.y, ModulateElementColor(_cAxis, OrbitElementFocus.None), 0.9f * s);
+                DrawFilledCircle(vh, _projectionSnapshot.EqBestScreenPos.x, _projectionSnapshot.EqBestScreenPos.y, dotR, ModulateElementColor(_cAxis, OrbitElementFocus.None));
+                Vector2 eqTickEnd = _projectionSnapshot.EqBestScreenPos + _projectionSnapshot.EqBestTickDir * (8f * s);
+                DrawAALine(vh, _projectionSnapshot.EqBestScreenPos.x, _projectionSnapshot.EqBestScreenPos.y, eqTickEnd.x, eqTickEnd.y, ModulateElementColor(_cAxis, OrbitElementFocus.None), 0.9f * s);
             }
 
             // ─────────────────────────────────────────────────────────────
@@ -2665,17 +2674,17 @@ namespace ModularFlightPanel.UI.Widgets
                 double pz = rCur * (Math.Cos(nu) * edirZ + Math.Sin(nu) * qdirZ);
 
                 ProjectWorldToScreenFloat(px, py, pz, cosCp, sinCp, cosCy, sinCy, cx, cy, out float sx, out float sy, out double depth);
-                _orbitPts[k] = new Vector2(sx, sy);
-                _orbitFront[k] = depth <= 0.0;
+                _orbitPtsBuffer[k] = new Vector2(sx, sy);
+                _orbitFrontBuffer[k] = depth <= 0.0;
             }
 
             // 远侧半周
             Color32 backCol = ModulateElementColor(_cOrbitBack, OrbitElementFocus.Sma);
             for (int k = 0; k < segments; k++)
             {
-                if (!_orbitFront[k] || !_orbitFront[k + 1])
+                if (!_orbitFrontBuffer[k] || !_orbitFrontBuffer[k + 1])
                 {
-                    DrawAALine(vh, _orbitPts[k].x, _orbitPts[k].y, _orbitPts[k + 1].x, _orbitPts[k + 1].y, backCol, 0.9f * s);
+                    DrawAALine(vh, _orbitPtsBuffer[k].x, _orbitPtsBuffer[k].y, _orbitPtsBuffer[k + 1].x, _orbitPtsBuffer[k + 1].y, backCol, 0.9f * s);
                 }
             }
 
@@ -2687,10 +2696,10 @@ namespace ModularFlightPanel.UI.Widgets
             Color32 frontCol = ModulateElementColor(_cOrbitFront, OrbitElementFocus.Sma);
             for (int k = 0; k < segments; k++)
             {
-                if (_orbitFront[k] && _orbitFront[k + 1])
+                if (_orbitFrontBuffer[k] && _orbitFrontBuffer[k + 1])
                 {
-                    DrawAALine(vh, _orbitPts[k].x, _orbitPts[k].y, _orbitPts[k + 1].x, _orbitPts[k + 1].y, glowCol, lineWGlow);
-                    DrawAALine(vh, _orbitPts[k].x, _orbitPts[k].y, _orbitPts[k + 1].x, _orbitPts[k + 1].y, frontCol, lineWThick);
+                    DrawAALine(vh, _orbitPtsBuffer[k].x, _orbitPtsBuffer[k].y, _orbitPtsBuffer[k + 1].x, _orbitPtsBuffer[k + 1].y, glowCol, lineWGlow);
+                    DrawAALine(vh, _orbitPtsBuffer[k].x, _orbitPtsBuffer[k].y, _orbitPtsBuffer[k + 1].x, _orbitPtsBuffer[k + 1].y, frontCol, lineWThick);
                 }
             }
 
@@ -2762,11 +2771,11 @@ namespace ModularFlightPanel.UI.Widgets
             }
 
             // 8.7 空间节点与拱点航电激光引线 (Leader Lines)
-            if (_drawLeaderAn) DrawAALine(vh, _leaderLineAn0.x, _leaderLineAn0.y, _leaderLineAn1.x, _leaderLineAn1.y, ModulateElementColor(_cNode, OrbitElementFocus.Lan), 0.8f * s);
-            if (_drawLeaderDn) DrawAALine(vh, _leaderLineDn0.x, _leaderLineDn0.y, _leaderLineDn1.x, _leaderLineDn1.y, ModulateElementColor(_cNode, OrbitElementFocus.Lan), 0.8f * s);
-            if (_drawLeaderPe) DrawAALine(vh, _leaderLinePe0.x, _leaderLinePe0.y, _leaderLinePe1.x, _leaderLinePe1.y, ModulateElementColor(_cApPe, OrbitElementFocus.Sma), 0.8f * s);
-            if (_drawLeaderAp && closed) DrawAALine(vh, _leaderLineAp0.x, _leaderLineAp0.y, _leaderLineAp1.x, _leaderLineAp1.y, ModulateElementColor(_cApPe, OrbitElementFocus.Sma), 0.8f * s);
-            if (_drawLeaderSc) DrawAALine(vh, _leaderLineSc0.x, _leaderLineSc0.y, _leaderLineSc1.x, _leaderLineSc1.y, ModulateElementColor(_cVessel, OrbitElementFocus.Tra), 0.8f * s);
+            if (_projectionSnapshot.DrawLeaderAn) DrawAALine(vh, _projectionSnapshot.LeaderLineAn0.x, _projectionSnapshot.LeaderLineAn0.y, _projectionSnapshot.LeaderLineAn1.x, _projectionSnapshot.LeaderLineAn1.y, ModulateElementColor(_cNode, OrbitElementFocus.Lan), 0.8f * s);
+            if (_projectionSnapshot.DrawLeaderDn) DrawAALine(vh, _projectionSnapshot.LeaderLineDn0.x, _projectionSnapshot.LeaderLineDn0.y, _projectionSnapshot.LeaderLineDn1.x, _projectionSnapshot.LeaderLineDn1.y, ModulateElementColor(_cNode, OrbitElementFocus.Lan), 0.8f * s);
+            if (_projectionSnapshot.DrawLeaderPe) DrawAALine(vh, _projectionSnapshot.LeaderLinePe0.x, _projectionSnapshot.LeaderLinePe0.y, _projectionSnapshot.LeaderLinePe1.x, _projectionSnapshot.LeaderLinePe1.y, ModulateElementColor(_cApPe, OrbitElementFocus.Sma), 0.8f * s);
+            if (_projectionSnapshot.DrawLeaderAp && closed) DrawAALine(vh, _projectionSnapshot.LeaderLineAp0.x, _projectionSnapshot.LeaderLineAp0.y, _projectionSnapshot.LeaderLineAp1.x, _projectionSnapshot.LeaderLineAp1.y, ModulateElementColor(_cApPe, OrbitElementFocus.Sma), 0.8f * s);
+            if (_projectionSnapshot.DrawLeaderSc) DrawAALine(vh, _projectionSnapshot.LeaderLineSc0.x, _projectionSnapshot.LeaderLineSc0.y, _projectionSnapshot.LeaderLineSc1.x, _projectionSnapshot.LeaderLineSc1.y, ModulateElementColor(_cVessel, OrbitElementFocus.Tra), 0.8f * s);
         }
 
         // ═════════════════════════════════════════════════════════════════

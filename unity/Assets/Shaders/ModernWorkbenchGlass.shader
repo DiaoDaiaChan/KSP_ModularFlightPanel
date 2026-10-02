@@ -19,6 +19,8 @@ Shader "ModularFlightPanel/ModernWorkbenchGlass"
         _HoverGlow ("Interactive Hover Glow", Range(0.0, 1.5)) = 0.0
         _DropShadowStrength ("Drop Shadow Ambient", Range(0.0, 1.0)) = 0.25
 
+        _TopAccentStrength ("Top Accent Strength", Range(0.0, 1.0)) = 0.0
+
         // UGUI 系统参数 (Required for UI.Mask & Canvas compatibility)
         _StencilComp ("Stencil Comparison", Float) = 8
         _Stencil ("Stencil ID", Float) = 0
@@ -100,6 +102,7 @@ Shader "ModularFlightPanel/ModernWorkbenchGlass"
             float _ScanlineStrength;
             float _HoverGlow;
             float _DropShadowStrength;
+            float _TopAccentStrength;
 
             v2f vert(appdata_t v)
             {
@@ -164,23 +167,30 @@ Shader "ModularFlightPanel/ModernWorkbenchGlass"
                 fixed4 finalCol = glass;
 
                 // 4. 程序化发光边框 (SDF Border & Outer Glow)
-                if (_BorderWidth > 0.001)
+                if (_BorderWidth > 0.0001)
                 {
                     float innerDist = dist + _BorderWidth * 2.0;
                     float borderMask = smoothstep(-edgeWidth, edgeWidth, innerDist);
                     borderMask = saturate(borderMask);
 
-                    // 顶部微妙强调色浸润
-                    float topAccent = smoothstep(0.85, 1.0, uv.y) * 0.6;
-                    fixed4 targetBorder = lerp(_BorderColor, _AccentColor, topAccent);
+                    fixed4 targetBorder = _BorderColor;
+
+                    // 顶部微妙强调色浸润 (仅当 _TopAccentStrength > 0 时按需融合)
+                    if (_TopAccentStrength > 0.001)
+                    {
+                        float topAccent = smoothstep(0.80, 1.0, uv.y) * _TopAccentStrength;
+                        targetBorder = lerp(targetBorder, _AccentColor, topAccent);
+                    }
 
                     if (_HoverGlow > 0.001)
                     {
                         targetBorder = lerp(targetBorder, _AccentColor, _HoverGlow * 0.7);
                     }
 
-                    finalCol.rgb = lerp(finalCol.rgb, targetBorder.rgb, borderMask);
-                    finalCol.a = max(finalCol.a, targetBorder.a * borderMask);
+                    // 严格遵守 Alpha 预乘与混合，彻底消灭全黑/全亮硬边
+                    float borderAlpha = borderMask * saturate(targetBorder.a);
+                    finalCol.rgb = lerp(finalCol.rgb, targetBorder.rgb, borderAlpha);
+                    finalCol.a = saturate(finalCol.a + borderAlpha * (1.0 - finalCol.a));
                 }
 
                 finalCol.a *= insideAlpha;

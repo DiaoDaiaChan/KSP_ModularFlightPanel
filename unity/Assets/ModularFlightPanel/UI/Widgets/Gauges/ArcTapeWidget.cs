@@ -373,11 +373,11 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         }
 
         // ==================== 弧形几何参数 ====================
-        private float _curvature = 0.5f;
-        private float _baseRadius = 200f;
-        private float _angularSpan = 80f;
-        private bool _isLeftOrientation = true;
-        private bool _isSpeedTape = true;
+        private readonly CachedFloat _curvature = new CachedFloat(0.5f, 0.001f);
+        private readonly CachedFloat _baseRadius = new CachedFloat(200f, 0.05f);
+        private readonly CachedFloat _angularSpan = new CachedFloat(80f, 0.05f);
+        private readonly Cached<bool> _isLeftOrientation = new Cached<bool>(true);
+        private readonly Cached<bool> _isSpeedTape = new Cached<bool>(true);
 
         // ==================== 视图层节点 ====================
         private GameObject _arcBandRoot;
@@ -432,8 +432,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         private Text _escortBadgeTextPrimary;
         private Text _escortBadgeTextSecondary;
 
-        private bool _showingIntegerReadout = false;
-        private float _trendAngle = 0f;
+        private readonly Cached<bool> _showingIntegerReadout = new Cached<bool>(false);
+        private readonly CachedFloat _trendAngle = new CachedFloat(0f, 0.05f);
 
         public static Action OnCycleSpeedModeAction;
         public static Action OnCycleAltitudeModeAction;
@@ -449,18 +449,18 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
             if (numToken.Contains("ALT") || widgetId.Contains("alt") || widgetId.Contains("altitude"))
             {
-                _isSpeedTape = false;
-                _isLeftOrientation = isLeft;
+                _isSpeedTape.Value = false;
+                _isLeftOrientation.Value = isLeft;
             }
             else if (numToken.Contains("SPD") || widgetId.Contains("speed"))
             {
-                _isSpeedTape = true;
-                _isLeftOrientation = true;
+                _isSpeedTape.Value = true;
+                _isLeftOrientation.Value = true;
             }
             else
             {
-                _isSpeedTape = isLeft;
-                _isLeftOrientation = isLeft;
+                _isSpeedTape.Value = isLeft;
+                _isLeftOrientation.Value = isLeft;
             }
 
             // 初始化默认通道
@@ -473,7 +473,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             float baseStep;
             float trendMaxScale;
 
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 valueToken = !string.IsNullOrEmpty(numToken) ? numToken : "{SPD}";
                 topModeTemplate = "{SPD:MODE}";
@@ -496,15 +496,15 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             }
 
             float cVal = GetTemplateChannelFloat(new[] { "CURVATURE", "CURVE" }, -1f);
-            if (cVal > 0f) _curvature = Mathf.Clamp(cVal, 0.05f, 1.0f);
+            if (cVal > 0f) _curvature.Value = Mathf.Clamp(cVal, 0.05f, 1.0f);
             float rVal = GetTemplateChannelFloat(new[] { "RADIUS", "R" }, -1f);
-            if (rVal > 0f) _baseRadius = Mathf.Clamp(rVal, 80f, 600f);
+            if (rVal > 0f) _baseRadius.Value = Mathf.Clamp(rVal, 80f, 600f);
             float spanVal = GetTemplateChannelFloat(new[] { "SPAN", "ANGLE" }, -1f);
-            if (spanVal > 0f) _angularSpan = Mathf.Clamp(spanVal, 40f, 120f);
+            if (spanVal > 0f) _angularSpan.Value = Mathf.Clamp(spanVal, 40f, 120f);
             string side = GetTemplateChannel("SIDE", null);
-            if (!string.IsNullOrEmpty(side)) _isLeftOrientation = !side.Equals("RIGHT", StringComparison.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(side)) _isLeftOrientation.Value = !side.Equals("RIGHT", StringComparison.OrdinalIgnoreCase);
             string typeVal = GetTemplateChannel(new[] { "TYPE", "MODE_TYPE" }, null);
-            if (!string.IsNullOrEmpty(typeVal)) _isSpeedTape = typeVal.Equals("SPEED", StringComparison.OrdinalIgnoreCase) || typeVal.Equals("SPD", StringComparison.OrdinalIgnoreCase);
+            if (!string.IsNullOrEmpty(typeVal)) _isSpeedTape.Value = typeVal.Equals("SPEED", StringComparison.OrdinalIgnoreCase) || typeVal.Equals("SPD", StringComparison.OrdinalIgnoreCase);
 
             valueToken = GetTemplateChannel(new[] { "VAL", "VALUE", "TOKEN" }, valueToken);
             topModeTemplate = GetTemplateChannel(new[] { "TOP", "MODE" }, topModeTemplate);
@@ -514,7 +514,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             terrainToken = GetTemplateChannel(new[] { "TERRAIN", "AGL" }, terrainToken);
             trendMaxScale = GetTemplateChannelFloat("TREND_MAX", trendMaxScale);
 
-            _logic.IsSpeedTape = _isSpeedTape;
+            _logic.IsSpeedTape = _isSpeedTape.Value;
             _logic.ValueToken = valueToken;
             _logic.TopModeTemplate = topModeTemplate;
             _logic.BottomSecTemplate = bottomSecTemplate;
@@ -523,17 +523,17 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _logic.TerrainToken = terrainToken;
             _logic.BaseStep = baseStep;
             _logic.TrendMaxScale = trendMaxScale;
-            _logic.AngularSpan = _angularSpan;
+            _logic.AngularSpan = _angularSpan.Value;
 
-            if (_baseRadius <= 80f || _baseRadius >= 599f)
+            if (_baseRadius.Value <= 80f || _baseRadius.Value >= 599f)
             {
-                _baseRadius = Mathf.Lerp(420f, 140f, Mathf.Clamp01(_curvature));
+                _baseRadius.Value = Mathf.Lerp(420f, 140f, Mathf.Clamp01(_curvature.Value));
             }
 
             float s = CurrentDpiScale;
-            float r = _baseRadius * s;
+            float r = _baseRadius.Value * s;
 
-            float halfSpanRad = (_angularSpan * 0.5f) * Mathf.Deg2Rad;
+            float halfSpanRad = (_angularSpan.Value * 0.5f) * Mathf.Deg2Rad;
             float totalH = 2f * (r + 26f * s) * Mathf.Sin(halfSpanRad) + 56f * s;
             float totalW = (r + 26f * s) * (1f - Mathf.Cos(halfSpanRad)) + 145f * s;
             RectTransform.sizeDelta = new Vector2(totalW, totalH);
@@ -579,16 +579,16 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             Color bandCol = WidgetStyleManager.Instance.GetCardBackgroundColor(CardStyleRole.Normal, theme);
             Color borderCol = WidgetStyleManager.Instance.GetCardBorderColor(CardStyleRole.Normal, theme);
 
-            float halfSpan = _angularSpan * 0.5f;
-            float step = _angularSpan / ARC_SEGMENT_COUNT;
-            float arcSegW = ((2f * Mathf.PI * radius * (_angularSpan / 360f)) / ARC_SEGMENT_COUNT) + 2f * s;
+            float halfSpan = _angularSpan.Value * 0.5f;
+            float step = _angularSpan.Value / ARC_SEGMENT_COUNT;
+            float arcSegW = ((2f * Mathf.PI * radius * (_angularSpan.Value / 360f)) / ARC_SEGMENT_COUNT) + 2f * s;
             float bandThickness = 28f * s;
 
             for (int i = 0; i <= ARC_SEGMENT_COUNT; i++)
             {
                 float ang = -halfSpan + (i * step);
                 Vector2 pt = EvalArcPoint(radius, ang);
-                float rotAngle = _isLeftOrientation ? -ang : ang;
+                float rotAngle = _isLeftOrientation.Value ? -ang : ang;
 
                 GameObject plate = UIFactory.CreatePanel(_arcBandRoot.transform, $"ArcPlate_{i}",
                     new Vector2(arcSegW, bandThickness), pt, bandCol);
@@ -616,7 +616,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             float cos = Mathf.Cos(rad);
             float sin = Mathf.Sin(rad);
 
-            if (_isLeftOrientation)
+            if (_isLeftOrientation.Value)
             {
                 float x = radius * (1f - cos);
                 float y = radius * sin;
@@ -648,9 +648,9 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                 RectTransform lineRt = lineObj.GetComponent<RectTransform>();
                 Image lineImg = lineObj.GetComponent<Image>();
 
-                float labelX = _isLeftOrientation ? (-18f * s) : (18f * s);
+                float labelX = _isLeftOrientation.Value ? (-18f * s) : (18f * s);
                 Text label = UIFactory.CreateText(root.transform, "Label", "0", Mathf.RoundToInt(9.5f * s),
-                    _isLeftOrientation ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft, textCol);
+                    _isLeftOrientation.Value ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft, textCol);
                 label.fontStyle = FontStyle.Bold;
                 label.alignByGeometry = false;
                 RectTransform labelRt = label.GetComponent<RectTransform>();
@@ -673,7 +673,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         {
             float boxW = 86f * s;
             float boxH = 26f * s;
-            float offsetX = _isLeftOrientation ? (-boxW * 0.44f) : (boxW * 0.44f);
+            float offsetX = _isLeftOrientation.Value ? (-boxW * 0.44f) : (boxW * 0.44f);
             Vector2 boxPos = new Vector2(offsetX, 0f);
 
             _centerBoxObj = UIFactory.CreatePanel(transform, "Center_Readout_Box", new Vector2(boxW, boxH), boxPos, theme.FrameBgColor);
@@ -685,13 +685,13 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
             float arrowW = 9f * s;
             float arrowH = 14f * s;
-            float arrowX = _isLeftOrientation ? (boxW * 0.5f + arrowW * 0.4f) : (-boxW * 0.5f - arrowW * 0.4f);
+            float arrowX = _isLeftOrientation.Value ? (boxW * 0.5f + arrowW * 0.4f) : (-boxW * 0.5f - arrowW * 0.4f);
 
             GameObject arrowObj = UIFactory.CreatePanel(_centerBoxObj.transform, "PointerArrow",
                 new Vector2(arrowW, arrowH), new Vector2(arrowX, 0f), WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Accent, theme));
             _pointerArrow = arrowObj.GetComponent<Image>();
             _pointerArrowRt = arrowObj.GetComponent<RectTransform>();
-            _pointerArrowRt.localEulerAngles = new Vector3(0f, 0f, _isLeftOrientation ? -90f : 90f);
+            _pointerArrowRt.localEulerAngles = new Vector3(0f, 0f, _isLeftOrientation.Value ? -90f : 90f);
 
             _centerValueText = UIFactory.CreateText(_centerBoxObj.transform, "CenterValue", "0.0",
                 Mathf.RoundToInt(15f * s), TextAnchor.MiddleRight, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.PrimaryValue, theme));
@@ -721,12 +721,12 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
         private void BuildTopModeCapsule(float radius, float s, ThemeConfig theme)
         {
-            float halfSpan = _angularSpan * 0.5f;
+            float halfSpan = _angularSpan.Value * 0.5f;
             Vector2 topArcPt = EvalArcPoint(radius, halfSpan);
 
             float capsuleW = 54f * s;
             float capsuleH = 17f * s;
-            float posX = _isLeftOrientation ? (topArcPt.x - capsuleW * 0.40f) : (topArcPt.x + capsuleW * 0.40f);
+            float posX = _isLeftOrientation.Value ? (topArcPt.x - capsuleW * 0.40f) : (topArcPt.x + capsuleW * 0.40f);
             float posY = topArcPt.y + capsuleH * 0.70f;
 
             _modeTagObj = UIFactory.CreatePanel(transform, "Top_Mode_Capsule",
@@ -736,7 +736,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _modeTagOutline.effectColor = theme.FrameBorderColor.ToColor();
             _modeTagOutline.effectDistance = new Vector2(1f * s, -1f * s);
 
-            _modeTagText = UIFactory.CreateText(_modeTagObj.transform, "Mode_Text", _isSpeedTape ? I18n.Tr("WIDGET_GAUGE_SURF", "表面") : "ALT",
+            _modeTagText = UIFactory.CreateText(_modeTagObj.transform, "Mode_Text", _isSpeedTape.Value ? I18n.Tr("WIDGET_GAUGE_SURF", "表面") : "ALT",
                 Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.Cardinal, theme));
             _modeTagText.fontStyle = FontStyle.Bold;
             _modeTagText.alignByGeometry = false;
@@ -754,12 +754,12 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
         private void BuildBottomSecondaryBox(float radius, float s, ThemeConfig theme)
         {
-            float halfSpan = _angularSpan * 0.5f;
+            float halfSpan = _angularSpan.Value * 0.5f;
             Vector2 btmArcPt = EvalArcPoint(radius, -halfSpan);
 
             float boxW = 68f * s;
             float boxH = 18f * s;
-            float posX = _isLeftOrientation ? (btmArcPt.x - boxW * 0.35f) : (btmArcPt.x + boxW * 0.35f);
+            float posX = _isLeftOrientation.Value ? (btmArcPt.x - boxW * 0.35f) : (btmArcPt.x + boxW * 0.35f);
             float posY = btmArcPt.y - boxH * 0.70f;
 
             _bottomSecObj = UIFactory.CreatePanel(transform, "Bottom_Secondary_Box",
@@ -769,7 +769,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _bottomSecOutline.effectColor = theme.FrameBorderColor.ToColor();
             _bottomSecOutline.effectDistance = new Vector2(1f * s, -1f * s);
 
-            _bottomSecText = UIFactory.CreateText(_bottomSecObj.transform, "Text", _isSpeedTape ? "M 0.00" : "RDR ---",
+            _bottomSecText = UIFactory.CreateText(_bottomSecObj.transform, "Text", _isSpeedTape.Value ? "M 0.00" : "RDR ---",
                 Mathf.RoundToInt(9.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.SecondaryValue, theme));
             _bottomSecText.fontStyle = FontStyle.Bold;
             _bottomSecText.alignByGeometry = false;
@@ -792,16 +792,16 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             Color ribbonCol = WidgetStyleManager.Instance.GetMeterColor(MeterStyleRole.Primary, theme);
 
             float escortRadius = radius + 20f * s;
-            float halfSpan = _angularSpan * 0.5f;
-            float step = _angularSpan / ESCORT_SEGMENT_COUNT;
-            float segW = ((2f * Mathf.PI * escortRadius * (_angularSpan / 360f)) / ESCORT_SEGMENT_COUNT) + 1.5f * s;
+            float halfSpan = _angularSpan.Value * 0.5f;
+            float step = _angularSpan.Value / ESCORT_SEGMENT_COUNT;
+            float segW = ((2f * Mathf.PI * escortRadius * (_angularSpan.Value / 360f)) / ESCORT_SEGMENT_COUNT) + 1.5f * s;
             float railThick = 3.5f * s;
 
             for (int i = 0; i <= ESCORT_SEGMENT_COUNT; i++)
             {
                 float ang = -halfSpan + (i * step);
                 Vector2 pt = EvalArcPoint(escortRadius, ang);
-                float rotAngle = _isLeftOrientation ? -ang : ang;
+                float rotAngle = _isLeftOrientation.Value ? -ang : ang;
 
                 GameObject trk = UIFactory.CreatePanel(_escortRailRoot.transform, $"EscortTrack_{i}",
                     new Vector2(segW, 1.2f * s), pt, trackCol);
@@ -833,15 +833,15 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _escortPointerHead = pHead.GetComponent<Image>();
 
             GameObject pLine = UIFactory.CreatePanel(_escortPointerObj.transform, "TailLine",
-                new Vector2(10f * s, 1.6f * s), new Vector2(_isLeftOrientation ? (-6f * s) : (6f * s), 0f), ribbonCol);
+                new Vector2(10f * s, 1.6f * s), new Vector2(_isLeftOrientation.Value ? (-6f * s) : (6f * s), 0f), ribbonCol);
             _escortPointerLine = pLine.GetComponent<Image>();
             _escortPointerObj.SetActive(false);
 
             float bW = 62f * s;
             float bH = 22f * s;
-            Vector2 tipPt = EvalArcPoint(escortRadius, _isSpeedTape ? (halfSpan * 0.88f) : (halfSpan * 0.88f));
-            float badgeX = _isLeftOrientation ? (tipPt.x - bW * 0.48f) : (tipPt.x + bW * 0.48f);
-            float badgeY = tipPt.y + (_isSpeedTape ? (bH * 0.45f) : (bH * 0.45f));
+            Vector2 tipPt = EvalArcPoint(escortRadius, _isSpeedTape.Value ? (halfSpan * 0.88f) : (halfSpan * 0.88f));
+            float badgeX = _isLeftOrientation.Value ? (tipPt.x - bW * 0.48f) : (tipPt.x + bW * 0.48f);
+            float badgeY = tipPt.y + (_isSpeedTape.Value ? (bH * 0.45f) : (bH * 0.45f));
 
             _escortBadgeObj = UIFactory.CreatePanel(transform, "Escort_Dynamics_Badge",
                 new Vector2(bW, bH), new Vector2(badgeX, badgeY), theme.FrameBgColor);
@@ -850,7 +850,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _escortBadgeOutline.effectColor = theme.FrameBorderColor.ToColor();
             _escortBadgeOutline.effectDistance = new Vector2(1f * s, -1f * s);
 
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 _escortBadgeTextPrimary = UIFactory.CreateText(_escortBadgeObj.transform, "ACC_Text", "ACC 1.0G",
                     Mathf.RoundToInt(8.5f * s), TextAnchor.MiddleCenter, WidgetStyleManager.Instance.GetTextColor(TextStyleRole.PrimaryValue, theme));
@@ -888,7 +888,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
         private void OnCenterBoxClicked()
         {
-            if (_isSpeedTape)
+            if (_isSpeedTape.Value)
             {
                 OnCycleSpeedModeAction?.Invoke();
             }
@@ -969,7 +969,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
             DrawConcentricEscortDynamics(state);
 
-            if (!_isSpeedTape)
+            if (!_isSpeedTape.Value)
             {
                 DrawTerrainGroundHighlight(state.Agl);
             }
@@ -978,23 +978,23 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         private void UpdateCenterReadout(double displayVal, DynamicUnitTier tier, string unitStr)
         {
             string formatted;
-            if (tier == DynamicUnitTier.Mega && _isSpeedTape)
+            if (tier == DynamicUnitTier.Mega && _isSpeedTape.Value)
             {
                 formatted = $"{displayVal:F3}";
             }
             else
             {
                 double abs = Math.Abs(displayVal);
-                if (_showingIntegerReadout)
+                if (_showingIntegerReadout.Value)
                 {
-                    if (abs < 995.0) _showingIntegerReadout = false;
+                    if (abs < 995.0) _showingIntegerReadout.Value = false;
                 }
                 else
                 {
-                    if (abs >= 1000.0) _showingIntegerReadout = true;
+                    if (abs >= 1000.0) _showingIntegerReadout.Value = true;
                 }
 
-                formatted = _showingIntegerReadout ? $"{displayVal:F0}" : $"{displayVal:F1}";
+                formatted = _showingIntegerReadout.Value ? $"{displayVal:F0}" : $"{displayVal:F1}";
             }
 
             formatted = UIFactory.FormatTabular(formatted);
@@ -1005,8 +1005,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
         private void UpdateArcTicks(double displayVal, float activeStep, DynamicUnitTier tier)
         {
             float s = CurrentDpiScale;
-            float r = _baseRadius * s;
-            float halfSpan = _angularSpan * 0.5f;
+            float r = _baseRadius.Value * s;
+            float halfSpan = _angularSpan.Value * 0.5f;
 
             float step = activeStep > 0f ? activeStep : 10f;
             float subStep = step * 0.5f;
@@ -1024,7 +1024,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                 ArcTickItem item = _tickPool[i];
                 double tickVal = startTick + (i * subStep);
 
-                if (tickVal < 0.0 && _isSpeedTape)
+                if (tickVal < 0.0 && _isSpeedTape.Value)
                 {
                     item.Root.SetActive(false);
                     continue;
@@ -1041,7 +1041,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
                 Vector2 pt = EvalArcPoint(r, ang);
                 item.Rect.SetAnchoredPositionSafe(pt);
-                float rotAngle = _isLeftOrientation ? -ang : ang;
+                float rotAngle = _isLeftOrientation.Value ? -ang : ang;
                 item.Rect.localEulerAngles = new Vector3(0f, 0f, rotAngle);
 
                 float edgeDist = halfSpan - Mathf.Abs(ang);
@@ -1059,7 +1059,7 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
                     if (!isOccludedByBox)
                     {
-                        string lbl = (tier == DynamicUnitTier.Mega && _isSpeedTape) ? $"{tickVal:F2}" :
+                        string lbl = (tier == DynamicUnitTier.Mega && _isSpeedTape.Value) ? $"{tickVal:F2}" :
                                      (step < 1.0f ? $"{tickVal:F1}" : $"{tickVal:F0}");
                         item.Label.SetTextSafe(lbl);
 
@@ -1081,8 +1081,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             if (_escortRailRoot == null) return;
 
             float s = CurrentDpiScale;
-            float escortRadius = (_baseRadius + 20f) * s;
-            float halfSpan = _angularSpan * 0.5f;
+            float escortRadius = (_baseRadius.Value + 20f) * s;
+            float halfSpan = _angularSpan.Value * 0.5f;
 
             ThemeConfig theme = WidgetStyleManager.ResolveTheme(ThemeManager.Instance?.CurrentTheme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
@@ -1090,12 +1090,12 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             int alertLevel = state.AlertLevel;
             Color dynamicCol = alertLevel == 2 ? style.GetMeterColor(MeterStyleRole.Danger, theme) :
                                alertLevel == 1 ? style.GetMeterColor(MeterStyleRole.Warning, theme) :
-                               (_isSpeedTape ? style.GetMeterColor(MeterStyleRole.Primary, theme) :
+                               (_isSpeedTape.Value ? style.GetMeterColor(MeterStyleRole.Primary, theme) :
                                 (state.TrendRatePositive ? style.GetMeterColor(MeterStyleRole.Primary, theme) :
                                                            style.GetMeterColor(MeterStyleRole.Accent, theme)));
 
             if (_escortBadgeTextPrimary != null) _escortBadgeTextPrimary.SetTextSafe(state.BadgePrimary);
-            if (_isSpeedTape && _escortBadgeTextSecondary != null) _escortBadgeTextSecondary.SetTextSafe(state.BadgeSecondary);
+            if (_isSpeedTape.Value && _escortBadgeTextSecondary != null) _escortBadgeTextSecondary.SetTextSafe(state.BadgeSecondary);
 
             if (_escortBadgeOutline != null)
             {
@@ -1113,10 +1113,10 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
                 _escortBadgeBg.SetColor(targetBg);
             }
 
-            _trendAngle = Mathf.Lerp(_trendAngle, state.TargetAngle, 0.25f);
+            _trendAngle.Value = Mathf.Lerp(_trendAngle.Value, state.TargetAngle, 0.25f);
             bool isDeadband = state.IsDeadband;
 
-            float step = _angularSpan / ESCORT_SEGMENT_COUNT;
+            float step = _angularSpan.Value / ESCORT_SEGMENT_COUNT;
             for (int i = 0; i < _escortRibbonSegments.Count; i++)
             {
                 Image seg = _escortRibbonSegments[i];
@@ -1130,19 +1130,19 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
 
                 float segAng = -halfSpan + (i * step);
                 bool inRange = false;
-                if (_trendAngle >= 0f)
+                if (_trendAngle.Value >= 0f)
                 {
-                    inRange = (segAng >= -step * 0.5f && segAng <= _trendAngle + step * 0.5f);
+                    inRange = (segAng >= -step * 0.5f && segAng <= _trendAngle.Value + step * 0.5f);
                 }
                 else
                 {
-                    inRange = (segAng <= step * 0.5f && segAng >= _trendAngle - step * 0.5f);
+                    inRange = (segAng <= step * 0.5f && segAng >= _trendAngle.Value - step * 0.5f);
                 }
 
                 if (inRange)
                 {
                     seg.gameObject.SetActive(true);
-                    float distFraction = Mathf.Clamp01(Mathf.Abs(segAng) / (Mathf.Abs(_trendAngle) + 0.1f));
+                    float distFraction = Mathf.Clamp01(Mathf.Abs(segAng) / (Mathf.Abs(_trendAngle.Value) + 0.1f));
                     float segAlpha = Mathf.Lerp(0.40f, 0.95f, distFraction);
                     seg.SetColor(WidgetStyleManager.WithAlpha(dynamicCol, segAlpha));
                 }
@@ -1160,10 +1160,10 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             {
                 if (!_escortPointerObj.activeSelf) _escortPointerObj.SetActive(true);
 
-                Vector2 needlePos = EvalArcPoint(escortRadius, _trendAngle);
+                Vector2 needlePos = EvalArcPoint(escortRadius, _trendAngle.Value);
                 _escortPointerRt.SetAnchoredPositionSafe(needlePos);
 
-                float rotAngle = _isLeftOrientation ? -_trendAngle : _trendAngle;
+                float rotAngle = _isLeftOrientation.Value ? -_trendAngle.Value : _trendAngle.Value;
                 _escortPointerRt.localEulerAngles = new Vector3(0f, 0f, rotAngle);
 
                 if (_escortPointerLine != null) _escortPointerLine.SetColor(dynamicCol);
@@ -1208,8 +1208,8 @@ namespace ModularFlightPanel.UI.Widgets.Gauges
             _logic.Reset();
             _lastTopText.Reset(string.Empty);
             _lastBottomText.Reset(string.Empty);
-            _trendAngle = 0f;
-            _showingIntegerReadout = false;
+            _trendAngle.Value = 0f;
+            _showingIntegerReadout.Value = false;
 
             for (int i = 0; i < _tickPool.Count; i++)
             {

@@ -258,22 +258,22 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         public override void OnUIDrawLoop(ref FlightUIDrawContext context)
         {
             // 驱动 3D 姿态仪离屏相机渲染与脏标记复位 (仅在网格渲染管线下工作)
-            if (!_isUsingRaymarch && _ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
+            if (!_isUsingRaymarch.Value && _ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
+                bool rotDirty = !_hasEverRendered.Value || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
                 bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime.Value) >= HeartbeatInterval;
 
-                if (rotDirty || _isPaletteLerping || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
+                if (rotDirty || _isPaletteLerping.Value || _isMaterialDirty.Value || heartbeatDirty || _isRenderDirty.Value)
                 {
                     context.Navball.RenderCamera();
-                    _hasEverRendered = true;
+                    _hasEverRendered.Value = true;
                     if (_sphereObject != null)
                     {
                         _lastRenderedRotation.Update(_sphereObject.transform.localRotation);
                     }
                     _lastRenderedTime.Update(Time.unscaledTime);
-                    _isMaterialDirty = false;
-                    _isRenderDirty = false;
+                    _isMaterialDirty.Value = false;
+                    _isRenderDirty.Value = false;
                 }
             }
 
@@ -291,11 +291,11 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (_shipRawImage != null)
             {
                 Texture targetTex = _shared3DSpacecraftTexture;
-                if (_shipVisualMode == CenterShipVisualMode.RealVessel3D && state.Tex3D != null)
+                if (_shipVisualMode.Value == CenterShipVisualMode.RealVessel3D && state.Tex3D != null)
                 {
                     targetTex = state.Tex3D;
                 }
-                else if (_shipVisualMode == CenterShipVisualMode.TopDownSilhouette)
+                else if (_shipVisualMode.Value == CenterShipVisualMode.TopDownSilhouette)
                 {
                     Texture silTex = VesselSilhouetteService.Provider?.SilhouetteTexture;
                     if (silTex != null) targetTex = silTex;
@@ -310,7 +310,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             // 2. 中央 3D 飞船姿态与俯仰收缩
             if (_centerShipRoot != null)
             {
-                if (_isChasePerspective)
+                if (_isChasePerspective.Value)
                 {
                     float pitchRad = state.Pitch * Mathf.Deg2Rad;
                     float foreshortenY = Mathf.Clamp(Mathf.Cos(pitchRad * 0.5f), 0.72f, 1.0f);
@@ -411,13 +411,13 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
         // 球面导航标线集合 (Prograde, Retrograde, Normal, Maneuver 等)
         private readonly Dictionary<string, Image> _markerImages = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
-        private float _visualRadius = 70f;
+        private readonly CachedFloat _visualRadius = new CachedFloat(70f, 0.05f);
 
         // 渲染与视口模式
-        private bool _isUsingRaymarch = false;
-        private CenterShipVisualMode _shipVisualMode = CenterShipVisualMode.Procedural3D;
-        private bool _isDirectorLocked = false;
-        private bool _isChasePerspective = true;
+        private readonly Cached<bool> _isUsingRaymarch = new Cached<bool>(false);
+        private readonly Cached<CenterShipVisualMode> _shipVisualMode = new Cached<CenterShipVisualMode>(CenterShipVisualMode.Procedural3D);
+        private readonly Cached<bool> _isDirectorLocked = new Cached<bool>(false);
+        private readonly Cached<bool> _isChasePerspective = new Cached<bool>(true);
 
         // 静态共享程序化纹理 (避免重复分配)
         private static Texture2D _shared3DSpacecraftTexture;
@@ -433,8 +433,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private readonly Cached<string> _lastFrameCategory = new Cached<string>("");
         private NavballFramePalette _currentPalette;
         private NavballFramePalette _targetPalette;
-        private bool _paletteInitialized = false;
-        private bool _isPaletteLerping = false;
+        private readonly Cached<bool> _paletteInitialized = new Cached<bool>(false);
+        private readonly Cached<bool> _isPaletteLerping = new Cached<bool>(false);
 
         // 动态绘制与亚像素脏标记判定 (Zero Visual Quality Loss)
         private const float RotationDirtyThreshold = 0.025f;
@@ -442,8 +442,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private readonly Cached<Quaternion> _lastRenderedRotation = new Cached<Quaternion>(Quaternion.identity);
         private readonly CachedFloat _lastRenderedTime = new CachedFloat(-10f, 0.001f);
         private readonly CachedFloat _lastShipScaleY = new CachedFloat(-1f, 0.002f);
-        private bool _isMaterialDirty = true;
-        private bool _hasEverRendered = false;
+        private readonly Cached<bool> _isMaterialDirty = new Cached<bool>(true);
+        private readonly Cached<bool> _hasEverRendered = new Cached<bool>(false);
 
         private static readonly int _PropSkyColor = Shader.PropertyToID("_SkyColor");
         private static readonly int _PropGroundColor = Shader.PropertyToID("_GroundColor");
@@ -492,7 +492,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             float ballDiameter = 150f * s;
             float totalHeight = ballDiameter + 28f * s;
             RectTransform.sizeDelta = new Vector2(ballDiameter, totalHeight);
-            _visualRadius = ballDiameter * 0.47f;
+            _visualRadius.Value = ballDiameter * 0.47f;
 
             _bgImage = gameObject.AddComponent<Image>();
             _bgImage.color = Color.clear;
@@ -508,7 +508,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             string viewVal = GetTemplateChannel("VIEW", null);
             if (!string.IsNullOrEmpty(viewVal))
             {
-                _isChasePerspective = !viewVal.Equals("TOP", StringComparison.OrdinalIgnoreCase);
+                _isChasePerspective.Value = !viewVal.Equals("TOP", StringComparison.OrdinalIgnoreCase);
             }
 
             string shipModeStr = GetTemplateChannel("SHIP", null);
@@ -516,15 +516,15 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             {
                 if ("VESSEL".Equals(shipModeStr, StringComparison.OrdinalIgnoreCase) || "REAL".Equals(shipModeStr, StringComparison.OrdinalIgnoreCase))
                 {
-                    _shipVisualMode = CenterShipVisualMode.RealVessel3D;
+                    _shipVisualMode.Value = CenterShipVisualMode.RealVessel3D;
                 }
                 else if ("SILHOUETTE".Equals(shipModeStr, StringComparison.OrdinalIgnoreCase))
                 {
-                    _shipVisualMode = CenterShipVisualMode.TopDownSilhouette;
+                    _shipVisualMode.Value = CenterShipVisualMode.TopDownSilhouette;
                 }
                 else
                 {
-                    _shipVisualMode = CenterShipVisualMode.Procedural3D;
+                    _shipVisualMode.Value = CenterShipVisualMode.Procedural3D;
                 }
             }
 
@@ -532,7 +532,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             _logic.PitchToken = _pitchToken;
             _logic.RollToken = _rollToken;
             _logic.SasToken = _sasToken;
-            _logic.ShipVisualMode = _shipVisualMode;
+            _logic.ShipVisualMode = _shipVisualMode.Value;
 
             EnsureSharedTextures();
 
@@ -577,8 +577,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             Shader raymarchShader = AssetLoader.RaymarchShader ?? Shader.Find("ModularFlightPanel/NavballRaymarch");
             Shader minimalShader = AssetLoader.MinimalistAttitudeShader ?? Shader.Find("ModularFlightPanel/MinimalistAttitudeSphere");
 
-            _isUsingRaymarch = !forceMesh && raymarchShader != null;
-            Shader targetShader = _isUsingRaymarch ? raymarchShader : (minimalShader ?? raymarchShader ?? AssetLoader.ProceduralShader ?? AssetLoader.ModernShader);
+            _isUsingRaymarch.Value = !forceMesh && raymarchShader != null;
+            Shader targetShader = _isUsingRaymarch.Value ? raymarchShader : (minimalShader ?? raymarchShader ?? AssetLoader.ProceduralShader ?? AssetLoader.ModernShader);
 
             _sphereMaterial = new Material(targetShader);
 
@@ -586,7 +586,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 new Vector2(ballDiameter, ballDiameter), Vector2.zero);
             _sphereDisplayImage.raycastTarget = false;
 
-            if (_isUsingRaymarch)
+            if (_isUsingRaymarch.Value)
             {
                 _sphereDisplayImage.material = _sphereMaterial;
                 _sphereDisplayImage.texture = Texture2D.whiteTexture;
@@ -651,7 +651,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             var hook = NavBallHookService.Provider;
             _currentPalette = GetPaletteForCategory(hook?.ReferenceFrameCategory ?? "SURFACE", theme);
             _targetPalette = _currentPalette;
-            _paletteInitialized = true;
+            _paletteInitialized.Value = true;
             ApplyPaletteToSphereMaterial(_currentPalette);
         }
 
@@ -668,7 +668,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         private void CreateMarkerOverlayLayer(Transform parent, float s)
         {
             RectTransform mlRt = CreateContainer("Markers_Layer", parent,
-                new Vector2(_visualRadius * 2f, _visualRadius * 2f), Vector2.zero);
+                new Vector2(_visualRadius.Value * 2f, _visualRadius.Value * 2f), Vector2.zero);
             GameObject markerLayer = mlRt.gameObject;
 
             string[] markerKeys = new string[]
@@ -781,7 +781,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (theme == null) return;
             theme = WidgetStyleManager.ResolveTheme(theme);
             WidgetStyleManager style = WidgetStyleManager.Instance;
-            _paletteInitialized = false;
+            _paletteInitialized.Value = false;
             _lastFrameCategory.Reset(string.Empty);
 
             Material uiMat = style?.GetUiMaterial(isText: false);
@@ -816,7 +816,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             if (_bottomBadgeText != null)
             {
-                _bottomBadgeText.color = _isDirectorLocked
+                _bottomBadgeText.color = _isDirectorLocked.Value
                     ? WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f)
                     : style.GetTextColor(TextStyleRole.PrimaryValue, theme);
                 if (txtMat != null) _bottomBadgeText.material = txtMat;
@@ -824,7 +824,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             if (_flightDirectorRawImage != null)
             {
-                _flightDirectorRawImage.color = _isDirectorLocked
+                _flightDirectorRawImage.color = _isDirectorLocked.Value
                     ? WidgetStyleManager.WithAlpha(theme.AccentPositive, 0.95f)
                     : WidgetStyleManager.WithAlpha(theme.AccentWarning, 0.90f);
             }
@@ -849,22 +849,22 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             SyncMarkers();
 
             // 网格渲染模式动态绘制与亚像素脏标记判定 (4Hz 保活心跳 + 0.025° 亚像素死区)
-            if (!_isUsingRaymarch && _ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
+            if (!_isUsingRaymarch.Value && _ballCamera != null && _renderTexture != null && _renderTexture.IsCreated())
             {
-                bool rotDirty = !_hasEverRendered || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
+                bool rotDirty = !_hasEverRendered.Value || (_sphereObject != null && Quaternion.Angle(_sphereObject.transform.localRotation, _lastRenderedRotation.Value) > RotationDirtyThreshold);
                 bool heartbeatDirty = (Time.unscaledTime - _lastRenderedTime.Value) >= HeartbeatInterval;
 
-                if (rotDirty || _isPaletteLerping || _isMaterialDirty || heartbeatDirty || _isRenderDirty)
+                if (rotDirty || _isPaletteLerping.Value || _isMaterialDirty.Value || heartbeatDirty || _isRenderDirty.Value)
                 {
                     _ballCamera.Render();
-                    _hasEverRendered = true;
+                    _hasEverRendered.Value = true;
                     if (_sphereObject != null)
                     {
                         _lastRenderedRotation.Update(_sphereObject.transform.localRotation);
                     }
                     _lastRenderedTime.Update(Time.unscaledTime);
-                    _isMaterialDirty = false;
-                    _isRenderDirty = false;
+                    _isMaterialDirty.Value = false;
+                    _isRenderDirty.Value = false;
                 }
             }
         }
@@ -886,7 +886,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 rawRot = (telem != null) ? telem.AttitudeRotation : Quaternion.identity;
             }
 
-            if (_isUsingRaymarch)
+            if (_isUsingRaymarch.Value)
             {
                 Quaternion invRot = Quaternion.Inverse(rawRot);
                 Vector4 invRotVec = new Vector4(invRot.x, invRot.y, invRot.z, invRot.w);
@@ -903,31 +903,31 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
 
             // 多参考系调色板过渡
             string category = hook?.ReferenceFrameCategory ?? "SURFACE";
-            if (_lastFrameCategory.Update(category) || !_paletteInitialized)
+            if (_lastFrameCategory.Update(category) || !_paletteInitialized.Value)
             {
                 _targetPalette = GetPaletteForCategory(category, ThemeManager.Instance.CurrentTheme);
-                if (!_paletteInitialized)
+                if (!_paletteInitialized.Value)
                 {
                     _currentPalette = _targetPalette;
-                    _paletteInitialized = true;
+                    _paletteInitialized.Value = true;
                     ApplyPaletteToSphereMaterial(_currentPalette);
-                    _isMaterialDirty = true;
+                    _isMaterialDirty.Value = true;
                 }
-                _isPaletteLerping = true;
+                _isPaletteLerping.Value = true;
             }
 
-            if (_sphereMaterial != null && _isPaletteLerping)
+            if (_sphereMaterial != null && _isPaletteLerping.Value)
             {
                 float dt = Time.deltaTime;
                 float lerpFactor = (!Application.isPlaying || dt <= 0.0001f) ? 1.0f : Mathf.Clamp01(dt * 8.0f);
                 _currentPalette = WidgetStyleManager.LerpFramePalette(_currentPalette, _targetPalette, lerpFactor);
                 ApplyPaletteToSphereMaterial(_currentPalette);
-                _isMaterialDirty = true;
+                _isMaterialDirty.Value = true;
 
                 if (IsPaletteEqual(ref _currentPalette, ref _targetPalette))
                 {
                     _currentPalette = _targetPalette;
-                    _isPaletteLerping = false;
+                    _isPaletteLerping.Value = false;
                 }
             }
         }
@@ -1006,7 +1006,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 {
                     if (!img.gameObject.activeSelf) img.gameObject.SetActive(true);
 
-                    Vector2 targetPos = new Vector2(dir.x, dir.y) * _visualRadius;
+                    Vector2 targetPos = new Vector2(dir.x, dir.y) * _visualRadius.Value;
                     if (Mathf.Abs(img.rectTransform.anchoredPosition.x - targetPos.x) > 0.05f || Mathf.Abs(img.rectTransform.anchoredPosition.y - targetPos.y) > 0.05f)
                     {
                         img.rectTransform.anchoredPosition = targetPos;
@@ -1061,7 +1061,7 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
             if (eventData.button == PointerEventData.InputButton.Right)
             {
                 // 右键切换观察视角 (Chase 3D <-> Top-Down 3D)
-                _isChasePerspective = !_isChasePerspective;
+                _isChasePerspective.Value = !_isChasePerspective.Value;
                 _lastPitch.Reset(double.NaN); // 触发刷新
             }
             else if (eventData.button == PointerEventData.InputButton.Left)
@@ -1070,8 +1070,8 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
                 if (_centerShipRoot != null && RectTransformUtility.RectangleContainsScreenPoint(_centerShipRoot, eventData.position, eventData.pressEventCamera))
                 {
                     // 点击飞船轮播视觉样式: Procedural3D -> RealVessel3D -> TopDownSilhouette
-                    _shipVisualMode = (CenterShipVisualMode)(((int)_shipVisualMode + 1) % 3);
-                    _logic.ShipVisualMode = _shipVisualMode;
+                    _shipVisualMode.Value = (CenterShipVisualMode)(((int)_shipVisualMode.Value + 1) % 3);
+                    _logic.ShipVisualMode = _shipVisualMode.Value;
                 }
                 else
                 {
@@ -1105,14 +1105,14 @@ namespace ModularFlightPanel.UI.Widgets.Navigation
         {
             base.OnRenderTextureRecreated(newRt);
             if (_ballCamera != null) _ballCamera.targetTexture = newRt;
-            if (_sphereDisplayImage != null && !_isUsingRaymarch) _sphereDisplayImage.texture = newRt;
+            if (_sphereDisplayImage != null && !_isUsingRaymarch.Value) _sphereDisplayImage.texture = newRt;
         }
 
         protected override void HandleRenderSettingChanged()
         {
-            if (_isUsingRaymarch) return;
+            if (_isUsingRaymarch.Value) return;
             if (WidgetRenderManager.Instance == null) return;
-            float ballDiameter = _visualRadius * 2.0f;
+            float ballDiameter = _visualRadius.Value * 2.0f;
             int optimalRes = WidgetRenderManager.Instance.CalculateOptimalResolution(
                 new Vector2(ballDiameter, ballDiameter),
                 Config != null ? Config.Scale : 1.0f,
