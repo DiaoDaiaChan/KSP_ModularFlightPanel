@@ -57,7 +57,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
 
         // 视口孔径与几何长宽比 (Aperture Shape & Aspect Ratio)
         _ApertureShape ("Aperture Shape (0=Circle, 1=Rectangle)", Float) = 0.0
-        _PfdMode ("PFD Dimension-Reduced Mode (0=3D Sphere, 1=PFD)", Float) = 1.0
+        _PfdMode ("PFD Dimension-Reduced Mode (0=3D Sphere, 1=PFD)", Float) = 0.0
         _AspectRatio ("Aspect Ratio (Width / Height)", Float) = 1.0
         _CornerRadius ("Corner Radius", Range(0.0, 0.5)) = 0.05
         _FovScale ("FOV Scale", Range(0.4, 2.5)) = 1.0
@@ -1475,6 +1475,7 @@ Shader "ModularFlightPanel/NavballRaymarch"
                         z = 1.0;
                         NdotV = 1.0;
                     }
+                }
 
                 fixed4 col;
 

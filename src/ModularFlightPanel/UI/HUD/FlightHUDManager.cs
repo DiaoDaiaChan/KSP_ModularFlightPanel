@@ -983,18 +983,91 @@ namespace ModularFlightPanel.UI
 
     /// <summary>
     /// 高精度性能探针悬浮徽章控制器 (HUD Profiler Overlay Controller)
+    /// 全面采用 UGUI 现代化渲染，100% 消除 Unity IMGUI OnGUI 引擎轮询与 GC 垃圾
     /// </summary>
     public class HUDProfilerOverlay : MonoBehaviour
     {
+        private GameObject _badgeObj;
+        private Text _badgeText;
+        private float _updateTimer = 0f;
+
         private void Awake()
         {
             enabled = false; // 默认严格休眠
         }
 
-        private void OnGUI()
+        private void OnEnable()
         {
-            if (!ModularFlightPanel.Core.MFPProfiler.ShowOverlay || ModularFlightPanel.Core.MFPProfiler.IsMasterBypassed) return;
-            ModularFlightPanel.Core.MFPProfiler.DrawGUI();
+            EnsureBadge();
+            if (_badgeObj != null) _badgeObj.SetActive(true);
+        }
+
+        private void OnDisable()
+        {
+            if (_badgeObj != null) _badgeObj.SetActive(false);
+        }
+
+        private void EnsureBadge()
+        {
+            if (_badgeObj != null) return;
+
+            _badgeObj = new GameObject("MFP_HUDProfilerBadge", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline));
+            _badgeObj.transform.SetParent(transform, false);
+
+            var rt = _badgeObj.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.anchoredPosition = new Vector2(-16f, -16f);
+            rt.sizeDelta = new Vector2(250f, 32f);
+
+            var bg = _badgeObj.GetComponent<Image>();
+            bg.color = new Color(0.04f, 0.06f, 0.10f, 0.92f);
+            bg.raycastTarget = false;
+
+            var outline = _badgeObj.GetComponent<Outline>();
+            outline.effectColor = new Color(0f, 0.88f, 1f, 0.45f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            GameObject txtObj = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            txtObj.transform.SetParent(_badgeObj.transform, false);
+
+            var txtRt = txtObj.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.sizeDelta = Vector2.zero;
+            txtRt.offsetMin = new Vector2(8f, 2f);
+            txtRt.offsetMax = new Vector2(-8f, -2f);
+
+            _badgeText = txtObj.GetComponent<Text>();
+            _badgeText.font = UIFactory.GetActiveFont();
+            _badgeText.fontSize = 11;
+            _badgeText.alignment = TextAnchor.MiddleCenter;
+            _badgeText.color = Color.white;
+            _badgeText.raycastTarget = false;
+        }
+
+        private void Update()
+        {
+            if (!ModularFlightPanel.Core.MFPProfiler.ShowOverlay || ModularFlightPanel.Core.MFPProfiler.IsMasterBypassed)
+            {
+                if (_badgeObj != null && _badgeObj.activeSelf) _badgeObj.SetActive(false);
+                return;
+            }
+
+            if (_badgeObj != null && !_badgeObj.activeSelf) _badgeObj.SetActive(true);
+
+            _updateTimer += Time.unscaledDeltaTime;
+            if (_updateTimer >= 0.20f)
+            {
+                _updateTimer = 0f;
+                if (_badgeText != null)
+                {
+                    double avgMs = ModularFlightPanel.Core.MFPProfiler.AvgTotalMs;
+                    string statusColor = avgMs < 0.5 ? "#00E5FF" : (avgMs < 1.5 ? "#FFCC00" : "#FF3B30");
+                    _badgeText.text = $"<b>MFP:</b> <color={statusColor}>{avgMs:F2}ms</color> ({ModularFlightPanel.Core.MFPProfiler.FrameBudgetPercent:F0}%) | <b>FPS:</b> {ModularFlightPanel.Core.MFPProfiler.CurrentFPS:F0}";
+                }
+            }
         }
     }
 }

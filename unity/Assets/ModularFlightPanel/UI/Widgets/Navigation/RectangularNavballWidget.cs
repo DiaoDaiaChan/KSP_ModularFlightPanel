@@ -571,7 +571,7 @@ namespace ModularFlightPanel.UI.Widgets
         private void CreateHeadingBox(Transform parent, float height, float dpiScale, ThemeConfig theme)
         {
             _headingBox = UIFactory.CreatePanel(parent, "RectNavball_Heading_Box",
-                new Vector2(96f * dpiScale, 20f * dpiScale),
+                new Vector2(114f * dpiScale, 20f * dpiScale),
                 new Vector2(0f, -height * 0.5f - 13f * dpiScale),
                 theme.FrameBgColor);
 
@@ -587,15 +587,15 @@ namespace ModularFlightPanel.UI.Widgets
             _headingText = UIFactory.CreateText(_headingBox.transform, "Heading_Value",
                 "HDG 000°", Mathf.Max(10, Mathf.RoundToInt(11f * dpiScale)),
                 TextAnchor.MiddleCenter, theme.TextPrimaryColor);
-            _headingText.rectTransform.anchoredPosition = new Vector2(0f, 0f);
-            _headingText.rectTransform.sizeDelta = new Vector2(96f * dpiScale, 20f * dpiScale);
+            _headingText.rectTransform.anchoredPosition = new Vector2(-16f * dpiScale, 0f);
+            _headingText.rectTransform.sizeDelta = new Vector2(76f * dpiScale, 20f * dpiScale);
             if (txtMat != null) _headingText.material = txtMat;
 
             _frameText = UIFactory.CreateText(_headingBox.transform, "Frame_Label",
                 I18n.Tr("WIDGET_NAV_SURF", "表面"), Mathf.Max(7, Mathf.RoundToInt(8f * dpiScale)),
                 TextAnchor.MiddleRight, theme.AccentSecondary);
-            _frameText.rectTransform.anchoredPosition = new Vector2(44f * dpiScale, 0f);
-            _frameText.rectTransform.sizeDelta = new Vector2(36f * dpiScale, 18f * dpiScale);
+            _frameText.rectTransform.anchoredPosition = new Vector2(38f * dpiScale, 0f);
+            _frameText.rectTransform.sizeDelta = new Vector2(34f * dpiScale, 18f * dpiScale);
             if (txtMat != null) _frameText.material = txtMat;
         }
 

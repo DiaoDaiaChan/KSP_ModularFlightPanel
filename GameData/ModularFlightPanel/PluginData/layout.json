@@ -48,7 +48,7 @@
       "ScaleX": 1.0,
       "ScaleY": 1.0,
       "Rotation": 0.0,
-      "CustomTemplate": "",
+      "CustomTemplate": "MODE=pfd",
       "WidgetType": "rect_navball",
       "NumericToken": "{SPD}",
       "MinValue": 0.0,

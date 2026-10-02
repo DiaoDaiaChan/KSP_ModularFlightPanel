@@ -568,74 +568,69 @@ namespace ModularFlightPanel.UI
     public static class WidgetControlHighlighter
     {
         public static IWidgetControl HighlightedControl { get; set; }
-        private static Texture2D _borderTex;
-
-        private static Texture2D GetBorderTex()
-        {
-            if (_borderTex == null)
-            {
-                _borderTex = new Texture2D(1, 1);
-                _borderTex.SetPixel(0, 0, Color.white);
-                _borderTex.Apply();
-            }
-            return _borderTex;
-        }
+        private static GameObject _gizmoRoot;
+        private static RectTransform _gizmoRt;
+        private static Image _borderImg;
+        private static Outline _outline;
+        private static Text _tagText;
 
         public static void DrawGizmo(Canvas canvas)
         {
-            if (HighlightedControl == null || HighlightedControl.RectTransform == null) return;
-            RectTransform rt = HighlightedControl.RectTransform;
-            if (!rt.gameObject.activeInHierarchy) return;
+            if (HighlightedControl == null || HighlightedControl.RectTransform == null || canvas == null)
+            {
+                if (_gizmoRoot != null && _gizmoRoot.activeSelf) _gizmoRoot.SetActive(false);
+                return;
+            }
 
-            Vector3[] corners = new Vector3[4];
-            rt.GetWorldCorners(corners);
+            RectTransform target = HighlightedControl.RectTransform;
+            if (!target.gameObject.activeInHierarchy)
+            {
+                if (_gizmoRoot != null && _gizmoRoot.activeSelf) _gizmoRoot.SetActive(false);
+                return;
+            }
 
-            Camera cam = (canvas == null || canvas.renderMode == RenderMode.ScreenSpaceOverlay) ? null : canvas.worldCamera;
-            Vector2 p0 = RectTransformUtility.WorldToScreenPoint(cam, corners[0]);
-            Vector2 p1 = RectTransformUtility.WorldToScreenPoint(cam, corners[1]);
-            Vector2 p2 = RectTransformUtility.WorldToScreenPoint(cam, corners[2]);
-            Vector2 p3 = RectTransformUtility.WorldToScreenPoint(cam, corners[3]);
+            if (_gizmoRoot == null)
+            {
+                _gizmoRoot = new GameObject("MFP_ControlHighlighterGizmo", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline));
+                _gizmoRoot.transform.SetParent(canvas.transform, false);
+                _gizmoRt = _gizmoRoot.GetComponent<RectTransform>();
 
-            float minX = Mathf.Min(p0.x, Mathf.Min(p1.x, Mathf.Min(p2.x, p3.x)));
-            float maxX = Mathf.Max(p0.x, Mathf.Max(p1.x, Mathf.Max(p2.x, p3.x)));
-            float minY = Mathf.Min(p0.y, Mathf.Min(p1.y, Mathf.Min(p2.y, p3.y)));
-            float maxY = Mathf.Max(p0.y, Mathf.Max(p1.y, Mathf.Max(p2.y, p3.y)));
+                _borderImg = _gizmoRoot.GetComponent<Image>();
+                _borderImg.color = new Color(0f, 0.9f, 1f, 0.12f);
+                _borderImg.raycastTarget = false;
 
-            float guiX = minX - 2f;
-            float guiY = (Screen.height - maxY) - 2f;
-            float guiW = (maxX - minX) + 4f;
-            float guiH = (maxY - minY) + 4f;
+                _outline = _gizmoRoot.GetComponent<Outline>();
+                _outline.effectColor = new Color(0f, 0.9f, 1f, 0.85f);
+                _outline.effectDistance = new Vector2(2f, -2f);
 
-            if (guiW < 4f || guiH < 4f) return;
+                GameObject tagObj = new GameObject("Tag", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                tagObj.transform.SetParent(_gizmoRoot.transform, false);
+                var tagRt = tagObj.GetComponent<RectTransform>();
+                tagRt.anchorMin = new Vector2(0f, 1f);
+                tagRt.anchorMax = new Vector2(0f, 1f);
+                tagRt.pivot = new Vector2(0f, 0f);
+                tagRt.anchoredPosition = new Vector2(0f, 4f);
+                tagRt.sizeDelta = new Vector2(160f, 20f);
 
-            Color prevCol = GUI.color;
-            Color cyanHighlight = new Color(0f, 0.9f, 1f, 0.85f);
-            Color fillCol = new Color(0f, 0.9f, 1f, 0.12f);
-            Texture2D tex = GetBorderTex();
+                _tagText = tagObj.GetComponent<Text>();
+                _tagText.font = UIFactory.GetActiveFont();
+                _tagText.fontSize = 11;
+                _tagText.color = new Color(0f, 0.9f, 1f, 1f);
+                _tagText.raycastTarget = false;
+            }
 
-            // 1. 半透明填充背板
-            GUI.color = fillCol;
-            GUI.DrawTexture(new Rect(guiX, guiY, guiW, guiH), tex);
+            if (!_gizmoRoot.activeSelf) _gizmoRoot.SetActive(true);
 
-            // 2. 边框 (Top, Bottom, Left, Right 2px)
-            GUI.color = cyanHighlight;
-            GUI.DrawTexture(new Rect(guiX, guiY, guiW, 2f), tex);
-            GUI.DrawTexture(new Rect(guiX, guiY + guiH - 2f, guiW, 2f), tex);
-            GUI.DrawTexture(new Rect(guiX, guiY, 2f, guiH), tex);
-            GUI.DrawTexture(new Rect(guiX + guiW - 2f, guiY, 2f, guiH), tex);
+            _gizmoRt.position = target.position;
+            _gizmoRt.rotation = target.rotation;
+            _gizmoRt.sizeDelta = target.rect.size + new Vector2(4f, 4f);
+            if (_tagText != null) _tagText.text = $"⌖ {HighlightedControl.DisplayName}";
+        }
 
-            // 3. 悬浮微标牌
-            string label = $" ⌖ {HighlightedControl.DisplayName} ";
-            Vector2 tagSize = GUI.skin.label.CalcSize(new GUIContent(label));
-            float tagY = guiY - tagSize.y - 2f;
-            if (tagY < 5f) tagY = guiY + guiH + 2f;
-
-            GUI.color = new Color(0.05f, 0.15f, 0.25f, 0.92f);
-            GUI.DrawTexture(new Rect(guiX, tagY, tagSize.x + 8f, tagSize.y), tex);
-            GUI.color = cyanHighlight;
-            GUI.Label(new Rect(guiX + 2f, tagY, tagSize.x + 4f, tagSize.y), $"<b>{label}</b>");
-
-            GUI.color = prevCol;
+        public static void Clear()
+        {
+            HighlightedControl = null;
+            if (_gizmoRoot != null && _gizmoRoot.activeSelf) _gizmoRoot.SetActive(false);
         }
     }
 }

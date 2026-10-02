@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.Events;
+using UnityEngine.EventSystems;
 using ModularFlightPanel.Config;
 using ModularFlightPanel.Core;
 using ModularFlightPanel.UI.Framework;
 using ModularFlightPanel.UI.Widgets;
-using ModularFlightPanel.UI.Widgets.Controls;
-using ModularFlightPanel.UI.Widgets.SpaceX;
 using ModularFlightPanel.UI.Settings;
 
 namespace ModularFlightPanel.UI.HUD
@@ -15,90 +16,204 @@ namespace ModularFlightPanel.UI.HUD
     /// 图形化编辑模式悬浮工具栏 (HUD Edit Mode Toolbar & Action Controller)
     /// 核心职责：
     /// 1. 宿主编辑模式顶部悬浮卡片 (撤销/重做、左中右顶底对齐、水平/垂直等距、网格/图层开关)；
-    /// 2. 宿主直接吸附在选中组件右侧/上方的即时悬浮缩放、旋转、图层快速操作盒；
-    /// 3. 与主 HUD 编排调度彻底解耦。仅在处于编辑模式时启用 (enabled = true)，
-    ///    非编辑状态下彻底休眠 (enabled = false)，100% 消除 Unity IMGUI 的 OnGUI / DoGUI 每帧轮询与内存垃圾！
+    /// 2. 宿主直接吸附在选中组件旁侧的即时悬浮缩放、形变、旋转、图层快速操作盒；
+    /// 3. 100% 采用现代化 UGUI + GPU 磨砂玻璃着色器 (ModernWorkbenchGlass.shader) 渲染，
+    ///    彻底清除 Unity IMGUI OnGUI 引擎轮询与 GC 垃圾！
     /// </summary>
     public class HUDEditModeToolbar : MonoBehaviour
     {
         private FlightHUDManager _hudManager;
+
+        // 全局微控件定制入口标记 (供 WidgetDragHandler 引用)
+        public static bool IsSubControlCustomizerOpen { get; set; } = false;
+
         private static bool _isFavoriteModDockOpen = false;
-        private Vector2 _modDockScroll = Vector2.zero;
+
+        // UGUI 视觉图元根节点与卡片组件
+        private GameObject _rootObj;
+        private CanvasGroup _rootCanvasGroup;
+
+        // 顶部工具栏
+        private GameObject _topBarObj;
+        private Text _selectionPillText;
+        private Button _undoBtn;
+        private Button _redoBtn;
+        private Button[] _alignBtns;
+        private Text _snapBtnText;
+        private Text _gridBtnText;
+        private Text _layerBtnText;
+        private Text _modDockBtnText;
+
+        // 组件旁侧即时浮动属性盒 (Contextual Inspector)
+        private GameObject _inspectorCardObj;
+        private RectTransform _inspectorCardRt;
+        private Text _inspectorTitleText;
+        private Text _inspectorStatsText;
+        private Text _inspectorOpacityText;
+
+        // 浮动图层抽屉 (Layer Drawer)
+        private GameObject _layerDrawerObj;
+        private Transform _layerContentTransform;
+        private readonly List<GameObject> _layerRowPool = new List<GameObject>();
+
+        // 常用模组抽屉 (Favorite Mod Dock)
+        private GameObject _modDockObj;
+        private Transform _modDockContentTransform;
+        private readonly List<GameObject> _modDockBtnPool = new List<GameObject>();
+
+        // 材质缓存
+        private Material _glassMaterial;
+
+        // 定频刷新节流
+        private float _lastUiRefreshTime = 0f;
+        private int _cachedSelectedCount = -1;
 
         public void Initialize(FlightHUDManager hudManager)
         {
             _hudManager = hudManager;
-            enabled = false; // 默认严格休眠，杜绝常驻 IMGUI 开销
+            enabled = false; // 默认严格休眠
         }
 
-#if KSP_RUNTIME && !UNITY_EDITOR
-        private void OnGUI()
+        private void Awake()
         {
-            if (!WidgetDragHandler.IsEditModeActive || MFPProfiler.IsMasterBypassed) return;
-
-            // 当全屏航电工坊工作台打开且未处于画布排版模式时，静默挂起 HUD 现场悬浮编辑栏与抽屉，
-            // 彻底防止与 WorkbenchTabStudio 的全功能 Inspector 发生视口遮挡与冲突打架！
-            if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
-            {
-                return;
-            }
-
-            SafeGUIGateway.ExecuteRoot(DrawFloatingToolbarContent, "HUDEditModeToolbar");
+            enabled = false;
         }
 
-        private void DrawFloatingToolbarContent()
+        private void OnEnable()
         {
-            MFPGuiSkin.EnsureInitialized();
+            EnsureUIHierarchy();
+            if (_rootObj != null) _rootObj.SetActive(true);
+            RefreshAllVisuals(true);
+        }
 
+        private void OnDisable()
+        {
+            if (_rootObj != null) _rootObj.SetActive(false);
             FlightHUDManager.IsMouseOverFloatingToolbar = false;
-            WidgetControlHighlighter.HighlightedControl = null;
+            MFPInputLock.SetWindowHoverLock(false);
+        }
 
-            float toolbarW = 1260f;
-            float toolbarH = 78f;
-            float x = (Screen.width - toolbarW) * 0.5f;
-            float y = 12f;
-
-            Rect topToolbarRect = new Rect(x, y, toolbarW, toolbarH);
-            if (topToolbarRect.Contains(Event.current.mousePosition))
+        private void OnDestroy()
+        {
+            if (_rootObj != null)
             {
-                FlightHUDManager.IsMouseOverFloatingToolbar = true;
+                Destroy(_rootObj);
+                _rootObj = null;
             }
-
-            GUILayout.BeginArea(topToolbarRect, MFPGuiSkin.CardStyle);
-
-            // 第一行：标题 + 撤销/重做 + 全套对齐工具 + 快速分享/导入
-            GUILayout.BeginHorizontal();
-            int selCount = WidgetSelectionManager.Count;
-            string selInfo = selCount > 0 ? string.Format(I18n.Tr("HUD_SEL_ITEMS", "<color=#FFE000><b>已选 {0} 项</b></color>"), selCount) : I18n.Tr("HUD_SEL_NONE", "<color=#AAAAAA>未选中 (拉框多选)</color>");
-            GUILayout.Label(string.Format(I18n.Tr("HUD_STUDIO_HEADER", "🛠️ <b>MFP 设计工坊</b> | {0}"), selInfo), GUILayout.Width(170f));
-
-            GUI.enabled = WidgetEditHistory.CanUndo;
-            if (GUILayout.Button(I18n.Tr("HUD_UNDO", "↶ 撤销"), GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Undo();
-            GUI.enabled = WidgetEditHistory.CanRedo;
-            if (GUILayout.Button(I18n.Tr("HUD_REDO", "↷ 重做"), GUILayout.Width(50f), GUILayout.Height(24f))) WidgetEditHistory.Redo();
-            GUI.enabled = true;
-
-            GUILayout.Space(6f);
-            GUI.enabled = selCount >= 2;
-            if (GUILayout.Button("⬅ 左对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignLeft();
-            if (GUILayout.Button("⏸ 居中X", GUILayout.Width(54f), GUILayout.Height(24f))) WidgetSelectionManager.AlignCenterX();
-            if (GUILayout.Button("➡ 右对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignRight();
-            if (GUILayout.Button("⬆ 顶对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignTop();
-            if (GUILayout.Button("⏵ 居中Y", GUILayout.Width(54f), GUILayout.Height(24f))) WidgetSelectionManager.AlignCenterY();
-            if (GUILayout.Button("⬇ 底对齐", GUILayout.Width(56f), GUILayout.Height(24f))) WidgetSelectionManager.AlignBottom();
-            GUI.enabled = selCount >= 3;
-            if (GUILayout.Button("⇹ 水平等距", GUILayout.Width(68f), GUILayout.Height(24f))) WidgetSelectionManager.DistributeHorizontally();
-            if (GUILayout.Button("⇳ 垂直等距", GUILayout.Width(68f), GUILayout.Height(24f))) WidgetSelectionManager.DistributeVertically();
-            GUI.enabled = selCount >= 1;
-            if (GUILayout.Button("⌖ X=0中轴", GUILayout.Width(64f), GUILayout.Height(24f))) WidgetSelectionManager.CenterToScreenX();
-            GUI.enabled = true;
-
-            GUILayout.Space(6f);
-            if (GUILayout.Button(I18n.Tr("HUD_BTN_NEW_ARTBOARD", "🎨 新建画板"), MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(84f), GUILayout.Height(24f)))
+            if (_glassMaterial != null)
             {
-                WidgetLayoutManager.CreateArtboard(false);
+                Destroy(_glassMaterial);
+                _glassMaterial = null;
             }
-            if (GUILayout.Button("📋 分享码", GUILayout.Width(68f), GUILayout.Height(24f)))
+        }
+
+        private Material GetOrCreateGlassMaterial()
+        {
+            if (_glassMaterial != null) return _glassMaterial;
+
+            Shader s = AssetLoader.ModernWorkbenchShader ?? AssetLoader.GlassCockpitShader ?? Shader.Find("UI/Default");
+            if (s != null)
+            {
+                _glassMaterial = new Material(s);
+                if (_glassMaterial.HasProperty("_GlassBgColor"))
+                    _glassMaterial.SetColor("_GlassBgColor", new Color(0.05f, 0.08f, 0.13f, 0.94f));
+                if (_glassMaterial.HasProperty("_BorderColor"))
+                    _glassMaterial.SetColor("_BorderColor", new Color(0.20f, 0.35f, 0.52f, 0.85f));
+                if (_glassMaterial.HasProperty("_AccentColor"))
+                    _glassMaterial.SetColor("_AccentColor", new Color(0f, 0.88f, 1f, 1f));
+                if (_glassMaterial.HasProperty("_CornerRadius"))
+                    _glassMaterial.SetFloat("_CornerRadius", 0.035f);
+                if (_glassMaterial.HasProperty("_BorderWidth"))
+                    _glassMaterial.SetFloat("_BorderWidth", 0.008f);
+            }
+            return _glassMaterial;
+        }
+
+        private void EnsureUIHierarchy()
+        {
+            if (_rootObj != null) return;
+            Canvas targetCanvas = _hudManager != null ? _hudManager.Canvas : GetComponentInParent<Canvas>();
+            if (targetCanvas == null) return;
+
+            // 1. 根节点挂载
+            _rootObj = new GameObject("MFP_HUDEditModeToolbarRoot", typeof(RectTransform), typeof(CanvasGroup));
+            _rootObj.transform.SetParent(targetCanvas.transform, false);
+
+            var rootRt = _rootObj.GetComponent<RectTransform>();
+            rootRt.anchorMin = Vector2.zero;
+            rootRt.anchorMax = Vector2.one;
+            rootRt.sizeDelta = Vector2.zero;
+            rootRt.anchoredPosition = Vector2.zero;
+
+            _rootCanvasGroup = _rootObj.GetComponent<CanvasGroup>();
+
+            // 2. 构建顶部主工具栏
+            BuildTopBar(rootRt);
+
+            // 3. 构建旁侧即时属性浮动盒
+            BuildContextualInspector(rootRt);
+
+            // 4. 构建右侧图层管理器抽屉
+            BuildLayerDrawer(rootRt);
+
+            // 5. 构建常用模组收纳坞
+            BuildFavoriteModDock(rootRt);
+        }
+
+        #region TopBar 构建
+        private void BuildTopBar(RectTransform parent)
+        {
+            _topBarObj = CreateGlassPanel(parent, "TopBar", new Vector2(1240f, 48f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -10f));
+            AddHoverCatcher(_topBarObj);
+
+            var hl = _topBarObj.AddComponent<HorizontalLayoutGroup>();
+            hl.childAlignment = TextAnchor.MiddleLeft;
+            hl.spacing = 4f;
+            hl.padding = new RectOffset(10, 10, 6, 6);
+            hl.childForceExpandWidth = false;
+            hl.childForceExpandHeight = false;
+
+            // 标题与选择计数药丸
+            var pillObj = new GameObject("SelectionPill", typeof(RectTransform), typeof(Image));
+            pillObj.transform.SetParent(_topBarObj.transform, false);
+            var pillRt = pillObj.GetComponent<RectTransform>();
+            pillRt.sizeDelta = new Vector2(165f, 32f);
+            pillObj.GetComponent<Image>().color = new Color(0.12f, 0.18f, 0.28f, 0.9f);
+
+            var pillOutline = pillObj.AddComponent<Outline>();
+            pillOutline.effectColor = new Color(0f, 0.88f, 1f, 0.4f);
+            pillOutline.effectDistance = new Vector2(1f, -1f);
+
+            _selectionPillText = UIFactory.CreateText(pillObj.transform, "Label", "🛠️ MFP 设计工坊", 11, TextAnchor.MiddleCenter, Color.white);
+            var spRt = _selectionPillText.GetComponent<RectTransform>();
+            spRt.anchorMin = Vector2.zero;
+            spRt.anchorMax = Vector2.one;
+            spRt.sizeDelta = Vector2.zero;
+
+            // 历史控制
+            _undoBtn = CreateToolbarButton(_topBarObj.transform, "UndoBtn", "↶ 撤销", new Vector2(50f, 32f), () => WidgetEditHistory.Undo());
+            _redoBtn = CreateToolbarButton(_topBarObj.transform, "RedoBtn", "↷ 重做", new Vector2(50f, 32f), () => WidgetEditHistory.Redo());
+
+            CreateDivider(_topBarObj.transform);
+
+            // 对齐工具群
+            var alignList = new List<Button>();
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "AlignLeft", "⬅ 左", new Vector2(42f, 32f), () => WidgetSelectionManager.AlignLeft()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "AlignCenterX", "⏸ 中X", new Vector2(46f, 32f), () => WidgetSelectionManager.AlignCenterX()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "AlignRight", "➡ 右", new Vector2(42f, 32f), () => WidgetSelectionManager.AlignRight()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "AlignTop", "⬆ 顶", new Vector2(42f, 32f), () => WidgetSelectionManager.AlignTop()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "AlignCenterY", "⏵ 中Y", new Vector2(46f, 32f), () => WidgetSelectionManager.AlignCenterY()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "AlignBottom", "⬇ 底", new Vector2(42f, 32f), () => WidgetSelectionManager.AlignBottom()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "DistH", "⇹ 等距H", new Vector2(56f, 32f), () => WidgetSelectionManager.DistributeHorizontally()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "DistV", "⇳ 等距V", new Vector2(56f, 32f), () => WidgetSelectionManager.DistributeVertically()));
+            alignList.Add(CreateToolbarButton(_topBarObj.transform, "CenterScreen", "⌖ 中轴", new Vector2(50f, 32f), () => WidgetSelectionManager.CenterToScreenX()));
+            _alignBtns = alignList.ToArray();
+
+            CreateDivider(_topBarObj.transform);
+
+            // 画布与分享
+            CreateToolbarButton(_topBarObj.transform, "ArtboardBtn", "🎨 画板", new Vector2(54f, 32f), () => WidgetLayoutManager.CreateArtboard(false), new Color(0.12f, 0.40f, 0.35f, 0.9f));
+            CreateToolbarButton(_topBarObj.transform, "ShareBtn", "📋 分享", new Vector2(50f, 32f), () =>
             {
                 string code = LayoutShareHub.ExportShareCode(WidgetLayoutManager.Instance.CurrentLayout);
                 if (!string.IsNullOrEmpty(code))
@@ -106,11 +221,11 @@ namespace ModularFlightPanel.UI.HUD
                     GUIUtility.systemCopyBuffer = code;
                     MFPToastBridge.Show(I18n.Tr("PRF_TOAST_SHARE_COPIED", "✔ 已成功复制分享码至剪贴板！"));
                 }
-            }
-            if (GUILayout.Button("📥 导入", GUILayout.Width(52f), GUILayout.Height(24f)))
+            });
+            CreateToolbarButton(_topBarObj.transform, "ImportBtn", "📥 导入", new Vector2(50f, 32f), () =>
             {
                 string clip = GUIUtility.systemCopyBuffer;
-                if (!string.IsNullOrEmpty(clip) && LayoutShareHub.TryImportShareCode(clip, out var imported, out string err))
+                if (!string.IsNullOrEmpty(clip) && LayoutShareHub.TryImportShareCode(clip, out var imported, out _))
                 {
                     WidgetSelectionManager.ClearSelection();
                     WidgetLayoutManager.Instance.ApplyLayout(imported);
@@ -119,92 +234,49 @@ namespace ModularFlightPanel.UI.HUD
                 }
                 else
                 {
-                    UIWidget.OnRequestOpenWorkbench?.Invoke();
+                    SettingsGUI.Instance?.OpenToTab(0);
                 }
-            }
-            GUILayout.EndHorizontal();
+            });
 
-            // 第二行：磁吸/网格开关 + 图层/删除/微调 + 快捷退出
-            GUILayout.BeginHorizontal();
-            ThemeConfig theme = ThemeManager.Instance?.CurrentTheme;
-            Color accentCol = theme != null ? (Color)theme.AccentSecondary : GUI.contentColor;
-            Color textCol = theme != null ? (Color)theme.TextPrimaryColor : GUI.contentColor;
-            bool snap = WidgetDragHandler.EnableMagneticSnap;
-            GUI.color = snap ? accentCol : textCol;
-            if (GUILayout.Button(snap ? "🧲 磁吸: [开]" : "🧲 磁吸: [关]", GUILayout.Width(84f), GUILayout.Height(22f)))
+            CreateDivider(_topBarObj.transform);
+
+            // 辅助开关 (磁吸/网格/图层/模组坞)
+            var snapBtn = CreateToolbarButton(_topBarObj.transform, "SnapBtn", "🧲 磁吸", new Vector2(62f, 32f), () =>
             {
                 WidgetDragHandler.EnableMagneticSnap = !WidgetDragHandler.EnableMagneticSnap;
-            }
+                RefreshTopBarStates();
+            });
+            _snapBtnText = snapBtn.GetComponentInChildren<Text>();
 
-            bool grid = WidgetCanvasGrid.IsGridVisible;
-            GUI.color = grid ? accentCol : textCol;
-            if (GUILayout.Button(grid ? "▦ 网格: [开]" : "▦ 网格: [关]", GUILayout.Width(84f), GUILayout.Height(22f)))
+            var gridBtn = CreateToolbarButton(_topBarObj.transform, "GridBtn", "▦ 网格", new Vector2(62f, 32f), () =>
             {
                 WidgetCanvasGrid.ToggleGrid();
-            }
+                RefreshTopBarStates();
+            });
+            _gridBtnText = gridBtn.GetComponentInChildren<Text>();
 
-            bool layerOpen = WidgetLayerManager.IsLayerPanelOpen;
-            GUI.color = layerOpen ? accentCol : textCol;
-            if (GUILayout.Button(layerOpen ? "📑 图层: [开]" : "📑 图层: [关]", GUILayout.Width(84f), GUILayout.Height(22f)))
+            var layerBtn = CreateToolbarButton(_topBarObj.transform, "LayerBtn", "📑 图层", new Vector2(62f, 32f), () =>
             {
                 WidgetLayerManager.ToggleLayerPanel();
-            }
-            GUI.color = textCol;
+                RefreshTopBarStates();
+            });
+            _layerBtnText = layerBtn.GetComponentInChildren<Text>();
 
-            int favCount = GetFavoriteButtonCount();
-            bool modDockOpen = _isFavoriteModDockOpen;
-            GUI.color = modDockOpen ? accentCol : textCol;
-            string modDockLabel = modDockOpen 
-                ? string.Format(I18n.Tr("HUD_FAV_MOD_OPEN", "★ 常用模组 ({0}): [开]"), favCount) 
-                : string.Format(I18n.Tr("HUD_FAV_MOD", "★ 常用模组 ({0})"), favCount);
-            if (GUILayout.Button(modDockLabel, GUILayout.Width(116f), GUILayout.Height(22f)))
+            var modDockBtn = CreateToolbarButton(_topBarObj.transform, "ModDockBtn", "★ 模组", new Vector2(62f, 32f), () =>
             {
                 _isFavoriteModDockOpen = !_isFavoriteModDockOpen;
                 if (_isFavoriteModDockOpen)
                 {
                     ThemeManager.Instance?.EnsureDockRulesPopulated();
                 }
-            }
-            GUI.color = textCol;
+                RefreshTopBarStates();
+            });
+            _modDockBtnText = modDockBtn.GetComponentInChildren<Text>();
 
-            if (selCount > 0)
-            {
-                // 图层层级
-                if (GUILayout.Button("⤒", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BringToFront();
-                if (GUILayout.Button("▲", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BringForward();
-                if (GUILayout.Button("▼", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.SendBackward();
-                if (GUILayout.Button("⤓", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.SendToBack();
+            CreateDivider(_topBarObj.transform);
 
-                // 快速删除/隐藏
-                if (GUILayout.Button("🗑 隐藏", GUILayout.Width(46f), GUILayout.Height(22f))) WidgetSelectionManager.DeleteSelected();
-
-                // 缩放
-                GUILayout.Space(4f);
-                if (GUILayout.Button("－", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BatchScale(-0.1f);
-                if (GUILayout.Button("＋", GUILayout.Width(22f), GUILayout.Height(22f))) WidgetSelectionManager.BatchScale(+0.1f);
-                if (GUILayout.Button("1.0x", GUILayout.Width(36f), GUILayout.Height(22f))) WidgetSelectionManager.BatchSetScale(1.0f);
-
-                // 旋转
-                if (GUILayout.Button("↺ 15°", GUILayout.Width(42f), GUILayout.Height(22f))) WidgetSelectionManager.BatchRotate(-15f);
-                if (GUILayout.Button("0°", GUILayout.Width(26f), GUILayout.Height(22f))) WidgetSelectionManager.ResetRotation();
-                if (GUILayout.Button("↻ 15°", GUILayout.Width(42f), GUILayout.Height(22f))) WidgetSelectionManager.BatchRotate(+15f);
-
-                GUILayout.Space(4f);
-                if (GUILayout.Button("取消选择", GUILayout.Width(62f), GUILayout.Height(22f))) WidgetSelectionManager.ClearSelection();
-            }
-            else
-            {
-                if (GUILayout.Button("全选 (Ctrl+A)", GUILayout.Width(88f), GUILayout.Height(22f)))
-                {
-                    if (_hudManager != null && _hudManager.ModularWidgets != null)
-                    {
-                        WidgetSelectionManager.SelectAll(_hudManager.ModularWidgets);
-                    }
-                }
-                GUILayout.Label("<color=#94A3B8><size=10>快捷键: 方向微调(Shift+10px) | 拖拽缩放/旋转 | Shift轴向 | Ctrl+Z撤销 | G网格 | L图层 | []层级</size></color>");
-            }
-
-            if (GUILayout.Button("✔ 完成退出", MFPGuiSkin.SuccessButtonStyle, GUILayout.Width(84f), GUILayout.Height(24f)))
+            // 快捷退出编辑模式
+            CreateToolbarButton(_topBarObj.transform, "ExitBtn", "✔ 退出编辑", new Vector2(88f, 32f), () =>
             {
                 WidgetDragHandler.IsEditModeActive = false;
                 WidgetSelectionManager.ClearSelection();
@@ -213,68 +285,348 @@ namespace ModularFlightPanel.UI.HUD
                 {
                     SettingsGUI.Instance.ToggleWindow();
                 }
-            }
-            GUILayout.EndHorizontal();
+            }, new Color(0.15f, 0.48f, 0.25f, 0.95f));
+        }
+        #endregion
 
-            GUILayout.EndArea();
+        #region Contextual Inspector 构建
+        private void BuildContextualInspector(RectTransform parent)
+        {
+            _inspectorCardObj = CreateGlassPanel(parent, "ContextualInspector", new Vector2(360f, 230f), Vector2.zero, new Vector2(0f, 1f), new Vector2(100f, 500f));
+            _inspectorCardRt = _inspectorCardObj.GetComponent<RectTransform>();
+            AddHoverCatcher(_inspectorCardObj);
 
-            // 绘制常用 MOD 顶部快捷启动折叠坞 (Favorite MOD Quick Dock)
-            if (_isFavoriteModDockOpen)
+            var vl = _inspectorCardObj.AddComponent<VerticalLayoutGroup>();
+            vl.childAlignment = TextAnchor.UpperLeft;
+            vl.spacing = 3f;
+            vl.padding = new RectOffset(8, 8, 8, 8);
+            vl.childForceExpandWidth = true;
+            vl.childForceExpandHeight = false;
+
+            // 标题行
+            var headerRow = CreateRowLayout(_inspectorCardObj.transform, 22f);
+            _inspectorTitleText = UIFactory.CreateText(headerRow.transform, "Title", "组件属性", 12, TextAnchor.MiddleLeft, Color.white);
+            _inspectorTitleText.GetComponent<RectTransform>().sizeDelta = new Vector2(210f, 22f);
+
+            _inspectorStatsText = UIFactory.CreateText(headerRow.transform, "Stats", "1.00x | 0°", 11, TextAnchor.MiddleRight, new Color(0f, 0.88f, 1f));
+            _inspectorStatsText.GetComponent<RectTransform>().sizeDelta = new Vector2(120f, 22f);
+
+            // 缩放控制行
+            var scaleRow = CreateRowLayout(_inspectorCardObj.transform, 22f);
+            UIFactory.CreateText(scaleRow.transform, "Lbl", "缩放:", 10, TextAnchor.MiddleLeft, new Color(0f, 0.88f, 1f)).GetComponent<RectTransform>().sizeDelta = new Vector2(36f, 22f);
+            CreateToolbarButton(scaleRow.transform, "S-", "－", new Vector2(28f, 20f), () => WidgetSelectionManager.BatchScale(-0.1f));
+            CreateToolbarButton(scaleRow.transform, "S+", "＋", new Vector2(28f, 20f), () => WidgetSelectionManager.BatchScale(+0.1f));
+            CreateToolbarButton(scaleRow.transform, "S08", "0.8x", new Vector2(44f, 20f), () => WidgetSelectionManager.BatchSetScale(0.8f));
+            CreateToolbarButton(scaleRow.transform, "S10", "1.0x", new Vector2(44f, 20f), () => WidgetSelectionManager.BatchSetScale(1.0f));
+            CreateToolbarButton(scaleRow.transform, "S12", "1.2x", new Vector2(44f, 20f), () => WidgetSelectionManager.BatchSetScale(1.2f));
+            CreateToolbarButton(scaleRow.transform, "S15", "1.5x", new Vector2(44f, 20f), () => WidgetSelectionManager.BatchSetScale(1.5f));
+
+            // 形变控制行
+            var deformRow = CreateRowLayout(_inspectorCardObj.transform, 22f);
+            UIFactory.CreateText(deformRow.transform, "Lbl", "形变:", 10, TextAnchor.MiddleLeft, new Color(0.65f, 0.55f, 0.98f)).GetComponent<RectTransform>().sizeDelta = new Vector2(36f, 22f);
+            CreateToolbarButton(deformRow.transform, "W-", "宽－", new Vector2(38f, 20f), () => WidgetSelectionManager.BatchAdjustScaleXY(-0.1f, 0f));
+            CreateToolbarButton(deformRow.transform, "W+", "宽＋", new Vector2(38f, 20f), () => WidgetSelectionManager.BatchAdjustScaleXY(+0.1f, 0f));
+            CreateToolbarButton(deformRow.transform, "H-", "高－", new Vector2(38f, 20f), () => WidgetSelectionManager.BatchAdjustScaleXY(0f, -0.1f));
+            CreateToolbarButton(deformRow.transform, "H+", "高＋", new Vector2(38f, 20f), () => WidgetSelectionManager.BatchAdjustScaleXY(0f, +0.1f));
+            CreateToolbarButton(deformRow.transform, "R11", "1:1", new Vector2(32f, 20f), () => WidgetSelectionManager.BatchResetAspectRatio());
+            CreateToolbarButton(deformRow.transform, "R169", "16:9", new Vector2(40f, 20f), () => WidgetSelectionManager.BatchSetAspectRatio(16f / 9f));
+
+            // 透明度控制行
+            var opRow = CreateRowLayout(_inspectorCardObj.transform, 22f);
+            UIFactory.CreateText(opRow.transform, "Lbl", "透明:", 10, TextAnchor.MiddleLeft, new Color(0.22f, 0.74f, 0.97f)).GetComponent<RectTransform>().sizeDelta = new Vector2(36f, 22f);
+            CreateToolbarButton(opRow.transform, "O-", "－", new Vector2(26f, 20f), () => WidgetSelectionManager.BatchAdjustOpacity(-0.1f));
+            CreateToolbarButton(opRow.transform, "O+", "＋", new Vector2(26f, 20f), () => WidgetSelectionManager.BatchAdjustOpacity(+0.1f));
+            CreateToolbarButton(opRow.transform, "O40", "40%", new Vector2(38f, 20f), () => WidgetSelectionManager.BatchSetOpacity(0.40f));
+            CreateToolbarButton(opRow.transform, "O60", "60%", new Vector2(38f, 20f), () => WidgetSelectionManager.BatchSetOpacity(0.60f));
+            CreateToolbarButton(opRow.transform, "O80", "80%", new Vector2(38f, 20f), () => WidgetSelectionManager.BatchSetOpacity(0.80f));
+            CreateToolbarButton(opRow.transform, "O100", "100%", new Vector2(44f, 20f), () => WidgetSelectionManager.BatchSetOpacity(1.0f));
+            _inspectorOpacityText = UIFactory.CreateText(opRow.transform, "OpVal", "100%", 10, TextAnchor.MiddleRight, new Color(0.22f, 0.74f, 0.97f));
+            _inspectorOpacityText.GetComponent<RectTransform>().sizeDelta = new Vector2(36f, 20f);
+
+            // 旋转控制行
+            var rotRow = CreateRowLayout(_inspectorCardObj.transform, 22f);
+            UIFactory.CreateText(rotRow.transform, "Lbl", "旋转:", 10, TextAnchor.MiddleLeft, new Color(1f, 0.88f, 0f)).GetComponent<RectTransform>().sizeDelta = new Vector2(36f, 22f);
+            CreateToolbarButton(rotRow.transform, "R-15", "↺ 15°", new Vector2(46f, 20f), () => WidgetSelectionManager.BatchRotate(-15f));
+            CreateToolbarButton(rotRow.transform, "R0", "0°", new Vector2(32f, 20f), () => WidgetSelectionManager.ResetRotation());
+            CreateToolbarButton(rotRow.transform, "R+15", "↻ 15°", new Vector2(46f, 20f), () => WidgetSelectionManager.BatchRotate(+15f));
+            CreateToolbarButton(rotRow.transform, "R90", "90°", new Vector2(36f, 20f), () => WidgetSelectionManager.BatchSetRotation(90f));
+            CreateToolbarButton(rotRow.transform, "R180", "180°", new Vector2(42f, 20f), () => WidgetSelectionManager.BatchSetRotation(180f));
+            CreateToolbarButton(rotRow.transform, "RCX", "⤢ 居中", new Vector2(48f, 20f), () => WidgetSelectionManager.CenterToScreenX());
+
+            // 图层与快捷动作行
+            var actRow = CreateRowLayout(_inspectorCardObj.transform, 22f);
+            UIFactory.CreateText(actRow.transform, "Lbl", "图层:", 10, TextAnchor.MiddleLeft, new Color(0.2f, 0.8f, 0.6f)).GetComponent<RectTransform>().sizeDelta = new Vector2(36f, 22f);
+            CreateToolbarButton(actRow.transform, "LFront", "⤒", new Vector2(26f, 20f), () => WidgetLayerManager.BringToFront(WidgetSelectionManager.SelectedWidgets));
+            CreateToolbarButton(actRow.transform, "LFwd", "▲", new Vector2(26f, 20f), () => WidgetLayerManager.BringForward(WidgetSelectionManager.SelectedWidgets));
+            CreateToolbarButton(actRow.transform, "LBack", "▼", new Vector2(26f, 20f), () => WidgetLayerManager.SendBackward(WidgetSelectionManager.SelectedWidgets));
+            CreateToolbarButton(actRow.transform, "LBottom", "⤓", new Vector2(26f, 20f), () => WidgetLayerManager.SendToBack(WidgetSelectionManager.SelectedWidgets));
+            CreateToolbarButton(actRow.transform, "CloneBtn", "📑 克隆", new Vector2(52f, 20f), () => WidgetClipboardManager.DuplicateSelected());
+            CreateToolbarButton(actRow.transform, "DelBtn", "🗑 隐藏", new Vector2(52f, 20f), () => WidgetSelectionManager.DeleteSelected(), new Color(0.45f, 0.12f, 0.15f, 0.9f));
+            CreateToolbarButton(actRow.transform, "Deselect", "取消", new Vector2(42f, 20f), () => WidgetSelectionManager.ClearSelection());
+
+            _inspectorCardObj.SetActive(false);
+        }
+        #endregion
+
+        #region LayerDrawer 构建
+        private void BuildLayerDrawer(RectTransform parent)
+        {
+            _layerDrawerObj = CreateGlassPanel(parent, "LayerDrawer", new Vector2(260f, 480f), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-16f, 0f));
+            AddHoverCatcher(_layerDrawerObj);
+
+            var vl = _layerDrawerObj.AddComponent<VerticalLayoutGroup>();
+            vl.childAlignment = TextAnchor.UpperLeft;
+            vl.spacing = 4f;
+            vl.padding = new RectOffset(8, 8, 8, 8);
+            vl.childForceExpandWidth = true;
+            vl.childForceExpandHeight = false;
+
+            // 抽屉头部
+            var header = CreateRowLayout(_layerDrawerObj.transform, 26f);
+            var title = UIFactory.CreateText(header.transform, "Header", "📑 航电图层管理", 12, TextAnchor.MiddleLeft, Color.white);
+            title.GetComponent<RectTransform>().sizeDelta = new Vector2(180f, 26f);
+            CreateToolbarButton(header.transform, "CloseBtn", "✕", new Vector2(26f, 24f), () =>
             {
-                DrawFavoriteModQuickDock(x, y + toolbarH + 4f, toolbarW);
-            }
+                WidgetLayerManager.IsLayerPanelOpen = false;
+                RefreshTopBarStates();
+            });
 
-            // 绘制直接吸附在组件旁边的即时悬浮缩放/旋转操作盒 (点击一下即可!)
-            DrawOnWidgetFloatingToolbar(selCount);
+            // 滚动列表视口
+            var scrollObj = new GameObject("ScrollArea", typeof(RectTransform), typeof(ScrollRect), typeof(Image), typeof(Mask));
+            scrollObj.transform.SetParent(_layerDrawerObj.transform, false);
+            var sRt = scrollObj.GetComponent<RectTransform>();
+            sRt.sizeDelta = new Vector2(244f, 430f);
 
-            // 绘制 Photoshop 级悬浮图层管理器抽屉 (按 L 键或点击工具栏切换)
-            WidgetLayerManager.DrawLayerPanel(selCount);
+            var sImg = scrollObj.GetComponent<Image>();
+            sImg.color = new Color(0.04f, 0.06f, 0.10f, 0.4f);
 
-            // 绘制微控件实时悬停高亮边框
-            if (TelemetryParamDrawer.IsOpen)
+            var sMask = scrollObj.GetComponent<Mask>();
+            sMask.showMaskGraphic = false;
+
+            var contentObj = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            contentObj.transform.SetParent(scrollObj.transform, false);
+            var cRt = contentObj.GetComponent<RectTransform>();
+            cRt.anchorMin = new Vector2(0f, 1f);
+            cRt.anchorMax = new Vector2(1f, 1f);
+            cRt.pivot = new Vector2(0f, 1f);
+            cRt.sizeDelta = new Vector2(0f, 0f);
+
+            var cvl = contentObj.GetComponent<VerticalLayoutGroup>();
+            cvl.childAlignment = TextAnchor.UpperLeft;
+            cvl.spacing = 2f;
+            cvl.childForceExpandWidth = true;
+            cvl.childForceExpandHeight = false;
+
+            var csf = contentObj.GetComponent<ContentSizeFitter>();
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scroll = scrollObj.GetComponent<ScrollRect>();
+            scroll.content = cRt;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+
+            _layerContentTransform = contentObj.transform;
+            _layerDrawerObj.SetActive(false);
+        }
+        #endregion
+
+        #region FavoriteModDock 构建
+        private void BuildFavoriteModDock(RectTransform parent)
+        {
+            _modDockObj = CreateGlassPanel(parent, "FavoriteModDock", new Vector2(1240f, 38f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -62f));
+            AddHoverCatcher(_modDockObj);
+
+            var hl = _modDockObj.AddComponent<HorizontalLayoutGroup>();
+            hl.childAlignment = TextAnchor.MiddleLeft;
+            hl.spacing = 6f;
+            hl.padding = new RectOffset(10, 10, 4, 4);
+            hl.childForceExpandWidth = false;
+            hl.childForceExpandHeight = false;
+
+            var title = UIFactory.CreateText(_modDockObj.transform, "Header", "★ 常用模组:", 11, TextAnchor.MiddleLeft, new Color(1f, 0.88f, 0f));
+            title.GetComponent<RectTransform>().sizeDelta = new Vector2(80f, 26f);
+
+            var listContainer = new GameObject("ModContainer", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            listContainer.transform.SetParent(_modDockObj.transform, false);
+            var lcRt = listContainer.GetComponent<RectTransform>();
+            lcRt.sizeDelta = new Vector2(1060f, 30f);
+
+            var lchl = listContainer.GetComponent<HorizontalLayoutGroup>();
+            lchl.childAlignment = TextAnchor.MiddleLeft;
+            lchl.spacing = 4f;
+            lchl.childForceExpandWidth = false;
+            lchl.childForceExpandHeight = false;
+
+            _modDockContentTransform = listContainer.transform;
+
+            CreateToolbarButton(_modDockObj.transform, "CloseModDock", "✕", new Vector2(26f, 26f), () =>
             {
-                float modalW = Mathf.Min(840f, Screen.width - 40f);
-                float modalH = Mathf.Min(540f, Screen.height - 40f);
-                float modalX = (Screen.width - modalW) * 0.5f;
-                float modalY = (Screen.height - modalH) * 0.5f;
-                Rect modalRect = new Rect(modalX, modalY, modalW, modalH);
+                _isFavoriteModDockOpen = false;
+                RefreshTopBarStates();
+            });
 
-                if (modalRect.Contains(Event.current.mousePosition))
-                {
-                    FlightHUDManager.IsMouseOverFloatingToolbar = true;
-                }
+            _modDockObj.SetActive(false);
+        }
+        #endregion
 
-                GUILayout.BeginArea(modalRect, MFPGuiSkin.CardStyle);
-                TelemetryParamDrawer.Draw(modalH - 120f);
-                GUILayout.EndArea();
+        #region 动态交互更新 (Update Loop)
+        private void Update()
+        {
+            if (!WidgetDragHandler.IsEditModeActive || MFPProfiler.IsMasterBypassed)
+            {
+                if (_rootObj != null && _rootObj.activeSelf) _rootObj.SetActive(false);
+                return;
             }
 
-            WidgetControlHighlighter.DrawGizmo(_hudManager?.Canvas);
+            if (SettingsGUI.Instance != null && SettingsGUI.Instance.IsOpen && !SettingsGUI.Instance.IsCanvasLayoutMode)
+            {
+                if (_rootObj != null && _rootObj.activeSelf) _rootObj.SetActive(false);
+                return;
+            }
 
-            MFPInputLock.SetWindowHoverLock(FlightHUDManager.IsMouseOverFloatingToolbar);
+            if (_rootObj != null && !_rootObj.activeSelf)
+            {
+                _rootObj.SetActive(true);
+            }
+
+            // 节流状态检测
+            int selCount = WidgetSelectionManager.Count;
+            if (selCount != _cachedSelectedCount || Time.unscaledTime - _lastUiRefreshTime > 0.1f)
+            {
+                _cachedSelectedCount = selCount;
+                _lastUiRefreshTime = Time.unscaledTime;
+                RefreshAllVisuals(false);
+            }
+
+            // 更新即时属性浮动盒的位置 (跟随当前选中组件)
+            UpdateInspectorPosition();
         }
 
-        private void DrawOnWidgetFloatingToolbar(int selCount)
+        private void RefreshAllVisuals(bool forceRebuildLists)
         {
-            if (selCount <= 0 || _hudManager == null || _hudManager.Canvas == null) return;
+            RefreshTopBarStates();
 
-            BaseFlightWidget primary = null;
-            foreach (var w in WidgetSelectionManager.SelectedWidgets)
+            // 浮动面板显隐
+            int selCount = WidgetSelectionManager.Count;
+            if (_inspectorCardObj != null)
             {
-                if (w != null && w.RectTransform != null)
+                bool showInspector = selCount > 0;
+                if (_inspectorCardObj.activeSelf != showInspector)
                 {
-                    primary = w;
-                    break;
+                    _inspectorCardObj.SetActive(showInspector);
+                }
+
+                if (showInspector)
+                {
+                    BaseFlightWidget primary = GetPrimarySelectedWidget();
+                    if (primary != null)
+                    {
+                        float sc = primary.Config?.Scale ?? 1f;
+                        float rot = primary.Config?.Rotation ?? 0f;
+                        float op = primary.Opacity;
+                        string prefix = selCount > 1 ? $"[已选 {selCount} 项] " : "";
+                        if (_inspectorTitleText != null) _inspectorTitleText.text = $"<b>{prefix}{primary.DisplayName}</b>";
+                        if (_inspectorStatsText != null) _inspectorStatsText.text = $"{sc:F2}x | {rot:F0}°";
+                        if (_inspectorOpacityText != null) _inspectorOpacityText.text = $"{Mathf.RoundToInt(op * 100f)}%";
+                    }
                 }
             }
 
+            // 图层面板显隐与内容刷新
+            if (_layerDrawerObj != null)
+            {
+                bool showLayer = WidgetLayerManager.IsLayerPanelOpen;
+                if (_layerDrawerObj.activeSelf != showLayer)
+                {
+                    _layerDrawerObj.SetActive(showLayer);
+                }
+                if (showLayer && (forceRebuildLists || Time.frameCount % 30 == 0))
+                {
+                    PopulateLayerDrawer();
+                }
+            }
+
+            // 模组坞显隐与内容刷新
+            if (_modDockObj != null)
+            {
+                bool showModDock = _isFavoriteModDockOpen;
+                if (_modDockObj.activeSelf != showModDock)
+                {
+                    _modDockObj.SetActive(showModDock);
+                }
+                if (showModDock && forceRebuildLists)
+                {
+                    PopulateFavoriteModDock();
+                }
+            }
+        }
+
+        private void RefreshTopBarStates()
+        {
+            int selCount = WidgetSelectionManager.Count;
+
+            if (_selectionPillText != null)
+            {
+                _selectionPillText.text = selCount > 0
+                    ? $"🛠️ MFP 工坊 | <b>已选 {selCount} 项</b>"
+                    : "🛠️ MFP 工坊 | <b>未选中</b>";
+            }
+
+            if (_undoBtn != null) _undoBtn.interactable = WidgetEditHistory.CanUndo;
+            if (_redoBtn != null) _redoBtn.interactable = WidgetEditHistory.CanRedo;
+
+            if (_alignBtns != null)
+            {
+                for (int i = 0; i < _alignBtns.Length; i++)
+                {
+                    if (_alignBtns[i] != null)
+                    {
+                        // 0~5 对齐需要 >= 2 项，6~7 等距需要 >= 3 项，8 居中需要 >= 1 项
+                        if (i < 6) _alignBtns[i].interactable = selCount >= 2;
+                        else if (i < 8) _alignBtns[i].interactable = selCount >= 3;
+                        else _alignBtns[i].interactable = selCount >= 1;
+                    }
+                }
+            }
+
+            if (_snapBtnText != null)
+            {
+                bool snap = WidgetDragHandler.EnableMagneticSnap;
+                _snapBtnText.text = snap ? "<color=#00E5FF>🧲 磁吸[开]</color>" : "🧲 磁吸[关]";
+            }
+
+            if (_gridBtnText != null)
+            {
+                bool grid = WidgetCanvasGrid.IsGridVisible;
+                _gridBtnText.text = grid ? "<color=#00E5FF>▦ 网格[开]</color>" : "▦ 网格[关]";
+            }
+
+            if (_layerBtnText != null)
+            {
+                bool layer = WidgetLayerManager.IsLayerPanelOpen;
+                _layerBtnText.text = layer ? "<color=#00E5FF>📑 图层[开]</color>" : "📑 图层[关]";
+            }
+
+            if (_modDockBtnText != null)
+            {
+                _modDockBtnText.text = _isFavoriteModDockOpen ? "<color=#FFE000>★ 模组[开]</color>" : "★ 模组[关]";
+            }
+        }
+
+        private void UpdateInspectorPosition()
+        {
+            if (_inspectorCardRt == null || !_inspectorCardObj.activeSelf) return;
+
+            BaseFlightWidget primary = GetPrimarySelectedWidget();
             if (primary == null || primary.RectTransform == null) return;
 
             Vector3[] corners = new Vector3[4];
             primary.RectTransform.GetWorldCorners(corners);
 
-            Canvas canvas = _hudManager.Canvas;
-            Camera cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera;
+            Canvas canvas = _hudManager != null ? _hudManager.Canvas : GetComponentInParent<Canvas>();
+            Camera cam = (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay) ? canvas.worldCamera : null;
+
             Vector2 p0 = RectTransformUtility.WorldToScreenPoint(cam, corners[0]);
             Vector2 p1 = RectTransformUtility.WorldToScreenPoint(cam, corners[1]);
             Vector2 p2 = RectTransformUtility.WorldToScreenPoint(cam, corners[2]);
@@ -282,1033 +634,121 @@ namespace ModularFlightPanel.UI.HUD
 
             float minX = Mathf.Min(p0.x, Mathf.Min(p1.x, Mathf.Min(p2.x, p3.x)));
             float maxX = Mathf.Max(p0.x, Mathf.Max(p1.x, Mathf.Max(p2.x, p3.x)));
-            float minY_screen = Mathf.Min(p0.y, Mathf.Min(p1.y, Mathf.Min(p2.y, p3.y)));
-            float maxY_screen = Mathf.Max(p0.y, Mathf.Max(p1.y, Mathf.Max(p2.y, p3.y)));
+            float maxY = Mathf.Max(p0.y, Mathf.Max(p1.y, Mathf.Max(p2.y, p3.y)));
 
-            // 屏幕坐标 (左下原点) 转换为 IMGUI 坐标 (左上原点)
-            float guiMinY = Screen.height - maxY_screen;
-            float guiMaxY = Screen.height - minY_screen;
+            float badgeW = 360f;
+            float badgeH = 230f;
 
-            bool isComposite = primary is Widgets.Gauges.CustomCompositePanelWidget;
-            float badgeW = isComposite ? 370f : 352f;
-            float badgeH = selCount == 1 ? (isComposite ? 242f : 218f) : 188f;
+            float bx = maxX + 12f;
+            float by = maxY;
 
-            // 优先置于组件右侧，留出 10px 空隙
-            float bx = maxX + 10f;
-            float by = guiMinY;
-
-            // 若右侧超出屏幕边缘，则自适应翻转至组件左侧
-            if (bx + badgeW > Screen.width - 10f)
+            if (bx + badgeW > Screen.width - 12f)
             {
-                bx = minX - badgeW - 10f;
+                bx = minX - badgeW - 12f;
             }
-            // 若左右两侧都超出，则置于组件正上方
-            if (bx < 10f)
+            if (bx < 12f)
             {
-                bx = Mathf.Clamp(minX, 10f, Screen.width - badgeW - 10f);
-                by = guiMinY - badgeH - 10f;
+                bx = Mathf.Clamp(minX, 12f, Screen.width - badgeW - 12f);
+                by = maxY - 12f;
             }
 
-            // 屏幕安全边界截断约束
-            bx = Mathf.Clamp(bx, 10f, Screen.width - badgeW - 10f);
-            by = Mathf.Clamp(by, 10f, Screen.height - badgeH - 10f);
+            bx = Mathf.Clamp(bx, 12f, Screen.width - badgeW - 12f);
+            by = Mathf.Clamp(by, badgeH + 12f, Screen.height - 12f);
 
-            Rect badgeRect = new Rect(bx, by, badgeW, badgeH);
-
-            if (badgeRect.Contains(Event.current.mousePosition))
-            {
-                FlightHUDManager.IsMouseOverFloatingToolbar = true;
-            }
-
-            GUILayout.BeginArea(badgeRect, MFPGuiSkin.CardStyle);
-
-            // 1. 标题行 (显示当前组件名与实时缩放比、旋转角)
-            GUILayout.BeginHorizontal();
-            float curScale = primary.Config?.Scale ?? 1.0f;
-            float curRot = primary.Config?.Rotation ?? 0f;
-            string titlePrefix = selCount > 1 ? $"<color=#FFE000><b>[已选 {selCount} 项]</b></color> " : "";
-            GUILayout.Label($"{titlePrefix}<b>{primary.DisplayName}</b>", GUILayout.ExpandWidth(true));
-            GUILayout.Label($"<color=#00E5FF><b>{curScale:F2}x</b></color> | <color=#FFE000><b>{curRot:F0}°</b></color>", GUILayout.Width(95f));
-            GUILayout.EndHorizontal();
-
-            // 2. 缩放控制行
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<color=#00E5FF><b>缩放:</b></color>", GUILayout.Width(35f));
-            if (GUILayout.Button("－", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchScale(-0.1f);
-            if (GUILayout.Button("＋", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchScale(+0.1f);
-            if (GUILayout.Button("0.8x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(0.8f);
-            if (GUILayout.Button("1.0x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(1.0f);
-            if (GUILayout.Button("1.2x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(1.2f);
-            if (GUILayout.Button("1.5x", GUILayout.Width(40f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetScale(1.5f);
-            GUILayout.EndHorizontal();
-
-            // 3. 形变 / 长宽比控制行
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<color=#A78BFA><b>形变:</b></color>", GUILayout.Width(35f));
-            if (GUILayout.Button("宽－", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(-0.1f, 0f);
-            if (GUILayout.Button("宽＋", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(+0.1f, 0f);
-            if (GUILayout.Button("高－", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(0f, -0.1f);
-            if (GUILayout.Button("高＋", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustScaleXY(0f, +0.1f);
-            if (GUILayout.Button("1:1", GUILayout.Width(30f), GUILayout.Height(20f))) WidgetSelectionManager.BatchResetAspectRatio();
-            if (GUILayout.Button("4:3", GUILayout.Width(30f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetAspectRatio(4f / 3f);
-            if (GUILayout.Button("16:9", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetAspectRatio(16f / 9f);
-            if (GUILayout.Button("2:1", GUILayout.Width(30f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetAspectRatio(2f);
-            GUILayout.EndHorizontal();
-
-            // 4. 透明度控制行
-            GUILayout.BeginHorizontal();
-            float curOp = primary.Opacity;
-            int curOpPct = Mathf.RoundToInt(curOp * 100f);
-            GUILayout.Label(I18n.Tr("HUD_BATCH_OPACITY", "<color=#38BDF8><b>透明:</b></color>"), GUILayout.Width(35f));
-            if (GUILayout.Button("－", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustOpacity(-0.1f);
-            if (GUILayout.Button("＋", GUILayout.Width(25f), GUILayout.Height(20f))) WidgetSelectionManager.BatchAdjustOpacity(+0.1f);
-            if (GUILayout.Button("40%", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(0.40f);
-            if (GUILayout.Button("60%", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(0.60f);
-            if (GUILayout.Button("80%", GUILayout.Width(36f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(0.80f);
-            if (GUILayout.Button("100%", GUILayout.Width(44f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetOpacity(1.0f);
-            GUILayout.Label($"<color=#38BDF8>{curOpPct}%</color>", GUILayout.Width(38f));
-            GUILayout.EndHorizontal();
-
-            // 5. 配色风格控制行
-            GUILayout.BeginHorizontal();
-            string curThemeOvr = primary.Config?.ThemeOverride;
-            GUILayout.Label(I18n.Tr("HUD_BATCH_THEME", "<color=#34D399><b>配色:</b></color>"), GUILayout.Width(35f));
-            if (GUILayout.Button(string.IsNullOrEmpty(curThemeOvr) ? I18n.Tr("HUD_BATCH_DEFAULT_BRACKET", "[默认]") : I18n.Tr("HUD_BATCH_DEFAULT", "默认"), GUILayout.Width(44f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("");
-            if (GUILayout.Button(I18n.Tr("THEME_787_NAME", "787晶蓝"), GUILayout.Width(50f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("boeing_787");
-            if (GUILayout.Button(I18n.Tr("THEME_SPACEX", "SpaceX"), GUILayout.Width(50f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("spacex_dragon");
-            if (GUILayout.Button(I18n.Tr("THEME_CYBER_NAME", "赛博霓虹"), GUILayout.Width(54f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("cyber_neon");
-            if (GUILayout.Button(I18n.Tr("THEME_VINTAGE_NAME", "复古琥珀"), GUILayout.Width(54f), GUILayout.Height(20f))) WidgetSelectionManager.BatchSetThemeOverride("vintage_amber");
-            if (GUILayout.Button("↺", GUILayout.Width(22f), GUILayout.Height(20f)))
-            {
-                string[] cycleThemes = new[] { "", "boeing_787", "spacex_dragon", "cyber_neon", "diffractive_hud", "vintage_amber", "starship_mars", "sr71_blackbird" };
-                int idx = Array.IndexOf(cycleThemes, curThemeOvr ?? "");
-                string nextTheme = cycleThemes[(idx + 1) % cycleThemes.Length];
-                WidgetSelectionManager.BatchSetThemeOverride(nextTheme);
-            }
-            GUILayout.EndHorizontal();
-
-            // 6. 旋转控制行 (点击一下即可!)
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("<color=#FFE000><b>旋转:</b></color>", GUILayout.Width(35f));
-            if (GUILayout.Button("↺ 15°", GUILayout.Width(46f), GUILayout.Height(20f)))
-            {
-                if (selCount > 1) WidgetSelectionManager.BatchRotate(-15f);
-                else { primary.UpdateTransform(rotation: (curRot - 15f + 360f) % 360f); WidgetLayoutManager.Instance.SaveLayout(); }
-            }
-            if (GUILayout.Button("0°", GUILayout.Width(30f), GUILayout.Height(20f)))
-            {
-                if (selCount > 1) WidgetSelectionManager.ResetRotation();
-                else { primary.UpdateTransform(rotation: 0f); WidgetLayoutManager.Instance.SaveLayout(); }
-            }
-            if (GUILayout.Button("↻ 15°", GUILayout.Width(46f), GUILayout.Height(20f)))
-            {
-                if (selCount > 1) WidgetSelectionManager.BatchRotate(+15f);
-                else { primary.UpdateTransform(rotation: (curRot + 15f) % 360f); WidgetLayoutManager.Instance.SaveLayout(); }
-            }
-            if (GUILayout.Button("90°", GUILayout.Width(32f), GUILayout.Height(20f)))
-            {
-                if (selCount > 1) WidgetSelectionManager.BatchSetRotation(90f);
-                else { primary.UpdateTransform(rotation: 90f); WidgetLayoutManager.Instance.SaveLayout(); }
-            }
-            if (GUILayout.Button("180°", GUILayout.Width(38f), GUILayout.Height(20f)))
-            {
-                if (selCount > 1) WidgetSelectionManager.BatchSetRotation(180f);
-                else { primary.UpdateTransform(rotation: 180f); WidgetLayoutManager.Instance.SaveLayout(); }
-            }
-            if (GUILayout.Button("⤢ 居中X", GUILayout.Width(52f), GUILayout.Height(20f)))
-            {
-                if (selCount > 1) WidgetSelectionManager.CenterToScreenX();
-                else { primary.UpdateTransform(x: 0f); WidgetLayoutManager.Instance.SaveLayout(); }
-            }
-            GUILayout.EndHorizontal();
-
-            // 4. 图层层级控制行 (Layer & Drawing Order)
-            GUILayout.BeginHorizontal();
-            int curLayer = WidgetLayerManager.GetLayerNumber(primary);
-            int totalLayers = WidgetLayerManager.TotalLayers;
-            GUILayout.Label($"<color=#38BDF8><b>图层: #{curLayer}/{totalLayers}</b></color>", GUILayout.Width(92f));
-            if (GUILayout.Button("⤒", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.BringToFront(WidgetSelectionManager.SelectedWidgets);
-            if (GUILayout.Button("▲", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.BringForward(WidgetSelectionManager.SelectedWidgets);
-            if (GUILayout.Button("▼", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.SendBackward(WidgetSelectionManager.SelectedWidgets);
-            if (GUILayout.Button("⤓", GUILayout.Width(24f), GUILayout.Height(20f))) WidgetLayerManager.SendToBack(WidgetSelectionManager.SelectedWidgets);
-            GUILayout.Space(6f);
-            bool isLocked = primary.Config?.IsLocked == true;
-            string lockBtn = isLocked ? "<color=#FFB703>🔒 锁定</color>" : "<color=#94A3B8>🔓 解锁</color>";
-            if (GUILayout.Button(lockBtn, GUILayout.Width(58f), GUILayout.Height(20f)))
-            {
-                WidgetLayerManager.ToggleLock(primary);
-            }
-            GUILayout.EndHorizontal();
-
-            // 5. 子控件微调与显隐入口 + 遥测装配入口
-            if (selCount == 1)
-            {
-                var ctrlList = primary.Controls.All;
-                int totalCtrls = ctrlList.Count;
-                int visCtrls = 0;
-                for (int i = 0; i < totalCtrls; i++) if (ctrlList[i].IsVisible) visCtrls++;
-
-                GUILayout.Space(2f);
-                GUILayout.BeginHorizontal();
-
-                // 控件定制入口
-                if (totalCtrls > 0)
-                {
-                    bool isMicroActive = _showInspectorDrawer && _activeInspectorTab == InspectorTab.MicroControls;
-                    GUI.color = isMicroActive ? new Color(0f, 0.9f, 1f) : Color.white;
-                    string btnTxt = isMicroActive ? $"⚙️ 控件 ({visCtrls}/{totalCtrls}) [开]" : $"⚙️ 控件 ({visCtrls}/{totalCtrls})";
-                    if (GUILayout.Button(btnTxt, GUILayout.Height(20f)))
-                    {
-                        if (_showInspectorDrawer && _activeInspectorTab == InspectorTab.MicroControls)
-                        {
-                            _showInspectorDrawer = false;
-                        }
-                        else
-                        {
-                            _showInspectorDrawer = true;
-                            _activeInspectorTab = InspectorTab.MicroControls;
-                        }
-                    }
-                }
-
-                // 遥测装配入口
-                bool isTelemActive = _showInspectorDrawer && _activeInspectorTab == InspectorTab.Telemetry;
-                GUI.color = isTelemActive ? new Color(0f, 0.9f, 1f) : Color.white;
-                string telemBtn = isTelemActive ? "📊 遥测 [开]" : "📊 遥测装配";
-                if (GUILayout.Button(telemBtn, GUILayout.Height(20f)))
-                {
-                    if (_showInspectorDrawer && _activeInspectorTab == InspectorTab.Telemetry)
-                    {
-                        _showInspectorDrawer = false;
-                    }
-                    else
-                    {
-                        _showInspectorDrawer = true;
-                        _activeInspectorTab = InspectorTab.Telemetry;
-                    }
-                }
-
-                // 自由画板专属工作台跳转入口
-                if (primary is Widgets.Gauges.CustomCompositePanelWidget)
-                {
-                    if (GUILayout.Button(I18n.Tr("HUD_BTN_OPEN_ARTBOARD_STUDIO", "🎨 画板工坊"), MFPGuiSkin.PrimaryButtonStyle, GUILayout.Width(76f), GUILayout.Height(20f)))
-                    {
-                        if (SettingsGUI.Instance != null)
-                        {
-                            if (SettingsGUI.Instance.IsCanvasLayoutMode)
-                            {
-                                SettingsGUI.Instance.ExitCanvasLayoutMode();
-                            }
-                            SettingsGUI.Instance.OpenToTab(0);
-                            WidgetSelectionManager.Select(primary, false);
-                        }
-                    }
-                }
-
-                // 快捷克隆副本 (Ctrl+D / Copy-Paste)
-                if (GUILayout.Button("📑 克隆", GUILayout.Width(62f), GUILayout.Height(20f)))
-                {
-                    WidgetClipboardManager.DuplicateSelected();
-                }
-
-                GUI.color = Color.white;
-                GUILayout.EndHorizontal();
-            }
-
-            GUILayout.EndArea();
-
-            if (_showInspectorDrawer && selCount == 1)
-            {
-                DrawWidgetInspectorDrawer(primary, badgeRect);
-            }
+            _inspectorCardRt.anchoredPosition = new Vector2(bx, by);
         }
 
-        public enum InspectorTab
+        private BaseFlightWidget GetPrimarySelectedWidget()
         {
-            MicroControls,
-            Telemetry,
-            Channels
+            foreach (var w in WidgetSelectionManager.SelectedWidgets)
+            {
+                if (w != null && w.RectTransform != null) return w;
+            }
+            return null;
         }
 
-        public static bool IsSubControlCustomizerOpen => _showInspectorDrawer && _activeInspectorTab == InspectorTab.MicroControls;
-        private static bool _showInspectorDrawer = false;
-        private static InspectorTab _activeInspectorTab = InspectorTab.MicroControls;
-        private static Vector2 _subControlScrollPos = Vector2.zero;
-        private static Vector2 _telemScrollPos = Vector2.zero;
-        private static Vector2 _channelScrollPos = Vector2.zero;
-        private static bool _showGlobalTelemetryFoldout = false;
-
-        private static float _lastEvalTime = 0f;
-        private static readonly Dictionary<string, string> _channelEvalCache = new Dictionary<string, string>();
-
-        private static string GetSampledTokenValue(string token)
+        private void PopulateLayerDrawer()
         {
-            if (string.IsNullOrEmpty(token)) return "---";
-            string val;
-            if (_channelEvalCache.TryGetValue(token, out val) && Time.unscaledTime - _lastEvalTime <= 0.25f)
-            {
-                return val;
-            }
-            try
-            {
-                val = TelemetryTokenEngine.Evaluate(token, TelemetryHub.Instance);
-                if (string.IsNullOrEmpty(val)) val = "---";
-            }
-            catch
-            {
-                val = "ERR";
-            }
-            _channelEvalCache[token] = val;
-            _lastEvalTime = Time.unscaledTime;
-            return val;
-        }
+            if (_layerContentTransform == null) return;
 
-        private static readonly string[] DefaultChannelKeys = new string[] { "CH1", "CH2", "CH3", "CH4", "CH5", "CH6" };
-        private static readonly string[] DefaultChannelNames = new string[] { "主速度", "推重比", "雷达高", "动压", "垂直速", "过载" };
-        private static readonly string[] DefaultChannelTokens = new string[] { "{SPD}", "{TWR}", "{ALT:AGL}", "{Q}", "{VSI}", "{GFORCE}" };
+            var widgets = FlightHUDManager.Instance?.ModularWidgets;
+            if (widgets == null) return;
 
-        private static Dictionary<string, string> ParseChannels(string template)
-        {
-            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrEmpty(template)) return dict;
-            string[] parts = template.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length; i++)
+            // 倒序排列：顶层组件在最上方
+            var sorted = new List<BaseFlightWidget>(widgets);
+            sorted.Sort((a, b) =>
             {
-                string p = parts[i].Trim();
-                int eq = p.IndexOf('=');
-                if (eq > 0)
+                int orderA = a.Config?.DrawOrder ?? 0;
+                int orderB = b.Config?.DrawOrder ?? 0;
+                return orderB.CompareTo(orderA);
+            });
+
+            // 隐藏复用池中超量对象
+            for (int i = sorted.Count; i < _layerRowPool.Count; i++)
+            {
+                _layerRowPool[i].SetActive(false);
+            }
+
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                var w = sorted[i];
+                GameObject rowObj;
+                if (i < _layerRowPool.Count)
                 {
-                    string k = p.Substring(0, eq).Trim();
-                    string v = (eq < p.Length - 1) ? p.Substring(eq + 1).Trim() : "";
-                    dict[k] = v;
-                }
-            }
-            return dict;
-        }
-
-        private static void SetChannel(WidgetConfig w, string channelKey, string token)
-        {
-            var dict = ParseChannels(w.CustomTemplate);
-            dict[channelKey] = token;
-            var sb = new System.Text.StringBuilder();
-            foreach (var kv in dict)
-            {
-                sb.Append(kv.Key).Append('=').Append(kv.Value).Append(';');
-            }
-            w.CustomTemplate = sb.ToString();
-            WidgetLayoutManager.Instance.SaveLayout();
-            FlightHUDManager.Instance?.RebuildHUD();
-        }
-
-        public static string GetCategoryShortTag(WidgetControlCategory cat)
-        {
-            switch (cat)
-            {
-                case WidgetControlCategory.Header: return "标题";
-                case WidgetControlCategory.Readout: return "数显";
-                case WidgetControlCategory.LinearGauge: return "柱条";
-                case WidgetControlCategory.ArcGauge: return "弧表";
-                case WidgetControlCategory.NeedlePointer: return "指针";
-                case WidgetControlCategory.ActionButton: return "按键";
-                case WidgetControlCategory.Annunciator: return "灯珠";
-                case WidgetControlCategory.Viewport: return "视口";
-                case WidgetControlCategory.DataStack: return "列表";
-                case WidgetControlCategory.ModeCapsule: return "胶囊";
-                case WidgetControlCategory.TrendBar: return "趋势";
-                default: return "图元";
-            }
-        }
-
-        private static Color GetCategoryColor(WidgetControlCategory cat)
-        {
-            switch (cat)
-            {
-                case WidgetControlCategory.Readout: return new Color(0.00f, 0.45f, 0.65f, 0.9f);
-                case WidgetControlCategory.LinearGauge:
-                case WidgetControlCategory.ArcGauge: return new Color(0.00f, 0.50f, 0.30f, 0.9f);
-                case WidgetControlCategory.ActionButton: return new Color(0.55f, 0.35f, 0.05f, 0.9f);
-                case WidgetControlCategory.Header: return new Color(0.35f, 0.20f, 0.50f, 0.9f);
-                default: return new Color(0.25f, 0.30f, 0.38f, 0.9f);
-            }
-        }
-
-        private void DrawWidgetInspectorDrawer(BaseFlightWidget primary, Rect badgeRect)
-        {
-            if (primary == null) return;
-            var ctrlList = primary.Controls.All;
-            WidgetConfig w = primary.Config;
-
-            float subW = _activeInspectorTab == InspectorTab.MicroControls ? 360f : 430f;
-            float subH = _activeInspectorTab == InspectorTab.MicroControls 
-                ? Mathf.Clamp(80f + ctrlList.Count * 28f, 160f, 320f)
-                : (_activeInspectorTab == InspectorTab.Telemetry ? Mathf.Clamp(120f + ctrlList.Count * 36f, 300f, 420f) : 340f);
-
-            float subX = badgeRect.x;
-            float subY = badgeRect.y + badgeRect.height + 6f;
-            if (subY + subH > Screen.height - 10f)
-            {
-                subY = badgeRect.y - subH - 6f;
-            }
-            subX = Mathf.Clamp(subX, 10f, Screen.width - subW - 10f);
-            subY = Mathf.Clamp(subY, 10f, Screen.height - subH - 10f);
-
-            Rect subRect = new Rect(subX, subY, subW, subH);
-            if (subRect.Contains(Event.current.mousePosition))
-            {
-                FlightHUDManager.IsMouseOverFloatingToolbar = true;
-            }
-
-            GUILayout.BeginArea(subRect, MFPGuiSkin.CardStyle);
-
-            // 标题栏与标签切换
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"🛠️ <b>{primary.DisplayName}</b>", GUILayout.Width(110f));
-
-            if (ctrlList.Count > 0)
-            {
-                GUI.color = _activeInspectorTab == InspectorTab.MicroControls ? new Color(0f, 0.9f, 1f) : Color.white;
-                if (GUILayout.Button("⚙️ 控件", GUILayout.Width(58f), GUILayout.Height(20f))) _activeInspectorTab = InspectorTab.MicroControls;
-            }
-
-            GUI.color = _activeInspectorTab == InspectorTab.Telemetry ? new Color(0f, 0.9f, 1f) : Color.white;
-            if (GUILayout.Button("📊 遥测", GUILayout.Width(58f), GUILayout.Height(20f))) _activeInspectorTab = InspectorTab.Telemetry;
-
-            bool hasTemplate = !string.IsNullOrEmpty(w?.CustomTemplate);
-            if (hasTemplate)
-            {
-                GUI.color = _activeInspectorTab == InspectorTab.Channels ? new Color(0f, 0.9f, 1f) : Color.white;
-                if (GUILayout.Button("📋 通道", GUILayout.Width(58f), GUILayout.Height(20f))) _activeInspectorTab = InspectorTab.Channels;
-            }
-            GUI.color = Color.white;
-
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("×", GUILayout.Width(22f), GUILayout.Height(18f)))
-            {
-                _showInspectorDrawer = false;
-            }
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(2f);
-
-            if (_activeInspectorTab == InspectorTab.MicroControls)
-            {
-                DrawMicroControlsTab(primary, ctrlList, subH);
-            }
-            else if (_activeInspectorTab == InspectorTab.Telemetry)
-            {
-                DrawTelemetryTab(primary, w, subH);
-            }
-            else if (_activeInspectorTab == InspectorTab.Channels)
-            {
-                DrawChannelsTab(primary, w, subH);
-            }
-
-            GUILayout.EndArea();
-        }
-
-        private void DrawMicroControlsTab(BaseFlightWidget primary, IReadOnlyList<IWidgetControl> ctrlList, float totalH)
-        {
-            // 提示与批处理栏
-            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=9>💡 提示: 可直接在屏幕上鼠标拖拽子控件，继承 5px 网格与原点磁吸</size></color>");
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("✔ 全显", GUILayout.Width(46f), GUILayout.Height(19f)))
-            {
-                for (int i = 0; i < ctrlList.Count; i++) primary.Controls.SetControlVisibility(ctrlList[i].Id, true);
-                WidgetLayoutManager.Instance.SaveLayout();
-            }
-            if (GUILayout.Button("○ 全隐", GUILayout.Width(46f), GUILayout.Height(19f)))
-            {
-                for (int i = 0; i < ctrlList.Count; i++) primary.Controls.SetControlVisibility(ctrlList[i].Id, false);
-                WidgetLayoutManager.Instance.SaveLayout();
-            }
-            if (GUILayout.Button("↺ 复位", GUILayout.Width(46f), GUILayout.Height(19f)))
-            {
-                primary.Controls.ResetAllOffsets();
-                WidgetLayoutManager.Instance.SaveLayout();
-            }
-            GUILayout.FlexibleSpace();
-            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>Shift: 10px 快速步进</size></color>");
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(2f);
-
-            _subControlScrollPos = GUILayout.BeginScrollView(_subControlScrollPos, GUILayout.Height(totalH - 72f));
-            for (int i = 0; i < ctrlList.Count; i++)
-            {
-                var ctrl = ctrlList[i];
-                if (ctrl == null) continue;
-
-                GUILayout.BeginHorizontal(MFPGuiSkin.InsetStyle, GUILayout.Height(22f));
-
-                // 1. 显隐开关
-                string led = ctrl.IsVisible ? "<color=#00FF88>●</color>" : "<color=#7088A8>○</color>";
-                if (GUILayout.Button(led, GUILayout.Width(22f), GUILayout.Height(18f)))
-                {
-                    primary.Controls.SetControlVisibility(ctrl.Id, !ctrl.IsVisible);
-                    WidgetLayoutManager.Instance.SaveLayout();
-                }
-
-                // 2. 类别徽章
-                string catTag = GetCategoryShortTag(ctrl.Category);
-                MFPGuiSkin.DrawBadge(catTag, Color.white, GetCategoryColor(ctrl.Category), 38f);
-
-                // 3. 控件名称
-                GUILayout.Label($"<b>{ctrl.DisplayName}</b>", GUILayout.Width(92f));
-
-                // 4. 步进位移
-                float step = Event.current.shift ? 10f : 2f;
-                Vector2 curOff = ctrl.CurrentOffset;
-
-                if (GUILayout.Button("◀", GUILayout.Width(18f), GUILayout.Height(18f)))
-                {
-                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(-step, 0f));
-                    WidgetLayoutManager.Instance.SaveLayout();
-                }
-                if (GUILayout.Button("▶", GUILayout.Width(18f), GUILayout.Height(18f)))
-                {
-                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(step, 0f));
-                    WidgetLayoutManager.Instance.SaveLayout();
-                }
-                if (GUILayout.Button("▲", GUILayout.Width(18f), GUILayout.Height(18f)))
-                {
-                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(0f, step));
-                    WidgetLayoutManager.Instance.SaveLayout();
-                }
-                if (GUILayout.Button("▼", GUILayout.Width(18f), GUILayout.Height(18f)))
-                {
-                    primary.Controls.SetControlOffset(ctrl.Id, curOff + new Vector2(0f, -step));
-                    WidgetLayoutManager.Instance.SaveLayout();
-                }
-
-                // 5. 偏移量读数与单项复位
-                bool hasOff = Mathf.Abs(curOff.x) > 0.01f || Mathf.Abs(curOff.y) > 0.01f;
-                if (hasOff)
-                {
-                    GUILayout.Label($"<color=#00E5FF><size=9>{curOff.x:+0;-0;0},{curOff.y:+0;-0;0}</size></color>", GUILayout.Width(38f));
-                    if (GUILayout.Button("↺", GUILayout.Width(18f), GUILayout.Height(18f)))
-                    {
-                        primary.Controls.SetControlOffset(ctrl.Id, Vector2.zero);
-                        WidgetLayoutManager.Instance.SaveLayout();
-                    }
+                    rowObj = _layerRowPool[i];
+                    rowObj.SetActive(true);
                 }
                 else
                 {
-                    GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>0,0</size></color>", GUILayout.Width(38f));
-                    GUILayout.Space(22f);
+                    rowObj = CreateRowLayout(_layerContentTransform, 26f);
+                    rowObj.name = $"LayerRow_{i}";
+                    _layerRowPool.Add(rowObj);
                 }
 
-                GUILayout.EndHorizontal();
-
-                // 实时悬停高亮检测
-                if (Event.current.type == EventType.Repaint)
+                // 清除旧子节点
+                for (int c = rowObj.transform.childCount - 1; c >= 0; c--)
                 {
-                    Rect rowRect = GUILayoutUtility.GetLastRect();
-                    if (rowRect.Contains(Event.current.mousePosition))
-                    {
-                        WidgetControlHighlighter.HighlightedControl = ctrl;
-                    }
+                    Destroy(rowObj.transform.GetChild(c).gameObject);
                 }
-            }
-            GUILayout.EndScrollView();
-        }
 
-        private void DrawTelemetryTab(BaseFlightWidget primary, WidgetConfig w, float totalH)
-        {
-            if (w == null) return;
-            _telemScrollPos = GUILayout.BeginScrollView(_telemScrollPos, GUILayout.Height(totalH - 46f));
+                bool isVis = w.Config?.IsEnabled ?? true;
+                bool isLock = w.Config?.IsLocked ?? false;
+                bool isSel = WidgetSelectionManager.IsSelected(w);
 
-            if (primary is IDynamicSlotWidget slotWidget)
-            {
-                DrawDynamicSlotsOrchestrator(slotWidget, w);
-                GUILayout.EndScrollView();
-                return;
-            }
-
-            var allControls = primary.Controls?.All;
-            var bindableControls = new List<ITelemetryBindableControl>();
-            if (allControls != null)
-            {
-                for (int i = 0; i < allControls.Count; i++)
+                // 显隐开关
+                CreateToolbarButton(rowObj.transform, "Vis", isVis ? "●" : "○", new Vector2(22f, 22f), () =>
                 {
-                    if (allControls[i] is ITelemetryBindableControl bindable && bindable.HasTelemetryBinding)
+                    if (w.Config != null)
                     {
-                        bindableControls.Add(bindable);
-                    }
-                }
-            }
-
-            // 1. 微控件多参数独立装配区
-            if (bindableControls.Count > 0)
-            {
-                GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=9>💡 发现 {bindableControls.Count} 处微控件数据源，支持逐项装配与实时取样:</size></color>");
-                for (int i = 0; i < bindableControls.Count; i++)
-                {
-                    var ctrl = bindableControls[i];
-                    MFPGuiSkin.BeginInset();
-                    GUILayout.BeginHorizontal();
-
-                    // 1. 显隐状态点
-                    string led = ctrl.IsVisible ? "<color=#00FF88>●</color>" : "<color=#7088A8>○</color>";
-                    if (GUILayout.Button(led, GUILayout.Width(20f), GUILayout.Height(18f)))
-                    {
-                        primary.Controls.SetControlVisibility(ctrl.Id, !ctrl.IsVisible);
+                        w.Config.IsEnabled = !w.Config.IsEnabled;
+                        w.SetVisible(w.Config.IsEnabled);
                         WidgetLayoutManager.Instance.SaveLayout();
                     }
+                }, isVis ? new Color(0.1f, 0.4f, 0.2f) : new Color(0.2f, 0.2f, 0.2f), isVis ? Color.green : Color.gray);
 
-                    // 2. 类别徽章
-                    string catTag = GetCategoryShortTag(ctrl.Category);
-                    MFPGuiSkin.DrawBadge(catTag, Color.white, GetCategoryColor(ctrl.Category), 34f);
-
-                    // 3. 微控件显示名称
-                    GUILayout.Label($"<b>{ctrl.DisplayName}</b>", GUILayout.Width(86f));
-
-                    // 4. Token 输入框
-                    string curTok = ctrl.TelemetryToken ?? "";
-                    string editedTok = GUILayout.TextField(curTok, GUILayout.Width(100f));
-                    if (editedTok != curTok)
-                    {
-                        ctrl.TelemetryToken = editedTok;
-                        SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_TOKEN", editedTok);
-                    }
-
-                    // 5. 🔍 选参数 按钮
-                    if (GUILayout.Button("🔍", GUILayout.Width(24f), GUILayout.Height(20f)))
-                    {
-                        var targetCtrl = ctrl;
-                        TelemetryParamDrawer.Open($"{primary.DisplayName} - {targetCtrl.DisplayName}", chosenToken =>
-                        {
-                            targetCtrl.TelemetryToken = chosenToken;
-                            SetChannel(w, $"{targetCtrl.Id.ToUpperInvariant()}_TOKEN", chosenToken);
-                            var meta = TelemetryCatalog.FindByToken(chosenToken);
-                            if (meta != null && targetCtrl.SupportsRange)
-                            {
-                                targetCtrl.MinValue = meta.DefaultMin;
-                                targetCtrl.MaxValue = meta.DefaultMax;
-                                SetChannel(w, $"{targetCtrl.Id.ToUpperInvariant()}_MIN", meta.DefaultMin.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                                SetChannel(w, $"{targetCtrl.Id.ToUpperInvariant()}_MAX", meta.DefaultMax.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                            }
-                        });
-                    }
-
-                    // 6. 实时采样值预览
-                    string sampleVal = GetSampledTokenValue(ctrl.TelemetryToken);
-                    GUILayout.Space(2f);
-                    string unitSuffix = !string.IsNullOrEmpty(ctrl.TelemetryUnit) ? $" <size=9>{ctrl.TelemetryUnit}</size>" : "";
-                    GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color>{unitSuffix}", GUILayout.Width(62f));
-
-                    // 7. 解绑/重置
-                    if (!string.IsNullOrEmpty(ctrl.TelemetryToken))
-                    {
-                        if (GUILayout.Button("×", GUILayout.Width(18f), GUILayout.Height(18f)))
-                        {
-                            ctrl.TelemetryToken = "";
-                            SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_TOKEN", "");
-                        }
-                    }
-                    else
-                    {
-                        GUILayout.Space(20f);
-                    }
-
-                    GUILayout.EndHorizontal();
-
-                    // 针对支持量程的微控件 (如微型线性柱条/弧表)，提供独立量程配置行
-                    if (ctrl.SupportsRange)
-                    {
-                        GUILayout.BeginHorizontal();
-                        GUILayout.Space(20f);
-                        GUILayout.Label("<size=9>量程:</size>", GUILayout.Width(35f));
-                        string minStr = GUILayout.TextField(ctrl.MinValue.ToString("G"), GUILayout.Width(45f));
-                        if (double.TryParse(minStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pMin) && Math.Abs(pMin - ctrl.MinValue) > 0.001)
-                        {
-                            ctrl.MinValue = pMin;
-                            SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_MIN", pMin.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                        }
-                        GUILayout.Label("<size=9>~</size>", GUILayout.Width(10f));
-                        string maxStr = GUILayout.TextField(ctrl.MaxValue.ToString("G"), GUILayout.Width(45f));
-                        if (double.TryParse(maxStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pMax) && Math.Abs(pMax - ctrl.MaxValue) > 0.001)
-                        {
-                            ctrl.MaxValue = pMax;
-                            SetChannel(w, $"{ctrl.Id.ToUpperInvariant()}_MAX", pMax.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                        }
-                        GUILayout.EndHorizontal();
-                    }
-
-                    MFPGuiSkin.EndInset();
-
-                    // 悬停高亮检测
-                    if (Event.current.type == EventType.Repaint)
-                    {
-                        Rect rowRect = GUILayoutUtility.GetLastRect();
-                        if (rowRect.Contains(Event.current.mousePosition))
-                        {
-                            WidgetControlHighlighter.HighlightedControl = ctrl;
-                        }
-                    }
-
-                    GUILayout.Space(1f);
-                }
-            }
-
-            // 2. 全局主数据源与量程折叠区 (若无微控件则直接展示，否则提供折叠开关)
-            bool showGlobal = bindableControls.Count == 0 || _showGlobalTelemetryFoldout;
-            if (bindableControls.Count > 0)
-            {
-                GUILayout.Space(4f);
-                string foldoutTitle = _showGlobalTelemetryFoldout ? "▼ 折叠全局主数据源与量程" : "▶ 展开全局主数据源与量程";
-                if (GUILayout.Button(foldoutTitle, GUILayout.Height(18f)))
+                // 锁定开关
+                CreateToolbarButton(rowObj.transform, "Lock", isLock ? "🔒" : "🔓", new Vector2(22f, 22f), () =>
                 {
-                    _showGlobalTelemetryFoldout = !_showGlobalTelemetryFoldout;
-                }
-            }
-
-            if (showGlobal)
-            {
-                DrawGlobalTelemetrySettings(primary, w);
-            }
-
-            GUILayout.EndScrollView();
-        }
-
-        private void DrawDynamicSlotsOrchestrator(IDynamicSlotWidget slotWidget, WidgetConfig w)
-        {
-            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentCyan}><size=9>💡 {slotWidget.SlotOrchestratorTitle}</size></color>");
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("+ 添加数据列", GUILayout.Width(100f), GUILayout.Height(22f)))
-            {
-                TelemetryParamDrawer.Open("添加数据列", chosenToken =>
-                {
-                    var meta = TelemetryCatalog.FindByToken(chosenToken);
-                    string title = meta != null ? meta.DisplayName : chosenToken;
-                    slotWidget.AddDynamicSlot(chosenToken, title);
+                    WidgetLayerManager.ToggleLock(w);
                 });
-            }
-            if (GUILayout.Button("↺ 恢复出厂默认", GUILayout.Width(110f), GUILayout.Height(22f)))
-            {
-                slotWidget.ResetToDefaultDynamicSlots();
-            }
-            GUILayout.FlexibleSpace();
-            GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>共 {slotWidget.DynamicSlots.Count} 列</size></color>");
-            GUILayout.EndHorizontal();
 
-            GUILayout.Space(4f);
-
-            var slots = slotWidget.DynamicSlots;
-            for (int i = 0; i < slots.Count; i++)
-            {
-                var slot = slots[i];
-                MFPGuiSkin.BeginInset();
-                GUILayout.BeginHorizontal(GUILayout.Height(22f));
-
-                // 1. 左右移位
-                GUI.enabled = (i > 0);
-                if (GUILayout.Button("◀", GUILayout.Width(18f), GUILayout.Height(19f)))
+                // 组件选择按钮
+                string nameLabel = !string.IsNullOrEmpty(w.DisplayName) ? w.DisplayName : w.WidgetId;
+                Color nameCol = isSel ? new Color(0f, 0.88f, 1f) : Color.white;
+                CreateToolbarButton(rowObj.transform, "Select", nameLabel, new Vector2(130f, 22f), () =>
                 {
-                    slotWidget.MoveDynamicSlot(i, i - 1);
-                    GUI.enabled = true;
-                    GUILayout.EndHorizontal();
-                    MFPGuiSkin.EndInset();
-                    break;
-                }
-                GUI.enabled = (i < slots.Count - 1);
-                if (GUILayout.Button("▶", GUILayout.Width(18f), GUILayout.Height(19f)))
-                {
-                    slotWidget.MoveDynamicSlot(i, i + 1);
-                    GUI.enabled = true;
-                    GUILayout.EndHorizontal();
-                    MFPGuiSkin.EndInset();
-                    break;
-                }
-                GUI.enabled = true;
+                    WidgetSelectionManager.Select(w, false);
+                }, isSel ? new Color(0.12f, 0.35f, 0.5f, 0.9f) : new Color(0.08f, 0.12f, 0.18f, 0.8f), nameCol, 10);
 
-                // 2. 分隔线开关
-                string sepText = slot.HasSeparator ? "<color=#00E5FF>|</color>" : "<color=#7088A8>○</color>";
-                if (GUILayout.Button(sepText, GUILayout.Width(20f), GUILayout.Height(19f)))
-                {
-                    slotWidget.ToggleDynamicSlotSeparator(i);
-                }
-
-                // 3. 标题输入
-                string curTitle = slot.Title ?? "";
-                string newTitle = GUILayout.TextField(curTitle, GUILayout.Width(76f), GUILayout.Height(19f));
-                if (newTitle != curTitle)
-                {
-                    slotWidget.UpdateDynamicSlotTitle(i, newTitle);
-                }
-
-                // 4. Token 输入与查表替换
-                string curTok = slot.Token ?? "";
-                string newTok = GUILayout.TextField(curTok, GUILayout.Width(88f), GUILayout.Height(19f));
-                if (newTok != curTok)
-                {
-                    slotWidget.UpdateDynamicSlotToken(i, newTok);
-                }
-
-                int slotIdx = i;
-                if (GUILayout.Button("🔍", GUILayout.Width(22f), GUILayout.Height(19f)))
-                {
-                    TelemetryParamDrawer.Open($"更换遥测数据 - {slot.Title}", chosenToken =>
-                    {
-                        var meta = TelemetryCatalog.FindByToken(chosenToken);
-                        slotWidget.UpdateDynamicSlotToken(slotIdx, chosenToken);
-                        if (string.IsNullOrEmpty(slot.Title) || slot.Title.StartsWith("col_"))
-                        {
-                            string suggested = meta != null ? meta.DisplayName : chosenToken;
-                            slotWidget.UpdateDynamicSlotTitle(slotIdx, suggested);
-                        }
-                    });
-                }
-
-                // 5. 实时采样预览
-                string sampleVal = GetSampledTokenValue(slot.Token);
-                GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color>", GUILayout.Width(48f));
-
-                // 6. 删除列
-                if (slots.Count > 1)
-                {
-                    if (GUILayout.Button("×", GUILayout.Width(18f), GUILayout.Height(19f)))
-                    {
-                        slotWidget.RemoveDynamicSlot(i);
-                        GUILayout.EndHorizontal();
-                        MFPGuiSkin.EndInset();
-                        break;
-                    }
-                }
-                else
-                {
-                    GUILayout.Space(22f);
-                }
-
-                GUILayout.EndHorizontal();
-                MFPGuiSkin.EndInset();
-                GUILayout.Space(1f);
+                // 图层升降
+                CreateToolbarButton(rowObj.transform, "Up", "▲", new Vector2(22f, 22f), () => WidgetLayerManager.BringForward(new[] { w }));
+                CreateToolbarButton(rowObj.transform, "Down", "▼", new Vector2(22f, 22f), () => WidgetLayerManager.SendBackward(new[] { w }));
             }
         }
 
-        private void DrawGlobalTelemetrySettings(BaseFlightWidget primary, WidgetConfig w)
+        private void PopulateFavoriteModDock()
         {
-            // 1. 主遥测驱动数据源
-            MFPGuiSkin.BeginInset();
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("主数据源:", GUILayout.Width(62f));
-            string editToken = GUILayout.TextField(w.NumericToken ?? "", GUILayout.Width(125f));
-            if (editToken != w.NumericToken)
-            {
-                w.NumericToken = editToken;
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-
-            if (GUILayout.Button("🔍 选参数", GUILayout.Width(72f), GUILayout.Height(20f)))
-            {
-                TelemetryParamDrawer.Open(primary.DisplayName + " 主驱动源", chosenToken =>
-                {
-                    w.NumericToken = chosenToken;
-                    var meta = TelemetryCatalog.FindByToken(chosenToken);
-                    if (meta != null)
-                    {
-                        w.MinValue = (float)meta.DefaultMin;
-                        w.MaxValue = (float)meta.DefaultMax;
-                        w.CautionThreshold = (float)meta.DefaultCaution;
-                        w.WarningThreshold = (float)meta.DefaultWarning;
-                        w.UnitLabel = meta.DefaultUnit;
-                        if (w.WidgetType == "tape") w.StepInterval = meta.DefaultStep;
-                    }
-                    WidgetLayoutManager.Instance.SaveLayout();
-                    FlightHUDManager.Instance?.RebuildHUD();
-                });
-            }
-
-            string sampleVal = GetSampledTokenValue(w.NumericToken);
-            GUILayout.Space(4f);
-            GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color> <size=9>{w.UnitLabel}</size>", GUILayout.Width(75f));
-
-            if (!string.IsNullOrEmpty(w.NumericToken))
-            {
-                if (GUILayout.Button("解绑", GUILayout.Width(38f), GUILayout.Height(20f)))
-                {
-                    w.NumericToken = "";
-                    WidgetLayoutManager.Instance.SaveLayout();
-                    FlightHUDManager.Instance?.RebuildHUD();
-                }
-            }
-            GUILayout.EndHorizontal();
-
-            var paramMeta = TelemetryCatalog.FindByToken(w.NumericToken);
-            if (paramMeta != null)
-            {
-                GUILayout.Label($"<color=#{MFPGuiSkin.HexTextSecondary}><size=9>• {paramMeta.DisplayName}: {paramMeta.Description}</size></color>");
-            }
-            MFPGuiSkin.EndInset();
-
-            GUILayout.Space(4f);
-
-            // 2. 量程下限与上限
-            MFPGuiSkin.BeginInset();
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("量程下限:", GUILayout.Width(62f));
-            string minStr = GUILayout.TextField(w.MinValue.ToString("G"), GUILayout.Width(55f));
-            if (float.TryParse(minStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedMin) && Math.Abs(parsedMin - w.MinValue) > 0.001f)
-            {
-                w.MinValue = parsedMin;
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-
-            GUILayout.Space(8f);
-            GUILayout.Label("量程上限:", GUILayout.Width(62f));
-            string maxStr = GUILayout.TextField(w.MaxValue.ToString("G"), GUILayout.Width(55f));
-            if (float.TryParse(maxStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedMax) && Math.Abs(parsedMax - w.MaxValue) > 0.001f)
-            {
-                w.MaxValue = parsedMax;
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-
-            if (GUILayout.Button("↺ 推荐", GUILayout.Width(50f), GUILayout.Height(20f)))
-            {
-                if (paramMeta != null)
-                {
-                    w.MinValue = (float)paramMeta.DefaultMin;
-                    w.MaxValue = (float)paramMeta.DefaultMax;
-                    w.CautionThreshold = (float)paramMeta.DefaultCaution;
-                    w.WarningThreshold = (float)paramMeta.DefaultWarning;
-                    w.UnitLabel = paramMeta.DefaultUnit;
-                    if (w.WidgetType == "tape") w.StepInterval = paramMeta.DefaultStep;
-                    WidgetLayoutManager.Instance.SaveLayout();
-                    FlightHUDManager.Instance?.RebuildHUD();
-                }
-            }
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(2f);
-
-            // 3. 黄色警戒与红色告警阈值
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("警戒(黄):", GUILayout.Width(62f));
-            string cautStr = GUILayout.TextField(w.CautionThreshold.ToString("G"), GUILayout.Width(55f));
-            if (float.TryParse(cautStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedCaut) && Math.Abs(parsedCaut - w.CautionThreshold) > 0.001f)
-            {
-                w.CautionThreshold = parsedCaut;
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-
-            GUILayout.Space(8f);
-            GUILayout.Label("告警(红):", GUILayout.Width(62f));
-            string warnStr = GUILayout.TextField(w.WarningThreshold.ToString("G"), GUILayout.Width(55f));
-            if (float.TryParse(warnStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedWarn) && Math.Abs(parsedWarn - w.WarningThreshold) > 0.001f)
-            {
-                w.WarningThreshold = parsedWarn;
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-            GUILayout.EndHorizontal();
-
-            GUILayout.Space(2f);
-
-            // 4. 单位与步进
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("单位角标:", GUILayout.Width(62f));
-            string unitStr = GUILayout.TextField(w.UnitLabel ?? "", GUILayout.Width(55f));
-            if (unitStr != w.UnitLabel)
-            {
-                w.UnitLabel = unitStr;
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-
-            GUILayout.Space(8f);
-            GUILayout.Label("标尺步进:", GUILayout.Width(62f));
-            string stepStr = GUILayout.TextField(w.StepInterval.ToString("G"), GUILayout.Width(55f));
-            if (float.TryParse(stepStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float parsedStep) && Math.Abs(parsedStep - w.StepInterval) > 0.001f)
-            {
-                w.StepInterval = parsedStep;
-                WidgetLayoutManager.Instance.SaveLayout();
-                FlightHUDManager.Instance?.RebuildHUD();
-            }
-            GUILayout.EndHorizontal();
-
-            MFPGuiSkin.EndInset();
-        }
-
-        private void DrawChannelsTab(BaseFlightWidget primary, WidgetConfig w, float totalH)
-        {
-            if (w == null) return;
-            _channelScrollPos = GUILayout.BeginScrollView(_channelScrollPos, GUILayout.Height(totalH - 46f));
-
-            var channelDict = ParseChannels(w.CustomTemplate);
-            for (int i = 0; i < 6; i++)
-            {
-                string chKey = DefaultChannelKeys[i];
-                string chName = DefaultChannelNames[i];
-                string defaultToken = DefaultChannelTokens[i];
-
-                string currentVal;
-                bool isCustom = channelDict.TryGetValue(chKey, out currentVal);
-                if (!isCustom) currentVal = defaultToken;
-
-                MFPGuiSkin.BeginInset();
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"<b>{chKey}</b> <size=9><color=#{MFPGuiSkin.HexTextSecondary}>({chName})</color></size>", GUILayout.Width(100f));
-                string editedToken = GUILayout.TextField(currentVal ?? "", GUILayout.Width(110f));
-                if (editedToken != currentVal)
-                {
-                    SetChannel(w, chKey, editedToken);
-                }
-
-                if (GUILayout.Button("🔍 选", GUILayout.Width(45f), GUILayout.Height(20f)))
-                {
-                    string targetKey = chKey;
-                    TelemetryParamDrawer.Open($"{primary.DisplayName} {targetKey}", token =>
-                    {
-                        SetChannel(w, targetKey, token);
-                    });
-                }
-
-                string sampleVal = GetSampledTokenValue(currentVal);
-                GUILayout.Space(4f);
-                GUILayout.Label($"<color=#{MFPGuiSkin.HexAccentGreen}><b>{sampleVal}</b></color>", GUILayout.Width(65f));
-
-                if (GUILayout.Button("↺", GUILayout.Width(22f), GUILayout.Height(20f)))
-                {
-                    SetChannel(w, chKey, defaultToken);
-                }
-                GUILayout.EndHorizontal();
-                MFPGuiSkin.EndInset();
-                GUILayout.Space(1f);
-            }
-
-            GUILayout.EndScrollView();
-        }
-
-        private int GetFavoriteButtonCount()
-        {
-            var rules = ThemeManager.Instance?.DockRules;
-            if (rules == null) return 0;
-            int count = 0;
-            for (int i = 0; i < rules.Count; i++)
-            {
-                if (rules[i].IsFavorite) count++;
-            }
-            return count;
-        }
-
-        private void DrawFavoriteModQuickDock(float x, float y, float toolbarW)
-        {
-            float dockH = 44f;
-            Rect dockRect = new Rect(x, y, toolbarW, dockH);
-
-            if (dockRect.Contains(Event.current.mousePosition))
-            {
-                FlightHUDManager.IsMouseOverFloatingToolbar = true;
-            }
-
-            GUILayout.BeginArea(dockRect, MFPGuiSkin.CardStyle);
-            GUILayout.BeginHorizontal();
-
-            GUILayout.Label(I18n.Tr("HUD_FAV_MOD_HEADER", "<color=#FFE000><b>★ 常用模组:</b></color>"), GUILayout.Width(88f), GUILayout.Height(22f));
+            if (_modDockContentTransform == null) return;
 
             var rules = ThemeManager.Instance?.DockRules;
             var favList = new List<DockButtonRule>();
@@ -1320,89 +760,162 @@ namespace ModularFlightPanel.UI.HUD
                 }
             }
 
-            if (favList.Count == 0)
+            for (int i = favList.Count; i < _modDockBtnPool.Count; i++)
             {
-                GUILayout.Label(I18n.Tr("HUD_FAV_MOD_EMPTY", "<color=#94A3B8><size=11>未收藏常用模组，点击右侧「⚙️ 管理」或「★ 推荐」添加到快捷坞</size></color>"), GUILayout.ExpandWidth(true), GUILayout.Height(22f));
-                if (GUILayout.Button(I18n.Tr("HUD_FAV_MOD_AUTO", "★ 一键推荐"), MFPGuiSkin.WarningButtonStyle, GUILayout.Width(82f), GUILayout.Height(22f)))
-                {
-                    ThemeManager.Instance?.AutoRecommendFavorites();
-                    ThemeManager.Instance?.EnsureDockRulesPopulated();
-                }
+                _modDockBtnPool[i].SetActive(false);
             }
-            else
+
+            for (int i = 0; i < favList.Count; i++)
             {
-                _modDockScroll = GUILayout.BeginScrollView(_modDockScroll, false, false, GUILayout.ExpandWidth(true), GUILayout.Height(26f));
-                GUILayout.BeginHorizontal();
-
-                for (int i = 0; i < favList.Count; i++)
+                var rule = favList[i];
+                GameObject btnObj;
+                if (i < _modDockBtnPool.Count)
                 {
-                    var rule = favList[i];
-                    string label = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
-                    if (string.IsNullOrEmpty(label)) label = rule.Key;
-
-                    if (GUILayout.Button(label, MFPGuiSkin.StepperButtonStyle, GUILayout.Height(22f), GUILayout.MinWidth(55f)))
-                    {
-                        TriggerFavoriteModClick(rule, Event.current != null && Event.current.button == 1);
-                    }
+                    btnObj = _modDockBtnPool[i];
+                    btnObj.SetActive(true);
+                }
+                else
+                {
+                    btnObj = CreateToolbarButton(_modDockContentTransform, $"ModBtn_{i}", "", new Vector2(76f, 26f), null).gameObject;
+                    _modDockBtnPool.Add(btnObj);
                 }
 
-                GUILayout.EndHorizontal();
-                GUILayout.EndScrollView();
-            }
+                string label = !string.IsNullOrEmpty(rule.CustomLabel) ? rule.CustomLabel : rule.DefaultName;
+                if (string.IsNullOrEmpty(label)) label = rule.Key;
 
-            if (GUILayout.Button(I18n.Tr("HUD_FAV_MOD_MGR", "⚙️ 管理"), MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(58f), GUILayout.Height(22f)))
-            {
-                SettingsGUI.Instance?.OpenToTab(0);
-            }
+                var btnText = btnObj.GetComponentInChildren<Text>();
+                if (btnText != null) btnText.text = label;
 
-            if (GUILayout.Button("✕", MFPGuiSkin.SecondaryButtonStyle, GUILayout.Width(22f), GUILayout.Height(22f)))
-            {
-                _isFavoriteModDockOpen = false;
+                var btn = btnObj.GetComponent<Button>();
+                btn.onClick.RemoveAllListeners();
+                var curRule = rule;
+                btn.onClick.AddListener(() =>
+                {
+                    MFPToastBridge.Show(string.Format(I18n.Tr("UI_TOAST_MOD_TRIGGERED", "✔ 已触发 [{0}]"), curRule.DisplayName));
+                });
             }
-
-            GUILayout.EndHorizontal();
-            GUILayout.EndArea();
         }
+        #endregion
 
-        private void TriggerFavoriteModClick(DockButtonRule rule, bool isRightClick)
+        #region UGUI 工具辅助方法
+        private GameObject CreateGlassPanel(Transform parent, string name, Vector2 size, Vector2 anchor, Vector2 pivot, Vector2 pos)
         {
-            if (rule == null) return;
-#if KSP_RUNTIME
-            try
-            {
-                var launcher = KSP.UI.Screens.ApplicationLauncher.Instance;
-                if (launcher != null)
-                {
-                    var stockBtns = StockToolbarHook.GetStockButtons(launcher);
-                    var modBtns = StockToolbarHook.GetModButtons(launcher);
-                    var all = new List<KSP.UI.Screens.ApplicationLauncherButton>();
-                    if (stockBtns != null) all.AddRange(stockBtns);
-                    if (modBtns != null) all.AddRange(modBtns);
+            GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Outline));
+            go.transform.SetParent(parent, false);
 
-                    for (int i = 0; i < all.Count; i++)
-                    {
-                        var btn = all[i];
-                        if (btn == null) continue;
-                        ModernToolbarWidget.GetButtonIdentity(btn, i, out string k, out string _);
-                        if (k.Equals(rule.Key, StringComparison.OrdinalIgnoreCase))
-                        {
-                            ModernToolbarWidget.TriggerKspButtonClick(btn, null, isRightClick);
-                            MFPToastBridge.Show(string.Format(I18n.Tr("UI_TOAST_MOD_TRIGGERED", "✔ 已触发 [{0}]"), rule.DisplayName));
-                            return;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = anchor;
+            rt.anchorMax = anchor;
+            rt.pivot = pivot;
+            rt.sizeDelta = size;
+            rt.anchoredPosition = pos;
+
+            var img = go.GetComponent<Image>();
+            Material glassMat = GetOrCreateGlassMaterial();
+            if (glassMat != null)
             {
-                MFPLogger.WarnThrottled("HUDEdit_TriggerMod", $"Failed triggering mod button: {ex.Message}");
+                img.material = glassMat;
             }
-#endif
-            MFPToastBridge.Show(string.Format(I18n.Tr("UI_TOAST_MOD_TRIGGERED_SIM", "✔ 已触发 [{0}] (模拟)"), rule.DisplayName));
+            img.color = new Color(0.06f, 0.09f, 0.14f, 0.94f);
+            img.raycastTarget = true;
+
+            var outline = go.GetComponent<Outline>();
+            outline.effectColor = new Color(0f, 0.88f, 1f, 0.35f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            return go;
         }
-#else
-        public static bool IsSubControlCustomizerOpen => false;
-#endif
+
+        private static GameObject CreateRowLayout(Transform parent, float height)
+        {
+            GameObject go = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            go.transform.SetParent(parent, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(0f, height);
+
+            var hl = go.GetComponent<HorizontalLayoutGroup>();
+            hl.childAlignment = TextAnchor.MiddleLeft;
+            hl.spacing = 3f;
+            hl.childForceExpandWidth = false;
+            hl.childForceExpandHeight = false;
+
+            return go;
+        }
+
+        private static Button CreateToolbarButton(Transform parent, string name, string label, Vector2 size, UnityAction onClick, Color? bgColor = null, Color? textColor = null, int fontSize = 11)
+        {
+            GameObject go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(Outline));
+            go.transform.SetParent(parent, false);
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.sizeDelta = size;
+
+            var img = go.GetComponent<Image>();
+            img.color = bgColor ?? new Color(0.12f, 0.17f, 0.25f, 0.92f);
+            img.raycastTarget = true;
+
+            var outline = go.GetComponent<Outline>();
+            outline.effectColor = new Color(0.25f, 0.40f, 0.60f, 0.60f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            var btn = go.GetComponent<Button>();
+            btn.transition = Selectable.Transition.ColorTint;
+            var colors = btn.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(0.2f, 0.8f, 1f, 1f);
+            colors.pressedColor = new Color(0.0f, 0.6f, 0.9f, 1f);
+            colors.disabledColor = new Color(0.5f, 0.5f, 0.5f, 0.3f);
+            btn.colors = colors;
+
+            if (onClick != null) btn.onClick.AddListener(onClick);
+
+            var txtObj = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            txtObj.transform.SetParent(go.transform, false);
+
+            var txtRt = txtObj.GetComponent<RectTransform>();
+            txtRt.anchorMin = Vector2.zero;
+            txtRt.anchorMax = Vector2.one;
+            txtRt.sizeDelta = Vector2.zero;
+            txtRt.offsetMin = new Vector2(2f, 0f);
+            txtRt.offsetMax = new Vector2(-2f, 0f);
+
+            var txt = txtObj.GetComponent<Text>();
+            txt.font = UIFactory.GetActiveFont();
+            txt.text = label;
+            txt.fontSize = fontSize;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.color = textColor ?? Color.white;
+            txt.raycastTarget = false;
+
+            return btn;
+        }
+
+        private static void CreateDivider(Transform parent)
+        {
+            GameObject div = new GameObject("Divider", typeof(RectTransform), typeof(Image));
+            div.transform.SetParent(parent, false);
+            var rt = div.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(1f, 22f);
+            div.GetComponent<Image>().color = new Color(0.25f, 0.35f, 0.50f, 0.5f);
+        }
+
+        private static void AddHoverCatcher(GameObject go)
+        {
+            var catcher = go.AddComponent<HoverCatcher>();
+            catcher.OnHoverChanged = isHover =>
+            {
+                FlightHUDManager.IsMouseOverFloatingToolbar = isHover;
+                MFPInputLock.SetWindowHoverLock(isHover);
+            };
+        }
+
+        private class HoverCatcher : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+        {
+            public Action<bool> OnHoverChanged;
+            public void OnPointerEnter(PointerEventData eventData) => OnHoverChanged?.Invoke(true);
+            public void OnPointerExit(PointerEventData eventData) => OnHoverChanged?.Invoke(false);
+        }
+        #endregion
     }
 }
-

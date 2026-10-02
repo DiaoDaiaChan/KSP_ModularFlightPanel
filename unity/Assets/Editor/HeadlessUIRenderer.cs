@@ -598,6 +598,17 @@ namespace ModularFlightPanel.Editor
                             w.MinValue = 0;
                             w.MaxValue = 1;
                         }
+                        if (cleanTargetId.Equals("nav.rect_navball", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (forceM2 || (!string.IsNullOrEmpty(targetScenario) && (targetScenario.Contains("3d") || targetScenario.Contains("sphere"))))
+                            {
+                                w.CustomTemplate = "MODE=3d";
+                            }
+                            else if (!string.IsNullOrEmpty(targetScenario) && (targetScenario.Contains("pfd") || targetScenario.Contains("dim")))
+                            {
+                                w.CustomTemplate = "MODE=pfd";
+                            }
+                        }
                         if (!string.IsNullOrEmpty(targetScenario))
                         {
                             if (targetScenario.Contains("concise") || targetScenario.Contains("minimal") || targetScenario.Contains("stock"))
@@ -635,6 +646,17 @@ namespace ModularFlightPanel.Editor
                     {
                         var toggleM = oew.GetType().GetMethod("OnModeToggle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
                         if (toggleM != null) toggleM.Invoke(oew, null);
+                    }
+                    if (ew is ModularFlightPanel.UI.Widgets.RectangularNavballWidget rnw)
+                    {
+                        if (forceM2 || (!string.IsNullOrEmpty(targetScenario) && (targetScenario.Contains("3d") || targetScenario.Contains("sphere"))))
+                        {
+                            rnw.SetDisplayMode(ModularFlightPanel.UI.Widgets.RectangularNavballMode.Spherical3D);
+                        }
+                        else if (!string.IsNullOrEmpty(targetScenario) && (targetScenario.Contains("pfd") || targetScenario.Contains("dim")))
+                        {
+                            rnw.SetDisplayMode(ModularFlightPanel.UI.Widgets.RectangularNavballMode.DimensionReducedPFD);
+                        }
                     }
                     if (triggerSmall && ew is ModularFlightPanel.UI.Framework.IAdaptiveSizeWidget adaptive)
                     {
